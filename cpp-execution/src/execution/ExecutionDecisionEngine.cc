@@ -1,4 +1,4 @@
-#pragma once
+// #pragma once
 
 #include <memory>
 #include <vector>
@@ -7,8 +7,8 @@
 #include <cmath>
 
 // Assuming protobuf messages are defined as in the document
-#include "trading_messages.pb.h"
-
+// #include "../../../proto/cpp/trading_messages.pb.h"
+#include "generated/cpp/trading_messages.pb.h"
 class OrderBookAnalyzer {
 private:
     struct OrderBookSnapshot {

@@ -1,8 +1,6 @@
 /**
- * Main risk management orchestrator that coordinates all risk subsystems
- *
- * File: risk_manager.hpp
- * Created: 2025-04-29
+ * Simplified Execution Risk Manager - Focus on execution-level risk only
+ * Strategic risk is handled by Python layer
  */
 
 #pragma once
@@ -10,151 +8,144 @@
 #include "risk_types.hpp"
 #include "risk_events.hpp"
 #include "risk_config.hpp"
-#include "pretrade/pre_trade_risk_filter.hpp"
-#include "posttrade/post_trade_monitor.hpp"
-#include "portfolio/portfolio_manager.hpp"
-#include "service/risk_service.hpp"
-#include "interfaces/strategy_interface.hpp"
-#include "interfaces/execution_interface.hpp"
-#include "interfaces/data_interface.hpp"
-#include "execution/models/execution_report.hpp"
-#include "interfaces/strategy_interface.hpp"
+#include "pretrade/fat_finger_protection.hpp"
+#include "pretrade/order_validator.hpp"
+#include "posttrade/circuit_breaker.hpp"
+#include "service/risk_validation_service.hpp"
+#include "trading_messages.pb.h" // From your protobuf definitions
 #include <atomic>
 #include <memory>
 #include <mutex>
 #include <string>
-#include <vector>
 #include <unordered_map>
 
-namespace trading   {
-namespace risk {
-using namespace trading::execution::models;
+namespace trading::risk {
 
 /**
- * The Risk Manager is the central coordinating component for all risk subsystems.
- * It orchestrates risk checks, monitors trading activity, and enforces risk limits.
+ * Lightweight execution risk manager for hybrid architecture
+ * Only handles execution-level risks that require microsecond responses
  */
-
-class RiskManager {
+class ExecutionRiskManager {
 public:
-    /**
-     * Constructor
-     * @param config The risk system configuration
-     */
-    explicit RiskManager(const RiskConfig& config);
-    
-    /**
-     * Destructor
-     */
-    ~RiskManager();
+    explicit ExecutionRiskManager(const RiskConfig& config);
+    ~ExecutionRiskManager() = default;
 
     /**
-     * Initialize the risk manager and its subsystems
-     * @return true if initialization was successful, false otherwise
+     * Initialize execution risk components only
      */
     bool initialize();
     
     /**
-     * Validate a trading signal before it becomes an order
-     * @param signal The trading signal to validate
-     * @return ValidationResult containing approval status and any violations
+     * Fast validation for trading intents from Python
+     * Must complete in < 100μs
      */
-    ValidationResult validateSignal(const TradingSignal& signal);
+    ExecutionRiskResult validateTradingIntent(const TradingIntent& intent,
+                                             const MarketIntelligence& market_intel);
     
     /**
-     * Process execution reports for post-trade analysis
-     * @param executionReport The execution report to process
+     * Real-time order validation before execution
+     * Must complete in < 50μs  
      */
-    void processExecutionReport(const ExecutionReport& executionReport);
+    ExecutionRiskResult validateOrder(const OrderRequest& order,
+                                     const MarketIntelligence& market_intel);
     
     /**
-     * Update market data for risk calculations
-     * @param marketData The latest market data
+     * Update market impact tracking
      */
-    void updateMarketData(const MarketData& marketData);
+    void updateMarketImpact(const std::string& symbol, 
+                           double executed_quantity,
+                           double price_impact);
     
     /**
-     * Get the current risk manager mode
-     * @return The current RiskManagerMode
+     * Emergency circuit breaker check
      */
-    RiskManagerMode getMode() const;
+    bool isCircuitBreakerTriggered(const std::string& symbol) const;
     
     /**
-     * Set the risk manager mode
-     * @param mode The new RiskManagerMode
+     * Get current execution limits for symbol
      */
-    void setMode(RiskManagerMode mode);
-    
-    /**
-     * Get the current risk limits
-     * @param exchangeId The exchange ID
-     * @param tradingPair The trading pair
-     * @param strategyId The strategy ID
-     * @return RiskParameters containing current risk limits
-     */
-    RiskParameters getRiskParameters(const ExchangeId& exchangeId, 
-                                    const TradingPair& tradingPair,
-                                    const StrategyId& strategyId) const;
-    
-    /**
-     * Update risk parameters
-     * @param params The new risk parameters
-     * @return true if update was successful, false otherwise
-     */
-    bool updateRiskParameters(const RiskParameters& params);
-    
-    /**
-     * Register a callback for risk events
-     * @param callback The function to call when risk events occur
-     */
-    void registerRiskEventCallback(const RiskEventCallback& callback);
-    
-    /**
-     * Force a position reconciliation
-     * @param exchangeId Optional exchange ID to limit reconciliation
-     * @return true if reconciliation was successful, false otherwise
-     */
-    bool reconcilePositions(const std::optional<ExchangeId>& exchangeId = std::nullopt);
-    
-    /**
-     * Get the latest performance metrics
-     * @return PerformanceMetrics containing the latest metrics
-     */
-    PerformanceMetrics getPerformanceMetrics() const;
-    
-    /**
-     * Perform emergency risk actions (halt trading, cancel orders)
-     * @param reason The reason for emergency action
-     * @return true if action was successful, false otherwise
-     */
-    bool emergencyAction(const std::string& reason);
+    ExecutionLimits getExecutionLimits(const std::string& symbol) const;
 
 private:
-    // Core subsystems
-    std::unique_ptr<PreTradeRiskFilter> m_preTradeFilter;
-    std::unique_ptr<PostTradeMonitor> m_postTradeMonitor;
-    std::unique_ptr<PortfolioManager> m_portfolioManager;
-    std::unique_ptr<RiskService> m_riskService;
+    // Execution-focused components only
+    std::unique_ptr<FatFingerProtection> m_fatFingerProtection;
+    std::unique_ptr<OrderValidator> m_orderValidator;  
+    std::unique_ptr<CircuitBreaker> m_circuitBreaker;
+    std::unique_ptr<RiskValidationService> m_validationService;
     
-    // Interfaces to external systems
-    std::unique_ptr<StrategyInterface> m_strategyInterface;
-    std::unique_ptr<ExecutionInterface> m_executionInterface;
-    std::unique_ptr<DataInterface> m_dataInterface;
-    
-    // Configuration and state
+    // Lightweight configuration
     RiskConfig m_config;
-    std::atomic<RiskManagerMode> m_mode;
-    mutable std::mutex m_stateMutex;
+    std::atomic<bool> m_emergencyStop{false};
     
-    // Risk event callbacks
-    std::vector<RiskEventCallback> m_eventCallbacks;
-    mutable std::mutex m_callbackMutex;
+    // Real-time tracking (minimal state)
+    mutable std::mutex m_impactMutex;
+    std::unordered_map<std::string, MarketImpactTracker> m_impactTrackers;
     
-    // Private helper methods
-    void notifyRiskEvent(const RiskEvent& event);
-    bool checkSystemHealth();
-    void loadConfiguration();
+    // Fast lookup tables for limits
+    std::unordered_map<std::string, ExecutionLimits> m_symbolLimits;
+    
+    // Emergency callback
+    std::function<void(const std::string& reason)> m_emergencyCallback;
 };
 
-} // namespace risk
-}
+/**
+ * Execution-specific risk result
+ */
+struct ExecutionRiskResult {
+    bool approved = false;
+    std::string rejection_reason;
+    std::chrono::microseconds validation_time{0};
+    
+    // Execution adjustments (if approved with modifications)
+    std::optional<double> adjusted_quantity;
+    std::optional<double> max_price_impact;
+    std::optional<int> max_execution_time_ms;
+};
+
+/**
+ * Market impact tracker for real-time monitoring
+ */
+struct MarketImpactTracker {
+    double cumulative_impact = 0.0;
+    double recent_volume = 0.0;
+    std::chrono::steady_clock::time_point last_update;
+    
+    void update(double quantity, double impact) {
+        auto now = std::chrono::steady_clock::now();
+        
+        // Decay old impact (5-minute half-life)
+        if (last_update != std::chrono::steady_clock::time_point{}) {
+            auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - last_update).count();
+            double decay_factor = std::exp(-elapsed / 300.0); // 5 minutes
+            cumulative_impact *= decay_factor;
+            recent_volume *= decay_factor;
+        }
+        
+        cumulative_impact += std::abs(impact);
+        recent_volume += std::abs(quantity);
+        last_update = now;
+    }
+    
+    double getImpactRate() const {
+        return recent_volume > 0 ? cumulative_impact / recent_volume : 0.0;
+    }
+};
+
+/**
+ * Execution limits per symbol
+ */
+struct ExecutionLimits {
+    double max_order_size = 0.0;
+    double max_market_impact = 0.01; // 1%
+    double max_price_deviation = 0.05; // 5%
+    double max_participation_rate = 0.2; // 20% of volume
+    int max_orders_per_second = 10;
+    bool allow_market_orders = true;
+    
+    // Circuit breaker thresholds
+    double cb_slippage_threshold = 0.02; // 2%
+    double cb_rejection_rate_threshold = 0.1; // 10%
+    int cb_max_consecutive_rejections = 5;
+};
+
+} // namespace trading::risk

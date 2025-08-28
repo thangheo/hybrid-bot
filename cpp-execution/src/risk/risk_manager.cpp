@@ -1,359 +1,275 @@
 /**
- * Implementation of the risk manager
- *
- * File: risk_manager.cpp
- * Created: 2025-04-29
+ * Implementation of simplified execution risk manager
  */
 
- #include "risk_manager.hpp"
- #include <iostream>
- #include <sstream>
- #include <chrono>
- 
- namespace trading {
- namespace risk {
- 
- RiskManager::RiskManager(const RiskConfig& config)
-     : m_config(config)
-     , m_mode(RiskManagerMode::NORMAL)
- {
- }
- 
- RiskManager::~RiskManager() {
-     // Ensure clean shutdown
-     try {
-         // Stop any running services
-         if (m_riskService) {
-             m_riskService->stop();
-         }
-     } catch (const std::exception& e) {
-         std::cerr << "Exception during RiskManager destruction: " << e.what() << std::endl;
-     }
- }
- 
- bool RiskManager::initialize() {
-     try {
-         // Load configuration
-         loadConfiguration();
-         
-         // Initialize portfolio manager first (needed by other components)
-         m_portfolioManager = std::make_unique<PortfolioManager>(m_config);
-         if (!m_portfolioManager->initialize()) {
-             std::cerr << "Failed to initialize portfolio manager" << std::endl;
-             return false;
-         }
-         
-         // Initialize pre-trade filter
-         m_preTradeFilter = std::make_unique<PreTradeRiskFilter>(m_config, m_portfolioManager.get());
-         if (!m_preTradeFilter->initialize()) {
-             std::cerr << "Failed to initialize pre-trade risk filter" << std::endl;
-             return false;
-         }
-         
-         // Initialize post-trade monitor
-         m_postTradeMonitor = std::make_unique<PostTradeMonitor>(m_config, m_portfolioManager.get());
-         if (!m_postTradeMonitor->initialize()) {
-             std::cerr << "Failed to initialize post-trade monitor" << std::endl;
-             return false;
-         }
-         
-         // Initialize external interfaces
-         m_strategyInterface = std::make_unique<StrategyInterface>(m_config);
-         m_executionInterface = std::make_unique<ExecutionInterface>(m_config);
-         m_dataInterface = std::make_unique<DataInterface>(m_config);
-         
-         if (!m_strategyInterface->initialize() || 
-             !m_executionInterface->initialize() || 
-             !m_dataInterface->initialize()) {
-             std::cerr << "Failed to initialize external interfaces" << std::endl;
-             return false;
-         }
-         
-         // Initialize risk service
-         m_riskService = std::make_unique<RiskService>(m_config);
-         
-         // Register callbacks
-         auto self = shared_from_this(); // Shared pointer to this instance
-         auto validationService = std::make_shared<RiskValidationService>(m_config, self);
-         
-         if (!validationService->initialize()) {
-             std::cerr << "Failed to initialize validation service" << std::endl;
-             return false;
-         }
-         
-         m_riskService->setRiskValidationService(validationService);
-         
-         if (!m_riskService->initialize() || !m_riskService->start()) {
-             std::cerr << "Failed to initialize or start risk service" << std::endl;
-             return false;
-         }
-         
-         // Set up event handlers
-         m_postTradeMonitor->registerRiskEventCallback([this](const RiskEvent& event) {
-             notifyRiskEvent(event);
-         });
-         
-         // Set up periodic system health check
-         // This would be set up with a timer in production code
-         
-         return true;
-     } catch (const std::exception& e) {
-         std::cerr << "Exception during RiskManager initialization: " << e.what() << std::endl;
-         return false;
-     }
- }
- 
- ValidationResult RiskManager::validateSignal(const TradingSignal& signal) {
-     // First check if the system is in a valid state for trading
-     if (m_mode != RiskManagerMode::NORMAL && m_mode != RiskManagerMode::HEIGHTENED_RISK) {
-         ValidationResult result;
-         result.signalId = signal.id;
-         result.approved = false;
-         
-         RiskViolation violation;
-         violation.violationType = "SYSTEM_MODE";
-         violation.description = "System is not in trading mode";
-         result.violations.push_back(violation);
-         result.timestamp = std::chrono::system_clock::now().time_since_epoch().count();
-         
-         return result;
-     }
-     
-     // Execute pre-trade risk checks
-     if (m_preTradeFilter) {
-         return m_preTradeFilter->validateSignal(signal);
-     }
-     
-     // If pre-trade filter is not available, reject the signal
-     ValidationResult result;
-     result.signalId = signal.id;
-     result.approved = false;
-     
-     RiskViolation violation;
-     violation.violationType = "SYSTEM_ERROR";
-     violation.description = "Pre-trade risk filter unavailable";
-     result.violations.push_back(violation);
-     result.timestamp = std::chrono::system_clock::now().time_since_epoch().count();
-     
-     return result;
- }
- 
- void RiskManager::processExecutionReport(const ExecutionReport& executionReport) {
-     try {
-         // Update portfolio with execution information
-         if (m_portfolioManager) {
-             m_portfolioManager->processExecution(executionReport);
-         }
-         
-         // Pass to post-trade monitoring
-         if (m_postTradeMonitor) {
-             m_postTradeMonitor->processExecutionReport(executionReport);
-         }
-     } catch (const std::exception& e) {
-         std::cerr << "Exception during execution report processing: " << e.what() << std::endl;
-         
-         // Create and notify risk event for the error
-         RiskEvent event;
-         event.type = RiskEventType::SYSTEM_ERROR;
-         event.severity = RiskEventSeverity::HIGH;
-         event.timestamp = std::chrono::system_clock::now().time_since_epoch().count();
-         event.description = std::string("Error processing execution report: ") + e.what();
-         
-         notifyRiskEvent(event);
-     }
- }
- 
- void RiskManager::updateMarketData(const MarketData& marketData) {
-     try {
-         // Update portfolio with market data
-         if (m_portfolioManager) {
-             m_portfolioManager->updateMarketData(marketData);
-         }
-         
-         // Pass to post-trade monitoring for real-time risk assessment
-         if (m_postTradeMonitor) {
-             m_postTradeMonitor->updateMarketData(marketData);
-         }
-     } catch (const std::exception& e) {
-         std::cerr << "Exception during market data update: " << e.what() << std::endl;
-         
-         // Create and notify risk event for the error
-         RiskEvent event;
-         event.type = RiskEventType::SYSTEM_ERROR;
-         event.severity = RiskEventSeverity::MEDIUM;
-         event.timestamp = std::chrono::system_clock::now().time_since_epoch().count();
-         event.description = std::string("Error updating market data: ") + e.what();
-         
-         notifyRiskEvent(event);
-     }
- }
- 
- RiskManagerMode RiskManager::getMode() const {
-     return m_mode.load();
- }
- 
- void RiskManager::setMode(RiskManagerMode mode) {
-     RiskManagerMode oldMode = m_mode.exchange(mode);
-     
-     // Notify about mode change if it actually changed
-     if (oldMode != mode) {
-         RiskEvent event;
-         event.type = RiskEventType::MODE_CHANGE;
-         event.severity = RiskEventSeverity::MEDIUM;
-         event.timestamp = std::chrono::system_clock::now().time_since_epoch().count();
-         
-         std::stringstream ss;
-         ss << "Risk manager mode changed from " << static_cast<int>(oldMode) 
-            << " to " << static_cast<int>(mode);
-         event.description = ss.str();
-         
-         notifyRiskEvent(event);
-         
-         // Take specific actions based on new mode
-         if (mode == RiskManagerMode::EMERGENCY) {
-             // Execute emergency procedures
-             emergencyAction("Entered emergency mode");
-         }
-     }
- }
- 
- RiskParameters RiskManager::getRiskParameters(const ExchangeId& exchangeId, 
-                                           const TradingPair& tradingPair,
-                                           const StrategyId& strategyId) const {
-     if (m_preTradeFilter) {
-         return m_preTradeFilter->getRiskParameters(exchangeId, tradingPair, strategyId);
-     }
-     
-     // Return empty parameters if pre-trade filter is not available
-     return RiskParameters();
- }
- 
- bool RiskManager::updateRiskParameters(const RiskParameters& params) {
-     if (m_preTradeFilter) {
-         return m_preTradeFilter->updateRiskParameters(params);
-     }
-     return false;
- }
- 
- void RiskManager::registerRiskEventCallback(const RiskEventCallback& callback) {
-     std::lock_guard<std::mutex> lock(m_callbackMutex);
-     m_eventCallbacks.push_back(callback);
- }
- 
- bool RiskManager::reconcilePositions(const std::optional<ExchangeId>& exchangeId) {
-     if (m_portfolioManager) {
-         return m_portfolioManager->reconcilePositions(exchangeId);
-     }
-     return false;
- }
- 
- PerformanceMetrics RiskManager::getPerformanceMetrics() const {
-     if (m_postTradeMonitor) {
-         return m_postTradeMonitor->getPerformanceMetrics();
-     }
-     
-     // Return empty metrics if post-trade monitor is not available
-     return PerformanceMetrics();
- }
- 
- bool RiskManager::emergencyAction(const std::string& reason) {
-     try {
-         std::cout << "EXECUTING EMERGENCY ACTIONS: " << reason << std::endl;
-         
-         // Create emergency event
-         RiskEvent event;
-         event.type = RiskEventType::EMERGENCY_ACTION;
-         event.severity = RiskEventSeverity::CRITICAL;
-         event.timestamp = std::chrono::system_clock::now().time_since_epoch().count();
-         event.description = "Emergency action triggered: " + reason;
-         
-         notifyRiskEvent(event);
-         
-         // 1. Cancel all open orders
-         if (m_executionInterface) {
-             m_executionInterface->cancelAllOrders("Emergency action");
-         }
-         
-         // 2. Disable new order submission
-         setMode(RiskManagerMode::EMERGENCY);
-         
-         // 3. Notify strategy engine
-         if (m_strategyInterface) {
-             m_strategyInterface->notifyEmergencyState(reason);
-         }
-         
-         return true;
-     } catch (const std::exception& e) {
-         std::cerr << "Exception during emergency action: " << e.what() << std::endl;
-         return false;
-     }
- }
- 
- void RiskManager::notifyRiskEvent(const RiskEvent& event) {
-     std::lock_guard<std::mutex> lock(m_callbackMutex);
-     for (const auto& callback : m_eventCallbacks) {
-         callback(event);
-     }
- }
- 
- bool RiskManager::checkSystemHealth() {
-     // Check if all components are functioning properly
-     bool portfolioManagerHealthy = m_portfolioManager && m_portfolioManager->isHealthy();
-     bool preTradeFilterHealthy = m_preTradeFilter && m_preTradeFilter->isHealthy();
-     bool postTradeMonitorHealthy = m_postTradeMonitor && m_postTradeMonitor->isHealthy();
-     
-     // Check external interfaces
-     bool strategyInterfaceHealthy = m_strategyInterface && m_strategyInterface->isConnected();
-     bool executionInterfaceHealthy = m_executionInterface && m_executionInterface->isConnected();
-     bool dataInterfaceHealthy = m_dataInterface && m_dataInterface->isConnected();
-     
-     // Check if service is running
-     bool serviceHealthy = m_riskService && m_riskService->isRunning();
-     
-     // Overall health status
-     bool systemHealthy = portfolioManagerHealthy && preTradeFilterHealthy && postTradeMonitorHealthy && 
-                          strategyInterfaceHealthy && executionInterfaceHealthy && dataInterfaceHealthy && 
-                          serviceHealthy;
-     
-     // If system is unhealthy but not in emergency or maintenance mode, trigger emergency
-     if (!systemHealthy && m_mode != RiskManagerMode::EMERGENCY && m_mode != RiskManagerMode::MAINTENANCE) {
-         std::stringstream ss;
-         ss << "System health check failed - Components status: "
-            << "Portfolio Manager: " << (portfolioManagerHealthy ? "OK" : "FAIL") << ", "
-            << "Pre-Trade Filter: " << (preTradeFilterHealthy ? "OK" : "FAIL") << ", "
-            << "Post-Trade Monitor: " << (postTradeMonitorHealthy ? "OK" : "FAIL") << ", "
-            << "Strategy Interface: " << (strategyInterfaceHealthy ? "OK" : "FAIL") << ", "
-            << "Execution Interface: " << (executionInterfaceHealthy ? "OK" : "FAIL") << ", "
-            << "Data Interface: " << (dataInterfaceHealthy ? "OK" : "FAIL") << ", "
-            << "Service: " << (serviceHealthy ? "OK" : "FAIL");
-         
-         emergencyAction(ss.str());
-     }
-     
-     return systemHealthy;
- }
- 
- void RiskManager::loadConfiguration() {
-     // Load specific parameters for risk components from configuration
-     
-     // Example of parameter loading for pre-trade risk filter
-     if (m_config.hasKey("risk.position_limits.enable")) {
-         bool enablePositionLimits = m_config.getBoolValue("risk.position_limits.enable");
-         // Use the parameter...
-     }
-     
-     // Example of parameter loading for post-trade monitor
-     if (m_config.hasKey("risk.circuit_breaker.enable")) {
-         bool enableCircuitBreaker = m_config.getBoolValue("risk.circuit_breaker.enable");
-         // Use the parameter...
-     }
-     
-     // Load default mode
-     if (m_config.hasKey("risk.default_mode")) {
-         int defaultMode = m_config.getIntValue("risk.default_mode");
-         m_mode.store(static_cast<RiskManagerMode>(defaultMode));
-     }
- }
- 
- } // namespace risk
- } // namespace trading
+#include "risk_manager.hpp"
+#include <algorithm>
+#include <chrono>
+
+namespace trading::risk {
+
+ExecutionRiskManager::ExecutionRiskManager(const RiskConfig& config)
+    : m_config(config) {
+}
+
+bool ExecutionRiskManager::initialize() {
+    try {
+        // Initialize only execution-focused components
+        m_fatFingerProtection = std::make_unique<FatFingerProtection>(m_config);
+        if (!m_fatFingerProtection->initialize()) {
+            return false;
+        }
+        
+        m_orderValidator = std::make_unique<OrderValidator>(m_config);
+        if (!m_orderValidator->initialize()) {
+            return false;
+        }
+        
+        m_circuitBreaker = std::make_unique<CircuitBreaker>(m_config);
+        if (!m_circuitBreaker->initialize()) {
+            return false;
+        }
+        
+        m_validationService = std::make_unique<RiskValidationService>(m_config);
+        if (!m_validationService->initialize()) {
+            return false;
+        }
+        
+        // Load symbol-specific execution limits
+        loadExecutionLimits();
+        
+        return true;
+    } catch (const std::exception& e) {
+        std::cerr << "Failed to initialize ExecutionRiskManager: " << e.what() << std::endl;
+        return false;
+    }
+}
+
+ExecutionRiskResult ExecutionRiskManager::validateTradingIntent(
+    const TradingIntent& intent,
+    const MarketIntelligence& market_intel) {
+    
+    auto start_time = std::chrono::high_resolution_clock::now();
+    ExecutionRiskResult result;
+    
+    // Emergency stop check (fastest possible)
+    if (m_emergencyStop.load()) {
+        result.rejection_reason = "Emergency stop active";
+        return result;
+    }
+    
+    // Circuit breaker check
+    if (isCircuitBreakerTriggered(intent.symbol())) {
+        result.rejection_reason = "Circuit breaker triggered for " + intent.symbol();
+        return result;
+    }
+    
+    // Get execution limits for symbol
+    auto limits = getExecutionLimits(intent.symbol());
+    
+    // Fast execution-level validations only
+    
+    // 1. Order size validation
+    if (intent.target_quantity() > limits.max_order_size) {
+        result.rejection_reason = "Order size exceeds limit";
+        result.adjusted_quantity = limits.max_order_size;
+        // Could still approve with adjustment
+    }
+    
+    // 2. Market impact validation
+    if (intent.max_market_impact() > limits.max_market_impact) {
+        result.rejection_reason = "Market impact limit exceeded";
+        result.max_price_impact = limits.max_market_impact;
+    }
+    
+    // 3. Price deviation check (fat finger protection)
+    if (m_fatFingerProtection) {
+        auto fat_finger_result = m_fatFingerProtection->validateIntent(intent, market_intel);
+        if (!fat_finger_result.approved) {
+            result.rejection_reason = fat_finger_result.reason;
+            return result;
+        }
+    }
+    
+    // 4. Liquidity-based adjustments
+    if (market_intel.liquidity_ratio() < 0.3) {
+        // Reduce size in thin markets
+        double liquidity_factor = market_intel.liquidity_ratio() / 0.3;
+        if (result.adjusted_quantity.has_value()) {
+            result.adjusted_quantity = result.adjusted_quantity.value() * liquidity_factor;
+        } else {
+            result.adjusted_quantity = intent.target_quantity() * liquidity_factor;
+        }
+        
+        // Extend execution time in illiquid markets
+        result.max_execution_time_ms = std::max(
+            intent.max_execution_time_ms() * 2,
+            60000  // Minimum 60 seconds
+        );
+    }
+    
+    // 5. Volatility-based adjustments
+    if (market_intel.realized_volatility_1m() > 0.03) {
+        // High volatility - be more conservative
+        result.max_price_impact = std::min(
+            limits.max_market_impact * 0.5,
+            intent.max_market_impact()
+        );
+    }
+    
+    // Final approval decision
+    if (result.rejection_reason.empty()) {
+        result.approved = true;
+    } else if (result.adjusted_quantity.has_value() || 
+               result.max_price_impact.has_value() ||
+               result.max_execution_time_ms.has_value()) {
+        // Approve with modifications
+        result.approved = true;
+        result.rejection_reason = "Approved with risk adjustments";
+    }
+    
+    // Record validation time
+    auto end_time = std::chrono::high_resolution_clock::now();
+    result.validation_time = std::chrono::duration_cast<std::chrono::microseconds>(
+        end_time - start_time);
+    
+    return result;
+}
+
+ExecutionRiskResult ExecutionRiskManager::validateOrder(
+    const OrderRequest& order,
+    const MarketIntelligence& market_intel) {
+    
+    auto start_time = std::chrono::high_resolution_clock::now();
+    ExecutionRiskResult result;
+    
+    // Ultra-fast pre-execution checks
+    
+    // Emergency stop
+    if (m_emergencyStop.load()) {
+        result.rejection_reason = "Emergency stop";
+        return result;
+    }
+    
+    // Order format validation
+    if (m_orderValidator) {
+        auto validation_result = m_orderValidator->validateOrder(order);
+        if (!validation_result.approved) {
+            result.rejection_reason = validation_result.reason;
+            return result;
+        }
+    }
+    
+    // Real-time market impact check
+    {
+        std::lock_guard<std::mutex> lock(m_impactMutex);
+        auto it = m_impactTrackers.find(order.symbol());
+        if (it != m_impactTrackers.end()) {
+            double current_impact_rate = it->second.getImpactRate();
+            auto limits = getExecutionLimits(order.symbol());
+            
+            if (current_impact_rate > limits.max_market_impact) {
+                result.rejection_reason = "Exceeds real-time market impact threshold";
+                return result;
+            }
+        }
+    }
+    
+    result.approved = true;
+    
+    auto end_time = std::chrono::high_resolution_clock::now();
+    result.validation_time = std::chrono::duration_cast<std::chrono::microseconds>(
+        end_time - start_time);
+    
+    return result;
+}
+
+void ExecutionRiskManager::updateMarketImpact(const std::string& symbol,
+                                            double executed_quantity,
+                                            double price_impact) {
+    std::lock_guard<std::mutex> lock(m_impactMutex);
+    m_impactTrackers[symbol].update(executed_quantity, price_impact);
+    
+    // Check if we should trigger circuit breaker
+    auto& tracker = m_impactTrackers[symbol];
+    auto limits = getExecutionLimits(symbol);
+    
+    if (tracker.getImpactRate() > limits.cb_slippage_threshold) {
+        if (m_circuitBreaker) {
+            m_circuitBreaker->triggerForSymbol(symbol, "High market impact detected");
+        }
+    }
+}
+
+bool ExecutionRiskManager::isCircuitBreakerTriggered(const std::string& symbol) const {
+    if (!m_circuitBreaker) return false;
+    return m_circuitBreaker->isTriggeredForSymbol(symbol);
+}
+
+ExecutionLimits ExecutionRiskManager::getExecutionLimits(const std::string& symbol) const {
+    auto it = m_symbolLimits.find(symbol);
+    if (it != m_symbolLimits.end()) {
+        return it->second;
+    }
+    
+    // Return default limits if symbol not found
+    return ExecutionLimits{};
+}
+
+void ExecutionRiskManager::loadExecutionLimits() {
+    // Load execution limits from configuration
+    const auto& config_limits = m_config.getExecutionLimitsConfig();
+    
+    // Set default limits from configuration
+    ExecutionLimits default_limits;
+    default_limits.max_order_size = config_limits.default_limits.max_order_size;
+    default_limits.max_market_impact = config_limits.default_limits.max_market_impact;
+    default_limits.max_price_deviation = config_limits.default_limits.max_price_deviation;
+    default_limits.max_participation_rate = config_limits.default_limits.max_participation_rate;
+    default_limits.max_orders_per_second = config_limits.default_limits.max_orders_per_second;
+    default_limits.allow_market_orders = config_limits.default_limits.allow_market_orders;
+    default_limits.cb_slippage_threshold = config_limits.default_limits.cb_slippage_threshold;
+    default_limits.cb_rejection_rate_threshold = config_limits.default_limits.cb_rejection_rate_threshold;
+    default_limits.cb_max_consecutive_rejections = config_limits.default_limits.cb_max_consecutive_rejections;
+    
+    // Apply symbol-specific overrides from configuration
+    for (const auto& [symbol, symbol_config] : config_limits.symbol_overrides) {
+        ExecutionLimits symbol_limits = default_limits; // Start with defaults
+        
+        // Override with symbol-specific values where specified
+        if (symbol_config.max_order_size > 0) {
+            symbol_limits.max_order_size = symbol_config.max_order_size;
+        }
+        if (symbol_config.max_market_impact > 0) {
+            symbol_limits.max_market_impact = symbol_config.max_market_impact;
+        }
+        if (symbol_config.max_price_deviation > 0) {
+            symbol_limits.max_price_deviation = symbol_config.max_price_deviation;
+        }
+        if (symbol_config.max_participation_rate > 0) {
+            symbol_limits.max_participation_rate = symbol_config.max_participation_rate;
+        }
+        if (symbol_config.max_orders_per_second > 0) {
+            symbol_limits.max_orders_per_second = symbol_config.max_orders_per_second;
+        }
+        symbol_limits.allow_market_orders = symbol_config.allow_market_orders;
+        
+        // Circuit breaker overrides
+        if (symbol_config.cb_slippage_threshold > 0) {
+            symbol_limits.cb_slippage_threshold = symbol_config.cb_slippage_threshold;
+        }
+        if (symbol_config.cb_rejection_rate_threshold > 0) {
+            symbol_limits.cb_rejection_rate_threshold = symbol_config.cb_rejection_rate_threshold;
+        }
+        if (symbol_config.cb_max_consecutive_rejections > 0) {
+            symbol_limits.cb_max_consecutive_rejections = symbol_config.cb_max_consecutive_rejections;
+        }
+        
+        m_symbolLimits[symbol] = symbol_limits;
+    }
+    
+    // Store default limits for symbols not explicitly configured
+    m_defaultLimits = default_limits;
+}
+
+} // namespace trading::risk

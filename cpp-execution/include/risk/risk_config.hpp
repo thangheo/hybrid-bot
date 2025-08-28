@@ -9,6 +9,7 @@
  */
 
 #pragma once
+#include <nlohmann/json.hpp>
 
 #include "risk_types.hpp"
 #include "risk_events.hpp"
@@ -22,7 +23,7 @@
 
 // Forward declare json for nlohmann/json.hpp
 namespace nlohmann {
-    class json;
+    // class json;
 }
 
 namespace trading::risk {

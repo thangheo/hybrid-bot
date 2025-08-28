@@ -14,6 +14,7 @@
 #include <chrono>
 #include <string>
 #include <vector>
+#include <iostream>
 
 using json = nlohmann::json;
 using namespace std::chrono;
@@ -595,7 +596,7 @@ int main(int argc, char* argv[]) {
     // Wait for shutdown signal
     printf("Press Enter to stop...\n");
     std::cin.get();
-    
+
     // Stop engine
     engine.stop();
     
