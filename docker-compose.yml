@@ -1,0 +1,26 @@
+version: '3.8'
+services:
+  python-strategy:
+    build: ./python-strategy
+    environment:
+      - TRADING_MODE=paper
+      - RISK_MULTIPLIER=0.1
+    depends_on:
+      - cpp-execution
+    volumes:
+      - ./configs:/app/configs
+      
+  cpp-execution:
+    build: ./cpp-execution
+    environment:
+      - EXECUTION_MODE=simulation
+    volumes:
+      - ./configs:/app/configs
+      
+  monitoring:
+    build: ./monitoring
+    ports:
+      - "8080:8080"
+    depends_on:
+      - python-strategy
+      - cpp-execution

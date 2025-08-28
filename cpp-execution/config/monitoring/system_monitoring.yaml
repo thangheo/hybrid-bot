@@ -1,0 +1,39 @@
+# System Monitoring Configuration
+
+# Component health monitoring configuration
+component_health:
+  check_interval_sec: 60
+  health_score_threshold: 0.7
+  components:
+    # TODO: Add component-specific health check configurations
+
+# Latency tracking configuration
+latency_tracking:
+  enabled: true
+  sample_rate: 0.1
+  percentiles:
+    - 50
+    - 90
+    - 99
+    - 99.9
+  # TODO: Add component-specific latency tracking configurations
+
+# Resource utilization thresholds and monitoring intervals
+resource_monitoring:
+  enabled: true
+  interval_sec: 30
+  cpu_threshold_percent: 80
+  memory_threshold_percent: 85
+  disk_threshold_percent: 90
+  network_threshold_mbps: 800
+  # TODO: Add additional resource monitoring configurations
+
+# Log collection and forwarding settings
+log_collection:
+  enabled: true
+  log_levels:
+    - ERROR
+    - WARNING
+    - INFO
+  retention_days: 30
+  # TODO: Add log collection endpoints and routing configurations

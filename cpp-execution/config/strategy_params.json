@@ -1,0 +1,10 @@
+{
+  "thresholds": {
+    "min_imbalance_ratio": 2.0,
+    "confidence_threshold": 0.7
+  },
+  "timeframes": {
+    "analysis_window_ms": 2000,
+    "signal_ttl_ms": 500
+  }
+}

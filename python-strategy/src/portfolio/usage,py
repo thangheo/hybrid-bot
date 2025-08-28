@@ -1,0 +1,20 @@
+from src.portfolio.models import PortfolioManager
+# Initialize
+portfolio = PortfolioManager({'initial_capital': 100000, 'base_currency': 'USDT'})
+
+# Update from trade
+portfolio.update_from_trade({
+    'symbol': 'BTCUSDT',
+    'side': 'BUY', 
+    'quantity': 0.1,
+    'price': 45000,
+    'commission': 4.5
+})
+
+# Update market prices
+portfolio.update_market_prices({'BTCUSDT': 46000})
+
+# Get portfolio summary
+summary = portfolio.get_portfolio_summary()
+print(f"Total Value: ${summary['total_value']:,.2f}")
+print(f"Unrealized P&L: ${summary['total_unrealized_pnl']:,.2f}")

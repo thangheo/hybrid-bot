@@ -1,0 +1,196 @@
+syntax = "proto3";
+
+import "common.proto";
+
+package trading.execution.grpc;
+
+// Trading signal to be executed
+message TradingSignalProto {
+    string signal_id = 1;
+    trading.common.proto.SymbolProto symbol = 2;               // Trading pair
+    enum OrderSide {
+        BUY = 0;
+        SELL = 1;
+        NEUTRAL = 2;
+    }
+    OrderSide direction = 3;
+    double strength = 4;
+    double target_size = 5;
+    int64 signal_ttl_ms = 6;                                    // Signal time-to-live in milliseconds
+    string strategy_id = 7;
+    string strategy_version = 8;
+    map<string, double> signal_metrics = 9;
+}
+
+// Order state in the system
+enum OrderStateProto {
+    UNKNOWN_STATE = 0;
+    CREATED = 1;
+    PENDING = 2;
+    PENDING_CANCEL = 3;
+    OPEN = 4;
+    PARTIALLY_FILLED = 5;
+    FILLED = 6;
+    CANCELED = 7;
+    REJECTED = 8;
+    EXPIRED = 9;
+}
+
+// Response for execution requests
+message ExecutionResponseProto {
+    string client_order_id = 1;
+    string exchange_order_id = 2;
+    bool success = 3;
+    string error_message = 4;
+    trading.common.proto.TimestampProto timestamp = 5;         // Timestamp
+    OrderStateProto order_status = 6;
+}
+
+// Cancel order response
+message CancelResponseProto {
+    string client_order_id = 1;
+    string exchange_order_id = 2;
+    bool success = 3;
+    string error_message = 4;
+    trading.common.proto.TimestampProto timestamp = 5;         // Timestamp
+}
+
+// Fill information for an order
+message FillProto {
+    string fill_id = 1;
+    string order_id = 2;                                        // Internal order ID
+    string exchange_order_id = 3;                               // Exchange's order ID
+    trading.common.proto.ExchangeIdProto exchange_id = 4;      // Which exchange
+    double quantity = 5;
+    double price = 6;
+    double fee = 7;
+    string fee_currency = 8;
+    trading.common.proto.TimestampProto timestamp = 9;         // Fill timestamp
+}
+
+// Order information
+message OrderProto {
+    string order_id = 1;                                        // Internal order ID
+    string client_order_id = 2;                                 // Client-specified ID
+    trading.common.proto.ExchangeIdProto exchange_id = 3;      // Exchange identifier
+    string exchange_order_id = 4;                               // Exchange's order ID
+    trading.common.proto.SymbolProto symbol = 5;               // Trading pair
+    enum OrderSide {
+        UNKNOWN_SIDE = 0;
+        BUY = 1;
+        SELL = 2;
+    }
+    OrderSide side = 6;
+    enum OrderType {
+        UNKNOWN_TYPE = 0;
+        MARKET = 1;
+        LIMIT = 2;
+        STOP = 3;
+        STOP_LIMIT = 4;
+        ICEBERG = 5;
+        TRAILING_STOP = 6;
+        FILL_OR_KILL = 7;
+        IMMEDIATE_OR_CANCEL = 8;
+        POST_ONLY = 9;
+    }
+    OrderType type = 7;
+    double quantity = 8;
+    double price = 9;
+    double stop_price = 10;
+    enum TimeInForce {
+        UNKNOWN_TIF = 0;
+        GTC = 1;  // Good Till Canceled
+        IOC = 2;  // Immediate Or Cancel
+        FOK = 3;  // Fill Or Kill
+        GTD = 4;  // Good Till Date
+    }
+    TimeInForce time_in_force = 11;
+    OrderStateProto state = 12;
+    string strategy_id = 13;
+    string signal_id = 14;
+    trading.common.proto.TimestampProto created_at = 15;       // Creation timestamp
+    trading.common.proto.TimestampProto updated_at = 16;       // Last update timestamp
+    repeated FillProto fills = 17;
+    double filled_quantity = 18;
+    double average_fill_price = 19;
+    map<string, string> extra_params = 20;
+}
+
+// Order status response
+message OrderStatusResponseProto {
+    OrderProto order = 1;
+    bool found = 2;
+    string error_message = 3;
+}
+
+// Health status request
+message HealthStatusRequestProto {
+    // Empty request
+}
+
+// Health status response
+message HealthStatusResponseProto {
+    string health_json = 1;
+}
+
+// Cancel order request
+message CancelOrderRequestProto {
+    string client_order_id = 1;
+}
+
+// Cancel order by exchange ID request
+message CancelOrderByExchangeIdRequestProto {
+    string exchange_order_id = 1;
+    trading.common.proto.ExchangeIdProto exchange_id = 2;
+}
+
+// Cancel all orders request
+message CancelAllOrdersRequestProto {
+    trading.common.proto.SymbolProto symbol = 1;               // Trading pair
+    trading.common.proto.ExchangeIdProto exchange_id = 2;      // Optional exchange filter
+}
+
+// Cancel all orders response
+message CancelAllOrdersResponseProto {
+    repeated CancelResponseProto responses = 1;
+}
+
+// Order status request
+message OrderStatusRequestProto {
+    string client_order_id = 1;
+}
+
+// Active orders request
+message ActiveOrdersRequestProto {
+    trading.common.proto.ExchangeIdProto exchange_id = 1;      // Optional exchange filter
+    trading.common.proto.SymbolProto symbol = 2;               // Optional symbol filter
+}
+
+// Active orders response
+message ActiveOrdersResponseProto {
+    repeated OrderProto orders = 1;
+}
+
+// Service definition
+service ExecutionService {
+    // Execute a trading signal
+    rpc ExecuteSignal(TradingSignalProto) returns (ExecutionResponseProto);
+    
+    // Place an order directly
+    rpc PlaceOrder(OrderProto) returns (ExecutionResponseProto);
+    
+    // Cancel an order
+    rpc CancelOrder(CancelOrderRequestProto) returns (CancelResponseProto);
+    
+    // Cancel all orders for a symbol
+    rpc CancelAllOrdersForSymbol(CancelAllOrdersRequestProto) returns (CancelAllOrdersResponseProto);
+    
+    // Get order status
+    rpc GetOrderStatus(OrderStatusRequestProto) returns (OrderStatusResponseProto);
+    
+    // Get active orders
+    rpc GetActiveOrders(ActiveOrdersRequestProto) returns (ActiveOrdersResponseProto);
+    
+    // Get health status
+    rpc GetHealthStatus(HealthStatusRequestProto) returns (HealthStatusResponseProto);
+}

@@ -1,0 +1,155 @@
+# config/monitoring/default_settings.yaml
+
+# System settings
+system:
+  health_check_interval: 60  # seconds
+  resource_check_interval: 30  # seconds
+  log_collection_interval: 120  # seconds
+  latency_thresholds:
+    critical: 500  # ms
+    warning: 200  # ms
+    normal: 100  # ms
+  cpu_thresholds:
+    critical: 90  # percent
+    warning: 75  # percent
+    normal: 60  # percent
+  memory_thresholds:
+    critical: 90  # percent
+    warning: 80  # percent
+    normal: 70  # percent
+  disk_thresholds:
+    critical: 90  # percent
+    warning: 80  # percent
+    normal: 70  # percent
+  monitored_services:
+    - data_ingestion
+    - strategy_engine
+    - execution_engine
+    - risk_management
+
+# Trading metrics settings
+trading:
+  calculation_interval: 300  # seconds
+  pnl_window_sizes:
+    - 300    # 5 minutes
+    - 3600   # 1 hour
+    - 86400  # 1 day
+    - 604800 # 1 week
+  execution_quality:
+    slippage:
+      critical: 0.5  # percent
+      warning: 0.2   # percent
+    fill_rate:
+      critical: 0.7  # ratio
+      warning: 0.9   # ratio
+  strategy_metrics:
+    - sharpe_ratio
+    - max_drawdown
+    - win_rate
+    - profit_factor
+
+# Alert settings
+alerts:
+  enabled: true
+  notification_channels:
+    email:
+      enabled: true
+      recipients:
+        - alerts@example.com
+        - oncall@example.com
+    slack:
+      enabled: true
+      webhook_url: "https://hooks.slack.com/services/xxx/yyy/zzz"
+      channel: "#trading-alerts"
+  throttling:
+    max_per_minute: 10
+    repeat_interval: 300  # seconds
+  severity_levels:
+    critical:
+      color: "red"
+      priority: 1
+    warning:
+      color: "amber"
+      priority: 2
+    info:
+      color: "blue"
+      priority: 3
+
+# Escalation settings
+escalation:
+  enabled: true
+  policies:
+    default:
+      steps:
+        - wait_minutes: 5
+          notify: ["primary_oncall"]
+        - wait_minutes: 15
+          notify: ["secondary_oncall"]
+        - wait_minutes: 30
+          notify: ["team_manager"]
+      repeat_count: 3
+    critical:
+      steps:
+        - wait_minutes: 2
+          notify: ["primary_oncall", "secondary_oncall"]
+        - wait_minutes: 5
+          notify: ["team_manager"]
+        - wait_minutes: 10
+          notify: ["director"]
+      repeat_count: 5
+  oncall:
+    rotation_days: 7
+    timezone: "UTC"
+  contacts:
+    primary_oncall:
+      name: "Primary On-Call"
+      methods: ["slack", "sms", "email"]
+    secondary_oncall:
+      name: "Secondary On-Call"
+      methods: ["slack", "email"]
+    team_manager:
+      name: "Team Manager"
+      methods: ["slack", "sms", "email", "call"]
+    director:
+      name: "Director"
+      methods: ["sms", "call"]
+
+# Database settings
+database:
+  timeseries:
+    host: "localhost"
+    port: 8086
+    database: "monitoring"
+    username: ""
+    password: ""
+    retention_policies:
+      raw: "7d"
+      hourly: "30d"
+      daily: "365d"
+  operational:
+    host: "localhost"
+    port: 5432
+    dbname: "monitoring"
+    user: "postgres"
+    password: "postgres"
+
+# Security settings
+security:
+  jwt_secret: "CHANGE_THIS_TO_A_RANDOM_SECRET_IN_PRODUCTION"
+  token_expiration: 86400  # 24 hours
+
+# Notification settings
+notifications:
+  email:
+    smtp_host: "smtp.example.com"
+    smtp_port: 587
+    smtp_user: "monitoring@example.com"
+    smtp_password: "your_smtp_password"
+    from: "monitoring@example.com"
+
+# Logging settings
+logging:
+  level: "INFO"
+  file: "/var/log/trading/monitoring.log"
+  max_size: 10  # MB
+  backup_count: 5

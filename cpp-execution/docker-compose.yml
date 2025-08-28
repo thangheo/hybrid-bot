@@ -1,0 +1,92 @@
+version: '3.8'
+
+services:
+  # Message Bus Proxy (ZeroMQ has no dedicated server, but we'll create a proxy service)
+  zeromq-proxy:
+    build:
+      context: ./docker/zeromq
+      dockerfile: Dockerfile
+    ports:
+      - "5555:5555"  # XPUB socket
+      - "5556:5556"  # XSUB socket
+    volumes:
+      - ./config/zeromq:/etc/zeromq
+    restart: unless-stopped
+    networks:
+      - trading-network
+
+  # Time-Series Database
+  influxdb:
+    image: influxdb:2.6
+    ports:
+      - "8086:8086"
+    volumes:
+      - influxdb-data:/var/lib/influxdb2
+      - ./config/influxdb:/etc/influxdb2
+    environment:
+      - DOCKER_INFLUXDB_INIT_MODE=setup
+      - DOCKER_INFLUXDB_INIT_USERNAME=trading
+      - DOCKER_INFLUXDB_INIT_PASSWORD=tradingpassword
+      - DOCKER_INFLUXDB_INIT_ORG=trading_org
+      - DOCKER_INFLUXDB_INIT_BUCKET=market_data
+      - DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=your_admin_token
+    restart: unless-stopped
+    networks:
+      - trading-network
+
+  # Operational Database
+  postgres:
+    image: postgres:15
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./config/postgres/init:/docker-entrypoint-initdb.d
+    environment:
+      - POSTGRES_USER=trading
+      - POSTGRES_PASSWORD=tradingpassword
+      - POSTGRES_DB=trading_db
+    restart: unless-stopped
+    networks:
+      - trading-network
+
+  # Monitoring Stack
+  prometheus:
+    image: prom/prometheus:v2.40.0
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./config/prometheus:/etc/prometheus
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+    restart: unless-stopped
+    networks:
+      - trading-network
+
+  grafana:
+    image: grafana/grafana:9.3.6
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./config/grafana/provisioning:/etc/grafana/provisioning
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin_password
+    depends_on:
+      - prometheus
+      - influxdb
+    restart: unless-stopped
+    networks:
+      - trading-network
+
+volumes:
+  influxdb-data:
+  postgres-data:
+  prometheus-data:
+  grafana-data:
+
+networks:
+  trading-network:
+    driver: bridge

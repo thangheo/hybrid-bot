@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: order-imbalance-system
+  labels:
+    app: order-imbalance-system
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: order-imbalance-system
+  template:
+    metadata:
+      labels:
+        app: order-imbalance-system
+    spec:
+      containers:
+      - name: core
+        image: order-imbalance-system:latest
+        imagePullPolicy: IfNotPresent
+        resources:
+          limits:
+            cpu: "2"
+            memory: "2Gi"
+          requests:
+            cpu: "1"
+            memory: "1Gi"
+        env:
+        - name: POSTGRES_HOST
+          value: postgres-service
+        - name: INFLUXDB_HOST
+          value: influxdb-service
+        volumeMounts:
+        - name: config-volume
+          mountPath: /app/config
+      volumes:
+      - name: config-volume
+        configMap:
+          name: trading-config

@@ -1,0 +1,49 @@
+syntax = "proto3";
+
+import "common.proto";
+
+package trading.market_data.proto;
+
+// Price level in the order book
+message PriceLevel {
+    double price = 1;
+    double quantity = 2;
+    int32 order_count = 3;
+}
+
+// Order book snapshot
+message OrderBook {
+    trading.common.proto.SymbolProto symbol = 1;               // Trading pair
+    trading.common.proto.ExchangeIdProto exchange_id = 2;      // Exchange identifier
+    trading.common.proto.TimestampProto timestamp = 3;         // Timestamp
+    repeated PriceLevel bids = 4;
+    repeated PriceLevel asks = 5;
+}
+
+// Order book delta update
+message OrderBookUpdate {
+    trading.common.proto.SymbolProto symbol = 1;               // Trading pair
+    trading.common.proto.ExchangeIdProto exchange_id = 2;      // Exchange identifier
+    trading.common.proto.TimestampProto timestamp = 3;         // Timestamp
+    repeated PriceLevel bids_added = 4;
+    repeated PriceLevel bids_removed = 5;
+    repeated PriceLevel asks_added = 6;
+    repeated PriceLevel asks_removed = 7;
+}
+
+// Trading signal
+message TradingSignal {
+    trading.common.proto.SymbolProto symbol = 1;               // Trading pair
+    enum Side {
+        BUY = 0;
+        SELL = 1;
+        NEUTRAL = 2;
+    }
+    Side side = 2;
+    double confidence = 3;
+    double target_price = 4;
+    double stop_price = 5;
+    trading.common.proto.TimestampProto expiry = 6;
+    trading.common.proto.TimestampProto timestamp = 7;
+    string strategy_id = 8;                                     // Strategy that generated this signal
+}

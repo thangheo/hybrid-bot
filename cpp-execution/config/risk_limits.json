@@ -1,0 +1,8 @@
+{
+  "position_limits": {
+    "BTC": 1.0,
+    "ETH": 10.0
+  },
+  "max_drawdown_percent": 2.0,
+  "max_open_orders": 5
+}

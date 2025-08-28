@@ -1,0 +1,63 @@
+syntax = "proto3";
+
+import "common.proto";
+
+package trading.data_ingestion.proto;
+
+// Represents a price level in the order book
+message PriceLevel {
+    string price = 1;           // Price as string to preserve precision
+    string quantity = 2;        // Quantity as string to preserve precision
+    
+    // Individual orders at this price level (if available)
+    message Order {
+        string order_id = 1;    // Order ID
+        string quantity = 2;    // Order quantity
+    }
+    
+    repeated Order orders = 3;  // Individual orders at this price level
+}
+
+// Represents an order book update
+message OrderBookUpdate {
+    trading.common.proto.ExchangeIdProto exchange_id = 1;     // Exchange identifier (enum)
+    trading.common.proto.SymbolProto symbol = 2;              // Trading pair
+    trading.common.proto.TimestampProto exchange_timestamp = 3; // Timestamp from exchange
+    trading.common.proto.TimestampProto received_timestamp = 4; // When received by our system
+    int64 sequence_number = 5;          // Sequence number for ordering updates
+    bool is_snapshot = 6;               // True if full snapshot, false for incremental
+    repeated PriceLevel bids = 7;       // Bid price levels (sorted descending)
+    repeated PriceLevel asks = 8;       // Ask price levels (sorted ascending)
+    string checksum = 9;                // Checksum for data integrity validation
+    
+    // Metadata for message handling
+    message Metadata {
+        string source_component = 1;    // Component that generated this update
+        string version = 2;             // Schema version
+        bool compressed = 3;            // Whether the message was compressed
+        string compression_algorithm = 4; // Compression algorithm used
+    }
+    
+    Metadata metadata = 10;             // Additional metadata
+}
+
+// Represents a heartbeat message
+message Heartbeat {
+    string component_id = 1;                                    // Component identifier
+    trading.common.proto.TimestampProto timestamp = 2;         // Timestamp
+    string status = 3;                                          // Component status
+    map<string, string> metrics = 4;                           // Optional metrics
+}
+
+// Wrapper message that can contain different types of messages
+message MessageEnvelope {
+    string message_id = 1;                                      // Unique message identifier
+    string message_type = 2;                                    // Type of message contained
+    trading.common.proto.TimestampProto timestamp = 3;         // Timestamp
+    
+    oneof payload {
+        OrderBookUpdate order_book_update = 10;
+        Heartbeat heartbeat = 11;
+        // Add other message types here as needed
+    }
+}
