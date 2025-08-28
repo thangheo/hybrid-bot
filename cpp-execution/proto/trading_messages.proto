@@ -1,0 +1,324 @@
+// trading_messages.proto
+// Complete protobuf schema for hybrid trading system
+
+syntax = "proto3";
+
+package trading;
+
+option java_package = "com.trading.messages";
+option java_outer_classname = "TradingMessagesProto";
+option go_package = "trading/messages";
+
+// ============================================================================
+// ENUMS - Define all enums first
+// ============================================================================
+
+enum TradeSide {
+    SIDE_BUY = 0;
+    SIDE_SELL = 1;
+}
+
+enum ExecutionStyle {
+    EXEC_AGGRESSIVE = 0;    // Market orders, fast execution
+    EXEC_BALANCED = 1;      // Mix of market/limit orders
+    EXEC_PASSIVE = 2;       // Primarily limit orders
+    EXEC_STEALTH = 3;       // Minimize market impact
+}
+
+enum MarketRegime {
+    REGIME_ACCUMULATION = 0;
+    REGIME_INSTITUTIONAL_FOMO = 1;
+    REGIME_EUPHORIA = 2;
+    REGIME_SIDEWAYS = 3;
+    REGIME_BALANCED = 4;
+    REGIME_UNCERTAIN = 5;
+    REGIME_DISTRIBUTION = 6;
+    REGIME_PROFIT_TAKING = 7;
+    REGIME_PANIC = 8;
+}
+
+enum VolatilityRegime {
+    VOL_LOW = 0;
+    VOL_MEDIUM = 1;
+    VOL_HIGH = 2;
+}
+
+enum ETFFlowRegime {
+    FLOW_POSITIVE = 0;
+    FLOW_NEUTRAL = 1;
+    FLOW_NEGATIVE = 2;
+}
+
+enum ExecutionState {
+    STATE_PENDING = 0;
+    STATE_IN_PROGRESS = 1;
+    STATE_COMPLETED = 2;
+    STATE_PARTIALLY_FILLED = 3;
+    STATE_CANCELLED = 4;
+    STATE_FAILED = 5;
+}
+
+enum OrderBookRegime {
+    OB_LIQUID = 0;
+    OB_NORMAL = 1;
+    OB_THIN = 2;
+    OB_VOLATILE = 3;
+}
+
+enum OrderType {
+    ORDER_MARKET = 0;
+    ORDER_LIMIT = 1;
+    ORDER_STOP_LIMIT = 2;
+    ORDER_ICEBERG = 3;
+    ORDER_HIDDEN = 4;
+}
+
+// ============================================================================
+// BASIC MESSAGE TYPES
+// ============================================================================
+
+message PriceLevel {
+    double price = 1;
+    double quantity = 2;
+    int32 order_count = 3;
+}
+
+message Timestamp {
+    int64 seconds = 1;
+    int32 nanos = 2;
+}
+
+// ============================================================================
+// CORE TRADING MESSAGES
+// ============================================================================
+
+message TradingIntent {
+    // Message metadata
+    string intent_id = 1;           // Unique identifier for this intent
+    int64 timestamp = 2;            // Creation timestamp (Unix milliseconds)
+    string strategy_id = 3;         // Strategy that generated this intent
+    
+    // Basic Trade Information
+    string symbol = 4;
+    TradeSide side = 5;
+    double target_quantity = 6;
+    double max_price = 7;           // For buys (0 = no limit)
+    double min_price = 8;           // For sells (0 = no limit)
+    
+    // Strategic Context
+    MarketRegime market_regime = 9;
+    VolatilityRegime volatility_regime = 10;
+    ETFFlowRegime etf_flow_regime = 11;
+    
+    // Signal Metadata
+    double signal_strength = 12;    // 0.0 to 1.0
+    double confidence = 13;         // 0.0 to 1.0
+    int64 signal_timestamp = 14;    // When signal was generated
+    
+    // Execution Preferences
+    ExecutionStyle execution_style = 15;
+    int32 max_execution_time_ms = 16;
+    double max_slippage_tolerance = 17;
+    bool allow_partial_fills = 18;
+    
+    // Risk Parameters
+    double max_market_impact = 19;      // Maximum acceptable market impact (0-1)
+    double urgency_factor = 20;         // 0.0 (patient) to 1.0 (urgent)
+    
+    // Optional parent order information
+    string parent_order_id = 21;        // For order splitting
+    int32 child_order_sequence = 22;    // Sequence number for child orders
+}
+
+message ExecutionStatus {
+    // Message metadata
+    string intent_id = 1;
+    string execution_id = 2;        // Unique execution identifier
+    ExecutionState state = 3;
+    int64 last_update_time = 4;
+    
+    // Execution Progress
+    double filled_quantity = 5;
+    double remaining_quantity = 6;
+    double average_fill_price = 7;
+    double total_fees = 8;
+    int32 total_orders_placed = 9;
+    int32 orders_filled = 10;
+    
+    // Market Conditions at time of execution
+    double current_bid = 11;
+    double current_ask = 12;
+    double order_book_imbalance = 13;
+    double estimated_slippage = 14;
+    
+    // Performance Metrics
+    double realized_slippage = 15;      // Actual slippage experienced
+    double market_impact = 16;          // Measured market impact
+    int64 execution_start_time = 17;
+    int64 execution_end_time = 18;      // 0 if still in progress
+    
+    // Order Book Intelligence
+    OrderBookRegime ob_regime = 19;
+    double liquidity_score = 20;
+    repeated PriceLevel best_levels = 21;
+    
+    // Execution quality metrics
+    double vwap_performance = 22;       // Performance vs VWAP
+    double twap_performance = 23;       // Performance vs TWAP
+    
+    // Error information (if failed)
+    string error_message = 24;
+    string error_code = 25;
+}
+
+message MarketIntelligence {
+    // Message metadata
+    string symbol = 1;
+    int64 timestamp = 2;
+    
+    // Order Book Metrics
+    double bid_ask_spread = 3;
+    double order_book_imbalance = 4;
+    double depth_imbalance = 5;         // Imbalance in deeper levels
+    double liquidity_ratio = 6;
+    double spread_stability = 7;        // How stable the spread has been
+    
+    // Flow Metrics
+    double net_flow_5s = 8;
+    double net_flow_30s = 9;
+    double net_flow_5m = 10;            // 5 minute flow
+    double aggressive_buy_ratio = 11;
+    double aggressive_sell_ratio = 12;
+    double passive_buy_ratio = 13;
+    double passive_sell_ratio = 14;
+    
+    // Volatility Indicators
+    double realized_volatility_1m = 15;
+    double realized_volatility_5m = 16;
+    double price_impact_estimate = 17;
+    double volatility_trend = 18;       // Is volatility increasing/decreasing
+    
+    // Volume Analysis
+    double volume_5s = 19;
+    double volume_30s = 20;
+    double volume_ratio_to_avg = 21;    // Current volume vs historical average
+    
+    // Regime Classification
+    OrderBookRegime current_regime = 22;
+    double regime_confidence = 23;
+    double regime_stability = 24;       // How stable the regime has been
+    
+    // Predictive metrics
+    double expected_volatility_5m = 25; // Expected volatility next 5 minutes
+    double flow_momentum = 26;          // Acceleration of flow metrics
+}
+
+// ============================================================================
+// SYSTEM MESSAGES
+// ============================================================================
+
+message ExecutionAcknowledgment {
+    string intent_id = 1;
+    bool accepted = 2;
+    string execution_id = 3;            // Assigned execution ID if accepted
+    string reason = 4;                  // Reason if rejected
+    int64 estimated_completion_time = 5; // Estimated completion (Unix milliseconds)
+    ExecutionParameters execution_params = 6; // Chosen execution parameters
+}
+
+message ExecutionParameters {
+    double chunk_size_ratio = 1;       // Fraction of total quantity per chunk
+    double aggression_level = 2;       // 0.0 (passive) to 1.0 (aggressive)
+    int32 max_chunk_delay_ms = 3;      // Max time between chunks
+    double price_improvement_threshold = 4; // Minimum improvement to wait for
+    bool use_hidden_orders = 5;
+    double max_participation_rate = 6;  // Max % of volume to consume
+    OrderType preferred_order_type = 7;
+    bool post_only = 8;
+    int32 time_in_force_ms = 9;
+}
+
+message SystemHeartbeat {
+    string component_id = 1;            // "python_strategy" or "cpp_execution"
+    int64 timestamp = 2;
+    string status = 3;                  // "healthy", "warning", "error"
+    map<string, double> metrics = 4;    // Key-value pairs of metrics
+    string version = 5;                 // Component version
+}
+
+message MarketDataSubscription {
+    repeated string symbols = 1;
+    bool enable_market_intelligence = 2;
+    bool enable_order_book = 3;
+    bool enable_trades = 4;
+    int32 update_frequency_ms = 5;      // Desired update frequency
+}
+
+// ============================================================================
+// BATCH AND CONTROL MESSAGES  
+// ============================================================================
+
+message BatchTradingIntent {
+    repeated TradingIntent intents = 1;
+    bool atomic_execution = 2;          // Execute all or none
+    string batch_id = 3;
+    int64 batch_timestamp = 4;
+}
+
+message BatchExecutionStatus {
+    string batch_id = 1;
+    repeated ExecutionStatus statuses = 2;
+    bool batch_completed = 3;
+    double batch_performance = 4;       // Overall batch performance metric
+}
+
+message SystemControl {
+    enum ControlType {
+        CTRL_START = 0;
+        CTRL_STOP = 1;
+        CTRL_PAUSE = 2;
+        CTRL_RESUME = 3;
+        CTRL_RESET = 4;
+        CTRL_EMERGENCY_STOP = 5;
+    }
+    
+    ControlType control_type = 1;
+    string component_id = 2;            // Target component
+    string reason = 3;
+    map<string, string> parameters = 4; // Additional control parameters
+}
+
+// ============================================================================
+// WRAPPER MESSAGE FOR ROUTING
+// ============================================================================
+
+message TradingMessage {
+    enum MessageType {
+        MSG_TRADING_INTENT = 0;
+        MSG_EXECUTION_STATUS = 1;
+        MSG_MARKET_INTELLIGENCE = 2;
+        MSG_EXECUTION_ACK = 3;
+        MSG_SYSTEM_HEARTBEAT = 4;
+        MSG_MARKET_DATA_SUB = 5;
+        MSG_BATCH_INTENT = 6;
+        MSG_BATCH_STATUS = 7;
+        MSG_SYSTEM_CONTROL = 8;
+    }
+    
+    MessageType message_type = 1;
+    int64 timestamp = 2;
+    string source_id = 3;
+    string destination_id = 4;
+    
+    oneof payload {
+        TradingIntent trading_intent = 5;
+        ExecutionStatus execution_status = 6;
+        MarketIntelligence market_intelligence = 7;
+        ExecutionAcknowledgment execution_ack = 8;
+        SystemHeartbeat system_heartbeat = 9;
+        MarketDataSubscription market_data_sub = 10;
+        BatchTradingIntent batch_intent = 11;
+        BatchExecutionStatus batch_status = 12;
+        SystemControl system_control = 13;
+    }
+}
