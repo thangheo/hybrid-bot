@@ -14,3 +14,4 @@
 *.env
 # third_parties
 cpp-execution/third_parties/
+.vscode/
