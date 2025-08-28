@@ -1,0 +1,12 @@
+-models we have :
+ + liquidity (volume in OB and agressive buys sells)
+ + volatility (agressive buys sells )
+ +short term supports + resistances (correlation in stacked ob)
+ +prices : AR models for 1m,
+ +EV of each trategy(MM or MR)
+ =======
+ Finalize strategy :
+  + calculate order imbalance and/or use simple model such as logistic regression ---> predict price movement
+  + use hawkes process to predict the intensity of arriving order --> predict future liquidity and volatility
+   From this predicted liquidity and volatility --> estimate risk and position size
+   

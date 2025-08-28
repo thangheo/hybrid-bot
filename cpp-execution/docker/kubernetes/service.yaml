@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: order-imbalance-service
+spec:
+  selector:
+    app: order-imbalance-system
+  ports:
+  - port: 8080
+    targetPort: 8080
+  type: ClusterIP

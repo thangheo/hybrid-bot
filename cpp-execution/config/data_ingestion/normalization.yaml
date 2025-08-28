@@ -1,0 +1,69 @@
+# config/data_ingestion/normalization.yaml
+order_book_normalization:
+  # Protocol adapters configuration
+  adapters:
+    binance:
+      enabled: true
+      validate_checksums: true
+    coinbase:
+      enabled: true
+      validate_checksums: false
+    ftx:
+      enabled: true
+      validate_checksums: false
+      
+  # Order book reconstructor configuration
+  order_book:
+    max_depth: 100
+    cache_size_per_symbol: 1000
+    snapshot_interval: 1000  # Take a snapshot every N updates
+    
+  # Data quality control
+  data_quality:
+    filters:
+      checksum:
+        enabled: true
+      price_range:
+        enabled: true
+        deviation_threshold: 0.2  # 20% from recent average
+      sequence_gap:
+        enabled: true
+        max_acceptable_gap: 5
+        
+  # Timestamp synchronization
+  timestamp:
+    sync_interval_ms: 60000  # NTP sync interval
+    max_clock_drift_ms: 100  # Alert if drift exceeds this
+    
+  # Publisher configuration
+  # config/data_ingestion/normalization.yaml (continued)
+  # Publisher configuration
+  publisher:
+    zeromq:
+      enabled: true
+      endpoint: "tcp://*:5555"
+      topics_format: "orderbook.{message_type}.{exchange_id}.{symbol}"
+      high_water_mark: 1000  # ZeroMQ socket option
+    
+    rest_api:
+      enabled: true
+      host: "0.0.0.0"
+      port: 8080
+      rate_limit: 100  # requests per minute
+      cache_duration_ms: 500  # How long to cache responses
+    
+    kafka:  # Optional for integration with enterprise systems
+      enabled: false
+      bootstrap_servers: "kafka:9092"
+      topic_prefix: "orderbook"
+      
+  # Logging and monitoring
+  logging:
+    level: "info"  # debug, info, warn, error
+    metrics_interval_ms: 5000  # How often to publish metrics
+    
+  # Performance tuning
+  performance:
+    thread_pool_size: 4  # For parallel processing
+    lock_free_queue_size: 10000  # For inter-thread communication
+    batch_size: 10  # Process updates in batches where applicable

@@ -1,0 +1,87 @@
+# Alerting Configuration
+
+# Alert definitions and thresholds
+alert_definitions:
+  system_health:
+    - name: component_down
+      description: "System component is down or unresponsive"
+      severity: critical
+      conditions:
+        - metric: component.health
+          operator: "=="
+          value: 0
+      # TODO: Add more system health alerts
+      
+  performance:
+    - name: high_latency
+      description: "System latency exceeds threshold"
+      severity: warning
+      conditions:
+        - metric: latency.p99
+          operator: ">"
+          value: 1000
+      # TODO: Add more performance alerts
+  
+  trading:
+    - name: large_drawdown
+      description: "Strategy experiencing significant drawdown"
+      severity: warning
+      conditions:
+        - metric: strategy.drawdown
+          operator: ">"
+          value: 0.1
+      # TODO: Add more trading alerts
+      
+  resources:
+    - name: high_cpu_usage
+      description: "CPU usage above threshold"
+      severity: warning
+      conditions:
+        - metric: system.cpu_usage
+          operator: ">"
+          value: 0.85
+      # TODO: Add more resource alerts
+
+# Notification channel configuration
+notification_channels:
+  email:
+    enabled: true
+    smtp_server: "smtp.example.com"
+    smtp_port: 587
+    # TODO: Complete email configuration
+    
+  slack:
+    enabled: true
+    webhook_url: "https://hooks.slack.com/services/XXX/YYY/ZZZ"
+    # TODO: Complete Slack configuration
+    
+  sms:
+    enabled: true
+    provider: "twilio"
+    # TODO: Complete SMS configuration
+
+# Alert grouping and deduplication settings
+alert_grouping:
+  enabled: true
+  group_by:
+    - source
+    - severity
+  deduplication_window_sec: 300
+  # TODO: Add more grouping settings
+
+# Alert severity levels and categories
+severity_levels:
+  critical:
+    color: "#FF0000"
+    notification_channels:
+      - email
+      - slack
+      - sms
+  warning:
+    color: "#FFCC00"
+    notification_channels:
+      - slack
+  info:
+    color: "#0066CC"
+    notification_channels:
+      - slack

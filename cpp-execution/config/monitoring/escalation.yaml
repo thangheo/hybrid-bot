@@ -1,0 +1,58 @@
+# Escalation Configuration
+
+# Escalation policy definitions
+escalation_policies:
+  - name: critical_system_issues
+    description: "Escalation policy for critical system issues"
+    steps:
+      - level: 1
+        wait_minutes: 5
+        notify:
+          - primary_oncall
+      - level: 2
+        wait_minutes: 15
+        notify:
+          - secondary_oncall
+      - level: 3
+        wait_minutes: 30
+        notify:
+          - team_manager
+          - lead_developer
+    # TODO: Add more escalation policies
+
+# On-call rotation schedules
+oncall_schedules:
+  - name: primary_oncall
+    rotation_days: 7
+    start_day: Monday
+    handover_time: "09:00"
+    time_zone: "UTC"
+    members:
+      # TODO: Add team members
+  - name: secondary_oncall
+    rotation_days: 7
+    start_day: Monday
+    handover_time: "09:00"
+    time_zone: "UTC"
+    members:
+      # TODO: Add team members
+
+# Contact information for team members
+team_members:
+  # TODO: Add team member contact information
+
+# Incident response procedures
+incident_procedures:
+  - type: system_outage
+    steps:
+      - "Verify the outage scope and affected components"
+      - "Notify all stakeholders"
+      - "Begin recovery procedures according to playbook"
+      # TODO: Add more procedural steps
+  - type: security_breach
+    steps:
+      - "Isolate affected systems"
+      - "Preserve evidence"
+      - "Notify security team"
+      # TODO: Add more procedural steps
+  # TODO: Add more incident types and procedures

@@ -1,0 +1,630 @@
+# ================================================================
+# Complete Markov-Enhanced ETF Trading Bot Configuration
+# File: config/markov_trading_bot.yaml
+# ================================================================
+signal_decay:
+  enabled: false
+  strong_signal_hours: 6    # >0.7 strength
+  medium_signal_hours: 4    # 0.3-0.7 strength  
+  weak_signal_hours: 2      # <0.3 strength
+  regime_change_exit: true  # Exit if regime category changes
+
+# 🚀 ETF ENHANCEMENT CONFIGURATION
+etf_enhancement:
+  enabled: true
+  alphavantage_api_key: ${ALPHAVANTAGE_API_KEY}
+  daily_api_limit: 100000      # Premium: practically unlimited
+  minute_api_limit: 75         # Premium: 75 calls/minute
+  etf_cache_duration: 30       # 30min cache for fresh data
+  etf_fallback_enabled: true
+  etf_symbols: 
+    - IBIT    # iShares Bitcoin Trust (highest volume)
+    - FBTC    # Fidelity Wise Origin Bitcoin Fund  
+    - ARKB    # ARK 21Shares Bitcoin ETF
+    - BITB    # Bitwise Bitcoin ETF
+    - BTCO    # Invesco Galaxy Bitcoin ETF  # Bitcoin ETF symbols to track
+  # Cache and rate limiting
+  
+  # ETF flow analysis parameters
+  flow_analysis:
+    flow_weight_in_signals: 0.3
+    flow_confidence_threshold: 0.6
+    dominant_etf_threshold: 0.4
+
+enhanced_indicators:
+    enabled: true  # Set to false to disable enhanced indicators
+    
+    # Feature flags
+    multi_timeframe: true      # Multi-timeframe analysis
+    volume_analysis: true      # Advanced volume indicators
+    market_structure: true     # Support/resistance and market structure
+    divergence_detection: true # Price-indicator divergences
+    
+    # Component weights for master signal
+    weights:
+      trend_weight: 0.25        # EMA ribbon, trend strength, etc.
+      momentum_weight: 0.20     # RSI consensus, stochastic RSI
+      volatility_weight: 0.15   # Bollinger bands, ATR
+      volume_weight: 0.15       # CMF, OBV, volume profile
+      structure_weight: 0.15    # Support/resistance levels
+      divergence_weight: 0.10   # Divergence signals
+    
+    # Signal processing
+    signal_threshold: 0.25      # Lower threshold for higher quality signals
+    confidence_threshold: 0.6   # Minimum confidence for signals
+    dynamic_thresholding: true  # Use volatility-adjusted thresholds
+    
+    # Advanced settings
+    adaptive_parameters: true   # Use adaptive indicator parameters
+    regime_adjustment: true     # Adjust indicators based on market regime
+    fallback_on_error: true     # Fall back to base indicators on error
+
+# 📊 DATA INGESTION
+data_ingestion:
+  binance:
+    api_key: ${BINANCE_API_KEY}
+    api_secret: ${BINANCE_API_SECRET}
+    testnet: false
+    rate_limit:
+      requests_per_minute: 1200
+      weight_per_minute: 6000
+  
+  database:
+    url: "postgresql://trading:${DB_PASSWORD}@localhost:5432/trading_db"
+    # self.db_url = db_config.get('url', 'postgresql://trading:Pass_1234@localhost:5432/trading_db')
+    pool_size: 5
+
+  symbols:
+    # TIER 1: Major Caps (High liquidity, ETF correlation)
+    - "BTCUSDT"    # Bitcoin - Direct ETF correlation
+    - "ETHUSDT"    # Ethereum - Major DeFi
+    # TIER 2: Large Caps (Strong institutional interest)
+    - "SOLUSDT"    # Solana - High performance blockchain
+    - "XRPUSDT"    # Ripple - Payment network
+    - "ADAUSDT"    # Cardano - Academic blockchain
+    - "AVAXUSDT"   # Avalanche - DeFi ecosystem
+    - "DOTUSDT"    # Polkadot - Interoperability
+    - "LINKUSDT"   # Chainlink - Oracle network
+    - "UNIUSDT"    # Uniswap - DEX protocol
+    # TIER 3: Mid Caps (Growing ecosystems)
+    - "ATOMUSDT"   # Cosmos - Internet of blockchains
+    - "ALGOUSDT"   # Algorand - Pure proof of stake
+    - "AAVEUSDT"   # Aave - DeFi lending
+    # TIER 4: Layer 2 & Scaling (High growth potential)
+    - "ARBUSDT"    # Arbitrum - Ethereum L2
+    - "OPUSDT"     # Optimism - Ethereum L2  
+    - "INJUSDT"    # Injective - DeFi derivatives
+    - "SUIUSDT"    # Sui - High performance blockchain
+    # TIER 5: Specialized/Oracle/Infrastructure
+    - "TRBUSDT"    # Tellor - Oracle network
+    - "BANDUSDT"   # Band Protocol - Oracle
+    - "CHZUSDT"    # Chiliz - Sports/entertainment
+    - "ENJUSDT"    # Enjin - Gaming/NFT
+    # TIER 6: DeFi Protocols (High volatility, regime-sensitive)
+    - "YFIUSDT"    # Yearn Finance - Yield farming
+    - "1INCHUSDT"  # 1inch - DEX aggregator
+    # TIER 7: Emerging/Trending (High beta to market regimes)
+    - "DOGEUSDT"   # Dogecoin - Payment/meme
+    - "WIFUSDT"    # Dogwifhat - Solana meme
+    
+  
+  # UPDATED: Optimal timeframes for Markov
+  timeframes:
+    - "4h"      # PRIMARY: Optimal for Markov regime detection
+    - "1d"      # SECONDARY: Long-term confirmation
+  
+  # NEW: Historical data requirements
+  historical_data:
+    minimum_periods: 200      # 200 * 4h = 33 days minimum
+    preferred_periods: 500    # 500 * 4h = 83 days optimal
+    backfill_enabled: true
+    max_backfill_days: 90
+  performance:
+    max_concurrent_symbols: 3        # Process 3 symbols simultaneously
+    rate_limit_delay: 0.5           # Base delay between requests
+    max_rate_delay: 5.0             # Maximum delay on rate limits
+    batch_insert_size: 1000         # Database batch size
+    connection_pool_size: 10        # Larger pool for batch operations
+    
+  prioritization:
+    high_priority: ['BTC/USDT', 'ETH/USDT', 'ADA/USDT']
+    fetch_strategy: 'priority_first' # vs 'round_robin'
+    
+  optimization:
+    skip_recent_data_hours:         # Skip if data is fresh
+      4h: 2                        # Skip 4h if less than 2 hours old
+      1d: 12  
+# 🧠 MARKOV STRATEGY CONFIGURATION
+markov_strategy:
+  enabled: true
+  
+  # Markov Model Parameters
+  markov_model:
+    lookbook_period: 150              # 150 * 4h = 25 days regime history
+    min_history_for_forecast: 75      # 75 * 4h = 12.5 days minimum
+    regime_memory_days: 30
+    
+    # Training parameters
+    transition_smoothing: 0.1
+    min_transitions_per_regime: 3
+    matrix_update_frequency: 24       # Re-train every 4 days
+    
+    # Duration modeling
+    duration_distribution: "exponential"
+    duration_confidence_threshold: 0.6
+    
+    # Forecasting
+    forecast_horizon: 6               # 24h ahead
+    transition_confidence_threshold: 0.6
+    
+  # 9-Regime Classification
+  regime_classification:
+    volatility_thresholds:
+      low_medium: 0.015               # 1.5% 4h volatility
+      medium_high: 0.035              # 3.5% 4h volatility
+      
+    etf_flow_thresholds:
+      negative_neutral: -0.2
+      neutral_positive: 0.2
+      
+    # Stability requirements
+    min_regime_duration: 3            # 12h minimum
+    regime_change_confidence: 0.7
+    
+  # Signal Enhancement
+  signal_generation:
+    current_regime_weight: 0.7        # 70% current regime
+    transition_anticipation_weight: 0.3  # 30% next regime
+    transition_horizon_periods: 12    # 48h lookahead
+    
+    # Risk adjustments
+    regime_duration_risk_adjustment: true
+    transition_uncertainty_penalty: 0.2
+
+# 🎯 STRATEGY CONFIGURATION
+strategy:
+  # Strategy selection
+  primary_strategy: "markov_etf_enhanced"
+
+  # Fallback hierarchy
+  strategy_fallback_order:
+    - "markov_etf_enhanced"
+    - "etf_enhanced_e8"
+    - "e8_integrated" 
+    - "statistical_mean_reversion"
+    
+  # Markov Strategy Parameters
+  markov_etf_strategy:
+    signal_threshold: 0.3
+    vol_threshold_low: 0.015
+    vol_threshold_high: 0.035
+    flow_threshold_low: -0.2
+    flow_threshold_high: 0.2
+    
+    # Markov enhancements
+    transition_enhancement_factor: 1.5
+    duration_risk_factor: 0.8
+    forecast_confidence_bonus: 1.2
+    
+    # 9-Regime strategy weights
+    regime_strategy_weights:
+      accumulation:
+        mean_reversion_weight: 0.3
+        trend_following_weight: 1.5
+        breakout_weight: 1.2
+        momentum_weight: 1.3
+        risk_sensitivity: 0.7
+      institutional_fomo:
+        mean_reversion_weight: 0.5
+        trend_following_weight: 1.4
+        breakout_weight: 1.5
+        momentum_weight: 1.2
+        risk_sensitivity: 0.8
+      euphoria:
+        mean_reversion_weight: 0.8
+        trend_following_weight: 1.0
+        breakout_weight: 0.7
+        momentum_weight: 0.8
+        risk_sensitivity: 1.3
+      sideways:
+        mean_reversion_weight: 1.8
+        trend_following_weight: 0.2
+        breakout_weight: 0.3
+        momentum_weight: 0.4
+        risk_sensitivity: 0.6
+      balanced:
+        mean_reversion_weight: 1.0
+        trend_following_weight: 1.0
+        breakout_weight: 1.0
+        momentum_weight: 1.0
+        risk_sensitivity: 1.0
+      uncertain:
+        mean_reversion_weight: 1.2
+        trend_following_weight: 0.6
+        breakout_weight: 0.4
+        momentum_weight: 0.5
+        risk_sensitivity: 1.5
+      distribution:
+        mean_reversion_weight: 1.6
+        trend_following_weight: 0.4
+        breakout_weight: 0.5
+        momentum_weight: 0.6
+        risk_sensitivity: 1.1
+      profit_taking:
+        mean_reversion_weight: 1.3
+        trend_following_weight: 0.7
+        breakout_weight: 0.6
+        momentum_weight: 0.8
+        risk_sensitivity: 1.2
+      panic:
+        mean_reversion_weight: 0.8
+        trend_following_weight: 0.3
+        breakout_weight: 0.2
+        momentum_weight: 0.3
+        risk_sensitivity: 2.0
+
+# 🛡️ RISK MANAGEMENT
+risk_management:
+  # Base limits
+  max_portfolio_risk: 0.02
+  max_position_risk: 0.01
+  max_drawdown_limit: 0.15
+  
+  # Regime-aware adjustments
+  regime_risk_multipliers:
+    accumulation: 1.2
+    institutional_fomo: 1.1
+    euphoria: 0.5
+    sideways: 1.1
+    balanced: 1.0
+    uncertain: 0.6
+    distribution: 0.8
+    profit_taking: 0.7
+    panic: 0.3
+    
+  # Position sizing
+  position_sizing:
+    method: "etf_enhanced_kelly"
+    base_risk_per_trade: 0.01
+    max_position_size: 0.1
+    volatility_lookback: 20
+    
+    # ETF flow modifiers
+    etf_flow_modifiers:
+      high_confidence_positive: 1.3
+      high_confidence_negative: 0.6
+      low_confidence: 0.8
+  
+  # Stop loss
+  stop_loss:
+    initial_stop_pct: 0.05
+    trailing_stop_pct: 0.03
+    take_profit_ratio: 2.0
+    breakeven_threshold: 0.02
+
+# ⚡ ORDER EXECUTION
+order_execution:
+  binance:
+    api_key: ${BINANCE_API_KEY}
+    api_secret: ${BINANCE_API_SECRET}
+    testnet: false
+  
+  execution:
+    max_slippage: 0.005
+    order_timeout: 300
+    retry_attempts: 3
+  
+  # Regime-aware execution
+  regime_execution_settings:
+    panic:
+      max_slippage: 0.010
+      order_timeout: 120
+      use_market_orders: true
+    euphoria:
+      max_slippage: 0.003
+      use_limit_orders: true
+    normal:
+      max_slippage: 0.005
+      balanced_execution: true
+
+# 💰 PORTFOLIO
+portfolio:
+  initial_capital: 5000
+  base_currency: "USDT"
+
+# ⏰ SCHEDULING
+scheduling:
+  timezone: "UTC"
+  active_hours:
+    start: 6
+    end: 22
+  
+  # UPDATED: Aligned with 4h timeframe
+  signal_interval: 14400             # 4 hours (match primary timeframe)
+  data_interval: 3600                # 1 hour data updates
+  etf_update_interval: 1800          # 30 minutes ETF updates
+  
+  # Markov-specific scheduling
+  markov_update_schedule:
+    transition_matrix_update: 14400  # Every 4 hours
+    regime_classification: 3600      # Every hour
+    forecast_update: 7200            # Every 2 hours
+
+# 📊 MONITORING
+monitoring:
+  # System health
+  memory_threshold: 50
+  cpu_threshold: 70
+  disk_threshold: 90
+  
+  # ETF monitoring
+  etf_monitoring:
+    enabled: true
+    api_call_tracking: true
+    flow_anomaly_detection: true
+    
+    alerts:
+      etf_api_failure_rate: 0.3
+      extreme_flow_detected: 5.0
+      etf_data_stale_hours: 2
+  
+  # Markov monitoring
+  markov_monitoring:
+    enabled: true
+    
+    track_metrics:
+      - regime_classification_accuracy
+      - transition_prediction_accuracy
+      - duration_prediction_accuracy
+      - markov_signal_contribution
+      - forecast_reliability
+    
+    alerts:
+      regime_accuracy_below: 0.6
+      transition_confidence_low: 0.4
+      insufficient_data_periods: 50
+
+# 🚨 ALERTS
+alerts:
+  email:
+    enabled: false
+    smtp_server: "smtp.gmail.com"
+    smtp_port: 587
+    username: ${EMAIL_USERNAME}
+    password: ${EMAIL_PASSWORD}
+    recipients:
+      - "trader@example.com"
+  
+  slack:
+    enabled: true
+    webhook_url: ${SLACK_WEBHOOK_URL}
+    channel: "#markov-trading-bot"
+    
+    # Enhanced alerts
+    alert_types:
+      regime_changes: true
+      etf_flow_anomalies: true
+      markov_forecasts: true
+      api_failures: true
+      extreme_movements: true
+    
+    # Markov-specific alerts
+    markov_alerts:
+      regime_change: true
+      high_confidence_forecast: true
+      low_forecast_accuracy: true
+      transition_matrix_retrain: true
+  
+  telegram:
+    enabled: false
+    bot_token: ${TELEGRAM_BOT_TOKEN}
+    chat_id: ${TELEGRAM_CHAT_ID}
+
+# 📝 LOGGING
+logging:
+  level: "INFO"
+  file: "logs/trading_bot.log"
+  max_size: "50MB"
+  backup_count: 10
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  
+  # Component-specific logging
+  component_logging:
+    etf_manager: "DEBUG"
+    markov_strategy: "INFO"
+    regime_detector: "INFO"
+    transition_forecaster: "INFO"
+    strategy_manager: "INFO"
+
+# ⚙️ SYSTEM SETTINGS
+system:
+  main_loop_interval: 60
+  graceful_shutdown_timeout: 30
+  max_memory_usage: "2GB"
+  
+  enhanced_features:
+    async_processing: true
+    cache_optimization: true
+    failover_strategy: "traditional"
+    
+    thread_pool_size: 6
+    connection_pool_size: 10
+
+# 🔬 BACKTESTING
+backtesting:
+  enabled: true
+  
+  # Markov backtesting
+  markov_backtesting:
+    enabled: true
+    simulate_etf_data: true
+    etf_data_source: "alpha_vantage"
+    backtest_start_date: "2024-01-01"
+    backtest_end_date: "2024-12-31"
+    
+    # Testing parameters
+    train_test_split: 0.7
+    rolling_window_test: true
+    min_test_periods: 100
+    
+    # Performance comparison
+    compare_with_strategies:
+      - "traditional_mean_reversion"
+      - "etf_enhanced_only"
+      - "markov_no_etf"
+      - "markov_etf_enhanced"
+
+# 💾 DATA STORAGE
+data_storage:
+  # Markov-specific storage
+  markov_data:
+    store_transition_history: true
+    store_forecast_history: true
+    store_regime_duration: true
+    
+    # Retention periods
+    transition_history_days: 365
+    forecast_history_days: 90
+    regime_classification_days: 180
+
+# 🏴 FEATURE FLAGS
+feature_flags:
+  etf_enhancement:
+    enabled: true
+    rollout_percentage: 100
+    
+  markov_strategy:
+    enabled: true
+    fallback_to_traditional: true
+  
+  regime_9_system:
+    enabled: true
+    fallback_to_3_regime: false
+
+# 🌱 ENVIRONMENT VARIABLES
+environment_variables:
+  required:
+    - ALPHAVANTAGE_API_KEY
+    - BINANCE_API_KEY
+    - BINANCE_API_SECRET
+    - DB_PASSWORD
+  
+  optional:
+    - SLACK_WEBHOOK_URL
+    - EMAIL_USERNAME
+    - EMAIL_PASSWORD
+    - TELEGRAM_BOT_TOKEN
+    - TELEGRAM_CHAT_ID
+
+# 🎯 PERFORMANCE TARGETS
+performance_targets:
+  # Markov-specific targets
+  regime_classification_accuracy: 75%
+  transition_prediction_accuracy: 65%
+  markov_signal_contribution: 30%
+  
+  # ETF targets
+  etf_data_availability: 95%
+  etf_api_response_time: 2.0
+  etf_enhancement_accuracy: 70%
+  
+  # System performance
+  signal_generation_latency: 30
+  memory_usage_optimization: 80%
+  system_uptime: 99.5%
+  
+  # Trading performance
+  monthly_return_target: 8%
+  maximum_monthly_drawdown: 5%
+  sharpe_ratio_target: 2.0
+
+# 📖 VERSION & COMPATIBILITY
+version: "5.0.0 -markov persistence with full indicator support"
+compatibility:
+  minimum_python_version: "3.9"
+  required_packages:
+    - numpy>=1.21.0
+    - pandas>=1.3.0
+    - aiohttp>=3.8.0
+    - scipy>=1.7.0
+    - scikit-learn>=1.0.0
+    - asyncpg>=0.27.0
+    - pyyaml>=6.0
+    - python-dotenv>=0.19.0
+  
+  api_versions:
+    alphavantage: "v1"
+    binance: "v3"
+  
+  database_versions:
+    postgresql: ">=12.0"
+# ================================================================
+# 🗄️ MARKOV PERSISTENCE (Added by install script)
+# ================================================================
+markov_persistence:
+  enabled: true
+  db_path: "data/markov_persistence.db"
+  save_frequency: 10
+  auto_load_on_init: true
+  max_history_age_hours: 168
+  
+  # Advanced settings
+  max_history_entries: 1000
+  cleanup_frequency: 100
+  backup_enabled: false
+  backup_frequency: 24
+markov_model:
+  lookback_period: 100
+  min_history: 30
+
+
+
+signal_decay:
+  enabled: true
+  strong_signal_hours: 6    # Default for strong signals
+  medium_signal_hours: 4    # Default for medium signals
+  weak_signal_hours: 2      # Default for weak signals
+  regime_change_exit: true  # Exit if regime category changes
+
+  # Per-symbol decay config (override defaults if needed)
+  per_symbol:
+    BTCUSDT:
+      strong_signal_hours: 8
+      medium_signal_hours: 5
+      weak_signal_hours: 3
+      regime_change_exit: true
+    ETHUSDT:
+      strong_signal_hours: 7
+      medium_signal_hours: 4
+      weak_signal_hours: 2
+      regime_change_exit: true
+    SOLUSDT:
+      strong_signal_hours: 6
+      medium_signal_hours: 3
+      weak_signal_hours: 1
+      regime_change_exit: true
+    # Add more symbols as needed...
+    # If a symbol is not listed, it uses the default above
+
+# Alpha Vantage API for SPY market filter
+alpha_vantage:
+  api_key: ${ALPHAVANTAGE_API_KEY}
+  
+# SPY Market Filter settings
+spy_market_filter:
+  enabled: true
+  correlation_strength: 0.50  # BTC-SPY correlation từ analysis
+  
+  # Signal adjustment factors
+  bull_regime_amplify: 1.3     # Amplify bullish signals in bull market
+  bear_regime_reduce: 0.6      # Reduce bullish signals in bear market
+  volatile_regime_reduce: 0.8  # Reduce all signals in volatile market
+  
+  # Thresholds
+  bull_momentum_threshold: 0.02   # 2% 5-day gain = bull
+  bear_momentum_threshold: -0.02  # 2% 5-day loss = bear
+  high_vol_threshold: 0.02        # 2% volatility = high vol
+  
+  # Emergency pause conditions
+  flash_crash_threshold: -0.05    # 5% drop in 3 days = pause
+  extreme_volatility: 0.03        # 3% daily volatility = pause

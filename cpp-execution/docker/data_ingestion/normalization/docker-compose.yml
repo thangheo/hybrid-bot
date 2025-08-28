@@ -1,0 +1,80 @@
+# docker-compose.yml
+version: '3.8'
+
+services:
+  order_book_normalizer:
+    build:
+      context: .
+      dockerfile: docker/order_book_normalizer.dockerfile
+    image: order-imbalance-trading/order-book-normalizer:latest
+    ports:
+      - "5555:5555"  # ZeroMQ port
+      - "8080:8080"  # REST API port
+      - "8081:8081"  # Metrics port
+    volumes:
+      - ./config:/app/config
+    environment:
+      - CONFIG_PATH=/app/config/data_ingestion/normalization.yaml
+    restart: unless-stopped
+    depends_on:
+      - influxdb
+      - zeromq-proxy
+      
+  zeromq-proxy:
+    build:
+      context: ./docker/zeromq
+      dockerfile: Dockerfile
+    image: order-imbalance-trading/zeromq-proxy:latest
+    ports:
+      - "5556:5556"  # Frontend port
+      - "5557:5557"  # Backend port
+    restart: unless-stopped
+
+  influxdb:
+    image: influxdb:2.0
+    ports:
+      - "8086:8086"
+    volumes:
+      - influxdb-data:/var/lib/influxdb2
+      - ./config/influxdb:/etc/influxdb2
+    environment:
+      - DOCKER_INFLUXDB_INIT_MODE=setup
+      - DOCKER_INFLUXDB_INIT_USERNAME=admin
+      - DOCKER_INFLUXDB_INIT_PASSWORD=adminpassword
+      - DOCKER_INFLUXDB_INIT_ORG=trading-system
+      - DOCKER_INFLUXDB_INIT_BUCKET=order-book-data
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./config/prometheus:/etc/prometheus
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./config/grafana:/etc/grafana
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    depends_on:
+      - prometheus
+      - influxdb
+    restart: unless-stopped
+
+volumes:
+  influxdb-data:
+  prometheus-data:
+  grafana-data:

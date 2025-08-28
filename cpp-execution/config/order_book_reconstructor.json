@@ -1,0 +1,27 @@
+// config/order_book_reconstructor.json
+{
+    "zmq_publish_endpoint": "tcp://*:5555",
+    "log_level": "INFO",
+    "exchanges": [
+      {
+        "id": "binance",
+        "enabled": true,
+        "api_url": "wss://stream.binance.com:9443/ws",
+        "trading_pairs": ["btcusdt", "ethusdt", "solusdt"],
+        "max_depth": 20,
+        "reconnect_interval_ms": 5000,
+        "ping_interval_ms": 30000
+      },
+      {
+        "id": "kraken",
+        "enabled": true,
+        "api_url": "wss://ws.kraken.com",
+        "trading_pairs": ["XBT/USD", "ETH/USD"],
+        "max_depth": 10,
+        "reconnect_interval_ms": 5000,
+        "ping_interval_ms": 30000
+      }
+    ],
+    "publish_interval_ms": 50,
+    "snapshot_interval_ms": 30000
+  }
