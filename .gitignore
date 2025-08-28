@@ -1,0 +1,16 @@
+# .db file
+*.db
+#*pycache
+*pycache*
+*.csv
+*.log
+*.gz
+# for c++
+*.o
+*.out
+#build
+*/build/
+*venv*/
+*.env
+# third_parties
+cpp-execution/third_parties/
