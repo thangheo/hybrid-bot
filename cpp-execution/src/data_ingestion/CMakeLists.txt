@@ -19,6 +19,10 @@ file(GLOB_RECURSE DATA_INGESTION_SOURCES
     "websocket/*.cpp"
 )
 
+# Remove example files from sources
+list(FILTER DATA_INGESTION_SOURCES EXCLUDE REGEX ".*example\.cpp$")
+list(FILTER DATA_INGESTION_SOURCES EXCLUDE REGEX ".*examples.*\.cpp$")
+
 # Define library
 add_library(data_ingestion ${DATA_INGESTION_SOURCES})
 
