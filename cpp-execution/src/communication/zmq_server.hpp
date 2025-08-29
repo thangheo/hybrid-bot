@@ -1,5 +1,3 @@
-// header for zmq_server.hpp
-
 #ifndef ZMQ_SERVER_HPP
 #define ZMQ_SERVER_HPP
 
@@ -15,6 +13,7 @@
 #include <condition_variable>
 #include <random>
 #include <cstring>
+#include <functional>  // Added for std::function
 
 // Include generated protobuf headers
 #include "trading_messages.pb.h"
@@ -24,21 +23,24 @@ private:
     zmq::context_t context_;
     std::unique_ptr<zmq::socket_t> intelligence_publisher_;
     std::unique_ptr<zmq::socket_t> intent_receiver_;
-
+    
     std::atomic<bool> running_;
     std::thread intelligence_thread_;
     std::thread intent_handler_thread_;
-
+    
     // Market intelligence generation
     std::mutex intel_queue_mutex_;
     std::queue<trading::MarketIntelligence> intel_queue_;
     std::condition_variable intel_cv_;
-
+    
     // Execution acknowledgment callback
     std::function<trading::ExecutionAcknowledgment(const trading::TradingIntent&)> execution_callback_;
 
 public:
     TradingCommunicationServer();
+    TradingCommunicationServer(const TradingCommunicationServer&) = delete;
+    TradingCommunicationServer& operator=(const TradingCommunicationServer&) = delete;
+    
     ~TradingCommunicationServer();
 
     void InitializeSockets();
@@ -52,6 +54,10 @@ public:
 private:
     void IntelligencePublisherLoop();
     void IntentHandlerLoop();
+    
+    // Helper methods
+    trading::ExecutionAcknowledgment CreateDefaultAcknowledgment(const trading::TradingIntent& intent);
+    void SendErrorAcknowledgment(const std::string& error_reason);
 };
 
 #endif // ZMQ_SERVER_HPP
