@@ -3,12 +3,13 @@
  * Removed portfolio management, strategic risk, and complex configurations
  */
 
-#pragma once
-
 #include <string>
 #include <unordered_map>
 #include <chrono>
 #include <nlohmann/json.hpp>
+#include <iostream>
+#include <fstream>
+#include <vector>
 
 namespace trading::risk {
 
@@ -67,10 +68,9 @@ struct CircuitBreakerConfig {
 struct RiskLoggingConfig {
     std::string logLevel = "INFO";
     std::string logDirectory = "/var/log/trading_risk";
-    bool enableDetailedLogs = true;
+    std::chrono::hours logRetentionPeriod{30 * 24}; // 30 days in hours
     bool logToConsole = true;
     bool logToFile = true;
-    std::chrono::days logRetentionPeriod{30};
 };
 
 /**
@@ -197,10 +197,10 @@ inline RiskConfig::RiskConfig() {
     // Logging
     m_loggingConfig.logLevel = "INFO";
     m_loggingConfig.logDirectory = "/var/log/trading_risk";
-    m_loggingConfig.enableDetailedLogs = true;
+    m_loggingConfig.logRetentionPeriod = std::chrono::hours(30 * 24); // 30 days in hours
     m_loggingConfig.logToConsole = true;
     m_loggingConfig.logToFile = true;
-    m_loggingConfig.logRetentionPeriod = std::chrono::days(30);
+    m_loggingConfig.logRetentionPeriod = std::chrono::hours(30 * 24); // 30 days in hours
 }
 
 inline bool RiskConfig::loadJsonConfiguration(const std::string& jsonStr) {
@@ -392,9 +392,9 @@ inline void RiskConfig::loadLoggingConfig(const json& lg) {
     if (lg.contains("logDirectory")) {
         m_loggingConfig.logDirectory = lg["logDirectory"].get<std::string>();
     }
-    if (lg.contains("enableDetailedLogs")) {
-        m_loggingConfig.enableDetailedLogs = lg["enableDetailedLogs"].get<bool>();
-    }
+    // if (lg.contains("enableDetailedLogs")) {
+    //     m_loggingConfig.enableDetailedLogs = lg["enableDetailedLogs"].get<bool>();
+    // }
     if (lg.contains("logToConsole")) {
         m_loggingConfig.logToConsole = lg["logToConsole"].get<bool>();
     }
@@ -402,7 +402,7 @@ inline void RiskConfig::loadLoggingConfig(const json& lg) {
         m_loggingConfig.logToFile = lg["logToFile"].get<bool>();
     }
     if (lg.contains("logRetentionDays")) {
-        m_loggingConfig.logRetentionPeriod = std::chrono::days(lg["logRetentionDays"].get<int>());
+        m_loggingConfig.logRetentionPeriod = std::chrono::hours(lg["logRetentionDays"].get<int>() * 24);
     }
 }
 
@@ -431,6 +431,41 @@ inline bool RiskConfig::validate() const {
         return false;
     }
     
+    return true;
+}
+
+// Implementation moved outside the class definition
+inline RiskConfig::RiskConfig(const std::string& configFilePath) {
+    // Initialize with defaults first
+    RiskConfig();
+    
+    // Then try to load from file
+    if (!loadFromFile(configFilePath)) {
+        std::cerr << "Failed to load configuration from file: " << configFilePath << std::endl;
+    }
+}
+
+inline bool RiskConfig::loadFromFile(const std::string& configFilePath) {
+    try {
+        std::ifstream file(configFilePath);
+        if (!file.is_open()) {
+            std::cerr << "Cannot open config file: " << configFilePath << std::endl;
+            return false;
+        }
+        
+        std::string jsonStr((std::istreambuf_iterator<char>(file)),
+                           std::istreambuf_iterator<char>());
+        file.close();
+        
+        return loadJsonConfiguration(jsonStr);
+    } catch (const std::exception& e) {
+        std::cerr << "Error loading config file: " << e.what() << std::endl;
+        return false;
+    }
+}
+
+inline bool RiskConfig::saveToFile(const std::string& configFilePath) const {
+    // Implementation would go here
     return true;
 }
 

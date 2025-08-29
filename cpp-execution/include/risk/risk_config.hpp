@@ -315,10 +315,11 @@ struct PortfolioConfig {
 struct RiskLoggingConfig {
     std::string logLevel = "INFO";
     std::string logDirectory = "/var/log/riskmanagement";
+    std::string logFileName = ""; // If empty, generate based on date/time
     bool enableDetailedLogs = true;
     bool logToConsole = true;
     bool logToFile = true;
-    std::chrono::days logRetentionPeriod{30};
+    std::chrono::hours logRetentionPeriod{30 * 24};
 };
 
 /**
@@ -506,17 +507,17 @@ private:
     
     // Private helper methods for JSON loading
     bool loadJsonConfiguration(const std::string& jsonStr);
-    void loadPositionLimitConfig(const json& pl);
-    void loadExposureLimitConfig(const json& el);
+    // void loadPositionLimitConfig(const json& pl);
+    // void loadExposureLimitConfig(const json& el);
     void loadCircuitBreakerConfig(const json& cb);
-    void loadStopLossConfig(const json& sl);
-    void loadDrawdownConfig(const json& dd);
+    // void loadStopLossConfig(const json& sl);
+    // void loadDrawdownConfig(const json& dd);
     void loadFatFingerConfig(const json& ff);
     void loadOrderValidationConfig(const json& ov);
-    void loadBalanceReconciliationConfig(const json& br);
-    void loadRebalancingConfig(const json& rb);
-    void loadCollateralConfig(const json& co);
-    void loadPortfolioConfig(const json& po);
+    // void loadBalanceReconciliationConfig(const json& br);
+    // void loadRebalancingConfig(const json& rb);
+    // void loadCollateralConfig(const json& co);
+    // void loadPortfolioConfig(const json& po);
     void loadLoggingConfig(const json& lg);
     
     // Helper method for saving other configs

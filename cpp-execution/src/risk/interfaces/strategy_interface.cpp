@@ -18,19 +18,8 @@
 namespace trading {
 namespace risk {
 
-// Helper to log with timestamp (temporary until we integrate with logging system)
-void logWithTimestamp(const std::string& level, const std::string& message) {
-    auto now = std::chrono::system_clock::now();
-    auto now_time_t = std::chrono::system_clock::to_time_t(now);
-    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-        now.time_since_epoch()) % 1000;
-        
-    std::stringstream ss;
-    ss << "[" << std::put_time(std::localtime(&now_time_t), "%Y-%m-%d %H:%M:%S")
-       << '.' << std::setfill('0') << std::setw(3) << ms.count() << "] ";
-    ss << "[" << level << "] " << message;
-    std::cout << ss.str() << std::endl;
-}
+// Forward declaration - function defined in execution_interface.cpp
+void logWithTimestamp(const std::string& level, const std::string& message);
 
 // Implementation of the StrategyInterface that uses ZeroMQ for communication
 class StrategyInterfaceImpl : public StrategyInterface {
