@@ -7,12 +7,25 @@
 # Since the websocket sources are already included in the parent data_ingestion library,
 # we're just adding any specific requirements or settings here
 
-# If you have specific websocket executables or examples, define them here
-if(BUILD_EXAMPLES)
-    add_executable(websocket_example examples_websocket.cpp)
-    target_link_libraries(websocket_example
-        PRIVATE
-            data_ingestion
-            common
-    )
-endif()
+# Build websocket examples - disabled for now
+# add_executable(examples_websocket examples_websocket.cpp)
+# target_link_libraries(examples_websocket
+#     PRIVATE
+#         data_ingestion
+#         common
+#         proto_lib
+#         Threads::Threads
+#         ${CMAKE_DL_LIBS}
+# )
+
+# # Set output directory for the executable
+# set_target_properties(examples_websocket PROPERTIES
+#     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
+# )
+
+# # Include directories for the executable
+# target_include_directories(examples_websocket
+#     PRIVATE
+#         ${CMAKE_SOURCE_DIR}/include
+#         ${CMAKE_SOURCE_DIR}/include/data_ingestion
+# )

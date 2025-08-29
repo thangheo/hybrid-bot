@@ -1,6 +1,6 @@
 # Root CMakeLists.txt
 cmake_minimum_required(VERSION 3.14)
-project(OrderImbalanceSystem VERSION 1.0.0 LANGUAGES CXX)
+project(TradeFusion VERSION 1.0.0 LANGUAGES CXX)
 
 # Set C++ standard
 set(CMAKE_CXX_STANDARD 23)
@@ -12,7 +12,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/modules")
 
 # Build settings
-option(BUILD_TESTS "Build the test suite" OFF)
+option(BUILD_TESTS "Build the test suite" ON)
 option(BUILD_SHARED_LIBS "Build shared libraries" ON)
 option(ENABLE_COVERAGE "Enable code coverage" OFF)
 option(USE_SANITIZERS "Use address and undefined sanitizers in debug builds" OFF)
@@ -61,7 +61,7 @@ endif()
 add_subdirectory(proto)
 add_subdirectory(src)
 
-# Testing - disabled due to old code
+# Testing - completely disabled due to old/incompatible code
 # if(BUILD_TESTS)
 #     enable_testing()
 #     add_subdirectory(tests)

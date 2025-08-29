@@ -44,8 +44,8 @@ Timestamp getCurrentTimestamp() {
 // Test basic order book functionality
 void testOrderBookBasic() {
     // Create OrderBook with string constructor
-    OrderBook order_book("binance", "btcusdt");
-    
+    OrderBook order_book(ExchangeId::binance(), Symbol::fromString("btcusdt"));
+
     // Create initial snapshot
     auto bids = createPriceLevels({
         {10100.00, 1.5},
@@ -85,7 +85,7 @@ void testOrderBookBasic() {
 
 // Test incremental updates
 void testOrderBookUpdates() {
-    OrderBook order_book("binance", "btcusdt");
+    OrderBook order_book(ExchangeId::binance(), Symbol::fromString("btcusdt"));
     
     // Create initial snapshot
     auto bids = createPriceLevels({
@@ -148,8 +148,19 @@ void testOrderBookUpdates() {
 
 // Test order book metrics
 void testOrderBookMetrics() {
-    OrderBook order_book("binance", "btcusdt");
-    
+    OrderBookCallback callback = [](const OrderBook& book) {
+        // Verify the book is valid
+        assert(book.isValid());
+        // Check some property to make sure we got the right book
+        assert(book.getSymbol() == Symbol::fromString("BTC/USDT"));
+        assert(book.getSymbol().base == "btc");
+        assert(book.getSymbol().toString() == "BTC/USDT" || book.getSymbol().toString() == "btcusdt");
+        assert(book.getExchangeId() == ExchangeId::binance());
+        assert(book.getSequenceNumber() == 1);
+    };
+    OrderBook order_book(ExchangeId::binance(), Symbol::fromString("btcusdt"), callback);
+    // order_book.setCallback(callback);
+
     // Create initial snapshot
     auto bids = createPriceLevels({
         {10100.00, 1.5},
@@ -206,13 +217,16 @@ void testOrderBookCallback() {
         // assert(book.getSymbol() == Symbol{"BTC/USDT"});
         // assert(book.getSymbol().base == "btc");
         // assert(book.getSymbol().toString() == "BTC/USDT" || book.getSymbol().toString() == "btcusdt");
-        assert(book.getExchangeId() == ExchangeId{"binance"});
+        assert(book.getExchangeId().toString() == "binance");
         assert(book.getSequenceNumber() == 1);
     };
     
     // Create order book with callback
-    OrderBook order_book("binance", "btcusdt", callback);
-    
+    // OrderBook(const ExchangeId& exchangeId, const Symbol& symbol, OrderBookCallback callback = nullptr);
+    // static const ExchangeId instance("BINANCE");
+
+    OrderBook order_book(ExchangeId::binance(), Symbol::fromString("BTC/USDT"), callback);
+
     // Create initial snapshot
     auto bids = createPriceLevels({
         {10100.00, 1.5},

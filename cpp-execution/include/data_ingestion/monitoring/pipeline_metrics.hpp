@@ -7,6 +7,9 @@
 #include <chrono>
 #include <mutex>
 #include <memory>
+#include <limits>
+#include <vector>
+#include "../../core/market_types.hpp"
 
 namespace trading {
 namespace data_ingestion {
@@ -18,7 +21,7 @@ public:
     
     // Count metrics
     void increment_input_count(const core::ExchangeId& exchange, const std::string& symbol) {
-        std::string key = exchange + ":" + symbol;
+        std::string key = exchange.toString() + ":" + symbol;
         
         std::lock_guard<std::mutex> lock(mutex_);
         ++input_counts_[key];
@@ -26,7 +29,7 @@ public:
     }
     
     void increment_output_count(const core::ExchangeId& exchange, const std::string& symbol) {
-        std::string key = exchange + ":" + symbol;
+        std::string key = exchange.toString() + ":" + symbol;
         
         std::lock_guard<std::mutex> lock(mutex_);
         ++output_counts_[key];
@@ -78,7 +81,7 @@ public:
     }
     
     size_t get_input_count(const core::ExchangeId& exchange, const std::string& symbol) const {
-        std::string key = exchange + ":" + symbol;
+        std::string key = exchange.toString() + ":" + symbol;
         
         std::lock_guard<std::mutex> lock(mutex_);
         auto it = input_counts_.find(key);
@@ -86,7 +89,7 @@ public:
     }
     
     size_t get_output_count(const core::ExchangeId& exchange, const std::string& symbol) const {
-        std::string key = exchange + ":" + symbol;
+        std::string key = exchange.toString() + ":" + symbol;
         
         std::lock_guard<std::mutex> lock(mutex_);
         auto it = output_counts_.find(key);

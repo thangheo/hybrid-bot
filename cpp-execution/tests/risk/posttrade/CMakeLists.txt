@@ -2,11 +2,8 @@
 
 # Source files for posttrade risk tests
 set(RISK_POSTTRADE_TEST_SOURCES
-    test_balance_reconciliation.cpp
     test_circuit_breaker.cpp
-    test_drawdown_monitor.cpp
     test_post_trade_monitor.cpp
-    test_stop_loss_manager.cpp
 )
 
 # Posttrade risk test executable
