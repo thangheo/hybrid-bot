@@ -4,6 +4,7 @@
 *pycache*
 *.csv
 *.log
+*logs/
 *.gz
 # for c++
 *.o

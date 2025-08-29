@@ -5,6 +5,7 @@ Basic ZMQ Subscriber - Works with any ZMQ version
 import zmq
 import time
 import sys
+from proto.trading_messages_pb2 import *
 
 def get_zmq_info():
     """Get ZMQ version info"""
@@ -14,7 +15,7 @@ def get_zmq_info():
         return zmq_version, pyzmq_version
     except:
         return "unknown", "unknown"
-
+    
 class BasicSubscriber:
     def __init__(self, address="tcp://localhost:5556"):
         zmq_ver, pyzmq_ver = get_zmq_info()
