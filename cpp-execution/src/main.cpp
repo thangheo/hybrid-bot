@@ -105,3 +105,33 @@ int main(int argc, char* argv[]) {
     
     return 0;
 }
+
+// // Production
+// int main() {
+//     // Core components as separate objects
+//     MarketDataIngestion data_feed;           // Real market data
+//     RiskManager risk_engine;                 // Position/risk limits  
+//     ExecutionEngine execution_engine;        // Actual order placement
+//     MonitoringService monitor;               // Health/performance tracking
+    
+//     // Communication layer
+//     TradingCommunicationServer comm_server;  // ZMQ only
+    
+//     // Wire components together
+//     comm_server.SetDataFeed(&data_feed);
+//     comm_server.SetRiskEngine(&risk_engine);
+//     comm_server.SetExecutionEngine(&execution_engine);
+//     comm_server.SetMonitor(&monitor);
+    
+//     // Start all components
+//     data_feed.Start();
+//     risk_engine.Start(); 
+//     execution_engine.Start();
+//     monitor.Start();
+//     comm_server.Start();
+    
+//     // Main loop
+//     while (!shutdown_requested) {
+//         // Health checks, coordination logic
+//     }
+// }
