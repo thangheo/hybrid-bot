@@ -2,11 +2,11 @@
 #include "risk/risk_manager.hpp"
 #include "risk/pretrade/pre_trade_risk_filter.hpp"
 #include "risk/pretrade/position_limit_checker.hpp"
-#include "risk/pretrade/exposure_calculator.hpp"
+// #include "risk/pretrade/exposure_calculator.hpp"
 #include "risk/pretrade/order_validator.hpp"
 #include "risk/pretrade/fat_finger_protection.hpp"
-#include "risk/portfolio/position_tracker.hpp"
-#include "risk/portfolio/portfolio_manager.hpp"
+// #include "risk/portfolio/position_tracker.hpp"
+// #include "risk/portfolio/portfolio_manager.hpp"
 #include "risk/utils/limit_manager.hpp"
 #include <memory>
 

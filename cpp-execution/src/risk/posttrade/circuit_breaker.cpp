@@ -1,522 +1,382 @@
 /**
  * @file circuit_breaker.cpp
- * @brief Implementation of the Circuit Breaker pattern for trading systems
- * 
- * Modern C++20 implementation with optimal performance and thread safety.
- * 
- * @author Trading System Team  
- * @date May 25, 2025
+ * @brief Implementation of clean C++17 circuit breaker system
  */
 
 #include "risk/posttrade/circuit_breaker.hpp"
 #include <algorithm>
 #include <sstream>
-#include <format>
-#include <random>
+#include <iomanip>
 
 namespace trading::risk {
 
-CircuitBreaker::CircuitBreaker(const RiskConfig& config)
-    : config_(config.getCircuitBreakerConfig()) {
+// ============================================================================
+// MarketImpactTracker Implementation
+// ============================================================================
+
+void MarketImpactTracker::update(double quantity, double impact) {
+    std::lock_guard lock(mutex_);
     
-    auto now = std::chrono::system_clock::now();
-    triggerTime_.store(now, std::memory_order_relaxed);
-    coolingStartTime_.store(now, std::memory_order_relaxed);
-    triggerCountResetTime_.store(
-        now + std::chrono::minutes(config_.triggerCountResetMinutes), 
-        std::memory_order_relaxed
-    );
+    impact_history_.emplace_back(quantity, std::abs(impact));
+    
+    if (impact_history_.size() > MAX_HISTORY) {
+        impact_history_.pop_front();
+    }
 }
 
-bool CircuitBreaker::initialize() noexcept {
-    try {
-        // Reset all state
-        state_.store(CircuitBreakerState::OFF, std::memory_order_release);
-        triggerCount_.store(0, std::memory_order_relaxed);
-        
-        auto now = std::chrono::system_clock::now();
-        triggerTime_.store(now, std::memory_order_relaxed);
-        coolingStartTime_.store(now, std::memory_order_relaxed);
-        triggerCountResetTime_.store(
-            now + std::chrono::minutes(config_.triggerCountResetMinutes),
-            std::memory_order_relaxed
+double MarketImpactTracker::getAverageImpact() const {
+    std::lock_guard lock(mutex_);
+    
+    if (impact_history_.empty()) {
+        return 0.0;
+    }
+    
+    double total_impact = 0.0;
+    double total_quantity = 0.0;
+    
+    for (const auto& [quantity, impact] : impact_history_) {
+        total_quantity += quantity;
+        total_impact += impact * quantity;
+    }
+    
+    return total_quantity > 0.0 ? total_impact / total_quantity : 0.0;
+}
+
+void MarketImpactTracker::reset() {
+    std::lock_guard lock(mutex_);
+    impact_history_.clear();
+}
+
+size_t MarketImpactTracker::size() const {
+    std::lock_guard lock(mutex_);
+    return impact_history_.size();
+}
+
+// ============================================================================
+// SymbolRiskMonitor Implementation
+// ============================================================================
+
+SymbolRiskMonitor::SymbolRiskMonitor(std::string symbol) 
+    : symbol_(std::move(symbol)) {}
+
+bool SymbolRiskMonitor::isHalted() const {
+    std::lock_guard lock(mutex_);
+    return state_ == SymbolRiskState::HALTED;
+}
+
+bool SymbolRiskMonitor::halt(std::string_view reason) {
+    std::lock_guard lock(mutex_);
+    
+    if (state_ == SymbolRiskState::HALTED) {
+        return false; // Already halted
+    }
+    
+    state_ = SymbolRiskState::HALTED;
+    halt_reason_ = reason;
+    halt_time_ = std::chrono::system_clock::now();
+    
+    return true;
+}
+
+void SymbolRiskMonitor::reset() {
+    std::lock_guard lock(mutex_);
+    
+    state_ = SymbolRiskState::OK;
+    halt_reason_.clear();
+    impact_tracker_.reset();
+    // halt_time_ intentionally not cleared for audit purposes
+}
+
+void SymbolRiskMonitor::updateMarketImpact(double quantity, double impact) {
+    impact_tracker_.update(quantity, impact);
+    
+    // Update state based on impact if needed
+    std::lock_guard lock(mutex_);
+    if (state_ == SymbolRiskState::OK && impact_tracker_.hasSufficientHistory()) {
+        const double avg_impact = impact_tracker_.getAverageImpact();
+        if (avg_impact > 0.01) { // 1% threshold for warning
+            state_ = SymbolRiskState::WARNING;
+        }
+    }
+}
+
+double SymbolRiskMonitor::getMarketImpact() const {
+    return impact_tracker_.getAverageImpact();
+}
+
+SymbolRiskState SymbolRiskMonitor::getState() const {
+    std::lock_guard lock(mutex_);
+    return state_;
+}
+
+std::string SymbolRiskMonitor::getHaltReason() const {
+    std::lock_guard lock(mutex_);
+    return halt_reason_;
+}
+
+std::optional<std::chrono::system_clock::time_point> SymbolRiskMonitor::getHaltTime() const {
+    std::lock_guard lock(mutex_);
+    if (state_ == SymbolRiskState::HALTED) {
+        return halt_time_;
+    }
+    return std::nullopt;
+}
+
+// ============================================================================
+// CircuitBreakerManager Implementation
+// ============================================================================
+
+bool CircuitBreakerManager::initialize() {
+    // Reset everything to clean state
+    resetAll();
+    resumeTrading();
+    return true;
+}
+
+bool CircuitBreakerManager::isTriggeredForSymbol(std::string_view symbol) const {
+    if (isEmergencyStop()) {
+        return true;
+    }
+    
+    auto monitor = getMonitor(symbol);
+    return monitor.has_value() && monitor->get().isHalted();
+}
+
+bool CircuitBreakerManager::triggerForSymbol(std::string_view symbol, std::string_view reason) {
+    auto& monitor = getOrCreateMonitor(std::string(symbol));
+    return monitor.halt(reason);
+}
+
+void CircuitBreakerManager::updateMarketImpact(std::string_view symbol, double quantity, double impact) {
+    auto& monitor = getOrCreateMonitor(std::string(symbol));
+    monitor.updateMarketImpact(quantity, impact);
+    
+    // Auto-trigger if threshold exceeded
+    const auto limits = getExecutionLimits(symbol);
+    if (monitor.getMarketImpact() > limits.cb_slippage_threshold) {
+        std::ostringstream ss;
+        ss << "Market impact threshold exceeded: " << std::fixed << std::setprecision(3) 
+           << monitor.getMarketImpact() * 100 << "% > " << limits.cb_slippage_threshold * 100 << "%";
+        triggerForSymbol(symbol, ss.str());
+    }
+}
+
+ExecutionLimits CircuitBreakerManager::getExecutionLimits(std::string_view symbol) const {
+    std::lock_guard lock(limits_mutex_);
+    
+    const auto it = symbol_limits_.find(std::string(symbol));
+    return it != symbol_limits_.end() ? it->second : default_limits_;
+}
+
+void CircuitBreakerManager::setExecutionLimits(std::string_view symbol, const ExecutionLimits& limits) {
+    std::lock_guard lock(limits_mutex_);
+    symbol_limits_[std::string(symbol)] = limits;
+}
+
+void CircuitBreakerManager::setDefaultLimits(const ExecutionLimits& limits) {
+    std::lock_guard lock(limits_mutex_);
+    default_limits_ = limits;
+}
+
+void CircuitBreakerManager::resetSymbol(std::string_view symbol) {
+    std::lock_guard lock(monitors_mutex_);
+    
+    const auto it = symbol_monitors_.find(std::string(symbol));
+    if (it != symbol_monitors_.end()) {
+        it->second->reset();
+    }
+}
+
+void CircuitBreakerManager::resetAll() {
+    std::lock_guard lock(monitors_mutex_);
+    
+    for (auto& [symbol, monitor] : symbol_monitors_) {
+        monitor->reset();
+    }
+}
+
+void CircuitBreakerManager::emergencyStop() noexcept {
+    global_emergency_stop_.store(true);
+}
+
+void CircuitBreakerManager::resumeTrading() noexcept {
+    global_emergency_stop_.store(false);
+}
+
+bool CircuitBreakerManager::isEmergencyStop() const noexcept {
+    return global_emergency_stop_.load();
+}
+
+std::vector<std::string> CircuitBreakerManager::getHaltedSymbols() const {
+    std::vector<std::string> halted;
+    std::lock_guard lock(monitors_mutex_);
+    
+    for (const auto& [symbol, monitor] : symbol_monitors_) {
+        if (monitor->isHalted()) {
+            halted.push_back(symbol);
+        }
+    }
+    
+    return halted;
+}
+
+std::vector<std::string> CircuitBreakerManager::getTrackedSymbols() const {
+    std::vector<std::string> symbols;
+    std::lock_guard lock(monitors_mutex_);
+    
+    symbols.reserve(symbol_monitors_.size());
+    for (const auto& [symbol, monitor] : symbol_monitors_) {
+        symbols.push_back(symbol);
+    }
+    
+    return symbols;
+}
+
+double CircuitBreakerManager::getMarketImpactRate(std::string_view symbol) const {
+    auto monitor = getMonitor(symbol);
+    return monitor.has_value() ? monitor->get().getMarketImpact() : 0.0;
+}
+
+std::string CircuitBreakerManager::getStatusSummary() const {
+    std::ostringstream ss;
+    
+    ss << "=== Circuit Breaker Status ===\n";
+    ss << "Emergency Stop: " << (isEmergencyStop() ? "ACTIVE" : "INACTIVE") << "\n";
+    
+    const auto halted_symbols = getHaltedSymbols();
+    ss << "Halted Symbols: " << halted_symbols.size() << "\n";
+    
+    if (!halted_symbols.empty()) {
+        ss << "\nHalted Symbol Details:\n";
+        for (const auto& symbol : halted_symbols) {
+            auto monitor = getMonitor(symbol);
+            if (monitor.has_value()) {
+                const auto& mon = monitor->get();
+                ss << "  " << symbol << ": " << mon.getHaltReason() << "\n";
+                ss << "    Market Impact: " << std::fixed << std::setprecision(3) 
+                   << mon.getMarketImpact() * 100 << "%\n";
+            }
+        }
+    }
+    
+    const auto tracked = getTrackedSymbols();
+    ss << "\nTotal Tracked Symbols: " << tracked.size() << "\n";
+    
+    return ss.str();
+}
+
+SymbolRiskState CircuitBreakerManager::getSymbolState(std::string_view symbol) const {
+    auto monitor = getMonitor(symbol);
+    return monitor.has_value() ? monitor->get().getState() : SymbolRiskState::OK;
+}
+
+SymbolRiskMonitor& CircuitBreakerManager::getOrCreateMonitor(const std::string& symbol) {
+    std::lock_guard lock(monitors_mutex_);
+    
+    auto it = symbol_monitors_.find(symbol);
+    if (it == symbol_monitors_.end()) {
+        auto [inserted_it, success] = symbol_monitors_.emplace(
+            symbol, std::make_unique<SymbolRiskMonitor>(symbol)
         );
-        
-        lastTriggerReason_.clear();
-        
-        // Clear metrics and history
-        {
-            std::unique_lock lock(metricsMutex_);
-            currentMetrics_.clear();
-        }
-        
-        {
-            std::unique_lock lock(historyMutex_);
-            triggerHistory_.clear();
-        }
-        
-        return true;
-    } catch (...) {
-        return false;
-    }
-}
-
-CircuitBreakerState CircuitBreaker::evaluateMetrics(const MetricMap& metrics) noexcept {
-    try {
-        auto currentState = state_.load(std::memory_order_acquire);
-        
-        // Update current metrics
-        {
-            std::unique_lock lock(metricsMutex_);
-            for (const auto& [name, value] : metrics) {
-                currentMetrics_[name] = value;
-            }
-        }
-        
-        // Handle TRIGGERED state - check for auto-reset
-        if (currentState == CircuitBreakerState::TRIGGERED) {
-            if (shouldAutoReset()) {
-                setState(CircuitBreakerState::COOLING, "Auto cooling after mandatory halt period");
-            }
-            return state_.load(std::memory_order_acquire);
-        }
-        
-        // Handle COOLING state - check for completion
-        if (currentState == CircuitBreakerState::COOLING) {
-            auto now = std::chrono::system_clock::now();
-            auto coolingStart = coolingStartTime_.load(std::memory_order_relaxed);
-            auto coolingElapsed = std::chrono::duration_cast<std::chrono::seconds>(now - coolingStart);
-            
-            if (coolingElapsed >= config_.coolingPeriod) {
-                setState(CircuitBreakerState::OFF, "Cooling period completed");
-            }
-            return state_.load(std::memory_order_acquire);
-        }
-        
-        // Check for critical threshold violations
-        if (auto violation = findMetricViolation(metrics, 
-            [this](std::string_view name, double value, double& threshold) {
-                return isMetricCritical(name, value, threshold);
-            })) {
-            
-            const auto& [metricName, threshold] = *violation;
-            double value = metrics.at(std::string(metricName));
-            
-            // Increment trigger count and check limits
-            int newTriggerCount = triggerCount_.fetch_add(1, std::memory_order_acq_rel) + 1;
-            checkTriggerCount();
-            
-            auto reason = std::format("Critical threshold breached for '{}': {} (threshold: {})", 
-                                    metricName, value, threshold);
-            setState(CircuitBreakerState::TRIGGERED, reason);
-            
-            // Create and store event
-            auto event = createEvent(currentState, CircuitBreakerState::TRIGGERED, 
-                                   metricName, threshold, value);
-            addToHistory(std::move(event));
-            
-            return state_.load(std::memory_order_acquire);
-        }
-        
-        // Check for warning threshold violations (only if currently OFF)
-        if (currentState == CircuitBreakerState::OFF) {
-            if (auto violation = findMetricViolation(metrics,
-                [this](std::string_view name, double value, double& threshold) {
-                    return isMetricWarning(name, value, threshold);
-                })) {
-                
-                const auto& [metricName, threshold] = *violation;
-                double value = metrics.at(std::string(metricName));
-                
-                auto reason = std::format("Warning threshold breached for '{}': {} (threshold: {})",
-                                        metricName, value, threshold);
-                setState(CircuitBreakerState::WARNING, reason);
-                
-                auto event = createEvent(CircuitBreakerState::OFF, CircuitBreakerState::WARNING,
-                                       metricName, threshold, value);
-                addToHistory(std::move(event));
-            }
-        }
-        
-        // Check if WARNING state should return to OFF
-        if (currentState == CircuitBreakerState::WARNING) {
-            bool allBelowWarning = std::ranges::all_of(metrics, 
-                [this](const auto& metric) {
-                    const auto& [name, value] = metric;
-                    double threshold = 0.0;
-                    return !isMetricWarning(name, value, threshold);
-                });
-                
-            if (allBelowWarning) {
-                setState(CircuitBreakerState::OFF, "All metrics below warning thresholds");
-            }
-        }
-        
-        return state_.load(std::memory_order_acquire);
-        
-    } catch (...) {
-        return state_.load(std::memory_order_acquire);
-    }
-}
-
-CircuitBreakerState CircuitBreaker::updateMetric(std::string_view metricName, double value) noexcept {
-    try {
-        // Update the specific metric
-        {
-            std::unique_lock lock(metricsMutex_);
-            currentMetrics_[std::string(metricName)] = value;
-        }
-        
-        // Get all current metrics and evaluate
-        MetricMap metricsCopy;
-        {
-            std::shared_lock lock(metricsMutex_);
-            metricsCopy = currentMetrics_;
-        }
-        
-        return evaluateMetrics(metricsCopy);
-        
-    } catch (...) {
-        return state_.load(std::memory_order_acquire);
-    }
-}
-
-bool CircuitBreaker::manualTrigger(std::string_view reason) noexcept {
-    try {
-        auto currentState = state_.load(std::memory_order_acquire);
-        if (currentState == CircuitBreakerState::TRIGGERED) {
-            return false; // Already triggered
-        }
-        
-        // Increment trigger count
-        triggerCount_.fetch_add(1, std::memory_order_acq_rel);
-        checkTriggerCount();
-        
-        auto fullReason = std::format("Manual trigger: {}", reason);
-        setState(CircuitBreakerState::TRIGGERED, fullReason);
-        
-        // Create and store event
-        auto event = createEvent(currentState, CircuitBreakerState::TRIGGERED, "MANUAL");
-        addToHistory(std::move(event));
-        
-        return true;
-        
-    } catch (...) {
-        return false;
-    }
-}
-
-bool CircuitBreaker::reset() noexcept {
-    try {
-        auto currentState = state_.load(std::memory_order_acquire);
-        
-        // Check if reset is allowed from TRIGGERED state
-        if (currentState == CircuitBreakerState::TRIGGERED) {
-            auto now = std::chrono::system_clock::now();
-            auto triggerTime = triggerTime_.load(std::memory_order_relaxed);
-            auto haltElapsed = std::chrono::duration_cast<std::chrono::seconds>(now - triggerTime);
-            
-            if (haltElapsed.count() < config_.mandatoryHaltPeriodSeconds) {
-                return false; // Must wait for mandatory halt period
-            }
-            
-            // Move to cooling state first
-            setState(CircuitBreakerState::COOLING, "Manual reset from TRIGGERED to COOLING");
-        }
-        
-        // Reset to OFF state
-        setState(CircuitBreakerState::OFF, "Manual reset");
-        return true;
-        
-    } catch (...) {
-        return false;
-    }
-}
-
-bool CircuitBreaker::isTradingAllowed() const noexcept {
-    auto currentState = state_.load(std::memory_order_acquire);
-    
-    switch (currentState) {
-        case CircuitBreakerState::OFF:
-        case CircuitBreakerState::WARNING:
-            return true;
-            
-        case CircuitBreakerState::TRIGGERED:
-            return false;
-            
-        case CircuitBreakerState::COOLING: {
-            if (!config_.gradualTradingResumption) {
-                return false; // Binary resumption - no trading during cooling
-            }
-            
-            // Gradual resumption based on cooling progress
-            auto now = std::chrono::system_clock::now();
-            auto coolingStart = coolingStartTime_.load(std::memory_order_relaxed);
-            auto coolingElapsed = std::chrono::duration_cast<std::chrono::seconds>(now - coolingStart);
-            
-            double progress = std::min(1.0, 
-                static_cast<double>(coolingElapsed.count()) / config_.coolingPeriod.count());
-            
-            // Use deterministic approach instead of random for consistency
-            static thread_local std::random_device rd;
-            static thread_local std::mt19937 gen(rd());
-            static thread_local std::uniform_real_distribution<> dis(0.0, 1.0);
-            
-            return dis(gen) < progress;
-        }
+        return *inserted_it->second;
     }
     
-    return false; // Default to safe behavior
+    return *it->second;
 }
 
-void CircuitBreaker::registerStateChangeCallback(StateChangeCallback callback) {
-    std::unique_lock lock(callbackMutex_);
-    stateChangeCallbacks_.emplace_back(std::move(callback));
-}
-
-bool CircuitBreaker::updateConfiguration(const CircuitBreakerConfig& newConfig) noexcept {
-    try {
-        if (!newConfig.isValid()) {
-            return false;
-        }
-        
-        std::unique_lock lock(configMutex_);
-        config_ = newConfig;
-        return true;
-        
-    } catch (...) {
-        return false;
-    }
-}
-
-CircuitBreakerConfig CircuitBreaker::getConfiguration() const {
-    std::shared_lock lock(configMutex_);
-    return config_;
-}
-
-std::chrono::seconds CircuitBreaker::getTimeUntilReset() const noexcept {
-    auto currentState = state_.load(std::memory_order_acquire);
-    auto now = std::chrono::system_clock::now();
+std::optional<std::reference_wrapper<const SymbolRiskMonitor>> 
+CircuitBreakerManager::getMonitor(std::string_view symbol) const {
+    std::lock_guard lock(monitors_mutex_);
     
-    if (currentState == CircuitBreakerState::TRIGGERED) {
-        auto triggerTime = triggerTime_.load(std::memory_order_relaxed);
-        auto haltElapsed = std::chrono::duration_cast<std::chrono::seconds>(now - triggerTime);
-        auto remainingSeconds = config_.mandatoryHaltPeriodSeconds - haltElapsed.count();
-        return std::chrono::seconds(std::max(0L, remainingSeconds));
-        
-    } else if (currentState == CircuitBreakerState::COOLING) {
-        auto coolingStart = coolingStartTime_.load(std::memory_order_relaxed);
-        auto coolingElapsed = std::chrono::duration_cast<std::chrono::seconds>(now - coolingStart);
-        auto remainingSeconds = config_.coolingPeriod.count() - coolingElapsed.count();
-        return std::chrono::seconds(std::max(0L, remainingSeconds));
+    const auto it = symbol_monitors_.find(std::string(symbol));
+    if (it != symbol_monitors_.end()) {
+        return std::cref(*it->second);
     }
     
-    return std::chrono::seconds(0);
+    return std::nullopt;
 }
 
-std::vector<CircuitBreakerEvent> CircuitBreaker::getTriggerHistory() const {
-    std::shared_lock lock(historyMutex_);
-    return triggerHistory_;
-}
+// ============================================================================
+// ExecutionRiskManager Implementation
+// ============================================================================
 
-CircuitBreaker::MetricMap CircuitBreaker::getCurrentMetrics() const {
-    std::shared_lock lock(metricsMutex_);
-    return currentMetrics_;
-}
+// ExecutionRiskManager::ExecutionRiskManager(const ExecutionLimits& default_limits) {
+//     circuit_breaker_manager_.setDefaultLimits(default_limits);
+//     circuit_breaker_manager_.initialize();
+// }
 
-bool CircuitBreaker::isMetricInWarning(std::string_view metricName) const noexcept {
-    try {
-        std::shared_lock metricsLock(metricsMutex_);
-        auto it = currentMetrics_.find(std::string(metricName));
-        if (it == currentMetrics_.end()) {
-            return false;
-        }
-        
-        double threshold = 0.0;
-        return isMetricWarning(metricName, it->second, threshold);
-        
-    } catch (...) {
-        return false;
-    }
-}
+// void ExecutionRiskManager::updateMarketImpact(std::string_view symbol, 
+//                                             double executed_quantity, 
+//                                             double price_impact) {
+//     circuit_breaker_manager_.updateMarketImpact(symbol, executed_quantity, price_impact);
+// }
 
-std::string CircuitBreaker::getDetailedStatus() const {
-    auto currentState = state_.load(std::memory_order_acquire);
-    auto triggerCount = triggerCount_.load(std::memory_order_relaxed);
+// bool ExecutionRiskManager::isCircuitBreakerTriggered(std::string_view symbol) const {
+//     return circuit_breaker_manager_.isTriggeredForSymbol(symbol) || 
+//            risk_manager_emergency_stop_.load();
+// }
+
+// ExecutionLimits ExecutionRiskManager::getExecutionLimits(std::string_view symbol) const {
+//     return circuit_breaker_manager_.getExecutionLimits(symbol);
+// }
+
+// bool ExecutionRiskManager::checkExecutionAllowed(std::string_view symbol, 
+//                                                double quantity, 
+//                                                double current_price) const {
+//     // Check circuit breaker first
+//     if (isCircuitBreakerTriggered(symbol)) {
+//         return false;
+//     }
     
-    std::ostringstream oss;
-    oss << std::format("CircuitBreaker Status:\n");
-    oss << std::format("  State: {}\n", static_cast<int>(currentState));
-    oss << std::format("  Trigger Count: {}\n", triggerCount);
-    oss << std::format("  Trading Allowed: {}\n", isTradingAllowed() ? "Yes" : "No");
+//     // Check basic limits
+//     const auto limits = getExecutionLimits(symbol);
     
-    if (currentState != CircuitBreakerState::OFF) {
-        auto timeUntilReset = getTimeUntilReset();
-        oss << std::format("  Time Until Reset: {}s\n", timeUntilReset.count());
-    }
+//     if (quantity > limits.max_order_size) {
+//         return false;
+//     }
     
-    // Add current metrics
-    {
-        std::shared_lock lock(metricsMutex_);
-        if (!currentMetrics_.empty()) {
-            oss << "  Current Metrics:\n";
-            for (const auto& [name, value] : currentMetrics_) {
-                oss << std::format("    {}: {}\n", name, value);
-            }
-        }
-    }
+//     // Additional checks can be added here
+//     return true;
+// }
+
+// void ExecutionRiskManager::setLimitsForSymbol(std::string_view symbol, const ExecutionLimits& limits) {
+//     circuit_breaker_manager_.setExecutionLimits(symbol, limits);
+// }
+
+// void ExecutionRiskManager::resetSymbol(std::string_view symbol) {
+//     circuit_breaker_manager_.resetSymbol(symbol);
+// }
+
+// void ExecutionRiskManager::emergencyStop() noexcept {
+//     risk_manager_emergency_stop_.store(true);
+//     circuit_breaker_manager_.emergencyStop();
+// }
+
+// void ExecutionRiskManager::resumeTrading() noexcept {
+//     risk_manager_emergency_stop_.store(false);
+//     circuit_breaker_manager_.resumeTrading();
+// }
+
+// std::string ExecutionRiskManager::getStatus() const {
+//     std::ostringstream ss;
     
-    return oss.str();
-}
-
-// Private helper methods
-
-bool CircuitBreaker::isMetricCritical(std::string_view metricName, double value, double& threshold) const noexcept {
-    try {
-        std::shared_lock lock(configMutex_);
-        auto it = config_.metricThresholds.find(std::string(metricName));
-        if (it == config_.metricThresholds.end()) {
-            return false;
-        }
-        
-        const auto& thresholds = it->second;
-        threshold = thresholds.criticalThreshold;
-        
-        return thresholds.isHigherBetter ? 
-               (value < thresholds.criticalThreshold) : 
-               (value > thresholds.criticalThreshold);
-               
-    } catch (...) {
-        return false;
-    }
-}
-
-bool CircuitBreaker::isMetricWarning(std::string_view metricName, double value, double& threshold) const noexcept {
-    try {
-        std::shared_lock lock(configMutex_);
-        auto it = config_.metricThresholds.find(std::string(metricName));
-        if (it == config_.metricThresholds.end()) {
-            return false;
-        }
-        
-        const auto& thresholds = it->second;
-        threshold = thresholds.warningThreshold;
-        
-        return thresholds.isHigherBetter ? 
-               (value < thresholds.warningThreshold) : 
-               (value > thresholds.warningThreshold);
-               
-    } catch (...) {
-        return false;
-    }
-}
-
-void CircuitBreaker::setState(CircuitBreakerState newState, std::string_view reason) noexcept {
-    try {
-        auto oldState = state_.exchange(newState, std::memory_order_acq_rel);
-        
-        if (oldState == newState) {
-            return; // No change
-        }
-        
-        // Update state-specific data
-        auto now = std::chrono::system_clock::now();
-        
-        if (newState == CircuitBreakerState::TRIGGERED) {
-            triggerTime_.store(now, std::memory_order_relaxed);
-            lastTriggerReason_ = reason;
-        } else if (newState == CircuitBreakerState::COOLING) {
-            coolingStartTime_.store(now, std::memory_order_relaxed);
-        }
-        
-        // Notify callbacks
-        notifyCallbacks(oldState, newState, reason);
-        
-    } catch (...) {
-        // Failed to set state - log error if logger available
-    }
-}
-
-bool CircuitBreaker::shouldAutoReset() const noexcept {
-    try {
-        auto now = std::chrono::system_clock::now();
-        auto triggerTime = triggerTime_.load(std::memory_order_relaxed);
-        auto haltElapsed = std::chrono::duration_cast<std::chrono::seconds>(now - triggerTime);
-        
-        // Calculate required halt period based on trigger count
-        int requiredHaltPeriod = config_.mandatoryHaltPeriodSeconds;
-        int currentTriggerCount = triggerCount_.load(std::memory_order_relaxed);
-        
-        if (currentTriggerCount > config_.maxTriggersBeforeExtendedHalt) {
-            requiredHaltPeriod *= config_.extendedHaltMultiplier;
-        }
-        
-        return haltElapsed.count() >= requiredHaltPeriod;
-        
-    } catch (...) {
-        return false;
-    }
-}
-
-void CircuitBreaker::checkTriggerCount() noexcept {
-    try {
-        auto now = std::chrono::system_clock::now();
-        auto resetTime = triggerCountResetTime_.load(std::memory_order_relaxed);
-        
-        if (now > resetTime) {
-            triggerCount_.store(1, std::memory_order_relaxed); // Reset to 1 (current trigger)
-            triggerCountResetTime_.store(
-                now + std::chrono::minutes(config_.triggerCountResetMinutes),
-                std::memory_order_relaxed
-            );
-        }
-    } catch (...) {
-        // Failed to check trigger count
-    }
-}
-
-CircuitBreakerEvent CircuitBreaker::createEvent(CircuitBreakerState oldState,
-                                               CircuitBreakerState newState,
-                                               std::string_view metricName,
-                                               double threshold,
-                                               double value) const {
-    auto event = CircuitBreakerEvent(oldState, newState, std::string(lastTriggerReason_),
-                                   std::string(metricName), value, threshold);
-    event.triggerCount = triggerCount_.load(std::memory_order_relaxed);
-    return event;
-}
-
-void CircuitBreaker::addToHistory(CircuitBreakerEvent event) {
-    std::unique_lock lock(historyMutex_);
-    triggerHistory_.emplace_back(std::move(event));
+//     ss << "=== Execution Risk Manager Status ===\n";
+//     ss << "Local Emergency Stop: " << (risk_manager_emergency_stop_.load() ? "ACTIVE" : "INACTIVE") << "\n";
+//     ss << "\n" << circuit_breaker_manager_.getStatusSummary();
     
-    // Limit history size
-    if (triggerHistory_.size() > config_.maxHistorySize) {
-        triggerHistory_.erase(triggerHistory_.begin(), 
-                            triggerHistory_.begin() + (triggerHistory_.size() - config_.maxHistorySize));
-    }
-}
+//     return ss.str();
+// }
 
-void CircuitBreaker::notifyCallbacks(CircuitBreakerState oldState, 
-                                   CircuitBreakerState newState, 
-                                   std::string_view reason) {
-    try {
-        std::vector<StateChangeCallback> callbacksCopy;
-        {
-            std::shared_lock lock(callbackMutex_);
-            callbacksCopy = stateChangeCallbacks_;
-        }
-        
-        for (const auto& callback : callbacksCopy) {
-            try {
-                callback(oldState, newState, reason);
-            } catch (...) {
-                // Individual callback failed - continue with others
-            }
-        }
-    } catch (...) {
-        // Failed to notify callbacks
-    }
-}
+// double ExecutionRiskManager::getMarketImpactRate(std::string_view symbol) const {
+//     return circuit_breaker_manager_.getMarketImpactRate(symbol);
+// }
+
+// std::vector<std::string> ExecutionRiskManager::getMonitoredSymbols() const {
+//     return circuit_breaker_manager_.getTrackedSymbols();
+// }
+
+// bool ExecutionRiskManager::isEmergencyStopActive() const noexcept {
+//     return risk_manager_emergency_stop_.load() || circuit_breaker_manager_.isEmergencyStop();
+// }
 
 } // namespace trading::risk

@@ -1,225 +1,467 @@
 /**
  * @file circuit_breaker.hpp
- * @brief Modern C++20 Circuit Breaker for Trading Risk Management
+ * @brief Clean, modern C++17 circuit breaker design for execution risk management
  * 
- * Implements the Circuit Breaker pattern to halt trading during extreme market conditions.
- * Uses modern C++20 features for optimal performance and maintainability.
+ * Focused design with clear separation of concerns and RAII principles.
  * 
  * @author Trading System Team
- * @date May 25, 2025
+ * @date August 29, 2025
  */
 
 #pragma once
 
-#include "../risk_types.hpp"
-#include "../risk_events.hpp"
-#include "../risk_config.hpp"
-#include "core/time.hpp"
-
 #include <string>
 #include <unordered_map>
-#include <map>
-#include <vector>
-#include <functional>
 #include <mutex>
 #include <atomic>
+#include <chrono>
+#include <deque>
 #include <memory>
+#include <vector>
 #include <optional>
-#include <concepts>
-#include <ranges>
-#include <algorithm>
-#include <shared_mutex>
+#include <string_view>
 
 namespace trading::risk {
 
 /**
- * @concept MetricProvider
- * @brief Concept for objects that can provide metric values
+ * @brief Risk state for individual symbols
  */
-template<typename T>
-concept MetricProvider = requires(T t, const std::string& name) {
-    { t.getMetric(name) } -> std::convertible_to<double>;
+enum class SymbolRiskState : uint8_t {
+    OK = 0,
+    WARNING = 1,
+    HALTED = 2
 };
 
 /**
- * @class CircuitBreaker
- * @brief High-performance circuit breaker for trading systems
- * 
- * Implements the Circuit Breaker pattern with C++20 features for optimal performance.
- * Monitors trading metrics and automatically halts trading when thresholds are breached.
+ * @brief Execution limits configuration per symbol
  */
-class CircuitBreaker {
-public:
-    using StateChangeCallback = std::function<void(CircuitBreakerState, CircuitBreakerState, std::string_view)>;
-    using MetricMap = std::unordered_map<std::string, double>;
+struct ExecutionLimits {
+    double max_order_size = 100000.0;
+    double max_market_impact = 0.002;              // 0.2%
+    double max_price_deviation = 0.05;             // 5%
+    double max_participation_rate = 0.2;           // 20% of volume
     
-    /**
-     * @brief Constructor with configuration
-     * @param config Risk configuration containing circuit breaker settings
-     */
-    explicit CircuitBreaker(const RiskConfig& config);
+    // Circuit breaker thresholds
+    double cb_slippage_threshold = 0.005;          // 0.5%
+    double cb_rejection_rate_threshold = 0.1;      // 10%
     
-    /**
-     * @brief Initialize the circuit breaker
-     * @return true if initialization successful
-     */
-    [[nodiscard]] bool initialize() noexcept;
+    int max_orders_per_second = 10;
+    int cb_max_consecutive_rejections = 5;
+    bool allow_market_orders = true;
+    bool enable_monitoring = true;
     
-    /**
-     * @brief Evaluate metrics and determine circuit breaker state
-     * @param metrics Map of metric names to values
-     * @return New circuit breaker state
-     */
-    [[nodiscard]] CircuitBreakerState evaluateMetrics(const MetricMap& metrics) noexcept;
-    
-    /**
-     * @brief Update a specific metric value
-     * @param metricName Name of the metric
-     * @param value New metric value
-     * @return New circuit breaker state
-     */
-    [[nodiscard]] CircuitBreakerState updateMetric(std::string_view metricName, double value) noexcept;
-    
-    /**
-     * @brief Get current circuit breaker state (thread-safe)
-     * @return Current state
-     */
-    [[nodiscard]] CircuitBreakerState getState() const noexcept {
-        return state_.load(std::memory_order_acquire);
+    // Factory methods for common configurations
+    [[nodiscard]] static ExecutionLimits conservative() noexcept {
+        return ExecutionLimits{
+            .max_order_size = 50000.0,
+            .max_market_impact = 0.001,
+            .cb_slippage_threshold = 0.003
+        };
     }
     
-    /**
-     * @brief Manually trigger the circuit breaker
-     * @param reason Reason for manual triggering
-     * @return true if successful
-     */
-    [[nodiscard]] bool manualTrigger(std::string_view reason) noexcept;
-    
-    /**
-     * @brief Reset circuit breaker to normal state
-     * @return true if successful
-     */
-    [[nodiscard]] bool reset() noexcept;
-    
-    /**
-     * @brief Check if trading is currently allowed
-     * @return true if trading allowed
-     */
-    [[nodiscard]] bool isTradingAllowed() const noexcept;
-    
-    /**
-     * @brief Register callback for state changes
-     * @param callback Function to call on state changes
-     */
-    void registerStateChangeCallback(StateChangeCallback callback);
-    
-    /**
-     * @brief Update circuit breaker configuration
-     * @param newConfig New configuration
-     * @return true if update successful
-     */
-    [[nodiscard]] bool updateConfiguration(const CircuitBreakerConfig& newConfig) noexcept;
-    
-    /**
-     * @brief Get current configuration (thread-safe copy)
-     * @return Current configuration
-     */
-    [[nodiscard]] CircuitBreakerConfig getConfiguration() const;
-    
-    /**
-     * @brief Get seconds until automatic reset
-     * @return Seconds until reset, or 0 if not applicable
-     */
-    [[nodiscard]] std::chrono::seconds getTimeUntilReset() const noexcept;
-    
-    /**
-     * @brief Get trigger history (thread-safe copy)
-     * @return Vector of historical trigger events
-     */
-    [[nodiscard]] std::vector<CircuitBreakerEvent> getTriggerHistory() const;
-    
-    /**
-     * @brief Get current metric values (thread-safe copy)
-     * @return Map of current metrics
-     */
-    [[nodiscard]] MetricMap getCurrentMetrics() const;
-    
-    /**
-     * @brief Check if a specific metric is in warning state
-     * @param metricName Name of the metric to check
-     * @return true if metric is in warning state
-     */
-    [[nodiscard]] bool isMetricInWarning(std::string_view metricName) const noexcept;
-    
-    /**
-     * @brief Get detailed status information
-     * @return Detailed status as string
-     */
-    [[nodiscard]] std::string getDetailedStatus() const;
-
-private:
-    // Configuration and state
-    mutable std::shared_mutex configMutex_;
-    CircuitBreakerConfig config_;
-    
-    // Atomic state for lockless reads
-    std::atomic<CircuitBreakerState> state_{CircuitBreakerState::OFF};
-    std::atomic<std::chrono::system_clock::time_point> triggerTime_;
-    std::atomic<std::chrono::system_clock::time_point> coolingStartTime_;
-    std::atomic<int> triggerCount_{0};
-    std::atomic<std::chrono::system_clock::time_point> triggerCountResetTime_;
-    
-    // Protected data with fine-grained locking
-    mutable std::shared_mutex metricsMutex_;
-    MetricMap currentMetrics_;
-    
-    mutable std::shared_mutex historyMutex_;
-    std::vector<CircuitBreakerEvent> triggerHistory_;
-    
-    mutable std::shared_mutex callbackMutex_;
-    std::vector<StateChangeCallback> stateChangeCallbacks_;
-    
-    std::string lastTriggerReason_;
-    
-    // Private helper methods
-    [[nodiscard]] bool isMetricCritical(std::string_view metricName, double value, double& threshold) const noexcept;
-    [[nodiscard]] bool isMetricWarning(std::string_view metricName, double value, double& threshold) const noexcept;
-    
-    void setState(CircuitBreakerState newState, std::string_view reason) noexcept;
-    [[nodiscard]] bool shouldAutoReset() const noexcept;
-    void checkTriggerCount() noexcept;
-    
-    [[nodiscard]] CircuitBreakerEvent createEvent(CircuitBreakerState oldState, 
-                                                 CircuitBreakerState newState,
-                                                 std::string_view metricName = "",
-                                                 double threshold = 0.0, 
-                                                 double value = 0.0) const;
-    
-    void addToHistory(CircuitBreakerEvent event);
-    void notifyCallbacks(CircuitBreakerState oldState, CircuitBreakerState newState, std::string_view reason);
-    
-    // Template helper for metric evaluation
-    template<typename Predicate>
-    [[nodiscard]] std::optional<std::pair<std::string, double>> 
-    findMetricViolation(const MetricMap& metrics, Predicate pred) const;
+    [[nodiscard]] static ExecutionLimits aggressive() noexcept {
+        return ExecutionLimits{
+            .max_order_size = 200000.0,
+            .max_market_impact = 0.005,
+            .cb_slippage_threshold = 0.01
+        };
+    }
 };
 
-// Template implementation
-template<typename Predicate>
-std::optional<std::pair<std::string, double>> 
-CircuitBreaker::findMetricViolation(const MetricMap& metrics, Predicate pred) const {
-    std::shared_lock lock(configMutex_);
+/**
+ * @brief Thread-safe market impact tracker using RAII
+ */
+class MarketImpactTracker {
+public:
+    static constexpr size_t MAX_HISTORY = 50;
     
-    for (const auto& [metricName, value] : metrics) {
-        if (auto it = config_.metricThresholds.find(metricName); 
-            it != config_.metricThresholds.end()) {
-            double threshold = 0.0;
-            if (pred(metricName, value, threshold)) {
-                return std::make_pair(metricName, threshold);
-            }
-        }
-    }
-    return std::nullopt;
-}
+    /**
+     * @brief Record new market impact data
+     * @param quantity Executed quantity
+     * @param impact Price impact as ratio (absolute value will be used)
+     */
+    void update(double quantity, double impact);
+    
+    /**
+     * @brief Get volume-weighted average market impact
+     * @return Average impact ratio, 0.0 if no history
+     */
+    [[nodiscard]] double getAverageImpact() const;
+    
+    /**
+     * @brief Clear all impact history
+     */
+    void reset();
+    
+    /**
+     * @brief Get number of impact records stored
+     * @return History size
+     */
+    [[nodiscard]] size_t size() const;
+    
+    /**
+     * @brief Check if tracker has sufficient data for reliable metrics
+     * @return true if sufficient history exists
+     */
+    [[nodiscard]] bool hasSufficientHistory() const { return size() >= 5; }
+
+private:
+    mutable std::mutex mutex_;
+    std::deque<std::pair<double, double>> impact_history_; // {quantity, impact}
+};
+
+/**
+ * @brief Per-symbol risk monitor with automatic state management
+ */
+class SymbolRiskMonitor {
+public:
+    /**
+     * @brief Construct monitor for specific symbol
+     * @param symbol Trading symbol to monitor
+     */
+    explicit SymbolRiskMonitor(std::string symbol);
+    
+    // Non-copyable, movable
+    SymbolRiskMonitor(const SymbolRiskMonitor&) = delete;
+    SymbolRiskMonitor& operator=(const SymbolRiskMonitor&) = delete;
+    SymbolRiskMonitor(SymbolRiskMonitor&&) = default;
+    SymbolRiskMonitor& operator=(SymbolRiskMonitor&&) = default;
+    
+    /**
+     * @brief Check if symbol trading is currently halted
+     * @return true if halted
+     */
+    [[nodiscard]] bool isHalted() const;
+    
+    /**
+     * @brief Halt trading for this symbol
+     * @param reason Descriptive reason for halt
+     * @return true if halt was successful (wasn't already halted)
+     */
+    bool halt(std::string_view reason);
+    
+    /**
+     * @brief Reset symbol to normal trading state
+     */
+    void reset();
+    
+    /**
+     * @brief Update market impact metrics
+     * @param quantity Executed quantity
+     * @param impact Price impact observed
+     */
+    void updateMarketImpact(double quantity, double impact);
+    
+    /**
+     * @brief Get current market impact rate
+     * @return Volume-weighted average market impact
+     */
+    [[nodiscard]] double getMarketImpact() const;
+    
+    /**
+     * @brief Get current risk state
+     * @return Current state (OK, WARNING, HALTED)
+     */
+    [[nodiscard]] SymbolRiskState getState() const;
+    
+    /**
+     * @brief Get halt reason if currently halted
+     * @return Halt reason, empty if not halted
+     */
+    [[nodiscard]] std::string getHaltReason() const;
+    
+    /**
+     * @brief Get symbol this monitor tracks
+     * @return Symbol name
+     */
+    [[nodiscard]] const std::string& getSymbol() const noexcept { return symbol_; }
+    
+    /**
+     * @brief Get time when symbol was halted (if halted)
+     * @return Optional halt time
+     */
+    [[nodiscard]] std::optional<std::chrono::system_clock::time_point> getHaltTime() const;
+
+private:
+    const std::string symbol_;
+    mutable std::mutex mutex_;
+    SymbolRiskState state_{SymbolRiskState::OK};
+    std::string halt_reason_;
+    std::chrono::system_clock::time_point halt_time_;
+    MarketImpactTracker impact_tracker_;
+};
+
+/**
+ * @brief Main circuit breaker manager with clean interface
+ */
+class CircuitBreakerManager {
+public:
+    CircuitBreakerManager() = default;
+    
+    // Non-copyable, non-movable for safety
+    CircuitBreakerManager(const CircuitBreakerManager&) = delete;
+    CircuitBreakerManager& operator=(const CircuitBreakerManager&) = delete;
+    CircuitBreakerManager(CircuitBreakerManager&&) = delete;
+    CircuitBreakerManager& operator=(CircuitBreakerManager&&) = delete;
+    
+    /**
+     * @brief Initialize circuit breaker system
+     * @return true if successful
+     */
+    [[nodiscard]] bool initialize();
+    
+    // ========================================================================
+    // CORE INTERFACE - What ExecutionRiskManager needs
+    // ========================================================================
+    
+    /**
+     * @brief Check if circuit breaker is triggered for symbol
+     * @param symbol Symbol to check
+     * @return true if circuit breaker is active
+     */
+    [[nodiscard]] bool isTriggeredForSymbol(std::string_view symbol) const;
+    
+    /**
+     * @brief Manually trigger circuit breaker for symbol
+     * @param symbol Symbol to halt
+     * @param reason Descriptive reason
+     * @return true if successfully triggered
+     */
+    bool triggerForSymbol(std::string_view symbol, std::string_view reason);
+    
+    /**
+     * @brief Update market impact and auto-check thresholds
+     * @param symbol Trading symbol
+     * @param quantity Executed quantity
+     * @param impact Price impact observed
+     */
+    void updateMarketImpact(std::string_view symbol, double quantity, double impact);
+    
+    /**
+     * @brief Get execution limits for symbol
+     * @param symbol Symbol to query
+     * @return ExecutionLimits (default limits if symbol not configured)
+     */
+    [[nodiscard]] ExecutionLimits getExecutionLimits(std::string_view symbol) const;
+    
+    // ========================================================================
+    // CONFIGURATION INTERFACE
+    // ========================================================================
+    
+    /**
+     * @brief Set execution limits for specific symbol
+     * @param symbol Symbol to configure
+     * @param limits New limits
+     */
+    void setExecutionLimits(std::string_view symbol, const ExecutionLimits& limits);
+    
+    /**
+     * @brief Set default limits for unconfigured symbols
+     * @param limits Default limits
+     */
+    void setDefaultLimits(const ExecutionLimits& limits);
+    
+    /**
+     * @brief Reset specific symbol to normal state
+     * @param symbol Symbol to reset
+     */
+    void resetSymbol(std::string_view symbol);
+    
+    /**
+     * @brief Reset all symbols to normal state
+     */
+    void resetAll();
+    
+    // ========================================================================
+    // EMERGENCY CONTROLS
+    // ========================================================================
+    
+    /**
+     * @brief Trigger global emergency stop
+     */
+    void emergencyStop() noexcept;
+    
+    /**
+     * @brief Resume all trading
+     */
+    void resumeTrading() noexcept;
+    
+    /**
+     * @brief Check if global emergency stop is active
+     * @return true if emergency stop active
+     */
+    [[nodiscard]] bool isEmergencyStop() const noexcept;
+    
+    // ========================================================================
+    // MONITORING INTERFACE
+    // ========================================================================
+    
+    /**
+     * @brief Get list of currently halted symbols
+     * @return Vector of halted symbol names
+     */
+    [[nodiscard]] std::vector<std::string> getHaltedSymbols() const;
+    
+    /**
+     * @brief Get list of all tracked symbols
+     * @return Vector of all monitored symbol names
+     */
+    [[nodiscard]] std::vector<std::string> getTrackedSymbols() const;
+    
+    /**
+     * @brief Get current market impact rate for symbol
+     * @param symbol Symbol to check
+     * @return Market impact rate, 0.0 if symbol not tracked
+     */
+    [[nodiscard]] double getMarketImpactRate(std::string_view symbol) const;
+    
+    /**
+     * @brief Get detailed status summary
+     * @return Multi-line status string
+     */
+    [[nodiscard]] std::string getStatusSummary() const;
+    
+    /**
+     * @brief Get risk state for specific symbol
+     * @param symbol Symbol to check
+     * @return Current SymbolRiskState
+     */
+    [[nodiscard]] SymbolRiskState getSymbolState(std::string_view symbol) const;
+
+private:
+    mutable std::mutex monitors_mutex_;
+    std::unordered_map<std::string, std::unique_ptr<SymbolRiskMonitor>> symbol_monitors_;
+    
+    mutable std::mutex limits_mutex_;
+    std::unordered_map<std::string, ExecutionLimits> symbol_limits_;
+    ExecutionLimits default_limits_;
+    
+    std::atomic<bool> global_emergency_stop_{false};
+    
+    /**
+     * @brief Get or create symbol monitor (thread-safe)
+     * @param symbol Symbol name
+     * @return Reference to monitor
+     */
+    SymbolRiskMonitor& getOrCreateMonitor(const std::string& symbol);
+    
+    /**
+     * @brief Get existing monitor (const version)
+     * @param symbol Symbol name
+     * @return Optional reference to monitor
+     */
+    [[nodiscard]] std::optional<std::reference_wrapper<const SymbolRiskMonitor>> 
+    getMonitor(std::string_view symbol) const;
+};
+
+/**
+ * @brief High-level execution risk manager
+ * 
+ * Simplified interface that integrates circuit breaker with execution risk management.
+ * This is the main class that your execution engine should use.
+ */
+// class ExecutionRiskManager {
+// public:
+//     /**
+//      * @brief Construct with configuration
+//      * @param config Risk configuration (can be simple struct)
+//      */
+//     explicit ExecutionRiskManager(const ExecutionLimits& default_limits = {});
+    
+//     // ========================================================================
+//     // MAIN INTERFACE - What your execution engine needs
+//     // ========================================================================
+    
+//     /**
+//      * @brief Update market impact and check all thresholds
+//      * @param symbol Trading symbol
+//      * @param executed_quantity Quantity that was executed
+//      * @param price_impact Price impact observed (as ratio)
+//      */
+//     void updateMarketImpact(std::string_view symbol, double executed_quantity, double price_impact);
+    
+//     /**
+//      * @brief Check if circuit breaker prevents trading for symbol
+//      * @param symbol Symbol to check
+//      * @return true if circuit breaker is triggered (halt trading)
+//      */
+//     [[nodiscard]] bool isCircuitBreakerTriggered(std::string_view symbol) const;
+    
+//     /**
+//      * @brief Get execution limits for symbol
+//      * @param symbol Symbol to get limits for
+//      * @return ExecutionLimits configuration
+//      */
+//     [[nodiscard]] ExecutionLimits getExecutionLimits(std::string_view symbol) const;
+    
+//     /**
+//      * @brief Pre-execution risk check
+//      * @param symbol Trading symbol
+//      * @param quantity Intended order quantity
+//      * @param current_price Current market price
+//      * @return true if execution is allowed
+//      */
+//     [[nodiscard]] bool checkExecutionAllowed(std::string_view symbol, double quantity, double current_price) const;
+    
+//     // ========================================================================
+//     // CONFIGURATION
+//     // ========================================================================
+    
+//     /**
+//      * @brief Set limits for specific symbol
+//      * @param symbol Symbol to configure
+//      * @param limits New limits
+//      */
+//     void setLimitsForSymbol(std::string_view symbol, const ExecutionLimits& limits);
+    
+//     /**
+//      * @brief Reset symbol to normal state
+//      * @param symbol Symbol to reset
+//      */
+//     void resetSymbol(std::string_view symbol);
+    
+//     /**
+//      * @brief Emergency stop all trading
+//      */
+//     void emergencyStop() noexcept;
+    
+//     /**
+//      * @brief Resume normal trading operations
+//      */
+//     void resumeTrading() noexcept;
+    
+//     // ========================================================================
+//     // MONITORING
+//     // ========================================================================
+    
+//     /**
+//      * @brief Get comprehensive status report
+//      * @return Detailed status string
+//      */
+//     [[nodiscard]] std::string getStatus() const;
+    
+//     /**
+//      * @brief Get current market impact rate for symbol
+//      * @param symbol Symbol to check
+//      * @return Market impact rate
+//      */
+//     [[nodiscard]] double getMarketImpactRate(std::string_view symbol) const;
+    
+//     /**
+//      * @brief Get all symbols currently being monitored
+//      * @return Vector of symbol names
+//      */
+//     [[nodiscard]] std::vector<std::string> getMonitoredSymbols() const;
+    
+//     /**
+//      * @brief Check if emergency stop is active
+//      * @return true if global emergency stop is active
+//      */
+//     [[nodiscard]] bool isEmergencyStopActive() const noexcept;
+
+// private:
+//     CircuitBreakerManager circuit_breaker_manager_;
+//     std::atomic<bool> risk_manager_emergency_stop_{false};
+// };
 
 } // namespace trading::risk

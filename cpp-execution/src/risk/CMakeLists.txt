@@ -4,7 +4,6 @@
 file(GLOB_RECURSE RISK_SOURCES
     "*.cpp"
     "interfaces/*.cpp"
-    "portfolio/*.cpp"
     "posttrade/*.cpp"
     "pretrade/*.cpp"
     "service/*.cpp"
