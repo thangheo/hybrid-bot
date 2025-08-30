@@ -128,6 +128,9 @@ double PriceRangeFilter::getReasonablePriceRange(const std::string& symbol) cons
 }
 
 // SequenceGapFilter implementation
+SequenceGapFilter::SequenceGapFilter(int max_gap) : max_gap_(max_gap) {
+}
+
 bool SequenceGapFilter::filter(OrderBookUpdate& update) {
     std::string key = update.exchangeId.toString() + ":" + update.tradingPair;
     
