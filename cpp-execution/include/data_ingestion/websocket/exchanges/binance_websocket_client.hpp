@@ -15,10 +15,20 @@
 #include <atomic>
 #include <memory>
 #include <thread>
+#include <boost/beast/core.hpp>
+#include <boost/beast/websocket.hpp>
+#include <boost/beast/websocket/ssl.hpp>
+#include <boost/asio/ssl.hpp>
+#include <boost/asio/ip/tcp.hpp>
 
 namespace trading {
 namespace data_ingestion {
 
+namespace beast = boost::beast;
+namespace net = boost::asio;
+namespace ssl = boost::asio::ssl;
+namespace websocket = beast::websocket;
+using tcp = boost::asio::ip::tcp;
 using json = nlohmann::json;
 
 class BinanceWebSocketClient : public ClientInterface {
@@ -66,7 +76,15 @@ private:
     std::string host_;
     std::string port_;
     std::string endpoint_;
+     // Add these members
+    net::io_context io_context_;
+    std::unique_ptr<ssl::context> ssl_context_;
+    std::unique_ptr<websocket::stream<ssl::stream<tcp::socket>>> ws_stream_;
+    std::thread io_thread_;
+    std::atomic<bool> keep_running_{false};
+    mutable std::mutex write_mutex_;
     
+    void runIoLoop();
     // Connection state
     std::atomic<ConnectionStatus> status_{ConnectionStatus::DISCONNECTED};
     std::atomic<bool> connected_{false};

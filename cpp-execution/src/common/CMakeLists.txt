@@ -2,6 +2,7 @@
 
 # Define library
 add_library(common
+    exchange_types.cpp
     logger.cpp
     zeromq_client.cpp
 )
