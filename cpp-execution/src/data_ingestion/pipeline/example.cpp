@@ -71,9 +71,9 @@ void printPipelineStatus(const PipelineStatus& status) {
     std::cout << "Stage States:" << std::endl;
     for (const auto& [stageName, state] : stageStates) {
         std::cout << "  " << stageName << ": " << 
-            (state == StageState::RUNNING ? "RUNNING" :
-             state == StageState::STOPPED ? "STOPPED" :
-             state == StageState::ERROR ? "ERROR" : "UNKNOWN") << std::endl;
+            (state == PipelineStatus::StageState::RUNNING ? "RUNNING" :
+             state == PipelineStatus::StageState::STOPPED ? "STOPPED" :
+             state == PipelineStatus::StageState::ERROR ? "ERROR" : "UNKNOWN") << std::endl;
     }
     
     if (!status.getLastError().empty()) {

@@ -1,11 +1,24 @@
-// pipeline.hpp
 #include <thread>
 #include <atomic>
 #include <vector>
+#include <unordered_map>
+#include <chrono>
+#include <memory>
+#include <stdexcept>
 #include <boost/lockfree/spsc_queue.hpp>
-#include <tbb/concurrent_queue.h>
+#include "core/market_types.hpp"
+#include "data_ingestion/orderbook/order_book_types.hpp"
+#include "data_ingestion/data_quality/data_quality.hpp"
+#include "data_ingestion/time/synchronizer.hpp"
+// normalizer
+#include "data_ingestion/normalization/normalizer.hpp"
+// #include "data_ingestion/orderbook/order_book_manager.hpp"
+// #include "data_ingestion/publishers/normalized_data_publisher.hpp"
 
-
+using namespace trading::data_ingestion;
+using namespace trading::core;
+using namespace trading::data_ingestion::time;
+    
 // Lock-free queue between pipeline stages
 template<typename T>
 class PipelineQueue {
@@ -18,6 +31,10 @@ public:
     
     bool pop(T& item) {
         return queue.pop(item);
+    }
+    
+    bool empty() const {
+        return queue.empty();
     }
     
 private:
@@ -46,48 +63,39 @@ public:
             OutputT output;
             
             while (running.load()) {
-                if (inputQueue->pop(input)) {
-                    try {
-                        process(input, output);
-                        if (outputQueue && !outputQueue->push(output)) {
-                            // Output queue full, handle backpressure
-                            handleBackpressure();
+                if (inputQueue && inputQueue->pop(input)) {
+                    process(input, output);
+                    
+                    if (outputQueue) {
+                        // Retry if queue is full
+                        while (running.load() && !outputQueue->push(output)) {
+                            std::this_thread::yield();
                         }
-                    } catch (const std::exception& e) {
-                        // Log exception
-                        std::cerr << "Exception in pipeline stage: " << e.what() << std::endl;
                     }
                 } else {
-                    // No input available, yield
-                    std::this_thread::yield();
+                    // Brief pause when no input available
+                    std::this_thread::sleep_for(std::chrono::microseconds(10));
                 }
             }
         });
     }
     
     void stop() {
-        if (!running.load()) return;
-        
-        running.store(false);
-        if (thread.joinable()) {
-            thread.join();
+        if (running.load()) {
+            running.store(false);
+            if (thread.joinable()) {
+                thread.join();
+            }
         }
     }
     
-protected:
-    virtual void handleBackpressure() {
-        // Default implementation: just wait a bit
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    }
-    
+private:
     PipelineQueue<InputT>* inputQueue;
     PipelineQueue<OutputT>* outputQueue;
     std::atomic<bool> running;
     std::thread thread;
 };
-
-// Implementation of pipeline stages
-
+ 
 // 1. Protocol Adapter Stage
 class ProtocolAdapterStage : public PipelineStage<ExchangeData, OrderBookUpdate> {
 public:
@@ -155,30 +163,107 @@ private:
 // 4. Timestamp Synchronization Stage
 class TimestampStage : public PipelineStage<OrderBookUpdate, OrderBookUpdate> {
 public:
-    TimestampStage(PipelineQueue<OrderBookUpdate>* input, 
-                  PipelineQueue<OrderBookUpdate>* output,
-                  std::shared_ptr<TimestampSynchronizer> synchronizer)
-        : PipelineStage(input, output), synchronizer(synchronizer) {}
-    
+    TimestampStage(PipelineQueue<OrderBookUpdate>* input,
+                   PipelineQueue<OrderBookUpdate>* output,
+                   std::shared_ptr<TimeSynchronizer> synchronizer)
+        : PipelineStage(input, output), synchronizer_(synchronizer) {}
+
     void process(const OrderBookUpdate& input, OrderBookUpdate& output) override {
-        output = input;  // Copy the input
+        output = input; // Copy the input
         
-        // Correct timestamps
-        output.processedTime = TimestampSynchronizer::getCurrentTime();
-        output.exchangeTime = synchronizer->correctTimestamp(
-            output.exchangeTime, output.receivedTime, output.exchangeId);
+        // DON'T modify receivedTimestamp - keep original receive time
+        auto receivedTimePoint = TimePoint(std::chrono::milliseconds(output.receivedTimestamp));
+        
+        // Handle exchange timestamp formats
+        uint64_t exchangeTimestampMs;
+        if (output.exchange_timestamp > 1000000000000ULL) {
+            exchangeTimestampMs = output.exchange_timestamp;
+        } else if (output.exchange_timestamp > 1000000000ULL) {
+            exchangeTimestampMs = output.exchange_timestamp * 1000;
+        } else {
+            exchangeTimestampMs = output.receivedTimestamp;
+        }
+        
+        // Normalize exchange timestamp
+        auto normalizedTimePoint = synchronizer_->normalizeExchangeTimeMs(
+            output.exchangeId.toString(),
+            exchangeTimestampMs,
+            receivedTimePoint);
+        
+        output.exchange_timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
+            normalizedTimePoint.time_since_epoch()).count();
+        
+        // Add calibration sample
+        synchronizer_->addExchangeTimeSample(
+            output.exchangeId.toString(),
+            exchangeTimestampMs,
+            receivedTimePoint);
     }
-    
+
 private:
-    std::shared_ptr<TimestampSynchronizer> synchronizer;
+    std::shared_ptr<TimeSynchronizer> synchronizer_;
 };
 
+// Alternative implementation if OrderBookUpdate uses TimePoint directly
+class TimestampStageTimePoint : public PipelineStage<OrderBookUpdate, OrderBookUpdate> {
+public:
+    TimestampStageTimePoint(PipelineQueue<OrderBookUpdate>* input,
+                           PipelineQueue<OrderBookUpdate>* output,
+                           std::shared_ptr<TimeSynchronizer> synchronizer)
+        : PipelineStage(input, output), synchronizer_(synchronizer) {}
+
+    void process(const OrderBookUpdate& input, OrderBookUpdate& output) override {
+        output = input; // Copy the input
+        
+        // Add calibration sample
+        if (output.exchange_timestamp > 0) { // Assuming uint64_t milliseconds
+            synchronizer_->addExchangeTimeSample(
+                output.exchangeId.toString(),
+                output.exchange_timestamp,
+                TimePoint(std::chrono::milliseconds(output.receivedTimestamp)));
+        }
+    }
+
+private:
+    std::shared_ptr<TimeSynchronizer> synchronizer_;
+};
+
+// Usage example in pipeline setup:
+/*
+void setupNormalizationPipeline() {
+    // Create time synchronizer
+    TimeSynchronizer::Config syncConfig;
+    syncConfig.ntpServers = {"time.cloudflare.com", "time.google.com"};
+    syncConfig.syncInterval = std::chrono::seconds(300); // 5 minutes
+    syncConfig.enableExchangeCalibration = true;
+    
+    auto synchronizer = createTimeSynchronizer(syncConfig);
+    synchronizer->start();
+    
+    // Create pipeline stages
+    auto timestampStage = std::make_unique<TimestampStage>(
+        inputQueue.get(),
+        outputQueue.get(),
+        synchronizer);
+    
+    // Register status monitoring
+    synchronizer->onSyncStatusChange([](SyncStatus status) {
+        if (status == SyncStatus::ERROR) {
+            // Log warning about time sync issues
+            std::cerr << "Warning: Time synchronization degraded!" << std::endl;
+        }
+    });
+    
+    // Add to pipeline
+    pipeline.addStage(std::move(timestampStage));
+}
+*/
 // 5. Publisher Stage
 class PublisherStage : public PipelineStage<OrderBookUpdate, int> {
 public:
     PublisherStage(PipelineQueue<OrderBookUpdate>* input, 
                   PipelineQueue<int>* output,  // No output needed
-                  std::shared_ptr<NormalizedDataPublisher> publisher,
+                  std::shared_ptr<Normalizer> publisher,
                   std::shared_ptr<OrderBookManager> manager)
         : PipelineStage(input, output), publisher(publisher), orderBookManager(manager) {}
     
@@ -230,7 +315,7 @@ public:
         std::shared_ptr<AdapterFactory> adapterFactory,
         std::shared_ptr<OrderBookManager> orderBookManager,
         std::shared_ptr<DataQualityControl> qualityControl,
-        std::shared_ptr<TimestampSynchronizer> synchronizer,
+        std::shared_ptr<TimeSynchronizer> synchronizer,
         std::shared_ptr<NormalizedDataPublisher> publisher) 
     {
         // Create queues
