@@ -64,6 +64,7 @@ struct OrderBookUpdate {
     std::string tradingPair;
     int64_t exchange_timestamp;
     int64_t receivedTimestamp;
+    // int64_t processedTimestamp{0};  
     int64_t sequence_number;
     bool is_snapshot;
     std::vector<PriceLevel> bids;

@@ -90,7 +90,8 @@
         "generator": "cpp",
         "print": "cpp",
         "scoped_allocator": "cpp",
-        "text_encoding": "cpp"
+        "text_encoding": "cpp",
+        "*.inc": "cpp"
     },
     "cmake.sourceDirectory": "/home/e8/works/hybrid-bot/cpp-execution"
 }

@@ -167,48 +167,6 @@ void OrderBookReconstructor::registerLiquidityFlowMonitor(
         });
     }
 }
-//  bool OrderBookReconstructor::processUpdate(
-//      ExchangeId exchange,
-//      const Symbol& symbol,
-//      const std::vector<PriceLevel>& bids,
-//      const std::vector<PriceLevel>& asks,
-//      uint64_t sequence_number,
-//      Timestamp timestamp) {
-     
-//      if (!initialized_) {
-//          std::cerr << "Error: OrderBookReconstructor not initialized" << std::endl;
-//          return false;
-//      }
-     
-//      // Find order book
-//      std::shared_ptr<OrderBook> order_book;
-//      {
-//          std::lock_guard<std::mutex> lock(mutex_);
-         
-//          OrderBookKey key{exchange, symbol};
-//          auto it = order_books_.find(key);
-         
-//          if (it == order_books_.end()) {
-//              // Order book not found, cannot apply update
-//              std::cerr << "Error: Order book not found for update" << std::endl;
-//              return false;
-//          }
-         
-//          order_book = it->second;
-//      }
-     
-//      // Apply update to order book
-//      if (!order_book->applyUpdate(bids, asks, sequence_number, timestamp)) {
-//          std::cerr << "Error: Failed to apply update to order book" << std::endl;
-//          return false;
-//      }
-     
-//      // Publish updated order book
-//      publishOrderBook(order_book);
-     
-//      return true;
-//  }
- 
  std::shared_ptr<OrderBook> OrderBookReconstructor::getOrderBook(
      ExchangeId exchange, const Symbol& symbol) const {
      
