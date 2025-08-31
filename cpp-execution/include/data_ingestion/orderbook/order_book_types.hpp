@@ -68,10 +68,10 @@ struct OrderBookUpdate {
     std::string tradingPair;
     int64_t exchange_timestamp;
     int64_t receivedTimestamp;
-    // is_snapshot
+    // isSnapshot
     // int64_t processedTimestamp{0};  
-    uint64_t sequence_number;
-    bool is_snapshot;
+    uint64_t sequenceNumber;
+    bool isSnapshot;
     std::vector<PriceLevel> bids;
     std::vector<PriceLevel> asks;
     std::string checksum;  // For data integrity validation
@@ -85,12 +85,12 @@ struct OrderBookUpdate {
     OrderBookUpdate() = default;
     OrderBookUpdate(const ExchangeId& exchangeId, const std::string& tradingPair,
                     int64_t exchange_timestamp, int64_t receivedTimestamp,
-                    uint64_t sequence_number, bool is_snapshot,
+                    uint64_t sequenceNumber, bool isSnapshot,
                     const std::vector<PriceLevel>& bids,
                     const std::vector<PriceLevel>& asks)
         : exchangeId(exchangeId), tradingPair(tradingPair),
           exchange_timestamp(exchange_timestamp), receivedTimestamp(receivedTimestamp),
-          sequence_number(sequence_number), is_snapshot(is_snapshot),
+          sequenceNumber(sequenceNumber), isSnapshot(isSnapshot),
           bids(bids), asks(asks) {}
     // Add other constructors or methods as needed
     // For example, a constructor that takes a MarketDataUpdate

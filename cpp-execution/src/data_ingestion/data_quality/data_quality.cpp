@@ -166,26 +166,26 @@ bool SequenceGapFilter::filter(OrderBookUpdate& update) {
     auto it = last_sequence_numbers_.find(key);
     if (it == last_sequence_numbers_.end()) {
         // First update for this symbol
-        last_sequence_numbers_[key] = update.sequence_number;
+        last_sequence_numbers_[key] = update.sequenceNumber;
         return true;
     }
     
     // Check for sequence gap
-    if (update.sequence_number <= it->second) {
+    if (update.sequenceNumber <= it->second) {
         // Out of order or duplicate
-        std::cerr << "Sequence number out of order: " << update.sequence_number 
+        std::cerr << "Sequence number out of order: " << update.sequenceNumber 
                   << " <= " << it->second << std::endl;
         return false;
     }
     
-    if (update.sequence_number > it->second + 1 && !update.is_snapshot) {
+    if (update.sequenceNumber > it->second + 1 && !update.isSnapshot) {
         // Gap detected - may need to request a snapshot
         std::cerr << "Sequence gap detected: " << it->second 
-                  << " -> " << update.sequence_number << std::endl;
+                  << " -> " << update.sequenceNumber << std::endl;
         // For now, we'll accept it but log the warning
     }
     
-    last_sequence_numbers_[key] = update.sequence_number;
+    last_sequence_numbers_[key] = update.sequenceNumber;
     return true;
 }
 

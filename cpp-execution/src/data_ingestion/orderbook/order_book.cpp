@@ -78,10 +78,10 @@ OrderBook::OrderBook(const ExchangeId& exchangeId, const std::string& tradingPai
 
 bool OrderBook::applySnapshot(const std::vector<PriceLevel>& bids, 
                             const std::vector<PriceLevel>& asks,
-                            uint64_t sequence_number,
+                            uint64_t sequenceNumber,
                             Timestamp timestamp) {
     // Skip older snapshots
-    if (sequence_number <= sequence_number_) {
+    if (sequenceNumber <= sequence_number_) {
         return false;
     }
     
@@ -95,7 +95,7 @@ bool OrderBook::applySnapshot(const std::vector<PriceLevel>& bids,
         .exchangeId = exchangeId_,
         .tradingPair = symbol_.toString(),
         .timestamp = timestamp,
-        .sequence_number = sequence_number
+        .sequenceNumber = sequenceNumber
     };
     
     // Clear existing book
@@ -123,7 +123,7 @@ bool OrderBook::applySnapshot(const std::vector<PriceLevel>& bids,
     }
     
     // Update metadata
-    sequence_number_ = sequence_number;
+    sequence_number_ = sequenceNumber;
     timestamp_ = timestamp;
     is_valid_ = true;
     
@@ -139,22 +139,22 @@ bool OrderBook::applySnapshot(const std::vector<PriceLevel>& bids,
 
 bool OrderBook::applyUpdate(const std::vector<PriceLevel>& bids,
                           const std::vector<PriceLevel>& asks,
-                          uint64_t sequence_number,
+                          uint64_t sequenceNumber,
                           Timestamp timestamp) {
     // Skip out-of-sequence updates
-    if (sequence_number <= sequence_number_) {
+    if (sequenceNumber <= sequence_number_) {
         return false;
     }
     
     // Detect sequence gaps
-    if (is_valid_ && sequence_number > sequence_number_ + 1) {
+    if (is_valid_ && sequenceNumber > sequence_number_ + 1) {
         // We missed some updates, invalidate the book
         is_valid_ = false;
         std::cerr << "Sequence gap detected for "
                   << exchangeId_.toString() << " "
                   << symbol_.base << "/" << symbol_.quote
                   << " (" << sequence_number_
-                  << " -> " << sequence_number << ")" << std::endl;
+                  << " -> " << sequenceNumber << ")" << std::endl;
         return false;
     }
     
@@ -168,7 +168,7 @@ bool OrderBook::applyUpdate(const std::vector<PriceLevel>& bids,
         .exchangeId = exchangeId_,
         .tradingPair = symbol_.toString(),
         .timestamp = timestamp,
-        .sequence_number = sequence_number
+        .sequenceNumber = sequenceNumber
     };
     
     // Apply bid updates and track deltas
@@ -184,7 +184,7 @@ bool OrderBook::applyUpdate(const std::vector<PriceLevel>& bids,
     }
     
     // Update metadata
-    sequence_number_ = sequence_number;
+    sequence_number_ = sequenceNumber;
     timestamp_ = timestamp;
     
     // Store this delta if it's not empty
@@ -301,7 +301,7 @@ OrderBookDelta OrderBook::getOrderBookDelta(Timestamp previous_timestamp) const 
         .exchangeId = exchangeId_,
         .tradingPair = symbol_.toString(),
         .timestamp = timestamp_,
-        .sequence_number = sequence_number_
+        .sequenceNumber = sequence_number_
     };
     
     // If timestamp is 0 or very old, return the entire current book as added
@@ -376,8 +376,8 @@ OrderBookUpdate OrderBook::getSnapshot(int depth) const {
     update.tradingPair = symbol_.toString();
     update.exchange_timestamp = timestamp_.time_since_epoch().count();
     update.receivedTimestamp = last_update_time_.time_since_epoch().count();
-    update.sequence_number = sequence_number_;
-    update.is_snapshot = true;
+    update.sequenceNumber = sequence_number_;
+    update.isSnapshot = true;
     
     // Add bid levels
     int bid_count = 0;

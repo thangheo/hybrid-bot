@@ -25,7 +25,7 @@ namespace strategy {
  */
 struct OrderBookMetrics {
     core::Timestamp timestamp;
-    uint64_t sequence_number;
+    uint64_t sequenceNumber;
     core::ExchangeId exchangeId;
     core::Symbol symbol;  // Changed from tradingPair for consistency
     

@@ -18,7 +18,7 @@
 #include <nlohmann/json.hpp>
 #include <mutex>
 #include <unordered_map>
-
+#include "data_ingestion/protocol/exchange_adapter.hpp"
 namespace trading {
 namespace data_ingestion {
 
@@ -28,7 +28,7 @@ namespace data_ingestion {
  * Converts Binance WebSocket and REST API data formats
  * to the standardized OrderBookUpdate format used internally.
  */
-class BinanceAdapter : public IProtocolAdapter {
+class BinanceAdapter : public IProtocolAdapter, public ExchangeAdapter {
 public:
     BinanceAdapter() = default;
     ~BinanceAdapter() override = default;
@@ -40,6 +40,14 @@ public:
     std::string getAdapterName() const override;
     bool isConfigured() const override;
     
+    // ExchangeAdapter interface implementation
+    bool canHandle(const MarketDataUpdate& update) override;
+    OrderBookUpdate normalize(const MarketDataUpdate& update) override;
+    std::string standardizeTradingPair(const std::string& tradingPair) override;
+    ExchangeId getExchangeId() const override;
+    std::string generateChecksum(const std::vector<PriceLevel>& bids,
+                                           const std::vector<PriceLevel>& asks) const;
+
     // Binance-specific methods
     
     /**

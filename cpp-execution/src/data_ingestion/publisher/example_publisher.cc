@@ -36,8 +36,8 @@ OrderBookUpdate generateRandomOrderBookUpdate(const core::ExchangeId& exchangeId
         std::chrono::system_clock::now().time_since_epoch()).count();
     update.receivedTimestamp = update.exchange_timestamp + 5000000;  // 5ms later
     static int64_t seq_num = 1;
-    update.sequence_number = seq_num++;
-    update.is_snapshot = (seq_num % 100 == 1);  // Every 100th update is a snapshot
+    update.sequenceNumber = seq_num++;
+    update.isSnapshot = (seq_num % 100 == 1);  // Every 100th update is a snapshot
     
     // Generate random bids
     int bid_depth = depth_dist(gen);
@@ -135,7 +135,7 @@ void displayStats(const PublisherStats& stats) {
 void handleBackPressure(const OrderBookUpdate& update) {
     std::cout << "Back pressure applied for update from " 
               << update.exchangeId << ":" << update.tradingPair 
-              << " sequence: " << update.sequence_number << std::endl;
+              << " sequence: " << update.sequenceNumber << std::endl;
 }
 
 int main() {

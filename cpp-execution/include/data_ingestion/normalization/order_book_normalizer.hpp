@@ -1,10 +1,10 @@
 #pragma once
 #include "data_ingestion/protocol/adapter_factory.hpp"
-#include "data_ingestion/normalization/binance_exchange_adapter.hpp"
+#include "data_ingestion/protocol/binance_adapter.hpp"
 
 #include "data_ingestion/orderbook/order_book_types.hpp"
 #include "data_ingestion/orderbook/order_book.hpp"
-#include "data_ingestion/protocol/binance_adapter.hpp"
+#include "data_ingestion/protocol/exchange_adapter.hpp"
 #include "core/market_types.hpp"
 #include <memory>
 #include <string>

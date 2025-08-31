@@ -77,7 +77,7 @@ namespace data_ingestion {
       * @param symbol Trading symbol
       * @param bids Vector of bid price levels
       * @param asks Vector of ask price levels
-      * @param sequence_number Sequence number of the snapshot
+      * @param sequenceNumber Sequence number of the snapshot
       * @param timestamp Timestamp of the snapshot
       * @return true if successful, false otherwise
       */
@@ -86,7 +86,7 @@ namespace data_ingestion {
          const Symbol& symbol,
          const std::vector<PriceLevel>& bids,
          const std::vector<PriceLevel>& asks,
-         uint64_t sequence_number,
+         uint64_t sequenceNumber,
          Timestamp timestamp);
      
      /**
@@ -96,7 +96,7 @@ namespace data_ingestion {
       * @param symbol Trading symbol
       * @param bids Vector of bid price levels to update
       * @param asks Vector of ask price levels to update
-      * @param sequence_number Sequence number of the update
+      * @param sequenceNumber Sequence number of the update
       * @param timestamp Timestamp of the update
       * @return true if successful, false otherwise
       */
@@ -105,7 +105,7 @@ namespace data_ingestion {
          const Symbol& symbol,
          const std::vector<PriceLevel>& bids,
          const std::vector<PriceLevel>& asks,
-         uint64_t sequence_number,
+         uint64_t sequenceNumber,
          Timestamp timestamp);
      //registerLiquidityFlowMonitor
      void registerLiquidityFlowMonitor(

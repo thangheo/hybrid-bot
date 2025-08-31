@@ -277,8 +277,8 @@ class OrderBookClient:
                 'trading_pair': order_book.trading_pair,
                 'exchange_timestamp': order_book.exchange_timestamp,
                 'received_timestamp': order_book.received_timestamp,
-                'sequence_number': order_book.sequence_number,
-                'is_snapshot': order_book.is_snapshot,
+                'sequenceNumber': order_book.sequenceNumber,
+                'isSnapshot': order_book.isSnapshot,
                 'bids': [{'price': level.price, 'quantity': level.quantity} 
                          for level in order_book.bids],
                 'asks': [{'price': level.price, 'quantity': level.quantity} 
@@ -1008,8 +1008,8 @@ class ImbalanceSimulator:
             'trading_pair': 'BTC/USDT',
             'exchange_timestamp': timestamp,
             'received_timestamp': timestamp,
-            'sequence_number': self.tick,
-            'is_snapshot': True,
+            'sequenceNumber': self.tick,
+            'isSnapshot': True,
             'bids': bids,
             'asks': asks
         }

@@ -102,12 +102,12 @@
          *previous_book_ = *current_book_;
          
          // Update current book
-         if (update.is_snapshot) {
+         if (update.isSnapshot) {
              current_book_->applySnapshot(
-                 update.bids, update.asks, update.sequence_number, update.timestamp);
+                 update.bids, update.asks, update.sequenceNumber, update.timestamp);
          } else {
              current_book_->applyUpdate(
-                 update.bids, update.asks, update.sequence_number, update.timestamp);
+                 update.bids, update.asks, update.sequenceNumber, update.timestamp);
          }
          
          // Process through liquidity monitor
@@ -174,8 +174,8 @@
      update1.exchangeId = "binance";
      update1.tradingPair = "BTC/USDT";
      update1.timestamp = std::chrono::system_clock::now();
-     update1.sequence_number = 1;
-     update1.is_snapshot = true;
+     update1.sequenceNumber = 1;
+     update1.isSnapshot = true;
      
      // Add some bids and asks
      update1.bids = {
@@ -201,8 +201,8 @@
      update2.exchangeId = "binance";
      update2.tradingPair = "BTC/USDT";
      update2.timestamp = std::chrono::system_clock::now();
-     update2.sequence_number = 2;
-     update2.is_snapshot = true;
+     update2.sequenceNumber = 2;
+     update2.isSnapshot = true;
      
      // Add some bids and asks with imbalance
      update2.bids = {
@@ -228,8 +228,8 @@
      update3.exchangeId = "binance";
      update3.tradingPair = "BTC/USDT";
      update3.timestamp = std::chrono::system_clock::now();
-     update3.sequence_number = 3;
-     update3.is_snapshot = true;
+     update3.sequenceNumber = 3;
+     update3.isSnapshot = true;
      
      // Add some bids and asks with tight spread
      update3.bids = {

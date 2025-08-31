@@ -222,7 +222,7 @@
       * @param curr_bids Current bids
       * @param curr_asks Current asks
       * @param timestamp core::Timestamp for the delta
-      * @param sequence_number Sequence number for the delta
+      * @param sequenceNumber Sequence number for the delta
       * @return Computed order book delta
       */
      virtual OrderBookDelta computeDelta(
@@ -231,7 +231,7 @@
          const std::vector<PriceLevel>& curr_bids,
          const std::vector<PriceLevel>& curr_asks,
          core::Timestamp timestamp,
-         uint64_t sequence_number);
+         uint64_t sequenceNumber);
      
      /**
       * Identify large orders in a set of price levels

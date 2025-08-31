@@ -390,6 +390,7 @@ void BinanceWebSocketClient::onWebSocketMessage(const std::string& message) {
         // Handle direct data format (not wrapped in stream)
         if (data.contains("e")) {
             std::string event_type = data.value("e", "");
+            
             std::string symbol = data.value("s", "");
             
             if (event_type == "depthUpdate") {

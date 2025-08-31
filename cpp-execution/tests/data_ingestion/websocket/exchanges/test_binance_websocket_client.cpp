@@ -150,10 +150,10 @@ protected:
     std::unique_ptr<TestBinanceWebSocketClient> client_;
     
     // Helper to create JSON test messages
-    std::string createOrderBookMessage(const std::string& symbol, bool is_snapshot = false) {
+    std::string createOrderBookMessage(const std::string& symbol, bool isSnapshot = false) {
         json data;
         
-        if (is_snapshot) {
+        if (isSnapshot) {
             data["lastUpdateId"] = 12345678;
             
             // Add some bids

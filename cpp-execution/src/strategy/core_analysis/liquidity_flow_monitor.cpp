@@ -82,7 +82,7 @@ void LiquidityFlowMonitor::processOrderBookDelta(const OrderBookDelta& delta) {
     
     // Update timestamps and sequence number
     last_update_time_ = delta.timestamp;
-    last_sequence_number_ = delta.sequence_number;
+    last_sequence_number_ = delta.sequenceNumber;
 }
 //  void LiquidityFlowMonitor::processOrderBookSnapshots(
 //      const data_ingestion::OrderBook& prev_book,
@@ -268,13 +268,13 @@ void LiquidityFlowMonitor::reset() {
      const std::vector<PriceLevel>& curr_bids,
      const std::vector<PriceLevel>& curr_asks,
      core::Timestamp timestamp,
-     uint64_t sequence_number) {
+     uint64_t sequenceNumber) {
      
      OrderBookDelta delta;
      delta.exchangeId = exchangeId_;
      delta.tradingPair = trading_pair_;
      delta.timestamp = timestamp;
-     delta.sequence_number = sequence_number;
+     delta.sequenceNumber = sequenceNumber;
      
      // Identify added and removed bids
      std::set<double> prev_bid_prices;
