@@ -243,27 +243,27 @@ int main() {
         // Extended symbol list for better testing
         std::vector<Symbol> majorSymbols = {
             Symbol("BTC", "USDT"),   // Bitcoin
-            Symbol("ETH", "USDT"),   // Ethereum  
-            Symbol("BNB", "USDT"),   // Binance Coin
-            Symbol("ADA", "USDT"),   // Cardano
-            Symbol("SOL", "USDT"),   // Solana
-            Symbol("XRP", "USDT"),   // Ripple
-            Symbol("DOT", "USDT"),   // Polkadot
-            Symbol("AVAX", "USDT"),  // Avalanche
-            Symbol("MATIC", "USDT"), // Polygon
+            // Symbol("ETH", "USDT"),   // Ethereum  
+            // Symbol("BNB", "USDT"),   // Binance Coin
+            // Symbol("ADA", "USDT"),   // Cardano
+            // Symbol("SOL", "USDT"),   // Solana
+            // Symbol("XRP", "USDT"),   // Ripple
+            // Symbol("DOT", "USDT"),   // Polkadot
+            // Symbol("AVAX", "USDT"),  // Avalanche
+            // Symbol("MATIC", "USDT"), // Polygon
             Symbol("LINK", "USDT")   // Chainlink
         };
         
         std::vector<Symbol> altSymbols = {
             Symbol("DOGE", "USDT"),  // Dogecoin
-            Symbol("SHIB", "USDT"),  // Shiba Inu
-            Symbol("UNI", "USDT"),   // Uniswap
-            Symbol("ATOM", "USDT"),  // Cosmos
-            Symbol("FTM", "USDT"),   // Fantom
-            Symbol("ALGO", "USDT"),  // Algorand
-            Symbol("VET", "USDT"),   // VeChain
-            Symbol("ICP", "USDT"),   // Internet Computer
-            Symbol("NEAR", "USDT"),  // Near Protocol
+            // Symbol("SHIB", "USDT"),  // Shiba Inu
+            // Symbol("UNI", "USDT"),   // Uniswap
+            // Symbol("ATOM", "USDT"),  // Cosmos
+            // Symbol("FTM", "USDT"),   // Fantom
+            // Symbol("ALGO", "USDT"),  // Algorand
+            // Symbol("VET", "USDT"),   // VeChain
+            // Symbol("ICP", "USDT"),   // Internet Computer
+            // Symbol("NEAR", "USDT"),  // Near Protocol
             Symbol("SAND", "USDT")   // Sandbox
         };
         
