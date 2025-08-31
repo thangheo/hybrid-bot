@@ -245,6 +245,13 @@ public:
      */
     std::chrono::seconds getTimeUntilNextSync() const;
 
+    /**
+     * @brief Runtime configuration update
+     * @param config New configuration settings
+     * @return true if configuration was applied successfully
+     */
+    bool configure(const Config& config);
+        
 private:
     Config config_;
     
@@ -276,6 +283,8 @@ private:
     void updateSyncQuality();
     void notifyStatusChange(SyncStatus newStatus);
     
+            // Add method to apply config changes
+    void applyConfiguration(const Config& newConfig);
     // NTP packet handling
     struct NtpPacket;
     bool sendNtpRequest(const std::string& server, NtpPacket& response);

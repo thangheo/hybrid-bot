@@ -4,6 +4,7 @@
 #include "data_ingestion/orderbook/order_book_types.hpp"
 #include "data_ingestion/data_quality/filter.hpp"
 #include "data_ingestion/data_quality/validator.hpp"
+#include "data_ingestion/config.hpp"
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -15,7 +16,9 @@ namespace data_ingestion {
 class DataQualityControl {
 public:
     DataQualityControl();
-    
+    // configure with config file
+    void configure(const DataQualityConfig& config);
+
     // Add a custom data filter
     void addFilter(std::shared_ptr<DataQualityFilter> filter);
     

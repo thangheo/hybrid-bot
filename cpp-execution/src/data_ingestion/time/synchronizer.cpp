@@ -220,7 +220,29 @@ std::chrono::seconds TimeSynchronizer::getTimeUntilNextSync() const {
     
     return std::max(remaining, std::chrono::seconds(0));
 }
-
+bool TimeSynchronizer::configure(const Config& config) {
+    std::lock_guard<std::mutex> lock(syncMutex_);
+    
+    // Check if running and if changes require restart
+    bool needsRestart = isRunning_.load() && 
+                       (config.ntpServers != config_.ntpServers ||
+                        config.syncInterval != config_.syncInterval);
+    
+    if (needsRestart) {
+        // Temporarily stop for reconfiguration
+        stop();
+    }
+    
+    // Apply new configuration
+    config_ = config;
+    
+    // Restart if was running
+    if (needsRestart) {
+        return start();
+    }
+    
+    return true;
+}
 // Private methods implementation
 
 void TimeSynchronizer::syncWorker() {
@@ -578,7 +600,7 @@ TimeSynchronizer& getGlobalSynchronizer() {
     
     if (!g_globalSynchronizer) {        
         // Fix - provide a Config argument
-        g_globalSynchronizer = std::make_unique<TimeSynchronizer>(Config{});
+        g_globalSynchronizer = std::make_unique<TimeSynchronizer>(TimeSynchronizer::Config{});
         g_globalSynchronizer->start();
     }
     

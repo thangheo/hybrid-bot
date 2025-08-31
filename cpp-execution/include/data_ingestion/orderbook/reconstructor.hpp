@@ -22,7 +22,7 @@
 #include "data_ingestion/orderbook/order_book_types.hpp"
 #include "strategy/core_analysis/liquidity_flow_monitor.hpp"
 // #include "data_ingestion/orderbook/level.hpp"
-
+#include "config.hpp"
 namespace trading {
 namespace data_ingestion {
 

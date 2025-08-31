@@ -30,7 +30,7 @@
  
  // Common timestamp definition
  using Timestamp = std::chrono::time_point<std::chrono::system_clock, std::chrono::nanoseconds>;
- using ExchangeId = common::ExchangeId;
+using ExchangeId = common::ExchangeId;
 
 // Raw market data from an exchange
 struct MarketDataUpdate {
@@ -40,8 +40,9 @@ struct MarketDataUpdate {
     int64_t exchange_timestamp;
     int64_t receivedTimestamp;
     std::vector<uint8_t> data;  // Raw data from exchange
-    uint64_t sequenceNumber = 0;      // Optional sequence number
+    uint64_t sequence_number = 0;      // Optional sequence number
     std::chrono::system_clock::time_point timestamp;  // Update timestamp
+    std::string messageType;
     MarketDataUpdate() = default;
 
 };
@@ -202,7 +203,7 @@ struct TradeData {
      std::string dataType;          // Type of data (e.g., "orderbook", "trade")
      
      // Other potentially useful fields
-     bool isSnapshot{false};        // Whether this is a full snapshot or an update
+     bool is_snapshot{false};        // Whether this is a full snapshot or an update
      std::string sourceType;        // "websocket" or "rest"
  };
  

@@ -111,7 +111,7 @@ void runABTestingExample() {
         snapshot.symbol = symbols[i % symbols.size()];
         snapshot.timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::system_clock::now().time_since_epoch()).count();
-        snapshot.sequenceNumber = i;
+        snapshot.sequence_number = i;
         
         // Generate some random bids and asks
         double midPrice = priceDist(gen);

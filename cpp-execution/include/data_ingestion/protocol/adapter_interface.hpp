@@ -1,54 +1,75 @@
 /**
  * @file adapter_interface.hpp
- * @brief Abstract interface for protocol adapter implementations
+ * @brief Base interface for protocol adapters
  * 
- * @details 
- * Part of the Data Ingestion & Processing Layer for the Crypto Trading System.
+ * Defines the common interface that all exchange-specific
+ * protocol adapters must implement.
  * 
- * Created on: April 30, 2025
+ * @author Trading System Team
+ * @date May 25, 2025
  */
 
-#ifndef ADAPTER_INTERFACE_HPP
-#define ADAPTER_INTERFACE_HPP
+#pragma once
 
-#include <string>
-#include <memory>
-#include <nlohmann/json.hpp>
+#include "common/exchange_types.hpp"
 #include "core/market_types.hpp"
 #include "data_ingestion/orderbook/order_book_types.hpp"
 
-using json = nlohmann::json;
-using namespace trading::data_ingestion;
+namespace trading {
+namespace data_ingestion {
 
-// TODO: Implement Abstract interface for protocol adapter implementations
-// Interface for all protocol adapters
-class AdapterInterface {
-    public:
-        virtual ~AdapterInterface() = default;
-        
-        // Convert raw exchange data to internal format
-        virtual OrderBookUpdate convertToStandardFormat(const ExchangeData& data) = 0;
-        
-        // Identify the exchange and data type
-        virtual bool canHandle(const ExchangeData& data) = 0;
-        
-        // Get adapter name/identifier
-        virtual std::string getName() const = 0;
-    };
+/**
+ * Base interface for all protocol adapters
+ * 
+ * Each exchange-specific adapter must implement this interface
+ * to provide standardized data conversion capabilities.
+ */
+class IProtocolAdapter {
+public:
+    virtual ~IProtocolAdapter() = default;
     
-    // Specific implementations for each exchange
-    // class BinanceAdapter : public AdapterInterface {
-    // public:
-    //     OrderBookUpdate convertToStandardFormat(const ExchangeData& data) override;
-    //     bool canHandle(const ExchangeData& data) override;
-    //     std::string getName() const override { return "Binance"; }
-    // private:
-    //     // Exchange-specific parsing logic
-    //     BidAskPair parsePriceLevel(const json& level);
-    //     Timestamp parseTimestamp(const json& data);
-    // };
+    /**
+     * Check if this adapter can handle the given exchange data
+     * 
+     * @param data Raw exchange data to check
+     * @return true if this adapter can process the data, false otherwise
+     */
+    virtual bool canHandle(const core::ExchangeData& data) = 0;
     
-    // Similar adapters for other exchanges
-    // class CoinbaseAdapter : public AdapterInterface;
-    // class FTXAdapter : public AdapterInterface;
-#endif // ADAPTER_INTERFACE_HPP
+    /**
+     * Convert exchange-specific data to standardized OrderBookUpdate format
+     * 
+     * @param data Raw exchange data to convert
+     * @return Standardized OrderBookUpdate structure
+     * @throws std::runtime_error if conversion fails
+     */
+    virtual OrderBookUpdate convertToStandardFormat(const core::ExchangeData& data) = 0;
+    
+    /**
+     * Get the exchange ID that this adapter supports
+     * 
+     * @return ExchangeId that this adapter is designed for
+     */
+    virtual common::ExchangeId getSupportedExchange() const = 0;
+    
+    /**
+     * Get adapter name for logging and debugging
+     * 
+     * @return Human-readable adapter name
+     */
+    virtual std::string getAdapterName() const {
+        return getSupportedExchange().toString() + "Adapter";
+    }
+    
+    /**
+     * Validate that the adapter is properly configured
+     * 
+     * @return true if adapter is ready to process data
+     */
+    virtual bool isConfigured() const {
+        return true; // Default implementation
+    }
+};
+
+} // namespace data_ingestion
+} // namespace trading

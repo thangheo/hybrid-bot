@@ -1,8 +1,10 @@
-// include/data_ingestion/order_book_normalizer.hpp
 #pragma once
+#include "data_ingestion/protocol/adapter_factory.hpp"
+#include "data_ingestion/normalization/binance_exchange_adapter.hpp"
 
 #include "data_ingestion/orderbook/order_book_types.hpp"
 #include "data_ingestion/orderbook/order_book.hpp"
+#include "data_ingestion/protocol/binance_adapter.hpp"
 #include "core/market_types.hpp"
 #include <memory>
 #include <string>
@@ -13,7 +15,7 @@ namespace data_ingestion {
 
 using namespace core;
 // Forward declarations
-class ExchangeAdapter;
+// class ExchangeAdapter;
 
 // Normalizes order book data from various exchanges
 class OrderBookNormalizer {
@@ -56,34 +58,20 @@ private:
                            const ExchangeId exchangeId);
 };
 
-// Interface for exchange-specific adapters
-class ExchangeAdapter {
-public:
-    virtual ~ExchangeAdapter() = default;
-    
-    // Check if this adapter can handle the data
-    virtual bool canHandle(const MarketDataUpdate& update) const = 0;
-    
-    // Normalize exchange-specific format to standard format
-    virtual OrderBookUpdate normalize(const MarketDataUpdate& update) const = 0;
-    
-    // Standardize trading pair format
-    virtual std::string standardizeTradingPair(const std::string& pair) const = 0;
-};
 
 // Concrete adapter for Binance
-class BinanceAdapter : public ExchangeAdapter {
-public:
-    bool canHandle(const MarketDataUpdate& update) const override;
-    OrderBookUpdate normalize(const MarketDataUpdate& update) const override;
-    std::string standardizeTradingPair(const std::string& pair) const override;
-};
+// class BinanceAdapter : public ExchangeAdapter {
+// public:
+//     bool canHandle(const MarketDataUpdate& update) const override;
+//     OrderBookUpdate normalize(const MarketDataUpdate& update) const override;
+//     std::string standardizeTradingPair(const std::string& pair) const override;
+// };
 
 // Factory for creating adapters
-class AdapterFactory {
-public:
-    static std::shared_ptr<ExchangeAdapter> createAdapter(const ExchangeId& exchangeId);
-};
+// class AdapterFactory {
+// public:
+//     static std::shared_ptr<ExchangeAdapter> createAdapter(const ExchangeId& exchangeId);
+// };
 
 } // namespace data_ingestion
 } // namespace trading

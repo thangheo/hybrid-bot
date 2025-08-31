@@ -26,6 +26,35 @@ DataQualityControl::DataQualityControl() {
     validator_ = std::make_shared<DataValidator>();
 }
 
+// Configure with data quality config
+void DataQualityControl::configure(const DataQualityConfig& config) {
+    // Clear existing filters
+    first_filter_.reset();
+    last_filter_.reset();
+    
+    // Set up filters based on config
+    if (config.enable_checksum_filter) {
+        addFilter(std::make_shared<ChecksumFilter>());
+    }
+    if (config.enable_price_range_filter) {
+        addFilter(std::make_shared<PriceRangeFilter>(std::unordered_map<std::string, double>{}));
+    }
+    if (config.enable_sequence_gap_filter) {
+        addFilter(std::make_shared<SequenceGapFilter>(config.max_sequence_gap));
+    }
+
+    // Set up validation rules
+    for (const auto& rule : config.validation_rules) {
+        //     std::map<std::string, std::string> validation_rules;
+        // void DataQualityControl::addValidationRule(const std::string& name, ValidationRule rule) {
+        // Create a simple validation rule that always returns true for now
+        ValidationRule validationRule = [](const OrderBookUpdate& update, std::string& error) -> bool {
+            return true; // Placeholder implementation
+        };
+        addValidationRule(rule.first, validationRule);
+    }
+}
+
 void DataQualityControl::addFilter(std::shared_ptr<DataQualityFilter> filter) {
     if (last_filter_) {
         last_filter_->setNext(filter);
