@@ -71,18 +71,52 @@ public:
     bool subscribeToStreams(const std::vector<std::string>& streams);
     bool unsubscribeFromStreams(const std::vector<std::string>& streams);
     std::vector<std::string> getSubscribedStreams() const;
+    // Reconnection control
+    void enableAutoReconnect(bool enable) { autoReconnect_ = enable; }
+    bool isAutoReconnectEnabled() const { return autoReconnect_; }
+    void setMaxReconnectAttempts(int attempts) { maxReconnectAttempts_ = attempts; }
+    int getReconnectAttempts() const { return reconnectAttempts_; }
+    
+    // Connection statistics
+    void resetStatistics() {
+        messageCount_.store(0);
+        totalLatency_.store(0.0);
+        reconnectAttempts_ = 0;
+    }
 
 private:
+    // std::unique_ptr<websocket::stream<ssl::stream<tcp::socket>>> wsStream_;
+    // Replace this line:
+    // With this:
+    std::unique_ptr<websocket::stream<ssl::stream<tcp::socket>>> wsStream_;
+    std::mutex sendMutex_;  // Protect WebSocket send operations
+    
+    // Reconnection logic
+    bool autoReconnect_ = true;
+    int reconnectAttempts_ = 0;
+    int maxReconnectAttempts_ = 5;
+    std::chrono::seconds reconnectBaseDelay_{2};  // Start with 2 seconds
+    std::chrono::seconds maxReconnectDelay_{60};  // Max 60 seconds between attempts
+    
+    // Connection state
+    std::atomic<bool> keep_running_{false};
+    
+    // Statistics tracking
+    std::atomic<double> totalLatency_{0.0};
+
     // Connection details
     std::string host_;
     std::string port_;
     std::string endpoint_;
-     // Add these members
+    // int reconnectAttempts_ = 0;
+    // bool autoReconnect_ = false;
+    // int maxReconnectAttempts_ = 5;
+
+    // Add these members
     net::io_context io_context_;
     std::unique_ptr<ssl::context> ssl_context_;
     std::unique_ptr<websocket::stream<ssl::stream<tcp::socket>>> ws_stream_;
     std::thread io_thread_;
-    std::atomic<bool> keep_running_{false};
     mutable std::mutex write_mutex_;
     
     void runIoLoop();
@@ -97,7 +131,7 @@ private:
     
     // Statistics
     std::atomic<int> messageCount_{0};
-    std::atomic<double> totalLatency_{0.0};
+    // std::atomic<double> totalLatency_{0.0};
     core::Timestamp lastMessageTime_;
     
     // Subscription tracking
@@ -105,7 +139,13 @@ private:
     std::vector<std::string> subscribedStreams_;
     std::vector<core::Symbol> subscribedSymbols_;
     int subscriptionIdCounter_ = 1;
+     void scheduleReconnection();
     
+    // Message processing with error handling
+    void processMessageSafely(const std::string& message);
+    
+    // Ping/pong handling for connection keepalive
+    void handlePingPong();
     // WebSocket connection (you'll need to implement these with your preferred WebSocket library)
     // These are placeholder - implement with boost::beast or your chosen library
     void initializeConnection();

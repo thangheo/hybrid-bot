@@ -183,15 +183,7 @@ public:
     
 private:
     // Add this at the very start of your onWebSocketData callback:
-    void onWebSocketData_(const ExchangeId& exchange, const std::string& symbol, const std::vector<uint8_t>& data) {
-        std::cout << "CALLBACK ENTRY: " << symbol << " (" << data.size() << " bytes)" << std::endl;
-        
-        // Don't do ANY JSON parsing or processing - just log and return
-        messagesReceived_.fetch_add(1);
-        std::cout << "CALLBACK EXIT: " << symbol << std::endl;
-        return; // Exit immediately - don't call pipeline
-    }
-    void onWebSocketData__(const ExchangeId& exchange, const std::string& symbol, const std::vector<uint8_t>& data) {
+    void onWebSocketData(const ExchangeId& exchange, const std::string& symbol, const std::vector<uint8_t>& data) {
         // Update statistics
         messagesReceived_.fetch_add(1);
         bytesReceived_.fetch_add(data.size());
@@ -283,30 +275,6 @@ private:
             // Pipeline queue is full - this is expected under high load
         }
     }
-    void onWebSocketData(const ExchangeId& exchange, const std::string& symbol, const std::vector<uint8_t>& data) {
-        messagesReceived_.fetch_add(1);
-        bytesReceived_.fetch_add(data.size());
-        g_messageCount.fetch_add(1);
-        g_totalBytes.fetch_add(data.size());
-        
-        // NO JSON PARSING AT ALL - just log and forward
-        static std::atomic<int> printCount{0};
-        if (printCount.fetch_add(1) < 10) {
-            std::cout << "DATA [" << symbol << "] " << data.size() << " bytes received" << std::endl;
-        }
-        
-        // Convert and forward to pipeline (no JSON parsing)
-        ExchangeData exchangeData;
-        exchangeData.exchangeId = exchange;
-        exchangeData.symbol = Symbol::fromString(symbol);
-        exchangeData.data = std::string(data.begin(), data.end());
-        exchangeData.receivedTime = std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::system_clock::now().time_since_epoch()).count();
-        
-        if (pipeline_ && !pipeline_->push(exchangeData)) {
-            pipelineErrors_.fetch_add(1);
-        }
-    }    
     void metricsLoop() {
         while (running_.load()) {
             std::this_thread::sleep_for(std::chrono::seconds(5));

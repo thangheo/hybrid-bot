@@ -14,6 +14,7 @@
 #include <boost/beast/websocket/ssl.hpp>
 #include <boost/asio/ip/tcp.hpp>
 #include <boost/asio/ssl/stream.hpp>
+#include "common/logger.hpp"
 
 namespace beast = boost::beast;
 namespace websocket = beast::websocket;
@@ -219,36 +220,286 @@ std::vector<std::string> BinanceWebSocketClient::getSubscribedStreams() const {
 }
 
 // Private implementation methods
-void BinanceWebSocketClient::initializeConnection() {
-    try {
-        // For now, use a simulated connection with realistic market data
-        // This ensures the pipeline gets data while we work on the real WebSocket
-        LOG_INFO("Initializing simulated WebSocket connection");
+// void BinanceWebSocketClient::initializeConnection() {
+//     try {
+//         // For now, use a simulated connection with realistic market data
+//         // This ensures the pipeline gets data while we work on the real WebSocket
+//         LOG_INFO("Initializing simulated WebSocket connection");
         
-        // Set up basic connection state
+//         // Set up basic connection state
+//         connected_.store(true);
+//         status_.store(ConnectionStatus::CONNECTED);
+        
+//         // Start a data simulation thread instead of real WebSocket
+//         keep_running_ = true;
+//         // io_thread_ = std::thread(&BinanceWebSocketClient::simulateMarketData, this);
+//         // run real WebSocket connection
+//         io_thread_ = std::thread(&BinanceWebSocketClient::runIoLoop, this);
+
+//         LOG_INFO("Real WebSocket connection established to " + host_);
+        
+//     } catch (const std::exception& e) {
+//         LOG_ERROR("WebSocket connection failed: " + std::string(e.what()));
+//         throw;
+//     }
+// }
+// Enhanced BinanceWebSocketClient::runIoLoop() implementation
+void BinanceWebSocketClient::runIoLoop() {
+    LOG_INFO("Starting real WebSocket IO loop for Binance");
+    
+    try {
+        // Create IO context and SSL context
+        net::io_context ioc;
+        ssl::context ctx{ssl::context::tlsv12_client};
+        
+        // Load default root certificates
+        ctx.set_default_verify_paths();
+        ctx.set_verify_mode(ssl::verify_peer);
+        
+        // These objects perform our I/O
+        tcp::resolver resolver{ioc};
+        // websocket::stream<beast::ssl_stream<tcp::socket>> ws{ioc, ctx};
+        websocket::stream<beast::ssl_stream<beast::tcp_stream>> ws{ioc, ctx};
+
+        // Set SNI Hostname (many hosts need this to handshake successfully)
+        if (!SSL_set_tlsext_host_name(ws.next_layer().native_handle(), host_.c_str())) {
+            beast::error_code ec{static_cast<int>(::ERR_get_error()), net::error::get_ssl_category()};
+            throw beast::system_error{ec};
+        }
+        
+        // Look up the domain name
+        // auto const results = resolver.resolve(host_, port_);
+        
+        // Make the connection on the IP address we get from a lookup
+        // auto ep = beast::get_lowest_layer(ws).connect(results);
+                // ...existing code...
+        boost::asio::ip::tcp::socket socket(ioc);
+        boost::asio::ip::tcp::endpoint endpoint(boost::asio::ip::make_address(host_), std::stoi(port_));
+        socket.connect(endpoint);
+        // ...existing code...
+        // Update the host string. This will provide the value of the
+        // Host HTTP header during the WebSocket handshake.
+        std::string host = host_ + ':' + std::to_string(endpoint.port());
+
+        // Perform the SSL handshake
+        ws.next_layer().handshake(ssl::stream_base::client);
+        
+        // Set a decorator to change the User-Agent of the handshake
+        ws.set_option(websocket::stream_base::decorator(
+            [](websocket::request_type& req) {
+                req.set(beast::http::field::user_agent, 
+                    std::string(BOOST_BEAST_VERSION_STRING) + " trading-system-websocket");
+            }));
+        
+        // Perform the websocket handshake
+        ws.handshake(host, "/ws");
+        
+        LOG_INFO("WebSocket handshake completed successfully");
+        
+        // Connection successful - update status
         connected_.store(true);
         status_.store(ConnectionStatus::CONNECTED);
         
-        // Start a data simulation thread instead of real WebSocket
-        keep_running_ = true;
-        io_thread_ = std::thread(&BinanceWebSocketClient::simulateMarketData, this);
-        // run real WebSocket connection
-        // io_thread_ = std::thread(&BinanceWebSocketClient::runIoLoop, this);
-
-        LOG_INFO("Real WebSocket connection established to " + host_);
+        // Notify connection callback
+        if (connectionCallback_) {
+            connectionCallback_(ConnectionStatus::CONNECTED, "WebSocket connected successfully");
+        }
+        
+        // Call onWebSocketOpen to handle resubscriptions
+        onWebSocketOpen();
+        
+        // Main message loop
+        beast::flat_buffer buffer;
+        
+        while (keep_running_ && connected_.load()) {
+            try {
+                // Set timeout for read operation
+                beast::get_lowest_layer(ws).expires_after(std::chrono::seconds(30));
+                // Read a message
+                ws.read(buffer);
+                
+                // Convert buffer to string
+                std::string message = beast::buffers_to_string(buffer.data());
+                buffer.consume(buffer.size());
+                
+                // Process the message
+                onWebSocketMessage(message);
+                
+                // Reset timeout
+                beast::get_lowest_layer(ws).expires_at(std::chrono::steady_clock::time_point::max());
+            } catch (const beast::system_error& se) {
+                if (se.code() == beast::error::timeout) {
+                    LOG_WARN("WebSocket read timeout - sending ping");
+                    
+                    // Send ping frame to keep connection alive
+                    try {
+                        ws.ping({});
+                        continue;
+                    } catch (const std::exception& ping_error) {
+                        LOG_ERROR("Failed to send ping: " + std::string(ping_error.what()));
+                        break;
+                    }
+                } else if (se.code() == websocket::error::closed) {
+                    LOG_INFO("WebSocket connection closed by remote");
+                    break;
+                } else {
+                    LOG_ERROR("WebSocket read error: " + std::string(se.what()));
+                    break;
+                }
+            }
+        }
+        
+        LOG_INFO("Exiting WebSocket message loop");
+        
+        // Graceful close
+        try {
+            if (ws.is_open()) {
+                ws.close(websocket::close_code::normal);
+            }
+        } catch (const std::exception& e) {
+            LOG_WARN("Error during WebSocket close: " + std::string(e.what()));
+        }
         
     } catch (const std::exception& e) {
         LOG_ERROR("WebSocket connection failed: " + std::string(e.what()));
+        
+        // Update status to error
+        status_.store(ConnectionStatus::ERROR);
+        connected_.store(false);
+        
+        if (connectionCallback_) {
+            connectionCallback_(ConnectionStatus::ERROR, "WebSocket connection error: " + std::string(e.what()));
+        }
+        
+        // Attempt reconnection if enabled
+        scheduleReconnection();
+    }
+    
+    // Final cleanup
+    connected_.store(false);
+    status_.store(ConnectionStatus::DISCONNECTED);
+    
+    LOG_INFO("WebSocket IO loop terminated");
+}
+
+// Enhanced sendWebSocketMessage with real WebSocket support
+bool BinanceWebSocketClient::sendWebSocketMessage(const std::string& message) {
+    if (!connected_.load() || !wsStream_) {
+        LOG_ERROR("Cannot send message - WebSocket not connected");
+        return false;
+    }
+    
+    try {
+        std::lock_guard<std::mutex> lock(sendMutex_);
+        
+        // Send the message
+        wsStream_->write(net::buffer(message));
+        
+        LOG_DEBUG("Sent WebSocket message: " + message.substr(0, 100) + 
+                 (message.length() > 100 ? "..." : ""));
+        
+        return true;
+        
+    } catch (const std::exception& e) {
+        LOG_ERROR("Error sending WebSocket message: " + std::string(e.what()));
+        return false;
+    }
+}
+
+// Add reconnection logic
+void BinanceWebSocketClient::scheduleReconnection() {
+    if (!autoReconnect_) {
+        return;
+    }
+    
+    reconnectAttempts_++;
+    
+    if (reconnectAttempts_ > maxReconnectAttempts_) {
+        LOG_ERROR("Max reconnection attempts reached (" + std::to_string(maxReconnectAttempts_) + 
+                 "), giving up");
+        return;
+    }
+    
+    // Calculate backoff delay (exponential backoff)
+    auto delay = std::chrono::seconds(
+        static_cast<long>(reconnectBaseDelay_.count() * std::pow(2, reconnectAttempts_ - 1))
+    );
+    
+    // Cap the delay to maximum
+    delay = std::min(delay, maxReconnectDelay_);
+    
+    LOG_INFO("Scheduling reconnection attempt " + std::to_string(reconnectAttempts_) + 
+            " in " + std::to_string(delay.count()) + " seconds");
+    
+    // Schedule reconnection in a separate thread
+    std::thread([this, delay]() {
+        std::this_thread::sleep_for(delay);
+        
+        if (keep_running_) {
+            LOG_INFO("Attempting reconnection...");
+            connect();
+        }
+    }).detach();
+}
+
+// Enhanced connection management with proper cleanup
+void BinanceWebSocketClient::initializeConnection() {
+    try {
+        LOG_INFO("Initializing real WebSocket connection to Binance");
+        
+        // Set up connection parameters
+        keep_running_ = true;
+        reconnectAttempts_ = 0;
+        
+        // Start the IO loop in a separate thread
+        io_thread_ = std::thread(&BinanceWebSocketClient::runIoLoop, this);
+        
+        // Wait a bit for connection to establish
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        
+        if (connected_.load()) {
+            LOG_INFO("WebSocket connection thread started successfully");
+        } else {
+            LOG_WARN("WebSocket connection thread started but connection not yet established");
+        }
+        
+    } catch (const std::exception& e) {
+        LOG_ERROR("Failed to initialize WebSocket connection: " + std::string(e.what()));
         throw;
     }
 }
-void BinanceWebSocketClient::runIoLoop() {
-    LOG_INFO("Starting WebSocket IO loop");
-    
-    // Since we're using simulation now, this method isn't used
-    // The simulateMarketData thread handles data generation
-    
-    LOG_INFO("WebSocket IO loop stopped");
+
+void BinanceWebSocketClient::closeConnection() {
+    try {
+        LOG_INFO("Closing WebSocket connection");
+        
+        // Signal threads to stop
+        keep_running_ = false;
+        
+        // Close WebSocket if it exists
+        if (wsStream_ && wsStream_->is_open()) {
+            try {
+                wsStream_->close(websocket::close_code::normal);
+            } catch (const std::exception& e) {
+                LOG_WARN("Error closing WebSocket stream: " + std::string(e.what()));
+            }
+        }
+        
+        // Join the IO thread
+        if (io_thread_.joinable()) {
+            LOG_INFO("Waiting for IO thread to terminate...");
+            io_thread_.join();
+            LOG_INFO("IO thread terminated");
+        }
+        
+        // Clean up WebSocket stream
+        wsStream_.reset();
+        
+        LOG_INFO("WebSocket connection closed successfully");
+        
+    } catch (const std::exception& e) {
+        LOG_ERROR("Error closing WebSocket connection: " + std::string(e.what()));
+    }
 }
 
 void BinanceWebSocketClient::simulateMarketData() {
@@ -320,31 +571,31 @@ void BinanceWebSocketClient::simulateMarketData() {
     
     LOG_INFO("Market data simulation stopped after " + std::to_string(updateCount) + " updates");
 }
-void BinanceWebSocketClient::closeConnection() {
-    try {
-        keep_running_ = false;
+// void BinanceWebSocketClient::closeConnection() {
+//     try {
+//         keep_running_ = false;
         
-        // Join the IO thread (now simulation thread)
-        if (io_thread_.joinable()) {
-            io_thread_.join();
-        }
+//         // Join the IO thread (now simulation thread)
+//         if (io_thread_.joinable()) {
+//             io_thread_.join();
+//         }
         
-        LOG_INFO("WebSocket connection closed");
+//         LOG_INFO("WebSocket connection closed");
         
-    } catch (const std::exception& e) {
-        LOG_ERROR("Error closing WebSocket: " + std::string(e.what()));
-    }
-}
-bool BinanceWebSocketClient::sendWebSocketMessage(const std::string& message) {
-    if (!connected_.load()) {
-        LOG_ERROR("Cannot send message - WebSocket not connected");
-        return false;
-    }
+//     } catch (const std::exception& e) {
+//         LOG_ERROR("Error closing WebSocket: " + std::string(e.what()));
+//     }
+// }
+// bool BinanceWebSocketClient::sendWebSocketMessage(const std::string& message) {
+//     if (!connected_.load()) {
+//         LOG_ERROR("Cannot send message - WebSocket not connected");
+//         return false;
+//     }
     
-    // For simulation, just log the subscription request
-    LOG_INFO("Simulating WebSocket message send: " + message);
-    return true;
-}
+//     // For simulation, just log the subscription request
+//     LOG_INFO("Simulating WebSocket message send: " + message);
+//     return true;
+// }
 void BinanceWebSocketClient::onWebSocketOpen() {
     std::cout << "Connected to Binance WebSocket" << std::endl;
     
