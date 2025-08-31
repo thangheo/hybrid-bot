@@ -203,7 +203,7 @@ void OrderBookReconstructor::registerLiquidityFlowMonitor(
      std::vector<std::shared_ptr<OrderBook>> result;
      
      for (const auto& [key, order_book] : order_books_) {
-         if (key.exchange == exchange) {
+         if (key.exchangeId == exchange) {
              result.push_back(order_book);
          }
      }

@@ -1,57 +1,108 @@
 /**
  * @file binance_adapter.cpp
- * @brief Implementation of Binance-specific message format conversion
+ * @brief Updated Binance adapter with interface implementation - Fixed version
  * 
- * @details 
- * Part of the Data Ingestion & Processing Layer for the Crypto Trading System.
- * 
- * Created on: April 30, 2025
+ * @author Trading System Team
+ * @date May 25, 2025
  */
 
-// TODO: Implement Implementation of Binance-specific message format conversion
-// binance_adapter.cpp
-#include "data_ingestion/protocol/binance_adapter.hpp"
+#include "protocol/binance_adapter.hpp"
 #include <nlohmann/json.hpp>
+#include <stdexcept>
+#include <iostream>
+#include "common/exchange_types.hpp"
 using json = nlohmann::json;
 
-bool BinanceAdapter::canHandle(const ExchangeData& data) {
+namespace trading {
+namespace data_ingestion {
+
+bool BinanceAdapter::canHandle(const core::ExchangeData& data) {
     // Check if this is Binance data
+    if (data.exchangeId != common::ExchangeId::binance()) {
+        return false;
+    }
+    
     try {
-        const auto& jsonData = json::parse(data.data);
-        return jsonData.contains("e") && 
+        // Convert vector<uint8_t> to string - handle properly if data is bytes
+        std::string jsonStr;
+        if (!data.data.empty()) {
+            jsonStr = std::string(data.data.begin(), data.data.end());
+        } else {
+            // Fallback to string data field if available
+            jsonStr = data.data;
+        }
+        
+        const auto& jsonData = json::parse(jsonStr);
+        
+        return jsonData.contains("e") &&
                (jsonData["e"] == "depthUpdate" || jsonData["e"] == "depth");
     } catch (...) {
         return false;
     }
 }
 
-OrderBookUpdate BinanceAdapter::convertToStandardFormat(const ExchangeData& data) {
-    OrderBookUpdate update;
-    const auto& jsonData = json::parse(data.data);
+OrderBookUpdate BinanceAdapter::convertToStandardFormat(const core::ExchangeData& data) {
+    try {
+        // Convert bytes to string properly
+        std::string jsonStr;
+        if (!data.data.empty()) {
+            jsonStr = std::string(data.data.begin(), data.data.end());
+        } else {
+            throw std::runtime_error("Empty data in ExchangeData");
+        }
+        
+        return convertDepthUpdate(jsonStr);
+    } catch (const std::exception& e) {
+        throw std::runtime_error("Binance adapter conversion failed: " + std::string(e.what()));
+    }
+}
+
+common::ExchangeId BinanceAdapter::getSupportedExchange() const {
+    return common::ExchangeId::binance();
+}
+
+std::string BinanceAdapter::getAdapterName() const {
+    return "BinanceAdapter";
+}
+
+bool BinanceAdapter::isConfigured() const {
+    return true; // Simple implementation is always configured
+}
+
+OrderBookUpdate BinanceAdapter::convertDepthUpdate(const std::string& jsonData) {
+    if (!validateBinanceMessage(jsonData)) {
+        throw std::runtime_error("Invalid Binance message format");
+    }
     
-    // Set basic fields
-    update.exchangeId.fromString("binance");
-    update.tradingPair = jsonData["s"];
-    update.exchange_timestamp = jsonData["E"];
-    update.receivedTimestamp = data.receivedTime;
-    update.sequence_number = jsonData["u"];
-    update.is_snapshot = jsonData.contains("lastUpdateId");
+    const auto& jsonObj = json::parse(jsonData);
+    
+    // Extract basic information
+    std::string binanceSymbol = jsonObj["s"].get<std::string>();
+    std::string tradingPair = extractTradingPair(binanceSymbol);
+    uint64_t sequenceNumber = jsonObj["u"].get<uint64_t>();
+    int64_t exchangeTimestamp = jsonObj["E"].get<int64_t>();
+    
+    // Create OrderBookUpdate using the constructor
+    OrderBookUpdate update(
+        common::ExchangeId::binance(),
+        tradingPair,
+        exchangeTimestamp,
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count(),
+        sequenceNumber,
+        false,
+        std::vector<PriceLevel>(),
+        std::vector<PriceLevel>()
+    );
+    // Set snapshot flag
+    update.is_snapshot = jsonObj.contains("lastUpdateId");
     
     // Parse bids
-    if (jsonData.contains("b")) {
-        for (const auto& bid : jsonData["b"]) {
+    if (jsonObj.contains("b")) {
+        for (const auto& bid : jsonObj["b"]) {
             try {
-                std::string price_str = bid[0].get<std::string>();
-                std::string qty_str = bid[1].get<std::string>();
-                
-                // Create PriceLevel directly with the constructor
-                PriceLevel level(std::stod(price_str), std::stod(qty_str));
-                
-                // No need for order tracking functionality since we're using the simplified class
-                // Just add the level to the update
-                update.bids.push_back(level);
+                update.bids.push_back(parsePriceLevel(bid));
             } catch (const std::exception& e) {
-                // Store anomaly information
                 update.has_anomaly = true;
                 update.anomaly_type = "parsing_error";
                 update.anomaly_details = std::string("Error parsing bid: ") + e.what();
@@ -60,18 +111,10 @@ OrderBookUpdate BinanceAdapter::convertToStandardFormat(const ExchangeData& data
     }
     
     // Parse asks
-    if (jsonData.contains("a")) {
-        for (const auto& ask : jsonData["a"]) {
+    if (jsonObj.contains("a")) {
+        for (const auto& ask : jsonObj["a"]) {
             try {
-                std::string price_str = ask[0].get<std::string>();
-                std::string qty_str = ask[1].get<std::string>();
-                
-                // Create PriceLevel directly with the constructor
-                PriceLevel level(std::stod(price_str), std::stod(qty_str));
-                
-                // No need for order tracking functionality since we're using the simplified class
-                // Just add the level to the update
-                update.asks.push_back(level);
+                update.asks.push_back(parsePriceLevel(ask));
             } catch (const std::exception& e) {
                 update.has_anomaly = true;
                 update.anomaly_type = "parsing_error";
@@ -81,20 +124,120 @@ OrderBookUpdate BinanceAdapter::convertToStandardFormat(const ExchangeData& data
     }
     
     // Handle checksum if available
-    if (jsonData.contains("checksum")) {
-        update.checksum = jsonData["checksum"].get<std::string>();
+    if (jsonObj.contains("checksum")) {
+        update.checksum = jsonObj["checksum"].get<std::string>();
     }
     
-    // Store any additional fields for future extensibility
-    for (auto it = jsonData.begin(); it != jsonData.end(); ++it) {
-        const std::string& key = it.key();
-        // Skip fields we've already processed
-        if (key != "s" && key != "E" && key != "u" && key != "b" &&
-            key != "a" && key != "lastUpdateId" && key != "checksum") {
-            // Store as string value
-            update.additional_fields[key] = it.value().dump();
-        }
+    // Validate sequence number
+    if (!validateSequenceNumber(update.sequence_number, tradingPair)) {
+        update.has_anomaly = true;
+        update.anomaly_type = "sequence_gap";
+        update.anomaly_details = "Sequence number gap detected";
     }
     
     return update;
 }
+
+OrderBookUpdate BinanceAdapter::convertDepthSnapshot(const std::string& jsonData) {
+    // Very similar to convertDepthUpdate but handles snapshot format
+    OrderBookUpdate update = convertDepthUpdate(jsonData);
+    update.is_snapshot = true;
+    return update;
+}
+
+bool BinanceAdapter::validateBinanceMessage(const std::string& jsonData) const {
+    try {
+        const auto& jsonObj = json::parse(jsonData);
+        
+        // Check required fields
+        if (!jsonObj.contains("e") || !jsonObj.contains("s") || !jsonObj.contains("E")) {
+            return false;
+        }
+        
+        // Check event type
+        std::string eventType = jsonObj["e"];
+        if (eventType != "depthUpdate" && eventType != "depth") {
+            return false;
+        }
+        
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
+PriceLevel BinanceAdapter::parsePriceLevel(const nlohmann::json& levelArray) {
+    if (!levelArray.is_array() || levelArray.size() < 2) {
+        throw std::runtime_error("Invalid price level format");
+    }
+    
+    std::string priceStr = levelArray[0].get<std::string>();
+    std::string qtyStr = levelArray[1].get<std::string>();
+    
+    double price = std::stod(priceStr);
+    double quantity = std::stod(qtyStr);
+    
+    return PriceLevel(price, quantity);
+}
+
+std::string BinanceAdapter::extractTradingPair(const std::string& binanceSymbol) {
+    // Convert BTCUSDT -> BTC/USDT
+    // This is a simplified heuristic - in production you'd want a symbol mapping table
+    
+    // Common quote currencies in Binance
+    std::vector<std::string> quoteCurrencies = {"USDT", "BUSD", "BTC", "ETH", "BNB", "USDC"};
+    
+    for (const auto& quote : quoteCurrencies) {
+        if (binanceSymbol.length() > quote.length() && 
+            binanceSymbol.substr(binanceSymbol.length() - quote.length()) == quote) {
+            std::string base = binanceSymbol.substr(0, binanceSymbol.length() - quote.length());
+            return base + "/" + quote;
+        }
+    }
+    
+    // Fallback: assume last 4 characters are quote currency
+    if (binanceSymbol.length() > 4) {
+        std::string base = binanceSymbol.substr(0, binanceSymbol.length() - 4);
+        std::string quote = binanceSymbol.substr(binanceSymbol.length() - 4);
+        return base + "/" + quote;
+    }
+    
+    return binanceSymbol; // Return as-is if can't parse
+}
+
+bool BinanceAdapter::validateSequenceNumber(uint64_t sequence_number, const std::string& symbol) {
+    std::lock_guard<std::mutex> lock(sequenceTrackingMutex_);
+    
+    auto it = lastSequenceNumbers_.find(symbol);
+    if (it == lastSequenceNumbers_.end()) {
+        // First message for this symbol
+        lastSequenceNumbers_[symbol] = sequence_number;
+        return true;
+    }
+    
+    uint64_t lastSequence = it->second;
+    if (sequence_number <= lastSequence) {
+        // Out of order or duplicate message
+        std::cerr << "Warning: Out-of-order sequence for " << symbol 
+                  << ". Expected > " << lastSequence 
+                  << ", got " << sequence_number << std::endl;
+        return false;
+    }
+    
+    if (sequence_number > lastSequence + 1) {
+        // Gap detected
+        std::cerr << "Warning: Sequence gap for " << symbol 
+                  << ". Expected " << (lastSequence + 1) 
+                  << ", got " << sequence_number << std::endl;
+        // Update sequence number but mark as anomaly
+        lastSequenceNumbers_[symbol] = sequence_number;
+        return false;
+    }
+    
+    // Sequential update
+    lastSequenceNumbers_[symbol] = sequence_number;
+    return true;
+}
+
+} // namespace data_ingestion
+} // namespace trading

@@ -6,18 +6,26 @@
 #include <memory>
 #include <stdexcept>
 #include <boost/lockfree/spsc_queue.hpp>
-#include "core/market_types.hpp"
+// #include "core/market_types.hpp"
 #include "data_ingestion/orderbook/order_book_types.hpp"
 #include "data_ingestion/data_quality/data_quality.hpp"
 #include "data_ingestion/time/synchronizer.hpp"
 // normalizer
 #include "data_ingestion/normalization/normalizer.hpp"
-// #include "data_ingestion/orderbook/order_book_manager.hpp"
-// #include "data_ingestion/publishers/normalized_data_publisher.hpp"
+#include "data_ingestion/normalization/order_book_normalizer.hpp"
+// #include "pipeline/normalization_pipeline.hpp"
+#include "protocol/adapter_factory.hpp"
+#include "data_ingestion/orderbook/order_book_manager.hpp"
 
 using namespace trading::data_ingestion;
 using namespace trading::core;
 using namespace trading::data_ingestion::time;
+
+// Forward declarations
+class ProtocolAdapterStage;
+class OrderBookStage;
+class DataQualityStage;
+class TimestampStage;
     
 // Lock-free queue between pipeline stages
 template<typename T>
@@ -167,7 +175,7 @@ public:
                    PipelineQueue<OrderBookUpdate>* output,
                    std::shared_ptr<TimeSynchronizer> synchronizer)
         : PipelineStage(input, output), synchronizer_(synchronizer) {}
-
+ 
     void process(const OrderBookUpdate& input, OrderBookUpdate& output) override {
         output = input; // Copy the input
         
@@ -199,7 +207,6 @@ public:
             exchangeTimestampMs,
             receivedTimePoint);
     }
-
 private:
     std::shared_ptr<TimeSynchronizer> synchronizer_;
 };
@@ -223,123 +230,46 @@ public:
                 TimePoint(std::chrono::milliseconds(output.receivedTimestamp)));
         }
     }
-
+    
 private:
     std::shared_ptr<TimeSynchronizer> synchronizer_;
 };
 
-// Usage example in pipeline setup:
-/*
-void setupNormalizationPipeline() {
-    // Create time synchronizer
-    TimeSynchronizer::Config syncConfig;
-    syncConfig.ntpServers = {"time.cloudflare.com", "time.google.com"};
-    syncConfig.syncInterval = std::chrono::seconds(300); // 5 minutes
-    syncConfig.enableExchangeCalibration = true;
-    
-    auto synchronizer = createTimeSynchronizer(syncConfig);
-    synchronizer->start();
-    
-    // Create pipeline stages
-    auto timestampStage = std::make_unique<TimestampStage>(
-        inputQueue.get(),
-        outputQueue.get(),
-        synchronizer);
-    
-    // Register status monitoring
-    synchronizer->onSyncStatusChange([](SyncStatus status) {
-        if (status == SyncStatus::ERROR) {
-            // Log warning about time sync issues
-            std::cerr << "Warning: Time synchronization degraded!" << std::endl;
-        }
-    });
-    
-    // Add to pipeline
-    pipeline.addStage(std::move(timestampStage));
-}
-*/
-// 5. Publisher Stage
-class PublisherStage : public PipelineStage<OrderBookUpdate, int> {
-public:
-    PublisherStage(PipelineQueue<OrderBookUpdate>* input, 
-                  PipelineQueue<int>* output,  // No output needed
-                  std::shared_ptr<Normalizer> publisher,
-                  std::shared_ptr<OrderBookManager> manager)
-        : PipelineStage(input, output), publisher(publisher), orderBookManager(manager) {}
-    
-    void process(const OrderBookUpdate& input, int& output) override {
-        // Publish the update
-        publisher->publishUpdate(input);
-        
-        // Generate and publish snapshot if needed
-        if (shouldPublishSnapshot(input)) {
-            auto snapshot = orderBookManager->getSnapshot(
-                input.exchangeId, input.symbol);
-            publisher->publishSnapshot(snapshot);
-        }
-        
-        output = 1;  // Dummy output
-    }
-    
-private:
-    bool shouldPublishSnapshot(const OrderBookUpdate& update) const {
-        // This could be based on various heuristics:
-        // - Every N updates
-        // - Significant changes
-        // - Time-based
-        
-        // Simple implementation: every 100th update or for snapshots
-        static std::unordered_map<std::string, int> updateCounts;
-        std::string key = update.exchangeId + ":" + update.symbol;
-        
-        if (update.isSnapshot) return true;
-        
-        int& count = updateCounts[key];
-        count++;
-        if (count >= 100) {
-            count = 0;
-            return true;
-        }
-        
-        return false;
-    }
-    
-    std::shared_ptr<NormalizedDataPublisher> publisher;
-    std::shared_ptr<OrderBookManager> orderBookManager;
-};
 
-// Pipeline manager
 class NormalizationPipeline {
 public:
     NormalizationPipeline(
         std::shared_ptr<AdapterFactory> adapterFactory,
         std::shared_ptr<OrderBookManager> orderBookManager,
         std::shared_ptr<DataQualityControl> qualityControl,
-        std::shared_ptr<TimeSynchronizer> synchronizer,
-        std::shared_ptr<NormalizedDataPublisher> publisher) 
+        std::shared_ptr<TimeSynchronizer> synchronizer)
     {
-        // Create queues
+        // Create queues (one less queue needed)
         exchangeDataQueue = std::make_unique<PipelineQueue<ExchangeData>>();
         stage1OutputQueue = std::make_unique<PipelineQueue<OrderBookUpdate>>();
         stage2OutputQueue = std::make_unique<PipelineQueue<OrderBookUpdate>>();
         stage3OutputQueue = std::make_unique<PipelineQueue<OrderBookUpdate>>();
-        dummyOutputQueue = std::make_unique<PipelineQueue<int>>();
         
-        // Create stages
+        // Create stages (no publisher stage)
         adapterStage = std::make_unique<ProtocolAdapterStage>(
-            exchangeDataQueue.get(), stage1OutputQueue.get(), adapterFactory);
+            static_cast<PipelineQueue<ExchangeData>*>(exchangeDataQueue.get()), 
+            static_cast<PipelineQueue<OrderBookUpdate>*>(stage1OutputQueue.get()), 
+            adapterFactory);
             
         orderBookStage = std::make_unique<OrderBookStage>(
-            stage1OutputQueue.get(), stage2OutputQueue.get(), orderBookManager);
+            static_cast<PipelineQueue<OrderBookUpdate>*>(stage1OutputQueue.get()), 
+            static_cast<PipelineQueue<OrderBookUpdate>*>(stage2OutputQueue.get()), 
+            orderBookManager);
             
         qualityStage = std::make_unique<DataQualityStage>(
-            stage2OutputQueue.get(), stage3OutputQueue.get(), qualityControl);
+            static_cast<PipelineQueue<OrderBookUpdate>*>(stage2OutputQueue.get()), 
+            static_cast<PipelineQueue<OrderBookUpdate>*>(stage3OutputQueue.get()), 
+            qualityControl);
             
         timestampStage = std::make_unique<TimestampStage>(
-            stage3OutputQueue.get(), stage3OutputQueue.get(), synchronizer);
-            
-        publisherStage = std::make_unique<PublisherStage>(
-            stage3OutputQueue.get(), dummyOutputQueue.get(), publisher, orderBookManager);
+            static_cast<PipelineQueue<OrderBookUpdate>*>(stage3OutputQueue.get()), 
+            nullptr, 
+            synchronizer);  // No output queue needed
     }
     
     void start() {
@@ -347,12 +277,11 @@ public:
         orderBookStage->start();
         qualityStage->start();
         timestampStage->start();
-        publisherStage->start();
+        // No publisher stage to start
     }
     
     void stop() {
-        // Stop in reverse order
-        publisherStage->stop();
+        // Stop in reverse order (no publisher)
         timestampStage->stop();
         qualityStage->stop();
         orderBookStage->stop();
@@ -363,18 +292,26 @@ public:
         return exchangeDataQueue->push(data);
     }
     
+    // Add method to get processed data
+    PipelineQueue<OrderBookUpdate>* getOutputQueue() {
+        return stage3OutputQueue.get();
+    }
+    
+    // Optional: Get processed updates manually
+    bool getProcessedUpdate(OrderBookUpdate& update) {
+        return stage3OutputQueue->pop(update);
+    }
+
 private:
-    // Queues
+    // Queues (removed dummyOutputQueue)
     std::unique_ptr<PipelineQueue<ExchangeData>> exchangeDataQueue;
     std::unique_ptr<PipelineQueue<OrderBookUpdate>> stage1OutputQueue;
     std::unique_ptr<PipelineQueue<OrderBookUpdate>> stage2OutputQueue;
     std::unique_ptr<PipelineQueue<OrderBookUpdate>> stage3OutputQueue;
-    std::unique_ptr<PipelineQueue<int>> dummyOutputQueue;
     
-    // Stages
+    // Stages (removed publisherStage)
     std::unique_ptr<ProtocolAdapterStage> adapterStage;
     std::unique_ptr<OrderBookStage> orderBookStage;
     std::unique_ptr<DataQualityStage> qualityStage;
     std::unique_ptr<TimestampStage> timestampStage;
-    std::unique_ptr<PublisherStage> publisherStage;
 };

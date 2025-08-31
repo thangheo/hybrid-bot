@@ -19,11 +19,26 @@ class OrderBook;
 using BidAskPair = std::pair<PriceLevel, PriceLevel>;
 // Define OrderBookKey as a pair of exchange ID and symbol
 struct OrderBookKey {
-    ExchangeId exchange;
-    Symbol symbol;
+    ExchangeId exchangeId;
+    core::Symbol symbol;
+    
+    OrderBookKey() = default;
+    OrderBookKey(const ExchangeId& exchange, const core::Symbol& sym)
+        : exchangeId(exchange), symbol(sym) {}
     
     bool operator==(const OrderBookKey& other) const {
-        return exchange == other.exchange && symbol == other.symbol;
+        return exchangeId == other.exchangeId && symbol == other.symbol;
+    }
+    
+    bool operator<(const OrderBookKey& other) const {
+        if (exchangeId != other.exchangeId) {
+            return exchangeId < other.exchangeId;
+        }
+        return symbol < other.symbol;
+    }
+    
+    std::string toString() const {
+        return exchangeId.toString() + ":" + symbol.toString();
     }
 };
  
@@ -34,7 +49,7 @@ struct OrderBookKey {
 struct OrderBookKeyHash {
     std::size_t operator()(const OrderBookKey& key) const {
         // Hash the exchange ID directly as a string
-        std::size_t h1 = std::hash<std::string>()(key.exchange.toString());
+        std::size_t h1 = std::hash<std::string>()(key.exchangeId.toString());
         // For Symbol, use the toString() method
         std::size_t h2 = std::hash<std::string>()(key.symbol.toString());
         
@@ -45,18 +60,7 @@ struct OrderBookKeyHash {
 /**
  * @brief Structure representing a market data update
  */
-
-// struct MarketDataUpdate {
-//     ExchangeId exchangeId;           // Exchange identifier
-//     std::string tradingPair;          // Trading pair (e.g., "BTCUSDT")
-//     std::string updateType;           // Type of update ("orderbook", "trade", "ticker")
-//     std::chrono::system_clock::time_point timestamp;  // Update timestamp
-//     std::vector<uint8_t> data;        // Raw data bytes
-//     uint64_t sequenceNumber = 0;      // Optional sequence number
-    
-//     MarketDataUpdate() = default;
-// };
-
+ 
 
 // Normalized order book update
 struct OrderBookUpdate {
@@ -64,6 +68,7 @@ struct OrderBookUpdate {
     std::string tradingPair;
     int64_t exchange_timestamp;
     int64_t receivedTimestamp;
+    // is_snapshot
     // int64_t processedTimestamp{0};  
     int64_t sequence_number;
     bool is_snapshot;
@@ -95,19 +100,7 @@ struct OrderBookUpdate {
 // Callback types
 // using OrderBookCallback = std::function<void(const OrderBookUpdate&)>;
 using NormalizedOrderBookCallback = std::function<void(const OrderBookUpdate&)>;
-
-// Statistics for publishers
-// struct PublisherStats {
-//     std::atomic<uint64_t> messages_published{0};
-//     std::atomic<uint64_t> messages_dropped{0};
-//     std::atomic<uint64_t> current_queue_size{0};
-//     std::atomic<uint64_t> max_queue_size_reached{0};
-//     std::atomic<uint64_t> bytes_published{0};
-//     std::atomic<uint64_t> bytes_before_compression{0};
-//     std::atomic<uint64_t> bytes_after_compression{0};
-//     std::chrono::system_clock::time_point start_time;
-//     std::chrono::system_clock::time_point last_publish_time;
-// };
+ 
 
 // Compression options
 enum class CompressionAlgorithm {
@@ -116,18 +109,7 @@ enum class CompressionAlgorithm {
     ZSTD,
     LZ4
 };
-
-// Publisher configuration
-// struct PublisherConfig {
-//     std::string zmq_endpoint = "tcp://*:5555";
-//     int zmq_hwm = 1000;
-//     int zmq_linger_ms = 1000;
-//     size_t max_queue_size = 10000;
-//     int max_publish_rate = 0;  // 0 means no limit
-//     CompressionAlgorithm compression = CompressionAlgorithm::NONE;
-//     int compression_level = 3;
-//     int heartbeat_interval_ms = 5000;
-// };
+ 
 
 } // namespace data_ingestion
 } // namespace trading

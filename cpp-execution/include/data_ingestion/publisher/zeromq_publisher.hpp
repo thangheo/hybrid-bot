@@ -26,7 +26,7 @@
  #include <condition_variable>
  #include <functional>
  #include <data_ingestion/orderbook/order_book_types.hpp>
- 
+ #include "config.hpp"
 namespace trading {
 namespace data_ingestion {
     
@@ -38,16 +38,16 @@ namespace data_ingestion {
 //  };
  
  // Publisher configuration
- struct PublisherConfig {
-     std::string zmq_endpoint = "tcp://*:5555";  // ZeroMQ binding endpoint
-     int zmq_hwm = 1000;             // High water mark for outgoing messages
-     int zmq_linger_ms = 1000;       // Linger period when closing socket
-     size_t max_queue_size = 10000;  // Maximum message queue size
-     int max_publish_rate = 0;       // Maximum messages per second (0 = unlimited)
-     CompressionAlgorithm compression = CompressionAlgorithm::NONE;  // Compression algorithm
-     int compression_level = 3;      // Compression level (algorithm-specific)
-     int heartbeat_interval_ms = 5000;  // Heartbeat interval in milliseconds (0 = disabled)
- };
+//  struct PublisherConfig {
+//      std::string zmq_endpoint = "tcp://*:5555";  // ZeroMQ binding endpoint
+//      int zmq_hwm = 1000;             // High water mark for outgoing messages
+//      int zmq_linger_ms = 1000;       // Linger period when closing socket
+//      size_t max_queue_size = 10000;  // Maximum message queue size
+//      int max_publish_rate = 0;       // Maximum messages per second (0 = unlimited)
+//      CompressionAlgorithm compression = CompressionAlgorithm::NONE;  // Compression algorithm
+//      int compression_level = 3;      // Compression level (algorithm-specific)
+//      int heartbeat_interval_ms = 5000;  // Heartbeat interval in milliseconds (0 = disabled)
+//  };
  
  // Publisher statistics
  struct PublisherStats {

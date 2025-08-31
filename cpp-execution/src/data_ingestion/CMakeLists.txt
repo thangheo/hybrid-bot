@@ -30,6 +30,7 @@ target_include_directories(data_ingestion
         ${CMAKE_SOURCE_DIR}/include
     PRIVATE
         ${CMAKE_SOURCE_DIR}/include/data_ingestion
+        ${CMAKE_SOURCE_DIR}/src/data_ingestion
         ${Protobuf_INCLUDE_DIRS}
         ${gRPC_INCLUDE_DIRS}
 )
@@ -49,3 +50,33 @@ target_link_libraries(data_ingestion
 )
 # Add websocket directory for specific build rules if needed
 add_subdirectory(websocket)
+
+# Create executable for pipeline example
+add_executable(pipeline_example
+    pipeline/example.cpp
+)
+
+# Include directories for pipeline example
+target_include_directories(pipeline_example
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/include
+        ${CMAKE_SOURCE_DIR}/include/data_ingestion
+        ${CMAKE_SOURCE_DIR}/src/data_ingestion
+)
+
+# Link libraries for pipeline example
+target_link_libraries(pipeline_example
+    PRIVATE
+        data_ingestion
+        common
+        proto_lib
+        Boost::system
+        Boost::filesystem
+        OpenSSL::SSL
+        OpenSSL::Crypto
+)
+
+# Set output directory for pipeline example
+set_target_properties(pipeline_example PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)

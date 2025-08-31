@@ -16,6 +16,8 @@
 #include <memory>
 // #include "core/market_types.hpp"
 #include "core/market_types.hpp"
+#include "orderbook/order_book_types.hpp"
+
 namespace trading {
 namespace data_ingestion {
 
@@ -48,6 +50,19 @@ struct DataQualityConfig {
     double max_price_deviation;  // Maximum allowed price deviation
     int max_gap_ms;              // Maximum allowed time gap between updates
     int validation_level;        // Level of validation to perform (0-3)
+    double min_volume_threshold; // Minimum volume threshold
+    double max_spread_percentage; // Maximum allowed spread percentage
+    double max_order_age_seconds; // Maximum age of orders to consider
+    double min_order_size;        // Minimum order size to consider
+    bool enable_sequence_validation;
+    bool enable_price_range_filter;
+    bool enable_order_age_filter;
+    bool enable_checksum_filter;
+    bool enable_sequence_gap_filter;
+    std::vector<double> max_prices;
+    std::vector<double> min_prices;
+    double max_sequence_gap;
+    std::map<std::string, std::string> validation_rules;
 };
 
 // Configuration for time synchronization
@@ -55,14 +70,23 @@ struct TimeSyncConfig {
     std::string ntp_server;
     int sync_interval_ms;
     int max_drift_ms;
+    int max_time_skew_ms;
+    bool enable_ntp_sync;
 };
 
 // Configuration for data publishing
 struct PublisherConfig {
     std::string zmq_bind_address;
     int publish_interval_ms;
+    std::string zmq_endpoint;
+    int max_queue_size;
+    int zmq_linger_ms;
+    int heartbeat_interval_ms;
+    int zmq_hwm;
     bool publish_raw_data;
     bool publish_normalized_data;
+    int max_publish_rate;
+    CompressionAlgorithm compression;
     std::vector<std::string> topics;
 };
 
