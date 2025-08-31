@@ -29,7 +29,12 @@
  namespace core {
  
  // Common timestamp definition
- using Timestamp = std::chrono::time_point<std::chrono::system_clock, std::chrono::nanoseconds>;
+//  using Timestamp = std::chrono::time_point<std::chrono::system_clock, std::chrono::nanoseconds>;
+// To this:
+using Timestamp = std::chrono::time_point<std::chrono::system_clock>;
+
+// Add proper namespace aliases where needed
+// Ensure all files use the same ExchangeId definition
 using ExchangeId = common::ExchangeId;
 
 // Raw market data from an exchange

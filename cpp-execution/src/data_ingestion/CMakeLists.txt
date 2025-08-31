@@ -53,7 +53,7 @@ add_subdirectory(websocket)
 
 # Create executable for pipeline example
 add_executable(pipeline_example
-    pipeline/example.cpp
+    pipeline/pipeline_example.cpp
 )
 
 # Include directories for pipeline example
