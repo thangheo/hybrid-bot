@@ -104,39 +104,88 @@ ConnectionStatus BinanceWebSocketClient::getStatus() const {
     return status_.load();
 }
 
+// bool BinanceWebSocketClient::subscribe(const std::vector<core::Symbol>& symbols) {
+//     std::lock_guard<std::mutex> lock(subscriptionMutex_);
+    
+//     if (!connected_.load()) {
+//         LOG_ERROR("Cannot subscribe - not connected to Binance WebSocket");
+//         return false;
+//     }
+    
+//     LOG_INFO("Subscribing to " + std::to_string(symbols.size()) + " symbols");
+    
+//     std::vector<std::string> streams;
+//     for (const auto& symbol : symbols) {
+//         // Create different stream types for each symbol
+//         streams.push_back(symbolToStream(symbol, "depth"));    // Order book
+//         streams.push_back(symbolToStream(symbol, "trade"));    // Trades
+//         streams.push_back(symbolToStream(symbol, "ticker"));   // 24hr stats
+        
+//         // Add to subscribed symbols if not already present
+//         if (std::find(subscribedSymbols_.begin(), subscribedSymbols_.end(), symbol) == subscribedSymbols_.end()) {
+//             subscribedSymbols_.push_back(symbol);
+//             LOG_INFO("Added symbol to subscription: " + symbol.base + symbol.quote);
+//         }
+//     }
+    
+//     bool success = subscribeToStreams(streams);
+    
+//     if (success) {
+//         LOG_INFO("Successfully subscribed to " + std::to_string(symbols.size()) + " symbols on Binance");
+//         LOG_INFO("Total subscribed symbols: " + std::to_string(subscribedSymbols_.size()));
+//     } else {
+//         LOG_ERROR("Failed to subscribe to symbols on Binance");
+//     }
+    
+//     return success;
+// }
+
 bool BinanceWebSocketClient::subscribe(const std::vector<core::Symbol>& symbols) {
     std::lock_guard<std::mutex> lock(subscriptionMutex_);
-    
+
     if (!connected_.load()) {
         LOG_ERROR("Cannot subscribe - not connected to Binance WebSocket");
         return false;
     }
-    
+
     LOG_INFO("Subscribing to " + std::to_string(symbols.size()) + " symbols");
-    
+
     std::vector<std::string> streams;
     for (const auto& symbol : symbols) {
-        // Create different stream types for each symbol
-        streams.push_back(symbolToStream(symbol, "depth"));    // Order book
-        streams.push_back(symbolToStream(symbol, "trade"));    // Trades
-        streams.push_back(symbolToStream(symbol, "ticker"));   // 24hr stats
-        
-        // Add to subscribed symbols if not already present
+        // Tạo các stream cho mỗi symbol
+        std::string depthStream = symbolToStream(symbol, "depth");
+        std::string tradeStream = symbolToStream(symbol, "trade");
+        std::string tickerStream = symbolToStream(symbol, "ticker");
+
+        streams.push_back(depthStream);
+        streams.push_back(tradeStream);
+        streams.push_back(tickerStream);
+
+        // Thêm vào subscribedStreams_ nếu chưa có
+        if (std::find(subscribedStreams_.begin(), subscribedStreams_.end(), depthStream) == subscribedStreams_.end())
+            subscribedStreams_.push_back(depthStream);
+        if (std::find(subscribedStreams_.begin(), subscribedStreams_.end(), tradeStream) == subscribedStreams_.end())
+            subscribedStreams_.push_back(tradeStream);
+        if (std::find(subscribedStreams_.begin(), subscribedStreams_.end(), tickerStream) == subscribedStreams_.end())
+            subscribedStreams_.push_back(tickerStream);
+
+        // Thêm vào subscribedSymbols_ nếu chưa có
         if (std::find(subscribedSymbols_.begin(), subscribedSymbols_.end(), symbol) == subscribedSymbols_.end()) {
             subscribedSymbols_.push_back(symbol);
             LOG_INFO("Added symbol to subscription: " + symbol.base + symbol.quote);
         }
     }
-    
+
     bool success = subscribeToStreams(streams);
-    
+
     if (success) {
         LOG_INFO("Successfully subscribed to " + std::to_string(symbols.size()) + " symbols on Binance");
         LOG_INFO("Total subscribed symbols: " + std::to_string(subscribedSymbols_.size()));
+        LOG_INFO("Total subscribed streams: " + std::to_string(subscribedStreams_.size()));
     } else {
         LOG_ERROR("Failed to subscribe to symbols on Binance");
     }
-    
+
     return success;
 }
 
@@ -218,32 +267,7 @@ std::vector<std::string> BinanceWebSocketClient::getSubscribedStreams() const {
     std::lock_guard<std::mutex> lock(subscriptionMutex_);
     return subscribedStreams_;
 }
-
-// Private implementation methods
-// void BinanceWebSocketClient::initializeConnection() {
-//     try {
-//         // For now, use a simulated connection with realistic market data
-//         // This ensures the pipeline gets data while we work on the real WebSocket
-//         LOG_INFO("Initializing simulated WebSocket connection");
-        
-//         // Set up basic connection state
-//         connected_.store(true);
-//         status_.store(ConnectionStatus::CONNECTED);
-        
-//         // Start a data simulation thread instead of real WebSocket
-//         keep_running_ = true;
-//         // io_thread_ = std::thread(&BinanceWebSocketClient::simulateMarketData, this);
-//         // run real WebSocket connection
-//         io_thread_ = std::thread(&BinanceWebSocketClient::runIoLoop, this);
-
-//         LOG_INFO("Real WebSocket connection established to " + host_);
-        
-//     } catch (const std::exception& e) {
-//         LOG_ERROR("WebSocket connection failed: " + std::string(e.what()));
-//         throw;
-//     }
-// }
-// Enhanced BinanceWebSocketClient::runIoLoop() implementation
+ 
 void BinanceWebSocketClient::runIoLoop() {
     LOG_INFO("Starting real WebSocket IO loop for Binance");
     
@@ -258,7 +282,6 @@ void BinanceWebSocketClient::runIoLoop() {
         
         // These objects perform our I/O
         tcp::resolver resolver{ioc};
-        // websocket::stream<beast::ssl_stream<tcp::socket>> ws{ioc, ctx};
         websocket::stream<beast::ssl_stream<beast::tcp_stream>> ws{ioc, ctx};
 
         // Set SNI Hostname (many hosts need this to handshake successfully)
@@ -267,23 +290,12 @@ void BinanceWebSocketClient::runIoLoop() {
             throw beast::system_error{ec};
         }
         
-        // Look up the domain name
-        // auto const results = resolver.resolve(host_, port_);
-        
-        // Make the connection on the IP address we get from a lookup
-        // auto ep = beast::get_lowest_layer(ws).connect(results);
-                // ...existing code...
-        boost::asio::ip::tcp::socket socket(ioc);
-        boost::asio::ip::tcp::endpoint endpoint(boost::asio::ip::make_address(host_), std::stoi(port_));
-        socket.connect(endpoint);
-        // ...existing code...
-        // Update the host string. This will provide the value of the
-        // Host HTTP header during the WebSocket handshake.
-        std::string host = host_ + ':' + std::to_string(endpoint.port());
-
+        auto const results = resolver.resolve(host_, port_);
+        // Kết nối TCP qua Beast
+        beast::get_lowest_layer(ws).connect(results);
+        std::string host = host_;
         // Perform the SSL handshake
         ws.next_layer().handshake(ssl::stream_base::client);
-        
         // Set a decorator to change the User-Agent of the handshake
         ws.set_option(websocket::stream_base::decorator(
             [](websocket::request_type& req) {
@@ -295,7 +307,13 @@ void BinanceWebSocketClient::runIoLoop() {
         ws.handshake(host, "/ws");
         
         LOG_INFO("WebSocket handshake completed successfully");
-        
+        json subscribeMsg = {
+            {"method", "SUBSCRIBE"},
+            {"params", subscribedStreams_},
+            {"id", 1}
+        };
+        ws.write(net::buffer(subscribeMsg.dump()));
+        LOG_INFO("Sent subscription request to Binance");
         // Connection successful - update status
         connected_.store(true);
         status_.store(ConnectionStatus::CONNECTED);
@@ -571,32 +589,7 @@ void BinanceWebSocketClient::simulateMarketData() {
     
     LOG_INFO("Market data simulation stopped after " + std::to_string(updateCount) + " updates");
 }
-// void BinanceWebSocketClient::closeConnection() {
-//     try {
-//         keep_running_ = false;
-        
-//         // Join the IO thread (now simulation thread)
-//         if (io_thread_.joinable()) {
-//             io_thread_.join();
-//         }
-        
-//         LOG_INFO("WebSocket connection closed");
-        
-//     } catch (const std::exception& e) {
-//         LOG_ERROR("Error closing WebSocket: " + std::string(e.what()));
-//     }
-// }
-// bool BinanceWebSocketClient::sendWebSocketMessage(const std::string& message) {
-//     if (!connected_.load()) {
-//         LOG_ERROR("Cannot send message - WebSocket not connected");
-//         return false;
-//     }
-    
-//     // For simulation, just log the subscription request
-//     LOG_INFO("Simulating WebSocket message send: " + message);
-//     return true;
-// }
-void BinanceWebSocketClient::onWebSocketOpen() {
+ void BinanceWebSocketClient::onWebSocketOpen() {
     std::cout << "Connected to Binance WebSocket" << std::endl;
     
     // Resubscribe to previously subscribed streams
