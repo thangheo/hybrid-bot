@@ -267,4 +267,4 @@ std::unique_ptr<NormalizationPipeline> createDefaultNormalizationPipeline(
 }
 
 } // namespace data_ingestion
-} // namespace trading
+} // namespace trading// Crypto-specific data quality settings

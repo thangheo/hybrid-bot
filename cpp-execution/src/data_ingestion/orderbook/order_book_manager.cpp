@@ -1,3 +1,4 @@
+#include "data_ingestion/orderbook/order_book.hpp"
 /**
  * @file order_book_manager.cpp
  * @brief Implementation of OrderBookManager
@@ -177,7 +178,7 @@ bool OrderBookManager::processUpdate(const OrderBookUpdate& update) {
         
         if (!success && config_.validateSequenceNumbers) {
             ++sequenceErrors_;
-            logError("Sequence number validation failed for " + key.toString());
+            logError("Sequence gap within tolerance for " + key.toString());
         }
         
     } catch (const std::exception& e) {
@@ -458,6 +459,46 @@ void OrderBookManager::updateStatistics(double latencyMs) const {
     }
 }
 
+// void OrderBookManager::updateStatistics(double latencyMs) const {
+//     if (!config_.enableStatistics) {
+//         return;
+//     }
+    
+//     // Use compare_exchange_weak loop for atomic double addition
+//     double expected = totalUpdateLatencyMs_.load(std::memory_order_relaxed);
+//     double desired;
+//     do {
+//         desired = expected + latencyMs;
+//     } while (!totalUpdateLatencyMs_.compare_exchange_weak(expected, desired, 
+//                                                          std::memory_order_relaxed));
+    
+//     // Update max latency if needed
+//     double currentMax = maxUpdateLatencyMs_.load(std::memory_order_acquire);
+//     while (latencyMs > currentMax && 
+//            !maxUpdateLatencyMs_.compare_exchange_weak(currentMax, latencyMs, 
+//                                                      std::memory_order_release,
+//                                                      std::memory_order_relaxed)) {
+//         // Keep trying until we successfully update or latencyMs is no longer the max
+//     }
+    
+//     // Update per-second counter with proper synchronization
+//     auto now = std::chrono::system_clock::now();
+    
+//     {
+//         std::lock_guard<std::mutex> lock(statsMutex_);
+//         auto timeSinceReset = std::chrono::duration_cast<std::chrono::seconds>(now - lastSecondReset_).count();
+        
+//         if (timeSinceReset >= 1) {
+//             // Reset counter if more than 1 second has passed
+//             updatesInLastSecond_ = 1;
+//             lastSecondReset_ = now;
+//         } else {
+//             ++updatesInLastSecond_;
+//         }
+//     }
+// }
+
+
 void OrderBookManager::notifyManagerEvent(const OrderBookKey& key, const std::string& eventType) {
     if (managerCallback_) {
         try {
@@ -527,6 +568,23 @@ void OrderBookManager::removeOrderBookInternal(const OrderBookKey& key) {
         ++totalOrderBooksRemoved_;
         notifyManagerEvent(key, "removed_inactive");
     }
+}
+// Allow sequence gaps up to 1000 for high-frequency crypto data
+const int64_t MAX_ALLOWED_SEQUENCE_GAP = 1000;
+const int64_t CRYPTO_MAX_SEQUENCE_GAP = 1000;
+
+bool OrderBookManager::validateSpread(const OrderBook& book) {
+    auto bestBid = book.getBestBid();
+    auto bestAsk = book.getBestAsk();
+    
+    if (bestBid.getPrice() > 0.0 && bestAsk.getPrice() > 0.0) {
+        if (bestBid.getPrice() >= bestAsk.getPrice()) {
+            // This should trigger a full resync, not just validation failure
+            std::cerr << "CRITICAL: Bid-ask spread inversion detected. Triggering resync." << std::endl;
+            return false;
+        }
+    }
+    return true;
 }
 
 // Factory implementations

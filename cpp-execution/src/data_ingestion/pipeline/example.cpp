@@ -181,6 +181,40 @@ private:
         g_messageCount.fetch_add(1);
         g_totalBytes.fetch_add(data.size());
         
+        // Convert data to string for inspection
+        std::string dataStr(data.begin(), data.end());
+        
+        // Print order book data for debugging (first 10 messages)
+        static std::atomic<int> printCount{0};
+        if (printCount.fetch_add(1) < 10) {
+            try {
+                json parsedData = json::parse(dataStr);
+                if (parsedData.contains("e") && parsedData.value("e", "") == "depthUpdate") {
+                    std::cout << "\n🔹 ORDER BOOK [" << symbol << "] 🔹" << std::endl;
+                    
+                    // Show best bid
+                    if (parsedData.contains("b") && parsedData.value("b", json{}).is_array()) {
+                        auto bids = parsedData.value("b", json::array());
+                        if (!bids.empty() && bids[0].is_array() && bids[0].size() >= 2) {
+                            std::cout << "📈 Best Bid: " << bids[0][0] << " @ " << bids[0][1] << std::endl;
+                        }
+                    }
+                    
+                    // Show best ask
+                    if (parsedData.contains("a") && parsedData.value("a", json{}).is_array()) {
+                        auto asks = parsedData.value("a", json::array());
+                        if (!asks.empty() && asks[0].is_array() && asks[0].size() >= 2) {
+                            std::cout << "📉 Best Ask: " << asks[0][0] << " @ " << asks[0][1] << std::endl;
+                        }
+                    }
+                    
+                    std::cout << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" << std::endl;
+                }
+            } catch (const std::exception& e) {
+                std::cout << "📊 Raw Data [" << symbol << "]: " << dataStr.substr(0, 50) << "..." << std::endl;
+            }
+        }
+        
         // Convert to ExchangeData format for pipeline
         ExchangeData exchangeData;
         exchangeData.exchangeId = exchange;

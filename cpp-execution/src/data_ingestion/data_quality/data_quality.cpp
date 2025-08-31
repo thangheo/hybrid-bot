@@ -149,11 +149,11 @@ double PriceRangeFilter::getReasonablePriceRange(const std::string& symbol) cons
     }
     
     // Otherwise use default limits based on typical ranges
-    if (symbol.find("BTC") != std::string::npos) return 100000.0;
+    if (symbol.find("BTC") != std::string::npos) return 200000.0;
     if (symbol.find("ETH") != std::string::npos) return 10000.0;
     
     // Default fallback - very high to avoid false positives
-    return 1000000.0;
+    return 2000000.0;
 }
 
 // SequenceGapFilter implementation

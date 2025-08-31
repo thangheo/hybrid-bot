@@ -15,6 +15,7 @@
 #include <atomic>
 #include <memory>
 #include <thread>
+#include <random>
 #include <boost/beast/core.hpp>
 #include <boost/beast/websocket.hpp>
 #include <boost/beast/websocket/ssl.hpp>
@@ -139,6 +140,12 @@ private:
     std::unique_ptr<std::thread> workerThread_;
     std::atomic<bool> shouldStop_{false};
     void workerFunction();
+    
+    // Market data simulation methods (temporary until real WebSocket is ready)
+    void simulateMarketData();
+    void generateOrderBookUpdate(const std::string& symbol, double basePrice, std::mt19937& gen);
+    void generateTradeUpdate(const std::string& symbol, double basePrice, std::mt19937& gen);
+    void generateTickerUpdate(const std::string& symbol, double basePrice, std::mt19937& gen);
 };
 
 } // namespace data_ingestion

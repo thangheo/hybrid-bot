@@ -120,7 +120,10 @@ using OrderBookManagerCallback = std::function<void(const OrderBookKey&, const s
  * @endcode
  */
 class OrderBookManager {
+private:
+    mutable std::mutex orderBookMutex_;
 public:
+    bool validateSpread(const OrderBook& book);
     /**
      * Constructor with optional configuration
      * @param config Configuration for manager behavior
@@ -317,11 +320,17 @@ private:
     mutable std::atomic<uint64_t> invalidUpdates_{0};
     
     // Performance tracking
-    mutable std::atomic<double> totalUpdateLatencyMs_{0.0};
+    // mutable std::atomic<double> totalUpdateLatencyMs_{0.0};
+    // mutable std::atomic<double> maxUpdateLatencyMs_{0.0};
+    // mutable std::atomic<uint64_t> updatesInLastSecond_{0};
+    // mutable std::chrono::system_clock::time_point lastSecondReset_;
+    mutable std::atomic<uint64_t> totalUpdateLatencyMs_{0};
     mutable std::atomic<double> maxUpdateLatencyMs_{0.0};
-    mutable std::atomic<uint64_t> updatesInLastSecond_{0};
+    mutable std::atomic<uint32_t> updatesInLastSecond_{0};
     mutable std::chrono::system_clock::time_point lastSecondReset_;
-    
+    // mutable std::mutex statsMutex_;
+
+
     // Helper methods
     OrderBookKey createKey(const ExchangeId& exchangeId, const core::Symbol& symbol) const;
     OrderBookKey createKey(const OrderBookUpdate& update) const;
