@@ -70,7 +70,7 @@ struct OrderBookUpdate {
     int64_t receivedTimestamp;
     // is_snapshot
     // int64_t processedTimestamp{0};  
-    int64_t sequence_number;
+    uint64_t sequence_number;
     bool is_snapshot;
     std::vector<PriceLevel> bids;
     std::vector<PriceLevel> asks;
@@ -85,7 +85,7 @@ struct OrderBookUpdate {
     OrderBookUpdate() = default;
     OrderBookUpdate(const ExchangeId& exchangeId, const std::string& tradingPair,
                     int64_t exchange_timestamp, int64_t receivedTimestamp,
-                    int64_t sequence_number, bool is_snapshot,
+                    uint64_t sequence_number, bool is_snapshot,
                     const std::vector<PriceLevel>& bids,
                     const std::vector<PriceLevel>& asks)
         : exchangeId(exchangeId), tradingPair(tradingPair),

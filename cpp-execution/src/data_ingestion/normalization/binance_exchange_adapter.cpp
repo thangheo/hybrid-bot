@@ -25,7 +25,7 @@ OrderBookUpdate BinanceExchangeAdapter::normalize(const MarketDataUpdate& update
             std::string(update.data.begin(), update.data.end()));
         
         // Check if this is a depth update or snapshot
-        if (data.contains("e") && data["e"] == "depthUpdate") {
+        if (data.contains("e") && data.value("e", "") == "depthUpdate") {
             return parseDepthUpdate(data, update);
         } else if (data.contains("bids") && data.contains("asks")) {
             return parseDepthSnapshot(data, update);
@@ -49,7 +49,7 @@ OrderBookUpdate BinanceExchangeAdapter::parseDepthUpdate(
     
     // Extract timestamp
     if (data.contains("E")) {
-        result.exchange_timestamp = data["E"].get<int64_t>();
+        result.exchange_timestamp = data.value("E", 0LL);
     } else {
         result.exchange_timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::system_clock::now().time_since_epoch()).count();
@@ -59,15 +59,15 @@ OrderBookUpdate BinanceExchangeAdapter::parseDepthUpdate(
     
     // Extract sequence number
     if (data.contains("u")) {
-        result.sequence_number = data["u"].get<int64_t>();
+        result.sequence_number = data.value("u", 0LL);
     }
     
     // Parse bids and asks
     if (data.contains("b")) {
-        result.bids = parsePriceLevels(data["b"]);
+        result.bids = parsePriceLevels(data.value("b", nlohmann::json::array()));
     }
     if (data.contains("a")) {
-        result.asks = parsePriceLevels(data["a"]);
+        result.asks = parsePriceLevels(data.value("a", nlohmann::json::array()));
     }
     
     return result;
@@ -83,7 +83,7 @@ OrderBookUpdate BinanceExchangeAdapter::parseDepthSnapshot(
     
     // Extract timestamp
     if (data.contains("T")) {
-        result.exchange_timestamp = data["T"].get<int64_t>();
+        result.exchange_timestamp = data.value("T", 0LL);
     } else {
         result.exchange_timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::system_clock::now().time_since_epoch()).count();
@@ -93,15 +93,15 @@ OrderBookUpdate BinanceExchangeAdapter::parseDepthSnapshot(
 
     // Extract sequence number
     if (data.contains("lastUpdateId")) {
-        result.sequence_number = data["lastUpdateId"].get<int64_t>();
+        result.sequence_number = data.value("lastUpdateId", 0LL);
     }
     
     // Parse bids and asks
     if (data.contains("bids")) {
-        result.bids = parsePriceLevels(data["bids"]);
+        result.bids = parsePriceLevels(data.value("bids", nlohmann::json::array()));
     }
     if (data.contains("asks")) {
-        result.asks = parsePriceLevels(data["asks"]);
+        result.asks = parsePriceLevels(data.value("asks", nlohmann::json::array()));
     }
     
     return result;
