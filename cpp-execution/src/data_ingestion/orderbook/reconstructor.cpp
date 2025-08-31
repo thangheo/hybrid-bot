@@ -69,7 +69,7 @@
      const Symbol& symbol,
      const std::vector<PriceLevel>& bids,
      const std::vector<PriceLevel>& asks,
-     uint64_t sequence_number,
+     uint64_t sequenceNumber,
      Timestamp timestamp) {
      
      if (!initialized_) {
@@ -95,7 +95,7 @@
      }
      
      // Apply snapshot to order book
-     if (!order_book->applySnapshot(bids, asks, sequence_number, timestamp)) {
+     if (!order_book->applySnapshot(bids, asks, sequenceNumber, timestamp)) {
          std::cerr << "Error: Failed to apply snapshot to order book" << std::endl;
          return false;
      }
@@ -112,7 +112,7 @@ bool OrderBookReconstructor::processUpdate(
     const Symbol& symbol,
     const std::vector<PriceLevel>& bids,
     const std::vector<PriceLevel>& asks,
-    uint64_t sequence_number,
+    uint64_t sequenceNumber,
     Timestamp timestamp) {
     
     if (!initialized_) {
@@ -138,11 +138,11 @@ bool OrderBookReconstructor::processUpdate(
     }
     
     // Apply update to order book
-    if (!order_book->applyUpdate(bids, asks, sequence_number, timestamp)) {
+    if (!order_book->applyUpdate(bids, asks, sequenceNumber, timestamp)) {
         std::cerr << "Error: Failed to apply update to order book" << std::endl;
         
         // If there's a sequence gap, request a snapshot
-        if (order_book->getSequenceNumber() + 1 < sequence_number) {
+        if (order_book->getSequenceNumber() + 1 < sequenceNumber) {
             requestSnapshot(exchange, symbol);
         }
         
@@ -257,7 +257,7 @@ void OrderBookReconstructor::publishOrderBook(const std::shared_ptr<OrderBook>& 
 
     OrderBookUpdate update = order_book->getSnapshot();
     std::string payload = update.exchangeId.toString() + ":" + update.tradingPair + ":" +
-        std::to_string(update.sequence_number) + ":" +
+        std::to_string(update.sequenceNumber) + ":" +
         std::to_string(update.exchange_timestamp) + ":" +
         std::to_string(update.receivedTimestamp);
     std::vector<unsigned char> binary_payload(payload.begin(), payload.end());

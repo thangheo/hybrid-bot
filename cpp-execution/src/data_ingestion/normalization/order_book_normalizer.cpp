@@ -1,10 +1,11 @@
 // src/data_ingestion/order_book_normalizer.cpp
 #include "data_ingestion/normalization/order_book_normalizer.hpp"
-#include "data_ingestion/protocol/binance_adapter.hpp"
 #include <iostream>
 #include <sstream>
 #include <nlohmann/json.hpp>
 #include <unordered_map>
+#include <map>
+#include <memory>
 #include <mutex>
 #include "protocol/adapter_factory.hpp"
 
@@ -26,10 +27,10 @@ void OrderBookNormalizer::initAdapters() {
     // Initialize adapters for each supported exchange
     
     // Binance adapter - use the new ExchangeAdapter implementation
-    exchange_adapters_["binance"] = std::make_shared<BinanceExchangeAdapter>();
+    // exchange_adapters_["binance"] = std::static_pointer_cast<ExchangeAdapter>(std::make_shared<BinanceAdapter>());
 
     // Add more exchanges as needed...
-    // exchange_adapters_["coinbase"] = std::make_shared<CoinbaseExchangeAdapter>();
+    // exchange_adapters_["coinbase"] = std::static_pointer_cast<ExchangeAdapter>(std::make_shared<CoinbaseExchangeAdapter>());
     
     std::cout << "Initialized " << exchange_adapters_.size() 
               << " exchange adapters" << std::endl;
@@ -55,7 +56,7 @@ OrderBookUpdate OrderBookNormalizer::getOrderBook(
     OrderBookUpdate empty_update;
     empty_update.exchangeId = exchangeId;
     empty_update.tradingPair = tradingPair;
-    empty_update.is_snapshot = true;
+    empty_update.isSnapshot = true;
     
     return empty_update;
 }
@@ -88,18 +89,18 @@ void OrderBookNormalizer::processMarketData(const MarketDataUpdate& update) {
         std::shared_ptr<OrderBook> order_book = getOrCreateOrderBook(update.exchangeId, standardized_pair);
         
         // Update the order book based on the normalized data
-        if (normalized.is_snapshot) {
+        if (normalized.isSnapshot) {
             order_book->applySnapshot(
                 normalized.bids, 
                 normalized.asks, 
-                normalized.sequence_number, 
+                normalized.sequenceNumber, 
                 std::chrono::system_clock::time_point(std::chrono::nanoseconds(normalized.exchange_timestamp))
             );
         } else {
             order_book->applyUpdate(
                 normalized.bids, 
                 normalized.asks, 
-                normalized.sequence_number, 
+                normalized.sequenceNumber, 
                 std::chrono::system_clock::time_point(std::chrono::nanoseconds(normalized.exchange_timestamp))
             );
         }
@@ -183,13 +184,6 @@ void OrderBookNormalizer::processExchangeData(const MarketDataUpdate& update,
             std::cerr << "No adapter found for exchange: " << exchangeId.toString() << std::endl;
         }
     }
-// BinanceAdapter implementation
-
-
-
-
-// AdapterFactory implementation
-
 
 } // namespace data_ingestion
 } // namespace trading

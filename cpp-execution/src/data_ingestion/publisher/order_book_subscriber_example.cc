@@ -87,8 +87,8 @@ void processOrderBookUpdate(const OrderBookUpdate& update, SubscriberStats& stat
     // Print basic info about the update
     std::cout << "Received order book update: "
               << exchange << ":" << pair
-              << " seq=" << update.sequence_number()
-              << " snapshot=" << (update.is_snapshot() ? "yes" : "no")
+              << " seq=" << update.sequenceNumber()
+              << " snapshot=" << (update.isSnapshot() ? "yes" : "no")
               << " bids=" << update.bids_size()
               << " asks=" << update.asks_size()
               << std::endl;

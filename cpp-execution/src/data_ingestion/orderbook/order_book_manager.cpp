@@ -160,18 +160,18 @@ bool OrderBookManager::processUpdate(const OrderBookUpdate& update) {
         auto timestamp = std::chrono::time_point<std::chrono::system_clock>(
             std::chrono::nanoseconds(update.receivedTimestamp)
         );
-        if (update.is_snapshot) {
+        if (update.isSnapshot) {
             success = orderBook->applySnapshot(
                 update.bids, 
                 update.asks, 
-                update.sequence_number, 
+                update.sequenceNumber, 
                 timestamp
             );
         } else {
             success = orderBook->applyUpdate(
                 update.bids, 
                 update.asks, 
-                update.sequence_number, 
+                update.sequenceNumber, 
                 timestamp
             );
         }

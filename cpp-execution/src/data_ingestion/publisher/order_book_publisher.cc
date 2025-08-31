@@ -335,7 +335,7 @@ OrderBookPublisher::OrderBookPublisher(const PublisherConfig& config)
                 OrderBookUpdate update;
                 update.exchangeId = "unknown";
                 update.tradingPair = "unknown";
-                update.sequence_number = 0;
+                update.sequenceNumber = 0;
                 
                 back_pressure_callback_(update);
             }
@@ -397,10 +397,10 @@ std::vector<uint8_t> OrderBookPublisher::serializeOrderBookUpdate(const OrderBoo
     ss << "{";
     ss << "\"exchangeId\":\"" << update.exchangeId << "\",";
     ss << "\"tradingPair\":\"" << update.tradingPair << "\",";
-    ss << "\"sequence_number\":" << update.sequence_number << ",";
+    ss << "\"sequenceNumber\":" << update.sequenceNumber << ",";
     ss << "\"exchange_timestamp\":" << update.exchange_timestamp << ",";
     ss << "\"receivedTimestamp\":" << update.receivedTimestamp << ",";
-    ss << "\"is_snapshot\":" << (update.is_snapshot ? "true" : "false") << ",";
+    ss << "\"isSnapshot\":" << (update.isSnapshot ? "true" : "false") << ",";
     
     // Add bids
     ss << "\"bids\":[";

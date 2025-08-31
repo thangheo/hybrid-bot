@@ -347,8 +347,8 @@ class ImbalanceSimulator:
             'trading_pair': 'BTC/USDT',
             'exchange_timestamp': timestamp,
             'received_timestamp': timestamp,
-            'sequence_number': self.tick,
-            'is_snapshot': True,
+            'sequenceNumber': self.tick,
+            'isSnapshot': True,
             'bids': bids,
             'asks': asks
         }

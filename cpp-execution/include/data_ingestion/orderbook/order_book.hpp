@@ -29,7 +29,7 @@ struct OrderBookDelta {
     ExchangeId exchangeId;
     std::string tradingPair;
     core::Timestamp timestamp;
-    uint64_t sequence_number;
+    uint64_t sequenceNumber;
     std::vector<PriceLevel> added_bids = {};
     std::vector<PriceLevel> removed_bids = {};
     std::vector<PriceLevel> added_asks = {};
@@ -74,12 +74,12 @@ public:
     // Update methods
     bool applySnapshot(const std::vector<PriceLevel>& bids, 
                       const std::vector<PriceLevel>& asks,
-                      uint64_t sequence_number,
+                      uint64_t sequenceNumber,
                       Timestamp timestamp);
                       
     bool applyUpdate(const std::vector<PriceLevel>& bids,
                     const std::vector<PriceLevel>& asks,
-                    uint64_t sequence_number,
+                    uint64_t sequenceNumber,
                     Timestamp timestamp);
     
     // Snapshot and delta methods

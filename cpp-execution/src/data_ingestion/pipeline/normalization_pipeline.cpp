@@ -205,7 +205,7 @@ core::ExchangeData NormalizationPipeline::convertMarketDataToExchangeData(
     exchangeData.symbol = core::Symbol::fromString(update.tradingPair);
     exchangeData.receivedTime = std::chrono::duration_cast<std::chrono::milliseconds>(
         update.timestamp.time_since_epoch()).count();
-    exchangeData.is_snapshot = false; // MarketDataUpdate is typically incremental
+    exchangeData.isSnapshot = false; // MarketDataUpdate is typically incremental
     exchangeData.sourceType = "websocket"; // Assume websocket source
     
     // Convert data vector to string (simplified)

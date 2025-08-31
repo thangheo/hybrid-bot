@@ -146,8 +146,8 @@ bool DataValidator::validateRequiredFields(const OrderBookUpdate& update, std::s
         valid = false;
     }
     
-    if (update.sequence_number == 0 && !update.is_snapshot) {
-        ss << "Missing sequence_number for incremental update; ";
+    if (update.sequenceNumber == 0 && !update.isSnapshot) {
+        ss << "Missing sequenceNumber for incremental update; ";
         valid = false;
     }
     

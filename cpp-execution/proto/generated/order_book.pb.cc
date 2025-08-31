@@ -78,8 +78,8 @@ PROTOBUF_CONSTEXPR OrderBookUpdate::OrderBookUpdate(
   , /*decltype(_impl_.received_timestamp_)*/nullptr
   , /*decltype(_impl_.metadata_)*/nullptr
   , /*decltype(_impl_.exchange_id_)*/0
-  , /*decltype(_impl_.is_snapshot_)*/false
-  , /*decltype(_impl_.sequence_number_)*/int64_t{0}
+  , /*decltype(_impl_.issnapshot_)*/false
+  , /*decltype(_impl_.sequencenumber_)*/int64_t{0}
   , /*decltype(_impl_._cached_size_)*/{}} {}
 struct OrderBookUpdateDefaultTypeInternal {
   PROTOBUF_CONSTEXPR OrderBookUpdateDefaultTypeInternal()
@@ -179,8 +179,8 @@ const uint32_t TableStruct_order_5fbook_2eproto::offsets[] PROTOBUF_SECTION_VARI
   PROTOBUF_FIELD_OFFSET(::trading::data_ingestion::proto::OrderBookUpdate, _impl_.symbol_),
   PROTOBUF_FIELD_OFFSET(::trading::data_ingestion::proto::OrderBookUpdate, _impl_.exchange_timestamp_),
   PROTOBUF_FIELD_OFFSET(::trading::data_ingestion::proto::OrderBookUpdate, _impl_.received_timestamp_),
-  PROTOBUF_FIELD_OFFSET(::trading::data_ingestion::proto::OrderBookUpdate, _impl_.sequence_number_),
-  PROTOBUF_FIELD_OFFSET(::trading::data_ingestion::proto::OrderBookUpdate, _impl_.is_snapshot_),
+  PROTOBUF_FIELD_OFFSET(::trading::data_ingestion::proto::OrderBookUpdate, _impl_.sequencenumber_),
+  PROTOBUF_FIELD_OFFSET(::trading::data_ingestion::proto::OrderBookUpdate, _impl_.issnapshot_),
   PROTOBUF_FIELD_OFFSET(::trading::data_ingestion::proto::OrderBookUpdate, _impl_.bids_),
   PROTOBUF_FIELD_OFFSET(::trading::data_ingestion::proto::OrderBookUpdate, _impl_.asks_),
   PROTOBUF_FIELD_OFFSET(::trading::data_ingestion::proto::OrderBookUpdate, _impl_.checksum_),
@@ -244,42 +244,42 @@ const char descriptor_table_protodef_order_5fbook_2eproto[] PROTOBUF_SECTION_VAR
   "\005price\030\001 \001(\t\022\020\n\010quantity\030\002 \001(\t\022>\n\006orders"
   "\030\003 \003(\0132..trading.data_ingestion.proto.Pr"
   "iceLevel.Order\032+\n\005Order\022\020\n\010order_id\030\001 \001("
-  "\t\022\020\n\010quantity\030\002 \001(\t\"\350\004\n\017OrderBookUpdate\022"
+  "\t\022\020\n\010quantity\030\002 \001(\t\"\346\004\n\017OrderBookUpdate\022"
   ":\n\013exchange_id\030\001 \001(\0162%.trading.common.pr"
   "oto.ExchangeIdProto\0221\n\006symbol\030\002 \001(\0132!.tr"
   "ading.common.proto.SymbolProto\022@\n\022exchan"
   "ge_timestamp\030\003 \001(\0132$.trading.common.prot"
   "o.TimestampProto\022@\n\022received_timestamp\030\004"
   " \001(\0132$.trading.common.proto.TimestampPro"
-  "to\022\027\n\017sequence_number\030\005 \001(\003\022\023\n\013is_snapsh"
-  "ot\030\006 \001(\010\0226\n\004bids\030\007 \003(\0132(.trading.data_in"
-  "gestion.proto.PriceLevel\0226\n\004asks\030\010 \003(\0132("
-  ".trading.data_ingestion.proto.PriceLevel"
-  "\022\020\n\010checksum\030\t \001(\t\022H\n\010metadata\030\n \001(\01326.t"
-  "rading.data_ingestion.proto.OrderBookUpd"
-  "ate.Metadata\032h\n\010Metadata\022\030\n\020source_compo"
-  "nent\030\001 \001(\t\022\017\n\007version\030\002 \001(\t\022\022\n\ncompresse"
-  "d\030\003 \001(\010\022\035\n\025compression_algorithm\030\004 \001(\t\"\341"
-  "\001\n\tHeartbeat\022\024\n\014component_id\030\001 \001(\t\0227\n\tti"
-  "mestamp\030\002 \001(\0132$.trading.common.proto.Tim"
-  "estampProto\022\016\n\006status\030\003 \001(\t\022E\n\007metrics\030\004"
-  " \003(\01324.trading.data_ingestion.proto.Hear"
-  "tbeat.MetricsEntry\032.\n\014MetricsEntry\022\013\n\003ke"
-  "y\030\001 \001(\t\022\r\n\005value\030\002 \001(\t:\0028\001\"\211\002\n\017MessageEn"
-  "velope\022\022\n\nmessage_id\030\001 \001(\t\022\024\n\014message_ty"
-  "pe\030\002 \001(\t\0227\n\ttimestamp\030\003 \001(\0132$.trading.co"
-  "mmon.proto.TimestampProto\022J\n\021order_book_"
-  "update\030\n \001(\0132-.trading.data_ingestion.pr"
-  "oto.OrderBookUpdateH\000\022<\n\theartbeat\030\013 \001(\013"
-  "2\'.trading.data_ingestion.proto.Heartbea"
-  "tH\000B\t\n\007payloadb\006proto3"
+  "to\022\026\n\016sequenceNumber\030\005 \001(\003\022\022\n\nisSnapshot"
+  "\030\006 \001(\010\0226\n\004bids\030\007 \003(\0132(.trading.data_inge"
+  "stion.proto.PriceLevel\0226\n\004asks\030\010 \003(\0132(.t"
+  "rading.data_ingestion.proto.PriceLevel\022\020"
+  "\n\010checksum\030\t \001(\t\022H\n\010metadata\030\n \001(\01326.tra"
+  "ding.data_ingestion.proto.OrderBookUpdat"
+  "e.Metadata\032h\n\010Metadata\022\030\n\020source_compone"
+  "nt\030\001 \001(\t\022\017\n\007version\030\002 \001(\t\022\022\n\ncompressed\030"
+  "\003 \001(\010\022\035\n\025compression_algorithm\030\004 \001(\t\"\341\001\n"
+  "\tHeartbeat\022\024\n\014component_id\030\001 \001(\t\0227\n\ttime"
+  "stamp\030\002 \001(\0132$.trading.common.proto.Times"
+  "tampProto\022\016\n\006status\030\003 \001(\t\022E\n\007metrics\030\004 \003"
+  "(\01324.trading.data_ingestion.proto.Heartb"
+  "eat.MetricsEntry\032.\n\014MetricsEntry\022\013\n\003key\030"
+  "\001 \001(\t\022\r\n\005value\030\002 \001(\t:\0028\001\"\211\002\n\017MessageEnve"
+  "lope\022\022\n\nmessage_id\030\001 \001(\t\022\024\n\014message_type"
+  "\030\002 \001(\t\0227\n\ttimestamp\030\003 \001(\0132$.trading.comm"
+  "on.proto.TimestampProto\022J\n\021order_book_up"
+  "date\030\n \001(\0132-.trading.data_ingestion.prot"
+  "o.OrderBookUpdateH\000\022<\n\theartbeat\030\013 \001(\0132\'"
+  ".trading.data_ingestion.proto.HeartbeatH"
+  "\000B\t\n\007payloadb\006proto3"
   ;
 static const ::_pbi::DescriptorTable* const descriptor_table_order_5fbook_2eproto_deps[1] = {
   &::descriptor_table_common_2eproto,
 };
 static ::_pbi::once_flag descriptor_table_order_5fbook_2eproto_once;
 const ::_pbi::DescriptorTable descriptor_table_order_5fbook_2eproto = {
-    false, false, 1342, descriptor_table_protodef_order_5fbook_2eproto,
+    false, false, 1340, descriptor_table_protodef_order_5fbook_2eproto,
     "order_book.proto",
     &descriptor_table_order_5fbook_2eproto_once, descriptor_table_order_5fbook_2eproto_deps, 1, 7,
     schemas, file_default_instances, TableStruct_order_5fbook_2eproto::offsets,
@@ -1228,8 +1228,8 @@ OrderBookUpdate::OrderBookUpdate(const OrderBookUpdate& from)
     , decltype(_impl_.received_timestamp_){nullptr}
     , decltype(_impl_.metadata_){nullptr}
     , decltype(_impl_.exchange_id_){}
-    , decltype(_impl_.is_snapshot_){}
-    , decltype(_impl_.sequence_number_){}
+    , decltype(_impl_.issnapshot_){}
+    , decltype(_impl_.sequencenumber_){}
     , /*decltype(_impl_._cached_size_)*/{}};
 
   _internal_metadata_.MergeFrom<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>(from._internal_metadata_);
@@ -1254,8 +1254,8 @@ OrderBookUpdate::OrderBookUpdate(const OrderBookUpdate& from)
     _this->_impl_.metadata_ = new ::trading::data_ingestion::proto::OrderBookUpdate_Metadata(*from._impl_.metadata_);
   }
   ::memcpy(&_impl_.exchange_id_, &from._impl_.exchange_id_,
-    static_cast<size_t>(reinterpret_cast<char*>(&_impl_.sequence_number_) -
-    reinterpret_cast<char*>(&_impl_.exchange_id_)) + sizeof(_impl_.sequence_number_));
+    static_cast<size_t>(reinterpret_cast<char*>(&_impl_.sequencenumber_) -
+    reinterpret_cast<char*>(&_impl_.exchange_id_)) + sizeof(_impl_.sequencenumber_));
   // @@protoc_insertion_point(copy_constructor:trading.data_ingestion.proto.OrderBookUpdate)
 }
 
@@ -1272,8 +1272,8 @@ inline void OrderBookUpdate::SharedCtor(
     , decltype(_impl_.received_timestamp_){nullptr}
     , decltype(_impl_.metadata_){nullptr}
     , decltype(_impl_.exchange_id_){0}
-    , decltype(_impl_.is_snapshot_){false}
-    , decltype(_impl_.sequence_number_){int64_t{0}}
+    , decltype(_impl_.issnapshot_){false}
+    , decltype(_impl_.sequencenumber_){int64_t{0}}
     , /*decltype(_impl_._cached_size_)*/{}
   };
   _impl_.checksum_.InitDefault();
@@ -1332,8 +1332,8 @@ void OrderBookUpdate::Clear() {
   }
   _impl_.metadata_ = nullptr;
   ::memset(&_impl_.exchange_id_, 0, static_cast<size_t>(
-      reinterpret_cast<char*>(&_impl_.sequence_number_) -
-      reinterpret_cast<char*>(&_impl_.exchange_id_)) + sizeof(_impl_.sequence_number_));
+      reinterpret_cast<char*>(&_impl_.sequencenumber_) -
+      reinterpret_cast<char*>(&_impl_.exchange_id_)) + sizeof(_impl_.sequencenumber_));
   _internal_metadata_.Clear<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>();
 }
 
@@ -1376,18 +1376,18 @@ const char* OrderBookUpdate::_InternalParse(const char* ptr, ::_pbi::ParseContex
         } else
           goto handle_unusual;
         continue;
-      // int64 sequence_number = 5;
+      // int64 sequenceNumber = 5;
       case 5:
         if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 40)) {
-          _impl_.sequence_number_ = ::PROTOBUF_NAMESPACE_ID::internal::ReadVarint64(&ptr);
+          _impl_.sequencenumber_ = ::PROTOBUF_NAMESPACE_ID::internal::ReadVarint64(&ptr);
           CHK_(ptr);
         } else
           goto handle_unusual;
         continue;
-      // bool is_snapshot = 6;
+      // bool isSnapshot = 6;
       case 6:
         if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 48)) {
-          _impl_.is_snapshot_ = ::PROTOBUF_NAMESPACE_ID::internal::ReadVarint64(&ptr);
+          _impl_.issnapshot_ = ::PROTOBUF_NAMESPACE_ID::internal::ReadVarint64(&ptr);
           CHK_(ptr);
         } else
           goto handle_unusual;
@@ -1493,16 +1493,16 @@ uint8_t* OrderBookUpdate::_InternalSerialize(
         _Internal::received_timestamp(this).GetCachedSize(), target, stream);
   }
 
-  // int64 sequence_number = 5;
-  if (this->_internal_sequence_number() != 0) {
+  // int64 sequenceNumber = 5;
+  if (this->_internal_sequencenumber() != 0) {
     target = stream->EnsureSpace(target);
-    target = ::_pbi::WireFormatLite::WriteInt64ToArray(5, this->_internal_sequence_number(), target);
+    target = ::_pbi::WireFormatLite::WriteInt64ToArray(5, this->_internal_sequencenumber(), target);
   }
 
-  // bool is_snapshot = 6;
-  if (this->_internal_is_snapshot() != 0) {
+  // bool isSnapshot = 6;
+  if (this->_internal_issnapshot() != 0) {
     target = stream->EnsureSpace(target);
-    target = ::_pbi::WireFormatLite::WriteBoolToArray(6, this->_internal_is_snapshot(), target);
+    target = ::_pbi::WireFormatLite::WriteBoolToArray(6, this->_internal_issnapshot(), target);
   }
 
   // repeated .trading.data_ingestion.proto.PriceLevel bids = 7;
@@ -1609,14 +1609,14 @@ size_t OrderBookUpdate::ByteSizeLong() const {
       ::_pbi::WireFormatLite::EnumSize(this->_internal_exchange_id());
   }
 
-  // bool is_snapshot = 6;
-  if (this->_internal_is_snapshot() != 0) {
+  // bool isSnapshot = 6;
+  if (this->_internal_issnapshot() != 0) {
     total_size += 1 + 1;
   }
 
-  // int64 sequence_number = 5;
-  if (this->_internal_sequence_number() != 0) {
-    total_size += ::_pbi::WireFormatLite::Int64SizePlusOne(this->_internal_sequence_number());
+  // int64 sequenceNumber = 5;
+  if (this->_internal_sequencenumber() != 0) {
+    total_size += ::_pbi::WireFormatLite::Int64SizePlusOne(this->_internal_sequencenumber());
   }
 
   return MaybeComputeUnknownFieldsSize(total_size, &_impl_._cached_size_);
@@ -1661,11 +1661,11 @@ void OrderBookUpdate::MergeImpl(::PROTOBUF_NAMESPACE_ID::Message& to_msg, const 
   if (from._internal_exchange_id() != 0) {
     _this->_internal_set_exchange_id(from._internal_exchange_id());
   }
-  if (from._internal_is_snapshot() != 0) {
-    _this->_internal_set_is_snapshot(from._internal_is_snapshot());
+  if (from._internal_issnapshot() != 0) {
+    _this->_internal_set_issnapshot(from._internal_issnapshot());
   }
-  if (from._internal_sequence_number() != 0) {
-    _this->_internal_set_sequence_number(from._internal_sequence_number());
+  if (from._internal_sequencenumber() != 0) {
+    _this->_internal_set_sequencenumber(from._internal_sequencenumber());
   }
   _this->_internal_metadata_.MergeFrom<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>(from._internal_metadata_);
 }
@@ -1693,8 +1693,8 @@ void OrderBookUpdate::InternalSwap(OrderBookUpdate* other) {
       &other->_impl_.checksum_, rhs_arena
   );
   ::PROTOBUF_NAMESPACE_ID::internal::memswap<
-      PROTOBUF_FIELD_OFFSET(OrderBookUpdate, _impl_.sequence_number_)
-      + sizeof(OrderBookUpdate::_impl_.sequence_number_)
+      PROTOBUF_FIELD_OFFSET(OrderBookUpdate, _impl_.sequencenumber_)
+      + sizeof(OrderBookUpdate::_impl_.sequencenumber_)
       - PROTOBUF_FIELD_OFFSET(OrderBookUpdate, _impl_.symbol_)>(
           reinterpret_cast<char*>(&_impl_.symbol_),
           reinterpret_cast<char*>(&other->_impl_.symbol_));

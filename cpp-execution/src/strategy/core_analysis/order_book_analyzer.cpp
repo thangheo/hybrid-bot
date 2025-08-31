@@ -65,7 +65,7 @@
      // Using the appropriate method to create a Symbol from string
      current_metrics_.symbol = core::Symbol::fromString(trading_pair_); // Using factory method instead of constructor
      current_metrics_.timestamp = snapshot.getTimestamp();
-     current_metrics_.sequence_number = snapshot.getSequenceNumber();
+     current_metrics_.sequenceNumber = snapshot.getSequenceNumber();
      
      // Calculate various metrics
      calculatePriceMetrics(bids, asks);
