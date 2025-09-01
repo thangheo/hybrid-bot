@@ -9,7 +9,7 @@
 #include <cstdio>   // Added for strlen()
 
 #include "trading_messages.pb.h"
-#include "zmq_server.hpp"
+#include "communication/zmq_server.hpp"
 
 // Market Intelligence Generator for simulation/testing
 class MarketIntelligenceGenerator {

@@ -7,7 +7,7 @@ add_subdirectory(strategy)
 add_subdirectory(execution)
 add_subdirectory(risk)
 add_subdirectory(monitoring)
-
+add_subdirectory(communication)
 # Main executable
 add_executable(trading_system main.cpp)
 target_link_libraries(trading_system
