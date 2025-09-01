@@ -18,14 +18,14 @@ public:
     
     // Parse a Binance order book snapshot
     bool parseOrderBookSnapshot(const std::vector<uint8_t>& data,
-                               int64_t& last_update_id,
+                               uint64_t& last_update_id,
                                std::vector<PriceLevel>& bids,
                                std::vector<PriceLevel>& asks);
     
     // Parse a Binance order book update
     bool parseOrderBookUpdate(const std::vector<uint8_t>& data,
-                             int64_t& first_update_id,
-                             int64_t& last_update_id,
+                             uint64_t& first_update_id,
+                             uint64_t& last_update_id,
                              std::vector<PriceLevel>& bids_updates,
                              std::vector<PriceLevel>& asks_updates);
     
@@ -35,7 +35,7 @@ public:
                    std::string& price,
                    std::string& quantity,
                    bool& is_buyer_maker,
-                   int64_t& trade_time);
+                   uint64_t& trade_time);
     
     // Parse a Binance ticker
     bool parseTicker(const std::vector<uint8_t>& data,
@@ -44,7 +44,7 @@ public:
                     std::string& bid_price,
                     std::string& ask_price,
                     std::string& volume,
-                    int64_t& ticker_time);
+                    uint64_t& ticker_time);
     
     // Normalize Binance trading pair to standard format
     static std::string normalizeTradingPair(const std::string& binance_symbol);
