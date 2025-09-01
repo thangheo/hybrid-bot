@@ -82,11 +82,11 @@ public:
                     uint64_t sequenceNumber,
                     Timestamp timestamp);
     // removeBid
-    bool removeBid(const PriceLevel& level);
-    // updateBid
-    bool updateBid(const PriceLevel& level);
-    bool removeAsk(const PriceLevel& level);
-    bool updateAsk(const PriceLevel& level);
+    // bool removeBid(const PriceLevel& level);
+    // // updateBid
+    // bool updateBid(const PriceLevel& level);
+    // bool removeAsk(const PriceLevel& level);
+    // bool updateAsk(const PriceLevel& level);
 
     // Snapshot and delta methods
     OrderBookUpdate getSnapshot(int depth = 0) const;
