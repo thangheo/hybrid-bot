@@ -13,8 +13,8 @@
 
 #include "pipeline_monitoring.hpp"
 #include "core/market_types.hpp"
-#include "orderbook/order_book_types.hpp"
-#include "data_quality/data_quality.hpp"
+#include "data_ingestion/orderbook/order_book_types.hpp"
+#include "data_ingestion/data_quality/data_quality.hpp"
 #include "data_ingestion/time/synchronizer.hpp"
 #include "normalization/normalizer.hpp"
 #include "protocol/adapter_factory.hpp"

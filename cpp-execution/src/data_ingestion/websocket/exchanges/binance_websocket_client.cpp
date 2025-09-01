@@ -104,41 +104,6 @@ ConnectionStatus BinanceWebSocketClient::getStatus() const {
     return status_.load();
 }
 
-// bool BinanceWebSocketClient::subscribe(const std::vector<core::Symbol>& symbols) {
-//     std::lock_guard<std::mutex> lock(subscriptionMutex_);
-    
-//     if (!connected_.load()) {
-//         LOG_ERROR("Cannot subscribe - not connected to Binance WebSocket");
-//         return false;
-//     }
-    
-//     LOG_INFO("Subscribing to " + std::to_string(symbols.size()) + " symbols");
-    
-//     std::vector<std::string> streams;
-//     for (const auto& symbol : symbols) {
-//         // Create different stream types for each symbol
-//         streams.push_back(symbolToStream(symbol, "depth"));    // Order book
-//         streams.push_back(symbolToStream(symbol, "trade"));    // Trades
-//         streams.push_back(symbolToStream(symbol, "ticker"));   // 24hr stats
-        
-//         // Add to subscribed symbols if not already present
-//         if (std::find(subscribedSymbols_.begin(), subscribedSymbols_.end(), symbol) == subscribedSymbols_.end()) {
-//             subscribedSymbols_.push_back(symbol);
-//             LOG_INFO("Added symbol to subscription: " + symbol.base + symbol.quote);
-//         }
-//     }
-    
-//     bool success = subscribeToStreams(streams);
-    
-//     if (success) {
-//         LOG_INFO("Successfully subscribed to " + std::to_string(symbols.size()) + " symbols on Binance");
-//         LOG_INFO("Total subscribed symbols: " + std::to_string(subscribedSymbols_.size()));
-//     } else {
-//         LOG_ERROR("Failed to subscribe to symbols on Binance");
-//     }
-    
-//     return success;
-// }
 
 bool BinanceWebSocketClient::subscribe(const std::vector<core::Symbol>& symbols) {
     std::lock_guard<std::mutex> lock(subscriptionMutex_);
@@ -154,20 +119,20 @@ bool BinanceWebSocketClient::subscribe(const std::vector<core::Symbol>& symbols)
     for (const auto& symbol : symbols) {
         // Tạo các stream cho mỗi symbol
         std::string depthStream = symbolToStream(symbol, "depth");
-        std::string tradeStream = symbolToStream(symbol, "trade");
-        std::string tickerStream = symbolToStream(symbol, "ticker");
+        // std::string tradeStream = symbolToStream(symbol, "trade");
+        // std::string tickerStream = symbolToStream(symbol, "ticker");
 
         streams.push_back(depthStream);
-        streams.push_back(tradeStream);
-        streams.push_back(tickerStream);
+        // streams.push_back(tradeStream);
+        // streams.push_back(tickerStream);
 
         // Thêm vào subscribedStreams_ nếu chưa có
         if (std::find(subscribedStreams_.begin(), subscribedStreams_.end(), depthStream) == subscribedStreams_.end())
             subscribedStreams_.push_back(depthStream);
-        if (std::find(subscribedStreams_.begin(), subscribedStreams_.end(), tradeStream) == subscribedStreams_.end())
-            subscribedStreams_.push_back(tradeStream);
-        if (std::find(subscribedStreams_.begin(), subscribedStreams_.end(), tickerStream) == subscribedStreams_.end())
-            subscribedStreams_.push_back(tickerStream);
+        // if (std::find(subscribedStreams_.begin(), subscribedStreams_.end(), tradeStream) == subscribedStreams_.end())
+        //     subscribedStreams_.push_back(tradeStream);
+        // if (std::find(subscribedStreams_.begin(), subscribedStreams_.end(), tickerStream) == subscribedStreams_.end())
+        //     subscribedStreams_.push_back(tickerStream);
 
         // Thêm vào subscribedSymbols_ nếu chưa có
         if (std::find(subscribedSymbols_.begin(), subscribedSymbols_.end(), symbol) == subscribedSymbols_.end()) {

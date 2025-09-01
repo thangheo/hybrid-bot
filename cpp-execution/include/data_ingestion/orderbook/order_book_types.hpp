@@ -1,4 +1,3 @@
-// include/data_ingestion/order_book_types.hpp
 #pragma once
 
 #include <string>
@@ -66,8 +65,8 @@ struct OrderBookKeyHash {
 struct OrderBookUpdate {
     ExchangeId exchangeId;  // Identifier for the exchange (e.g., "binance")
     std::string tradingPair;
-    int64_t exchange_timestamp;
-    int64_t receivedTimestamp;
+    uint64_t exchange_timestamp;
+    uint64_t receivedTimestamp;
     // isSnapshot
     // int64_t processedTimestamp{0};  
     uint64_t sequenceNumber;
@@ -84,7 +83,7 @@ struct OrderBookUpdate {
     // Constructor
     OrderBookUpdate() = default;
     OrderBookUpdate(const ExchangeId& exchangeId, const std::string& tradingPair,
-                    int64_t exchange_timestamp, int64_t receivedTimestamp,
+                    uint64_t exchange_timestamp, uint64_t receivedTimestamp,
                     uint64_t sequenceNumber, bool isSnapshot,
                     const std::vector<PriceLevel>& bids,
                     const std::vector<PriceLevel>& asks)

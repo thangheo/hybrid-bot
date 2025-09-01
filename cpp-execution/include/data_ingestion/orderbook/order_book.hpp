@@ -81,7 +81,13 @@ public:
                     const std::vector<PriceLevel>& asks,
                     uint64_t sequenceNumber,
                     Timestamp timestamp);
-    
+    // removeBid
+    bool removeBid(const PriceLevel& level);
+    // updateBid
+    bool updateBid(const PriceLevel& level);
+    bool removeAsk(const PriceLevel& level);
+    bool updateAsk(const PriceLevel& level);
+
     // Snapshot and delta methods
     OrderBookUpdate getSnapshot(int depth = 0) const;
     // OrderBookDelta getOrderBookDelta(Timestamp previous_timestamp = 0) const;
@@ -137,13 +143,14 @@ private:
     std::atomic<bool> is_snapshot_{false};  
     
     // Order book state
-    std::map<double, PriceLevel, std::greater<double>> bids_;  // Descending order for bids
-    std::map<double, PriceLevel, std::less<double>> asks_;     // Ascending order for asks
-    
+    // std::map<double, PriceLevel, std::greater<double>> bids_;  // Descending order for bids
+    // std::map<double, PriceLevel, std::less<double>> asks_;     // Ascending order for asks
+    std::map<double, PriceLevel, std::greater<double>> bids_;  // Descending
+    std::map<double, PriceLevel> asks_;                       // Ascending (correct)
     // Previous state for delta tracking
     std::map<double, PriceLevel, std::greater<double>> previous_bids_;  
-    std::map<double, PriceLevel, std::less<double>> previous_asks_;
-    
+    std::map<double, PriceLevel> previous_asks_;
+
     // Delta history for more accurate delta retrieval
     static constexpr size_t MAX_DELTA_HISTORY = 100;
     std::deque<OrderBookDelta> recent_deltas_;
