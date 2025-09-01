@@ -8,10 +8,10 @@
 # we're just adding any specific requirements or settings here
 
 # Build websocket examples - enabled for testing
-add_executable(examples_websocket examples_websocket.cpp)
+add_executable(websocket_examples websocket_examples.cpp)
 
 # Link with the already built libraries
-target_link_libraries(examples_websocket
+target_link_libraries(websocket_examples
     PRIVATE
         data_ingestion
         common
@@ -25,7 +25,7 @@ find_package(OpenSSL REQUIRED)
 find_package(Boost REQUIRED COMPONENTS system filesystem)
 
 # Link additional dependencies for websocket functionality
-target_link_libraries(examples_websocket
+target_link_libraries(websocket_examples
     PRIVATE
         OpenSSL::SSL
         OpenSSL::Crypto
@@ -34,14 +34,14 @@ target_link_libraries(examples_websocket
 )
 
 # Set output directory for the executable
-set_target_properties(examples_websocket PROPERTIES
+set_target_properties(websocket_examples PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
     CXX_STANDARD 17
     CXX_STANDARD_REQUIRED ON
 )
 
 # Include directories for the executable
-target_include_directories(examples_websocket
+target_include_directories(websocket_examples
     PRIVATE
         ${CMAKE_SOURCE_DIR}/include
         ${CMAKE_SOURCE_DIR}/include/data_ingestion
@@ -50,7 +50,7 @@ target_include_directories(examples_websocket
 )
 
 # Add compile definitions if needed
-target_compile_definitions(examples_websocket
+target_compile_definitions(websocket_examples
     PRIVATE
         -DBOOST_ALL_NO_LIB
 )

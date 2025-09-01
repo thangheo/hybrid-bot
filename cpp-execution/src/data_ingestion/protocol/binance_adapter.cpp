@@ -36,14 +36,31 @@ bool BinanceAdapter::canHandle(const core::ExchangeData& data) {
     }
 }
 
+// OrderBookUpdate BinanceAdapter::convertToStandardFormat(const core::ExchangeData& data) {
+//     try {
+//         return convertDepthUpdate(data.data);
+//     } catch (const std::exception& e) {
+//         throw std::runtime_error("Binance adapter conversion failed: " + std::string(e.what()));
+//     }
+// }
+// ...existing code...
 OrderBookUpdate BinanceAdapter::convertToStandardFormat(const core::ExchangeData& data) {
     try {
-        return convertDepthUpdate(data.data);
+        // Only process if it's a depth update
+        json jsonObj = json::parse(data.data);
+        if (jsonObj.contains("e") && jsonObj["e"].is_string()) {
+            std::string eventType = jsonObj["e"].get<std::string>();
+            if (eventType == "depthUpdate" || eventType == "depth") {
+                return convertDepthUpdate(data.data);
+            }
+        }
+        // If not a depth update, skip or return empty
+        throw std::runtime_error("Not a depth update message");
     } catch (const std::exception& e) {
         throw std::runtime_error("Binance adapter conversion failed: " + std::string(e.what()));
     }
 }
-
+// ...existing code...
 common::ExchangeId BinanceAdapter::getSupportedExchange() const {
     return common::ExchangeId::binance();
 }
