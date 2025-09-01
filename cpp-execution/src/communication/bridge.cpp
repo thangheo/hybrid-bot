@@ -3,7 +3,7 @@
  * @brief Integrated server combining pipeline processing with ZMQ communication
  */
 
-#include "data_ingestion/pipeline/normalization_pipeline.hpp"
+// #include "data_ingestion/pipeline/normalization_pipeline.hpp"
 #include "data_ingestion/websocket/exchanges/binance_websocket_client.hpp"
 #include "data_ingestion/websocket/connection_pool.hpp"
 #include "data_ingestion/publisher/zeromq_publisher.hpp"
@@ -41,7 +41,7 @@ void signalHandler(int signal) {
 class IntegratedTradingServer {
 private:
     // Pipeline components
-    std::shared_ptr<NormalizationPipeline> pipeline_;
+    // std::shared_ptr<NormalizationPipeline> pipeline_;
     std::unique_ptr<ConnectionPool> connectionPool_;
     std::vector<ClientInterfacePtr> activeConnections_;
     
@@ -63,31 +63,20 @@ private:
 
 public:
     IntegratedTradingServer() : start_time_(std::chrono::steady_clock::now()) {
-        InitializePipeline();
+        // InitializePipeline();
+        InitializeConnectionPool();
         InitializeCommunication();
     }
     
     ~IntegratedTradingServer() {
         Stop();
     }
-    
-    void InitializePipeline() {
-        // Create pipeline configuration
-        PipelineConfig config;
-         config.maxQueueSize = 10000;  // Smaller queue to prevent overflow
-        config.threadPoolSize = 4;    // Fewer threads for stability
-        config.enableMetrics = true;
-        config.metricsInterval = std::chrono::milliseconds(5000);
-        
-        auto uniquePipeline = createDefaultNormalizationPipeline(config);
-        pipeline_ = std::shared_ptr<NormalizationPipeline>(uniquePipeline.release());
-        
-        // Create connection pool
+    void InitializeConnectionPool() {
         connectionPool_ = std::make_unique<ConnectionPool>(
             "integrated_pool",
             [this]() -> ClientInterfacePtr {
                 return std::make_shared<BinanceWebSocketClient>(
-                    "stream.binance.com", 
+                    "stream.binance.com",
                     "9443",
                     [this](const ExchangeId& exchange, const std::string& symbol, const std::vector<uint8_t>& data) {
                         this->OnMarketData(exchange, symbol, data);
@@ -96,9 +85,35 @@ public:
             },
             2, 4
         );
-        
-        std::cout << "Pipeline initialized" << std::endl;
     }
+    // void InitializePipeline() {
+    //     // Create pipeline configuration
+    //     PipelineConfig config;
+    //      config.maxQueueSize = 10000;  // Smaller queue to prevent overflow
+    //     config.threadPoolSize = 4;    // Fewer threads for stability
+    //     config.enableMetrics = true;
+    //     config.metricsInterval = std::chrono::milliseconds(5000);
+        
+    //     auto uniquePipeline = createDefaultNormalizationPipeline(config);
+    //     // pipeline_ = std::shared_ptr<NormalizationPipeline>(uniquePipeline.release());
+        
+    //     // Create connection pool
+    //     connectionPool_ = std::make_unique<ConnectionPool>(
+    //         "integrated_pool",
+    //         [this]() -> ClientInterfacePtr {
+    //             return std::make_shared<BinanceWebSocketClient>(
+    //                 "stream.binance.com", 
+    //                 "9443",
+    //                 [this](const ExchangeId& exchange, const std::string& symbol, const std::vector<uint8_t>& data) {
+    //                     this->OnMarketData(exchange, symbol, data);
+    //                 }
+    //             );
+    //         },
+    //         2, 4
+    //     );
+        
+    //     std::cout << "Pipeline initialized" << std::endl;
+    // }
     void GenerateAndPublishIntelligence(const std::string& symbol, std::shared_ptr<OrderBook> orderbook) {
         try {
             auto bids = orderbook->getBids(5);
@@ -240,10 +255,10 @@ public:
         // Wait for connections to be ready
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
         // Start pipeline
-        if (!pipeline_->start()) {
-            std::cerr << "Failed to start pipeline" << std::endl;
-            return false;
-        }
+        // if (!pipeline_->start()) {
+        //     std::cerr << "Failed to start pipeline" << std::endl;
+        //     return false;
+        // }
         
         // Start ZMQ communication
         zmq_server_->Start();
@@ -299,9 +314,9 @@ public:
         }
         
         // Stop pipeline
-        if (pipeline_) {
-            pipeline_->stop();
-        }
+        // if (pipeline_) {
+        //     pipeline_->stop();
+        // }
         
         std::cout << "Integrated Trading Server stopped" << std::endl;
     }
@@ -320,10 +335,10 @@ public:
             }
             
             // Check pipeline health
-            auto status = pipeline_->getStatus();
-            if (!status->isHealthy()) {
-                std::cerr << "Pipeline unhealthy: " << status->getLastError() << std::endl;
-            }
+            // auto status = pipeline_->getStatus();
+            // if (!status->isHealthy()) {
+            //     std::cerr << "Pipeline unhealthy: " << status->getLastError() << std::endl;
+            // }
         }
     }
 
@@ -368,10 +383,10 @@ private:
             return; // SKIP invalid JSON
         }
         // Push to pipeline for processing
-        if (pipeline_ && !pipeline_->push(exchangeData)) {
-            // Pipeline queue full - handle gracefully
-            return;
-        }
+        // if (pipeline_ && !pipeline_->push(exchangeData)) {
+        //     // Pipeline queue full - handle gracefully
+        //     return;
+        // }
         messages_processed_.fetch_add(1);
 
         // Also process for real-time intelligence generation
@@ -704,7 +719,7 @@ private:
         }
         params.set_max_participation_rate(std::min(0.3, std::max(0.05, params.max_participation_rate())));
     }
-    // CRITICAL FIX: Replace your UpdateOrderBookFromJson function
+
     void UpdateOrderBookFromJson(std::shared_ptr<OrderBook> orderbook, const json& data, const std::string& symbol) {
         try {
             static std::atomic<int> debug_updates{0};
@@ -715,9 +730,11 @@ private:
                 std::cout << "Full message: " << data.dump().substr(0, 500) << std::endl;
             }
             
-            bool updated = false;
+            // Collect ALL bid and ask updates in vectors
+            std::vector<trading::data_ingestion::PriceLevel> bid_updates;
+            std::vector<trading::data_ingestion::PriceLevel> ask_updates;
             
-            // Process bids
+            // Process ALL bids into vector
             if (data.contains("b") && data["b"].is_array()) {
                 if (is_debug) {
                     std::cout << "Found bids array with " << data["b"].size() << " entries" << std::endl;
@@ -726,7 +743,6 @@ private:
                 for (const auto& bid : data["b"]) {
                     if (bid.is_array() && bid.size() >= 2) {
                         try {
-                            // Binance sends [price, quantity] as strings
                             std::string priceStr = bid[0].get<std::string>();
                             std::string qtyStr = bid[1].get<std::string>();
                             
@@ -739,13 +755,15 @@ private:
                             }
                             
                             if (price > 0) {
-                                if (quantity == 0.0) {
-                                    orderbook->removeBid(trading::data_ingestion::PriceLevel{price, quantity});
-                                    if (is_debug) std::cout << "  Removed bid at " << price << std::endl;
-                                } else {
-                                    orderbook->updateBid(trading::data_ingestion::PriceLevel{price, quantity});
-                                    updated = true;
-                                    if (is_debug) std::cout << "  Updated bid: " << price << " @ " << quantity << std::endl;
+                                // Add to bid updates vector (including zero quantity for removal)
+                                bid_updates.emplace_back(price, quantity);
+                                
+                                if (is_debug) {
+                                    if (quantity == 0.0) {
+                                        std::cout << "  Will remove bid at " << price << std::endl;
+                                    } else {
+                                        std::cout << "  Will update bid: " << price << " @ " << quantity << std::endl;
+                                    }
                                 }
                             }
                         } catch (const std::exception& e) {
@@ -755,7 +773,7 @@ private:
                 }
             }
             
-            // Process asks
+            // Process ALL asks into vector
             if (data.contains("a") && data["a"].is_array()) {
                 if (is_debug) {
                     std::cout << "Found asks array with " << data["a"].size() << " entries" << std::endl;
@@ -776,13 +794,15 @@ private:
                             }
                             
                             if (price > 0) {
-                                if (quantity == 0.0) {
-                                    orderbook->removeAsk(trading::data_ingestion::PriceLevel{price, quantity});
-                                    if (is_debug) std::cout << "  Removed ask at " << price << std::endl;
-                                } else {
-                                    orderbook->updateAsk(trading::data_ingestion::PriceLevel{price, quantity});
-                                    updated = true;
-                                    if (is_debug) std::cout << "  Updated ask: " << price << " @ " << quantity << std::endl;
+                                // Add to ask updates vector (including zero quantity for removal)  
+                                ask_updates.emplace_back(price, quantity);
+                                
+                                if (is_debug) {
+                                    if (quantity == 0.0) {
+                                        std::cout << "  Will remove ask at " << price << std::endl;
+                                    } else {
+                                        std::cout << "  Will update ask: " << price << " @ " << quantity << std::endl;
+                                    }
                                 }
                             }
                         } catch (const std::exception& e) {
@@ -792,33 +812,58 @@ private:
                 }
             }
             
-            if (updated) {
-                // Verify order book state after update
-                auto bids = orderbook->getBids(1);
-                auto asks = orderbook->getAsks(1);
+            // Apply ALL updates at once using proper OrderBook method
+            if (!bid_updates.empty() || !ask_updates.empty()) {
+                // Get sequence number from message if available
+                uint64_t sequence_num = 0;
+                if (data.contains("u")) {
+                    sequence_num = data["u"].get<uint64_t>();
+                }
+                
+                // Apply the update
+                bool success = orderbook->applyUpdate(
+                    bid_updates, 
+                    ask_updates, 
+                    sequence_num, 
+                    std::chrono::system_clock::now()
+                );
                 
                 if (is_debug) {
-                    std::cout << "OrderBook updated successfully:" << std::endl;
-                    std::cout << "  Bids count: " << bids.size() << std::endl;
-                    std::cout << "  Asks count: " << asks.size() << std::endl;
-                    
-                    if (!bids.empty()) {
-                        std::cout << "  Best bid: " << bids[0].getPrice() << " @ " << bids[0].getQuantity() << std::endl;
-                    }
-                    if (!asks.empty()) {
-                        std::cout << "  Best ask: " << asks[0].getPrice() << " @ " << asks[0].getQuantity() << std::endl;
-                    }
+                    std::cout << "Applied update with " << bid_updates.size() 
+                            << " bid changes and " << ask_updates.size() << " ask changes" << std::endl;
+                    std::cout << "Update success: " << (success ? "YES" : "NO") << std::endl;
                 }
                 
-                // Generate intelligence only if we have valid data
-                if (!bids.empty() && !asks.empty() && bids[0].getPrice() > 0 && asks[0].getPrice() > 0) {
-                    GenerateAndPublishIntelligence(symbol, orderbook);
-                    if (is_debug) std::cout << "Intelligence generated and published" << std::endl;
+                if (success) {
+                    // Verify order book state after update
+                    auto bids = orderbook->getBids(5);
+                    auto asks = orderbook->getAsks(5);
+                    
+                    if (is_debug) {
+                        std::cout << "OrderBook state after update:" << std::endl;
+                        std::cout << "  Bids count: " << bids.size() << std::endl;
+                        std::cout << "  Asks count: " << asks.size() << std::endl;
+                        
+                        if (!bids.empty()) {
+                            std::cout << "  Best bid: " << bids[0].getPrice() << " @ " << bids[0].getQuantity() << std::endl;
+                        }
+                        if (!asks.empty()) {
+                            std::cout << "  Best ask: " << asks[0].getPrice() << " @ " << asks[0].getQuantity() << std::endl;
+                        }
+                    }
+                    
+                    // Generate intelligence only if we have valid data
+                    if (!bids.empty() && !asks.empty() && bids[0].getPrice() > 0 && asks[0].getPrice() > 0) {
+                        GenerateAndPublishIntelligence(symbol, orderbook);
+                        if (is_debug) std::cout << "Intelligence generated and published" << std::endl;
+                    } else {
+                        if (is_debug) std::cout << "No intelligence generated - invalid order book state" << std::endl;
+                    }
                 } else {
-                    if (is_debug) std::cout << "No intelligence generated - invalid order book state" << std::endl;
+                    if (is_debug) std::cout << "OrderBook update failed" << std::endl;
                 }
             } else {
-                if (is_debug) std::cout << "No order book updates applied" << std::endl;
+                if (is_debug) std::cout << "No price level updates to apply" << std::endl;
             }
             
             if (is_debug) {
@@ -840,11 +885,11 @@ private:
         std::cout << "Rate: " << (elapsed > 0 ? messages_processed_.load() / elapsed : 0) << " msg/s" << std::endl;
         
         // Pipeline metrics
-        if (pipeline_) {
-            auto metrics = pipeline_->getMetrics();
-            std::cout << "Pipeline throughput: " << metrics->getThroughputPerSecond() << " updates/s" << std::endl;
-            std::cout << "Pipeline errors: " << metrics->getTotalErrorCount() << std::endl;
-        }
+        // if (pipeline_) {
+        //     auto metrics = pipeline_->getMetrics();
+        //     std::cout << "Pipeline throughput: " << metrics->getThroughputPerSecond() << " updates/s" << std::endl;
+        //     std::cout << "Pipeline errors: " << metrics->getTotalErrorCount() << std::endl;
+        // }
         
         // Active symbols
         {
@@ -886,7 +931,7 @@ int main() {
         }
         
         std::cout << "\nServer running. Processing " << symbols.size() << " symbols..." << std::endl;
-        std::cout << "Market data pipeline: WebSocket -> OrderBook -> Intelligence -> ZMQ" << std::endl;
+        // std::cout << "Market data pipeline: WebSocket -> OrderBook -> Intelligence -> ZMQ" << std::endl;
         std::cout << "Press Ctrl+C to stop gracefully..." << std::endl;
         
         // Main loop

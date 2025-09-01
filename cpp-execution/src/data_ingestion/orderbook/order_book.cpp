@@ -136,44 +136,44 @@ bool OrderBook::applySnapshot(const std::vector<PriceLevel>& bids,
     
     return true;
 }
-bool OrderBook::removeBid(const PriceLevel& level){
-    std::lock_guard<std::mutex> lock(mutex_);
-    auto it = bids_.find(level.getPrice());
-    if (it != bids_.end()) {
-        bids_.erase(it);
-        return true;
-    }
-    return false;
-}
+// bool OrderBook::removeBid(const PriceLevel& level){
+//     std::lock_guard<std::mutex> lock(mutex_);
+//     auto it = bids_.find(level.getPrice());
+//     if (it != bids_.end()) {
+//         bids_.erase(it);
+//         return true;
+//     }
+//     return false;
+// }
  
-bool OrderBook::updateBid(const PriceLevel& level) {
-    if (level.getQuantity() <= 0.0) {
-        bids_.erase(level.getPrice());
-    } else {
-        bids_[level.getPrice()] = level;  // Creates if not exists
-    }
-    return true;
-}
-bool OrderBook::removeAsk(const PriceLevel& level) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    auto it = asks_.find(level.getPrice());
-    if (it != asks_.end()) {
-        asks_.erase(it);
-        return true;
-    }
-    return false;
-}
+// bool OrderBook::updateBid(const PriceLevel& level) {
+//     if (level.getQuantity() <= 0.0) {
+//         bids_.erase(level.getPrice());
+//     } else {
+//         bids_[level.getPrice()] = level;  // Creates if not exists
+//     }
+//     return true;
+// }
+// bool OrderBook::removeAsk(const PriceLevel& level) {
+//     std::lock_guard<std::mutex> lock(mutex_);
+//     auto it = asks_.find(level.getPrice());
+//     if (it != asks_.end()) {
+//         asks_.erase(it);
+//         return true;
+//     }
+//     return false;
+// }
 
-// Update an ask level
-bool OrderBook::updateAsk(const PriceLevel& level) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    auto it = asks_.find(level.getPrice());
-    if (it != asks_.end()) {
-        it->second = level;
-        return true;
-    }
-    return false;
-}
+// // Update an ask level
+// bool OrderBook::updateAsk(const PriceLevel& level) {
+//     std::lock_guard<std::mutex> lock(mutex_);
+//     auto it = asks_.find(level.getPrice());
+//     if (it != asks_.end()) {
+//         it->second = level;
+//         return true;
+//     }
+//     return false;
+// }
 
 bool OrderBook::applyUpdate(const std::vector<PriceLevel>& bids,
                           const std::vector<PriceLevel>& asks,

@@ -70,7 +70,7 @@ class MarketIntelligenceIntegrator:
             self.intelligence_subscriber.setsockopt(zmq.RCVTIMEO, 1000)  # 1 second timeout
             
             self.intent_publisher = self.context.socket(zmq.REQ)
-            self.intent_publisher.connect("tcp://localhost:5556")
+            self.intent_publisher.connect("tcp://localhost:5558")
             self.intent_publisher.setsockopt(zmq.RCVTIMEO, 5000)  # 5 second timeout
             
             # Start intelligence monitoring thread
@@ -640,7 +640,10 @@ class IntegratedTradingStrategy:
         print(f"Runtime: {elapsed:.0f}s")
         print(f"Trades executed: {self.trades_executed}")
         print(f"Active regimes: {len(self.intelligence_integrator.current_regimes)}")
-        
+        # print regimes
+        for regime in self.intelligence_integrator.current_regimes:
+            print(f"  - {regime}")
+
         # Show current regimes
 def signalHandler(signum, frame):
     """Handle termination signals gracefully"""
