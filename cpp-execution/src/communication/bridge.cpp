@@ -10,6 +10,7 @@
 #include "data_ingestion/protocol/binance_adapter.hpp"
 #include "data_ingestion/config.hpp"
 #include "data_ingestion/orderbook/order_book.hpp"
+// #include "data_ingestion/orderbook/reconstructor.hpp"
 #include "common/exchange_types.hpp"
 #include "core/market_types.hpp"
 #include "communication/zmq_server.hpp"
@@ -86,34 +87,7 @@ public:
             2, 4
         );
     }
-    // void InitializePipeline() {
-    //     // Create pipeline configuration
-    //     PipelineConfig config;
-    //      config.maxQueueSize = 10000;  // Smaller queue to prevent overflow
-    //     config.threadPoolSize = 4;    // Fewer threads for stability
-    //     config.enableMetrics = true;
-    //     config.metricsInterval = std::chrono::milliseconds(5000);
-        
-    //     auto uniquePipeline = createDefaultNormalizationPipeline(config);
-    //     // pipeline_ = std::shared_ptr<NormalizationPipeline>(uniquePipeline.release());
-        
-    //     // Create connection pool
-    //     connectionPool_ = std::make_unique<ConnectionPool>(
-    //         "integrated_pool",
-    //         [this]() -> ClientInterfacePtr {
-    //             return std::make_shared<BinanceWebSocketClient>(
-    //                 "stream.binance.com", 
-    //                 "9443",
-    //                 [this](const ExchangeId& exchange, const std::string& symbol, const std::vector<uint8_t>& data) {
-    //                     this->OnMarketData(exchange, symbol, data);
-    //                 }
-    //             );
-    //         },
-    //         2, 4
-    //     );
-        
-    //     std::cout << "Pipeline initialized" << std::endl;
-    // }
+  
     void GenerateAndPublishIntelligence(const std::string& symbol, std::shared_ptr<OrderBook> orderbook) {
         try {
             auto bids = orderbook->getBids(5);
@@ -243,9 +217,6 @@ public:
         }
         // Initialize order books for symbols
         for (const auto& symbol : symbols) {
-                // OrderBook(const ExchangeId& exchangeId, const std::string& tradingPair, OrderBookCallback callback = nullptr);
-                // OrderBook(const ExchangeId& exchangeId, const Symbol& symbol, OrderBookCallback callback = nullptr);
-
             order_books_[symbol] = std::make_shared<OrderBook>(
                 ExchangeId::binance(),  // Replace with the appropriate ExchangeId
                 Symbol::fromString(symbol),
@@ -254,12 +225,10 @@ public:
         }      
         // Wait for connections to be ready
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
-        // Start pipeline
-        // if (!pipeline_->start()) {
-        //     std::cerr << "Failed to start pipeline" << std::endl;
-        //     return false;
-        // }
-        
+        if ((connectionPool_->getActiveConnectionCount() < 2)) {
+            std::cerr << "Not all WebSocket connections are active" << std::endl;
+            return false;
+        }        
         // Start ZMQ communication
         zmq_server_->Start();
         
@@ -312,12 +281,7 @@ public:
         if (connectionPool_) {
             connectionPool_->shutdown();
         }
-        
-        // Stop pipeline
-        // if (pipeline_) {
-        //     pipeline_->stop();
-        // }
-        
+                 
         std::cout << "Integrated Trading Server stopped" << std::endl;
     }
     
@@ -333,25 +297,13 @@ public:
                 PrintStatus();
                 last_status = now;
             }
-            
-            // Check pipeline health
-            // auto status = pipeline_->getStatus();
-            // if (!status->isHealthy()) {
-            //     std::cerr << "Pipeline unhealthy: " << status->getLastError() << std::endl;
-            // }
+             
         }
     }
 
 private:
     void OnMarketData(const ExchangeId& exchange, const std::string& symbol, const std::vector<uint8_t>& data) {
-        // static std::atomic<int> sample_count{0};
-        // if (sample_count.fetch_add(1) < 10) {
-        //     std::string dataStr(data.begin(), data.end());
-        //     std::cout << "\n=== RAW DATA SAMPLE " << sample_count.load() << " ===" << std::endl;
-        //     std::cout << "Symbol: " << symbol << std::endl;
-        //     std::cout << "Data: " << dataStr.substr(0, 300) << std::endl;
-        //     std::cout << "==============================" << std::endl;
-        // }
+        
         // Convert to string for JSON parsing
         std::string dataStr(data.begin(), data.end());
         
@@ -382,11 +334,7 @@ private:
         } catch (...) {
             return; // SKIP invalid JSON
         }
-        // Push to pipeline for processing
-        // if (pipeline_ && !pipeline_->push(exchangeData)) {
-        //     // Pipeline queue full - handle gracefully
-        //     return;
-        // }
+       
         messages_processed_.fetch_add(1);
 
         // Also process for real-time intelligence generation
@@ -429,37 +377,7 @@ private:
             // Silently handle JSON parsing errors
         }
     }
-    // void ProcessDirectOrderBook(const std::string& symbol, const std::string& data) {
-    //     try {
-    //         json parsed = json::parse(data);
-            
-    //         std::lock_guard<std::mutex> lock(orderbook_mutex_);
-    //         auto it = order_books_.find(symbol);
-    //         if (it != order_books_.end()) {
-    //             UpdateOrderBookDirect(it->second, parsed);
-                
-    //             // Generate intelligence directly
-    //             auto intel = GenerateMarketIntelligence(symbol, it->second);
-                
-    //             if (intel.bid_ask_spread() > 0) { // Validate intelligence
-    //                 std::lock_guard<std::mutex> intel_lock(intelligence_mutex_);
-    //                 latest_intelligence_[symbol] = intel;
-                    
-    //                 if (zmq_server_) {
-    //                     zmq_server_->PublishMarketIntelligence(intel);
-    //                     intelligence_generated_.fetch_add(1);
-    //                 }
-    //             }
-    //         }
-    //     } catch (...) {
-    //         // Handle errors silently
-    //     }
-    // }
-    /**
- * @file orderbook_parsing_fix.cpp
- * @brief Fix OrderBook parsing from Binance depthUpdate messages
- */
-    
+        
     
     trading::MarketIntelligence GenerateMarketIntelligence(const std::string& symbol, 
                                                           std::shared_ptr<OrderBook> orderbook) {
@@ -883,13 +801,6 @@ private:
         std::cout << "Messages processed: " << messages_processed_.load() << std::endl;
         std::cout << "Intelligence generated: " << intelligence_generated_.load() << std::endl;
         std::cout << "Rate: " << (elapsed > 0 ? messages_processed_.load() / elapsed : 0) << " msg/s" << std::endl;
-        
-        // Pipeline metrics
-        // if (pipeline_) {
-        //     auto metrics = pipeline_->getMetrics();
-        //     std::cout << "Pipeline throughput: " << metrics->getThroughputPerSecond() << " updates/s" << std::endl;
-        //     std::cout << "Pipeline errors: " << metrics->getTotalErrorCount() << std::endl;
-        // }
         
         // Active symbols
         {

@@ -55,6 +55,7 @@ file(GLOB COMMON_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../../src/common/*.cpp)
 file(GLOB NORMALIZATION_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../../src/data_ingestion/normalization/*.cpp)
 file(GLOB DATA_QUALITY_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../../src/data_ingestion/data_quality/*.cpp)
 file(GLOB TIME_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../../src/data_ingestion/time/*.cpp)
+file(GLOB PUBLISH_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../../src/data_ingestion/publisher/*.cpp)
 # protocol source
 file(GLOB PROTOCOL_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../../src/data_ingestion/protocol/*.cpp)
 
@@ -63,8 +64,8 @@ set(SOURCES
     zmq_server.cpp
     bridge.cpp
     ${PROTO_SOURCES}  # Include protobuf-generated files
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../src/data_ingestion/pipeline/normalization_pipeline.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../src/data_ingestion/pipeline/pipeline_monitoring.cpp
+    # ${CMAKE_CURRENT_SOURCE_DIR}/../../src/data_ingestion/pipeline/normalization_pipeline.cpp
+    # ${CMAKE_CURRENT_SOURCE_DIR}/../../src/data_ingestion/pipeline/pipeline_monitoring.cpp
     ${WEBSOCKET_SOURCES}  # Add the expanded list of websocket .cpp files
     ${WEBSOCKET_EX_SOURCES}  # Add the expanded list of websocket exchange .cpp files
     # addd all source above
@@ -75,6 +76,7 @@ set(SOURCES
     ${PROTOCOL_SOURCES}
     ${DATA_QUALITY_SOURCES}
     ${TIME_SOURCES}
+    ${PUBLISH_SOURCES}
 )
 
 # Include directories
@@ -98,8 +100,8 @@ target_link_libraries(communication zmq jsoncpp pthread protobuf gRPC::grpc++)
 
 # Set the output directory for executables
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../../bin)
-# Add executable for bridge.cpp
-add_executable(bridge_exec bridge.cpp)
+# Add executable for full_bridge.cpp
+add_executable(bridge_exec full_bridge.cpp)
 target_link_libraries(bridge_exec communication zmq jsoncpp pthread protobuf)
 # Test files
 set(TEST_SOURCES

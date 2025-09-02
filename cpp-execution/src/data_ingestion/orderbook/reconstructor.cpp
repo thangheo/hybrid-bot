@@ -63,7 +63,187 @@
      
      initialized_ = false;
  }
- 
+ void OrderBookReconstructor::UpdateOrderBookFromJson(ExchangeId exchange_id, const nlohmann::json& data, const Symbol& symbol) {
+    try {
+        static std::atomic<int> debug_updates{0};
+        bool is_debug = debug_updates.fetch_add(1) < 3;
+        
+        // Get or CREATE order book
+        std::shared_ptr<OrderBook> orderbook;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            OrderBookKey key{exchange_id, symbol};
+            auto it = order_books_.find(key);
+            
+            if (it == order_books_.end()) {
+                // Create new order book if it doesn't exist
+                orderbook = std::make_shared<OrderBook>(exchange_id, symbol);
+                order_books_[key] = orderbook;
+                
+                if (is_debug) {
+                    std::cout << "Created new order book for " << symbol.toString() 
+                             << " on exchange " << exchange_id.toString() << std::endl;
+                }
+            } else {
+                orderbook = it->second;
+            }
+        }
+        
+        if (!orderbook) {
+            std::cerr << "Error: Failed to create/get OrderBook for " << symbol.toString() 
+                     << " on exchange " << exchange_id.toString() << std::endl;
+            return;
+        }
+        
+        if (is_debug) {
+            std::cout << "\n=== DEBUG: Processing depthUpdate ===" << std::endl;
+            std::cout << "Symbol: " << symbol.toString() << std::endl;
+            std::cout << "Exchange: " << exchange_id.toString() << std::endl;
+            std::cout << "Full message: " << data.dump().substr(0, 500) << std::endl;
+        }
+        
+        // Collect ALL bid and ask updates in vectors
+        std::vector<trading::data_ingestion::PriceLevel> bid_updates;
+        std::vector<trading::data_ingestion::PriceLevel> ask_updates;
+        
+        // Process ALL bids into vector
+        if (data.contains("b") && data["b"].is_array()) {
+            if (is_debug) {
+                std::cout << "Found bids array with " << data["b"].size() << " entries" << std::endl;
+            }
+            
+            for (const auto& bid : data["b"]) {
+                if (bid.is_array() && bid.size() >= 2) {
+                    try {
+                        std::string priceStr = bid[0].get<std::string>();
+                        std::string qtyStr = bid[1].get<std::string>();
+                        
+                        double price = std::stod(priceStr);
+                        double quantity = std::stod(qtyStr);
+                        
+                        if (is_debug) {
+                            std::cout << "Processing bid: " << priceStr << " @ " << qtyStr 
+                                    << " (parsed: " << price << " @ " << quantity << ")" << std::endl;
+                        }
+                        
+                        if (price > 0) {
+                            bid_updates.emplace_back(price, quantity);
+                            
+                            if (is_debug) {
+                                if (quantity == 0.0) {
+                                    std::cout << "  Will remove bid at " << price << std::endl;
+                                } else {
+                                    std::cout << "  Will update bid: " << price << " @ " << quantity << std::endl;
+                                }
+                            }
+                        }
+                    } catch (const std::exception& e) {
+                        if (is_debug) std::cout << "  Error parsing bid: " << e.what() << std::endl;
+                    }
+                }
+            }
+        }
+        
+        // Process ALL asks into vector
+        if (data.contains("a") && data["a"].is_array()) {
+            if (is_debug) {
+                std::cout << "Found asks array with " << data["a"].size() << " entries" << std::endl;
+            }
+            
+            for (const auto& ask : data["a"]) {
+                if (ask.is_array() && ask.size() >= 2) {
+                    try {
+                        std::string priceStr = ask[0].get<std::string>();
+                        std::string qtyStr = ask[1].get<std::string>();
+                        
+                        double price = std::stod(priceStr);
+                        double quantity = std::stod(qtyStr);
+                        
+                        if (is_debug) {
+                            std::cout << "Processing ask: " << priceStr << " @ " << qtyStr 
+                                    << " (parsed: " << price << " @ " << quantity << ")" << std::endl;
+                        }
+                        
+                        if (price > 0) {
+                            ask_updates.emplace_back(price, quantity);
+                            
+                            if (is_debug) {
+                                if (quantity == 0.0) {
+                                    std::cout << "  Will remove ask at " << price << std::endl;
+                                } else {
+                                    std::cout << "  Will update ask: " << price << " @ " << quantity << std::endl;
+                                }
+                            }
+                        }
+                    } catch (const std::exception& e) {
+                        if (is_debug) std::cout << "  Error parsing ask: " << e.what() << std::endl;
+                    }
+                }
+            }
+        }
+        
+        // Apply ALL updates at once using proper OrderBook method
+        if (!bid_updates.empty() || !ask_updates.empty()) {
+            // Get sequence number from message if available
+            uint64_t sequence_num = 0;
+            if (data.contains("u")) {
+                sequence_num = data["u"].get<uint64_t>();
+            }
+            
+            // Apply the update
+            bool success = orderbook->applyUpdate(
+                bid_updates, 
+                ask_updates, 
+                sequence_num, 
+                std::chrono::system_clock::now()
+            );
+            
+            if (is_debug) {
+                std::cout << "Applied update with " << bid_updates.size() 
+                        << " bid changes and " << ask_updates.size() << " ask changes" << std::endl;
+                std::cout << "Update success: " << (success ? "YES" : "NO") << std::endl;
+            }
+            
+            if (success) {
+                // Verify order book state after update
+                auto bids = orderbook->getBids(5);
+                auto asks = orderbook->getAsks(5);
+                
+                if (is_debug) {
+                    std::cout << "OrderBook state after update:" << std::endl;
+                    std::cout << "  Bids count: " << bids.size() << std::endl;
+                    std::cout << "  Asks count: " << asks.size() << std::endl;
+                    
+                    if (!bids.empty()) {
+                        std::cout << "  Best bid: " << bids[0].getPrice() << " @ " << bids[0].getQuantity() << std::endl;
+                    }
+                    if (!asks.empty()) {
+                        std::cout << "  Best ask: " << asks[0].getPrice() << " @ " << asks[0].getQuantity() << std::endl;
+                    }
+                }
+                
+                // Publish the updated order book
+                publishOrderBook(orderbook);
+                
+            } else {
+                if (is_debug) std::cout << "OrderBook update failed - possibly due to sequence gap" << std::endl;
+                
+                // On failure, request a snapshot to resync
+                requestSnapshot(exchange_id, symbol);
+            }
+        } else {
+            if (is_debug) std::cout << "No price level updates to apply" << std::endl;
+        }
+        
+        if (is_debug) {
+            std::cout << "==================================" << std::endl;
+        }
+        
+    } catch (const std::exception& e) {
+        std::cout << "Error processing order book update for " << symbol.toString() 
+                 << ": " << e.what() << std::endl;
+    }
+}
  bool OrderBookReconstructor::processSnapshot(
      ExchangeId exchange, 
      const Symbol& symbol,
@@ -254,7 +434,6 @@ void OrderBookReconstructor::publishOrderBook(const std::shared_ptr<OrderBook>& 
          return;
      }
      
-
     OrderBookUpdate update = order_book->getSnapshot();
     std::string payload = update.exchangeId.toString() + ":" + update.tradingPair + ":" +
         std::to_string(update.sequenceNumber) + ":" +
@@ -266,8 +445,6 @@ void OrderBookReconstructor::publishOrderBook(const std::shared_ptr<OrderBook>& 
 
     // Publish message
     publisher_->publish("orderbook", binary_payload);
-
-
 
  }
  

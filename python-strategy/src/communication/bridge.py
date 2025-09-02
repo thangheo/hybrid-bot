@@ -15,6 +15,7 @@ from typing import Dict, List, Optional, Tuple
 from collections import deque
 import pandas as pd
 import numpy as np
+import socket  # Standard library socket module
 
 # Add protobuf path
 sys.path.append('generated/python')
@@ -35,6 +36,94 @@ class MarketRegimeState:
     volatility_trend: float
     flow_momentum: float
 
+def signalHandler(signum, frame):
+    """Handle termination signals gracefully"""
+    global g_running
+    print(f"\nReceived signal {signum}, shutting down...")
+    g_running = False
+ 
+def check_zmq_server_availability():
+    """Check if ZMQ servers are actually running"""
+    print("=== ZMQ SERVER DIAGNOSTICS ===")
+    
+    # Check if ports are open
+    def check_port(host, port, service_name):
+        try:
+            # Fixed: Use different variable name to avoid shadowing the socket module
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(2)
+            result = sock.connect_ex((host, port))
+            sock.close()
+            
+            if result == 0:
+                print(f"✓ {service_name} port {port} is OPEN")
+                return True
+            else:
+                print(f"✗ {service_name} port {port} is CLOSED")
+                return False
+        except Exception as e:
+            print(f"✗ {service_name} port check failed: {e}")
+            return False
+    
+    # Check both ZMQ ports
+    intelligence_port_open = check_port("localhost", 5555, "Market Intelligence")
+    execution_port_open = check_port("localhost", 5558, "Execution Engine")
+    
+    # Test ZMQ connection specifically
+    if intelligence_port_open:
+        print("Testing ZMQ intelligence connection...")
+        try:
+            context = zmq.Context()
+            # Fixed: Use different variable name to avoid conflict with socket module
+            zmq_socket = context.socket(zmq.SUB)
+            zmq_socket.setsockopt(zmq.SUBSCRIBE, b"MARKET_INTEL")
+            zmq_socket.setsockopt(zmq.RCVTIMEO, 2000)
+            zmq_socket.connect("tcp://localhost:5555")
+            
+            # Try to receive a message
+            try:
+                topic = zmq_socket.recv(zmq.NOBLOCK)
+                data = zmq_socket.recv(zmq.NOBLOCK)
+                print("✓ Successfully received intelligence data")
+            except zmq.Again:
+                print("⚠ Connected but no intelligence data flowing")
+            
+            zmq_socket.close()
+            context.term()
+            
+        except Exception as e:
+            print(f"✗ ZMQ intelligence test failed: {e}")
+    
+    if execution_port_open:
+        print("Testing ZMQ execution connection...")
+        try:
+            context = zmq.Context()
+            # Fixed: Use different variable name to avoid conflict with socket module
+            zmq_socket = context.socket(zmq.DEALER)
+            zmq_socket.setsockopt(zmq.IDENTITY, b"test_client")
+            zmq_socket.setsockopt(zmq.RCVTIMEO, 2000)
+            zmq_socket.setsockopt(zmq.SNDTIMEO, 2000)
+            zmq_socket.connect("tcp://localhost:5558")
+            
+            # Send a test message
+            test_msg = b"test_connection"
+            zmq_socket.send_multipart([b"test_id", test_msg])
+            
+            try:
+                response = zmq_socket.recv_multipart()
+                print("✓ Execution engine responded to test")
+            except zmq.Again:
+                print("⚠ Connected but execution engine not responding")
+            
+            zmq_socket.close()
+            context.term()
+            
+        except Exception as e:
+            print(f"✗ ZMQ execution test failed: {e}")
+    
+    print("==============================")
+    return intelligence_port_open and execution_port_open
+
 class MarketIntelligenceIntegrator:
     """Integrates C++ market intelligence with Python strategy"""
     
@@ -51,6 +140,11 @@ class MarketIntelligenceIntegrator:
         self.intelligence_subscriber = None
         self.intent_publisher = None
         
+        # Connection tracking
+        self.connection_retry_count = 0
+        self.max_connection_retries = 5
+        self.last_intent_time = 0
+        
         # Threading
         self.intelligence_thread = None
         self.intelligence_lock = threading.Lock()
@@ -58,20 +152,26 @@ class MarketIntelligenceIntegrator:
         print("Market Intelligence Integrator initialized")
 
     def start(self):
-        """Start market intelligence integration"""
+        """Start market intelligence integration with diagnostics"""
         if self.running:
             return True
-            
+        
         try:
-            # Setup ZMQ connections
+            # Setup ZMQ connections with improved error handling
             self.intelligence_subscriber = self.context.socket(zmq.SUB)
             self.intelligence_subscriber.connect("tcp://localhost:5555")
             self.intelligence_subscriber.setsockopt(zmq.SUBSCRIBE, b"MARKET_INTEL")
-            self.intelligence_subscriber.setsockopt(zmq.RCVTIMEO, 1000)  # 1 second timeout
+            self.intelligence_subscriber.setsockopt(zmq.RCVTIMEO, 1000)
             
-            self.intent_publisher = self.context.socket(zmq.REQ)
+            # Use DEALER socket for better reliability
+            self.intent_publisher = self.context.socket(zmq.DEALER)
+            self.intent_publisher.setsockopt(zmq.IDENTITY, b"python_strategy")
             self.intent_publisher.connect("tcp://localhost:5558")
-            self.intent_publisher.setsockopt(zmq.RCVTIMEO, 5000)  # 5 second timeout
+            self.intent_publisher.setsockopt(zmq.RCVTIMEO, 10000)
+            self.intent_publisher.setsockopt(zmq.SNDTIMEO, 5000)
+            
+            # Wait a moment for connections to establish
+            time.sleep(0.5)
             
             # Start intelligence monitoring thread
             self.running = True
@@ -347,6 +447,35 @@ class MarketIntelligenceIntegrator:
         
         return max(0.1, min(1.0, urgency))
 
+    def _reconnect_publisher(self):
+        """Reconnect the intent publisher"""
+        if self.connection_retry_count >= self.max_connection_retries:
+            print(f"Max reconnection attempts reached ({self.max_connection_retries})")
+            return False
+        
+        try:
+            print(f"Reconnecting intent publisher (attempt {self.connection_retry_count + 1})...")
+            
+            if self.intent_publisher:
+                self.intent_publisher.close()
+            
+            self.intent_publisher = self.context.socket(zmq.DEALER)
+            self.intent_publisher.setsockopt(zmq.IDENTITY, b"python_strategy")
+            self.intent_publisher.connect("tcp://localhost:5558")
+            self.intent_publisher.setsockopt(zmq.RCVTIMEO, 10000)
+            self.intent_publisher.setsockopt(zmq.SNDTIMEO, 5000)
+            
+            self.connection_retry_count += 1
+            time.sleep(1)  # Brief pause
+            
+            print("Intent publisher reconnected")
+            return True
+            
+        except Exception as e:
+            print(f"Reconnection failed: {e}")
+            self.connection_retry_count += 1
+            return False
+
 
 class IntegratedTradingStrategy:
     """Enhanced trading strategy with C++ pipeline integration"""
@@ -362,6 +491,8 @@ class IntegratedTradingStrategy:
         
         # Performance tracking
         self.trades_executed = 0
+        self.trades_rejected = 0
+        self.connection_errors = 0
         self.total_pnl = 0.0
         self.start_time = time.time()
         
@@ -393,8 +524,7 @@ class IntegratedTradingStrategy:
         if not regime_state:
             return None
         
-        # Your existing signal generation logic here...
-        # For demo, I'll create a simple signal based on market intelligence
+        # Calculate signal strength
         signal_strength = self._calculate_signal_strength(symbol, regime_state)
         
         if signal_strength < 0.7:  # Only trade strong signals
@@ -554,41 +684,131 @@ class IntegratedTradingStrategy:
             return tm.FLOW_NEUTRAL
 
     def send_trading_intent(self, intent: tm.TradingIntent) -> bool:
-        """Send trading intent to C++ execution engine"""
-        try:
-            # Send intent
-            self.intelligence_integrator.intent_publisher.send(intent.SerializeToString())
-            
-            # Receive acknowledgment
-            response = self.intelligence_integrator.intent_publisher.recv()
-            
-            # Parse acknowledgment
-            ack = tm.ExecutionAcknowledgment()
-            ack.ParseFromString(response)
-            
-            if ack.accepted:
-                print(f"Intent accepted: {ack.execution_id}")
-                print(f"  Estimated completion: {ack.estimated_completion_time}")
-                print(f"  Reason: {ack.reason}")
-                
-                # Set cooldown
-                self.signal_cooldowns[intent.symbol] = time.time()
-                self.trades_executed += 1
-                
-                return True
-            else:
-                print(f"Intent rejected: {ack.reason}")
-                return False
-                
-        except Exception as e:
-            print(f"Error sending intent: {e}")
+        """Send trading intent to C++ execution engine with improved error handling"""
+        
+        # Rate limiting - prevent spam
+        current_time = time.time()
+        if current_time - self.intelligence_integrator.last_intent_time < 5:
+            print("Rate limit: Skipping intent (too frequent)")
             return False
+        
+        retry_count = 0
+        max_retries = 3
+        
+        while retry_count < max_retries:
+            try:
+                # Check if publisher is available
+                if not self.intelligence_integrator.intent_publisher:
+                    print("No intent publisher available")
+                    return False
+                
+                # Create unique request ID for DEALER socket
+                request_id = f"{intent.symbol}_{int(time.time() * 1000)}"
+                
+                # Serialize intent
+                intent_data = intent.SerializeToString()
+                
+                print(f"Sending intent (attempt {retry_count + 1}): {intent.intent_id}")
+                
+                # Send with request ID for DEALER socket
+                self.intelligence_integrator.intent_publisher.send_multipart([
+                    request_id.encode(), 
+                    intent_data
+                ])
+                
+                # Try to receive acknowledgment
+                try:
+                    response_parts = self.intelligence_integrator.intent_publisher.recv_multipart()
+                    
+                    if len(response_parts) >= 2:
+                        response_id = response_parts[0].decode()
+                        response_data = response_parts[1]
+                        
+                        # Parse acknowledgment
+                        ack = tm.ExecutionAcknowledgment()
+                        ack.ParseFromString(response_data)
+                        
+                        if ack.accepted:
+                            print(f"✓ Intent accepted: {ack.execution_id}")
+                            print(f"  Execution ID: {ack.execution_id}")
+                            print(f"  Estimated completion: {ack.estimated_completion_time}")
+                            print(f"  Reason: {ack.reason}")
+                            
+                            # Update tracking
+                            self.signal_cooldowns[intent.symbol] = current_time
+                            self.intelligence_integrator.last_intent_time = current_time
+                            self.trades_executed += 1
+                            self.intelligence_integrator.connection_retry_count = 0  # Reset on success
+                            
+                            return True
+                        else:
+                            print(f"✗ Intent rejected: {ack.reason}")
+                            self.trades_rejected += 1
+                            return False
+                    else:
+                        print("Invalid response format")
+                        
+                except zmq.Again:
+                    print("Timeout waiting for acknowledgment")
+                    retry_count += 1
+                    if retry_count < max_retries:
+                        print(f"Retrying in 2 seconds... ({retry_count}/{max_retries})")
+                        time.sleep(2)
+                    continue
+                    
+            except zmq.ZMQError as e:
+                print(f"ZMQ Error (attempt {retry_count + 1}): {e}")
+                self.connection_errors += 1
+                
+                if e.errno == zmq.EAGAIN:  # Resource temporarily unavailable
+                    print("Socket busy, attempting reconnection...")
+                    if self.intelligence_integrator._reconnect_publisher():
+                        retry_count += 1
+                        continue
+                    else:
+                        break
+                else:
+                    retry_count += 1
+                    if retry_count < max_retries:
+                        time.sleep(1)
+                    continue
+                    
+            except Exception as e:
+                print(f"Unexpected error sending intent (attempt {retry_count + 1}): {e}")
+                retry_count += 1
+                if retry_count < max_retries:
+                    time.sleep(1)
+        
+        print(f"Failed to send intent after {max_retries} attempts")
+        return False
+
+    def print_strategy_status(self):
+        """Print enhanced strategy performance status"""
+        elapsed = time.time() - self.start_time
+        
+        print(f"\n=== STRATEGY STATUS ===")
+        print(f"Runtime: {elapsed:.0f}s")
+        print(f"Trades executed: {self.trades_executed}")
+        print(f"Trades rejected: {self.trades_rejected}")
+        print(f"Connection errors: {self.connection_errors}")
+        print(f"Success rate: {self.trades_executed/(max(1, self.trades_executed + self.trades_rejected))*100:.1f}%")
+        print(f"Active regimes: {len(self.intelligence_integrator.current_regimes)}")
+        
+        # Show current regimes with details
+        for symbol, regime_state in self.intelligence_integrator.current_regimes.items():
+            print(f"  {symbol}: Regime {regime_state.primary_regime} "
+                  f"(conf: {regime_state.confidence:.2f}, "
+                  f"liq: {regime_state.liquidity_score:.2f})")
+        
+        print("========================")
 
     def run_strategy_loop(self):
-        """Main strategy execution loop"""
+        """Main strategy execution loop with improved error handling"""
         print("Starting strategy loop...")
         
         loop_count = 0
+        consecutive_errors = 0
+        max_consecutive_errors = 10
         
         # Ensure g_running is defined
         global g_running
@@ -598,66 +818,83 @@ class IntegratedTradingStrategy:
             g_running = True
 
         while g_running:
-            loop_count += 1
-            
-            # Process each symbol
-            for symbol in self.symbols:
-                try:
-                    # Generate signal if conditions are met
-                    intent = self.generate_enhanced_signal(symbol)
-                    
-                    if intent:
-                        print(f"\n--- SIGNAL GENERATED ---")
-                        print(f"Symbol: {intent.symbol}")
-                        print(f"Side: {'BUY' if intent.side == tm.SIDE_BUY else 'SELL'}")
-                        print(f"Quantity: {intent.target_quantity}")
-                        print(f"Signal Strength: {intent.signal_strength}")
-                        print(f"Market Regime: {intent.market_regime}")
-                        print(f"Execution Style: {intent.execution_style}")
+            try:
+                loop_count += 1
+                
+                # Check for too many consecutive errors
+                if consecutive_errors >= max_consecutive_errors:
+                    print(f"Too many consecutive errors ({consecutive_errors}), pausing...")
+                    time.sleep(10)
+                    consecutive_errors = 0
+                
+                # Process each symbol
+                symbols_processed = 0
+                for symbol in self.symbols:
+                    try:
+                        # Generate signal if conditions are met
+                        intent = self.generate_enhanced_signal(symbol)
                         
-                        # Send to C++ execution engine
-                        if self.send_trading_intent(intent):
-                            print("Intent sent successfully")
-                        else:
-                            print("Failed to send intent")
-                        print("------------------------")
+                        if intent:
+                            print(f"\n--- SIGNAL GENERATED ---")
+                            print(f"Symbol: {intent.symbol}")
+                            print(f"Side: {'BUY' if intent.side == tm.SIDE_BUY else 'SELL'}")
+                            print(f"Quantity: {intent.target_quantity:.1f}")
+                            print(f"Signal Strength: {intent.signal_strength:.2f}")
+                            print(f"Market Regime: {intent.market_regime}")
+                            print(f"Execution Style: {intent.execution_style}")
+                            print(f"Urgency: {intent.urgency_factor:.2f}")
+                            
+                            # Send to C++ execution engine
+                            if self.send_trading_intent(intent):
+                                print("✓ Intent sent successfully")
+                                consecutive_errors = 0  # Reset error count on success
+                            else:
+                                print("✗ Failed to send intent")
+                                consecutive_errors += 1
+                            print("------------------------")
+                            
+                        symbols_processed += 1
                         
-                except Exception as e:
-                    print(f"Error processing {symbol}: {e}")
-            
-            # Print periodic status
-            if loop_count % 20 == 0:  # Every ~20 seconds
-                self.print_strategy_status()
-            
-            # Sleep between iterations
-            time.sleep(1)
+                    except Exception as e:
+                        print(f"Error processing {symbol}: {e}")
+                        consecutive_errors += 1
+                
+                # Print periodic status
+                if loop_count % 20 == 0:  # Every ~20 seconds
+                    self.print_strategy_status()
+                
+                # Sleep between iterations
+                time.sleep(1)
+                
+            except KeyboardInterrupt:
+                print("Keyboard interrupt received")
+                break
+            except Exception as e:
+                print(f"Error in strategy loop: {e}")
+                consecutive_errors += 1
+                time.sleep(2)
 
-    def print_strategy_status(self):
-        """Print strategy performance status"""
-        elapsed = time.time() - self.start_time
-        
-        print(f"\n=== STRATEGY STATUS ===")
-        print(f"Runtime: {elapsed:.0f}s")
-        print(f"Trades executed: {self.trades_executed}")
-        print(f"Active regimes: {len(self.intelligence_integrator.current_regimes)}")
-        # print regimes
-        for regime in self.intelligence_integrator.current_regimes:
-            print(f"  - {regime}")
-
-        # Show current regimes
-def signalHandler(signum, frame):
-    """Handle termination signals gracefully"""
-    global g_running
-    print(f"\nReceived signal {signum}, shutting down...")
-    g_running = False
 
 def main():
-    """Main application entry point"""
+    """Main application entry point with better error handling"""
     signal(SIGINT, signalHandler)
     signal(SIGTERM, signalHandler)
     
     print("=== INTEGRATED TRADING STRATEGY ===")
     print("Combining C++ pipeline intelligence with Python strategy")
+    
+    # Run initial diagnostics
+    if not check_zmq_server_availability():
+        print("\n❌ CRITICAL: C++ servers not detected!")
+        print("Please make sure the integrated_trading_server is running:")
+        print("  ./build/full_bridge")
+        print("\nWaiting 10 seconds for servers to start...")
+        time.sleep(10)
+        
+        # Check again
+        if not check_zmq_server_availability():
+            print("❌ Servers still not available. Exiting.")
+            return 1
     
     try:
         # Symbol list
@@ -670,13 +907,21 @@ def main():
             print("Failed to start strategy")
             return 1
         
-        print(f"\nStrategy running with {len(symbols)} symbols...")
-        print("Receiving real-time market intelligence from C++ pipeline")
-        print("Generating trading signals based on enhanced regime detection")
+        print(f"\n✓ Strategy running with {len(symbols)} symbols...")
+        print("✓ Receiving real-time market intelligence from C++ pipeline")
+        print("✓ Generating trading signals based on enhanced regime detection")
         print("Press Ctrl+C to stop...")
         
         # Wait a moment for intelligence to start flowing
-        time.sleep(3)
+        print("Waiting for market intelligence...")
+        time.sleep(5)
+        
+        # Check if we're receiving intelligence
+        if len(strategy.intelligence_integrator.current_regimes) == 0:
+            print("⚠ WARNING: No market intelligence received yet")
+            print("  This is normal for the first 30-60 seconds")
+        else:
+            print(f"✓ Receiving intelligence for {len(strategy.intelligence_integrator.current_regimes)} symbols")
         
         # Run main strategy loop
         strategy.run_strategy_loop()
@@ -686,6 +931,8 @@ def main():
         
     except Exception as e:
         print(f"Strategy error: {e}")
+        import traceback
+        traceback.print_exc()
         return 1
     
     print("Strategy shutdown complete")

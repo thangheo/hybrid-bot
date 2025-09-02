@@ -23,6 +23,7 @@
 #include "strategy/core_analysis/liquidity_flow_monitor.hpp"
 // #include "data_ingestion/orderbook/level.hpp"
 #include "config.hpp"
+#include "nlohmann/json.hpp"
 namespace trading {
 namespace data_ingestion {
 
@@ -43,7 +44,9 @@ namespace data_ingestion {
      OrderBookReconstructor& operator=(const OrderBookReconstructor&) = delete;
      OrderBookReconstructor(OrderBookReconstructor&&) = delete;
      OrderBookReconstructor& operator=(OrderBookReconstructor&&) = delete;
-     
+    // bool updateFromBinanceJson(const nlohmann::json& data);
+    void UpdateOrderBookFromJson(ExchangeId exchange_id,const nlohmann::json& data, const Symbol& symbol);
+
      /**
       * @brief Destroy the Order Book Reconstructor object
       */
