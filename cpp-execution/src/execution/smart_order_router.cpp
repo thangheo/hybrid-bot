@@ -128,10 +128,10 @@ RoutingResult SmartOrderRouter::defaultRoutingStrategy(
     const RoutingFactors& factors) const {
     
     // Calculate scores for each exchange
-    std::vector<std::pair<std::string, double>> exchange_scores;
+    std::vector<std::pair<ExchangeId, double>> exchange_scores; // Changed to store ExchangeId directly
     for (const auto& exchange : exchanges) {
         double score = calculateExchangeScore(exchange, order);
-        exchange_scores.emplace_back(exchange.exchangeId.toString(), score);
+        exchange_scores.emplace_back(exchange.exchangeId, score); // Use exchangeId directly
     }
     
     // Find exchange with highest score
@@ -144,11 +144,11 @@ RoutingResult SmartOrderRouter::defaultRoutingStrategy(
     // Build routing result
     RoutingResult result;
     if (best_exchange != exchange_scores.end()) {
-        result.exchangeId.fromString(best_exchange->first);
+        result.exchangeId = best_exchange->first; // Directly assign the ExchangeId
         result.score = best_exchange->second;
         result.reason = "Selected based on optimal routing score";
     } else {
-        result.exchangeId = core::ExchangeId::unknown();
+        result.exchangeId = core::ExchangeId(); // Default (invalid) exchange
         result.score = 0.0;
         result.reason = "No suitable exchange found";
     }

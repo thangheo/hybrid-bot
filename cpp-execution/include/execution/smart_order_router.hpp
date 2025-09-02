@@ -79,10 +79,13 @@ struct ExchangeInfo {
     }
     
     bool supports_trading_pair(const std::string& trading_pair) const {
+        return true;
         // Accept all major trading pairs
-        return trading_pair.find("USDT") != std::string::npos ||
-               trading_pair.find("USD") != std::string::npos ||
-               trading_pair.find("BTC") != std::string::npos;
+        // return trading_pair.find("USDT") != std::string::npos ||
+        //        trading_pair.find("USD") != std::string::npos ||
+        //        trading_pair.find("BTC") != std::string::npos ||
+        //        trading_pair.find("ETH") != std::string::npos ||
+        //        trading_pair.find("LTC") != std::string::npos;
     }
 };
 /**

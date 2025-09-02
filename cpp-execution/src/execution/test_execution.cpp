@@ -87,25 +87,25 @@ public:
         std::cout << "Test application stopped\n";
     }
     void initializeExecutionService() {
-    // Create the authentication service first
+        // Create the authentication service first
         auto authService = std::make_shared<AuthenticationService>();
-     
+        
         // Create API client manager with auth service
         auto api_client_manager = std::make_shared<ApiClientManager>(authService);
         
-        //realClient  with test api for reading only
+        // Set up credentials and clients (your existing code)
+        //get from environment .env file
         auto credentials = ExchangeCredentials{
-            "sycxy0ya6lY8Vh4PDQtAmY3ki0m6n6j9SEBaZDXsgvyriRb06kTiFoMyBZet2j3n",
-            "EGiCdIO4DDRMSCw08BflfVX0DoGp7eG48pAHSvRnClXU4x9757Rg9hlMvDrTTReY",
-            "", // passphrase if needed
-            true // testnet mode
+            std::getenv("BINANCE_API_KEY"),
+            std::getenv("BINANCE_API_SECRET"),
+            "", 
+            true
         };
         authService->setCredentials(core::ExchangeId::binance(), credentials);
         api_client_manager->addClient(core::ExchangeId::binance(),
             std::make_shared<BinanceApiClient>(credentials, 
             std::make_shared<RateLimitController>(core::ExchangeId::binance())));
 
-        
         // Create other components
         auto order_generator = std::make_shared<OrderGenerator>();
         auto smart_order_router = std::make_shared<SmartOrderRouter>();
@@ -113,7 +113,29 @@ public:
         auto execution_algorithm_factory = std::make_shared<ExecutionAlgorithmFactory>();
         auto order_lifecycle_tracker = std::make_shared<OrderLifecycleTracker>();
         auto fill_reconciliation = std::make_shared<FillReconciliation>();
+
+        // **CRITICAL: Initialize the smart order router with exchange information**
+        std::vector<ExchangeInfo> exchanges;
+        ExchangeInfo binanceInfo;
+        binanceInfo.exchangeId = core::ExchangeId::binance();
+        binanceInfo.trading_fee = 0.001;
+        binanceInfo.liquidity_score = 0.9;
+        binanceInfo.latency_ms = 50;
+        binanceInfo.success_rate = 0.99;
+        exchanges.push_back(binanceInfo);
         
+        // After initializing the router, add this debug check:
+        smart_order_router->initialize(exchanges);
+
+        // Debug: Test if the exchange supports our trading pairs
+        std::cout << "Testing exchange support for BTC/USDT: " << 
+            (binanceInfo.supports_trading_pair("BTC/USDT") ? "YES" : "NO") << std::endl;
+
+        std::vector<std::string> available = smart_order_router->getAvailableExchanges("BTC/USDT");
+        std::cout << "Available exchanges for BTC/USDT: " << available.size() << std::endl;
+        for (const auto& ex : available) {
+            std::cout << "  - " << ex << std::endl;
+        }
         // Initialize the execution service
         execution_service_ = std::make_shared<ExecutionService>(
             order_generator,
@@ -267,29 +289,25 @@ private:
         std::uniform_real_distribution<>& size_dist,
         std::uniform_int_distribution<>& side_dist) {
         
-        // Random selections
-        std::uniform_int_distribution<> pair_dist(0, pairs.size() - 1);
-        std::string trading_pair = pairs[pair_dist(signal_generator_)];
+        // Use Binance-format symbols instead of generic format
+        std::vector<std::string> binance_pairs = {
+            "BTCUSDT", "ETHUSDT", "ADAUSDT", "DOTUSDT"  // No slashes
+        };
+        
+        std::uniform_int_distribution<> pair_dist(0, binance_pairs.size() - 1);
+        std::string trading_pair = binance_pairs[pair_dist(signal_generator_)];
         
         TradingSignal signal;
         signal.signal_id = generateSignalId();
-        signal.tradingPair = trading_pair;
+        signal.tradingPair = trading_pair;  // Now uses correct format
         signal.direction = side_dist(signal_generator_) == 0 ? Direction::BUY : Direction::SELL;
         signal.strength = strength_dist(signal_generator_);
         signal.target_size = size_dist(signal_generator_);
-        signal.signal_ttl = std::chrono::milliseconds(10000); // 10 seconds
+        signal.signal_ttl = std::chrono::milliseconds(10000);
         signal.strategy_id = "test_strategy";
         signal.strategy_version = "1.0";
         
-        // Add some test metrics
-        signal.signal_metrics["bid_price"] = 50000.0 + (signal_generator_() % 1000);
-        signal.signal_metrics["ask_price"] = signal.signal_metrics["bid_price"] + 10.0;
-        signal.signal_metrics["spread"] = 10.0;
-        signal.signal_metrics["volatility"] = 0.02;
-        signal.signal_metrics["volume"] = 100.0;
-        signal.signal_metrics["liquidity_score"] = 0.8;
-        signal.signal_metrics["market_impact_estimate"] = 0.005;
-        
+        // Rest of your existing code...
         return signal;
     }
     

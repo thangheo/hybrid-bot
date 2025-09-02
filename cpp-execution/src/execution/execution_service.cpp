@@ -146,7 +146,8 @@
     auto order_ptr = std::make_shared<models::Order>(order);
     RoutingResult routing_result = smart_order_router_->routeOrder(order_ptr);
     ExchangeId exchangeId = routing_result.exchangeId;
-    if (exchangeId.isValid()) {
+
+    if (!exchangeId.isValid()) {
         return ExecutionResponse{
             order.getClientOrderId(), "", false, 
             "No suitable exchange found",  
@@ -772,73 +773,167 @@ std::string ExecutionService::activeOrdersToJson(const std::vector<models::Order
     
     return j.dump();
 }
- // Private helper methods
- models::Order ExecutionService::createOrderFromSignal(const TradingSignal& signal) {
-    // Use order generator to create an order based on the signal
-    OrderGenerationParams params;
-    params.tradingPair = signal.tradingPair;
-    params.signal_strength = signal.strength;
-    params.target_size = signal.target_size;
-    params.signal_id = signal.signal_id;
-    params.strategy_id = signal.strategy_id;
-    params.side = signal.direction;
-    
-    // Generate the order
-    auto order = order_generator_->createOrder(params);
-    
-    // Select the best exchange
-    RoutingResult routing_result = smart_order_router_->selectExchange(order);
-    ExchangeId exchangeId = routing_result.exchangeId;
-    if (exchangeId.isValid()) {
-        // logger_->error("No suitable exchange found for order generation");
-        throw std::runtime_error("No suitable exchange found for order generation");
+
+models::Order ExecutionService::createOrderFromSignal(const TradingSignal& signal) {
+    try {
+        // Validate input signal first
+        if (signal.tradingPair.empty()) {
+            throw std::invalid_argument("Signal trading pair is empty");
+        }
+        if (signal.target_size <= 0.0) {
+            throw std::invalid_argument("Signal target size must be positive: " + std::to_string(signal.target_size));
+        }
+        if (signal.strength < 0.0 || signal.strength > 1.0) {
+            throw std::invalid_argument("Signal strength must be between 0.0 and 1.0: " + std::to_string(signal.strength));
+        }
+
+        // Create order generation parameters
+        OrderGenerationParams params;
+        params.tradingPair = signal.tradingPair;
+        params.side = signal.direction;
+        params.quantity = signal.target_size;
+        params.strategy_id = signal.strategy_id;
+        params.signal_id = signal.signal_id;
+        params.signal_strength = signal.strength;
+        params.target_size = signal.target_size;
+        params.signal_ttl = signal.signal_ttl;
+        params.type = models::OrderType::MARKET;
+        params.time_in_force = models::TimeInForce::GTC;
+        params.price = 0.0;
+
+        // Check if order_generator_ is valid
+        if (!order_generator_) {
+            throw std::runtime_error("Order generator is null");
+        }
+
+        // Generate the order
+        auto order = order_generator_->createOrder(params);
+        if (!order) {
+            throw std::runtime_error("Failed to create order from parameters");
+        }
+        
+        // ADD DEBUG HERE:
+        std::cout << "DEBUG: About to select exchange for pair: " << signal.tradingPair << std::endl;
+
+        // Check if smart_order_router_ is valid
+        if (!smart_order_router_) {
+            throw std::runtime_error("Smart order router is null");
+        }
+
+        // Select the best exchange
+        RoutingResult routing_result = smart_order_router_->selectExchange(order);
+
+        // ADD MORE DEBUG:
+        std::cout << "DEBUG: Routing result - ExchangeId: " << routing_result.exchangeId.toString() << std::endl;
+        std::cout << "DEBUG: Routing result - Score: " << routing_result.score << std::endl;
+        std::cout << "DEBUG: Routing result - Reason: " << routing_result.reason << std::endl;
+        std::cout << "DEBUG: ExchangeId isValid(): " << routing_result.exchangeId.isValid() << std::endl;
+
+        // if (!routing_result.exchangeId.isValid()) {
+        //     throw std::runtime_error("No suitable exchange found: " + routing_result.reason);
+        // }
+        if (!routing_result.exchangeId.isValid()) { // Add the ! (NOT operator)
+            throw std::runtime_error("No suitable exchange found: " + routing_result.reason);
+        }
+        // Set exchange ID
+        order->setExchangeId(routing_result.exchangeId);
+
+        // Check if order_type_selector_ is valid  
+        if (!order_type_selector_) {
+            throw std::runtime_error("Order type selector is null");
+        }
+
+        // Create MarketCondition from signal metrics
+        MarketCondition market_condition;
+        auto getMetric = [&](const std::string& key, double defaultValue = 0.0) -> double {
+            auto it = signal.signal_metrics.find(key);
+            return (it != signal.signal_metrics.end()) ? it->second : defaultValue;
+        };
+
+        market_condition.bid_price = getMetric("bid_price", 50000.0);
+        market_condition.ask_price = getMetric("ask_price", market_condition.bid_price + 10.0);
+        market_condition.spread = getMetric("spread", 10.0);
+        market_condition.volatility = getMetric("volatility", 0.02);
+        market_condition.volume = getMetric("volume", 100.0);
+        market_condition.liquidity_score = getMetric("liquidity_score", 0.8);
+        market_condition.market_impact_estimate = getMetric("market_impact_estimate", 0.005);
+
+        // Select the most appropriate order type
+        OrderTypeSelection selection = order_type_selector_->selectOrderType(order, market_condition);
+
+        // Apply the selected order type and parameters
+        order->setType(selection.type);
+        if (selection.type == models::OrderType::LIMIT && selection.price > 0.0) {
+            order->setPrice(selection.price);
+        }
+        order->setTimeInForce(selection.time_in_force);
+
+        return *order;
+
+    } catch (const std::exception& e) {
+        std::cerr << "Exception in createOrderFromSignal: " << e.what() << std::endl;
+        throw; // Re-throw the exception
+    } catch (...) {
+        std::cerr << "Unknown exception in createOrderFromSignal" << std::endl;
+        throw std::runtime_error("Unknown exception in createOrderFromSignal");
     }
-    
-    // Set exchange ID
-    order->setExchangeId(exchangeId);
-    
-    // Create a shared pointer to the order for the selector
-    // auto order_ptr = std::make_shared<models::Order> (order);
-    auto order_ptr = std::make_shared<models::Order>(*order);
-    order_ptr->setOrderId(signal.signal_id);
-    
-    // Create MarketCondition from signal metrics
-    MarketCondition market_condition;
-    // Set market condition from signal metrics
-    auto it = signal.signal_metrics.find("bid_price");
-    if (it != signal.signal_metrics.end()) market_condition.bid_price = it->second;
-    
-    it = signal.signal_metrics.find("ask_price");
-    if (it != signal.signal_metrics.end()) market_condition.ask_price = it->second;
-    
-    it = signal.signal_metrics.find("spread");
-    if (it != signal.signal_metrics.end()) market_condition.spread = it->second;
-    
-    it = signal.signal_metrics.find("volatility");
-    if (it != signal.signal_metrics.end()) market_condition.volatility = it->second;
-    
-    it = signal.signal_metrics.find("volume");
-    if (it != signal.signal_metrics.end()) market_condition.volume = it->second;
-    
-    it = signal.signal_metrics.find("liquidity_score");
-    if (it != signal.signal_metrics.end()) market_condition.liquidity_score = it->second;
-    
-    it = signal.signal_metrics.find("market_impact_estimate");
-    if (it != signal.signal_metrics.end()) market_condition.market_impact_estimate = it->second;
-    
-    // Select the most appropriate order type
-    OrderTypeSelection selection = order_type_selector_->selectOrderType(order_ptr, market_condition);
-    
-    // Apply the selected order type and other parameters
-    order->setType(selection.type);
-    if (selection.type == models::OrderType::LIMIT) {
-        order->setPrice(selection.price);
-    }
-    order->setTimeInForce(selection.time_in_force);
-    
-    return *order_ptr;
 }
- 
+// models::Order ExecutionService::createOrderFromSignal(const TradingSignal& signal) {
+//     // Create order generation parameters with correct field mapping
+//     OrderGenerationParams params;
+//     params.tradingPair = signal.tradingPair;
+//     params.side = signal.direction;
+//     params.quantity = signal.target_size;  // This was missing - using target_size as quantity
+//     params.strategy_id = signal.strategy_id;
+//     params.signal_id = signal.signal_id;
+//     params.signal_strength = signal.strength;
+//     params.target_size = signal.target_size;
+//     params.signal_ttl = signal.signal_ttl;
+    
+//     // Set defaults for required fields
+//     params.type = models::OrderType::MARKET;
+//     params.time_in_force = models::TimeInForce::GTC;
+//     params.price = 0.0;
+    
+//     // Generate the order using OrderGenerator
+//     auto order = order_generator_->createOrder(params);
+    
+//     // Select the best exchange
+//     RoutingResult routing_result = smart_order_router_->selectExchange(order);
+//     if (!routing_result.exchangeId.isValid()) {
+//         throw std::runtime_error("No suitable exchange found: " + routing_result.reason);
+//     }
+    
+//     // Set exchange ID
+//     order->setExchangeId(routing_result.exchangeId);
+    
+//     // Create MarketCondition from signal metrics
+//     MarketCondition market_condition;
+//     auto getMetric = [&](const std::string& key, double defaultValue = 0.0) -> double {
+//         auto it = signal.signal_metrics.find(key);
+//         return (it != signal.signal_metrics.end()) ? it->second : defaultValue;
+//     };
+    
+//     market_condition.bid_price = getMetric("bid_price", 50000.0);
+//     market_condition.ask_price = getMetric("ask_price", market_condition.bid_price + 10.0);
+//     market_condition.spread = getMetric("spread", 10.0);
+//     market_condition.volatility = getMetric("volatility", 0.02);
+//     market_condition.volume = getMetric("volume", 100.0);
+//     market_condition.liquidity_score = getMetric("liquidity_score", 0.8);
+//     market_condition.market_impact_estimate = getMetric("market_impact_estimate", 0.005);
+    
+//     // Select the most appropriate order type
+//     OrderTypeSelection selection = order_type_selector_->selectOrderType(order, market_condition);
+    
+//     // Apply the selected order type and parameters
+//     order->setType(selection.type);
+//     if (selection.type == models::OrderType::LIMIT && selection.price > 0.0) {
+//         order->setPrice(selection.price);
+//     }
+//     order->setTimeInForce(selection.time_in_force);
+    
+//     return *order;
+// } 
  bool ExecutionService::validateOrder(const models::Order& order) {
      // Basic validation checks
      if (order.getTradingPair().empty()) {

@@ -157,7 +157,7 @@ public:
         zmq_server_->Start();
         
         // Acquire and subscribe connections
-        int connectionsNeeded = std::min(static_cast<int>(symbols.size() / 5 + 1), 4);
+        int connectionsNeeded = std::min(static_cast<int>(symbols.size() / 5 + 1), 5);
         
         for (int i = 0; i < connectionsNeeded; ++i) {
             auto conn = connectionPool_->acquireConnection(10000);
