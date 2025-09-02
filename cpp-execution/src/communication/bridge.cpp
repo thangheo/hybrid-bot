@@ -14,7 +14,7 @@
 #include "common/exchange_types.hpp"
 #include "core/market_types.hpp"
 #include "communication/zmq_server.hpp"
-#include "trading_messages.pb.h"
+#include "../proto/generated/cpp/trading_messages.pb.h"
 #include "data_ingestion/orderbook/order_book_types.hpp"
 #include <nlohmann/json.hpp>
 #include <iostream>

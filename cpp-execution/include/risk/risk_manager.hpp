@@ -12,7 +12,7 @@
 #include "pretrade/order_validator.hpp"
 #include "posttrade/circuit_breaker.hpp"
 #include "service/risk_validation_service.hpp"
-#include "../../proto/cpp/trading_messages.pb.h" // From your protobuf definitions
+#include "../proto/generated/cpp/trading_messages.pb.h"
 #include <atomic>
 #include <memory>
 #include <mutex>

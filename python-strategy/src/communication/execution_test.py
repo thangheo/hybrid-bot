@@ -3,7 +3,7 @@
 Mock Python Execution Engine - Receives trading intents from Python strategy
 Acts as the C++ execution engine to test the communication flow
 """
-
+import os
 import zmq
 import time
 import sys
@@ -24,7 +24,7 @@ class MockExecutionEngine:
         """Start mock execution engine server"""
         try:
             # Setup ZMQ REP socket (receives requests, sends replies)
-            self.intent_receiver = self.context.socket(zmq.REP)
+            self.intent_receiver = self.context.socket(zmq.ROUTER)
             self.intent_receiver.bind("tcp://*:5558")
             self.intent_receiver.setsockopt(zmq.RCVTIMEO, 1000)  # 1 second timeout
             
@@ -42,8 +42,10 @@ class MockExecutionEngine:
         while self.running:
             try:
                 # Receive trading intent
-                data = self.intent_receiver.recv()
-                
+                msg_parts = self.intent_receiver.recv_multipart()
+                identity = msg_parts[0]
+                request_id = msg_parts[1] 
+                data = msg_parts[2]
                 # Parse intent
                 intent = tm.TradingIntent()
                 intent.ParseFromString(data)
@@ -53,8 +55,11 @@ class MockExecutionEngine:
                 
                 # Create and send acknowledgment
                 ack = self.create_acknowledgment(intent)
-                self.intent_receiver.send(ack.SerializeToString())
-                
+                self.intent_receiver.send_multipart([
+                    identity,
+                    request_id,
+                    ack.SerializeToString()
+                ])
                 self.processed_intents += 1
                 
             except zmq.Again:
@@ -65,9 +70,9 @@ class MockExecutionEngine:
                 # Send error acknowledgment if possible
                 try:
                     error_ack = tm.ExecutionAcknowledgment()
-                    error_ack.set_intent_id("unknown")
-                    error_ack.set_accepted(False)
-                    error_ack.set_reason(f"Processing error: {str(e)}")
+                    error_ack.intent_id = "unknown"
+                    error_ack.accepted = False
+                    error_ack.reason = f"Processing error: {str(e)}"
                     self.intent_receiver.send(error_ack.SerializeToString())
                 except:
                     pass
@@ -118,20 +123,19 @@ class MockExecutionEngine:
         """Create execution acknowledgment response"""
         ack = tm.ExecutionAcknowledgment()
         
-        # Basic response
-        ack.set_intent_id(intent.intent_id)
-        ack.set_accepted(True)  # Always accept for testing
-        ack.set_execution_id(f"mock_exec_{int(time.time())}_{self.processed_intents}")
-        ack.set_reason("Mock execution engine - intent accepted for testing")
+        # FIXED: Use direct assignment instead of set_ methods
+        ack.intent_id = intent.intent_id
+        ack.accepted = True
+        ack.execution_id = f"mock_exec_{int(time.time())}_{self.processed_intents}"
+        ack.reason = "Mock execution engine - intent accepted for testing"
         
         # Estimate completion time
         current_time = int(time.time() * 1000)
         completion_delay = self.calculate_mock_completion_delay(intent)
-        ack.set_estimated_completion_time(current_time + completion_delay)
+        ack.estimated_completion_time = current_time + completion_delay
         
         # Create mock execution parameters
-        params = ack.mutable_execution_params()
-        self.set_mock_execution_parameters(params, intent)
+        self.set_mock_execution_parameters(ack.execution_params, intent)
         
         return ack
     
@@ -153,41 +157,42 @@ class MockExecutionEngine:
         return max(1000, base_delay)  # Minimum 1 second
     
     def set_mock_execution_parameters(self, params, intent):
-        """Set mock execution parameters"""
+        """Set mock execution parameters - FIXED to use direct assignment"""
+        
         # Base parameters by execution style
         if intent.execution_style == tm.EXEC_AGGRESSIVE:
-            params.set_chunk_size_ratio(0.4)
-            params.set_aggression_level(0.9)
-            params.set_max_chunk_delay_ms(500)
-            params.set_preferred_order_type(tm.ORDER_MARKET)
+            params.chunk_size_ratio = 0.4
+            params.aggression_level = 0.9
+            params.max_chunk_delay_ms = 500
+            params.preferred_order_type = tm.ORDER_MARKET
         elif intent.execution_style == tm.EXEC_PASSIVE:
-            params.set_chunk_size_ratio(0.15)
-            params.set_aggression_level(0.3)
-            params.set_max_chunk_delay_ms(5000)
-            params.set_preferred_order_type(tm.ORDER_LIMIT)
-            params.set_post_only(True)
+            params.chunk_size_ratio = 0.15
+            params.aggression_level = 0.3
+            params.max_chunk_delay_ms = 5000
+            params.preferred_order_type = tm.ORDER_LIMIT
+            params.post_only = True
         elif intent.execution_style == tm.EXEC_STEALTH:
-            params.set_chunk_size_ratio(0.08)
-            params.set_aggression_level(0.15)
-            params.set_max_chunk_delay_ms(8000)
-            params.set_preferred_order_type(tm.ORDER_HIDDEN)
-            params.set_use_hidden_orders(True)
+            params.chunk_size_ratio = 0.08
+            params.aggression_level = 0.15
+            params.max_chunk_delay_ms = 8000
+            params.preferred_order_type = tm.ORDER_HIDDEN
+            params.use_hidden_orders = True
         else:  # BALANCED
-            params.set_chunk_size_ratio(0.25)
-            params.set_aggression_level(0.6)
-            params.set_max_chunk_delay_ms(2000)
-            params.set_preferred_order_type(tm.ORDER_LIMIT)
+            params.chunk_size_ratio = 0.25
+            params.aggression_level = 0.6
+            params.max_chunk_delay_ms = 2000
+            params.preferred_order_type = tm.ORDER_LIMIT
         
         # Adjust based on intent parameters
-        params.set_aggression_level(params.aggression_level * (0.5 + intent.confidence))
-        params.set_max_participation_rate(0.15 * intent.urgency_factor)
-        params.set_price_improvement_threshold(0.001 / max(0.1, intent.confidence))
-        params.set_time_in_force_ms(min(30000, intent.max_execution_time_ms // 2))
+        params.aggression_level = params.aggression_level * (0.5 + intent.confidence)
+        params.max_participation_rate = 0.15 * intent.urgency_factor
+        params.price_improvement_threshold = 0.001 / max(0.1, intent.confidence)
+        params.time_in_force_ms = min(30000, intent.max_execution_time_ms // 2)
         
         # Ensure bounds
-        params.set_aggression_level(min(1.0, max(0.1, params.aggression_level)))
-        params.set_chunk_size_ratio(min(0.5, max(0.05, params.chunk_size_ratio)))
-        params.set_max_participation_rate(min(0.3, max(0.05, params.max_participation_rate)))
+        params.aggression_level = min(1.0, max(0.1, params.aggression_level))
+        params.chunk_size_ratio = min(0.5, max(0.05, params.chunk_size_ratio))
+        params.max_participation_rate = min(0.3, max(0.05, params.max_participation_rate))
 
     # Helper methods for readable output
     def regime_to_string(self, regime):
@@ -198,7 +203,7 @@ class MockExecutionEngine:
             tm.REGIME_PANIC: "PANIC",
             tm.REGIME_DISTRIBUTION: "DISTRIBUTION",
             tm.REGIME_SIDEWAYS: "SIDEWAYS",
-            tm.REGIME_BALANCED: "BALANCED"
+            tm.REGIME_BALANCED: "BALANCED"  # Now supported
         }
         return regime_map.get(regime, f"UNKNOWN({regime})")
     
@@ -238,10 +243,9 @@ class MockExecutionEngine:
         print(f"Total intents processed: {self.processed_intents}")
 
 def signal_handler(signum, frame):
-    """Handle Ctrl+C gracefully"""
-    print(f"\nReceived signal {signum}, shutting down...")
-    global running
-    running = False
+    """Handle Ctrl+C gracefully and kill all threads/processes"""
+    print(f"\nReceived signal {signum}, killing process and all threads...")
+    os._exit(0)
 
 def main():
     global running

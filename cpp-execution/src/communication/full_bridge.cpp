@@ -14,7 +14,7 @@
 #include "common/exchange_types.hpp"
 #include "core/market_types.hpp"
 #include "communication/zmq_server.hpp"
-#include "trading_messages.pb.h"
+#include "../proto/generated/cpp/trading_messages.pb.h"
 #include "data_ingestion/orderbook/order_book_types.hpp"
 #include <nlohmann/json.hpp>
 #include <iostream>
@@ -305,86 +305,32 @@ public:
         
         std::cout << "Communication server initialized" << std::endl;
     }
-    
-    // bool Start(const std::vector<std::string>& symbols) {
-    //     std::cout << "Starting Integrated Trading Server..." << std::endl;
-    //     // Setup WebSocket connections
-    //     connectionPool_->initialize();
-    //     if (!connectionPool_->connectAll()) {
-    //         std::cerr << "Failed to establish WebSocket connections" << std::endl;
-    //         return false;
-    //     }
-    //     // Initialize order books for symbols
-    //     for (const auto& symbol : symbols) {
-    //         //get order_book from orderbook_reconstructor_
-    //         order_books_[symbol] = order_book_reconstructor_->getOrderBook(ExchangeId::binance(), Symbol::fromString(symbol));
-    //     }      
-    //     // Wait for connections to be ready
-    //     std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-    //     // if ((connectionPool_->getActiveConnectionCount() < 1)) {
-    //     //     std::cerr << "Not all WebSocket connections are active" << std::endl;
-    //     //     return false;
-    //     // }        
-    //     // Start ZMQ communication
-    //     zmq_server_->Start();
-        
-    //     // Acquire and subscribe connections
-    //     int connectionsNeeded = std::min(static_cast<int>(symbols.size() / 5 + 1), 4);
-        
-    //     for (int i = 0; i < connectionsNeeded; ++i) {
-    //         auto conn = connectionPool_->acquireConnection(10000);
-    //         if (conn && conn->isConnected()) {  // Check connection status
-    //             activeConnections_.push_back(conn);
-    //         }
-    //     }
-        
-    //     if (activeConnections_.empty()) {
-    //         std::cerr << "No connections available" << std::endl;
-    //         return false;
-    //     }
-        
-    //     // Subscribe to symbols
-    //     for (size_t i = 0; i < activeConnections_.size(); ++i) {
-    //         std::vector<Symbol> connectionSymbols;
-            
-    //         for (size_t j = i; j < symbols.size(); j += activeConnections_.size()) {
-    //             connectionSymbols.emplace_back(Symbol::fromString(symbols[j]));
-    //         }
-            
-    //         if (!connectionSymbols.empty()) {
-    //             activeConnections_[i]->subscribe(connectionSymbols);
-    //         }
-    //         else{
-    //             std::cout << "Warning: No symbols assigned to connection " << i << std::endl;
-
-    //         }
-    //     }
-        
-    //     std::cout << "Integrated Trading Server started successfully" << std::endl;
-    //     return true;
-    // }
-    
+      
     void Stop() {
         g_running = false;
         
-        // Stop ZMQ server
+        // 1. Stop ZMQ server first
         if (zmq_server_) {
             zmq_server_->Stop();
+            zmq_server_.reset();  // Explicitly reset
         }
         
-        // Release connections
+        // 2. Release connections before destroying pool
         for (auto& conn : activeConnections_) {
-            connectionPool_->releaseConnection(conn);
+            if (connectionPool_) {
+                connectionPool_->releaseConnection(conn);
+            }
         }
         activeConnections_.clear();
         
+        // 3. Shutdown pool last
         if (connectionPool_) {
             connectionPool_->shutdown();
+            connectionPool_.reset();
         }
-                 
+        
         std::cout << "Integrated Trading Server stopped" << std::endl;
     }
-    
     void RunMainLoop() {
         auto last_status = std::chrono::steady_clock::now();
         
