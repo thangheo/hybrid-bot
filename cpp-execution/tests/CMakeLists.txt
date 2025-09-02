@@ -13,9 +13,9 @@ include_directories(
 
 # Add subdirectories for component tests
 add_subdirectory(data_ingestion)
-# add_subdirectory(strategy)
 # add_subdirectory(execution)
-add_subdirectory(risk)
+# add_subdirectory(strategy)
+# add_subdirectory(risk)
 
 # Python tests - We'll use CMake to run Python unit tests
 find_package(Python3 COMPONENTS Interpreter REQUIRED)

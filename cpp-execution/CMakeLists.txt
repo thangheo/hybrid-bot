@@ -6,6 +6,14 @@ project(TradeFusion VERSION 1.0.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++23")
+
+# Hoặc kiểm tra compiler support
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS "11.0")
+        message(FATAL_ERROR "GCC 11+ required for C++23 support")
+    endif()
+endif()
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Set CMake module path to find custom Find*.cmake modules
@@ -62,10 +70,10 @@ add_subdirectory(proto)
 add_subdirectory(src)
 
 # Testing - completely disabled due to old/incompatible code
-# if(BUILD_TESTS)
-#     enable_testing()
-#     add_subdirectory(tests)
-# endif()
+if(BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
+endif()
 
 # Install rules
 install(TARGETS trading_system

@@ -26,6 +26,8 @@ struct ExchangeCredentials {
     std::string apiKey;
     std::string apiSecret;
     std::string passphrase;  // Some exchanges require this
+    // testnet
+    bool testnet = false;
     // Additional authentication data
 };
 

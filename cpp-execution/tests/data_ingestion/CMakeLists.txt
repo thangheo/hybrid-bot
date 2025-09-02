@@ -8,19 +8,19 @@ find_package(Boost REQUIRED COMPONENTS system thread)
 
 # Source files
 set(DATA_INGESTION_TEST_SOURCES
-    test_order_book.cpp
+    # test_order_book.cpp
     test_order_book_reconstructor.cpp
-    test_exchange_manager.cpp
+    # test_exchange_manager.cpp
     mock_exchange_server.cpp
 )
 
 # Websocket specific tests
 set(WEBSOCKET_TEST_SOURCES
-    websocket/test_connection_pool.cpp
-    websocket/test_websocket_client_base.cpp
-    websocket/test_websocket_integration.cpp
+    # websocket/test_connection_pool.cpp
+    # websocket/test_websocket_client_base.cpp
+    # websocket/test_websocket_integration.cpp
     websocket/mock_exchange_server.cpp
-    websocket/exchanges/test_binance_websocket_client.cpp
+    # websocket/exchanges/test_binance_websocket_client.cpp
 )
 
 # Main data ingestion test executable

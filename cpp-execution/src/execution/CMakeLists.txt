@@ -5,6 +5,8 @@ find_package(PkgConfig REQUIRED)
 find_package(CURL REQUIRED)
 find_package(jsoncpp REQUIRED)
 
+set(CMAKE_CXX_STANDARD 23)
+
 # Find libuuid
 pkg_check_modules(UUID REQUIRED uuid)
 
