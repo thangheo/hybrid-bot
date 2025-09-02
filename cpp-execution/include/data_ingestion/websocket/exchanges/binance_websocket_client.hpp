@@ -3,7 +3,8 @@
  * @brief Binance WebSocket client implementation
  */
 #pragma once
-
+#include <boost/beast/ssl.hpp>
+#include <boost/asio/ssl/stream.hpp>
 #include "data_ingestion/websocket/client_interface.hpp"
 #include "core/market_types.hpp"
 #include <nlohmann/json.hpp>
@@ -88,8 +89,10 @@ private:
     // std::unique_ptr<websocket::stream<ssl::stream<tcp::socket>>> wsStream_;
     // Replace this line:
     // With this:
-    std::unique_ptr<websocket::stream<ssl::stream<tcp::socket>>> wsStream_;
-    // std::unique_ptr<boost::beast::websocket::stream<boost::beast::ssl_stream<boost::beast::tcp_stream>>> wsStream_;
+    // std::unique_ptr<websocket::stream<ssl::stream<tcp::socket>>> wsStream_;
+    std::unique_ptr<boost::beast::websocket::stream<
+        boost::beast::ssl_stream<boost::beast::tcp_stream>>> wsStream_;
+
     std::mutex sendMutex_;  // Protect WebSocket send operations    
     // Subscription management
     std::atomic<int> subscriptionIdCounter_{1};
@@ -105,7 +108,7 @@ private:
     
     // Statistics tracking
     std::atomic<double> totalLatency_{0.0};
-
+    
     // Connection details
     std::string host_;
     std::string port_;
