@@ -1,5 +1,5 @@
 // trading_messages.proto
-// Complete protobuf schema for hybrid trading system
+// Updated protobuf schema for hybrid trading system with bridge.py compatibility
 
 syntax = "proto3";
 
@@ -10,7 +10,7 @@ option java_outer_classname = "TradingMessagesProto";
 option go_package = "trading/messages";
 
 // ============================================================================
-// ENUMS - Define all enums first
+// ENUMS - Updated with missing values used by bridge.py
 // ============================================================================
 
 enum TradeSide {
@@ -30,7 +30,7 @@ enum MarketRegime {
     REGIME_INSTITUTIONAL_FOMO = 1;
     REGIME_EUPHORIA = 2;
     REGIME_SIDEWAYS = 3;
-    REGIME_BALANCED = 4;
+    REGIME_BALANCED = 4;        // Added for bridge.py compatibility
     REGIME_UNCERTAIN = 5;
     REGIME_DISTRIBUTION = 6;
     REGIME_PROFIT_TAKING = 7;
@@ -58,11 +58,12 @@ enum ExecutionState {
     STATE_FAILED = 5;
 }
 
+// Added for bridge.py compatibility
 enum OrderBookRegime {
-    OB_LIQUID = 0;
-    OB_NORMAL = 1;
-    OB_THIN = 2;
-    OB_VOLATILE = 3;
+    OB_LIQUID = 0;     // Added for bridge.py
+    OB_NORMAL = 1;     // Added for bridge.py
+    OB_THIN = 2;       // Added for bridge.py
+    OB_VOLATILE = 3;   // Added for bridge.py
 }
 
 enum OrderType {
@@ -71,6 +72,26 @@ enum OrderType {
     ORDER_STOP_LIMIT = 2;
     ORDER_ICEBERG = 3;
     ORDER_HIDDEN = 4;
+}
+
+// Added for execution module compatibility
+enum OrderState {
+    ORDER_CREATED = 0;
+    ORDER_PENDING = 1;
+    ORDER_PENDING_CANCEL = 2;
+    ORDER_OPEN = 3;
+    ORDER_PARTIALLY_FILLED = 4;
+    ORDER_FILLED = 5;
+    ORDER_CANCELED = 6;
+    ORDER_REJECTED = 7;
+    ORDER_EXPIRED = 8;
+}
+
+enum TimeInForce {
+    TIF_GTC = 0;  // Good Till Canceled
+    TIF_IOC = 1;  // Immediate Or Cancel
+    TIF_FOK = 2;  // Fill Or Kill
+    TIF_GTD = 3;  // Good Till Date
 }
 
 // ============================================================================
@@ -86,6 +107,18 @@ message PriceLevel {
 message Timestamp {
     int64 seconds = 1;
     int32 nanos = 2;
+}
+
+// Added for execution module compatibility
+message Fill {
+    string fill_id = 1;
+    string order_id = 2;
+    string exchange_order_id = 3;
+    double quantity = 4;
+    double price = 5;
+    double fee = 6;
+    string fee_currency = 7;
+    int64 timestamp = 8;
 }
 
 // ============================================================================
@@ -205,12 +238,66 @@ message MarketIntelligence {
     
     // Regime Classification
     OrderBookRegime current_regime = 22;
-    double regime_confidence = 23;
+    double regime_confidence = 23;      // Added for bridge.py compatibility
     double regime_stability = 24;       // How stable the regime has been
     
     // Predictive metrics
     double expected_volatility_5m = 25; // Expected volatility next 5 minutes
     double flow_momentum = 26;          // Acceleration of flow metrics
+}
+
+// ============================================================================
+// EXECUTION ENGINE MESSAGES - Added for full compatibility
+// ============================================================================
+
+message OrderRequest {
+    string client_order_id = 1;
+    string exchange_id = 2;
+    string trading_pair = 3;
+    OrderType order_type = 4;
+    TradeSide side = 5;
+    double quantity = 6;
+    optional double price = 7;          // Optional for market orders
+    TimeInForce time_in_force = 8;
+    string strategy_id = 9;
+    string signal_id = 10;
+    map<string, string> extra_params = 11;  // Exchange-specific parameters
+}
+
+message OrderResponse {
+    string client_order_id = 1;
+    string exchange_order_id = 2;
+    OrderState status = 3;
+    int64 timestamp = 4;
+    string message = 5;                 // Success message or error details
+    string error_code = 6;              // Error code if applicable
+}
+
+message OrderStatusRequest {
+    string exchange_id = 1;
+    oneof order_id {
+        string exchange_order_id = 2;
+        string client_order_id = 3;
+    }
+}
+
+message DetailedOrderStatus {
+    string client_order_id = 1;
+    string exchange_order_id = 2;
+    string exchange_id = 3;
+    string trading_pair = 4;
+    TradeSide side = 5;
+    OrderType order_type = 6;
+    double quantity = 7;
+    double filled_quantity = 8;
+    double remaining_quantity = 9;
+    optional double price = 10;
+    double average_fill_price = 11;
+    OrderState status = 12;
+    int64 created_at = 13;
+    int64 updated_at = 14;
+    repeated Fill fills = 15;
+    string reject_reason = 16;          // If order was rejected
 }
 
 // ============================================================================
@@ -303,6 +390,9 @@ message TradingMessage {
         MSG_BATCH_INTENT = 6;
         MSG_BATCH_STATUS = 7;
         MSG_SYSTEM_CONTROL = 8;
+        MSG_ORDER_REQUEST = 9;          // Added for execution compatibility
+        MSG_ORDER_RESPONSE = 10;        // Added for execution compatibility
+        MSG_ORDER_STATUS = 11;          // Added for execution compatibility
     }
     
     MessageType message_type = 1;
@@ -320,5 +410,8 @@ message TradingMessage {
         BatchTradingIntent batch_intent = 11;
         BatchExecutionStatus batch_status = 12;
         SystemControl system_control = 13;
+        OrderRequest order_request = 14;        // Added for execution compatibility
+        OrderResponse order_response = 15;      // Added for execution compatibility
+        DetailedOrderStatus order_status = 16;  // Added for execution compatibility
     }
 }

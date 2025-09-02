@@ -884,17 +884,17 @@ def main():
     print("Combining C++ pipeline intelligence with Python strategy")
     
     # Run initial diagnostics
-    if not check_zmq_server_availability():
-        print("\n❌ CRITICAL: C++ servers not detected!")
-        print("Please make sure the integrated_trading_server is running:")
-        print("  ./build/full_bridge")
-        print("\nWaiting 10 seconds for servers to start...")
-        time.sleep(10)
+    # if not check_zmq_server_availability():
+    #     print("\n❌ CRITICAL: C++ servers not detected!")
+    #     print("Please make sure the integrated_trading_server is running:")
+    #     print("  ./build/full_bridge")
+    #     print("\nWaiting 10 seconds for servers to start...")
+    #     time.sleep(10)
         
-        # Check again
-        if not check_zmq_server_availability():
-            print("❌ Servers still not available. Exiting.")
-            return 1
+    #     # Check again
+    #     if not check_zmq_server_availability():
+    #         print("❌ Servers still not available. Exiting.")
+    #         return 1
     
     try:
         # Symbol list

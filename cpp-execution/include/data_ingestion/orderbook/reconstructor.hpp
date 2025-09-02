@@ -61,6 +61,7 @@ namespace data_ingestion {
     //  bool initialize(std::shared_ptr<publisher::Publisher> publisher);
     // bool initialize(std::shared_ptr<trading::data_ingestion::Publisher> publisher);
     bool initialize(std::shared_ptr<trading::data_ingestion::ZeroMQPublisher> publisher);
+    
      
      /**
       * @brief Check if the reconstructor is initialized
