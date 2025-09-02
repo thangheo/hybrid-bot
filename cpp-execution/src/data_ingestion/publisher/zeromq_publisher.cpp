@@ -370,6 +370,20 @@
      config_ = config;
      return zmq_publisher_->updateConfig(config);
  }
+// bool ZeroMQPublisher::publish(const std::string& topic, const std::vector<uint8_t>& data) {
+//     // Example implementation: enqueue the message for the worker thread
+//     {
+//         std::lock_guard<std::mutex> lock(queue_mutex_);
+//         message_queue_.emplace(topic, data);
+//         stats_.messages_published++;
+//         stats_.bytes_published += data.size();
+//         stats_.current_queue_size = message_queue_.size();
+//         if (stats_.current_queue_size > stats_.max_queue_size_reached)
+//             stats_.max_queue_size_reached = stats_.current_queue_size;
+//     }
+//     queue_condition_.notify_one();
+//     return true;
+// }
  
  } // namespace data_ingestion
  } // namespace trading

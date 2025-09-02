@@ -547,55 +547,7 @@ std::vector<LiquidityEvent> LiquidityFlowMonitor::detectRapidLiquidityChanges(
     return events;
 }
 
-
-// When accessing order_book_history_ items, dereference the shared pointers
-// std::vector<LiquidityEvent> LiquidityFlowMonitor::detectSpreadChanges(
-//     int window_size, double threshold) const {
-    
-//     std::vector<LiquidityEvent> events;
-    
-//     // Need enough history for detection
-//     if (order_book_history_.size() < static_cast<size_t>(window_size + 1)) {
-//         return events;
-//     }
-    
-//     // Get recent order books
-//     std::vector<std::reference_wrapper<const data_ingestion::OrderBook>> recent_books;
-    
-//     // Take the window_size + 1 most recent books
-//     for (auto it = order_book_history_.end() - std::min(order_book_history_.size(), 
-//                                                         static_cast<size_t>(window_size + 1));
-//          it != order_book_history_.end(); ++it) {
-//         recent_books.push_back(std::cref(**it));
-//     }
-    
-//     // Calculate baseline spread
-//     std::vector<double> spreads;
-//     for (size_t i = 0; i < recent_books.size() - 1; ++i) {
-//         spreads.push_back(recent_books[i].get().getSpread());
-//     }
-    
-//     // Calculate average and standard deviation of spread
-//     double avg_spread = std::accumulate(spreads.begin(), spreads.end(), 0.0) / spreads.size();
-    
-//     double variance = 0.0;
-//     for (double spread : spreads) {
-//         double diff = spread - avg_spread;
-//         variance += diff * diff;
-//     }
-//     variance /= spreads.size();
-//     double std_dev = std::sqrt(variance);
-    
-//     // Check the most recent spread change
-//     double current_spread = recent_books.back().get().getSpread();
-//     double previous_spread = recent_books[recent_books.size() - 2].get().getSpread();
-//     double spread_change = current_spread - previous_spread;
-    
-//     // Rest of the method remains the same...
-    
-//     return events;
-// }
-
+ 
 
 // 2. Fix the detectSpreadChanges method
 std::vector<LiquidityEvent> LiquidityFlowMonitor::detectSpreadChanges(

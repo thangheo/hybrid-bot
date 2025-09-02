@@ -459,46 +459,6 @@ void OrderBookManager::updateStatistics(double latencyMs) const {
     }
 }
 
-// void OrderBookManager::updateStatistics(double latencyMs) const {
-//     if (!config_.enableStatistics) {
-//         return;
-//     }
-    
-//     // Use compare_exchange_weak loop for atomic double addition
-//     double expected = totalUpdateLatencyMs_.load(std::memory_order_relaxed);
-//     double desired;
-//     do {
-//         desired = expected + latencyMs;
-//     } while (!totalUpdateLatencyMs_.compare_exchange_weak(expected, desired, 
-//                                                          std::memory_order_relaxed));
-    
-//     // Update max latency if needed
-//     double currentMax = maxUpdateLatencyMs_.load(std::memory_order_acquire);
-//     while (latencyMs > currentMax && 
-//            !maxUpdateLatencyMs_.compare_exchange_weak(currentMax, latencyMs, 
-//                                                      std::memory_order_release,
-//                                                      std::memory_order_relaxed)) {
-//         // Keep trying until we successfully update or latencyMs is no longer the max
-//     }
-    
-//     // Update per-second counter with proper synchronization
-//     auto now = std::chrono::system_clock::now();
-    
-//     {
-//         std::lock_guard<std::mutex> lock(statsMutex_);
-//         auto timeSinceReset = std::chrono::duration_cast<std::chrono::seconds>(now - lastSecondReset_).count();
-        
-//         if (timeSinceReset >= 1) {
-//             // Reset counter if more than 1 second has passed
-//             updatesInLastSecond_ = 1;
-//             lastSecondReset_ = now;
-//         } else {
-//             ++updatesInLastSecond_;
-//         }
-//     }
-// }
-
-
 void OrderBookManager::notifyManagerEvent(const OrderBookKey& key, const std::string& eventType) {
     if (managerCallback_) {
         try {

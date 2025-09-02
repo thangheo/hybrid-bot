@@ -140,6 +140,7 @@ namespace data_ingestion {
      // Update publisher configuration
      bool updateConfig(const PublisherConfig& config);
      
+     
  private:
      PublisherConfig config_;
      std::unique_ptr<ZeroMQPublisher> zmq_publisher_;
