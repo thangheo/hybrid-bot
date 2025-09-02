@@ -898,8 +898,12 @@ def main():
     
     try:
         # Symbol list
-        symbols = ["BTCUSDT", "ETHUSDT", "BNBUSDT", "ADAUSDT", "SOLUSDT"]
-        
+        symbols = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "ADAUSDT",
+                   "AVAXUSDT", "DOTUSDT", "LINKUSDT", "UNIUSDT", "ATOMUSDT",
+                   "ALGOUSDT", "AAVEUSDT", "ARBUSDT", "OPUSDT", "INJUSDT",
+                   "SUIUSDT", "TRBUSDT", "BANDUSDT", "CHZUSDT", "ENJUSDT",
+                   "YFIUSDT", "1INCHUSDT", "DOGEUSDT", "WIFUSDT"]
+
         # Create and start strategy
         strategy = IntegratedTradingStrategy(symbols)
         
