@@ -55,7 +55,8 @@ private:
     
     // Order book tracking
     std::unordered_map<std::string, std::shared_ptr<OrderBook>> order_books_;
-    std::unique_ptr<OrderBookReconstructor> order_book_reconstructor_;
+    // std::unique_ptr<OrderBookReconstructor> order_book_reconstructor_;
+    OrderBookReconstructor* order_book_reconstructor_;
     // std::mutex orderbook_mutex_;
     
     // Statistics
@@ -65,13 +66,22 @@ private:
 
 public:
     IntegratedTradingServer() : start_time_(std::chrono::steady_clock::now()) {
-        order_book_reconstructor_ = std::unique_ptr<OrderBookReconstructor>(&OrderBookReconstructor::getInstance());
+        // order_book_reconstructor_ = std::unique_ptr<OrderBookReconstructor>(&OrderBookReconstructor::getInstance());
+        order_book_reconstructor_ = &OrderBookReconstructor::getInstance();
         InitializeConnectionPool();
         InitializeCommunication();
     }
     
     ~IntegratedTradingServer() {
-        Stop();
+        try {
+            Stop();
+            
+            // Don't delete singleton - just nullify pointer
+            order_book_reconstructor_ = nullptr;
+            
+        } catch (const std::exception& e) {
+            std::cerr << "Error in destructor: " << e.what() << std::endl;
+        }
     }
     void InitializeConnectionPool() {
         connectionPool_ = std::make_unique<ConnectionPool>(
