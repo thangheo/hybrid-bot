@@ -101,6 +101,9 @@ public:
             "", 
             true
         };
+        //debug api
+        std::cout << "API KEY: " << std::getenv("BINANCE_API_KEY") << std::endl;
+        std::cout << "API SECRET: " << std::getenv("BINANCE_API_SECRET") << std::endl;
         authService->setCredentials(core::ExchangeId::binance(), credentials);
         api_client_manager->addClient(core::ExchangeId::binance(),
             std::make_shared<BinanceApiClient>(credentials, 

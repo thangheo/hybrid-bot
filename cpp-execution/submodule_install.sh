@@ -24,11 +24,7 @@ echo "Cloning hiredis..."
 git clone https://github.com/redis/hiredis.git third_parties/hiredis
 
 echo "Cloning cpp-httplib..."
-git clone https://github.com/yhirose/cpp-httplib.git third_parties/cpp-httplib
-
-echo "Cloning timescaledb..."
-git clone https://github.com/timescale/timescaledb.git third_parties/timescaledb
-
+git clone https://github.com/yhirose/cpp-httplib.git third_parties/cpp-httplib 
 echo "Cloning redis-plus-plus..."
 git clone https://github.com/sewenew/redis-plus-plus.git third_parties/redis-plus-plus
 
