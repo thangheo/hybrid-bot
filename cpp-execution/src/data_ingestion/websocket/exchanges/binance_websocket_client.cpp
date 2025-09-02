@@ -1,7 +1,6 @@
 // src/data_ingestion/websocket/exchanges/binance_websocket_client.cpp
 #include "data_ingestion/websocket/exchanges/binance_websocket_client.hpp"
 #include "common/logger.hpp"
-
 #include <iostream>
 #include <sstream>
 #include <algorithm>
@@ -423,38 +422,39 @@ void BinanceWebSocketClient::runIoLoop() {
         
         // These objects perform our I/O
         tcp::resolver resolver{ioc};
-        websocket::stream<beast::ssl_stream<beast::tcp_stream>> ws{ioc, ctx};
+        
+        // CREATE the WebSocket stream and STORE it in wsStream_
+        wsStream_ = std::make_unique<websocket::stream<beast::ssl_stream<beast::tcp_stream>>>(ioc, ctx);
 
-        // Set SNI Hostname (many hosts need this to handshake successfully)
-        if (!SSL_set_tlsext_host_name(ws.next_layer().native_handle(), host_.c_str())) {
+        // Set SNI Hostname
+        if (!SSL_set_tlsext_host_name(wsStream_->next_layer().native_handle(), host_.c_str())) {
             beast::error_code ec{static_cast<int>(::ERR_get_error()), net::error::get_ssl_category()};
             throw beast::system_error{ec};
         }
         
         auto const results = resolver.resolve(host_, port_);
-        // Kết nối TCP qua Beast
-        beast::get_lowest_layer(ws).connect(results);
-        std::string host = host_;
+        
+        // Connect TCP through Beast
+        beast::get_lowest_layer(*wsStream_).connect(results);
+        
         // Perform the SSL handshake
-        ws.next_layer().handshake(ssl::stream_base::client);
-        // Set a decorator to change the User-Agent of the handshake
-        ws.set_option(websocket::stream_base::decorator(
+        wsStream_->next_layer().handshake(ssl::stream_base::client);
+        
+        // Set decorator
+        wsStream_->set_option(websocket::stream_base::decorator(
             [](websocket::request_type& req) {
                 req.set(beast::http::field::user_agent, 
                     std::string(BOOST_BEAST_VERSION_STRING) + " trading-system-websocket");
             }));
         
         // Perform the websocket handshake
-        ws.handshake(host, "/ws");
+        wsStream_->handshake(host_, "/ws");
         
         LOG_INFO("WebSocket handshake completed successfully");
-        json subscribeMsg = {
-            {"method", "SUBSCRIBE"},
-            {"params", subscribedStreams_},
-            {"id", 1}
-        };
-        ws.write(net::buffer(subscribeMsg.dump()));
-        LOG_INFO("Sent subscription request to Binance");
+        
+        // *** DO NOT SEND SUBSCRIPTION HERE - WAIT FOR EXPLICIT CALL ***
+        LOG_INFO("WebSocket ready - waiting for subscription calls");
+        
         // Connection successful - update status
         connected_.store(true);
         status_.store(ConnectionStatus::CONNECTED);
@@ -464,7 +464,7 @@ void BinanceWebSocketClient::runIoLoop() {
             connectionCallback_(ConnectionStatus::CONNECTED, "WebSocket connected successfully");
         }
         
-        // Call onWebSocketOpen to handle resubscriptions
+        // Call onWebSocketOpen (but it won't send subscription)
         onWebSocketOpen();
         
         // Main message loop
@@ -473,9 +473,10 @@ void BinanceWebSocketClient::runIoLoop() {
         while (keep_running_ && connected_.load()) {
             try {
                 // Set timeout for read operation
-                beast::get_lowest_layer(ws).expires_after(std::chrono::seconds(30));
+                beast::get_lowest_layer(*wsStream_).expires_after(std::chrono::seconds(30));
+                
                 // Read a message
-                ws.read(buffer);
+                wsStream_->read(buffer);
                 
                 // Convert buffer to string
                 std::string message = beast::buffers_to_string(buffer.data());
@@ -485,14 +486,14 @@ void BinanceWebSocketClient::runIoLoop() {
                 onWebSocketMessage(message);
                 
                 // Reset timeout
-                beast::get_lowest_layer(ws).expires_at(std::chrono::steady_clock::time_point::max());
+                beast::get_lowest_layer(*wsStream_).expires_at(std::chrono::steady_clock::time_point::max());
+                
             } catch (const beast::system_error& se) {
                 if (se.code() == beast::error::timeout) {
                     LOG_WARN("WebSocket read timeout - sending ping");
                     
-                    // Send ping frame to keep connection alive
                     try {
-                        ws.ping({});
+                        wsStream_->ping({});
                         continue;
                     } catch (const std::exception& ping_error) {
                         LOG_ERROR("Failed to send ping: " + std::string(ping_error.what()));
@@ -512,8 +513,8 @@ void BinanceWebSocketClient::runIoLoop() {
         
         // Graceful close
         try {
-            if (ws.is_open()) {
-                ws.close(websocket::close_code::normal);
+            if (wsStream_ && wsStream_->is_open()) {
+                wsStream_->close(websocket::close_code::normal);
             }
         } catch (const std::exception& e) {
             LOG_WARN("Error during WebSocket close: " + std::string(e.what()));
@@ -529,34 +530,66 @@ void BinanceWebSocketClient::runIoLoop() {
         if (connectionCallback_) {
             connectionCallback_(ConnectionStatus::ERROR, "WebSocket connection error: " + std::string(e.what()));
         }
-        
-        // Attempt reconnection if enabled
-        scheduleReconnection();
     }
     
     // Final cleanup
     connected_.store(false);
     status_.store(ConnectionStatus::DISCONNECTED);
+    wsStream_.reset();
     
     LOG_INFO("WebSocket IO loop terminated");
 }
 
-// Enhanced sendWebSocketMessage with real WebSocket support
+// // Enhanced sendWebSocketMessage with real WebSocket support
+// bool BinanceWebSocketClient::sendWebSocketMessage(const std::string& message) {
+//     if (!connected_.load() || !wsStream_) {
+//         LOG_ERROR("Cannot send message - WebSocket not connected");
+//         return false;
+//     }
+    
+//     try {
+//         std::lock_guard<std::mutex> lock(sendMutex_);
+        
+//         // Send the message
+//         wsStream_->write(net::buffer(message));
+        
+//         LOG_DEBUG("Sent WebSocket message: " + message.substr(0, 100) + 
+//                  (message.length() > 100 ? "..." : ""));
+        
+//         return true;
+        
+//     } catch (const std::exception& e) {
+//         LOG_ERROR("Error sending WebSocket message: " + std::string(e.what()));
+//         return false;
+//     }
+// }
+
+// Fix sendWebSocketMessage to work with the stored wsStream_
 bool BinanceWebSocketClient::sendWebSocketMessage(const std::string& message) {
-    if (!connected_.load() || !wsStream_) {
-        LOG_ERROR("Cannot send message - WebSocket not connected");
+    if (!connected_.load()) {
+        LOG_ERROR("Cannot send message - WebSocket not connected (connected_=" + std::to_string(connected_.load()) + ")");
+        return false;
+    }
+    
+    if (!wsStream_) {
+        LOG_ERROR("Cannot send message - wsStream_ is null");
+        return false;
+    }
+    
+    if (!wsStream_->is_open()) {
+        LOG_ERROR("Cannot send message - wsStream_ is not open");
         return false;
     }
     
     try {
         std::lock_guard<std::mutex> lock(sendMutex_);
         
-        // Send the message
+        LOG_INFO("Sending WebSocket message: " + message);
+        
+        // Send the message using the stored wsStream_
         wsStream_->write(net::buffer(message));
         
-        LOG_DEBUG("Sent WebSocket message: " + message.substr(0, 100) + 
-                 (message.length() > 100 ? "..." : ""));
-        
+        LOG_INFO("Message sent successfully");
         return true;
         
     } catch (const std::exception& e) {
@@ -564,7 +597,6 @@ bool BinanceWebSocketClient::sendWebSocketMessage(const std::string& message) {
         return false;
     }
 }
-
 // Add reconnection logic
 void BinanceWebSocketClient::scheduleReconnection() {
     if (!autoReconnect_) {
@@ -662,15 +694,21 @@ void BinanceWebSocketClient::initializeConnection() {
 // }
 
 
- void BinanceWebSocketClient::onWebSocketOpen() {
-    std::cout << "Connected to Binance WebSocket" << std::endl;
+//  void BinanceWebSocketClient::onWebSocketOpen() {
+//     std::cout << "Connected to Binance WebSocket" << std::endl;
     
-    // Resubscribe to previously subscribed streams
-    std::lock_guard<std::mutex> lock(subscriptionMutex_);
-    if (!subscribedStreams_.empty()) {
-        std::cout << "Resubscribing to " << subscribedStreams_.size() << " streams" << std::endl;
-        subscribeToStreams(subscribedStreams_);
-    }
+//     // Resubscribe to previously subscribed streams
+//     std::lock_guard<std::mutex> lock(subscriptionMutex_);
+//     if (!subscribedStreams_.empty()) {
+//         std::cout << "Resubscribing to " << subscribedStreams_.size() << " streams" << std::endl;
+//         subscribeToStreams(subscribedStreams_);
+//     }
+// }
+
+// Fix onWebSocketOpen - DON'T auto-subscribe
+void BinanceWebSocketClient::onWebSocketOpen() {
+    LOG_INFO("WebSocket connection opened - ready for subscriptions");
+    // DO NOT automatically resubscribe - wait for explicit subscribe() calls
 }
 
 void BinanceWebSocketClient::onWebSocketMessage(const std::string& message) {
