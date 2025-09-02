@@ -85,7 +85,7 @@ public:
                     }
                 );
             },
-            2, 4
+            5, 10
         );
     }
     // Add this method to IntegratedTradingServer class
@@ -905,14 +905,47 @@ int main() {
     
     try {
         IntegratedTradingServer server;
-        
+        /*                
+        symbols:
+            # TIER 1: Major Caps (High liquidity, ETF correlation)
+            - "BTCUSDT"    # Bitcoin - Direct ETF correlation
+            - "ETHUSDT"    # Ethereum - Major DeFi
+            # TIER 2: Large Caps (Strong institutional interest)
+            - "SOLUSDT"    # Solana - High performance blockchain
+            - "XRPUSDT"    # Ripple - Payment network
+            - "ADAUSDT"    # Cardano - Academic blockchain
+            - "AVAXUSDT"   # Avalanche - DeFi ecosystem
+            - "DOTUSDT"    # Polkadot - Interoperability
+            - "LINKUSDT"   # Chainlink - Oracle network
+            - "UNIUSDT"    # Uniswap - DEX protocol
+            # TIER 3: Mid Caps (Growing ecosystems)
+            - "ATOMUSDT"   # Cosmos - Internet of blockchains
+            - "ALGOUSDT"   # Algorand - Pure proof of stake
+            - "AAVEUSDT"   # Aave - DeFi lending
+            # TIER 4: Layer 2 & Scaling (High growth potential)
+            - "ARBUSDT"    # Arbitrum - Ethereum L2
+            - "OPUSDT"     # Optimism - Ethereum L2  
+            - "INJUSDT"    # Injective - DeFi derivatives
+            - "SUIUSDT"    # Sui - High performance blockchain
+            # TIER 5: Specialized/Oracle/Infrastructure
+            - "TRBUSDT"    # Tellor - Oracle network
+            - "BANDUSDT"   # Band Protocol - Oracle
+            - "CHZUSDT"    # Chiliz - Sports/entertainment
+            - "ENJUSDT"    # Enjin - Gaming/NFT
+            # TIER 6: DeFi Protocols (High volatility, regime-sensitive)
+            - "YFIUSDT"    # Yearn Finance - Yield farming
+            - "1INCHUSDT"  # 1inch - DEX aggregator
+            # TIER 7: Emerging/Trending (High beta to market regimes)
+            - "DOGEUSDT"   # Dogecoin - Payment/meme
+            - "WIFUSDT"    # Dogwifhat - Solana meme
+            */
         // Start with a subset of symbols for testing
         std::vector<std::string> symbols = {
-            "BTCUSDT",
-            "ETHUSDT", 
-            "BNBUSDT",
-            "ADAUSDT",
-            "SOLUSDT"
+            "BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "ADAUSDT",
+            "AVAXUSDT", "DOTUSDT", "LINKUSDT", "UNIUSDT", "ATOMUSDT",
+            "ALGOUSDT", "AAVEUSDT", "ARBUSDT", "OPUSDT", "INJUSDT",
+            "SUIUSDT", "TRBUSDT", "BANDUSDT", "CHZUSDT", "ENJUSDT",
+            "YFIUSDT", "1INCHUSDT", "DOGEUSDT", "WIFUSDT"
         };
         
         if (!server.Start(symbols)) {
