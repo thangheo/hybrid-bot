@@ -15,6 +15,7 @@
 #include <boost/asio/ip/tcp.hpp>
 #include <boost/asio/ssl/stream.hpp>
 #include "common/logger.hpp"
+#include <future>  
 
 namespace beast = boost::beast;
 namespace websocket = beast::websocket;
@@ -37,9 +38,94 @@ BinanceWebSocketClient::BinanceWebSocketClient(const std::string& host,
     
     LOG_INFO("Created BinanceWebSocketClient for " + endpoint_);
 }
+ 
 
 BinanceWebSocketClient::~BinanceWebSocketClient() {
-    disconnect();
+    try {
+        // Signal all threads to stop
+        keep_running_ = false;
+        connected_.store(false);
+        
+        // Close WebSocket connection first to interrupt any blocking operations
+        if (wsStream_ && wsStream_->is_open()) {
+            try {
+                wsStream_->close(websocket::close_code::normal);
+            } catch (...) {
+                // Ignore close errors during destruction
+            }
+        }
+        
+        // Join the IO thread if it's joinable
+        if (io_thread_.joinable()) {
+            LOG_INFO("Waiting for IO thread to finish in destructor...");
+            io_thread_.join();
+            LOG_INFO("IO thread joined successfully");
+        }
+        
+        // Clean up resources
+        wsStream_.reset();
+        
+        LOG_INFO("BinanceWebSocketClient destroyed successfully");
+        
+    } catch (const std::exception& e) {
+        // Log error but don't throw from destructor
+        LOG_ERROR("Error in BinanceWebSocketClient destructor: " + std::string(e.what()));
+    } catch (...) {
+        // Catch any other exceptions to prevent terminate
+        LOG_ERROR("Unknown error in BinanceWebSocketClient destructor");
+    }
+}
+
+void BinanceWebSocketClient::closeConnection() {
+    try {
+        LOG_INFO("Closing WebSocket connection");
+        
+        // Signal threads to stop FIRST
+        keep_running_ = false;
+        
+        // Close WebSocket stream to interrupt any blocking read operations
+        if (wsStream_) {
+            try {
+                if (wsStream_->is_open()) {
+                    wsStream_->close(websocket::close_code::normal);
+                }
+            } catch (const std::exception& e) {
+                LOG_WARN("Error closing WebSocket stream: " + std::string(e.what()));
+            } catch (...) {
+                LOG_WARN("Unknown error closing WebSocket stream");
+            }
+        }
+        
+        // Give the thread a moment to notice the close and exit gracefully
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        
+        // Join the IO thread if it exists and is joinable
+        if (io_thread_.joinable()) {
+            LOG_INFO("Waiting for IO thread to terminate...");
+            
+            // Use a timeout to avoid hanging indefinitely
+            auto future = std::async(std::launch::async, [this]() {
+                io_thread_.join();
+            });
+            
+            if (future.wait_for(std::chrono::seconds(5)) == std::future_status::timeout) {
+                LOG_ERROR("IO thread did not terminate within timeout - this may cause issues");
+                // Note: We can't detach here safely because the object might be destroyed
+            } else {
+                LOG_INFO("IO thread terminated successfully");
+            }
+        }
+        
+        // Clean up WebSocket stream
+        wsStream_.reset();
+        
+        LOG_INFO("WebSocket connection closed successfully");
+        
+    } catch (const std::exception& e) {
+        LOG_ERROR("Error closing WebSocket connection: " + std::string(e.what()));
+    } catch (...) {
+        LOG_ERROR("Unknown error closing WebSocket connection");
+    }
 }
 
 // ClientInterface implementation
@@ -81,20 +167,31 @@ bool BinanceWebSocketClient::connect() {
 
 void BinanceWebSocketClient::disconnect() {
     if (!connected_.load()) {
+        LOG_INFO("Already disconnected from Binance WebSocket");
         return;
     }
     
-    connected_.store(false);
-    status_.store(ConnectionStatus::DISCONNECTED);
+    LOG_INFO("Disconnecting from Binance WebSocket...");
     
+    // Update status first
+    connected_.store(false);
+    status_.store(ConnectionStatus::DISCONNECTING);
+    
+    // Signal threads to stop
+    keep_running_ = false;
+    
+    // Close the actual connection
     closeConnection();
+    
+    // Update final status
+    status_.store(ConnectionStatus::DISCONNECTED);
     
     if (connectionCallback_) {
         connectionCallback_(ConnectionStatus::DISCONNECTED, "Disconnected from Binance WebSocket");
     }
     
-    LOG_INFO("Disconnected from Binance WebSocket");
-}
+    LOG_INFO("Disconnected from Binance WebSocket successfully");
+} 
 
 bool BinanceWebSocketClient::isConnected() const {
     return connected_.load();
@@ -452,38 +549,38 @@ void BinanceWebSocketClient::initializeConnection() {
     }
 }
 
-void BinanceWebSocketClient::closeConnection() {
-    try {
-        LOG_INFO("Closing WebSocket connection");
+// void BinanceWebSocketClient::closeConnection() {
+//     try {
+//         LOG_INFO("Closing WebSocket connection");
         
-        // Signal threads to stop
-        keep_running_ = false;
+//         // Signal threads to stop
+//         keep_running_ = false;
         
-        // Close WebSocket if it exists
-        if (wsStream_ && wsStream_->is_open()) {
-            try {
-                wsStream_->close(websocket::close_code::normal);
-            } catch (const std::exception& e) {
-                LOG_WARN("Error closing WebSocket stream: " + std::string(e.what()));
-            }
-        }
+//         // Close WebSocket if it exists
+//         if (wsStream_ && wsStream_->is_open()) {
+//             try {
+//                 wsStream_->close(websocket::close_code::normal);
+//             } catch (const std::exception& e) {
+//                 LOG_WARN("Error closing WebSocket stream: " + std::string(e.what()));
+//             }
+//         }
         
-        // Join the IO thread
-        if (io_thread_.joinable()) {
-            LOG_INFO("Waiting for IO thread to terminate...");
-            io_thread_.join();
-            LOG_INFO("IO thread terminated");
-        }
+//         // Join the IO thread
+//         if (io_thread_.joinable()) {
+//             LOG_INFO("Waiting for IO thread to terminate...");
+//             io_thread_.join();
+//             LOG_INFO("IO thread terminated");
+//         }
         
-        // Clean up WebSocket stream
-        wsStream_.reset();
+//         // Clean up WebSocket stream
+//         wsStream_.reset();
         
-        LOG_INFO("WebSocket connection closed successfully");
+//         LOG_INFO("WebSocket connection closed successfully");
         
-    } catch (const std::exception& e) {
-        LOG_ERROR("Error closing WebSocket connection: " + std::string(e.what()));
-    }
-}
+//     } catch (const std::exception& e) {
+//         LOG_ERROR("Error closing WebSocket connection: " + std::string(e.what()));
+//     }
+// }
 
 void BinanceWebSocketClient::simulateMarketData() {
     LOG_INFO("Starting market data simulation");
