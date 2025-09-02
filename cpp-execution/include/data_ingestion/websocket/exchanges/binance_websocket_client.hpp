@@ -89,15 +89,17 @@ private:
     // Replace this line:
     // With this:
     std::unique_ptr<websocket::stream<ssl::stream<tcp::socket>>> wsStream_;
-    std::mutex sendMutex_;  // Protect WebSocket send operations
-    
+    // std::unique_ptr<boost::beast::websocket::stream<boost::beast::ssl_stream<boost::beast::tcp_stream>>> wsStream_;
+    std::mutex sendMutex_;  // Protect WebSocket send operations    
+    // Subscription management
+    std::atomic<int> subscriptionIdCounter_{1};
     // Reconnection logic
     bool autoReconnect_ = true;
     int reconnectAttempts_ = 0;
     int maxReconnectAttempts_ = 5;
     std::chrono::seconds reconnectBaseDelay_{2};  // Start with 2 seconds
     std::chrono::seconds maxReconnectDelay_{60};  // Max 60 seconds between attempts
-    
+
     // Connection state
     std::atomic<bool> keep_running_{false};
     
@@ -108,10 +110,6 @@ private:
     std::string host_;
     std::string port_;
     std::string endpoint_;
-    // int reconnectAttempts_ = 0;
-    // bool autoReconnect_ = false;
-    // int maxReconnectAttempts_ = 5;
-
     // Add these members
     net::io_context io_context_;
     std::unique_ptr<ssl::context> ssl_context_;
@@ -138,7 +136,7 @@ private:
     mutable std::mutex subscriptionMutex_;
     std::vector<std::string> subscribedStreams_;
     std::vector<core::Symbol> subscribedSymbols_;
-    int subscriptionIdCounter_ = 1;
+    // int subscriptionIdCounter_ = 1;
      void scheduleReconnection();
     
     // Message processing with error handling

@@ -255,6 +255,7 @@ struct TradeData {
      CONNECTED,
      CONNECTING,
      DISCONNECTED,
+     DISCONNECTING,
      RECONNECTING,
      ERROR
  };
