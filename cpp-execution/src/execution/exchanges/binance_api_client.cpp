@@ -20,7 +20,9 @@ namespace execution {
 struct BinanceApiClient::BinanceImpl {
     std::string apiKey;
     std::string apiSecret;
-    std::string baseUrl = "https://api.binance.com";
+    // std::string baseUrl = "https://api.binance.com";
+    //for testnet
+    std::string baseUrl = "https://testnet.binance.vision";
     bool connected = false;
     std::unique_ptr<CURL, decltype(&curl_easy_cleanup)> curl;
     

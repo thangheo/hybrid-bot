@@ -25,8 +25,8 @@ class ConnectionPool {
 public:
     ConnectionPool(const std::string& poolId,
                   ConnectionFactory factory,
-                  int minConnections = 1,
-                  int maxConnections = 5);
+                  int minConnections = 5,
+                  int maxConnections = 10);
     ~ConnectionPool();
     
     // Pool lifecycle management
