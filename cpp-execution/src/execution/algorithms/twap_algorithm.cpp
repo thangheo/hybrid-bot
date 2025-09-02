@@ -170,6 +170,11 @@ bool TwapAlgorithm::cancel() {
 //     }
 // }
 // Add this helper method to TwapAlgorithm class
+// Thêm implementation cho method này
+void TwapAlgorithm::setVolumeCallback(
+    const std::function<double(const std::string&, std::chrono::minutes)>& callback) {
+    volume_callback_ = callback;
+}
 TwapConfig TwapAlgorithm::extractConfigFromOrder(const models::Order& parentOrder) {
     TwapConfig config;
     

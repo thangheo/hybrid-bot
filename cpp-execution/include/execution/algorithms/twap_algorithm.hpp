@@ -85,10 +85,12 @@ public:
     
     // Get all child orders
     std::vector<models::OrderPtr> getChildOrders() const;
-    
+    // Get volume for a specific trading pair and time duration
+    double getVolume(const std::string& tradingPair, std::chrono::minutes duration) const;
 private:
     // Extract TWAP configuration from order parameters
     algorithms::TwapConfig extractConfigFromOrder(const models::Order& parentOrder);
+    std::function<double(const std::string&, std::chrono::minutes)> volume_callback_;
 
     // Algorithm state
     enum class State {
