@@ -1,6 +1,14 @@
 # src/execution/CMakeLists.txt
 
-# Collect all source files
+# Find required packages
+find_package(PkgConfig REQUIRED)
+find_package(CURL REQUIRED)
+find_package(jsoncpp REQUIRED)
+
+# Find libuuid
+pkg_check_modules(UUID REQUIRED uuid)
+
+# Collect all source files except test files
 file(GLOB_RECURSE EXECUTION_SOURCES
     "*.cpp"
     "algorithms/*.cpp"
@@ -8,6 +16,9 @@ file(GLOB_RECURSE EXECUTION_SOURCES
     "grpc/*.cpp"
     "models/*.cpp"
 )
+
+# Remove test files from library sources
+list(FILTER EXECUTION_SOURCES EXCLUDE REGEX ".*test.*\\.cpp$")
 
 # Define library
 add_library(execution ${EXECUTION_SOURCES})
@@ -18,20 +29,47 @@ target_include_directories(execution
     ${CMAKE_SOURCE_DIR}/include
     PRIVATE
     ${CMAKE_SOURCE_DIR}/include/execution
-    ${CMAKE_SOURCE_DIR}/proto/generated  # Add proto generated directory
+    ${CMAKE_SOURCE_DIR}/proto/generated
     ${Protobuf_INCLUDE_DIRS}
     ${gRPC_INCLUDE_DIRS}
+    ${UUID_INCLUDE_DIRS}
 )
 
-# Link libraries
+# Link libraries for the execution library
 target_link_libraries(execution
     PUBLIC
     common
     PRIVATE
-    proto_lib  # Fixed typo: proto_libs -> proto_lib
+    proto_lib
     ${Protobuf_LIBRARIES}
     ${gRPC_LIBRARIES}
     Boost::system
     OpenSSL::SSL
     OpenSSL::Crypto
+    CURL::libcurl          # Add libcurl
+    jsoncpp_lib            # Add JsonCpp
+    ${UUID_LIBRARIES}      # Add libuuid
+)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../../bin)
+
+# Add compiler definitions for UUID
+target_compile_definitions(execution PRIVATE ${UUID_CFLAGS_OTHER})
+
+# Test executable
+add_executable(test_execution test_execution.cpp)
+
+target_link_libraries(test_execution
+    PRIVATE
+    execution
+    common
+    proto_lib
+    ${Protobuf_LIBRARIES}
+    ${gRPC_LIBRARIES}
+    Boost::system
+    OpenSSL::SSL
+    OpenSSL::Crypto
+    CURL::libcurl          # Add libcurl for test
+    jsoncpp_lib            # Add JsonCpp for test
+    ${UUID_LIBRARIES}      # Add libuuid for test
+    Threads::Threads
 )

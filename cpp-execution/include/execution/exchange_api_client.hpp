@@ -32,7 +32,7 @@ struct ExchangeCredentials {
 class ExchangeApiClient {
 public:
     virtual ~ExchangeApiClient() = default;
-    
+    // 
     // Order operations
     virtual std::future<models::ExecutionReport> placeOrder(const models::Order& order) = 0;
     virtual std::future<models::ExecutionReport> cancelOrder(const std::string& orderId, const std::string& symbol) = 0;

@@ -10,7 +10,8 @@
  #include <sstream>
  #include <nlohmann/json.hpp>
  #include <thread>
- 
+ #include <mutex>
+ #include <iostream>
  namespace trading {
  namespace execution {
  
@@ -52,13 +53,15 @@
      // Initialize API client manager first
      success &= api_client_manager_->initialize();
      if (!success) {
+        std::cerr << "Failed to initialize API Client Manager." << std::endl;
          return false;
      }
      
      // Initialize other components
      success &= order_lifecycle_tracker_->initialize();
+     std::cout << "Order Lifecycle Tracker initialized." << std::endl;
      success &= fill_reconciliation_->initialize();
-     
+     std::cout << "Fill Reconciliation initialized." << std::endl;
      // Start reconciliation process
      if (success) {
          is_initialized_ = true;

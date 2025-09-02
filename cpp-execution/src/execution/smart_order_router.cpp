@@ -5,7 +5,7 @@
 
 namespace trading {
 namespace execution {
-
+ 
 SmartOrderRouter::SmartOrderRouter() {
     // Set default routing strategy
     routing_strategy_ = [this](const models::OrderPtr& order, 

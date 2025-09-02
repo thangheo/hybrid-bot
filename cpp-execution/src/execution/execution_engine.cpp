@@ -572,8 +572,8 @@ private:
 // ================================================================
 // MAIN FUNCTION
 // ================================================================
-
-int main(int argc, char* argv[]) {
+//avoid conflict with main
+int main_(int argc, char* argv[]) {
     printf("Starting C++ Execution Engine...\n");
     
     // Load configuration

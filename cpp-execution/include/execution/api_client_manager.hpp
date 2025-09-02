@@ -17,7 +17,7 @@ class ApiClientManager {
 public:
     ApiClientManager(std::shared_ptr<AuthenticationService> authService);
     ~ApiClientManager();
-    
+    ApiClientManager(); // Default constructor  
     // Get a client for a specific exchange
     std::shared_ptr<ExchangeApiClient> getClient(const core::ExchangeId& exchangeId);
     // 
