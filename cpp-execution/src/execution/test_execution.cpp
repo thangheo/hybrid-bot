@@ -17,6 +17,7 @@
 #include <sstream>
 
 // Include your execution components
+#include "execution/exchanges/binance_api_client.hpp"
 #include "execution/execution_service.hpp"
 #include "execution/models/order.hpp"
 #include "execution/trading_signal.hpp"
@@ -29,79 +30,6 @@ using namespace trading::execution;
 using namespace trading::core;
 using namespace trading;
 
-class MockExchangeApiClient : public ExchangeApiClient {
-public:
-    MockExchangeApiClient() 
-        : connected_(false), 
-          exchangeId_(core::ExchangeId::binance()) {
-    }
-    
-    explicit MockExchangeApiClient(const core::ExchangeId& exchangeId) 
-        : connected_(false), 
-          exchangeId_(exchangeId) {
-    }
-    
-    // Core trading operations
-    std::future<models::ExecutionReport> placeOrder(const models::Order& order) override {
-        return std::async(std::launch::async, [this, order]() {
-            models::ExecutionReport report(order.getClientOrderId());
-            report.setExchangeOrderId("MOCK-" + order.getClientOrderId());
-            report.setStatus(models::OrderState::OPEN);
-            report.setQuantity(order.getQuantity());
-            report.setFilledQuantity(0);
-            report.setExchangeId(exchangeId_);
-            return report;
-        });
-    }
-    
-    std::future<models::ExecutionReport> cancelOrder(
-        const std::string& orderId, 
-        const std::string&) override {
-        return std::async(std::launch::async, [this, orderId]() {
-            models::ExecutionReport report;
-            report.setExchangeOrderId(orderId);
-            report.setStatus(models::OrderState::CANCELED);
-            report.setExchangeId(exchangeId_);
-            return report;
-        });
-    }
-    
-    std::future<models::ExecutionReport> getOrderStatus(
-        const std::string& orderId,
-        const std::string&) override {
-        return std::async(std::launch::async, [this, orderId]() {
-            models::ExecutionReport report;
-            report.setExchangeOrderId(orderId);
-            report.setStatus(models::OrderState::OPEN);
-            report.setExchangeId(exchangeId_);
-            return report;
-        });
-    }
-    
-    // Connection management
-    void connect() override { connected_ = true; }
-    void disconnect() override { connected_ = false; }
-    bool isConnected() const override { return connected_; }
-    bool checkConnection() const override { return connected_; }
-    
-    // Exchange information
-    std::string getExchangeName() const override {
-        return "MockExchange-" + exchangeId_.toString();
-    }
-    
-    std::unordered_map<std::string, std::string> getExchangeStatuses() const override {
-        return {{"status", "operational"}, {"trading", "enabled"}};
-    }
-    
-    // REMOVE THIS METHOD - it's not virtual in the base class
-    // core::ExchangeId getExchangeId() const override {
-    //     return exchangeId_;
-    // }
-    
-private:
-    std::atomic<bool> connected_;
-    core::ExchangeId exchangeId_;
-};
 
 class ExecutionTestApp {
 public:
@@ -161,21 +89,22 @@ public:
     void initializeExecutionService() {
     // Create the authentication service first
         auto authService = std::make_shared<AuthenticationService>();
-        
-        // Add mock credentials for testing
-        ExchangeCredentials mockCredentials{
-            "mock_api_key",
-            "mock_secret_key",
-            "" // passphrase
-        };
-        authService->setCredentials(core::ExchangeId::binance(), mockCredentials);
-        
+     
         // Create API client manager with auth service
         auto api_client_manager = std::make_shared<ApiClientManager>(authService);
         
-        // Add a mock client for testing
-        auto mockClient = std::make_shared<MockExchangeApiClient>(core::ExchangeId::binance());
-        api_client_manager->addClient(core::ExchangeId::binance(), mockClient);
+        //realClient  with test api for reading only
+        auto credentials = ExchangeCredentials{
+            "sycxy0ya6lY8Vh4PDQtAmY3ki0m6n6j9SEBaZDXsgvyriRb06kTiFoMyBZet2j3n",
+            "EGiCdIO4DDRMSCw08BflfVX0DoGp7eG48pAHSvRnClXU4x9757Rg9hlMvDrTTReY",
+            "", // passphrase if needed
+            true // testnet mode
+        };
+        authService->setCredentials(core::ExchangeId::binance(), credentials);
+        api_client_manager->addClient(core::ExchangeId::binance(),
+            std::make_shared<BinanceApiClient>(credentials, 
+            std::make_shared<RateLimitController>(core::ExchangeId::binance())));
+
         
         // Create other components
         auto order_generator = std::make_shared<OrderGenerator>();
@@ -233,26 +162,6 @@ private:
     std::mutex active_orders_mutex_;
      
     // Add this new method to set up test exchange clients:
-    void setupTestExchangeClients(std::shared_ptr<ApiClientManager> manager) {
-        // Create mock exchange clients for testing
-        // You can either use mock clients or real ones with test credentials
-        
-        // Option 1: Create a mock client (recommended for testing)
-        auto mockClient = std::make_shared<MockExchangeApiClient>();
-        manager->addClient(ExchangeId::binance(), mockClient);
-        
-        // Option 2: If you want to use real clients with test credentials
-        // (requires proper authentication setup)
-        // auto credentials = ExchangeCredentials{
-        //     "test_api_key",
-        //     "test_secret_key",
-        //     "", // passphrase if needed
-        //     true // testnet mode
-        // };
-        // auto rateLimitController = std::make_shared<RateLimitController>(core::ExchangeId::binance());
-        // auto binanceClient = std::make_shared<BinanceApiClient>(credentials, rateLimitController);
-        // manager->addClient(core::ExchangeId::binance(), binanceClient);
-    }
     void setupTestScenarios() {
         std::cout << "Setting up test scenarios...\n";
         // Test scenarios will be configured here

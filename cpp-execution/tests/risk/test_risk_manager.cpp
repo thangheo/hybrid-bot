@@ -7,8 +7,8 @@
 
  #include "risk_manager.hpp"
  #include "pretrade/pre_trade_risk_filter.hpp"
- #include "posttrade/post_trade_monitor.hpp"
- #include "portfolio/portfolio_manager.hpp"
+//  #include "posttrade/post_trade_monitor.hpp"
+//  #include "portfolio/portfolio_manager.hpp"
  #include <gtest/gtest.h>
  #include <gmock/gmock.h>
  #include <memory>

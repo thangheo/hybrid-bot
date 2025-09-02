@@ -11,7 +11,9 @@
  #include <thread>
  
  using namespace trading::execution;
- 
+ using namespace testing;
+ using namespace trading::execution::models;
+
  class OrderLifecycleTrackerTest : public ::testing::Test {
  protected:
      void SetUp() override {
