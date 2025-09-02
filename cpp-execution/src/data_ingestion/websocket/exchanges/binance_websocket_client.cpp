@@ -27,6 +27,19 @@ using tcp = boost::asio::ip::tcp;
 namespace trading {
 namespace data_ingestion {
 
+// BinanceWebSocketClient::BinanceWebSocketClient(const std::string& host,
+//                                              const std::string& port,
+//                                              std::function<void(const core::ExchangeId&, const std::string&, const std::vector<uint8_t>&)> callback)
+//     : host_(host)
+//     , port_(port)
+//     , endpoint_("wss://" + host + ":" + port + "/ws")
+//     , dataCallback_(callback)
+//     , lastMessageTime_(std::chrono::system_clock::now()) {
+    
+//     LOG_INFO("Created BinanceWebSocketClient for " + endpoint_);
+// }
+// EMERGENCY FIX: Replace BinanceWebSocketClient constructor and connect method
+
 BinanceWebSocketClient::BinanceWebSocketClient(const std::string& host,
                                              const std::string& port,
                                              std::function<void(const core::ExchangeId&, const std::string&, const std::vector<uint8_t>&)> callback)
@@ -34,11 +47,77 @@ BinanceWebSocketClient::BinanceWebSocketClient(const std::string& host,
     , port_(port)
     , endpoint_("wss://" + host + ":" + port + "/ws")
     , dataCallback_(callback)
-    , lastMessageTime_(std::chrono::system_clock::now()) {
+    , lastMessageTime_(std::chrono::system_clock::now())
+    , keep_running_(false)  // INITIALIZE THIS
+    , reconnectAttempts_(0)
+    , subscriptionIdCounter_(1) {
     
     LOG_INFO("Created BinanceWebSocketClient for " + endpoint_);
 }
- 
+
+// SAFER connect method
+bool BinanceWebSocketClient::connect() {
+    if (connected_.load()) {
+        LOG_WARN("Already connected to Binance WebSocket");
+        return true;
+    }
+    
+    try {
+        status_.store(ConnectionStatus::CONNECTING);
+        
+        // CRITICAL: Check if thread is already running
+        if (io_thread_.joinable()) {
+            LOG_WARN("Previous IO thread still running, cleaning up...");
+            keep_running_ = false;
+            io_thread_.join();
+        }
+        
+        // Reset flags
+        keep_running_ = true;
+        connected_.store(false);
+        
+        // Create thread with explicit lambda capture
+        io_thread_ = std::thread([this]() {
+            try {
+                this->runIoLoop();
+            } catch (const std::exception& e) {
+                LOG_ERROR("IO thread exception: " + std::string(e.what()));
+            } catch (...) {
+                LOG_ERROR("Unknown IO thread exception");
+            }
+        });
+        
+        // Wait for connection with timeout
+        int attempts = 0;
+        while (!connected_.load() && attempts < 50) { // 5 seconds max
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            ++attempts;
+        }
+        
+        if (connected_.load()) {
+            if (connectionCallback_) {
+                connectionCallback_(ConnectionStatus::CONNECTED, "Connected to Binance WebSocket");
+            }
+            LOG_INFO("Connected to Binance WebSocket: " + endpoint_);
+            return true;
+        } else {
+            LOG_ERROR("Connection timeout after 5 seconds");
+            status_.store(ConnectionStatus::ERROR);
+            return false;
+        }
+        
+    } catch (const std::exception& e) {
+        status_.store(ConnectionStatus::ERROR);
+        connected_.store(false);
+        
+        if (connectionCallback_) {
+            connectionCallback_(ConnectionStatus::ERROR, e.what());
+        }
+        
+        LOG_ERROR("Failed to connect to Binance WebSocket: " + std::string(e.what()));
+        return false;
+    }
+} 
 
 BinanceWebSocketClient::~BinanceWebSocketClient() {
     try {
@@ -128,42 +207,42 @@ void BinanceWebSocketClient::closeConnection() {
     }
 }
 
-// ClientInterface implementation
-bool BinanceWebSocketClient::connect() {
-    if (connected_.load()) {
-        LOG_WARN("Already connected to Binance WebSocket");
-        return true;
-    }
+// // ClientInterface implementation
+// bool BinanceWebSocketClient::connect() {
+//     if (connected_.load()) {
+//         LOG_WARN("Already connected to Binance WebSocket");
+//         return true;
+//     }
     
-    try {
-        status_.store(ConnectionStatus::CONNECTING);
+//     try {
+//         status_.store(ConnectionStatus::CONNECTING);
         
-        // TODO: Implement actual WebSocket connection using boost::beast
-        // For now, simulate connection
-        initializeConnection();
+//         // TODO: Implement actual WebSocket connection using boost::beast
+//         // For now, simulate connection
+//         initializeConnection();
         
-        connected_.store(true);
-        status_.store(ConnectionStatus::CONNECTED);
+//         connected_.store(true);
+//         status_.store(ConnectionStatus::CONNECTED);
         
-        if (connectionCallback_) {
-            connectionCallback_(ConnectionStatus::CONNECTED, "Connected to Binance WebSocket");
-        }
+//         if (connectionCallback_) {
+//             connectionCallback_(ConnectionStatus::CONNECTED, "Connected to Binance WebSocket");
+//         }
         
-        LOG_INFO("Connected to Binance WebSocket: " + endpoint_);
-        return true;
+//         LOG_INFO("Connected to Binance WebSocket: " + endpoint_);
+//         return true;
         
-    } catch (const std::exception& e) {
-        status_.store(ConnectionStatus::ERROR);
-        connected_.store(false);
+//     } catch (const std::exception& e) {
+//         status_.store(ConnectionStatus::ERROR);
+//         connected_.store(false);
         
-        if (connectionCallback_) {
-            connectionCallback_(ConnectionStatus::ERROR, e.what());
-        }
+//         if (connectionCallback_) {
+//             connectionCallback_(ConnectionStatus::ERROR, e.what());
+//         }
         
-        LOG_ERROR("Failed to connect to Binance WebSocket: " + std::string(e.what()));
-        return false;
-    }
-}
+//         LOG_ERROR("Failed to connect to Binance WebSocket: " + std::string(e.what()));
+//         return false;
+//     }
+// }
 
 void BinanceWebSocketClient::disconnect() {
     if (!connected_.load()) {
@@ -582,75 +661,7 @@ void BinanceWebSocketClient::initializeConnection() {
 //     }
 // }
 
-void BinanceWebSocketClient::simulateMarketData() {
-    LOG_INFO("Starting market data simulation");
-    
-    // Realistic price data for major crypto pairs
-    std::unordered_map<std::string, double> basePrices = {
-        {"BTCUSDT", 43250.50}, {"ETHUSDT", 2380.75}, {"BNBUSDT", 315.20},
-        {"ADAUSDT", 0.4825}, {"SOLUSDT", 98.65}, {"XRPUSDT", 0.5234},
-        {"DOTUSDT", 7.45}, {"AVAXUSDT", 28.90}, {"MATICUSDT", 0.8156},
-        {"LINKUSDT", 14.75}, {"DOGEUSDT", 0.0825}, {"SHIBUSDT", 0.00001045},
-        {"UNIUSDT", 6.85}, {"ATOMUSDT", 10.25}, {"FTMUSDT", 0.3975}
-    };
-    
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    
-    int updateCount = 0;
-    
-    while (keep_running_ && connected_.load()) {
-        // Get current subscribed symbols (copy to avoid holding lock)
-        std::vector<core::Symbol> currentSymbols;
-        {
-            std::lock_guard<std::mutex> lock(subscriptionMutex_);
-            currentSymbols = subscribedSymbols_;
-        }
-        
-        if (currentSymbols.empty()) {
-            // Wait for symbols to be subscribed
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
-            continue;
-        }
-        
-        for (const auto& symbol : currentSymbols) {
-            std::string symbolStr = symbol.base + symbol.quote;
-            
-            if (basePrices.find(symbolStr) != basePrices.end()) {
-                // Generate realistic order book data
-                generateOrderBookUpdate(symbolStr, basePrices[symbolStr], gen);
-                updateCount++;
-                
-                // Generate occasional trade data
-                if (gen() % 10 == 0) {  // 10% chance of trade
-                    generateTradeUpdate(symbolStr, basePrices[symbolStr], gen);
-                    updateCount++;
-                }
-                
-                // Generate ticker updates less frequently
-                if (gen() % 50 == 0) {  // 2% chance of ticker
-                    generateTickerUpdate(symbolStr, basePrices[symbolStr], gen);
-                    updateCount++;
-                }
-                
-                // Small price drift for realism
-                double drift = std::uniform_real_distribution<double>(-0.0005, 0.0005)(gen);
-                basePrices[symbolStr] *= (1.0 + drift);
-            }
-        }
-        
-        // Log progress every 100 updates
-        if (updateCount > 0 && updateCount % 100 == 0) {
-            LOG_INFO("Generated " + std::to_string(updateCount) + " market data updates for " + 
-                    std::to_string(currentSymbols.size()) + " symbols");
-        }
-        
-        // Realistic update frequency (about 10-20 updates per second per symbol)
-        std::this_thread::sleep_for(std::chrono::milliseconds(50));
-    }
-    
-    LOG_INFO("Market data simulation stopped after " + std::to_string(updateCount) + " updates");
-}
+
  void BinanceWebSocketClient::onWebSocketOpen() {
     std::cout << "Connected to Binance WebSocket" << std::endl;
     
