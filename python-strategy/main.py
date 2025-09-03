@@ -40,6 +40,8 @@ from src.execution.models import Order, OrderSide, OrderType
 # 🚀 Import UNIFIED Strategy Manager
 # from strategy.unified_manager import UnifiedStrategyManager
 from src.strategy.strategies.markov_strategy_complete import MarkovETFStrategyPersistent
+from src.communication.market_intelligence_bridge import MarketIntelligenceBridge
+
 UNIFIED_MANAGER_AVAILABLE = True
 
 class EnhancedPositionTracker:
@@ -178,7 +180,10 @@ class EnhancedTradingBot:
         
         signal.signal(signal.SIGINT, self._signal_handler)
         signal.signal(signal.SIGTERM, self._signal_handler)
-        
+        #if usee intelligent bridge
+        self.intelligence_bridge = None
+        self.cpp_intelligence_enabled = self.config.get('cpp_intelligence', {}).get('enabled', False)
+
         self.logger.info("🚀 Enhanced Trading Bot initialized")
         if UNIFIED_MANAGER_AVAILABLE:
             self.logger.info("   ✅ Unified Strategy Manager available")
@@ -264,7 +269,24 @@ class EnhancedTradingBot:
             if self.order_manager:
                 balance = await self.order_manager.exchange.fetch_balance()
                 await self.position_tracker.sync_from_exchange(balance)
-            
+            #intellgent bridge init
+            if self.cpp_intelligence_enabled:
+                try:
+                    symbols = self.config.get('data_ingestion', {}).get('symbols', [])
+                    self.intelligence_bridge = MarketIntelligenceBridge(symbols)
+                    
+                    if self.intelligence_bridge.start():
+                        # Set bridge in strategy
+                        if hasattr(self.strategy_manager, 'set_intelligence_bridge'):
+                            self.strategy_manager.set_intelligence_bridge(self.intelligence_bridge)
+                        
+                        self.logger.info("✅ C++ market intelligence integration enabled")
+                    else:
+                        self.logger.warning("⚠️ C++ intelligence failed to start - continuing without")
+                        self.intelligence_bridge = None
+                except Exception as e:
+                    self.logger.warning(f"C++ intelligence integration failed: {e}")
+                    self.intelligence_bridge = None
             # Log system capabilities
             self._log_system_capabilities()
             
