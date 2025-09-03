@@ -268,42 +268,34 @@ strategy:
 
 # 🛡️ RISK MANAGEMENT
 risk_management:
-  # Base limits
-  max_portfolio_risk: 0.02
-  max_position_risk: 0.01
-  max_drawdown_limit: 0.15
+  # Adjusted for crypto volatility
+  max_portfolio_risk: 0.05        # 5% (tăng từ 2%)
+  max_position_risk: 0.02         # 2% (tăng từ 1%)
+  max_drawdown_limit: 0.25        # 25% (tăng từ 15%)
   
-  # Regime-aware adjustments
+  # Crypto-appropriate regime multipliers
   regime_risk_multipliers:
-    accumulation: 1.2
-    institutional_fomo: 1.1
-    euphoria: 0.5
-    sideways: 1.1
-    balanced: 1.0
-    uncertain: 0.6
-    distribution: 0.8
-    profit_taking: 0.7
-    panic: 0.3
-    
-  # Position sizing
-  position_sizing:
-    method: "etf_enhanced_kelly"
-    base_risk_per_trade: 0.01
-    max_position_size: 0.1
-    volatility_lookback: 20
-    
-    # ETF flow modifiers
-    etf_flow_modifiers:
-      high_confidence_positive: 1.3
-      high_confidence_negative: 0.6
-      low_confidence: 0.8
+    accumulation: 1.3             # Tăng trong accumulation
+    institutional_fomo: 1.4       # Tăng mạnh trong FOMO
+    euphoria: 0.8                 # Giảm nhẹ thôi (không 0.5)
+    sideways: 1.0                 # Neutral
+    balanced: 1.0                 
+    uncertain: 0.7                # Conservative
+    distribution: 0.6             # Giảm mạnh
+    profit_taking: 0.7            
+    panic: 0.4                    # Tăng từ 0.3 - catch knife
   
-  # Stop loss
+  position_sizing:
+    base_risk_per_trade: 0.02     # 2% (tăng từ 1%)
+    max_position_size: 0.15       # 15% (tăng từ 10%)
+    volatility_lookback: 14       # Giảm để responsive hơn
+    
+  # Adjusted for crypto volatility
   stop_loss:
-    initial_stop_pct: 0.05
-    trailing_stop_pct: 0.03
-    take_profit_ratio: 2.0
-    breakeven_threshold: 0.02
+    initial_stop_pct: 0.08        # 8% (tăng từ 5%)
+    trailing_stop_pct: 0.05       # 5% (tăng từ 3%)
+    take_profit_ratio: 3.0        # 3:1 (tăng từ 2:1)
+    breakeven_threshold: 0.03     # 3% (tăng từ 2%)
 
 # ⚡ ORDER EXECUTION
 order_execution:
