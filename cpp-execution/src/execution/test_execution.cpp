@@ -221,6 +221,8 @@ private:
             // signal.signal_metrics["order_type"] = "MARKET";
                 // Add ETH price metrics
                 //if buy price =4280.0;, if sell price = 4350
+            //get current bids ask
+            
             if(direction == Direction::BUY){
                 signal.signal_metrics["bid_price"] = 4280.0;
                 signal.signal_metrics["ask_price"] = 4311.0;
