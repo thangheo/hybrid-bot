@@ -27,7 +27,7 @@ target_link_libraries(risk
         common
         execution
     PRIVATE
-        strategy
+        # strategy
         data_ingestion
         nlohmann_json::nlohmann_json
 )

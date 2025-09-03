@@ -8,7 +8,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Find required packages
 find_package(Threads REQUIRED)
 find_package(ZeroMQ REQUIRED)
-find_package(cppzmq REQUIRED)
+# find_package(cppzmq REQUIRED)
 find_package(Boost REQUIRED COMPONENTS system program_options filesystem thread)
 find_package(nlohmann_json REQUIRED)
 find_package(OpenSSL REQUIRED)
@@ -58,14 +58,12 @@ file(GLOB TIME_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../../src/data_ingestion/time
 file(GLOB PUBLISH_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../../src/data_ingestion/publisher/*.cpp)
 # protocol source
 file(GLOB PROTOCOL_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../../src/data_ingestion/protocol/*.cpp)
-
+file(GLOB MARKET_INTEL_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../../src/market_intelligence/adaptive_intelligence.cpp)
 # Add the sources to the SOURCES list
 set(SOURCES
     zmq_server.cpp
     # full_bridge.cpp
     ${PROTO_SOURCES}  # Include protobuf-generated files
-    # ${CMAKE_CURRENT_SOURCE_DIR}/../../src/data_ingestion/pipeline/normalization_pipeline.cpp
-    # ${CMAKE_CURRENT_SOURCE_DIR}/../../src/data_ingestion/pipeline/pipeline_monitoring.cpp
     ${WEBSOCKET_SOURCES}  # Add the expanded list of websocket .cpp files
     ${WEBSOCKET_EX_SOURCES}  # Add the expanded list of websocket exchange .cpp files
     # addd all source above
@@ -77,6 +75,7 @@ set(SOURCES
     ${DATA_QUALITY_SOURCES}
     ${TIME_SOURCES}
     ${PUBLISH_SOURCES}
+    ${MARKET_INTEL_SOURCES}
 )
 
 # Include directories
@@ -89,7 +88,9 @@ include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/../../include/execution
     ${CMAKE_CURRENT_SOURCE_DIR}/../../include/communication
     ${CMAKE_CURRENT_SOURCE_DIR}/../../include/risk
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../include/market_intelligence
     ${CMAKE_CURRENT_SOURCE_DIR}/../../proto/generated/cpp
+
 )
 
 # Add the main communication library
@@ -101,8 +102,8 @@ target_link_libraries(communication zmq jsoncpp pthread protobuf gRPC::grpc++)
 # Set the output directory for executables
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../../bin)
 # Add executable for full_bridge.cpp
-add_executable(bridge_exec full_bridge.cpp)
-target_link_libraries(bridge_exec communication zmq jsoncpp pthread protobuf)
+add_executable(tactical full_bridge.cpp    ${CMAKE_CURRENT_SOURCE_DIR}/../../src/market_intelligence/adaptive_intelligence.cpp)
+target_link_libraries(tactical communication zmq jsoncpp pthread protobuf)
 # Test files
 set(TEST_SOURCES
     tests/zmq_server_test.cpp
