@@ -714,29 +714,35 @@ private:
         }
         
         // Create acknowledgment
+        // trading::ExecutionAcknowledgment ack;
+        // ack.set_intent_id(intent.intent_id());
+        // ack.set_accepted(true);
+        // ack.set_execution_id("exec_" + intent.intent_id() + "_" + std::to_string(std::time(nullptr)));
+        // ack.set_reason("Intent accepted - Market intelligence integrated");
+        // 
         trading::ExecutionAcknowledgment ack;
         ack.set_intent_id(intent.intent_id());
-        ack.set_accepted(true);
-        ack.set_execution_id("exec_" + intent.intent_id() + "_" + std::to_string(std::time(nullptr)));
-        ack.set_reason("Intent accepted - Market intelligence integrated");
+        ack.set_accepted(true);  // Always accept for now
+        ack.set_execution_id("cpp_ack_" + intent.intent_id());
+        ack.set_reason("Acknowledged - execution handled by Python");
         
         // Estimate completion time based on market conditions
         int64_t base_time = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::system_clock::now().time_since_epoch()).count();
         
-        int completion_delay = CalculateCompletionDelay(intent, current_intel);
-        ack.set_estimated_completion_time(base_time + completion_delay);
+        // int completion_delay = CalculateCompletionDelay(intent, current_intel);
+        // ack.set_estimated_completion_time(base_time + completion_delay);
         
         // Set execution parameters based on market intelligence
-        trading::ExecutionParameters* params = ack.mutable_execution_params();
-        SetIntelligentExecutionParameters(*params, intent, current_intel);
+        // trading::ExecutionParameters* params = ack.mutable_execution_params();
+        // SetIntelligentExecutionParameters(*params, intent, current_intel);
         
-        std::cout << "Execution Parameters:" << std::endl;
-        std::cout << "  Aggression Level: " << params->aggression_level() << std::endl;
-        std::cout << "  Chunk Size Ratio: " << params->chunk_size_ratio() << std::endl;
-        std::cout << "  Max Participation: " << params->max_participation_rate() << std::endl;
-        std::cout << "  Order Type: " << params->preferred_order_type() << std::endl;
-        std::cout << "=================================" << std::endl;
+        // std::cout << "Execution Parameters:" << std::endl;
+        // std::cout << "  Aggression Level: " << params->aggression_level() << std::endl;
+        // std::cout << "  Chunk Size Ratio: " << params->chunk_size_ratio() << std::endl;
+        // std::cout << "  Max Participation: " << params->max_participation_rate() << std::endl;
+        // std::cout << "  Order Type: " << params->preferred_order_type() << std::endl;
+        // std::cout << "=================================" << std::endl;
         
         return ack;
     }
