@@ -343,8 +343,9 @@ scheduling:
     end: 22
   
   # UPDATED: Aligned with 4h timeframe
-  signal_interval: 14400             # 4 hours (match primary timeframe)
+  signal_interval: 180             # 4 hours (match primary timeframe)
   data_interval: 3600                # 1 hour data updates
+  intelligent_interval: 60 #update C++ intelligence
   etf_update_interval: 1800          # 30 minutes ETF updates
   
   # Markov-specific scheduling
