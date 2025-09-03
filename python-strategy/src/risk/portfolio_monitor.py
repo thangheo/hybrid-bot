@@ -6,7 +6,7 @@ Uses NumPy/SciPy for statistical calculations and portfolio risk metrics
 
 import numpy as np
 from scipy import stats
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional 
 import logging
 
 logger = logging.getLogger(__name__)
@@ -25,7 +25,6 @@ class PortfolioRiskMonitor:
         self.config = config
         self.var_confidence = config.get('var_confidence', 0.05)
         self.correlation_threshold = config.get('correlation_threshold', 0.7)
-        
     # Fix for src/risk/portfolio_monitor.py
     """
     Updated portfolio risk calculation to handle empty portfolios correctly
