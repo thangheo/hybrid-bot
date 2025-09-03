@@ -9,6 +9,7 @@ import sys
 import os
 from datetime import datetime, timedelta
 from pathlib import Path
+import time
 
 # 🚀 SETUP LOGGING FIRST
 sys.path.insert(0, str(Path(__file__).parent / 'src'))
@@ -362,23 +363,31 @@ class EnhancedTradingBot:
         """Schedule trading tasks"""
         scheduling_config = self.config.get('scheduling', {})
         
-        # Core data collection (every 5 minutes)
+        # Core data collection (every 30 minutes) - GIỮ NGUYÊN
         self.scheduler.add_job(
             self._collect_market_data,
-            trigger=IntervalTrigger(seconds=scheduling_config.get('data_interval', 300)),
+            trigger=IntervalTrigger(seconds=scheduling_config.get('data_interval', 1800)),
             id='market_data_collection',
             max_instances=1
         )
         
-        # Signal generation (every 30 minutes)
+        # Full signal generation (every 6 minutes) - GIỮ NGUYÊN  
         self.scheduler.add_job(
             self._generate_signals,
-            trigger=IntervalTrigger(seconds=scheduling_config.get('signal_interval', 1800)),
+            trigger=IntervalTrigger(seconds=scheduling_config.get('signal_interval', 360)),
             id='signal_generation',
             max_instances=1
         )
         
-        # System monitoring (every minute)
+        # THÊM HÀM MỚI - Intelligence-based quick checks
+        self.scheduler.add_job(
+            self._check_intelligence_changes,
+            trigger=IntervalTrigger(seconds=scheduling_config.get('intelligent_interval',60)),
+            id='intelligence_monitoring',
+            max_instances=1
+        )
+        
+        # System monitoring - GIỮ NGUYÊN
         self.scheduler.add_job(
             self._monitor_system,
             trigger=IntervalTrigger(seconds=160),
@@ -386,16 +395,45 @@ class EnhancedTradingBot:
             max_instances=1
         )
         
-        # Portfolio reconciliation (every 30 minutes)
+        # Portfolio reconciliation - GIỮ NGUYÊN
         self.scheduler.add_job(
             self._reconcile_portfolio,
             trigger=IntervalTrigger(seconds=1800),
             id='portfolio_reconciliation',
             max_instances=1
         )
-        
-        self.logger.info("📅 Task scheduling configured")
-    
+    async def _check_intelligence_changes(self):
+        """Monitor C++ intelligence for significant changes"""
+        try:
+            if not self.intelligence_bridge or not self.intelligence_bridge.is_available():
+                return
+                
+            symbols = self.config.get('data_ingestion', {}).get('symbols', [])
+            
+            for symbol in symbols:
+                intel = self.intelligence_bridge.get_intelligence(symbol)
+                if not intel:
+                    continue
+                    
+                # Check if intelligence is fresh (< 30 seconds old)
+                intelligence_age = time.time() - intel.last_update
+                if intelligence_age > 30:
+                    continue
+                    
+                # Check for significant regime changes or high confidence signals
+                if (intel.regime_confidence > 0.85 or 
+                    intel.liquidity_ratio > 0.9 or 
+                    abs(intel.order_book_imbalance) > 0.4):
+                    
+                    self.logger.info(f"🚀 High confidence C++ signal for {symbol}: "
+                                    f"regime_conf={intel.regime_confidence:.2f}, "
+                                    f"liquidity={intel.liquidity_ratio:.2f}")
+                    
+                    # Trigger immediate signal generation for this symbol
+                    await self._process_symbol_signals(symbol)
+                    
+        except Exception as e:
+            self.logger.error(f"Intelligence monitoring failed: {e}")
     async def _collect_market_data(self):
         """Collect market data"""
         try:
