@@ -167,7 +167,7 @@ class EnhancedTradingBot:
         self.portfolio_manager = None
         self.system_monitor = None
         self.alert_manager = None
-        
+        self.last_regime = None
         # 🚀 UNIFIED Strategy Manager
         self.strategy_manager = None
         
