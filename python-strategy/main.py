@@ -42,6 +42,8 @@ from src.execution.models import Order, OrderSide, OrderType
 # from strategy.unified_manager import UnifiedStrategyManager
 from src.strategy.strategies.markov_strategy_complete import MarkovETFStrategyPersistent
 from src.communication.market_intelligence_bridge import MarketIntelligenceBridge
+#extract regime info
+from src.utils.regime_info import _extract_regime_info_for_risk_management
 
 UNIFIED_MANAGER_AVAILABLE = True
 
@@ -498,7 +500,8 @@ class EnhancedTradingBot:
             
             # Calculate indicators
             indicators = self.strategy_manager.calculate_indicators(market_data)
-            
+            #get current volatility from indicators
+            current_volatility = indicators['volatility'].iloc[-1]
             # Generate signals - DIRECT CALL
             signals = await self.strategy_manager.generate_signals(symbol, market_data, indicators)
             
@@ -508,6 +511,19 @@ class EnhancedTradingBot:
             
             latest_signal = signals.iloc[-1]
             
+            # Extract regime info
+            regime_info = {
+                'current_regime': signals.get('regime', 'balanced'),
+                'confidence': signals.get('regime_confidence', 0.5),
+                'strength': signals.get('regime_strength', 0.5)
+            }
+
+            # Update risk management
+            self._update_risk_management_with_regime(regime_info, current_volatility)
+            
+
+            # # Evaluate trades như bình thường - giờ đã regime-aware!
+            # approved, size, reason = risk_manager.evaluate_trade_risk(symbol, signal, portfolio)
             # Log signal info
             self._log_signal_info(symbol, latest_signal)
 
@@ -518,6 +534,43 @@ class EnhancedTradingBot:
         except Exception as e:
             self.logger.error(f"Signal processing failed for {symbol}: {e}")
 
+    def _update_risk_management_with_regime(self, regime_info: dict, current_volatility: float = None):
+        """Update risk management parameters based on regime information"""
+        extracted_info = self._extract_regime_info_for_risk_management(regime_info)
+        current_regime = extracted_info['current_regime']
+        regime_confidence = extracted_info['confidence']
+        regime_strength = extracted_info['strength']
+        
+        # Convert enum to string if needed
+        if hasattr(current_regime, 'value'):
+            current_regime = current_regime.value
+        
+        # Only update if regime changed or significant confidence change
+        should_update = (
+            self.last_regime != current_regime or 
+            self.last_regime_update is None or
+            abs(regime_confidence - getattr(self, 'last_confidence', 0.5)) > 0.1
+        )
+        
+        if should_update:
+            try:
+                # Update risk parameters
+                self.risk_manager.update_regime_risk_parameters(
+                    regime=current_regime,
+                    confidence=regime_confidence,
+                    regime_strength=regime_strength,
+                    current_volatility=current_volatility
+                )
+                
+                # Update tracking variables
+                self.last_regime = current_regime
+                self.last_regime_update = time.time()
+                self.last_confidence = regime_confidence
+                
+                logger.info(f"Risk management updated for regime: {current_regime} (confidence: {regime_confidence:.2f})")
+                
+            except Exception as e:
+                logger.error(f"Failed to update risk management with regime: {e}")
     def _log_signal_info(self, symbol: str, signal_data: pd.Series):
         """Log signal information"""
         signal_value = signal_data.get('signal', 0)

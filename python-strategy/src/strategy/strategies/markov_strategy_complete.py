@@ -904,6 +904,7 @@ class MarkovETFStrategyPersistent(BaseStrategy):
 
         # Add metadata
         signals['regime'] = regime_info.current_regime.value
+        signals['volatility'] = indicators.get('atr', 0.05)    # ADD THIS
         signals['next_likely_regime'] = regime_info.next_most_likely.value
         signals['transition_confidence'] = regime_info.transition_confidence
         
