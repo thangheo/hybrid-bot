@@ -29,6 +29,8 @@ print_status() {
     local message=$2
     echo -e "${color}[$(date '+%Y-%m-%d %H:%M:%S')] ${message}${NC}"
 }
+#source environment
+source venv/bin/activate
 
 # Function to check if a process is running
 is_running() {
