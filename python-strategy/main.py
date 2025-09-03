@@ -536,7 +536,7 @@ class EnhancedTradingBot:
 
     def _update_risk_management_with_regime(self, regime_info: dict, current_volatility: float = None):
         """Update risk management parameters based on regime information"""
-        extracted_info = self._extract_regime_info_for_risk_management(regime_info)
+        extracted_info = _extract_regime_info_for_risk_management(regime_info)
         current_regime = extracted_info['current_regime']
         regime_confidence = extracted_info['confidence']
         regime_strength = extracted_info['strength']

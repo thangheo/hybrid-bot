@@ -18,14 +18,14 @@ import asyncpg
 from typing import Dict, List, Optional, Tuple, Any 
 from src.strategy.strategies.markov_strategy_complete import MarkovRegimeInfo , MarketRegime
 
-def _extract_regime_info_for_risk_management(self, regime_info) -> dict:
+def _extract_regime_info_for_risk_management(regime_info) -> dict:
     """Extract regime information for risk management from MarkovRegimeInfo"""
     
     # 1. REGIME CONFIDENCE = regime_probability (0-1)
     regime_confidence = getattr(regime_info, 'regime_probability', 0.5)
     
     # 2. REGIME STRENGTH = Composite calculation using multiple factors
-    regime_strength = self._calculate_regime_strength(regime_info)
+    regime_strength = _calculate_regime_strength(regime_info)
     
     # 3. CURRENT REGIME = Direct extraction
     current_regime = getattr(regime_info, 'current_regime', 'balanced')
@@ -48,7 +48,7 @@ def _extract_regime_info_for_risk_management(self, regime_info) -> dict:
         'expected_duration': getattr(regime_info, 'expected_duration', 5)
     }
 
-def _calculate_regime_strength(self, regime_info) -> float:
+def _calculate_regime_strength(regime_info) -> float:
     """
     Calculate regime strength from multiple factors
     
