@@ -3,7 +3,6 @@
  * @brief Integrated server combining pipeline processing with ZMQ communication
  */
 
-// #include "data_ingestion/pipeline/normalization_pipeline.hpp"
 #include "data_ingestion/websocket/exchanges/binance_websocket_client.hpp"
 #include "data_ingestion/websocket/connection_pool.hpp"
 #include "data_ingestion/publisher/zeromq_publisher.hpp"
@@ -71,7 +70,7 @@ public:
         InitializeConnectionPool();
         InitializeCommunication();
     }
-    
+
     ~IntegratedTradingServer() {
         try {
             Stop();
