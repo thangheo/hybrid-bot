@@ -243,7 +243,37 @@ class MarkovPersistenceManager:
             return None
         finally:
             conn.close()
-    
+    def should_save_regime_history(self, symbol: str, new_regime_info: MarkovRegimeInfo) -> bool:
+        """Check if regime changed enough to warrant saving"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.execute("""
+                SELECT regime, regime_probability, transition_confidence 
+                FROM regime_history 
+                WHERE symbol = ? 
+                ORDER BY timestamp DESC 
+                LIMIT 1
+            """, (symbol,))
+            
+            last_record = cursor.fetchone()
+            conn.close()
+            
+            if not last_record:
+                return True  # First record
+            
+            last_regime, last_prob, last_confidence = last_record
+            
+            # Only save if significant change
+            if (last_regime != new_regime_info.current_regime.value or
+                abs(last_prob - new_regime_info.regime_probability) > 0.1 or
+                abs(last_confidence - new_regime_info.transition_confidence) > 0.2):
+                return True
+                
+            return False  # Skip duplicate/similar regime
+            
+        except Exception as e:
+            logger.error(f"Error checking regime history: {e}")
+            return True  # Save on error to be safe
     def save_regime_history_entry(self, symbol: str, regime_info: MarkovRegimeInfo):
         conn = sqlite3.connect(self.db_path)
         try:
@@ -324,7 +354,7 @@ class MarkovETFStrategyPersistent(BaseStrategy):
         # Persistence setup
         db_path = config.get('markov_persistence', {}).get('db_path', 'data/markov_persistence.db')
         self.persistence_manager = MarkovPersistenceManager(db_path)
-        self.save_frequency = config.get('markov_persistence', {}).get('save_frequency', 5)
+        self.save_frequency = config.get('markov_persistence', {}).get('save_frequency', 50)
         self.auto_load_on_init = config.get('markov_persistence', {}).get('auto_load_on_init', True)
         self._persistence_loaded = {}
 
@@ -898,9 +928,9 @@ class MarkovETFStrategyPersistent(BaseStrategy):
         if self.signals_generated == 1 or self.signals_generated % self.save_frequency == 0:
             await self._save_persistent_data(symbol)
         
-        if regime_info:
-            self.persistence_manager.save_regime_history_entry(symbol, regime_info)
         
+        if regime_info and self.persistence_manager.should_save_regime_history(symbol, regime_info):
+            self.persistence_manager.save_regime_history_entry(symbol, regime_info)
         logger.info(f"Generated signal for {symbol}: {signals['signal'].iloc[-1]}")
         logger.info(f"Regime: {regime_info.current_regime.value}")
         
