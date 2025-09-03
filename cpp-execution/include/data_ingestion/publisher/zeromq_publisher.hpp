@@ -26,7 +26,8 @@
  #include <condition_variable>
  #include <functional>
  #include <data_ingestion/orderbook/order_book_types.hpp>
- #include "config.hpp"
+ #include "data_ingestion/config.hpp"
+ 
 namespace trading {
 namespace data_ingestion {
     

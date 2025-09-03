@@ -4,7 +4,7 @@
 # Usage: ./trading_manager.sh [start|stop|restart|status|logs]
 
 # Configuration
-CPP_EXEC_PATH="cpp-execution/bin/bridge_exec"
+CPP_EXEC_PATH="cpp-execution/bin/tactical"
 PYTHON_SCRIPT_PATH="python-strategy/main.py"
 LOG_DIR="logs"
 CPP_LOG_FILE="$LOG_DIR/cpp_bridge.log"

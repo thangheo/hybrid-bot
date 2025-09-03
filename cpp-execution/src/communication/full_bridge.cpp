@@ -24,6 +24,7 @@
 #include <signal.h>
 #include <unordered_map>
 #include <mutex>
+#include "market_intelligence/adaptive_intelligence.hpp"
 
 using namespace trading::data_ingestion;
 using namespace trading::common;
@@ -44,7 +45,9 @@ private:
     // std::shared_ptr<NormalizationPipeline> pipeline_;
     std::unique_ptr<ConnectionPool> connectionPool_;
     std::vector<ClientInterfacePtr> activeConnections_;
-    
+    //market intel
+    std::unique_ptr<trading::intelligence::AdaptiveMarketIntelligence> adaptive_intel_;
+
     // Communication components
     std::unique_ptr<TradingCommunicationServer> zmq_server_;
     
@@ -65,8 +68,9 @@ private:
 
 public:
     IntegratedTradingServer() : start_time_(std::chrono::steady_clock::now()) {
-        // order_book_reconstructor_ = std::unique_ptr<OrderBookReconstructor>(&OrderBookReconstructor::getInstance());
         order_book_reconstructor_ = &OrderBookReconstructor::getInstance();
+        //Initialize adaptive intelligence
+        adaptive_intel_ = std::make_unique<trading::intelligence::AdaptiveMarketIntelligence>();
         InitializeConnectionPool();
         InitializeCommunication();
     }
@@ -196,8 +200,9 @@ public:
         std::cout << "Integrated Trading Server started successfully" << std::endl;
         return true;
     }
-    void GenerateAndPublishIntelligence(const std::string& symbol, std::shared_ptr<OrderBook> orderbook) {
+    void GenerateAndPublishIntelligence__obsolet(const std::string& symbol, std::shared_ptr<OrderBook> orderbook) {
         try {
+            /*obsolete intelligence*/
             auto bids = orderbook->getBids(5);
             auto asks = orderbook->getAsks(5);
             
@@ -304,6 +309,45 @@ public:
         }
     }
 
+    void GenerateAndPublishIntelligence(const std::string& symbol, std::shared_ptr<OrderBook> orderbook) {
+        try {
+                         
+            // NEW CODE: Use adaptive intelligence
+            trading::MarketIntelligence intel = adaptive_intel_->GenerateAdaptiveMarketIntelligence(symbol, orderbook);
+            
+            if (intel.symbol().empty()) {
+                return; // No valid intelligence generated
+            }
+            
+            // DEBUG: Print generated intelligence (first few times)
+            static std::unordered_map<std::string, int> debug_counters;
+            debug_counters[symbol]++;
+            
+            if (debug_counters[symbol] <= 3) {
+                std::cout << "\n=== ADAPTIVE INTELLIGENCE for " << symbol << " ===" << std::endl;
+                std::cout << "  Spread: " << intel.bid_ask_spread() << std::endl;
+                std::cout << "  Liquidity: " << intel.liquidity_ratio() << std::endl;
+                std::cout << "  Imbalance: " << intel.order_book_imbalance() << std::endl;
+                std::cout << "  Regime: " << intel.current_regime() << std::endl;
+                std::cout << "  Confidence: " << intel.regime_confidence() << std::endl;
+                std::cout << "=============================================" << std::endl;
+            }
+            
+            // Store and publish (unchanged)
+            {
+                std::lock_guard<std::mutex> intel_lock(intelligence_mutex_);
+                latest_intelligence_[symbol] = intel;
+            }
+            
+            if (zmq_server_) {
+                zmq_server_->PublishMarketIntelligence(intel);
+                intelligence_generated_.fetch_add(1);
+            }
+            
+        } catch (const std::exception& e) {
+            std::cout << "Error generating adaptive intelligence for " << symbol << ": " << e.what() << std::endl;
+        }
+    }
     void InitializeCommunication() {
         zmq_server_ = std::make_unique<TradingCommunicationServer>();
         
@@ -570,122 +614,8 @@ private:
             }
         }
     }
-    void ProcessMarketDataForIntelligence_1(const std::string& symbol, const std::string& data) {
-        try {
-            json parsed = json::parse(data);
             
-            // Check if it's order book update
-            if (!parsed.contains("e") || !parsed["e"].is_string() || 
-                parsed["e"] != "depthUpdate") {
-                return;
-            }
-            
-            // Update order book
-            // order_book_reconstructor_->processUpdate(parsed, symbol);
-
-            // auto it = order_books_.find(symbol);
-            order_book_reconstructor_->UpdateOrderBookFromJson(ExchangeId::binance(), parsed, Symbol::fromString(symbol));
-            //check if order book bids ask empty or not, if so, skip intelligence generation
-            auto orderbook= order_books_[symbol];//order_book_reconstructor_->getOrderBook(ExchangeId::binance(), Symbol::fromString(symbol));
-            if(orderbook && !orderbook->getBids().empty() && !orderbook->getAsks().empty() && orderbook->getBids()[0].getPrice() > 0 && orderbook->getAsks()[0].getPrice() > 0) {
-                GenerateAndPublishIntelligence(symbol, orderbook);
-            }
-            else{
-                std::cout << "Warning: Order book for " << symbol << " is empty, skipping intelligence generation." << std::endl;
-                return;
-            }
-
-
-            if (orderbook) {
-                if (orderbook->getBids().empty() || orderbook->getAsks().empty()) {
-                    std::cout << "Warning: Order book for " << symbol << " is empty, skipping intelligence generation." << std::endl;
-                    return;
-                }
-            }
-            // Generate market intelligence from updated order book
-            auto intel = GenerateMarketIntelligence(symbol, orderbook);
-
-            // Store latest intelligence
-            {
-                std::lock_guard<std::mutex> intel_lock(intelligence_mutex_);
-                latest_intelligence_[symbol] = intel;
-            }
-            
-            // Publish via ZMQ
-            if (zmq_server_) {
-                zmq_server_->PublishMarketIntelligence(intel);
-                intelligence_generated_.fetch_add(1);
-            }                            
-        } catch (const std::exception& e) {
-            // Silently handle JSON parsing errors
-        }
-    }
         
-    trading::MarketIntelligence GenerateMarketIntelligence(const std::string& symbol, 
-                                                          std::shared_ptr<OrderBook> orderbook) {
-        trading::MarketIntelligence intel;
-        
-        auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::system_clock::now().time_since_epoch()).count();
-        
-        intel.set_symbol(symbol);
-        intel.set_timestamp(now);
-        
-        // Get order book state
-        auto bids = orderbook->getBids(5);
-        auto asks = orderbook->getAsks(5);
-        
-        if (!bids.empty() && !asks.empty()) {
-            double best_bid = bids[0].getPrice();
-            double best_ask = asks[0].getPrice();
-            double spread = best_ask - best_bid;
-            double mid_price = (best_bid + best_ask) / 2.0;
-            
-            intel.set_bid_ask_spread(spread / mid_price);
-            
-            // Calculate order book imbalance
-            double bid_volume = 0, ask_volume = 0;
-            for (size_t i = 0; i < std::min(size_t(5), bids.size()); ++i) {
-                bid_volume += bids[i].getQuantity();
-            }
-            for (size_t i = 0; i < std::min(size_t(5), asks.size()); ++i) {
-                ask_volume += asks[i].getQuantity();
-            }
-            
-            double total_volume = bid_volume + ask_volume;
-            if (total_volume > 0) {
-                intel.set_order_book_imbalance((bid_volume - ask_volume) / total_volume);
-            }
-            
-            // Calculate liquidity metrics
-            intel.set_liquidity_ratio(std::min(1.0, total_volume / 10000.0));
-            
-            // Estimate volatility (simplified)
-            intel.set_realized_volatility_1m(spread / mid_price * 10); // Rough estimate
-            
-            // Flow metrics (placeholder - would need trade data)
-            intel.set_net_flow_5s(intel.order_book_imbalance() * 0.5);
-            intel.set_net_flow_30s(intel.order_book_imbalance() * 0.3);
-            intel.set_aggressive_buy_ratio(0.5 + intel.order_book_imbalance() * 0.2);
-            intel.set_aggressive_sell_ratio(0.5 - intel.order_book_imbalance() * 0.2);
-            
-            // Classify order book regime
-            if (total_volume > 15000 && intel.bid_ask_spread() < 0.001) {
-                intel.set_current_regime(trading::OB_LIQUID);
-            } else if (total_volume < 2000 || intel.bid_ask_spread() > 0.005) {
-                intel.set_current_regime(trading::OB_THIN);
-            } else if (std::abs(intel.order_book_imbalance()) > 0.3) {
-                intel.set_current_regime(trading::OB_VOLATILE);
-            } else {
-                intel.set_current_regime(trading::OB_NORMAL);
-            }
-            
-            intel.set_regime_confidence(0.8);
-        }
-        
-        return intel;
-    }
-    
     trading::ExecutionAcknowledgment HandleTradingIntent(const trading::TradingIntent& intent) {
         std::cout << "\n=== PROCESSING TRADING INTENT ===" << std::endl;
         std::cout << "Intent ID: " << intent.intent_id() << std::endl;

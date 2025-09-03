@@ -1,6 +1,6 @@
 # Root CMakeLists.txt
 cmake_minimum_required(VERSION 3.14)
-project(TradeFusion VERSION 1.0.0 LANGUAGES CXX)
+project(tactical_cpp VERSION 1.0.0 LANGUAGES CXX)
 
 # Set C++ standard
 set(CMAKE_CXX_STANDARD 23)
@@ -76,14 +76,14 @@ if(BUILD_TESTS)
 endif()
 
 # Install rules
-install(TARGETS trading_system
+install(TARGETS tactical
     RUNTIME DESTINATION bin
 )
 
 # CPack configuration for binary distribution
 include(InstallRequiredSystemLibraries)
 set(CPACK_PACKAGE_VENDOR "Your Company")
-set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Order Imbalance Trading System")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Tactical System")
 set(CPACK_PACKAGE_VERSION_MAJOR ${PROJECT_VERSION_MAJOR})
 set(CPACK_PACKAGE_VERSION_MINOR ${PROJECT_VERSION_MINOR})
 set(CPACK_PACKAGE_VERSION_PATCH ${PROJECT_VERSION_PATCH})
