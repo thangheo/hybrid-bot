@@ -568,20 +568,17 @@ compatibility:
 markov_persistence:
   enabled: true
   db_path: "data/markov_persistence.db"
-  save_frequency: 10
+  save_frequency: 50  # Tăng lên 50 (từ 10)
   auto_load_on_init: true
-  max_history_age_hours: 168
+  max_history_age_hours: 72  # Giảm xuống 72h (từ 168h)
   
-  # Advanced settings
-  max_history_entries: 1000
-  cleanup_frequency: 100
-  backup_enabled: false
-  backup_frequency: 24
-markov_model:
-  lookback_period: 100
-  min_history: 30
-
-
+  # Cải thiện cleanup
+  max_history_entries: 500  # Giảm xuống 500
+  cleanup_frequency: 20     # Cleanup thường xuyên hơn
+  
+  # Thêm dedupe logic
+  skip_duplicate_regimes: true
+  min_regime_change_threshold: 0.1
 
 signal_decay:
   enabled: true
