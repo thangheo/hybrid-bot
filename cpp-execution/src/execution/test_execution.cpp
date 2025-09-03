@@ -220,8 +220,17 @@ private:
             // QUAN TRỌNG: Dùng market order để tránh giá cố định
             // signal.signal_metrics["order_type"] = "MARKET";
                 // Add ETH price metrics
-            signal.signal_metrics["bid_price"] = 42800.0;
-            signal.signal_metrics["ask_price"] = 4351.0;
+                //if buy price =4280.0;, if sell price = 4350
+            if(direction == Direction::BUY){
+                signal.signal_metrics["bid_price"] = 4280.0;
+                signal.signal_metrics["ask_price"] = 4311.0;
+
+            }
+            else{
+                signal.signal_metrics["bid_price"] = 4320.0;
+                signal.signal_metrics["ask_price"] = 4331.0;
+
+            }
             signal.signal_metrics["spread"] = 1.0;
             signal.signal_metrics["volatility"] = 0.02;
             signal.signal_metrics["volume"] = 1000.0;
@@ -250,58 +259,7 @@ private:
         std::cout << "Completed all test orders. Total: " << orders_completed << std::endl;
         running_ = false;
     }
-    void signalGeneratorThread_1() {
-        std::cout << "Signal generator thread started\n";
-        
-        // TẠO 2 ORDERS - KHÔNG RANDOM
-        int orders_to_place = 2;
-        int orders_placed_count = 0;
-        
-        while (running_ && orders_placed_count < orders_to_place) {
-            // Tạo signal cố định
-            TradingSignal signal;
-            signal.signal_id = generateSignalId();
-            signal.tradingPair = "ETHUSDT";
-            signal.direction = Direction::BUY;
-            signal.strength = 0.8;
-            signal.target_size = 0.0022; // $15 worth of ETH
-            signal.signal_ttl = std::chrono::milliseconds(10000);
-            signal.strategy_id = "test_strategy";
-            signal.strategy_version = "1.0";
-            
-            // Add ETH price metrics
-            signal.signal_metrics["bid_price"] = 3300.0;
-            signal.signal_metrics["ask_price"] = 3301.0;
-            signal.signal_metrics["spread"] = 1.0;
-            signal.signal_metrics["volatility"] = 0.02;
-            signal.signal_metrics["volume"] = 1000.0;
-            signal.signal_metrics["liquidity_score"] = 0.9;
-            signal.signal_metrics["market_impact_estimate"] = 0.001;
-            
-            // Execute signal
-            auto response = execution_service_->executeSignal(signal);
-            
-            signals_generated_++;
-            if (response.success) {
-                orders_placed_++;
-                orders_placed_count++;
-                std::cout << "Order " << orders_placed_count << "/2 placed: " 
-                        << response.client_order_id << std::endl;
-            } else {
-                orders_rejected_++;
-                std::cout << "Order " << (orders_placed_count + 1) << " failed: " 
-                        << response.error_message << std::endl;
-            }
-            
-            // Chờ 5 giây giữa 2 orders
-            if (orders_placed_count < orders_to_place) {
-                std::this_thread::sleep_for(std::chrono::seconds(5));
-            }
-        }
-        
-        std::cout << "Completed placing " << orders_placed_count << " orders\n";
-        running_ = false; // Dừng sau khi hoàn thành
-    }
+    
     
     void orderStatusMonitorThread() {
         std::cout << "Order status monitor thread started\n";
