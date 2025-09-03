@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from enum import Enum
 from collections import defaultdict
 from scipy import stats
-
+import time
 logger = logging.getLogger(__name__)
 
 from src.data.etf_flow_manager import CompositeETFFlow , ETFFlowManager
