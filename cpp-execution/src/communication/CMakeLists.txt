@@ -62,7 +62,7 @@ file(GLOB PROTOCOL_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../../src/data_ingestion/
 # Add the sources to the SOURCES list
 set(SOURCES
     zmq_server.cpp
-    bridge.cpp
+    # full_bridge.cpp
     ${PROTO_SOURCES}  # Include protobuf-generated files
     # ${CMAKE_CURRENT_SOURCE_DIR}/../../src/data_ingestion/pipeline/normalization_pipeline.cpp
     # ${CMAKE_CURRENT_SOURCE_DIR}/../../src/data_ingestion/pipeline/pipeline_monitoring.cpp
