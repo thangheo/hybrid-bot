@@ -194,6 +194,57 @@ private:
     void signalGeneratorThread() {
         std::cout << "Signal generator thread started\n";
         
+        // Tạo 4 orders: 2 BUY + 2 SELL
+        std::vector<std::pair<Direction, std::string>> orders_to_place = {
+            {Direction::BUY, "Buy order 1"},
+            {Direction::BUY, "Buy order 2"}, 
+            {Direction::SELL, "Sell order 1"},
+            {Direction::SELL, "Sell order 2"}
+        };
+        
+        int orders_completed = 0;
+        
+        for (const auto& [direction, description] : orders_to_place) {
+            if (!running_) break;
+            
+            TradingSignal signal;
+            signal.signal_id = generateSignalId();
+            signal.tradingPair = "ETHUSDT";
+            signal.direction = direction;
+            signal.strength = 0.8;
+            signal.target_size = 0.0045; // ~$15 worth
+            signal.signal_ttl = std::chrono::milliseconds(10000);
+            signal.strategy_id = "test_strategy";
+            signal.strategy_version = "1.0";
+            
+            // QUAN TRỌNG: Dùng market order để tránh giá cố định
+            // signal.signal_metrics["order_type"] = "MARKET";
+            
+            auto response = execution_service_->executeSignal(signal);
+            
+            signals_generated_++;
+            orders_completed++;
+            
+            if (response.success) {
+                orders_placed_++;
+                std::cout << description << " SUCCESS: " << response.client_order_id << std::endl;
+            } else {
+                orders_rejected_++;
+                std::cout << description << " FAILED: " << response.error_message << std::endl;
+            }
+            
+            // Chờ 3 giây giữa các orders
+            if (orders_completed < 4) {
+                std::this_thread::sleep_for(std::chrono::seconds(3));
+            }
+        }
+        
+        std::cout << "Completed all test orders. Total: " << orders_completed << std::endl;
+        running_ = false;
+    }
+    void signalGeneratorThread_1() {
+        std::cout << "Signal generator thread started\n";
+        
         // TẠO 2 ORDERS - KHÔNG RANDOM
         int orders_to_place = 2;
         int orders_placed_count = 0;
@@ -243,43 +294,6 @@ private:
         std::cout << "Completed placing " << orders_placed_count << " orders\n";
         running_ = false; // Dừng sau khi hoàn thành
     }
-    // void signalGeneratorThread_() {
-    //     std::cout << "Signal generator thread started\n";
-        
-    //     std::uniform_real_distribution<> strength_dist(0.3, 1.0);
-    //     std::uniform_real_distribution<> size_dist(0.001, 1.0);
-    //     std::uniform_int_distribution<> side_dist(0, 1);
-    //     std::uniform_int_distribution<> interval_dist(1000, 5000); // 1-5 seconds
-        
-    //     std::vector<std::string> trading_pairs = {
-    //         "BTC/USDT", "ETH/USDT", "ADA/USDT", "DOT/USDT"
-    //     };
-        
-    //     while (running_) {
-    //         // Generate random trading signal
-    //         TradingSignal signal = generateRandomSignal(
-    //             trading_pairs, strength_dist, size_dist, side_dist);
-            
-    //         // Execute the signal
-    //         auto response = execution_service_->executeSignal(signal);
-            
-    //         // Track results
-    //         signals_generated_++;
-    //         if (response.success) {
-    //             orders_placed_++;
-                
-    //             std::lock_guard<std::mutex> lock(active_orders_mutex_);
-    //             active_order_ids_.push_back(response.client_order_id);
-    //         } else {
-    //             orders_rejected_++;
-    //             std::cout << "Signal execution failed: " << response.error_message << "\n";
-    //         }
-            
-    //         // Wait for next signal
-    //         std::this_thread::sleep_for(
-    //             std::chrono::milliseconds(interval_dist(signal_generator_)));
-    //     }
-    // }
     
     void orderStatusMonitorThread() {
         std::cout << "Order status monitor thread started\n";
