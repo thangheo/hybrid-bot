@@ -2,6 +2,9 @@
 # Complete Markov-Enhanced ETF Trading Bot Configuration
 # File: config/markov_trading_bot.yaml
 # ================================================================
+cpp_intelligence:
+  enabled: true  # Set to false to disable C++ integration
+  fallback_mode: true  # Continue trading even if C++ is unavailable
 signal_decay:
   enabled: false
   strong_signal_hours: 6    # >0.7 strength

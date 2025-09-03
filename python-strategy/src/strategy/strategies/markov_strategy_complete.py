@@ -378,7 +378,167 @@ class MarkovETFStrategyPersistent(BaseStrategy):
         logger.info(f"Markov ETF Strategy with Persistence initialized")
         logger.info(f"Database: {db_path}")
         logger.info(f"Save frequency: every {self.save_frequency} signals")
+
+        # Add intelligence integration flag
+        self.cpp_intelligence_enabled = config.get('cpp_intelligence', {}).get('enabled', False)
+        self.intelligence_bridge = None
     
+    def set_intelligence_bridge(self, bridge):
+        """Set the intelligence bridge - called from main.py"""
+        self.intelligence_bridge = bridge
+        self.cpp_intelligence_enabled = bridge is not None
+        logger.info(f"C++ intelligence bridge {'enabled' if self.cpp_intelligence_enabled else 'disabled'}")
+    
+    def _enhance_signals_with_cpp_intelligence_filter(self, signals: pd.DataFrame, symbol: str) -> pd.DataFrame:
+        """Enhance signals with C++ market intelligence"""
+        
+        if not self.cpp_intelligence_enabled or not self.intelligence_bridge:
+            return signals
+        
+        intel = self.intelligence_bridge.get_intelligence(symbol)
+        if not intel:
+            return signals
+        
+        # Create enhanced columns
+        signals = signals.copy()
+        
+        # Liquidity adjustment
+        liquidity_factor = max(0.5, min(1.5, intel.liquidity_ratio))
+        signals['cpp_liquidity_factor'] = liquidity_factor
+        
+        # Volatility adjustment  
+        volatility_factor = 1.0
+        if intel.volatility_trend > 0.03:  # High volatility
+            volatility_factor = 0.7
+        elif intel.volatility_trend < 0.01:  # Low volatility
+            volatility_factor = 1.2
+        signals['cpp_volatility_factor'] = volatility_factor
+        
+        # Order book imbalance influence
+        imbalance_factor = 1.0 + (intel.order_book_imbalance * 0.3)
+        signals['cpp_imbalance_factor'] = imbalance_factor
+        
+        # Combine factors
+        enhancement_factor = (liquidity_factor * volatility_factor * imbalance_factor * intel.regime_confidence)
+        signals['cpp_enhancement_factor'] = enhancement_factor
+        
+        # Apply to signals
+        signals['enhanced_final_signal'] = signals['final_signal'] * enhancement_factor
+        signals['enhanced_signal_strength'] = signals['signal_strength'] * enhancement_factor
+        
+        # Update discrete signals based on enhanced values
+        signal_threshold = self.config.get('signal_threshold', 0.3)
+        signals['enhanced_signal'] = 0
+        signals.loc[signals['enhanced_final_signal'] > signal_threshold, 'enhanced_signal'] = 1
+        signals.loc[signals['enhanced_final_signal'] < -signal_threshold, 'enhanced_signal'] = -1
+        
+        return signals
+    #use C++ as boost signal
+    def _enhance_signals_with_cpp_intelligence(self, signals: pd.DataFrame, symbol: str) -> pd.DataFrame:
+        """Enhance signals with C++ market intelligence - BOOST ONLY, never weaken"""
+        
+        if not self.cpp_intelligence_enabled or not self.intelligence_bridge:
+            return signals
+            
+        intel = self.intelligence_bridge.get_intelligence(symbol)
+        if not intel:
+            return signals
+        
+        # Create enhanced columns
+        signals = signals.copy()
+        
+        # Initialize boost factors - all start at 1.0 (neutral)
+        liquidity_boost = 1.0
+        volatility_boost = 1.0 
+        imbalance_boost = 1.0
+        regime_boost = 1.0
+        
+        # === LIQUIDITY BOOST ===
+        # Only boost when liquidity is good (>0.6), no penalty for poor liquidity
+        if intel.liquidity_ratio > 0.6:
+            liquidity_boost = 1.0 + (intel.liquidity_ratio - 0.6) * 1.25  # Max boost: 1.5x
+        signals['cpp_liquidity_boost'] = liquidity_boost
+        
+        # === VOLATILITY BOOST ===
+        # Boost signals in favorable volatility conditions
+        if 0.01 < intel.volatility_trend < 0.025:  # Sweet spot volatility
+            volatility_boost = 1.0 + 0.3  # 30% boost in optimal volatility
+        elif intel.volatility_trend < 0.01:  # Low vol - good for accumulation
+            volatility_boost = 1.0 + 0.2  # 20% boost
+        # High volatility (>0.025): no boost, no penalty
+        signals['cpp_volatility_boost'] = volatility_boost
+        
+        # === ORDER BOOK IMBALANCE BOOST ===
+        # Boost signals aligned with order book flow direction
+        abs_imbalance = abs(intel.order_book_imbalance)
+        if abs_imbalance > 0.2:  # Significant imbalance
+            # Check if signal direction aligns with imbalance
+            latest_signal = signals['final_signal'].iloc[-1] if not signals.empty else 0
+            
+            signal_direction = 1 if latest_signal > 0 else -1 if latest_signal < 0 else 0
+            imbalance_direction = 1 if intel.order_book_imbalance > 0 else -1
+            
+            # Boost if signal aligns with order book flow
+            if signal_direction == imbalance_direction and signal_direction != 0:
+                imbalance_boost = 1.0 + (abs_imbalance * 0.8)  # Up to 80% boost
+        signals['cpp_imbalance_boost'] = imbalance_boost
+        
+        # === REGIME CONFIDENCE BOOST ===
+        # Boost when C++ is confident about regime classification
+        if intel.regime_confidence > 0.7:
+            regime_boost = 1.0 + (intel.regime_confidence - 0.7) * 0.67  # Up to 20% boost when very confident
+        signals['cpp_regime_boost'] = regime_boost
+        
+        # === COMBINED BOOST CALCULATION ===
+        # Use geometric mean to prevent explosive multiplication
+        individual_boosts = [liquidity_boost, volatility_boost, imbalance_boost, regime_boost]
+        combined_boost = np.prod(individual_boosts) ** (1.0 / len(individual_boosts))
+        
+        # Apply maximum boost cap to prevent unrealistic enhancement
+        max_total_boost = 2.0  # Maximum 2x boost
+        final_boost = min(combined_boost, max_total_boost)
+        
+        signals['cpp_combined_boost'] = final_boost
+        
+        # === APPLY BOOST TO SIGNALS ===
+        # Only apply boost to existing non-zero signals
+        original_signal_strength = signals['signal_strength'].copy()
+        
+        # Boost the continuous signals
+        signals['enhanced_final_signal'] = signals['final_signal'] * final_boost
+        signals['enhanced_signal_strength'] = original_signal_strength * final_boost
+        
+        # For discrete signals, only boost if original signal exists and boost is significant
+        signals['enhanced_signal'] = signals['signal'].copy()  # Start with original
+        
+        # Apply enhanced thresholds only where we have boost AND original signal
+        significant_boost_mask = (final_boost > 1.1) & (signals['signal'] != 0)
+        
+        if significant_boost_mask.any():
+            signal_threshold = self.config.get('signal_threshold', 0.3)
+            
+            # Apply enhanced thresholding only to boosted signals
+            boosted_indices = signals[significant_boost_mask].index
+            
+            for idx in boosted_indices:
+                enhanced_value = signals.loc[idx, 'enhanced_final_signal']
+                
+                if enhanced_value > signal_threshold:
+                    signals.loc[idx, 'enhanced_signal'] = 1
+                elif enhanced_value < -signal_threshold:
+                    signals.loc[idx, 'enhanced_signal'] = -1
+                # Keep original signal if enhanced doesn't meet threshold
+        
+        # === INTELLIGENCE METADATA ===
+        # Add intelligence metadata for monitoring
+        signals['cpp_intelligence_available'] = True
+        signals['cpp_intelligence_age'] = time.time() - intel.last_update
+        signals['cpp_liquidity_ratio'] = intel.liquidity_ratio
+        signals['cpp_volatility_trend'] = intel.volatility_trend
+        signals['cpp_order_book_imbalance'] = intel.order_book_imbalance
+        signals['cpp_regime_confidence'] = intel.regime_confidence
+        
+        return signals
     def _initialize_9_regime_matrix(self) -> Dict[Tuple[VolatilityRegime, ETFFlowRegime], MarketRegime]:
         return {
             (VolatilityRegime.LOW, ETFFlowRegime.POSITIVE): MarketRegime.ACCUMULATION,
@@ -724,6 +884,14 @@ class MarkovETFStrategyPersistent(BaseStrategy):
             signals['enhanced_momentum_component'] = indicators['enhanced_momentum_score']
         if 'enhanced_volume_score' in indicators:
             signals['enhanced_volume_component'] = indicators['enhanced_volume_score']
+
+        #use orderbook  intelligent
+        signals = self._enhance_signals_with_cpp_intelligence(signals, symbol)
+        
+        # Use enhanced signals if available
+        if 'enhanced_signal' in signals.columns:
+            signals['signal'] = signals['enhanced_signal']
+            signals['signal_strength'] = signals['enhanced_signal_strength']
 
         # Persistence
         self.signals_generated += 1
