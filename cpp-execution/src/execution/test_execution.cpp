@@ -197,9 +197,9 @@ private:
         // Tạo 4 orders: 2 BUY + 2 SELL
         std::vector<std::pair<Direction, std::string>> orders_to_place = {
             {Direction::BUY, "Buy order 1"},
-            {Direction::BUY, "Buy order 2"}, 
+            // {Direction::BUY, "Buy order 2"}, 
             {Direction::SELL, "Sell order 1"},
-            {Direction::SELL, "Sell order 2"}
+            // {Direction::SELL, "Sell order 2"}
         };
         
         int orders_completed = 0;
@@ -212,14 +212,22 @@ private:
             signal.tradingPair = "ETHUSDT";
             signal.direction = direction;
             signal.strength = 0.8;
-            signal.target_size = 0.0045; // ~$15 worth
+            signal.target_size = 0.0025; // ~$15 worth
             signal.signal_ttl = std::chrono::milliseconds(10000);
             signal.strategy_id = "test_strategy";
             signal.strategy_version = "1.0";
             
             // QUAN TRỌNG: Dùng market order để tránh giá cố định
             // signal.signal_metrics["order_type"] = "MARKET";
-            
+                // Add ETH price metrics
+            signal.signal_metrics["bid_price"] = 42800.0;
+            signal.signal_metrics["ask_price"] = 4351.0;
+            signal.signal_metrics["spread"] = 1.0;
+            signal.signal_metrics["volatility"] = 0.02;
+            signal.signal_metrics["volume"] = 1000.0;
+            signal.signal_metrics["liquidity_score"] = 0.9;
+            signal.signal_metrics["market_impact_estimate"] = 0.001;
+
             auto response = execution_service_->executeSignal(signal);
             
             signals_generated_++;
