@@ -191,44 +191,95 @@ private:
         std::cout << "Setting up test scenarios...\n";
         // Test scenarios will be configured here
     }
-    
     void signalGeneratorThread() {
         std::cout << "Signal generator thread started\n";
         
-        std::uniform_real_distribution<> strength_dist(0.3, 1.0);
-        std::uniform_real_distribution<> size_dist(0.001, 1.0);
-        std::uniform_int_distribution<> side_dist(0, 1);
-        std::uniform_int_distribution<> interval_dist(1000, 5000); // 1-5 seconds
+        // TẠO 2 ORDERS - KHÔNG RANDOM
+        int orders_to_place = 2;
+        int orders_placed_count = 0;
         
-        std::vector<std::string> trading_pairs = {
-            "BTC/USDT", "ETH/USDT", "ADA/USDT", "DOT/USDT"
-        };
-        
-        while (running_) {
-            // Generate random trading signal
-            TradingSignal signal = generateRandomSignal(
-                trading_pairs, strength_dist, size_dist, side_dist);
+        while (running_ && orders_placed_count < orders_to_place) {
+            // Tạo signal cố định
+            TradingSignal signal;
+            signal.signal_id = generateSignalId();
+            signal.tradingPair = "ETHUSDT";
+            signal.direction = Direction::BUY;
+            signal.strength = 0.8;
+            signal.target_size = 0.0022; // $15 worth of ETH
+            signal.signal_ttl = std::chrono::milliseconds(10000);
+            signal.strategy_id = "test_strategy";
+            signal.strategy_version = "1.0";
             
-            // Execute the signal
+            // Add ETH price metrics
+            signal.signal_metrics["bid_price"] = 3300.0;
+            signal.signal_metrics["ask_price"] = 3301.0;
+            signal.signal_metrics["spread"] = 1.0;
+            signal.signal_metrics["volatility"] = 0.02;
+            signal.signal_metrics["volume"] = 1000.0;
+            signal.signal_metrics["liquidity_score"] = 0.9;
+            signal.signal_metrics["market_impact_estimate"] = 0.001;
+            
+            // Execute signal
             auto response = execution_service_->executeSignal(signal);
             
-            // Track results
             signals_generated_++;
             if (response.success) {
                 orders_placed_++;
-                
-                std::lock_guard<std::mutex> lock(active_orders_mutex_);
-                active_order_ids_.push_back(response.client_order_id);
+                orders_placed_count++;
+                std::cout << "Order " << orders_placed_count << "/2 placed: " 
+                        << response.client_order_id << std::endl;
             } else {
                 orders_rejected_++;
-                std::cout << "Signal execution failed: " << response.error_message << "\n";
+                std::cout << "Order " << (orders_placed_count + 1) << " failed: " 
+                        << response.error_message << std::endl;
             }
             
-            // Wait for next signal
-            std::this_thread::sleep_for(
-                std::chrono::milliseconds(interval_dist(signal_generator_)));
+            // Chờ 5 giây giữa 2 orders
+            if (orders_placed_count < orders_to_place) {
+                std::this_thread::sleep_for(std::chrono::seconds(5));
+            }
         }
+        
+        std::cout << "Completed placing " << orders_placed_count << " orders\n";
+        running_ = false; // Dừng sau khi hoàn thành
     }
+    // void signalGeneratorThread_() {
+    //     std::cout << "Signal generator thread started\n";
+        
+    //     std::uniform_real_distribution<> strength_dist(0.3, 1.0);
+    //     std::uniform_real_distribution<> size_dist(0.001, 1.0);
+    //     std::uniform_int_distribution<> side_dist(0, 1);
+    //     std::uniform_int_distribution<> interval_dist(1000, 5000); // 1-5 seconds
+        
+    //     std::vector<std::string> trading_pairs = {
+    //         "BTC/USDT", "ETH/USDT", "ADA/USDT", "DOT/USDT"
+    //     };
+        
+    //     while (running_) {
+    //         // Generate random trading signal
+    //         TradingSignal signal = generateRandomSignal(
+    //             trading_pairs, strength_dist, size_dist, side_dist);
+            
+    //         // Execute the signal
+    //         auto response = execution_service_->executeSignal(signal);
+            
+    //         // Track results
+    //         signals_generated_++;
+    //         if (response.success) {
+    //             orders_placed_++;
+                
+    //             std::lock_guard<std::mutex> lock(active_orders_mutex_);
+    //             active_order_ids_.push_back(response.client_order_id);
+    //         } else {
+    //             orders_rejected_++;
+    //             std::cout << "Signal execution failed: " << response.error_message << "\n";
+    //         }
+            
+    //         // Wait for next signal
+    //         std::this_thread::sleep_for(
+    //             std::chrono::milliseconds(interval_dist(signal_generator_)));
+    //     }
+    // }
     
     void orderStatusMonitorThread() {
         std::cout << "Order status monitor thread started\n";
