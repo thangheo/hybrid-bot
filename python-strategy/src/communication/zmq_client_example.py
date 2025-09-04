@@ -11,7 +11,7 @@ proto_path = os.path.join(current_dir, 'generated', 'python', 'proto')
 sys.path.append(proto_path)
 
 
-from trading_messages_pb2 import *
+from .trading_messages_pb2 import *
 
 def get_zmq_info():
     """Get ZMQ version info"""
