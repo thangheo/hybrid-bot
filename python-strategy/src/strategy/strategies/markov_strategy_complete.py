@@ -489,8 +489,11 @@ class MarkovETFStrategyPersistent(BaseStrategy):
         
         # === APPLY BOOST TO SIGNALS ===
         # Only apply boost to existing non-zero signals
-        original_signal_strength = signals['signal_strength'].copy()
-        
+        #check if we have signal strength otherwise set it to 0.5
+        if 'signal_strength' in signals.columns:
+            original_signal_strength = signals['signal_strength'].copy()
+        else
+            original_signal_strength = 0.5
         # Boost the continuous signals
         signals['enhanced_final_signal'] = signals['final_signal'] * final_boost
         signals['enhanced_signal_strength'] = original_signal_strength * final_boost
