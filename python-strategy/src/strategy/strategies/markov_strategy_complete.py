@@ -768,136 +768,140 @@ class MarkovETFStrategyPersistent(BaseStrategy):
         return composite
     # Also add this method to handle the else case in generate_signals:
     async def generate_signals(self, symbol: str, data: pd.DataFrame, indicators: Dict[str, pd.Series]) -> pd.DataFrame:
-        self.current_symbol = symbol
-        
-        # Load persistent data if needed
-        if self.auto_load_on_init and symbol not in self._persistence_loaded:
-            await self._load_persistent_data(symbol)
-            self._persistence_loaded[symbol] = True
-        
-        signals = pd.DataFrame(index=data.index)
-        
-        # Detect regime with Markov enhancement
-        regime_info = await self._detect_regime_with_markov(data, indicators)
-        
-        # Get weights for current regime
-        current_weights = self.regime_strategy_weights[regime_info.current_regime]
-        
-        # Calculate component signals
-        if self.use_enhanced_indicators:
-            signals['zscore_signal'] = self._calculate_zscore_signals(indicators, current_weights)
-            signals['trend_signal'] = self._calculate_trend_signals(indicators, current_weights)
-            signals['momentum_signal'] = self._calculate_momentum_signals(indicators, current_weights)
+        try:
+            self.current_symbol = symbol
             
-            # Add new enhanced signal components
-            signals['volume_signal'] = self._calculate_volume_signals(indicators, current_weights)
-            signals['structure_signal'] = self._calculate_structure_signals(indicators, current_weights)
-            signals['divergence_signal'] = self._calculate_divergence_signals(indicators, current_weights)
+            # Load persistent data if needed
+            if self.auto_load_on_init and symbol not in self._persistence_loaded:
+                await self._load_persistent_data(symbol)
+                self._persistence_loaded[symbol] = True
             
-            # Enhanced breakout signals
-            signals['breakout_signal'] = self._calculate_breakout_signals(indicators, current_weights)
+            signals = pd.DataFrame(index=data.index)
             
-            # Combine signals with enhanced weighting
-            base_signal = (
-                signals['zscore_signal'] * current_weights['mean_reversion_weight'] +
-                signals['trend_signal'] * current_weights['trend_following_weight'] +
-                signals['breakout_signal'] * current_weights['breakout_weight'] +
-                signals['momentum_signal'] * current_weights['momentum_weight']
-            ) / 4.0
+            # Detect regime with Markov enhancement
+            regime_info = await self._detect_regime_with_markov(data, indicators)
             
-            # Add enhanced components
-            enhanced_signal = (
-                signals['volume_signal'] * 0.15 +
-                signals['structure_signal'] * 0.10 +
-                signals['divergence_signal'] * 0.10
-            )
+            # Get weights for current regime
+            current_weights = self.regime_strategy_weights[regime_info.current_regime]
             
-            signals['base_signal'] = base_signal + enhanced_signal
-            
-            # Use enhanced master signal if available
-            if 'enhanced_master_signal' in indicators:
-                master_signal = indicators['enhanced_master_signal']
-                # Blend with regime-adjusted signal
-                signals['base_signal'] = (signals['base_signal'] * 0.6) + (master_signal * 0.4)
+            # Calculate component signals
+            if self.use_enhanced_indicators:
+                signals['zscore_signal'] = self._calculate_zscore_signals(indicators, current_weights)
+                signals['trend_signal'] = self._calculate_trend_signals(indicators, current_weights)
+                signals['momentum_signal'] = self._calculate_momentum_signals(indicators, current_weights)
                 
-        else:
-            # FALLBACK: Use existing calculation methods when enhanced indicators are disabled
-            signals['zscore_signal'] = self._calculate_zscore_signals(indicators, current_weights)
-            signals['trend_signal'] = self._calculate_trend_signals(indicators, current_weights)
-            signals['breakout_signal'] = self._calculate_breakout_signals(indicators, current_weights)
-            signals['momentum_signal'] = self._calculate_momentum_signals(indicators, current_weights)
+                # Add new enhanced signal components
+                signals['volume_signal'] = self._calculate_volume_signals(indicators, current_weights)
+                signals['structure_signal'] = self._calculate_structure_signals(indicators, current_weights)
+                signals['divergence_signal'] = self._calculate_divergence_signals(indicators, current_weights)
+                
+                # Enhanced breakout signals
+                signals['breakout_signal'] = self._calculate_breakout_signals(indicators, current_weights)
+                
+                # Combine signals with enhanced weighting
+                base_signal = (
+                    signals['zscore_signal'] * current_weights['mean_reversion_weight'] +
+                    signals['trend_signal'] * current_weights['trend_following_weight'] +
+                    signals['breakout_signal'] * current_weights['breakout_weight'] +
+                    signals['momentum_signal'] * current_weights['momentum_weight']
+                ) / 4.0
+                
+                # Add enhanced components
+                enhanced_signal = (
+                    signals['volume_signal'] * 0.15 +
+                    signals['structure_signal'] * 0.10 +
+                    signals['divergence_signal'] * 0.10
+                )
+                
+                signals['base_signal'] = base_signal + enhanced_signal
+                
+                # Use enhanced master signal if available
+                if 'enhanced_master_signal' in indicators:
+                    master_signal = indicators['enhanced_master_signal']
+                    # Blend with regime-adjusted signal
+                    signals['base_signal'] = (signals['base_signal'] * 0.6) + (master_signal * 0.4)
+                    
+            else:
+                # FALLBACK: Use existing calculation methods when enhanced indicators are disabled
+                signals['zscore_signal'] = self._calculate_zscore_signals(indicators, current_weights)
+                signals['trend_signal'] = self._calculate_trend_signals(indicators, current_weights)
+                signals['breakout_signal'] = self._calculate_breakout_signals(indicators, current_weights)
+                signals['momentum_signal'] = self._calculate_momentum_signals(indicators, current_weights)
+                
+                signals['base_signal'] = (
+                    signals['zscore_signal'] * current_weights['mean_reversion_weight'] +
+                    signals['trend_signal'] * current_weights['trend_following_weight'] +
+                    signals['breakout_signal'] * current_weights['breakout_weight'] +
+                    signals['momentum_signal'] * current_weights['momentum_weight']
+                ) / 4.0
+
+            # Apply ETF enhancement
+            etf_enhancement = self._calculate_etf_enhancement(regime_info)
+            signals['enhanced_signal'] = signals['base_signal'] * etf_enhancement
             
-            signals['base_signal'] = (
-                signals['zscore_signal'] * current_weights['mean_reversion_weight'] +
-                signals['trend_signal'] * current_weights['trend_following_weight'] +
-                signals['breakout_signal'] * current_weights['breakout_weight'] +
-                signals['momentum_signal'] * current_weights['momentum_weight']
-            ) / 4.0
-
-        # Apply ETF enhancement
-        etf_enhancement = self._calculate_etf_enhancement(regime_info)
-        signals['enhanced_signal'] = signals['base_signal'] * etf_enhancement
-        
-        # Apply Markov transition enhancement
-        transition_enhancement = self._calculate_transition_enhancement(regime_info)
-        signals['final_signal'] = signals['enhanced_signal'] * transition_enhancement
-        
-        # Apply confidence adjustment to final signal if enhanced indicators are available
-        if self.use_enhanced_indicators and 'enhanced_signal_confidence' in indicators:
-            confidence_factor = indicators['enhanced_signal_confidence']
-            signals['final_signal'] = signals['final_signal'] * confidence_factor
-
-        # Apply orderbook intelligence enhancement to continuous signal
-        signals = self._enhance_signals_with_cpp_intelligence(signals, symbol)
-        
-        # FIXED: Use enhanced continuous signal if available, otherwise use final_signal
-        continuous_signal = signals.get('enhanced_final_signal', signals['final_signal'])
-        if 'enhanced_final_signal' in signals.columns:
-            continuous_signal = signals['enhanced_final_signal']
-        else:
-            continuous_signal = signals['final_signal']
-        # Generate discrete signals from the best continuous signal
-        signal_threshold = self.config.get('signal_threshold', 0.3)
-        signals['signal'] = 0  # Initialize discrete signals
-        signals.loc[continuous_signal > signal_threshold, 'signal'] = 1
-        signals.loc[continuous_signal < -signal_threshold, 'signal'] = -1
-        
-        # Signal strength for position sizing (based on continuous signal)
-        signals['signal_strength'] = abs(continuous_signal) if continuous_signal is not None else 0.5
-        
-        # Enhanced confidence calculation
-        signals['confidence'] = self._calculate_enhanced_signal_confidence(signals, indicators)
-
-        # Add metadata
-        signals['regime'] = regime_info.current_regime.value
-        signals['volatility'] = indicators.get('atr', 0.05)
-        signals['next_likely_regime'] = regime_info.next_most_likely.value
-        signals['transition_confidence'] = regime_info.transition_confidence
-        
-        # Add enhanced metadata if available
-        if 'enhanced_trend_score' in indicators:
-            signals['enhanced_trend_component'] = indicators['enhanced_trend_score']
-        if 'enhanced_momentum_score' in indicators:
-            signals['enhanced_momentum_component'] = indicators['enhanced_momentum_score']
-        if 'enhanced_volume_score' in indicators:
-            signals['enhanced_volume_component'] = indicators['enhanced_volume_score']
-
-        # Validate final signals
-        assert signals['signal'].isin([-1, 0, 1]).all(), "Signal column contains invalid values"
-        
-        # Persistence
-        self.signals_generated += 1
-        if self.signals_generated == 1 or self.signals_generated % self.save_frequency == 0:
-            await self._save_persistent_data(symbol)
-        
-        if regime_info and self.persistence_manager.should_save_regime_history(symbol, regime_info):
-            self.persistence_manager.save_regime_history_entry(symbol, regime_info)
+            # Apply Markov transition enhancement
+            transition_enhancement = self._calculate_transition_enhancement(regime_info)
+            signals['final_signal'] = signals['enhanced_signal'] * transition_enhancement
             
-        logger.info(f"Generated signal for {symbol}: {signals['signal'].iloc[-1]}")
-        logger.info(f"Signal strength: {signals['signal_strength'].iloc[-1]:.3f}")
-        logger.info(f"Regime: {regime_info.current_regime.value}")
-        
-        return signals
+            # Apply confidence adjustment to final signal if enhanced indicators are available
+            if self.use_enhanced_indicators and 'enhanced_signal_confidence' in indicators:
+                confidence_factor = indicators['enhanced_signal_confidence']
+                signals['final_signal'] = signals['final_signal'] * confidence_factor
+
+            # Apply orderbook intelligence enhancement to continuous signal
+            signals = self._enhance_signals_with_cpp_intelligence(signals, symbol)
+            
+            # FIXED: Use enhanced continuous signal if available, otherwise use final_signal
+            continuous_signal = signals.get('enhanced_final_signal', signals['final_signal'])
+            if 'enhanced_final_signal' in signals.columns:
+                continuous_signal = signals['enhanced_final_signal']
+            else:
+                continuous_signal = signals['final_signal']
+            # Generate discrete signals from the best continuous signal
+            signal_threshold = self.config.get('signal_threshold', 0.3)
+            signals['signal'] = 0  # Initialize discrete signals
+            signals.loc[continuous_signal > signal_threshold, 'signal'] = 1
+            signals.loc[continuous_signal < -signal_threshold, 'signal'] = -1
+            
+            # Signal strength for position sizing (based on continuous signal)
+            signals['signal_strength'] = abs(continuous_signal) if continuous_signal is not None else 0.5
+            
+            # Enhanced confidence calculation
+            signals['confidence'] = self._calculate_enhanced_signal_confidence(signals, indicators)
+
+            # Add metadata
+            signals['regime'] = regime_info.current_regime.value
+            signals['volatility'] = indicators.get('atr', 0.05)
+            signals['next_likely_regime'] = regime_info.next_most_likely.value
+            signals['transition_confidence'] = regime_info.transition_confidence
+            
+            # Add enhanced metadata if available
+            if 'enhanced_trend_score' in indicators:
+                signals['enhanced_trend_component'] = indicators['enhanced_trend_score']
+            if 'enhanced_momentum_score' in indicators:
+                signals['enhanced_momentum_component'] = indicators['enhanced_momentum_score']
+            if 'enhanced_volume_score' in indicators:
+                signals['enhanced_volume_component'] = indicators['enhanced_volume_score']
+
+            # Validate final signals
+            assert signals['signal'].isin([-1, 0, 1]).all(), "Signal column contains invalid values"
+            
+            # Persistence
+            self.signals_generated += 1
+            if self.signals_generated == 1 or self.signals_generated % self.save_frequency == 0:
+                await self._save_persistent_data(symbol)
+            
+            if regime_info and self.persistence_manager.should_save_regime_history(symbol, regime_info):
+                self.persistence_manager.save_regime_history_entry(symbol, regime_info)
+                
+            logger.info(f"Generated signal for {symbol}: {signals['signal'].iloc[-1]}")
+            logger.info(f"Signal strength: {signals['signal_strength'].iloc[-1]:.3f}")
+            logger.info(f"Regime: {regime_info.current_regime.value}")
+            
+            return signals
+
+        except Exception as e:
+            logger.error(f"SOS send help!!something is fucking wong for {symbol}: {e}")
 
     # Add method to get enhanced strategy info:
     def get_enhanced_strategy_info(self) -> Dict[str, Any]:
