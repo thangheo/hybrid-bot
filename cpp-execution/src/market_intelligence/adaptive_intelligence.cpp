@@ -176,8 +176,8 @@ std::vector<trading::PriceLevel> AdaptiveMarketIntelligence::ConvertPriceLevels(
     
     for (const auto& level : input) {
         trading::PriceLevel converted;
-        converted.set_price(level.getPrice());          // Hoặc level.price
-        converted.set_quantity(level.getQuantity());    // Hoặc level.quantity  
+        converted.set_price(level.price);          // Hoặc level.price
+        converted.set_quantity(level.quantity);    // Hoặc level.quantity  
         // converted.set_order_count(level.getOrderCount()); // Hoặc level.order_count
         result.push_back(converted);
     }
@@ -209,8 +209,8 @@ MarketIntelligence AdaptiveMarketIntelligence::GenerateAdaptiveMarketIntelligenc
     }
     
     // Basic calculations
-    double best_bid = bids[0].getPrice();
-    double best_ask = asks[0].getPrice();
+    double best_bid = bids[0].price;
+    double best_ask = asks[0].price;
     double spread = best_ask - best_bid;
     double mid_price = (best_bid + best_ask) / 2.0;
     double relative_spread = spread / mid_price;

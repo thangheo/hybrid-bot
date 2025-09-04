@@ -92,7 +92,13 @@
      performance_adjustment_factors_["accuracy_70_90"] = 0.9;     // Slightly decrease thresholds
      performance_adjustment_factors_["accuracy_above_90"] = 0.8;  // Decrease thresholds for high accuracy
  }
- 
+    ThresholdManager::ThresholdManager(const ThresholdManagerConfig& config){
+            //  double globalSensitivity = 1.0;        // Global sensitivity factor
+            //  double volatilityAdjustmentFactor = 0.5; // Factor for volatility adjustment
+        base_thresholds_.global_sensitivity = config.globalSensitivity;
+
+    }
+
  void ThresholdManager::updateMarketConditions(const MarketState& state) {
      std::lock_guard<std::mutex> lock(mutex_);
      

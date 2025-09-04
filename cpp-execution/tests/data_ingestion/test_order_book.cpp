@@ -75,10 +75,10 @@ void testOrderBookBasic() {
     assert(bids_result.size() == 3);
     assert(asks_result.size() == 3);
     
-    assert(bids_result[0].getPrice() == 10100.00);
-    assert(bids_result[0].getQuantity() == 1.5);
-    assert(asks_result[0].getPrice() == 10101.00);
-    assert(asks_result[0].getQuantity() == 1.2);
+    assert(bids_result[0].price == 10100.00);
+    assert(bids_result[0].quantity == 1.5);
+    assert(asks_result[0].price == 10101.00);
+    assert(asks_result[0].quantity == 1.2);
     
     std::cout << "Basic order book test passed" << std::endl;
 }
@@ -136,10 +136,10 @@ void testOrderBookUpdates() {
     PriceLevel best_bid = order_book.getBestBid();
     PriceLevel best_ask = order_book.getBestAsk();
     
-    assert(best_bid.getPrice() == 10101.00);
-    assert(best_bid.getQuantity() == 0.5);
-    assert(best_ask.getPrice() == 10100.50);
-    assert(best_ask.getQuantity() == 1.0);
+    assert(best_bid.price == 10101.00);
+    assert(best_bid.quantity == 0.5);
+    assert(best_ask.price == 10100.50);
+    assert(best_ask.quantity == 1.0);
     
     std::cout << "Order book updates test passed" << std::endl;
 }

@@ -40,9 +40,11 @@ public:
      * @brief Constructor
      */
     ImbalanceSignalGenerator();
-    ImbalanceSignalGenerator(const SignalGeneratorConfig& config);
-    // ImbalanceSignalGenerator(const ImbalanceSignalGeneratorConfig& config);
+    // explicit ImbalanceDetectionEngine(const ImbalanceDetectionConfig& config);
+    explicit ImbalanceSignalGenerator(const SignalGeneratorConfig& config);  // ✅ CORRECT CLASS NAME    
     
+    // Other existing methods...
+    bool initialize(const SignalGeneratorConfig& config);  // ✅ SEMICOLON ADDED
     /**
      * @brief Destructor
      */
@@ -53,7 +55,6 @@ public:
      * @param config Signal generator configuration
      * @return True if initialization successful, false otherwise
      */
-    bool initialize(const SignalGeneratorConfig& config);
     
     /**
      * @brief Process newly detected imbalances
@@ -138,7 +139,6 @@ public:
 private:
     // Configuration
     SignalGeneratorConfig config_;
-    
     // State
     std::vector<ImbalanceEvent> pendingImbalances_;
     std::vector<TradingSignal> generatedSignals_;

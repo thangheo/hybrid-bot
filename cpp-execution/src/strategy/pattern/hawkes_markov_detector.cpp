@@ -181,11 +181,11 @@ double HawkesMarkovDetector::getDecayFactor(double dt, const std::string& decayT
      double askVolume = 0.0;
      
      for (const auto& level : bids) {
-         bidVolume += level.getQuantity();
+         bidVolume += level.quantity;
      }
      
      for (const auto& level : asks) {
-         askVolume += level.getQuantity();
+         askVolume += level.quantity;
      }
      
      int imbalance;

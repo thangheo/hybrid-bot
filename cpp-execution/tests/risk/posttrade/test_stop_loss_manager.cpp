@@ -268,7 +268,7 @@ TEST_F(StopLossManagerTest, AutoLiquidateOnTrigger) {
             EXPECT_EQ(order.exchangeId, "binance");
             EXPECT_EQ(order.tradingPair, "BTC/USDT");
             EXPECT_EQ(order.side, "SELL");  // Selling long position
-            EXPECT_DOUBLE_EQ(order.quantity, 1.0);
+            EXPECT_DOUBLE_EQ(order.getQuantity(), 1.0);
             EXPECT_EQ(order.orderType, "MARKET");
             return true;
         });

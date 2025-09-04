@@ -23,7 +23,7 @@ namespace data_ingestion {
 double OrderBookDelta::getTotalAddedBidVolume() const {
     double total = 0.0;
     for (const auto& level : added_bids) {
-        total += level.getQuantity();
+        total += level.quantity;
     }
     return total;
 }
@@ -31,7 +31,7 @@ double OrderBookDelta::getTotalAddedBidVolume() const {
 double OrderBookDelta::getTotalRemovedBidVolume() const {
     double total = 0.0;
     for (const auto& level : removed_bids) {
-        total += level.getQuantity();
+        total += level.quantity;
     }
     return total;
 }
@@ -39,7 +39,7 @@ double OrderBookDelta::getTotalRemovedBidVolume() const {
 double OrderBookDelta::getTotalAddedAskVolume() const {
     double total = 0.0;
     for (const auto& level : added_asks) {
-        total += level.getQuantity();
+        total += level.quantity;
     }
     return total;
 }
@@ -47,7 +47,7 @@ double OrderBookDelta::getTotalAddedAskVolume() const {
 double OrderBookDelta::getTotalRemovedAskVolume() const {
     double total = 0.0;
     for (const auto& level : removed_asks) {
-        total += level.getQuantity();
+        total += level.quantity;
     }
     return total;
 }
@@ -138,7 +138,7 @@ bool OrderBook::applySnapshot(const std::vector<PriceLevel>& bids,
 }
 // bool OrderBook::removeBid(const PriceLevel& level){
 //     std::lock_guard<std::mutex> lock(mutex_);
-//     auto it = bids_.find(level.getPrice());
+//     auto it = bids_.find(level.price);
 //     if (it != bids_.end()) {
 //         bids_.erase(it);
 //         return true;
@@ -147,16 +147,16 @@ bool OrderBook::applySnapshot(const std::vector<PriceLevel>& bids,
 // }
  
 // bool OrderBook::updateBid(const PriceLevel& level) {
-//     if (level.getQuantity() <= 0.0) {
-//         bids_.erase(level.getPrice());
+//     if (level.quantity <= 0.0) {
+//         bids_.erase(level.price);
 //     } else {
-//         bids_[level.getPrice()] = level;  // Creates if not exists
+//         bids_[level.price] = level;  // Creates if not exists
 //     }
 //     return true;
 // }
 // bool OrderBook::removeAsk(const PriceLevel& level) {
 //     std::lock_guard<std::mutex> lock(mutex_);
-//     auto it = asks_.find(level.getPrice());
+//     auto it = asks_.find(level.price);
 //     if (it != asks_.end()) {
 //         asks_.erase(it);
 //         return true;
@@ -167,7 +167,7 @@ bool OrderBook::applySnapshot(const std::vector<PriceLevel>& bids,
 // // Update an ask level
 // bool OrderBook::updateAsk(const PriceLevel& level) {
 //     std::lock_guard<std::mutex> lock(mutex_);
-//     auto it = asks_.find(level.getPrice());
+//     auto it = asks_.find(level.price);
 //     if (it != asks_.end()) {
 //         it->second = level;
 //         return true;
@@ -238,8 +238,8 @@ bool OrderBook::applyUpdate(const std::vector<PriceLevel>& bids,
 }
 
 void OrderBook::trackBidDelta(const PriceLevel& level, OrderBookDelta& delta) {
-    double price = level.getPrice();
-    double quantity = level.getQuantity();
+    double price = level.price;
+    double quantity = level.quantity;
     
     auto it = bids_.find(price);
     
@@ -262,8 +262,8 @@ void OrderBook::trackBidDelta(const PriceLevel& level, OrderBookDelta& delta) {
 }
 
 void OrderBook::trackAskDelta(const PriceLevel& level, OrderBookDelta& delta) {
-    double price = level.getPrice();
-    double quantity = level.getQuantity();
+    double price = level.price;
+    double quantity = level.quantity;
     
     auto it = asks_.find(price);
     
@@ -286,9 +286,9 @@ void OrderBook::trackAskDelta(const PriceLevel& level, OrderBookDelta& delta) {
 }
 
 void OrderBook::updateBidLevel(const PriceLevel& level) {
-    double price = level.getPrice();
+    double price = level.price;
     
-    if (level.getQuantity() <= 0.0) {
+    if (level.quantity <= 0.0) {
         // Remove the level if quantity is zero or negative
         bids_.erase(price);
     } else {
@@ -301,9 +301,9 @@ void OrderBook::updateBidLevel(const PriceLevel& level) {
 }
 
 void OrderBook::updateAskLevel(const PriceLevel& level) {
-    double price = level.getPrice();
+    double price = level.price;
     
-    if (level.getQuantity() <= 0.0) {
+    if (level.quantity <= 0.0) {
         // Remove the level if quantity is zero or negative
         asks_.erase(price);
     } else {
@@ -541,7 +541,7 @@ double OrderBook::getBidVolume(int depth) const {
     
     for (auto it = bids_.begin(); it != bids_.end() && (depth == 0 || count < depth); ++it, ++count) {
         const auto& level = it->second;
-        volume += level.getQuantity();
+        volume += level.quantity;
     }
     
     return volume;
@@ -555,7 +555,7 @@ double OrderBook::getAskVolume(int depth) const {
     
     for (auto it = asks_.begin(); it != asks_.end() && (depth == 0 || count < depth); ++it, ++count) {
         const auto& level = it->second;
-        volume += level.getQuantity();
+        volume += level.quantity;
     }
     
     return volume;
@@ -588,10 +588,10 @@ std::string OrderBook::calculateChecksum() const {
         const auto& level = it->second;
         
         // Convert price to 8 decimal places and remove decimal point
-        uint64_t price_int = static_cast<uint64_t>(level.getPrice() * 100000000);
+        uint64_t price_int = static_cast<uint64_t>(level.price * 100000000);
         
         // Convert quantity to 8 decimal places and remove decimal point
-        uint64_t qty_int = static_cast<uint64_t>(level.getQuantity() * 100000000);
+        uint64_t qty_int = static_cast<uint64_t>(level.quantity * 100000000);
         
         // Add to checksum
         ss << "B:" << price_int << ":" << qty_int << "|";
@@ -602,10 +602,10 @@ std::string OrderBook::calculateChecksum() const {
         const auto& level = it->second;
         
         // Convert price to 8 decimal places and remove decimal point
-        uint64_t price_int = static_cast<uint64_t>(level.getPrice() * 100000000);
+        uint64_t price_int = static_cast<uint64_t>(level.price * 100000000);
         
         // Convert quantity to 8 decimal places and remove decimal point
-        uint64_t qty_int = static_cast<uint64_t>(level.getQuantity() * 100000000);
+        uint64_t qty_int = static_cast<uint64_t>(level.quantity * 100000000);
         
         // Add to checksum
         ss << "A:" << price_int << ":" << qty_int << "|";

@@ -121,7 +121,7 @@ bool PriceRangeFilter::filter(OrderBookUpdate& update) {
     
     // Check if any price is outside reasonable range
     for (const auto& level : update.bids) {
-        double price = level.getPrice();
+        double price = level.price;
         if (price <= 0 || price > reasonable_range) {
             std::cerr << "Price range filter failed for bid: " << price 
                       << " (max: " << reasonable_range << ")" << std::endl;
@@ -130,7 +130,7 @@ bool PriceRangeFilter::filter(OrderBookUpdate& update) {
     }
     
     for (const auto& level : update.asks) {
-        double price = level.getPrice();
+        double price = level.price;
         if (price <= 0 || price > reasonable_range) {
             std::cerr << "Price range filter failed for ask: " << price 
                       << " (max: " << reasonable_range << ")" << std::endl;

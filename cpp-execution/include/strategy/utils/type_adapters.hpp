@@ -25,8 +25,8 @@
   */
  inline core::PriceLevel convertPriceLevel(const data_ingestion::PriceLevel& level) {
      core::PriceLevel result;
-     result.price = level.getPrice();
-     result.quantity = level.getQuantity();
+     result.price = level.price;
+     result.quantity = level.quantity;
      // Copy other fields as needed
      return result;
  }

@@ -283,18 +283,18 @@ void LiquidityFlowMonitor::reset() {
      std::map<double, double> curr_bid_quantities;
      
      for (const auto& level : prev_bids) {
-         prev_bid_prices.insert(level.getPrice());
-         prev_bid_quantities[level.getPrice()] = level.getQuantity();
+         prev_bid_prices.insert(level.price);
+         prev_bid_quantities[level.price] = level.quantity;
      }
      
      for (const auto& level : curr_bids) {
-        curr_bid_prices.insert(level.getPrice());
-        curr_bid_quantities[level.getPrice()] = level.getQuantity();
+        curr_bid_prices.insert(level.price);
+        curr_bid_quantities[level.price] = level.quantity;
     }
     
     // Find added bids (in current but not in previous)
     for (const auto& level : curr_bids) {
-        double price = level.getPrice();
+        double price = level.price;
         if (prev_bid_prices.find(price) == prev_bid_prices.end()) {
             // This is a new price level
             delta.added_bids.push_back(level);
@@ -314,7 +314,7 @@ void LiquidityFlowMonitor::reset() {
     
     // Find removed bids (in previous but not in current)
     for (const auto& level : prev_bids) {
-        double price = level.getPrice();
+        double price = level.price;
         if (curr_bid_prices.find(price) == curr_bid_prices.end()) {
             // This price level was removed
             delta.removed_bids.push_back(level);
@@ -328,18 +328,18 @@ void LiquidityFlowMonitor::reset() {
     std::map<double, double> curr_ask_quantities;
     
     for (const auto& level : prev_asks) {
-        prev_ask_prices.insert(level.getPrice());
-        prev_ask_quantities[level.getPrice()] = level.getQuantity();
+        prev_ask_prices.insert(level.price);
+        prev_ask_quantities[level.price] = level.quantity;
     }
     
     for (const auto& level : curr_asks) {
-        curr_ask_prices.insert(level.getPrice());
-        curr_ask_quantities[level.getPrice()] = level.getQuantity();
+        curr_ask_prices.insert(level.price);
+        curr_ask_quantities[level.price] = level.quantity;
     }
     
     // Find added asks (in current but not in previous)
     for (const auto& level : curr_asks) {
-        double price = level.getPrice();
+        double price = level.price;
         if (prev_ask_prices.find(price) == prev_ask_prices.end()) {
             // This is a new price level
             delta.added_asks.push_back(level);
@@ -359,7 +359,7 @@ void LiquidityFlowMonitor::reset() {
     
     // Find removed asks (in previous but not in current)
     for (const auto& level : prev_asks) {
-        double price = level.getPrice();
+        double price = level.price;
         if (curr_ask_prices.find(price) == curr_ask_prices.end()) {
             // This price level was removed
             delta.removed_asks.push_back(level);
@@ -392,7 +392,7 @@ std::vector<PriceLevel> LiquidityFlowMonitor::identifyLargeOrders(
     
     // Identify orders significantly larger than typical
     for (const auto& level : levels) {
-        if (level.getQuantity() > typical_order_size_ * large_order_threshold_) {
+        if (level.quantity > typical_order_size_ * large_order_threshold_) {
             large_orders.push_back(level);
         }
     }
@@ -443,9 +443,9 @@ std::vector<LiquidityEvent> LiquidityFlowMonitor::detectRapidLiquidityChanges(
         double max_add_price = 0.0;
         
         for (const auto& level : latest_delta.added_bids) {
-            if (level.getQuantity() > max_add_volume) {
-                max_add_volume = level.getQuantity();
-                max_add_price = level.getPrice();
+            if (level.quantity > max_add_volume) {
+                max_add_volume = level.quantity;
+                max_add_price = level.price;
             }
         }
         
@@ -470,9 +470,9 @@ std::vector<LiquidityEvent> LiquidityFlowMonitor::detectRapidLiquidityChanges(
         double max_add_price = 0.0;
         
         for (const auto& level : latest_delta.added_asks) {
-            if (level.getQuantity() > max_add_volume) {
-                max_add_volume = level.getQuantity();
-                max_add_price = level.getPrice();
+            if (level.quantity > max_add_volume) {
+                max_add_volume = level.quantity;
+                max_add_price = level.price;
             }
         }
         
@@ -497,9 +497,9 @@ std::vector<LiquidityEvent> LiquidityFlowMonitor::detectRapidLiquidityChanges(
         double max_remove_price = 0.0;
         
         for (const auto& level : latest_delta.removed_bids) {
-            if (level.getQuantity() > max_remove_volume) {
-                max_remove_volume = level.getQuantity();
-                max_remove_price = level.getPrice();
+            if (level.quantity > max_remove_volume) {
+                max_remove_volume = level.quantity;
+                max_remove_price = level.price;
             }
         }
         
@@ -524,9 +524,9 @@ std::vector<LiquidityEvent> LiquidityFlowMonitor::detectRapidLiquidityChanges(
         double max_remove_price = 0.0;
         
         for (const auto& level : latest_delta.removed_asks) {
-            if (level.getQuantity() > max_remove_volume) {
-                max_remove_volume = level.getQuantity();
-                max_remove_price = level.getPrice();
+            if (level.quantity > max_remove_volume) {
+                max_remove_volume = level.quantity;
+                max_remove_price = level.price;
             }
         }
         
@@ -759,17 +759,17 @@ void LiquidityFlowMonitor::updateLiquidityMetrics() {
     for (const auto& delta : recent_deltas) {
         // Check for large orders in added bids
         for (const auto& level : delta.added_bids) {
-            total_volume += level.getQuantity();
-            if (level.getQuantity() > typical_order_size_ * large_order_threshold_) {
-                large_order_volume += level.getQuantity();
+            total_volume += level.quantity;
+            if (level.quantity > typical_order_size_ * large_order_threshold_) {
+                large_order_volume += level.quantity;
             }
         }
         
         // Check for large orders in added asks
         for (const auto& level : delta.added_asks) {
-            total_volume += level.getQuantity();
-            if (level.getQuantity() > typical_order_size_ * large_order_threshold_) {
-                large_order_volume += level.getQuantity();
+            total_volume += level.quantity;
+            if (level.quantity > typical_order_size_ * large_order_threshold_) {
+                large_order_volume += level.quantity;
             }
         }
     }
@@ -794,11 +794,11 @@ double LiquidityFlowMonitor::calculateTypicalOrderSize() const {
     // Collect order sizes from recent deltas
     for (const auto& delta : delta_history_) {
         for (const auto& level : delta.added_bids) {
-            order_sizes.push_back(level.getQuantity());
+            order_sizes.push_back(level.quantity);
         }
         
         for (const auto& level : delta.added_asks) {
-            order_sizes.push_back(level.getQuantity());
+            order_sizes.push_back(level.quantity);
         }
     }
     

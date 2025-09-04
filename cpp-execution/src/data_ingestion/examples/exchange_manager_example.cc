@@ -36,12 +36,12 @@ void onOrderBookUpdate(const OrderBookUpdate& update) {
     
     // Print the top of the book (best bid/ask)
     if (!update.bids.empty() && !update.asks.empty()) {
-        std::cout << "Best Bid: " << update.bids[0].getPrice() << " (" << update.bids[0].getQuantity() << ")" << std::endl;
-        std::cout << "Best Ask: " << update.asks[0].getPrice() << " (" << update.asks[0].getQuantity() << ")" << std::endl;
+        std::cout << "Best Bid: " << update.bids[0].price << " (" << update.bids[0].quantity << ")" << std::endl;
+        std::cout << "Best Ask: " << update.asks[0].price << " (" << update.asks[0].quantity << ")" << std::endl;
         
         // Calculate spread
-        double bid_price = update.bids[0].getPrice();
-        double ask_price = update.asks[0].getPrice();
+        double bid_price = update.bids[0].price;
+        double ask_price = update.asks[0].price;
         double spread = ask_price - bid_price;
         double spread_pct = (spread / ask_price) * 100;
         

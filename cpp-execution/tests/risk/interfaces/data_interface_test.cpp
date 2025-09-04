@@ -391,8 +391,8 @@
          order.tradingPair = "BTC/USDT";
          order.side = risk::OrderSide::BUY;
          order.type = "LIMIT";
-         order.quantity = 1.0;
-         order.price = 50000.0;
+         order.getQuantity() = 1.0;
+         order.getPrice() = 50000.0;
          order.timeInForce = "GTC";
          order.strategyId = "strategy1";
          order.signalId = "signal123";

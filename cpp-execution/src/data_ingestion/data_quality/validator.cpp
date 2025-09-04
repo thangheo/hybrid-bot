@@ -37,8 +37,8 @@ bool DataValidator::validate(const OrderBookUpdate& update, ValidationContext& c
 bool DataValidator::validateBidAskOrder(const OrderBookUpdate& update, std::string& error) {
     // Ensure bids are sorted in descending order
     for (size_t i = 1; i < update.bids.size(); ++i) {
-        double prev_price = update.bids[i-1].getPrice();
-        double curr_price = update.bids[i].getPrice();
+        double prev_price = update.bids[i-1].price;
+        double curr_price = update.bids[i].price;
         
         if (curr_price > prev_price) {
             error = "Bids are not properly sorted (descending order)";
@@ -48,8 +48,8 @@ bool DataValidator::validateBidAskOrder(const OrderBookUpdate& update, std::stri
     
     // Ensure asks are sorted in ascending order
     for (size_t i = 1; i < update.asks.size(); ++i) {
-        double prev_price = update.asks[i-1].getPrice();
-        double curr_price = update.asks[i].getPrice();
+        double prev_price = update.asks[i-1].price;
+        double curr_price = update.asks[i].price;
         
         if (curr_price < prev_price) {
             error = "Asks are not properly sorted (ascending order)";
@@ -63,7 +63,7 @@ bool DataValidator::validateBidAskOrder(const OrderBookUpdate& update, std::stri
 bool DataValidator::validateNonNegativePrices(const OrderBookUpdate& update, std::string& error) {
     // Check bid prices
     for (const auto& level : update.bids) {
-        double price = level.getPrice();
+        double price = level.price;
         if (price <= 0.0) {
             error = "Found non-positive bid price: " + std::to_string(price);
             return false;
@@ -72,7 +72,7 @@ bool DataValidator::validateNonNegativePrices(const OrderBookUpdate& update, std
     
     // Check ask prices
     for (const auto& level : update.asks) {
-        double price = level.getPrice();
+        double price = level.price;
         if (price <= 0.0) {
             error = "Found non-positive ask price: " + std::to_string(price);
             return false;
@@ -85,7 +85,7 @@ bool DataValidator::validateNonNegativePrices(const OrderBookUpdate& update, std
 bool DataValidator::validateQuantities(const OrderBookUpdate& update, std::string& error) {
     // Check bid quantities
     for (const auto& level : update.bids) {
-        double quantity = level.getQuantity();
+        double quantity = level.quantity;
         if (quantity <= 0.0) {
             error = "Found non-positive bid quantity: " + std::to_string(quantity);
             return false;
@@ -94,7 +94,7 @@ bool DataValidator::validateQuantities(const OrderBookUpdate& update, std::strin
     
     // Check ask quantities
     for (const auto& level : update.asks) {
-        double quantity = level.getQuantity();
+        double quantity = level.quantity;
         if (quantity <= 0.0) {
             error = "Found non-positive ask quantity: " + std::to_string(quantity);
             return false;
@@ -110,8 +110,8 @@ bool DataValidator::validateBidAskSpread(const OrderBookUpdate& update, std::str
         return true;
     }
     
-    double best_bid = update.bids[0].getPrice();
-    double best_ask = update.asks[0].getPrice();
+    double best_bid = update.bids[0].price;
+    double best_ask = update.asks[0].price;
     
     if (best_bid >= best_ask) {
         error = "Invalid spread: best bid (" + std::to_string(best_bid) + 

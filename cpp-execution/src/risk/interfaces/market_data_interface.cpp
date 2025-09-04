@@ -490,11 +490,11 @@ core::MarketData MarketDataInterface::convertOrderBookToMarketData(
     
     // Get best bid and ask
     if (!orderBook.bids.empty()) {
-        marketData.bid = orderBook.bids[0].getPrice();
+        marketData.bid = orderBook.bids[0].price;
     }
     
     if (!orderBook.asks.empty()) {
-        marketData.ask = orderBook.asks[0].getPrice();
+        marketData.ask = orderBook.asks[0].price;
     }
     
     // Calculate mid price
@@ -507,11 +507,11 @@ core::MarketData MarketDataInterface::convertOrderBookToMarketData(
     double askVolume = 0.0;
     
     for (int i = 0; i < std::min(5, static_cast<int>(orderBook.bids.size())); ++i) {
-        bidVolume += orderBook.bids[i].getQuantity();
+        bidVolume += orderBook.bids[i].quantity;
     }
     
     for (int i = 0; i < std::min(5, static_cast<int>(orderBook.asks.size())); ++i) {
-        askVolume += orderBook.asks[i].getQuantity();
+        askVolume += orderBook.asks[i].quantity;
     }
     
     marketData.volume = bidVolume + askVolume;

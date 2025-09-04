@@ -122,7 +122,7 @@ async def main():
         logger.info(f"Recent orders: {len(history)}")
         
         for order in history[:3]:  # Show last 3 orders
-            logger.info(f"  {order.symbol} {order.side.value} {order.quantity} - {order.status.value}")
+            logger.info(f"  {order.symbol} {order.side.value} {order.getQuantity()} - {order.status.value}")
         
         # Test 6: Start order monitoring (run for a short time)
         logger.info("\n=== Test 6: Order Monitoring ===")

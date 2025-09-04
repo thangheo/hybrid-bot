@@ -10,7 +10,7 @@
 
  #pragma once
 
- #include "types.hpp"
+#include "../types.hpp"
 #include "core/types.hpp"
  #include <string>
  #include <core/market_types.hpp>
@@ -21,6 +21,8 @@
   * Configuration for OrderBookAnalyzer
   */
  struct OrderBookAnalyzerConfig {
+    core::ExchangeId exchangeId; 
+    std::string tradingPair;
      int depth = 10;                        // Default depth to analyze
      int historySize = 1000;                // Size of history to maintain
      double priceWeightFactor = 0.5;        // Weight factor for price-weighted metrics

@@ -396,11 +396,11 @@ std::pair<double, double> OrderBookManager::getBestPricesAcrossExchanges(const c
             auto bid = orderBook->getBestBid();
             auto ask = orderBook->getBestAsk();
             
-            if (bid.getPrice() > bestBid) {
-                bestBid = bid.getPrice();
+            if (bid.price > bestBid) {
+                bestBid = bid.price;
             }
-            if (ask.getPrice() < bestAsk) {
-                bestAsk = ask.getPrice();
+            if (ask.price < bestAsk) {
+                bestAsk = ask.price;
             }
             foundAny = true;
         }
@@ -486,14 +486,14 @@ bool OrderBookManager::validateUpdate(const OrderBookUpdate& update) const {
     
     // Validate price levels
     for (const auto& bid : update.bids) {
-        if (bid.getPrice() <= 0.0 || bid.getQuantity() < 0.0) {
+        if (bid.price <= 0.0 || bid.quantity < 0.0) {
             logError("Invalid bid price level in update for " + update.symbol.toString());
             return false;
         }
     }
     
     for (const auto& ask : update.asks) {
-        if (ask.getPrice() <= 0.0 || ask.getQuantity() < 0.0) {
+        if (ask.price <= 0.0 || ask.quantity < 0.0) {
             logError("Invalid ask price level in update for " + update.symbol.toString());
             return false;
         }
@@ -537,8 +537,8 @@ bool OrderBookManager::validateSpread(const OrderBook& book) {
     auto bestBid = book.getBestBid();
     auto bestAsk = book.getBestAsk();
     
-    if (bestBid.getPrice() > 0.0 && bestAsk.getPrice() > 0.0) {
-        if (bestBid.getPrice() >= bestAsk.getPrice()) {
+    if (bestBid.price > 0.0 && bestAsk.price > 0.0) {
+        if (bestBid.price >= bestAsk.price) {
             // This should trigger a full resync, not just validation failure
             std::cerr << "CRITICAL: Bid-ask spread inversion detected. Triggering resync." << std::endl;
             return false;

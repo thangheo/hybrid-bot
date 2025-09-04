@@ -30,8 +30,40 @@
      historical_volumes_.reserve(100);
      historical_imbalances_.reserve(100);
  }
- 
- OrderBookAnalyzer::OrderBookAnalyzer(const core::ExchangeId& exchangeId, const std::string& tradingPair,
+ // Add this to order_book_analyzer.cpp
+
+// Add this constructor implementation to order_book_analyzer.cpp
+OrderBookAnalyzer::OrderBookAnalyzer(const OrderBookAnalyzerConfig& config)
+    : exchangeId_(config.exchangeId), // Will need to be set later or add to config
+      trading_pair_(config.tradingPair), // Will need to be set later or add to config
+      depth_levels_(config.depth),
+      price_grouping_factor_(0.0001), // Default value, or add to config
+      min_samples_for_stability_(5), // Default value, or add to config
+      ema_alpha_(0.2), // Default value, or add to config
+      last_update_time_(std::chrono::system_clock::now()) {
+    
+    // Initialize historical data containers with configured capacity
+    historical_mid_prices_.reserve(config.historySize);
+    historical_spreads_.reserve(config.historySize);
+    historical_volumes_.reserve(config.historySize);
+    historical_imbalances_.reserve(config.historySize);
+    
+    // Store config values that might be used in calculations
+    // You can add these as member variables if needed
+    // For now, they could be stored in params_
+    params_.setParameter("priceWeightFactor", config.priceWeightFactor);
+    params_.setParameter("volumeWeightFactor", config.volumeWeightFactor);
+    params_.setParameter("imbalanceThreshold", config.imbalanceThreshold);
+    params_.setParameter("liquidityPressureThreshold", config.liquidityPressureThreshold);
+    params_.setParameter("orderFlowThreshold", config.orderFlowThreshold);
+    params_.setParameter("historySize", config.historySize);
+    
+    // Initialize current metrics
+    current_metrics_.exchangeId = exchangeId_;
+    current_metrics_.symbol = core::Symbol::fromString(trading_pair_);
+}
+
+OrderBookAnalyzer::OrderBookAnalyzer(const core::ExchangeId& exchangeId, const std::string& tradingPair,
                                     int depth_levels, double price_grouping_factor)
      : exchangeId_(exchangeId),
        trading_pair_(tradingPair),
@@ -184,8 +216,8 @@
      }
      
      // Best bid and ask are the first elements (assuming sorted)
-     double best_bid = bids[0].getPrice();
-     double best_ask = asks[0].getPrice();
+     double best_bid = bids[0].price;
+     double best_ask = asks[0].price;
      
      // Calculate mid price
      current_metrics_.mid_price = (best_bid + best_ask) / 2.0;
@@ -234,7 +266,7 @@
      
      // Process bid levels
      for (size_t i = 0; i < bids.size() && i < static_cast<size_t>(depth); ++i) {
-         double level_volume = bids[i].getQuantity();
+         double level_volume = bids[i].quantity;
          current_metrics_.bid_volumes_by_level[i] = level_volume;
          current_metrics_.total_bid_volume += level_volume;
          
@@ -249,7 +281,7 @@
      
      // Process ask levels
      for (size_t i = 0; i < asks.size() && i < static_cast<size_t>(depth); ++i) {
-         double level_volume = asks[i].getQuantity();
+         double level_volume = asks[i].quantity;
          current_metrics_.ask_volumes_by_level[i] = level_volume;
          current_metrics_.total_ask_volume += level_volume;
          
@@ -278,14 +310,14 @@
      
      // Calculate price level densities
      if (!bids.empty() && bids.size() > 1) {
-         double price_range = bids.front().getPrice() - bids.back().getPrice();
+         double price_range = bids.front().price - bids.back().price;
          if (price_range > 0) {
              current_metrics_.bid_density = static_cast<double>(bids.size()) / price_range;
          }
      }
      
      if (!asks.empty() && asks.size() > 1) {
-         double price_range = asks.back().getPrice() - asks.front().getPrice();
+         double price_range = asks.back().price - asks.front().price;
          if (price_range > 0) {
              current_metrics_.ask_density = static_cast<double>(asks.size()) / price_range;
          }
@@ -320,16 +352,16 @@
      
      if (!bids.empty() && !asks.empty()) {
          // Use price of the best bid/ask as reference
-         double ref_price = (bids[0].getPrice() + asks[0].getPrice()) / 2.0;
+         double ref_price = (bids[0].price + asks[0].price) / 2.0;
          
          for (size_t i = 0; i < bids.size() && i < 5; ++i) {
-             double price_distance = (ref_price - bids[i].getPrice()) / ref_price;
-             bid_depth_score += bids[i].getQuantity() / (1.0 + 10.0 * price_distance);
+             double price_distance = (ref_price - bids[i].price) / ref_price;
+             bid_depth_score += bids[i].quantity / (1.0 + 10.0 * price_distance);
          }
          
          for (size_t i = 0; i < asks.size() && i < 5; ++i) {
-             double price_distance = (asks[i].getPrice() - ref_price) / ref_price;
-             ask_depth_score += asks[i].getQuantity() / (1.0 + 10.0 * price_distance);
+             double price_distance = (asks[i].price - ref_price) / ref_price;
+             ask_depth_score += asks[i].quantity / (1.0 + 10.0 * price_distance);
          }
          
          if (bid_depth_score + ask_depth_score > 0) {
@@ -439,7 +471,7 @@
      
      for (const auto& level : levels) {
          // Round price to the nearest group
-         double price = level.getPrice();
+         double price = level.price;
          double group_price;
          
          if (is_bids) {
@@ -451,7 +483,7 @@
          }
          
          // Accumulate quantities at the same price level
-         price_groups[group_price] += level.getQuantity();
+         price_groups[group_price] += level.quantity;
      }
      
      // Convert the map back to a vector
@@ -464,13 +496,13 @@
          // Bids in descending order by price
          std::sort(grouped_levels.begin(), grouped_levels.end(), 
              [](const data_ingestion::PriceLevel& a, const data_ingestion::PriceLevel& b) {
-                 return a.getPrice() > b.getPrice();
+                 return a.price > b.price;
              });
      } else {
          // Asks in ascending order by price
          std::sort(grouped_levels.begin(), grouped_levels.end(), 
              [](const data_ingestion::PriceLevel& a, const data_ingestion::PriceLevel& b) {
-                 return a.getPrice() < b.getPrice();
+                 return a.price < b.price;
              });
      }
      
@@ -488,13 +520,13 @@
      // Process bid levels with weights
      for (size_t i = 0; i < bids.size(); ++i) {
          double weight = weighting_function(static_cast<int>(i));
-         weighted_bid_volume += bids[i].getQuantity() * weight;
+         weighted_bid_volume += bids[i].quantity * weight;
      }
      
      // Process ask levels with weights
      for (size_t i = 0; i < asks.size(); ++i) {
          double weight = weighting_function(static_cast<int>(i));
-         weighted_ask_volume += asks[i].getQuantity() * weight;
+         weighted_ask_volume += asks[i].quantity * weight;
      }
      
      // Calculate weighted imbalance
@@ -519,13 +551,13 @@
      // Calculate average volume
      double avg_volume = 0.0;
      for (const auto& level : levels) {
-         avg_volume += level.getQuantity();
+         avg_volume += level.quantity;
      }
      avg_volume /= levels.size();
      
      // Detect levels with volume above threshold * average
      for (size_t i = 0; i < levels.size(); ++i) {
-         if (levels[i].getQuantity() > threshold * avg_volume) {
+         if (levels[i].quantity > threshold * avg_volume) {
              wall_indices.push_back(static_cast<int>(i));
          }
      }

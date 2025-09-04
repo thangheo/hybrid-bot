@@ -25,18 +25,21 @@
  ImbalanceSignalGenerator::ImbalanceSignalGenerator()
      : signalCount_(0), nextCallbackId_(0) {
  }
- 
- // Initialize the signal generator with configuration
- bool ImbalanceSignalGenerator::initialize(const SignalGeneratorConfig& config) {
-     std::lock_guard<std::mutex> lock(mutex_);
-     config_ = config;
-     
-     // Clear any existing state
-     clear();
-     
-     return true;
- }
- 
+// Constr
+// Constructor with configuration
+ImbalanceSignalGenerator::ImbalanceSignalGenerator(const SignalGeneratorConfig& config) {  // ✅ CORRECT CLASS AND CONFIG
+    initialize(config);
+}
+
+// Initialize method
+bool ImbalanceSignalGenerator::initialize(const SignalGeneratorConfig& config) {  // ✅ CORRECT CONFIG TYPE
+    config_ = config;
+    // Clear any existing state
+    // Initialize internal components based on config
+    return true;
+}
+
+
  // Process newly detected imbalances
  int ImbalanceSignalGenerator::processImbalances(const std::vector<ImbalanceEvent>& imbalances) {
      std::lock_guard<std::mutex> lock(mutex_);

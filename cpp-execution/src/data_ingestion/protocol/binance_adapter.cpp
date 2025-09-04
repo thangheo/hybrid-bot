@@ -104,7 +104,7 @@ OrderBookUpdate BinanceAdapter::normalize(const MarketDataUpdate& update) {
                     if (bidArray.is_array() && bidArray.size() >= 2) {
                         try {
                             PriceLevel level = parsePriceLevel(bidArray);
-                            if (level.getQuantity() > 0.0) { // Only add non-zero quantities
+                            if (level.quantity > 0.0) { // Only add non-zero quantities
                                 normalized.bids.push_back(level);
                             }
                         } catch (...) {
@@ -121,7 +121,7 @@ OrderBookUpdate BinanceAdapter::normalize(const MarketDataUpdate& update) {
                     if (askArray.is_array() && askArray.size() >= 2) {
                         try {
                             PriceLevel level = parsePriceLevel(askArray);
-                            if (level.getQuantity() > 0.0) { // Only add non-zero quantities
+                            if (level.quantity > 0.0) { // Only add non-zero quantities
                                 normalized.asks.push_back(level);
                             }
                         } catch (...) {
@@ -208,7 +208,7 @@ OrderBookUpdate BinanceAdapter::convertDepthUpdate(const std::string& jsonData) 
         for (const auto& bidArray : jsonObj["b"]) {
             try {
                 PriceLevel level = parsePriceLevel(bidArray);
-                if (level.getQuantity() > 0.0) {
+                if (level.quantity > 0.0) {
                     update.bids.push_back(level);
                 }
             } catch (...) {
@@ -222,7 +222,7 @@ OrderBookUpdate BinanceAdapter::convertDepthUpdate(const std::string& jsonData) 
         for (const auto& askArray : jsonObj["a"]) {
             try {
                 PriceLevel level = parsePriceLevel(askArray);
-                if (level.getQuantity() > 0.0) {
+                if (level.quantity > 0.0) {
                     update.asks.push_back(level);
                 }
             } catch (...) {
@@ -263,7 +263,7 @@ OrderBookUpdate BinanceAdapter::convertDepthSnapshot(const std::string& jsonData
         for (const auto& bidArray : jsonObj["bids"]) {
             try {
                 PriceLevel level = parsePriceLevel(bidArray);
-                if (level.getQuantity() > 0.0) {
+                if (level.quantity > 0.0) {
                     update.bids.push_back(level);
                 }
             } catch (...) {
@@ -277,7 +277,7 @@ OrderBookUpdate BinanceAdapter::convertDepthSnapshot(const std::string& jsonData
         for (const auto& askArray : jsonObj["asks"]) {
             try {
                 PriceLevel level = parsePriceLevel(askArray);
-                if (level.getQuantity() > 0.0) {
+                if (level.quantity > 0.0) {
                     update.asks.push_back(level);
                 }
             } catch (...) {
@@ -388,14 +388,14 @@ std::string BinanceAdapter::generateChecksum(const std::vector<PriceLevel>& bids
     
     // Combine all bids (sorted by price descending for bids)
     for (const auto& bid : bids) {
-        combined += std::to_string(bid.getPrice()) + ":" + std::to_string(bid.getQuantity()) + "|";
+        combined += std::to_string(bid.price) + ":" + std::to_string(bid.quantity) + "|";
     }
     
     combined += "||"; // Separator between bids and asks
     
     // Combine all asks (sorted by price ascending for asks)
     for (const auto& ask : asks) {
-        combined += std::to_string(ask.getPrice()) + ":" + std::to_string(ask.getQuantity()) + "|";
+        combined += std::to_string(ask.price) + ":" + std::to_string(ask.quantity) + "|";
     }
     
     // Generate hash
@@ -428,7 +428,7 @@ std::string BinanceAdapter::generateChecksum(const std::vector<PriceLevel>& bids
 //         for (const auto& bidArray : jsonObj["bids"]) {
 //             try {
 //                 PriceLevel level = parsePriceLevel(bidArray);
-//                 if (level.getQuantity() > 0.0) {
+//                 if (level.quantity > 0.0) {
 //                     update.bids.push_back(level);
 //                 }
 //             } catch (...) {
@@ -442,7 +442,7 @@ std::string BinanceAdapter::generateChecksum(const std::vector<PriceLevel>& bids
 //         for (const auto& askArray : jsonObj["asks"]) {
 //             try {
 //                 PriceLevel level = parsePriceLevel(askArray);
-//                 if (level.getQuantity() > 0.0) {
+//                 if (level.quantity > 0.0) {
 //                     update.asks.push_back(level);
 //                 }
 //             } catch (...) {
