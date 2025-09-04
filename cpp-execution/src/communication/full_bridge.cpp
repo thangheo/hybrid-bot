@@ -200,114 +200,6 @@ public:
         std::cout << "Integrated Trading Server started successfully" << std::endl;
         return true;
     }
-    void GenerateAndPublishIntelligence__obsolet(const std::string& symbol, std::shared_ptr<OrderBook> orderbook) {
-        try {
-            /*obsolete intelligence*/
-            auto bids = orderbook->getBids(5);
-            auto asks = orderbook->getAsks(5);
-            
-            // DEBUG: Check if we have order book data
-            static std::unordered_map<std::string, int> debug_counters;
-            debug_counters[symbol]++;
-            
-            if (debug_counters[symbol] <= 3) {
-                std::cout << "\n=== DEBUG: OrderBook state for " << symbol << " ===" << std::endl;
-                std::cout << "Bids count: " << bids.size() << std::endl;
-                std::cout << "Asks count: " << asks.size() << std::endl;
-                
-                if (!bids.empty()) {
-                    std::cout << "Best bid: " << bids[0].getPrice() << " @ " << bids[0].getQuantity() << std::endl;
-                }
-                if (!asks.empty()) {
-                    std::cout << "Best ask: " << asks[0].getPrice() << " @ " << asks[0].getQuantity() << std::endl;
-                }
-                std::cout << "===============================================" << std::endl;
-            }
-            
-            if (bids.empty() || asks.empty()) {
-                return; // No valid order book data
-            }
-            
-            double best_bid = bids[0].getPrice();
-            double best_ask = asks[0].getPrice();
-            
-            if (best_bid <= 0 || best_ask <= 0 || best_ask <= best_bid) {
-                return; // Invalid prices
-            }
-            
-            // Generate intelligence
-            trading::MarketIntelligence intel;
-            
-            auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::system_clock::now().time_since_epoch()).count();
-            
-            intel.set_symbol(symbol);
-            intel.set_timestamp(now);
-            
-            // Calculate spread
-            double spread = best_ask - best_bid;
-            double mid_price = (best_bid + best_ask) / 2.0;
-            intel.set_bid_ask_spread(spread / mid_price);
-            
-            // Calculate volumes
-            double bid_volume = 0, ask_volume = 0;
-            for (size_t i = 0; i < std::min(size_t(5), bids.size()); ++i) {
-                bid_volume += bids[i].getQuantity();
-            }
-            for (size_t i = 0; i < std::min(size_t(5), asks.size()); ++i) {
-                ask_volume += asks[i].getQuantity();
-            }
-            
-            if (bid_volume + ask_volume > 0) {
-                intel.set_order_book_imbalance((bid_volume - ask_volume) / (bid_volume + ask_volume));
-                intel.set_liquidity_ratio(std::min(1.0, (bid_volume + ask_volume) / 10000.0));
-            }
-            
-            // Set other metrics (simplified for now)
-            intel.set_realized_volatility_1m(spread / mid_price * 10);
-            intel.set_net_flow_5s(intel.order_book_imbalance() * 0.5);
-            intel.set_net_flow_30s(intel.order_book_imbalance() * 0.3);
-            intel.set_aggressive_buy_ratio(0.5 + intel.order_book_imbalance() * 0.2);
-            intel.set_aggressive_sell_ratio(0.5 - intel.order_book_imbalance() * 0.2);
-            
-            // Classify regime
-            double total_volume = bid_volume + ask_volume;
-            if (total_volume > 15000 && intel.bid_ask_spread() < 0.001) {
-                intel.set_current_regime(trading::OB_LIQUID);
-            } else if (total_volume < 2000 || intel.bid_ask_spread() > 0.005) {
-                intel.set_current_regime(trading::OB_THIN);
-            } else if (std::abs(intel.order_book_imbalance()) > 0.3) {
-                intel.set_current_regime(trading::OB_VOLATILE);
-            } else {
-                intel.set_current_regime(trading::OB_NORMAL);
-            }
-            
-            intel.set_regime_confidence(0.8);
-            
-            // DEBUG: Print generated intelligence
-            if (debug_counters[symbol] <= 3) {
-                std::cout << "Generated intelligence for " << symbol << ":" << std::endl;
-                std::cout << "  Spread: " << intel.bid_ask_spread() << std::endl;
-                std::cout << "  Liquidity: " << intel.liquidity_ratio() << std::endl;
-                std::cout << "  Imbalance: " << intel.order_book_imbalance() << std::endl;
-                std::cout << "  Regime: " << intel.current_regime() << std::endl;
-            }
-            
-            // Store and publish
-            {
-                std::lock_guard<std::mutex> intel_lock(intelligence_mutex_);
-                latest_intelligence_[symbol] = intel;
-            }
-            
-            if (zmq_server_) {
-                zmq_server_->PublishMarketIntelligence(intel);
-                intelligence_generated_.fetch_add(1);
-            }
-            
-        } catch (const std::exception& e) {
-            std::cout << "Error generating intelligence for " << symbol << ": " << e.what() << std::endl;
-        }
-    }
 
     void GenerateAndPublishIntelligence(const std::string& symbol, std::shared_ptr<OrderBook> orderbook) {
         try {
@@ -593,11 +485,11 @@ private:
             }
             
             // Verify prices are valid
-            if (bids[0].getPrice() <= 0 || asks[0].getPrice() <= 0 || 
-                asks[0].getPrice() <= bids[0].getPrice()) {
+            if (bids[0].price <= 0 || asks[0].price <= 0 || 
+                asks[0].price <= bids[0].price) {
                 std::cout << "Warning: Invalid prices in order book for " << symbol 
-                        << " (bid:" << bids[0].getPrice() 
-                        << ", ask:" << asks[0].getPrice() << ")" << std::endl;
+                        << " (bid:" << bids[0].price 
+                        << ", ask:" << asks[0].price << ")" << std::endl;
                 return;
             }
             

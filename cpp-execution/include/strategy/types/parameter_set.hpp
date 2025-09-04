@@ -70,6 +70,10 @@
          numeric_params[name] = value;
          updateTimestamp();
      }
+     void setParameter(const std::string& name, int value) {
+         numeric_params[name] = value;
+         updateTimestamp();
+     }
      
      void setParameter(const std::string& name, const std::string& value) {
          string_params[name] = value;

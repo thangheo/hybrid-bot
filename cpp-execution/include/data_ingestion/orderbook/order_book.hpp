@@ -71,17 +71,70 @@ public:
     OrderBook(const ExchangeId& exchangeId, const Symbol& symbol, OrderBookCallback callback = nullptr);
     ~OrderBook() = default;
     
+    // Explicitly delete copy constructor and copy assignment
+    OrderBook(const OrderBook&) = delete;
+    OrderBook& operator=(const OrderBook&) = delete;
+    // Add move constructor and move assignment
+    OrderBook(OrderBook&& other) noexcept 
+        : exchangeId_(std::move(other.exchangeId_)),
+          symbol_(std::move(other.symbol_)),
+          last_update_time_(other.last_update_time_),
+          sequence_number_(other.sequence_number_),
+          timestamp_(other.timestamp_),
+          is_valid_(other.is_valid_.load()),
+          is_snapshot_(other.is_snapshot_.load()),
+          bids_(std::move(other.bids_)),
+          asks_(std::move(other.asks_)),
+          previous_bids_(std::move(other.previous_bids_)),
+          previous_asks_(std::move(other.previous_asks_)),
+          recent_deltas_(std::move(other.recent_deltas_)),
+          callback_(std::move(other.callback_)),
+          delta_callback_(std::move(other.delta_callback_)) {
+        // Reset the moved-from object
+        other.is_valid_.store(false);
+        other.is_snapshot_.store(false);
+        other.sequence_number_ = 0;
+    }
+    
+    OrderBook& operator=(OrderBook&& other) noexcept {
+        if (this != &other) {
+            std::lock_guard<std::mutex> lock1(mutex_);
+            std::lock_guard<std::mutex> lock2(other.mutex_);
+            
+            exchangeId_ = std::move(other.exchangeId_);
+            symbol_ = std::move(other.symbol_);
+            last_update_time_ = other.last_update_time_;
+            sequence_number_ = other.sequence_number_;
+            timestamp_ = other.timestamp_;
+            is_valid_.store(other.is_valid_.load());
+            is_snapshot_.store(other.is_snapshot_.load());
+            bids_ = std::move(other.bids_);
+            asks_ = std::move(other.asks_);
+            previous_bids_ = std::move(other.previous_bids_);
+            previous_asks_ = std::move(other.previous_asks_);
+            recent_deltas_ = std::move(other.recent_deltas_);
+            callback_ = std::move(other.callback_);
+            delta_callback_ = std::move(other.delta_callback_);
+            
+            // Reset the moved-from object
+            other.is_valid_.store(false);
+            other.is_snapshot_.store(false);
+            other.sequence_number_ = 0;
+        }
+        return *this;
+    }
+    
     // Update methods
     bool applySnapshot(const std::vector<PriceLevel>& bids, 
-                      const std::vector<PriceLevel>& asks,
-                      uint64_t sequenceNumber,
-                      Timestamp timestamp);
-                      
+                    const std::vector<PriceLevel>& asks,
+                    uint64_t sequenceNumber,
+                    Timestamp timestamp);
+                    
     bool applyUpdate(const std::vector<PriceLevel>& bids,
                     const std::vector<PriceLevel>& asks,
                     uint64_t sequenceNumber,
                     Timestamp timestamp);
-      
+    
 
     // Snapshot and delta methods
     OrderBookUpdate getSnapshot(int depth = 0) const;
@@ -169,6 +222,6 @@ private:
     void storeDelta(const OrderBookDelta& delta);
     void captureOrderBookState();
 };
- 
+    
 } // namespace data_ingestion
 } // namespace trading

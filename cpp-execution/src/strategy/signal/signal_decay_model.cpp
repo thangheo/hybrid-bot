@@ -9,8 +9,13 @@
  #include <functional>
  
  namespace trading {
- namespace strategy {
- 
+ namespace strategy 
+ {
+    SignalDecayModel::SignalDecayModel(const SignalDecayConfig& config){
+        params_.base_decay_rate = config.defaultDecayRate;       // Default decay rate per second
+        params_.min_valid_strength = config.minSignalStrength ;       // Minimum signal strength before expiration
+    }
+
  SignalDecayModel::SignalDecayModel(DecayModelType model_type)
      : model_type_(model_type) {
      // Initialize with default decay parameters

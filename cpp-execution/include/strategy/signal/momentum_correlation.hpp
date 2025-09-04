@@ -30,7 +30,6 @@ public:
      * @param window_size Size of the rolling window for correlation analysis
      */
     explicit MomentumCorrelation(size_t window_size = 100);
-    MomentumCorrelation(const MomentumCorrelation& config);
     MomentumCorrelation(const MomentumCorrelationConfig& config);
 
     /**

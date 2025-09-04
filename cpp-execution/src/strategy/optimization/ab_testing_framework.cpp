@@ -306,7 +306,7 @@ uint64_t ABTestingFramework::computeConsistentHash(const data_ingestion::OrderBo
             uint64_t timeBucket = snapshot.exchange_timestamp / (24 * 60 * 60 * 1000);
             hash = combineHashes(hash, timeBucket);
         } else if (field == "price" && !snapshot.bids.empty() && !snapshot.asks.empty()) {
-            double midPrice = (snapshot.bids[0].getPrice() + snapshot.asks[0].getPrice()) / 2.0;
+            double midPrice = (snapshot.bids[0].price + snapshot.asks[0].price) / 2.0;
             hash = combineHashes(hash, hashDouble(midPrice));
         }
     }

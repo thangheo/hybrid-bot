@@ -24,7 +24,13 @@
      params_.correlation_decay_rate = 0.95;
      params_.regime_detection_window = 20;
  }
- 
+
+    
+    MomentumCorrelation::MomentumCorrelation(const MomentumCorrelationConfig& config){
+        window_size_=config.correlationWindowMs;
+    //  int predictionHorizonMs = 5000;        // Prediction horizon in milliseconds
+    }
+
  void MomentumCorrelation::updateCorrelationModel(
      const OrderBookMetrics& metrics, const PriceMovement& movement) {
      

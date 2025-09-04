@@ -48,11 +48,11 @@ double PriceJumpFilter::calculateMidPrice(const OrderBookUpdate& update) const {
     }
     
     // Get best bid and ask
-    double best_bid = update.bids[0].getPrice();
+    double best_bid = update.bids[0].price;
     if (best_bid <= 0.0) {
         return 0.0; // Avoid division by zero
     }
-    double best_ask = update.asks[0].getPrice();
+    double best_ask = update.asks[0].price;
     if (best_ask <= 0.0) {
         return 0.0; // Avoid division by zero
     }
@@ -89,11 +89,11 @@ double SpreadFilter::calculateSpread(const OrderBookUpdate& update) const {
         return 0.0;
     }
     // Get best bid and ask
-    double best_bid =  update.bids[0].getPrice();
+    double best_bid =  update.bids[0].price;
     if (best_bid <= 0.0) {
         return 0.0; // Avoid division by zero
     }
-    double best_ask = update.asks[0].getPrice();
+    double best_ask = update.asks[0].price;
     if (best_ask <= 0.0) {
         return 0.0; // Avoid division by zero
     }
@@ -113,9 +113,9 @@ double SpreadFilter::calculateSpreadPercent(const OrderBookUpdate& update) const
         return 0.0;
     }
     // Get best bid and ask
-    double best_bid = update.bids[0].getPrice();
+    double best_bid = update.bids[0].price;
   
-    double best_ask = update.asks[0].getPrice();
+    double best_ask = update.asks[0].price;
     if (best_ask <= 0.0) {
         return 0.0; // Avoid division by zero
     }
@@ -166,12 +166,12 @@ double VolumeFilter::calculateTotalVolume(const OrderBookUpdate& update) const {
     
     // Sum up bid volumes
     for (const auto& level : update.bids) {
-        total_volume += level.getQuantity();
+        total_volume += level.quantity;
     }
     
     // Sum up ask volumes
     for (const auto& level : update.asks) {
-        total_volume += level.getQuantity();
+        total_volume += level.quantity;
     }
     
     return total_volume;

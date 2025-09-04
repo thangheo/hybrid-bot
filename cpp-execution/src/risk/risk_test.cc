@@ -140,7 +140,7 @@ public:
         }
         
         // 3. Order size validation
-        if (order.quantity > config_.executionLimitsConfig.maxOrderSize) {
+        if (order.getQuantity() > config_.executionLimitsConfig.maxOrderSize) {
             result.rejectionReason = "Order size exceeds limit (" + 
                 std::to_string(config_.executionLimitsConfig.maxOrderSize) + ")";
             result.adjustedQuantity = config_.executionLimitsConfig.maxOrderSize;
@@ -149,8 +149,8 @@ public:
         
         // 4. Fat finger protection
         const auto& marketData = marketData_[order.tradingPair];
-        if (order.orderType == "LIMIT" && order.price > 0) {
-            double priceDeviation = std::abs(order.price - marketData.currentPrice) / marketData.currentPrice;
+        if (order.orderType == "LIMIT" && order.getPrice() > 0) {
+            double priceDeviation = std::abs(order.getPrice() - marketData.currentPrice) / marketData.currentPrice;
             if (priceDeviation > config_.fatFingerConfig.maxPriceDeviation) {
                 result.rejectionReason = "Price deviation too large: " + 
                     std::to_string(priceDeviation * 100) + "% (limit: " +
@@ -160,7 +160,7 @@ public:
         }
         
         // 5. Notional value check
-        double notionalValue = order.quantity * marketData.currentPrice;
+        double notionalValue = order.getQuantity() * marketData.currentPrice;
         if (notionalValue > config_.fatFingerConfig.notionalValueLimit) {
             result.rejectionReason = "Notional value exceeds limit: $" + 
                 std::to_string(notionalValue) + " (limit: $" +

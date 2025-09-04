@@ -201,7 +201,7 @@ def show_integration_example():
     print(f"\n⚙️  Order Created:")
     print(f"   Type: {order.order_type.value}")
     print(f"   Side: {order.side.value}")
-    print(f"   Quantity: {order.quantity}")
+    print(f"   Quantity: {order.getQuantity()}")
     print(f"   Strategy: {order.strategy_id}")
     
     print(f"\n🚀 In real system:")

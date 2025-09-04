@@ -27,7 +27,11 @@
      imbalanceState_[ImbalanceType::LIQUIDITY_FLOW_IMBALANCE] = false;
      imbalanceState_[ImbalanceType::ABNORMAL_SPREAD] = false;
  }
- 
+ ImbalanceDetectionEngine::ImbalanceDetectionEngine(const ImbalanceDetectionConfig& config){
+    
+     config_ = config;
+ }
+
  // Initialize the detection engine with configuration
  bool ImbalanceDetectionEngine::initialize(const ImbalanceDetectionConfig& config) {
      std::lock_guard<std::mutex> lock(mutex_);

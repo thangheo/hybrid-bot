@@ -210,7 +210,7 @@
      for (int i = 0; i < 10; i++) {
          OrderRequest order;
          order.tradingPair = TradingPair("BTC/USDT");
-         order.quantity = 0.3;  // Larger than previous orders
+         order.getQuantity() = 0.3;  // Larger than previous orders
          fatFingerProtection->recordOrder(order);
      }
      

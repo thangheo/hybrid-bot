@@ -215,10 +215,10 @@
                     std::cout << "  Asks count: " << asks.size() << std::endl;
                     
                     if (!bids.empty()) {
-                        std::cout << "  Best bid: " << bids[0].getPrice() << " @ " << bids[0].getQuantity() << std::endl;
+                        std::cout << "  Best bid: " << bids[0].price << " @ " << bids[0].quantity << std::endl;
                     }
                     if (!asks.empty()) {
-                        std::cout << "  Best ask: " << asks[0].getPrice() << " @ " << asks[0].getQuantity() << std::endl;
+                        std::cout << "  Best ask: " << asks[0].price << " @ " << asks[0].quantity << std::endl;
                     }
                 }
                 

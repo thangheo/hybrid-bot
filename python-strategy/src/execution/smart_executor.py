@@ -60,7 +60,7 @@ class SmartOrderExecutor:
             
             # Calculate order impact
             daily_volume = market_data.get('volume_24h', 0)
-            order_value = order.quantity * market_data.get('last_price', 0)
+            order_value = order.getQuantity() * market_data.get('last_price', 0)
             
             if daily_volume > 0:
                 volume_ratio = order_value / daily_volume
@@ -92,14 +92,14 @@ class SmartOrderExecutor:
                 result = await self.exchange.create_market_order(
                     symbol=order.symbol,
                     side=order.side.value,
-                    amount=order.quantity
+                    amount=order.getQuantity()
                 )
             elif order.order_type == OrderType.LIMIT:
                 result = await self.exchange.create_limit_order(
                     symbol=order.symbol,
                     side=order.side.value,
-                    amount=order.quantity,
-                    price=order.price
+                    amount=order.getQuantity(),
+                    price=order.getPrice()
                 )
             else:
                 return False, f"Unsupported order type: {order.order_type}"
@@ -118,7 +118,7 @@ class SmartOrderExecutor:
     async def _execute_twap(self, order: Order) -> Tuple[bool, str]:
         """Time-Weighted Average Price execution"""
         try:
-            chunk_size = order.quantity / self.twap_chunks
+            chunk_size = order.getQuantity() / self.twap_chunks
             filled_quantity = 0.0
             total_cost = 0.0
             filled_chunks = 0
@@ -155,7 +155,7 @@ class SmartOrderExecutor:
             # Update order
             order.filled_quantity = filled_quantity
             order.average_price = total_cost / filled_quantity if filled_quantity > 0 else 0
-            order.status = OrderStatus.FILLED if filled_quantity >= order.quantity * 0.95 else OrderStatus.PARTIALLY_FILLED
+            order.status = OrderStatus.FILLED if filled_quantity >= order.getQuantity() * 0.95 else OrderStatus.PARTIALLY_FILLED
             
             success_rate = filled_chunks / self.twap_chunks
             return True, f"TWAP completed: {filled_chunks}/{self.twap_chunks} chunks filled ({success_rate:.1%})"
@@ -166,8 +166,8 @@ class SmartOrderExecutor:
     async def _execute_iceberg(self, order: Order) -> Tuple[bool, str]:
         """Iceberg order execution - hide order size"""
         try:
-            chunk_size = order.quantity * self.iceberg_chunk_size
-            remaining_quantity = order.quantity
+            chunk_size = order.getQuantity() * self.iceberg_chunk_size
+            remaining_quantity = order.getQuantity()
             filled_quantity = 0.0
             total_cost = 0.0
             chunk_count = 0
@@ -235,9 +235,9 @@ class SmartOrderExecutor:
             # Update order
             order.filled_quantity = filled_quantity
             order.average_price = total_cost / filled_quantity if filled_quantity > 0 else 0
-            order.status = OrderStatus.FILLED if filled_quantity >= order.quantity * 0.95 else OrderStatus.PARTIALLY_FILLED
+            order.status = OrderStatus.FILLED if filled_quantity >= order.getQuantity() * 0.95 else OrderStatus.PARTIALLY_FILLED
             
-            fill_rate = filled_quantity / order.quantity if order.quantity > 0 else 0
+            fill_rate = filled_quantity / order.getQuantity() if order.getQuantity() > 0 else 0
             return True, f"Iceberg completed: {chunk_count} chunks, {fill_rate:.1%} filled"
             
         except Exception as e:
@@ -246,12 +246,12 @@ class SmartOrderExecutor:
     async def _execute_adaptive_limit(self, order: Order) -> Tuple[bool, str]:
         """Adaptive limit order with price improvement"""
         try:
-            if not order.price:
+            if not order.getPrice():
                 return False, "Adaptive limit requires initial price"
             
             max_attempts = 5
             price_increment = 0.0001  # 0.01%
-            current_price = order.price
+            current_price = order.getPrice()
             
             for attempt in range(max_attempts):
                 try:
@@ -259,7 +259,7 @@ class SmartOrderExecutor:
                     result = await self.exchange.create_limit_order(
                         symbol=order.symbol,
                         side=order.side.value,
-                        amount=order.quantity,
+                        amount=order.getQuantity(),
                         price=current_price
                     )
                     

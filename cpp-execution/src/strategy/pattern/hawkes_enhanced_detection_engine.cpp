@@ -54,7 +54,7 @@
      // Make trading decision based on current price
      double currentPrice = (orderBook.getMidPrice() > 0) ? 
                           orderBook.getMidPrice() : 
-                          (orderBook.getBestBid().getPrice() + orderBook.getBestAsk().getPrice()) / 2.0;
+                          (orderBook.getBestBid().price + orderBook.getBestAsk().price) / 2.0;
      
      // Get current timestamp
      double currentTime = std::chrono::duration_cast<std::chrono::duration<double>>(
@@ -80,11 +80,11 @@
      double askVolume = 0.0;
      
      for (const auto& level : bids) {
-         bidVolume += level.getQuantity();
+         bidVolume += level.quantity;
      }
      
      for (const auto& level : asks) {
-         askVolume += level.getQuantity();
+         askVolume += level.quantity;
      }
      
      // Determine event type based on imbalance

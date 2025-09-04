@@ -168,7 +168,7 @@ bool FatFingerProtection::checkFatFinger(const OrderRequest& orderRequest,
 void FatFingerProtection::recordOrder(const OrderRequest& order) {
     try {
         auto& analyzer = getOrCreateAnalyzer(order.tradingPair);
-        analyzer.addSample(order.quantity);
+        analyzer.addSample(order.price);
         
         LOG_DEBUG("Recorded order for {}: size={}", order.tradingPair, order.quantity);
     } catch (const std::exception& e) {

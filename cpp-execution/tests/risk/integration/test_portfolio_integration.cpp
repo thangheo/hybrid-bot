@@ -136,7 +136,7 @@ TEST_F(PortfolioIntegrationTest, EndToEndPositionTracking) {
     EXPECT_EQ(positions.size(), 1);
     EXPECT_EQ(positions[0].getExchangeId(), "binance");
     EXPECT_EQ(positions[0].getTradingPair(), "BTC/USD");
-    EXPECT_DOUBLE_EQ(positions[0].getQuantity(), 1.0);
+    EXPECT_DOUBLE_EQ(positions[0].quantity, 1.0);
     
     // Process another buy report
     ExecutionReport ethBuyReport = createExecutionReport("binance", "ETH/USD", "buy", 10.0, 2000.0);

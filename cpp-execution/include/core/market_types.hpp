@@ -215,33 +215,75 @@ struct TradeData {
  /**
   * Represents a price level in an order book
   */
- struct PriceLevel {
-     double price;     // Price level
-     double quantity;  // Quantity available at this price level
+//  struct PriceLevel {
+//      double price;     // Price level
+//      double quantity;  // Quantity available at this price level
      
-     PriceLevel() : price(0.0), quantity(0.0) {}
+//      PriceLevel() : price(0.0), quantity(0.0) {}
      
-     PriceLevel(double p, double q) : price(p), quantity(q) {}
+//      PriceLevel(double p, double q) : price(p), quantity(q) {}
      
-     // Equality operator
-     bool operator==(const PriceLevel& other) const {
-         // Use epsilon comparison for floating point values
-         const double epsilon = 1e-9;
-         return std::abs(price - other.price) < epsilon && 
-                std::abs(quantity - other.quantity) < epsilon;
-     }
+//      // Equality operator
+//      bool operator==(const PriceLevel& other) const {
+//          // Use epsilon comparison for floating point values
+//          const double epsilon = 1e-9;
+//          return std::abs(price - other.price) < epsilon && 
+//                 std::abs(quantity - other.quantity) < epsilon;
+//      }
      
-     // Inequality operator
-     bool operator!=(const PriceLevel& other) const {
-         return !(*this == other);
-     }
+//      // Inequality operator
+//      bool operator!=(const PriceLevel& other) const {
+//          return !(*this == other);
+//      }
      
-     // Less than operator (for containers)
-     bool operator<(const PriceLevel& other) const {
-         return price < other.price;
-     }
- };
+//      // Less than operator (for containers)
+//      bool operator<(const PriceLevel& other) const {
+//          return price < other.price;
+//      }
+//  };
+
+/**
+ * Represents a price level in an order book
+ */
+struct PriceLevel {
+    double price;     // Price level
+    double quantity;  // Quantity available at this price level
+    
+    // Constructors
+    PriceLevel() : price(0.0), quantity(0.0) {}
+    PriceLevel(double p, double q) : price(p), quantity(q) {}
+    
+    // String constructor for data ingestion compatibility
+    PriceLevel(const std::string& priceStr, const std::string& quantityStr) {
+        try {
+            price = std::stod(priceStr);
+            quantity = std::stod(quantityStr);
+        } catch (const std::exception& e) {
+            throw std::invalid_argument("Invalid price or quantity format");
+        }
+    }
+    
+    // Equality operator with epsilon comparison
+    bool operator==(const PriceLevel& other) const {
+        static constexpr double epsilon = 1e-9;
+        return std::abs(price - other.price) < epsilon && 
+               std::abs(quantity - other.quantity) < epsilon;
+    }
+    
+    bool operator!=(const PriceLevel& other) const {
+        return !(*this == other);
+    }
+    
+    bool operator<(const PriceLevel& other) const {
+        return price < other.price;
+    }
+    
+    // Utility methods
+    bool isEmpty() const { return quantity <= 0.0; }
+    bool isValid() const { return price > 0.0 && quantity >= 0.0; }
+};
  
+
  // Update type for order book
  enum class UpdateType {
      SNAPSHOT,

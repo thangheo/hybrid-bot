@@ -91,8 +91,8 @@ TEST_F(RiskSystemIntegrationTest, CompleteOrderFlowTest) {
     order.tradingPair = "BTC-USDT";
     order.strategy = "strategy1";
     order.side = OrderSide::BUY;
-    order.quantity = 0.5;
-    order.price = 50000.0;
+    order.getQuantity() = 0.5;
+    order.getPrice() = 50000.0;
     order.signalId = "signal1";
     
     ValidationResult orderResult = riskManager->validateOrder(order);
