@@ -80,22 +80,30 @@ start_cpp() {
 }
 
 # Function to start Python strategy
+# Function to start Python strategy
 start_python() {
     if is_running "$PYTHON_PID_FILE"; then
         print_status "$YELLOW" "Python strategy is already running (PID: $(cat $PYTHON_PID_FILE))"
         return 1
     fi
-
+    
     if [[ ! -f "$PYTHON_SCRIPT_PATH" ]]; then
         print_status "$RED" "ERROR: Python script not found: $PYTHON_SCRIPT_PATH"
         return 1
     fi
-
-    print_status "$BLUE" "Starting Python strategy..."
     
-    # Start Python process with nohup
+    # Check if config file exists
+    local config_path="python-strategy/config/trading_bot.yaml"
+    if [[ ! -f "$config_path" ]]; then
+        print_status "$RED" "ERROR: Config file not found: $config_path"
+        return 1
+    fi
+    
+    print_status "$BLUE" "Starting Python strategy with config: $config_path"
+    
+    # Start Python process with nohup and config parameter
     cd "$(dirname "$PYTHON_SCRIPT_PATH")" || exit 1
-    nohup python3 "$(basename "$PYTHON_SCRIPT_PATH")" > "../$PYTHON_LOG_FILE" 2>&1 &
+    nohup python3 "$(basename "$PYTHON_SCRIPT_PATH")" --config "../$config_path" > "../$PYTHON_LOG_FILE" 2>&1 &
     local python_pid=$!
     
     # Save PID (adjust path since we changed directory)
@@ -106,13 +114,13 @@ start_python() {
     sleep 3
     if is_running "$PYTHON_PID_FILE"; then
         print_status "$GREEN" "Python strategy started successfully (PID: $python_pid)"
+        print_status "$GREEN" "Using config: $config_path"
         return 0
     else
         print_status "$RED" "ERROR: Python strategy failed to start. Check logs: $PYTHON_LOG_FILE"
         return 1
     fi
 }
-
 # Function to stop a process
 stop_process() {
     local pid_file=$1
