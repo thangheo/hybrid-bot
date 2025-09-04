@@ -8,7 +8,7 @@
 #include <algorithm> // Added for std::min/max
 #include <cstdio>   // Added for strlen()
 
-#include "../proto/generated/cpp/trading_messages.pb.h"
+#include "../../generated/cpp/proto/trading_messages.pb.h"
 #include "communication/zmq_server.hpp"
 
 // Market Intelligence Generator for simulation/testing

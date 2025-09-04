@@ -18,7 +18,7 @@ import numpy as np
 import socket  # Standard library socket module
 
 # Add protobuf path
-sys.path.append('generated/python')
+sys.path.append('generated/python/proto')
 import trading_messages_pb2 as tm
 
 @dataclass

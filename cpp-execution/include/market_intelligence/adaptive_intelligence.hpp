@@ -1,6 +1,6 @@
 #pragma once
 
-#include "trading_messages.pb.h"  // Sửa path
+#include "../../generated/cpp/proto/trading_messages.pb.h"
 #include "data_ingestion/orderbook/order_book.hpp"
 #include <string>
 #include <unordered_map>

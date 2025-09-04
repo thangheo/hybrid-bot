@@ -356,7 +356,7 @@ double AdaptiveMarketIntelligence::EstimateVolatility(const std::string& symbol,
                         std::shared_ptr<OrderBook> orderbook) {
     // More sophisticated volatility estimation
     auto& profile = profiles_[symbol];
-    
+    (void)orderbook; // suppress unused parameter warning
     // Base volatility from spread
     double spread_vol = spread * profile.volatility_factor;
     
