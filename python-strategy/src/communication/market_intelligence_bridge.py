@@ -8,7 +8,7 @@ from dataclasses import dataclass
 import sys
 import os 
 current_dir = os.path.dirname(os.path.abspath(__file__))
-proto_path = os.path.join(current_dir, '..', 'generated', 'python', 'proto')
+proto_path = os.path.join(current_dir, 'generated', 'python', 'proto')
 sys.path.append(proto_path)
 
 from trading_messages_pb2 import MarketIntelligence
