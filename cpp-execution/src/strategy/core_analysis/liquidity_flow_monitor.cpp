@@ -241,12 +241,8 @@ void LiquidityFlowMonitor::processOrderBookSnapshots(
     }
 }
 
- 
-// Reset should also handle our shared pointers
-void LiquidityFlowMonitor::reset() {
-    std::lock_guard<std::mutex> lock(mutex_);
-    
-    // Clear all history
+ void LiquidityFlowMonitor::resetInternal() {
+// Clear all history
     delta_history_.clear();
     order_book_history_.clear();
     
@@ -260,6 +256,13 @@ void LiquidityFlowMonitor::reset() {
     typical_order_size_ = 1.0;
     last_update_time_ = std::chrono::system_clock::now();
     last_sequence_number_ = 0;
+}
+ 
+// Reset should also handle our shared pointers
+void LiquidityFlowMonitor::reset() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    resetInternal();  // Call the internal version
+    
 }
  
  OrderBookDelta LiquidityFlowMonitor::computeDelta(
@@ -376,10 +379,9 @@ void LiquidityFlowMonitor::updateParameters(const ParameterSet& params) {
     large_order_threshold_ = params.getDouble("large_order_threshold", large_order_threshold_);
     history_window_seconds_ = params.getInt("history_window_seconds", history_window_seconds_);
     
-    // Reset the monitor state if necessary
-    reset();
+    // Call reset WITHOUT the mutex (since we already hold it)
+    resetInternal();  // Create this method without mutex acquisition
 }
-
 std::vector<PriceLevel> LiquidityFlowMonitor::identifyLargeOrders(
     const std::vector<PriceLevel>& levels) const {
     

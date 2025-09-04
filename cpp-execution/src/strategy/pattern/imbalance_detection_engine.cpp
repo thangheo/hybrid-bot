@@ -10,7 +10,8 @@
  */
 
  #include "strategy/pattern/imbalance_detection_engine.hpp"
- 
+ #include <common/event_bus.hpp>
+ #include <common/trading_events.hpp>
  #include <algorithm>
  #include <cmath>
  #include <iostream>
@@ -577,28 +578,32 @@
      detectedImbalances_.push_back(event);
      
      // Notify callbacks
-     notifyImbalanceCallbacks(event);
+    //  notifyImbalanceCallbacks(event);
+    common::EventBus::getInstance().publish(events::ImbalanceDetectedEvent{event});
  }
  
  // Notify all registered callbacks about a new imbalance event
- void ImbalanceDetectionEngine::notifyImbalanceCallbacks(const ImbalanceEvent& event) {
-     // Copy callbacks to prevent deadlocks if callback registers/unregisters another callback
-     std::map<size_t, ImbalanceCallback> callbacksCopy;
-     {
-         std::lock_guard<std::mutex> lock(mutex_);
-         callbacksCopy = callbacks_;
-     }
+//  void ImbalanceDetectionEngine::notifyImbalanceCallbacks(const ImbalanceEvent& event) {
+//      // Copy callbacks to prevent deadlocks if callback registers/unregisters another callback
+//      std::map<size_t, ImbalanceCallback> callbacksCopy;
+//      {
+//          std::lock_guard<std::mutex> lock(mutex_);
+//          callbacksCopy = callbacks_;
+//      }
      
-     // Notify all callbacks
-     for (const auto& cb : callbacksCopy) {
-         try {
-             cb.second(event);
-         } catch (const std::exception& e) {
-             std::cerr << "Exception in imbalance callback: " << e.what() << std::endl;
-         }
-     }
- }
- 
+//      // Notify all callbacks
+//      for (const auto& cb : callbacksCopy) {
+//          try {
+//              cb.second(event);
+//          } catch (const std::exception& e) {
+//              std::cerr << "Exception in imbalance callback: " << e.what() << std::endl;
+//          }
+//      }
+//  }
+ void ImbalanceDetectionEngine::notifyImbalanceCallbacks(const ImbalanceEvent& event) {
+    // Simply publish to event bus - no locks, no deadlocks
+    common::EventBus::getInstance().publish(events::ImbalanceDetectedEvent{event});
+}
  // Generate a unique event ID
  uint64_t ImbalanceDetectionEngine::generateEventId() {
      static uint64_t nextId = 0;

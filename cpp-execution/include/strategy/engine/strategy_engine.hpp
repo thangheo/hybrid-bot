@@ -88,7 +88,8 @@ public:
      * @return True if processing was successful, false otherwise
      */
     bool processOrderBook(const data_ingestion::OrderBook& orderBook);
-    
+    void handleSignalGenerated(const TradingSignal& signal) ;
+
     /**
      * @brief Get all active trading signals
      * @return Vector of active trading signals
@@ -152,7 +153,11 @@ private:
     // Strategy identification
     std::string strategyId_;
     std::string strategyVersion_;
-    //
+    size_t eventSubscriptionId_;
+    size_t imbalanceSubscriptionId_;
+    //event bus
+    // size_t eventSubscriptionId_ = 0;  
+        //
     // Component instances
     OrderBookAnalyzerPtr orderBookAnalyzer_;
     ImbalanceDetectionEnginePtr imbalanceDetector_;
