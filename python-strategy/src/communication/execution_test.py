@@ -12,7 +12,7 @@ import sys
 # Add protobuf path if needed
 import os 
 current_dir = os.path.dirname(os.path.abspath(__file__))
-proto_path = os.path.join(current_dir, '..', 'generated', 'python', 'proto')
+proto_path = os.path.join(current_dir, 'generated', 'python', 'proto')
 sys.path.append(proto_path)
 
 import trading_messages_pb2 as tm
