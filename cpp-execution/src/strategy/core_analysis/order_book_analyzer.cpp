@@ -11,7 +11,7 @@
  #include <algorithm>
  #include <numeric>
  #include <cmath>
- 
+ #include <thread>
  namespace trading {
  namespace strategy {
  
@@ -80,54 +80,61 @@ OrderBookAnalyzer::OrderBookAnalyzer(const core::ExchangeId& exchangeId, const s
  }
  
  void OrderBookAnalyzer::processOrderBook(const data_ingestion::OrderBook& snapshot) {
-     std::lock_guard<std::mutex> lock(mutex_);
-     
-     // Get bids and asks limited to our depth level
-     auto bids = snapshot.getBids(depth_levels_);
-     auto asks = snapshot.getAsks(depth_levels_);
-     
-     // Group price levels if grouping factor is non-zero
-     if (price_grouping_factor_ > 0.0) {
-         bids = groupPriceLevels(bids, true);
-         asks = groupPriceLevels(asks, false);
-     }
-     
-     // Initialize metrics with snapshot metadata
-     current_metrics_.exchangeId = exchangeId_;
-     // Using the appropriate method to create a Symbol from string
-     current_metrics_.symbol = core::Symbol::fromString(trading_pair_); // Using factory method instead of constructor
-     current_metrics_.timestamp = snapshot.getTimestamp();
-     current_metrics_.sequenceNumber = snapshot.getSequenceNumber();
-     
-     // Calculate various metrics
-     calculatePriceMetrics(bids, asks);
-     calculateVolumeMetrics(bids, asks, depth_levels_);
-     calculateLevelMetrics(bids, asks);
-     calculateImbalanceMetrics(bids, asks);
-     
-     // Update time series data
-     updateTimeSeries();
-     
-     // Calculate derived metrics based on time series
-     calculateDerivedMetrics();
-     
-     // Calculate time-based metrics
-     calculateTimeBasedMetrics();
-     
-     // Store snapshot in history (limit to 100 items)
-     metrics_history_.push_back(current_metrics_);
-     if (metrics_history_.size() > 100) {
-         metrics_history_.pop_front();
-     }
-     
-     // Update timestamps
-     last_update_time_ = snapshot.getTimestamp();
-     
-     // Notify callbacks
-     notifyMetricsUpdated();
- }
- 
- OrderBookMetrics OrderBookAnalyzer::getMetrics() const {
+    OrderBookMetrics metrics_to_notify;  // Declare outside the lock
+    
+    {  // Scope the lock
+        std::lock_guard<std::mutex> lock(mutex_);
+        
+        // Get bids and asks limited to our depth level
+        auto bids = snapshot.getBids(depth_levels_);
+        auto asks = snapshot.getAsks(depth_levels_);
+        
+        // Group price levels if grouping factor is non-zero
+        if (price_grouping_factor_ > 0.0) {
+            bids = groupPriceLevels(bids, true);
+            asks = groupPriceLevels(asks, false);
+        }
+        
+        // Initialize metrics with snapshot metadata
+        current_metrics_.exchangeId = exchangeId_;
+        current_metrics_.symbol = core::Symbol::fromString(trading_pair_);
+        current_metrics_.timestamp = snapshot.getTimestamp();
+        current_metrics_.sequenceNumber = snapshot.getSequenceNumber();
+        
+        // Calculate various metrics
+        calculatePriceMetrics(bids, asks);
+        calculateVolumeMetrics(bids, asks, depth_levels_);
+        calculateLevelMetrics(bids, asks);
+        calculateImbalanceMetrics(bids, asks);
+        
+        // Update time series data
+        updateTimeSeries();
+        
+        // Calculate derived metrics based on time series
+        calculateDerivedMetrics();
+        
+        // Calculate time-based metrics
+        calculateTimeBasedMetrics();
+        
+        // Store snapshot in history (limit to 100 items)
+        metrics_history_.push_back(current_metrics_);
+        if (metrics_history_.size() > 100) {
+            metrics_history_.pop_front();
+        }
+        
+        // Update timestamps
+        last_update_time_ = snapshot.getTimestamp();
+        
+        // Copy metrics for notification
+        metrics_to_notify = current_metrics_;
+        
+    }  // Lock is released here
+    
+    // Notify callbacks AFTER releasing the lock
+    common::EventBus::getInstance().publish(events::MetricsUpdatedEvent{current_metrics_});
+}
+
+OrderBookMetrics OrderBookAnalyzer::getMetrics() const {
      std::lock_guard<std::mutex> lock(mutex_);
      return current_metrics_;
  }
@@ -651,21 +658,64 @@ OrderBookAnalyzer::OrderBookAnalyzer(const core::ExchangeId& exchangeId, const s
      // Normalize to a reasonable range (0-1, where 0.5 is average expected volatility)
      return std::max(0.0, std::min(1.0, volatility_expectation / 2.0));
  }
- 
  void OrderBookAnalyzer::notifyMetricsUpdated() {
-     // Copy callbacks to avoid calling them while holding the lock
-     std::vector<MetricsCallback> callbacks;
-     {
-         std::lock_guard<std::mutex> lock(mutex_);
-         callbacks = metrics_callbacks_;
-     }
-     
-     // Call all registered callbacks
-     for (const auto& callback : callbacks) {
-         callback(current_metrics_);
-     }
- }
- 
+    // Copy callbacks and metrics
+    std::vector<MetricsCallback> callbacks;
+    OrderBookMetrics metrics_copy;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        callbacks = metrics_callbacks_;
+        metrics_copy = current_metrics_;
+    }
+    
+    // Execute callbacks asynchronously to break any deadlock cycle
+    for (const auto& callback : callbacks) {
+        std::thread([callback, metrics_copy]() {
+            try {
+                callback(metrics_copy);
+            } catch (const std::exception& e) {
+                // Log error
+            }
+        }).detach();
+    }
+}
+//   void OrderBookAnalyzer::notifyMetricsUpdated() {
+//     // Copy callbacks to avoid calling them while holding the lock
+//     std::vector<MetricsCallback> callbacks;
+//     OrderBookMetrics metrics_copy;
+//     {
+//         std::lock_guard<std::mutex> lock(mutex_);
+//         callbacks = metrics_callbacks_;
+//         metrics_copy = current_metrics_;  // Copy metrics too
+//     }
+    
+//     // Call all registered callbacks with copied data
+//     for (const auto& callback : callbacks) {
+//         callback(metrics_copy);  // Use copy, not current_metrics_
+//     }
+// }
+//  void OrderBookAnalyzer::notifyMetricsUpdated() {
+//     // Copy both callbacks AND metrics while holding the lock
+//     std::vector<MetricsCallback> callbacks;
+//     OrderBookMetrics metrics_copy;
+//     {
+//         std::lock_guard<std::mutex> lock(mutex_);
+//         callbacks = metrics_callbacks_;
+//         metrics_copy = current_metrics_;
+//     }
+    
+//     // Call callbacks asynchronously to avoid any deadlock
+//     std::thread([callbacks = std::move(callbacks), metrics_copy]() {
+//         for (const auto& callback : callbacks) {
+//             try {
+//                 callback(metrics_copy);
+//             } catch (const std::exception& e) {
+//                 // Log callback exception
+//             }
+//         }
+//     }).detach();
+// }
+
  std::shared_ptr<OrderBookAnalyzer> createOrderBookAnalyzer(
      const core::ExchangeId& exchangeId, 
      const std::string& tradingPair,
@@ -674,19 +724,49 @@ OrderBookAnalyzer::OrderBookAnalyzer(const core::ExchangeId& exchangeId, const s
      return std::make_shared<OrderBookAnalyzer>(exchangeId, tradingPair, params);
  }
  //updateParameters function
+// void OrderBookAnalyzer::updateParameters(const ParameterSet& params) {
+//     std::lock_guard<std::mutex> lock(mutex_);
+//     params_ = params;
+    
+//     // Update parameters in the analyzer
+//     depth_levels_ = params_.getInt("depth_levels", depth_levels_);
+//     price_grouping_factor_ = params_.getDouble("price_grouping_factor", price_grouping_factor_);
+//     min_samples_for_stability_ = params_.getInt("min_samples_for_stability", min_samples_for_stability_);
+//     ema_alpha_ = params_.getDouble("ema_alpha", 0.1); // Default EMA alpha
+//     // Update other parameters as needed
+//     // Notify callbacks about parameter update
+//     notifyMetricsUpdated();
+// }
 void OrderBookAnalyzer::updateParameters(const ParameterSet& params) {
     std::lock_guard<std::mutex> lock(mutex_);
     params_ = params;
     
-    // Update parameters in the analyzer
+    // Update parameters
     depth_levels_ = params_.getInt("depth_levels", depth_levels_);
     price_grouping_factor_ = params_.getDouble("price_grouping_factor", price_grouping_factor_);
     min_samples_for_stability_ = params_.getInt("min_samples_for_stability", min_samples_for_stability_);
-    ema_alpha_ = params_.getDouble("ema_alpha", 0.1); // Default EMA alpha
-    // Update other parameters as needed
-    // Notify callbacks about parameter update
-    notifyMetricsUpdated();
+    ema_alpha_ = params_.getDouble("ema_alpha", 0.1);
+    
+    // COPY current_metrics_ while we have the lock
+    OrderBookMetrics metrics_copy = current_metrics_;
+    
+    // Release lock, then notify with the copy
+    lock.~lock_guard();  // Explicit unlock
+    
+    // Now call callbacks with the copied metrics (no mutex needed)
+    std::vector<MetricsCallback> callbacks;
+    {
+        std::lock_guard<std::mutex> callback_lock(mutex_);
+        callbacks = metrics_callbacks_;
+    }
+    
+    for (const auto& callback : callbacks) {
+        try {
+            callback(metrics_copy);  // Use copy instead of current_metrics_
+        } catch (const std::exception& e) {
+            // Log exception
+        }
+    }
 }
-
  } // namespace strategy
  } // namespace trading

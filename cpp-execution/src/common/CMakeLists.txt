@@ -5,6 +5,7 @@ add_library(common
     exchange_types.cpp
     logger.cpp
     zeromq_client.cpp
+    event_bus.cpp
 )
 
 # Include directories

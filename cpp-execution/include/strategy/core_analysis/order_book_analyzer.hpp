@@ -21,6 +21,8 @@
  #include <functional>
  #include "strategy/types.hpp"
  #include "data_ingestion/orderbook/order_book.hpp"
+ #include "common/event_bus.hpp"
+ #include "common/trading_events.hpp"
 //  #include "core/market_types.hpp"
 //  #include "core/types.hpp"
 
@@ -275,7 +277,7 @@
       * Notify callbacks of metrics update
       */
      virtual void notifyMetricsUpdated();
-     
+
      // Exchange and trading pair identification
      core::ExchangeId exchangeId_;
      std::string trading_pair_;

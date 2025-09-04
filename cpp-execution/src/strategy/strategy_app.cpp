@@ -16,6 +16,8 @@
 #include "strategy/config/strategy_config_loader.hpp"
 #include "data_ingestion/orderbook/order_book.hpp"
 #include "common/logger.hpp"
+#include "common/event_bus.hpp"
+#include "common/trading_events.hpp"
 #include <iostream>
 #include <fstream>
 #include <thread>
@@ -121,6 +123,14 @@ data_ingestion::OrderBook createMockOrderBook(const std::string& symbol,
 // Main example function
 int main() {
     try {
+        // common::Logger::initialize("TradingApp", trading::common::LogLevel::INFO);
+        common::Logger::initialize("TradingApp", common::LogLevel::DEBUG);  // INFO, WARN, ERROR, CRITICAL
+        //event bus
+        common::Logger::initialize("TradingApp", common::LogLevel::DEBUG);
+    
+        // Start event bus before creating any components
+        auto& eventBus = common::EventBus::getInstance();
+        eventBus.start();
         LOG_INFO("=== Strategy Engine Example Starting ===");
         
         // 1. Load configuration from JSON file
@@ -176,7 +186,7 @@ int main() {
             if (!strategyEngine.processOrderBook(ethOrderBook)) {
                 LOG_WARN("Failed to process ETH order book in cycle {}", cycle + 1);
             }
-            
+            //
             // Check active signals
             auto activeSignals = strategyEngine.getActiveSignals();
             LOG_INFO("Active signals: {}", activeSignals.size());

@@ -6,6 +6,8 @@
  */
 #include "strategy/engine/strategy_engine.hpp"
 
+#include "common/event_bus.hpp"
+#include "common/trading_events.hpp"
 #include "common/logger.hpp"
 
  #include <nlohmann/json.hpp>
@@ -71,11 +73,24 @@
         signalGenerator_->setThresholdManager(thresholdManager_);
         
         // Register callbacks between components
-        size_t callbackId = signalGenerator_->registerSignalCallback([this](const TradingSignal& signal) {
-            this->notifySignalCallbacks(signal);
-            this->activeSignals_[signal.id] = signal;
-        });
-        
+        // size_t callbackId = signalGenerator_->registerSignalCallback([this](const TradingSignal& signal) {
+        //     this->notifySignalCallbacks(signal);
+        //     this->activeSignals_[signal.id] = signal;
+        // });
+        //use event bus
+                
+        // NEW: In StrategyEngine::initialize()
+        imbalanceSubscriptionId_ = common::EventBus::getInstance().subscribe<events::ImbalanceDetectedEvent>(
+            [this](const events::ImbalanceDetectedEvent& event) {
+                this->processImbalanceEvents({event.imbalance});
+            }
+        );
+        eventSubscriptionId_ = common::EventBus::getInstance().subscribe<events::SignalGeneratedEvent>(
+            [this](const events::SignalGeneratedEvent& event) {
+                this->handleSignalGenerated(event.signal);
+            }
+        );
+
         // Initialize trading pairs
         for (const auto& pair : config_.tradingPairs) {
             if (!initializeTradingPair(pair.first, pair.second)) {
@@ -96,7 +111,12 @@
         return false;
     }
 }
-
+void StrategyEngine::handleSignalGenerated(const TradingSignal& signal) {
+    // No locks needed here - this runs in event thread
+    std::lock_guard<std::mutex> lock(mutex_);
+    activeSignals_[signal.id] = signal;
+    notifySignalCallbacks(signal);
+}
  // Start the strategy engine
  bool StrategyEngine::start() {
      std::lock_guard<std::mutex> lock(mutex_);

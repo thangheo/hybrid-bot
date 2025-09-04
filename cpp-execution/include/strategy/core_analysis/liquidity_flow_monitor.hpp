@@ -205,6 +205,8 @@
      /**
       * Reset the monitor state
       */
+     virtual void resetInternal() ;
+
      virtual void reset();
      //updateParameters(parameters)
      /**
