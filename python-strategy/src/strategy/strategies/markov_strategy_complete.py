@@ -863,7 +863,7 @@ class MarkovETFStrategyPersistent(BaseStrategy):
         signals.loc[continuous_signal < -signal_threshold, 'signal'] = -1
         
         # Signal strength for position sizing (based on continuous signal)
-        signals['signal_strength'] = abs(continuous_signal)
+        signals['signal_strength'] = abs(continuous_signal) if continuous_signal is not None else 0.5
         
         # Enhanced confidence calculation
         signals['confidence'] = self._calculate_enhanced_signal_confidence(signals, indicators)
