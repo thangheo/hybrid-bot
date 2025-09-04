@@ -852,11 +852,21 @@ class MarkovETFStrategyPersistent(BaseStrategy):
             signals = self._enhance_signals_with_cpp_intelligence(signals, symbol)
             
             # FIXED: Use enhanced continuous signal if available, otherwise use final_signal
-            continuous_signal = signals.get('enhanced_final_signal', signals['final_signal'])
+            # continuous_signal = signals.get('enhanced_final_signal', signals['final_signal'])
+            # if 'enhanced_final_signal' in signals.columns:
+            #     continuous_signal = signals['enhanced_final_signal']
+            # else:
+            #     continuous_signal = signals['final_signal']
             if 'enhanced_final_signal' in signals.columns:
                 continuous_signal = signals['enhanced_final_signal']
             else:
                 continuous_signal = signals['final_signal']
+
+            # Add safety check:
+            if continuous_signal is None:
+                logger.error(f"Both enhanced_final_signal and final_signal are None for {symbol}!")
+                continuous_signal = pd.Series(0.5, index=signals.index)
+
             # Generate discrete signals from the best continuous signal
             signal_threshold = self.config.get('signal_threshold', 0.3)
             signals['signal'] = 0  # Initialize discrete signals
@@ -902,7 +912,7 @@ class MarkovETFStrategyPersistent(BaseStrategy):
 
         except Exception as e:
             logger.error(f"SOS send help!!something is fucking wong for {symbol}: {e}")
-
+            return pd.DataFrame()
     # Add method to get enhanced strategy info:
     def get_enhanced_strategy_info(self) -> Dict[str, Any]:
         """Get enhanced strategy information"""
