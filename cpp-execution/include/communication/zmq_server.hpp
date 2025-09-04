@@ -16,7 +16,7 @@
 #include <functional>  // Added for std::function
 
 // Include generated protobuf headers
-#include "../proto/generated/cpp/trading_messages.pb.h"
+#include "../../generated/cpp/proto/trading_messages.pb.h"
 
 class TradingCommunicationServer {
 private:

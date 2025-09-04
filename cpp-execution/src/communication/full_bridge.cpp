@@ -13,7 +13,7 @@
 #include "common/exchange_types.hpp"
 #include "core/market_types.hpp"
 #include "communication/zmq_server.hpp"
-#include "../proto/generated/cpp/trading_messages.pb.h"
+#include "../../generated/cpp/proto/trading_messages.pb.h"
 #include "data_ingestion/orderbook/order_book_types.hpp"
 #include <nlohmann/json.hpp>
 #include <iostream>

@@ -6,7 +6,7 @@ from typing import Dict, List, Optional, Deque
 from collections import deque
 from dataclasses import dataclass
 # from trading_messages_pb2 import MarketIntelligence
-from .trading_messages_pb2 import MarketIntelligence
+from proto.trading_messages_pb2 import MarketIntelligence
 logger = logging.getLogger(__name__)
 
 @dataclass

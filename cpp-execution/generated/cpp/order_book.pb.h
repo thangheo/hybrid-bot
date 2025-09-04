@@ -911,22 +911,22 @@ class OrderBookUpdate final :
   void _internal_set_exchange_id(::trading::common::proto::ExchangeIdProto value);
   public:
 
-  // bool isSnapshot = 6;
-  void clear_issnapshot();
-  bool issnapshot() const;
-  void set_issnapshot(bool value);
+  // bool is_snapshot = 6;
+  void clear_is_snapshot();
+  bool is_snapshot() const;
+  void set_is_snapshot(bool value);
   private:
-  bool _internal_issnapshot() const;
-  void _internal_set_issnapshot(bool value);
+  bool _internal_is_snapshot() const;
+  void _internal_set_is_snapshot(bool value);
   public:
 
-  // int64 sequenceNumber = 5;
-  void clear_sequencenumber();
-  int64_t sequencenumber() const;
-  void set_sequencenumber(int64_t value);
+  // int64 sequence_number = 5;
+  void clear_sequence_number();
+  int64_t sequence_number() const;
+  void set_sequence_number(int64_t value);
   private:
-  int64_t _internal_sequencenumber() const;
-  void _internal_set_sequencenumber(int64_t value);
+  int64_t _internal_sequence_number() const;
+  void _internal_set_sequence_number(int64_t value);
   public:
 
   // @@protoc_insertion_point(class_scope:trading.data_ingestion.proto.OrderBookUpdate)
@@ -945,8 +945,8 @@ class OrderBookUpdate final :
     ::trading::common::proto::TimestampProto* received_timestamp_;
     ::trading::data_ingestion::proto::OrderBookUpdate_Metadata* metadata_;
     int exchange_id_;
-    bool issnapshot_;
-    int64_t sequencenumber_;
+    bool is_snapshot_;
+    int64_t sequence_number_;
     mutable ::PROTOBUF_NAMESPACE_ID::internal::CachedSize _cached_size_;
   };
   union { Impl_ _impl_; };
@@ -2151,44 +2151,44 @@ inline void OrderBookUpdate::set_allocated_received_timestamp(::trading::common:
   // @@protoc_insertion_point(field_set_allocated:trading.data_ingestion.proto.OrderBookUpdate.received_timestamp)
 }
 
-// int64 sequenceNumber = 5;
-inline void OrderBookUpdate::clear_sequencenumber() {
-  _impl_.sequencenumber_ = int64_t{0};
+// int64 sequence_number = 5;
+inline void OrderBookUpdate::clear_sequence_number() {
+  _impl_.sequence_number_ = int64_t{0};
 }
-inline int64_t OrderBookUpdate::_internal_sequencenumber() const {
-  return _impl_.sequencenumber_;
+inline int64_t OrderBookUpdate::_internal_sequence_number() const {
+  return _impl_.sequence_number_;
 }
-inline int64_t OrderBookUpdate::sequencenumber() const {
-  // @@protoc_insertion_point(field_get:trading.data_ingestion.proto.OrderBookUpdate.sequenceNumber)
-  return _internal_sequencenumber();
+inline int64_t OrderBookUpdate::sequence_number() const {
+  // @@protoc_insertion_point(field_get:trading.data_ingestion.proto.OrderBookUpdate.sequence_number)
+  return _internal_sequence_number();
 }
-inline void OrderBookUpdate::_internal_set_sequencenumber(int64_t value) {
+inline void OrderBookUpdate::_internal_set_sequence_number(int64_t value) {
   
-  _impl_.sequencenumber_ = value;
+  _impl_.sequence_number_ = value;
 }
-inline void OrderBookUpdate::set_sequencenumber(int64_t value) {
-  _internal_set_sequencenumber(value);
-  // @@protoc_insertion_point(field_set:trading.data_ingestion.proto.OrderBookUpdate.sequenceNumber)
+inline void OrderBookUpdate::set_sequence_number(int64_t value) {
+  _internal_set_sequence_number(value);
+  // @@protoc_insertion_point(field_set:trading.data_ingestion.proto.OrderBookUpdate.sequence_number)
 }
 
-// bool isSnapshot = 6;
-inline void OrderBookUpdate::clear_issnapshot() {
-  _impl_.issnapshot_ = false;
+// bool is_snapshot = 6;
+inline void OrderBookUpdate::clear_is_snapshot() {
+  _impl_.is_snapshot_ = false;
 }
-inline bool OrderBookUpdate::_internal_issnapshot() const {
-  return _impl_.issnapshot_;
+inline bool OrderBookUpdate::_internal_is_snapshot() const {
+  return _impl_.is_snapshot_;
 }
-inline bool OrderBookUpdate::issnapshot() const {
-  // @@protoc_insertion_point(field_get:trading.data_ingestion.proto.OrderBookUpdate.isSnapshot)
-  return _internal_issnapshot();
+inline bool OrderBookUpdate::is_snapshot() const {
+  // @@protoc_insertion_point(field_get:trading.data_ingestion.proto.OrderBookUpdate.is_snapshot)
+  return _internal_is_snapshot();
 }
-inline void OrderBookUpdate::_internal_set_issnapshot(bool value) {
+inline void OrderBookUpdate::_internal_set_is_snapshot(bool value) {
   
-  _impl_.issnapshot_ = value;
+  _impl_.is_snapshot_ = value;
 }
-inline void OrderBookUpdate::set_issnapshot(bool value) {
-  _internal_set_issnapshot(value);
-  // @@protoc_insertion_point(field_set:trading.data_ingestion.proto.OrderBookUpdate.isSnapshot)
+inline void OrderBookUpdate::set_is_snapshot(bool value) {
+  _internal_set_is_snapshot(value);
+  // @@protoc_insertion_point(field_set:trading.data_ingestion.proto.OrderBookUpdate.is_snapshot)
 }
 
 // repeated .trading.data_ingestion.proto.PriceLevel bids = 7;

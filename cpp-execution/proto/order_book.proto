@@ -24,8 +24,8 @@ message OrderBookUpdate {
     trading.common.proto.SymbolProto symbol = 2;              // Trading pair
     trading.common.proto.TimestampProto exchange_timestamp = 3; // Timestamp from exchange
     trading.common.proto.TimestampProto received_timestamp = 4; // When received by our system
-    int64 sequenceNumber = 5;          // Sequence number for ordering updates
-    bool isSnapshot = 6;               // True if full snapshot, false for incremental
+    int64 sequence_number = 5;          // Sequence number for ordering updates
+    bool is_snapshot = 6;               // True if full snapshot, false for incremental
     repeated PriceLevel bids = 7;       // Bid price levels (sorted descending)
     repeated PriceLevel asks = 8;       // Ask price levels (sorted ascending)
     string checksum = 9;                // Checksum for data integrity validation

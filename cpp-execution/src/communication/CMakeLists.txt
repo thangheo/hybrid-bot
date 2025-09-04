@@ -46,7 +46,7 @@ endif()
 
 
 # Add protobuf-generated files to the SOURCES list
-file(GLOB PROTO_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../../proto/generated/cpp/*.cc)
+file(GLOB PROTO_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../../generated/cpp/*.cc)
 file(GLOB WEBSOCKET_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../../src/data_ingestion/websocket/*.cpp)
 file(GLOB WEBSOCKET_EX_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../../src/data_ingestion/websocket/exchanges/*.cpp)
 file(GLOB ORDERBOOK_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../../src/data_ingestion/orderbook/*.cpp)
@@ -89,7 +89,7 @@ include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/../../include/communication
     ${CMAKE_CURRENT_SOURCE_DIR}/../../include/risk
     ${CMAKE_CURRENT_SOURCE_DIR}/../../include/market_intelligence
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../proto/generated/cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../generated/cpp/
 
 )
 

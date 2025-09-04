@@ -5,6 +5,8 @@ import numpy as np
 from collections import deque
 from dataclasses import dataclass
 from typing import Dict, List, Optional
+import sys
+sys.path.append('generated/python/proto')
 from trading_messages_pb2 import MarketIntelligence, TradingIntent, MarketRegime
 
 @dataclass

@@ -7,7 +7,7 @@
 #include <cmath>
 
 // Assuming protobuf messages are defined as in the document
-#include "../proto/generated/cpp/trading_messages.pb.h"
+#include "../../generated/cpp/trading_messages.pb.h"
 class OrderBookAnalyzer {
 private:
     struct OrderBookSnapshot {
