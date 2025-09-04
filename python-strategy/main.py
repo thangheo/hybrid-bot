@@ -665,7 +665,7 @@ class EnhancedTradingBot:
             # Prepare signal dictionary
             signal_dict = {
                 'symbol': symbol.replace('/', ''),
-                'signal_strength': float(signal_data.get('final_strength', 0.5)),
+                'signal_strength': float(signal_data.get('signal_strength', 0.5)),
                 'volatility': float(market_data['close'].pct_change().tail(20).std()),
                 'direction': 'BUY',
                 'raw_signal': float(signal_data.get('final_signal', 1)),
