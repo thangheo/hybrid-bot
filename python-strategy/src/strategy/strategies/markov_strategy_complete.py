@@ -894,8 +894,11 @@ class MarkovETFStrategyPersistent(BaseStrategy):
         signals = self._enhance_signals_with_cpp_intelligence(signals, symbol)
         
         # FIXED: Use enhanced continuous signal if available, otherwise use final_signal
-        continuous_signal = signals.get('enhanced_final_signal', signals['final_signal'])
-        
+        # continuous_signal = signals.get('enhanced_final_signal', signals['final_signal'])
+        if 'enhanced_final_signal' in signals.columns:
+            continuous_signal = signals['enhanced_final_signal']
+        else:
+            continuous_signal = signals['final_signal']
         # Generate discrete signals from the best continuous signal
         signal_threshold = self.config.get('signal_threshold', 0.3)
         signals['signal'] = 0  # Initialize discrete signals
