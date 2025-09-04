@@ -69,6 +69,7 @@ public:
 private:
     std::unordered_map<std::string, CoinProfile> profiles_;
     std::mutex profiles_mutex_;
+    void InitializeDefaultProfiles_conservative() ;
 
     void InitializeDefaultProfiles();
     CoinProfile& GetOrCreateProfile(const std::string& symbol);
