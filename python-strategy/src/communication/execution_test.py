@@ -8,9 +8,9 @@ import zmq
 import time
 import sys
 from signal import signal, SIGINT
-
+import sys
 # Add protobuf path if needed
-sys.path.append('generated/python')
+sys.path.append('generated/python/proto')
 import trading_messages_pb2 as tm
 
 class MockExecutionEngine:

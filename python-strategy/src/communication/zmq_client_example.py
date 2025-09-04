@@ -5,7 +5,9 @@ Basic ZMQ Subscriber - Works with any ZMQ version
 import zmq
 import time
 import sys
-from proto.trading_messages_pb2 import *
+sys.path.append('generated/python/proto')
+
+from trading_messages_pb2 import *
 
 def get_zmq_info():
     """Get ZMQ version info"""
