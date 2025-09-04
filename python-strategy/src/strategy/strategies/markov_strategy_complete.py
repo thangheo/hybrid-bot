@@ -419,50 +419,7 @@ class MarkovETFStrategyPersistent(BaseStrategy):
         self.cpp_intelligence_enabled = bridge is not None
         logger.info(f"C++ intelligence bridge {'enabled' if self.cpp_intelligence_enabled else 'disabled'}")
     
-    def _enhance_signals_with_cpp_intelligence_filter(self, signals: pd.DataFrame, symbol: str) -> pd.DataFrame:
-        """Enhance signals with C++ market intelligence"""
-        
-        if not self.cpp_intelligence_enabled or not self.intelligence_bridge:
-            return signals
-        
-        intel = self.intelligence_bridge.get_intelligence(symbol)
-        if not intel:
-            return signals
-        
-        # Create enhanced columns
-        signals = signals.copy()
-        
-        # Liquidity adjustment
-        liquidity_factor = max(0.5, min(1.5, intel.liquidity_ratio))
-        signals['cpp_liquidity_factor'] = liquidity_factor
-        
-        # Volatility adjustment  
-        volatility_factor = 1.0
-        if intel.volatility_trend > 0.03:  # High volatility
-            volatility_factor = 0.7
-        elif intel.volatility_trend < 0.01:  # Low volatility
-            volatility_factor = 1.2
-        signals['cpp_volatility_factor'] = volatility_factor
-        
-        # Order book imbalance influence
-        imbalance_factor = 1.0 + (intel.order_book_imbalance * 0.3)
-        signals['cpp_imbalance_factor'] = imbalance_factor
-        
-        # Combine factors
-        enhancement_factor = (liquidity_factor * volatility_factor * imbalance_factor * intel.regime_confidence)
-        signals['cpp_enhancement_factor'] = enhancement_factor
-        
-        # Apply to signals
-        signals['enhanced_final_signal'] = signals['final_signal'] * enhancement_factor
-        signals['enhanced_signal_strength'] = signals['signal_strength'] * enhancement_factor
-        
-        # Update discrete signals based on enhanced values
-        signal_threshold = self.config.get('signal_threshold', 0.3)
-        signals['enhanced_signal'] = 0
-        signals.loc[signals['enhanced_final_signal'] > signal_threshold, 'enhanced_signal'] = 1
-        signals.loc[signals['enhanced_final_signal'] < -signal_threshold, 'enhanced_signal'] = -1
-        
-        return signals
+    
     #use C++ as boost signal
     def _enhance_signals_with_cpp_intelligence(self, signals: pd.DataFrame, symbol: str) -> pd.DataFrame:
         """Enhance signals with C++ market intelligence - BOOST ONLY, never weaken"""
@@ -894,7 +851,7 @@ class MarkovETFStrategyPersistent(BaseStrategy):
         signals = self._enhance_signals_with_cpp_intelligence(signals, symbol)
         
         # FIXED: Use enhanced continuous signal if available, otherwise use final_signal
-        # continuous_signal = signals.get('enhanced_final_signal', signals['final_signal'])
+        continuous_signal = signals.get('enhanced_final_signal', signals['final_signal'])
         if 'enhanced_final_signal' in signals.columns:
             continuous_signal = signals['enhanced_final_signal']
         else:
