@@ -15,14 +15,14 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Callable
 from datetime import datetime
 import os 
-current_dir = os.path.dirname(os.path.abspath(__file__))
-proto_path = os.path.join(current_dir, 'generated', 'python', 'proto')
-sys.path.append(proto_path)
+# current_dir = os.path.dirname(os.path.abspath(__file__))
+# proto_path = os.path.join(current_dir, 'generated', 'python', 'proto')
+# sys.path.append(proto_path)
 
 
 # Import protobuf messages (assuming generated from trading_messages.proto)
 try:
-    from trading_messages_pb2 import *
+    from .trading_messages_pb2 import *
 except ImportError:
     print("Error: trading_messages_pb2 not found. Generate with: protoc --python_out=. trading_messages.proto")
     sys.exit(1)
