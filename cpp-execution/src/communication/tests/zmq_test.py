@@ -10,7 +10,7 @@ import sys
 import os
 
 # Add generated protobuf path
-sys.path.append('generated/python')
+sys.path.append('generated/python/proto')
 
 try:
     import trading_messages_pb2 as tm

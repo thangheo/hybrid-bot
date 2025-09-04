@@ -10,12 +10,13 @@ import subprocess
 import signal
 
 # Add generated protobuf path
-sys.path.append(os.path.join(os.path.dirname(__file__), 'generated', 'python'))
+# sys.path.append(os.path.join(os.path.dirname(__file__), 'generated', 'python'))
+sys.path.append('generated/python/proto')
 
 def test_protobuf():
     """Test protobuf import"""
     try:
-        import proto.trading_messages_pb2
+        import trading_messages_pb2
         print("✓ Protobuf messages imported")
         return True
     except ImportError as e:
