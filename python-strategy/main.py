@@ -521,9 +521,6 @@ class EnhancedTradingBot:
             # Update risk management
             self._update_risk_management_with_regime(regime_info, current_volatility)
             
-
-            # # Evaluate trades như bình thường - giờ đã regime-aware!
-            # approved, size, reason = risk_manager.evaluate_trade_risk(symbol, signal, portfolio)
             # Log signal info
             self._log_signal_info(symbol, latest_signal)
 
@@ -606,71 +603,108 @@ class EnhancedTradingBot:
                 
         except Exception as e:
             self.logger.error(f"Signal processing failed for {symbol}: {e}")
-
     async def _handle_sell_signal(self, symbol: str, signal_data: pd.Series, balance: dict):
-        """Handle SELL signals"""
-        try:
-            # Check position
-            position_info = self.position_tracker.has_position(symbol)
-            available_quantity = position_info.get('quantity', 0)
+    """Handle SELL signals"""
+    try:
+        # Check position
+        position_info = self.position_tracker.has_position(symbol)
+        available_quantity = position_info.get('quantity', 0)
+        
+        if available_quantity <= 0:
+            self.logger.info(f"✅ No {symbol} position found (correctly rejected)")
+            return
+        
+        # Get current price
+        ticker = await self.order_manager.exchange.fetch_ticker(symbol)
+        current_price = ticker['last']
+        position_value = available_quantity * current_price
+        
+        if position_value >= 10:  # Minimum order check
+            order = Order(
+                symbol=symbol,
+                side=OrderSide.SELL,
+                order_type=OrderType.MARKET,
+                quantity=available_quantity
+            )
             
-            if available_quantity <= 0:
-                self.logger.info(f"✅ No {symbol} position found (correctly rejected)")
-                return
+            success, message = await self.order_manager.place_order(order)
             
-            # Get current price
-            ticker = await self.order_manager.exchange.fetch_ticker(symbol)
-            current_price = ticker['last']
-            position_value = available_quantity * current_price
-            
-            if position_value >= 10:  # Minimum order check
-                order = Order(
-                    symbol=symbol,
-                    side=OrderSide.SELL,
-                    order_type=OrderType.MARKET,
-                    quantity=available_quantity
-                )
+            if success:
+                # Update position tracker
+                await self.position_tracker.update_position(symbol, 0, current_price, datetime.now())
                 
-                success, message = await self.order_manager.place_order(order)
-                
-                if success:
-                    # Update position tracker
-                    await self.position_tracker.update_position(symbol, 0, current_price, datetime.now())
-                    
-                    if self.alert_manager:
-                        await self.alert_manager.send_alert(
-                            'INFO',
-                            f'✅ SELL: {symbol} {available_quantity:.6f} ~${position_value:.2f}',
-                            {
-                                'symbol': symbol,
-                                'direction': 'SELL',
-                                'quantity': available_quantity,
-                                'value': position_value
-                            }
-                        )
-                    self.logger.error(f"❌ SELL failed: {message}")
+                if self.alert_manager:
+                    await self.alert_manager.send_alert(
+                        'INFO',
+                        f'✅ SELL: {symbol} {available_quantity:.6f} ~${position_value:.2f}',
+                        {
+                            'symbol': symbol,
+                            'direction': 'SELL',
+                            'quantity': available_quantity,
+                            'value': position_value
+                        }
+                    )
+                self.logger.info(f"✅ SELL order successful: {symbol}")
             else:
-                self.logger.info(f"⚠️ Position too small: {symbol} ${position_value:.2f}")
-                
-        except Exception as e:
-            self.logger.error(f"❌ SELL handling failed: {e}")
-    
+                self.logger.error(f"❌ SELL failed: {message}")
+        else:
+            self.logger.info(f"⚠️ Position too small: {symbol} ${position_value:.2f}")
+            
+    except Exception as e:
+        self.logger.error(f"❌ SELL handling failed: {e}")
+        self.logger.debug(f"Available signal_data keys: {list(signal_data.index)}")
+        raise
+
     async def _handle_buy_signal(self, symbol: str, signal_data: pd.Series,
                                 market_data: pd.DataFrame, balance: dict):
-        """Handle BUY signals"""
+        """Handle BUY signals with enhanced debugging"""
         try:
+            # DEBUG: Log what we received
+            self.logger.debug(f"Processing BUY signal for {symbol}")
+            self.logger.debug(f"signal_data type: {type(signal_data)}")
+            self.logger.debug(f"Available signal_data keys: {list(signal_data.index)}")
+            self.logger.debug(f"signal_data values: {signal_data.to_dict()}")
+            
             # Build portfolio for risk assessment
             current_portfolio = await self._build_portfolio_from_balance(balance)
             
-            # Prepare signal dictionary
-            signal_dict = {
-                'symbol': symbol.replace('/', ''),
-                'signal_strength': float(signal_data.get('signal_strength', 0.5)),
-                'volatility': float(market_data['close'].pct_change().tail(20).std()),
-                'direction': 'BUY',
-                'raw_signal': float(signal_data.get('final_signal', 1)),
-                'confidence': float(signal_data.get('confidence', 0.5))
-            }
+            # Prepare signal dictionary with robust field extraction
+            signal_dict = {}
+            
+            # Extract each field with proper error handling
+            try:
+                signal_dict['symbol'] = symbol.replace('/', '')
+                
+                # Try multiple possible keys for signal_strength
+                if 'signal_strength' in signal_data.index:
+                    signal_dict['signal_strength'] = float(signal_data['signal_strength'])
+                elif 'strength' in signal_data.index:
+                    signal_dict['signal_strength'] = float(signal_data['strength'])
+                else:
+                    # Calculate from raw signal as fallback
+                    raw_signal = float(signal_data.get('signal', 0))
+                    signal_dict['signal_strength'] = min(abs(raw_signal), 1.0)
+                    self.logger.warning(f"Using calculated signal_strength for {symbol}: {signal_dict['signal_strength']}")
+                
+                signal_dict['volatility'] = float(market_data['close'].pct_change().tail(20).std())
+                signal_dict['direction'] = 'BUY'
+                
+                # Try multiple possible keys for raw signal
+                if 'final_signal' in signal_data.index:
+                    signal_dict['raw_signal'] = float(signal_data['final_signal'])
+                elif 'signal' in signal_data.index:
+                    signal_dict['raw_signal'] = float(signal_data['signal'])
+                else:
+                    signal_dict['raw_signal'] = 1.0  # Default for BUY
+                    
+                signal_dict['confidence'] = float(signal_data.get('confidence', 0.5))
+                
+            except Exception as field_error:
+                self.logger.error(f"Error extracting signal fields for {symbol}: {field_error}")
+                self.logger.error(f"Available keys: {list(signal_data.index)}")
+                raise
+            
+            self.logger.debug(f"Constructed signal_dict: {signal_dict}")
             
             # Risk assessment
             risk_approved, position_size, reason = self.risk_manager.evaluate_trade_risk(
@@ -709,6 +743,7 @@ class EnhancedTradingBot:
                         await self.position_tracker.update_position(
                             symbol, new_quantity, current_price, datetime.now()
                         )
+                        
                         if self.alert_manager:
                             await self.alert_manager.send_alert(
                                 'INFO',
@@ -721,7 +756,7 @@ class EnhancedTradingBot:
                                     'value': order_value
                                 }
                             )
-
+                        self.logger.info(f"✅ BUY order successful: {symbol}")
                     else:
                         self.logger.error(f"❌ BUY order failed: {message}")
                 else:
@@ -730,7 +765,161 @@ class EnhancedTradingBot:
                 self.logger.info(f"🚫 BUY signal rejected for {symbol}: {reason}")
                 
         except Exception as e:
-            self.logger.error(f"❌ BUY handling failed: {e}")
+            self.logger.error(f"❌ BUY handling failed for {symbol}: {e}")
+            self.logger.debug(f"signal_data type: {type(signal_data)}")
+            if hasattr(signal_data, 'index'):
+                self.logger.debug(f"Available signal_data keys: {list(signal_data.index)}")
+            else:
+                self.logger.debug(f"signal_data content: {signal_data}")
+            raise
+
+    # Also add this validation method to your main processing:
+    def validate_signal_data(self, symbol: str, signal_data: pd.Series) -> bool:
+        """Validate that signal_data contains required fields"""
+        try:
+            required_basic = ['signal']
+            optional_fields = ['signal_strength', 'confidence', 'final_signal']
+            
+            # Check if we have basic requirements
+            missing_basic = [field for field in required_basic if field not in signal_data.index]
+            if missing_basic:
+                self.logger.error(f"Missing critical fields for {symbol}: {missing_basic}")
+                return False
+                
+            # Check if we have at least some optional fields
+            available_optional = [field for field in optional_fields if field in signal_data.index]
+            if not available_optional:
+                self.logger.warning(f"No optional fields available for {symbol}. Available: {list(signal_data.index)}")
+                
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Error validating signal data for {symbol}: {e}")
+            return False
+    # async def _handle_sell_signal(self, symbol: str, signal_data: pd.Series, balance: dict):
+    #     """Handle SELL signals"""
+    #     try:
+    #         # Check position
+    #         position_info = self.position_tracker.has_position(symbol)
+    #         available_quantity = position_info.get('quantity', 0)
+            
+    #         if available_quantity <= 0:
+    #             self.logger.info(f"✅ No {symbol} position found (correctly rejected)")
+    #             return
+            
+    #         # Get current price
+    #         ticker = await self.order_manager.exchange.fetch_ticker(symbol)
+    #         current_price = ticker['last']
+    #         position_value = available_quantity * current_price
+            
+    #         if position_value >= 10:  # Minimum order check
+    #             order = Order(
+    #                 symbol=symbol,
+    #                 side=OrderSide.SELL,
+    #                 order_type=OrderType.MARKET,
+    #                 quantity=available_quantity
+    #             )
+                
+    #             success, message = await self.order_manager.place_order(order)
+                
+    #             if success:
+    #                 # Update position tracker
+    #                 await self.position_tracker.update_position(symbol, 0, current_price, datetime.now())
+                    
+    #                 if self.alert_manager:
+    #                     await self.alert_manager.send_alert(
+    #                         'INFO',
+    #                         f'✅ SELL: {symbol} {available_quantity:.6f} ~${position_value:.2f}',
+    #                         {
+    #                             'symbol': symbol,
+    #                             'direction': 'SELL',
+    #                             'quantity': available_quantity,
+    #                             'value': position_value
+    #                         }
+    #                     )
+    #                 self.logger.error(f"❌ SELL failed: {message}")
+    #         else:
+    #             self.logger.info(f"⚠️ Position too small: {symbol} ${position_value:.2f}")
+                
+    #     except Exception as e:
+    #         self.logger.error(f"❌ SELL handling failed: {e}")
+    
+    # async def _handle_buy_signal(self, symbol: str, signal_data: pd.Series,
+    #                             market_data: pd.DataFrame, balance: dict):
+    #     """Handle BUY signals"""
+    #     try:
+    #         # Build portfolio for risk assessment
+    #         current_portfolio = await self._build_portfolio_from_balance(balance)
+            
+    #         # Prepare signal dictionary
+    #         signal_dict = {
+    #             'symbol': symbol.replace('/', ''),
+    #             'signal_strength': float(signal_data.get('signal_strength', 0.5)),
+    #             'volatility': float(market_data['close'].pct_change().tail(20).std()),
+    #             'direction': 'BUY',
+    #             'raw_signal': float(signal_data.get('final_signal', 1)),
+    #             'confidence': float(signal_data.get('confidence', 0.5))
+    #         }
+            
+    #         # Risk assessment
+    #         risk_approved, position_size, reason = self.risk_manager.evaluate_trade_risk(
+    #             symbol=signal_dict['symbol'],
+    #             signal=signal_dict,
+    #             current_portfolio=current_portfolio
+    #         )
+            
+    #         if risk_approved and position_size > 0:
+    #             # Execute BUY order
+    #             ticker = await self.order_manager.exchange.fetch_ticker(symbol)
+    #             current_price = ticker['last']
+                
+    #             available_balance = balance.get('USDT', {}).get('free', 0)
+    #             order_value = available_balance * position_size
+                
+    #             if order_value >= 10:  # Minimum order check
+    #                 quantity = order_value / current_price
+                    
+    #                 order = Order(
+    #                     symbol=symbol,
+    #                     side=OrderSide.BUY,
+    #                     order_type=OrderType.LIMIT,
+    #                     price=current_price,
+    #                     quantity=quantity
+    #                 )
+                    
+    #                 success, message = await self.order_manager.place_order(order)
+                    
+    #                 if success:
+    #                     # Update position tracker
+    #                     current_position = self.position_tracker.has_position(symbol)
+    #                     current_quantity = current_position.get('quantity', 0)
+    #                     new_quantity = current_quantity + quantity
+                        
+    #                     await self.position_tracker.update_position(
+    #                         symbol, new_quantity, current_price, datetime.now()
+    #                     )
+    #                     if self.alert_manager:
+    #                         await self.alert_manager.send_alert(
+    #                             'INFO',
+    #                             f'✅ BUY: {symbol} {quantity:.6f} (~${order_value:.2f})',
+    #                             {
+    #                                 'symbol': symbol,
+    #                                 'direction': 'BUY',
+    #                                 'quantity': quantity,
+    #                                 'price': current_price,
+    #                                 'value': order_value
+    #                             }
+    #                         )
+
+    #                 else:
+    #                     self.logger.error(f"❌ BUY order failed: {message}")
+    #             else:
+    #                 self.logger.warning(f"⚠️ Insufficient order value: {symbol} ${order_value:.2f}")
+    #         else:
+    #             self.logger.info(f"🚫 BUY signal rejected for {symbol}: {reason}")
+                
+    #     except Exception as e:
+    #         self.logger.error(f"❌ BUY handling failed: {e}")
     
     async def _build_portfolio_from_balance(self, balance: dict) -> dict:
         """Build portfolio from exchange balance"""
