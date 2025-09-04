@@ -11,7 +11,11 @@ import signal
 
 # Add generated protobuf path
 # sys.path.append(os.path.join(os.path.dirname(__file__), 'generated', 'python'))
-sys.path.append('generated/python/proto')
+import os 
+current_dir = os.path.dirname(os.path.abspath(__file__))
+proto_path = os.path.join(current_dir, '..', 'generated', 'python', 'proto')
+sys.path.append(proto_path)
+
 
 def test_protobuf():
     """Test protobuf import"""

@@ -14,7 +14,11 @@ from collections import deque
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Callable
 from datetime import datetime
-sys.path.append('generated/python/proto')
+import os 
+current_dir = os.path.dirname(os.path.abspath(__file__))
+proto_path = os.path.join(current_dir, '..', 'generated', 'python', 'proto')
+sys.path.append(proto_path)
+
 
 # Import protobuf messages (assuming generated from trading_messages.proto)
 try:
