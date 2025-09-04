@@ -5,7 +5,11 @@ Basic ZMQ Subscriber - Works with any ZMQ version
 import zmq
 import time
 import sys
-sys.path.append('generated/python/proto')
+import os 
+current_dir = os.path.dirname(os.path.abspath(__file__))
+proto_path = os.path.join(current_dir, '..', 'generated', 'python', 'proto')
+sys.path.append(proto_path)
+
 
 from trading_messages_pb2 import *
 
