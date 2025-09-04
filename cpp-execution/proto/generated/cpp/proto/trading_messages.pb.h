@@ -203,14 +203,15 @@ inline bool TradingMessage_MessageType_Parse(
     TradingMessage_MessageType_descriptor(), name, value);
 }
 enum TradeSide : int {
-  SIDE_BUY = 0,
-  SIDE_SELL = 1,
+  SIDE_UNKNOWN = 0,
+  SIDE_BUY = 1,
+  SIDE_SELL = -1,
   TradeSide_INT_MIN_SENTINEL_DO_NOT_USE_ = std::numeric_limits<int32_t>::min(),
   TradeSide_INT_MAX_SENTINEL_DO_NOT_USE_ = std::numeric_limits<int32_t>::max()
 };
 bool TradeSide_IsValid(int value);
-constexpr TradeSide TradeSide_MIN = SIDE_BUY;
-constexpr TradeSide TradeSide_MAX = SIDE_SELL;
+constexpr TradeSide TradeSide_MIN = SIDE_SELL;
+constexpr TradeSide TradeSide_MAX = SIDE_BUY;
 constexpr int TradeSide_ARRAYSIZE = TradeSide_MAX + 1;
 
 const ::PROTOBUF_NAMESPACE_ID::EnumDescriptor* TradeSide_descriptor();
