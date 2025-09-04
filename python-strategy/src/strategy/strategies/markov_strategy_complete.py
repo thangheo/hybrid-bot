@@ -852,8 +852,9 @@ class MarkovETFStrategyPersistent(BaseStrategy):
                 signals['final_signal'] = signals['final_signal'] * confidence_factor
 
             # Apply orderbook intelligence enhancement to continuous signal
-            signals = self._enhance_signals_with_cpp_intelligence(signals, symbol)
-            
+            if 'signal_strength' in signals.columns:
+                signals = self._enhance_signals_with_cpp_intelligence(signals, symbol)
+                
             # FIXED: Use enhanced continuous signal if available, otherwise use final_signal
             # continuous_signal = signals.get('enhanced_final_signal', signals['final_signal'])
             # if 'enhanced_final_signal' in signals.columns:
