@@ -627,7 +627,7 @@ class IntegratedTradingStrategy:
         if abs(regime_state.flow_momentum) > 0.3:
             return tm.SIDE_BUY if regime_state.flow_momentum > 0 else tm.SIDE_SELL
         
-        return None
+        return tm.SIDE_UNKNOWN
 
     def _calculate_position_size(self, symbol: str, regime_state: MarketRegimeState, signal_strength: float) -> float:
         """Calculate position size based on regime and signal strength"""

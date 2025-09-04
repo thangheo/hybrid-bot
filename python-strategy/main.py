@@ -676,16 +676,30 @@ class EnhancedTradingBot:
                 signal_dict['symbol'] = symbol.replace('/', '')
                 
                 # Try multiple possible keys for signal_strength
-                if 'signal_strength' in signal_data.index:
+                # if 'signal_strength' in signal_data.index:
+                #     signal_dict['signal_strength'] = float(signal_data['signal_strength'])
+                # elif 'strength' in signal_data.index:
+                #     signal_dict['signal_strength'] = float(signal_data['strength'])
+                # else:
+                #     # Calculate from raw signal as fallback
+                #     raw_signal = float(signal_data.get('signal', 0))
+                #     signal_dict['signal_strength'] = min(abs(raw_signal), 1.0)
+                #     self.logger.warning(f"Using calculated signal_strength for {symbol}: {signal_dict['signal_strength']}")
+                if 'signal_strength' in signal_data.index and pd.notna(signal_data['signal_strength']):
                     signal_dict['signal_strength'] = float(signal_data['signal_strength'])
-                elif 'strength' in signal_data.index:
+                elif 'strength' in signal_data.index and pd.notna(signal_data['strength']):
                     signal_dict['signal_strength'] = float(signal_data['strength'])
                 else:
-                    # Calculate from raw signal as fallback
                     raw_signal = float(signal_data.get('signal', 0))
                     signal_dict['signal_strength'] = min(abs(raw_signal), 1.0)
                     self.logger.warning(f"Using calculated signal_strength for {symbol}: {signal_dict['signal_strength']}")
-                
+
+                # ADDITIONAL SAFETY CHECK:
+                if signal_dict['signal_strength'] is None or pd.isna(signal_dict['signal_strength']):
+                    signal_dict['signal_strength'] = 0.5
+                    self.logger.warning(f"signal_strength was None/NaN for {symbol}, using default 0.5")
+
+
                 signal_dict['volatility'] = float(market_data['close'].pct_change().tail(20).std())
                 signal_dict['direction'] = 'BUY'
                 
