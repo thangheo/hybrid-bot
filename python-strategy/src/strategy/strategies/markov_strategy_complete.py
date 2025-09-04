@@ -885,26 +885,32 @@ class MarkovETFStrategyPersistent(BaseStrategy):
         transition_enhancement = self._calculate_transition_enhancement(regime_info)
         signals['final_signal'] = signals['enhanced_signal'] * transition_enhancement
         
-        # Generate discrete signals
-        signal_threshold = self.config.get('signal_threshold', 0.3)
-        signals['signal'] = 0
-        signals.loc[signals['final_signal'] > signal_threshold, 'signal'] = 1
-        signals.loc[signals['final_signal'] < -signal_threshold, 'signal'] = -1
-        
-        # Signal strength for position sizing
-        signals['signal_strength'] = abs(signals['final_signal'])
-        
-        # Enhanced confidence calculation
-        signals['confidence'] = self._calculate_enhanced_signal_confidence(signals, indicators)
-
         # Apply confidence adjustment to final signal if enhanced indicators are available
         if self.use_enhanced_indicators and 'enhanced_signal_confidence' in indicators:
             confidence_factor = indicators['enhanced_signal_confidence']
             signals['final_signal'] = signals['final_signal'] * confidence_factor
 
+        # Apply orderbook intelligence enhancement to continuous signal
+        signals = self._enhance_signals_with_cpp_intelligence(signals, symbol)
+        
+        # FIXED: Use enhanced continuous signal if available, otherwise use final_signal
+        continuous_signal = signals.get('enhanced_final_signal', signals['final_signal'])
+        
+        # Generate discrete signals from the best continuous signal
+        signal_threshold = self.config.get('signal_threshold', 0.3)
+        signals['signal'] = 0  # Initialize discrete signals
+        signals.loc[continuous_signal > signal_threshold, 'signal'] = 1
+        signals.loc[continuous_signal < -signal_threshold, 'signal'] = -1
+        
+        # Signal strength for position sizing (based on continuous signal)
+        signals['signal_strength'] = abs(continuous_signal)
+        
+        # Enhanced confidence calculation
+        signals['confidence'] = self._calculate_enhanced_signal_confidence(signals, indicators)
+
         # Add metadata
         signals['regime'] = regime_info.current_regime.value
-        signals['volatility'] = indicators.get('atr', 0.05)    # ADD THIS
+        signals['volatility'] = indicators.get('atr', 0.05)
         signals['next_likely_regime'] = regime_info.next_most_likely.value
         signals['transition_confidence'] = regime_info.transition_confidence
         
@@ -916,23 +922,19 @@ class MarkovETFStrategyPersistent(BaseStrategy):
         if 'enhanced_volume_score' in indicators:
             signals['enhanced_volume_component'] = indicators['enhanced_volume_score']
 
-        #use orderbook  intelligent
-        signals = self._enhance_signals_with_cpp_intelligence(signals, symbol)
+        # Validate final signals
+        assert signals['signal'].isin([-1, 0, 1]).all(), "Signal column contains invalid values"
         
-        # Use enhanced signals if available
-        if 'enhanced_signal' in signals.columns:
-            signals['signal'] = signals['enhanced_signal']
-            signals['signal_strength'] = signals['enhanced_signal_strength']
-
         # Persistence
         self.signals_generated += 1
         if self.signals_generated == 1 or self.signals_generated % self.save_frequency == 0:
             await self._save_persistent_data(symbol)
         
-        
         if regime_info and self.persistence_manager.should_save_regime_history(symbol, regime_info):
             self.persistence_manager.save_regime_history_entry(symbol, regime_info)
+            
         logger.info(f"Generated signal for {symbol}: {signals['signal'].iloc[-1]}")
+        logger.info(f"Signal strength: {signals['signal_strength'].iloc[-1]:.3f}")
         logger.info(f"Regime: {regime_info.current_regime.value}")
         
         return signals

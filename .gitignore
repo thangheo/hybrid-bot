@@ -17,3 +17,5 @@
 cpp-execution/third_parties/
 .vscode/
 cpp-execution/bin/
+pids/*
+backtest/
