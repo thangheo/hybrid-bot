@@ -493,7 +493,7 @@ class MarkovETFStrategyPersistent(BaseStrategy):
         if 'signal_strength' in signals.columns:
             original_signal_strength = signals['signal_strength'].copy()
         else:
-            original_signal_strength = 0.5
+            return signals
         # Boost the continuous signals
         signals['enhanced_final_signal'] = signals['final_signal'] * final_boost
         signals['enhanced_signal_strength'] = original_signal_strength * final_boost
