@@ -604,56 +604,56 @@ class EnhancedTradingBot:
         except Exception as e:
             self.logger.error(f"Signal processing failed for {symbol}: {e}")
     async def _handle_sell_signal(self, symbol: str, signal_data: pd.Series, balance: dict):
-    """Handle SELL signals"""
-    try:
-        # Check position
-        position_info = self.position_tracker.has_position(symbol)
-        available_quantity = position_info.get('quantity', 0)
-        
-        if available_quantity <= 0:
-            self.logger.info(f"✅ No {symbol} position found (correctly rejected)")
-            return
-        
-        # Get current price
-        ticker = await self.order_manager.exchange.fetch_ticker(symbol)
-        current_price = ticker['last']
-        position_value = available_quantity * current_price
-        
-        if position_value >= 10:  # Minimum order check
-            order = Order(
-                symbol=symbol,
-                side=OrderSide.SELL,
-                order_type=OrderType.MARKET,
-                quantity=available_quantity
-            )
+        """Handle SELL signals"""
+        try:
+            # Check position
+            position_info = self.position_tracker.has_position(symbol)
+            available_quantity = position_info.get('quantity', 0)
             
-            success, message = await self.order_manager.place_order(order)
+            if available_quantity <= 0:
+                self.logger.info(f"✅ No {symbol} position found (correctly rejected)")
+                return
             
-            if success:
-                # Update position tracker
-                await self.position_tracker.update_position(symbol, 0, current_price, datetime.now())
+            # Get current price
+            ticker = await self.order_manager.exchange.fetch_ticker(symbol)
+            current_price = ticker['last']
+            position_value = available_quantity * current_price
+            
+            if position_value >= 10:  # Minimum order check
+                order = Order(
+                    symbol=symbol,
+                    side=OrderSide.SELL,
+                    order_type=OrderType.MARKET,
+                    quantity=available_quantity
+                )
                 
-                if self.alert_manager:
-                    await self.alert_manager.send_alert(
-                        'INFO',
-                        f'✅ SELL: {symbol} {available_quantity:.6f} ~${position_value:.2f}',
-                        {
-                            'symbol': symbol,
-                            'direction': 'SELL',
-                            'quantity': available_quantity,
-                            'value': position_value
-                        }
-                    )
-                self.logger.info(f"✅ SELL order successful: {symbol}")
+                success, message = await self.order_manager.place_order(order)
+                
+                if success:
+                    # Update position tracker
+                    await self.position_tracker.update_position(symbol, 0, current_price, datetime.now())
+                    
+                    if self.alert_manager:
+                        await self.alert_manager.send_alert(
+                            'INFO',
+                            f'✅ SELL: {symbol} {available_quantity:.6f} ~${position_value:.2f}',
+                            {
+                                'symbol': symbol,
+                                'direction': 'SELL',
+                                'quantity': available_quantity,
+                                'value': position_value
+                            }
+                        )
+                    self.logger.info(f"✅ SELL order successful: {symbol}")
+                else:
+                    self.logger.error(f"❌ SELL failed: {message}")
             else:
-                self.logger.error(f"❌ SELL failed: {message}")
-        else:
-            self.logger.info(f"⚠️ Position too small: {symbol} ${position_value:.2f}")
-            
-    except Exception as e:
-        self.logger.error(f"❌ SELL handling failed: {e}")
-        self.logger.debug(f"Available signal_data keys: {list(signal_data.index)}")
-        raise
+                self.logger.info(f"⚠️ Position too small: {symbol} ${position_value:.2f}")
+                
+        except Exception as e:
+            self.logger.error(f"❌ SELL handling failed: {e}")
+            self.logger.debug(f"Available signal_data keys: {list(signal_data.index)}")
+            raise
 
     async def _handle_buy_signal(self, symbol: str, signal_data: pd.Series,
                                 market_data: pd.DataFrame, balance: dict):
