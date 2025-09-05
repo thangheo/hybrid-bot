@@ -81,9 +81,8 @@ void OrderBookNormalizer::processMarketData(const MarketDataUpdate& update) {
         // Standardize trading pair
         std::string standardized_pair = adapter->standardizeTradingPair(update.tradingPair);
         normalized.tradingPair = standardized_pair;
-        
+        normalized.symbol = core::Symbol::fromString(standardized_pair);
         // DON'T create order books here - just forward the normalized data
-        // Let the OrderBookManager handle order book creation and updates
         
         if (callback_) {
             callback_(normalized);  // Send normalized data to DataIngestionService

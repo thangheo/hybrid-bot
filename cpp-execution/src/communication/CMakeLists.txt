@@ -103,7 +103,7 @@ target_link_libraries(communication zmq jsoncpp pthread protobuf gRPC::grpc++)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../../bin)
 # Add executable for full_bridge.cpp
 add_executable(tactical full_bridge.cpp    ${CMAKE_CURRENT_SOURCE_DIR}/../../src/market_intelligence/adaptive_intelligence.cpp)
-target_link_libraries(tactical communication zmq jsoncpp pthread protobuf)
+target_link_libraries(tactical communication zmq jsoncpp pthread protobuf data_ingestion)
 # Test files
 set(TEST_SOURCES
     tests/zmq_server_test.cpp

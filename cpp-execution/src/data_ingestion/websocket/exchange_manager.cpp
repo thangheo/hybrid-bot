@@ -1,5 +1,4 @@
-
-// src/data_ingestion/exchange_manager.cpp
+// Fixed exchange_manager.cpp - Remove event bus circular dependency
 #include "data_ingestion/exchange_manager.hpp"
 #include <iostream>
 #include <sstream>
@@ -13,16 +12,9 @@ namespace data_ingestion {
 ExchangeManager::ExchangeManager(NormalizedOrderBookCallback callback,
                                 int minConnections,
                                 int maxConnections)
-    : eventBus_(common::EventBus::getInstance()),  // Add this line
-      normalizedCallback_(std::move(callback)),
+    : normalizedCallback_(std::move(callback)),
       minConnections_(minConnections),
       maxConnections_(maxConnections) {
-    
-    // Subscribe to subscription request events
-    subscriptionRequestHandlerId_ = eventBus_.subscribe<events::SubscriptionRequestEvent>(
-        [this](const events::SubscriptionRequestEvent& event) {
-            this->handleSubscriptionRequest(event);
-        });
     
     // Create the normalizer with the callback
     normalizer_ = std::make_unique<OrderBookNormalizer>(normalizedCallback_);
@@ -37,15 +29,16 @@ ExchangeManager::ExchangeManager(NormalizedOrderBookCallback callback,
     std::cout << "ExchangeManager initialized with " << minConnections_
               << "-" << maxConnections_ << " connections\n";
 }
+
 inline std::string ExchangeManager::toLowercase(const std::string& str) {
     std::string result = str;
     std::transform(result.begin(), result.end(), result.begin(),
                    [](unsigned char c) { return std::tolower(c); });
     return result;
 }
+
 ExchangeManager::~ExchangeManager() {
     // Stop the monitor thread first
-    eventBus_.unsubscribe<events::SubscriptionRequestEvent>(subscriptionRequestHandlerId_);
     running_.store(false);
     if (monitorThread_.joinable()) {
         monitorThread_.join();
@@ -58,7 +51,7 @@ ExchangeManager::~ExchangeManager() {
 }
 
 bool ExchangeManager::initialize() {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     
     try {
         // Create the connection pool for Binance
@@ -93,13 +86,11 @@ bool ExchangeManager::initialize() {
         return false;
     }
 }
+
 void ExchangeManager::onWebSocketData(const core::ExchangeId& exchange,
                                     const std::string& symbol, 
                                     const std::vector<uint8_t>& data) {
     try {
-        // std::cout << "[DEBUG] ExchangeManager received WebSocket data for " 
-        //           << exchange.toString() << ":" << symbol << std::endl;
-        
         // Convert WebSocket data to MarketDataUpdate format
         MarketDataUpdate update{};
         update.exchangeId = exchange;
@@ -107,121 +98,85 @@ void ExchangeManager::onWebSocketData(const core::ExchangeId& exchange,
         update.receivedTimestamp = std::chrono::system_clock::now();
         update.data = data;
         update.updateType = "orderbook";
-        
-        // std::cout << "[DEBUG] Created MarketDataUpdate, forwarding to normalizer" << std::endl;
-        
+        // std::cout << "[DEBUG] WebSocket data received - Exchange: " << exchange.toString() 
+        //         << ", Symbol: '" << symbol << "', Data size: " << data.size() << std::endl;
         // Forward to the normalizer
         if (normalizer_) {
             normalizer_->processMarketData(update);
-            // std::cout << "[DEBUG] Sent data to normalizer" << std::endl;
         } 
         
     } catch (const std::exception& e) {
         std::cerr << "Error processing WebSocket data: " << e.what() << '\n';
     }
 }
-// void ExchangeManager::onWebSocketData(const core::ExchangeId& exchange,
-//                                     const std::string& symbol, 
-//                                     const std::vector<uint8_t>& data) {
-//     try {
-//         // Convert WebSocket data to MarketDataUpdate format
-//         MarketDataUpdate update{};
-//         update.exchangeId = exchange;
-//         update.tradingPair = symbol;
-//         update.receivedTimestamp = std::chrono::system_clock::now();
-//         update.data = data;
-//         update.updateType = "orderbook"; // Default type, could be parsed from data
-        
-//         // Forward to the normalizer
-//         if (normalizer_) {
-//             normalizer_->processMarketData(update);
-//         }
-        
-//     } catch (const std::exception& e) {
-//         std::cerr << "Error processing WebSocket data: " << e.what() << '\n';
-//     }
-// }
-std::future<bool> ExchangeManager::subscribe(const std::vector<std::string>& tradingPairs,
-                                           const std::vector<DataType>& dataTypes,
-                                           int depth) {
+
+// SIMPLIFIED DIRECT SUBSCRIPTION - Remove event bus complexity
+bool ExchangeManager::subscribe(const std::vector<std::string>& tradingPairs,
+                               const std::vector<DataType>& dataTypes,
+                               int depth) {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     
-    // Generate unique request ID
-    std::string requestId = generateRequestId();
-    
-    // Create promise for the result
-    std::promise<bool> promise;
-    std::future<bool> future = promise.get_future();
-    
-    // Store the promise for later resolution
-    {
-        std::lock_guard<std::mutex> lock(pendingRequestsMutex_);
-        pendingRequests_[requestId] = std::move(promise);
+    if (!connectionPool_ || !isConnected_.load()) {
+        std::cerr << "Not connected. Call connect() first.\n";
+        return false;
     }
     
-    // Publish the subscription request event (non-blocking)
-    eventBus_.publish(events::SubscriptionRequestEvent(tradingPairs, dataTypes, depth, requestId));
-    
-    return future;
+    try {
+        std::cout << "=== SUBSCRIBING TO SYMBOLS ===" << std::endl;
+        for (const auto& pair : tradingPairs) {
+            std::cout << "Will subscribe to: " << pair << std::endl;
+        }
+        std::cout << "===============================" << std::endl;
+        
+        // Acquire a connection from the pool
+        auto connection = connectionPool_->acquireConnection();
+        if (!connection) {
+            std::cerr << "Failed to acquire connection for subscription\n";
+            return false;
+        }
+        
+        // Convert trading pairs to Symbol objects
+        std::vector<core::Symbol> symbols;
+        symbols.reserve(tradingPairs.size());
+        
+        for (const auto& pair : tradingPairs) {
+            auto symbol = core::Symbol::fromString(pair);
+            std::cout << "Created symbol: " << symbol.base << "/" << symbol.quote << std::endl;
+            symbols.emplace_back(symbol);
+        }
+        
+        // Subscribe using the connection
+        bool success = connection->subscribe(symbols);
+        
+        // Release the connection back to the pool
+        connectionPool_->releaseConnection(connection);
+        
+        if (success) {
+            // Store the subscription request for reconnection scenarios
+            SubscriptionRequest request{};
+            request.exchangeId = core::ExchangeId::binance();
+            request.tradingPairs = tradingPairs;
+            request.dataTypes = dataTypes;
+            request.depth = depth;
+            
+            activeSubscriptions_.push_back(std::move(request));
+            
+            std::cout << "Successfully subscribed to " << tradingPairs.size() 
+                      << " trading pairs\n";
+        } else {
+            std::cerr << "Failed to subscribe to trading pairs\n";
+        }
+        
+        return success;
+        
+    } catch (const std::exception& e) {
+        std::cerr << "Error during subscription: " << e.what() << '\n';
+        return false;
+    }
 }
 
-// bool ExchangeManager::subscribe(const std::vector<std::string>& tradingPairs,
-//                               const std::vector<DataType>& dataTypes,
-//                               int32_t depth) {
-//     std::lock_guard<std::mutex> lock(mutex_);
-    
-//     if (!connectionPool_ || !isConnected_.load()) {
-//         std::cerr << "Not connected. Call connect() first.\n";
-//         return false;
-//     }
-    
-//     try {
-//         // Acquire a connection from the pool
-//         auto connection = connectionPool_->acquireConnection();
-//         if (!connection) {
-//             std::cerr << "Failed to acquire connection for subscription\n";
-//             return false;
-//         }
-        
-//         // Convert trading pairs to Symbol objects
-//         std::vector<core::Symbol> symbols;
-//         symbols.reserve(tradingPairs.size());
-        
-//         for (const auto& pair : tradingPairs) {
-//             symbols.emplace_back(core::Symbol::fromString(pair));
-//         }
-        
-//         // Subscribe using the connection
-//         bool success = connection->subscribe(symbols);
-        
-//         // Release the connection back to the pool
-//         connectionPool_->releaseConnection(connection);
-        
-//         if (success) {
-//             // Store the subscription request for reconnection scenarios
-//             SubscriptionRequest request{};
-//             request.exchangeId = core::ExchangeId::binance();
-//             request.tradingPairs = tradingPairs;
-//             request.dataTypes = dataTypes;
-//             request.depth = depth;
-            
-//             activeSubscriptions_.push_back(std::move(request));
-            
-//             std::cout << "Successfully subscribed to " << tradingPairs.size() 
-//                       << " trading pairs\n";
-//         } else {
-//             std::cerr << "Failed to subscribe to trading pairs\n";
-//         }
-        
-//         return success;
-        
-//     } catch (const std::exception& e) {
-//         std::cerr << "Error during subscription: " << e.what() << '\n';
-//         return false;
-//     }
-// }
-
 bool ExchangeManager::connect() {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     
     if (!connectionPool_) {
         std::cerr << "Connection pool not initialized. Call initialize() first.\n";
@@ -247,7 +202,7 @@ bool ExchangeManager::connect() {
 }
 
 void ExchangeManager::disconnect() {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     
     if (connectionPool_) {
         try {
@@ -261,7 +216,7 @@ void ExchangeManager::disconnect() {
 }
 
 bool ExchangeManager::isConnected() const {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     return isConnected_.load() && connectionPool_ && connectionPool_->isHealthy();
 }
 
@@ -275,7 +230,7 @@ OrderBookUpdate ExchangeManager::getOrderBook(const std::string& tradingPair,
 }
 
 std::string ExchangeManager::getConnectionStats() const {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     
     std::ostringstream oss;
     
@@ -299,7 +254,7 @@ void ExchangeManager::monitorConnections() {
     while (running_.load()) {
         try {
             {
-                std::lock_guard<std::mutex> lock(mutex_);
+                std::lock_guard<std::recursive_mutex> lock(mutex_);
                 
                 if (connectionPool_) {
                     bool poolHealthy = connectionPool_->isHealthy();
@@ -314,8 +269,6 @@ void ExchangeManager::monitorConnections() {
                             
                             // Restore subscriptions after reconnection
                             for (const auto& subscription : activeSubscriptions_) {
-                                // Note: This is a simplified approach - in production,
-                                // you might want more sophisticated subscription recovery
                                 std::cout << "Attempting to restore subscription for " 
                                           << subscription.tradingPairs.size() << " pairs\n";
                             }
@@ -351,7 +304,8 @@ std::vector<std::string> ExchangeManager::createStreamNames(
     for (const auto& pair : tradingPairs) {
         // Use ONLY ONE way to format the pair - choose the simpler one:
         std::string formattedPair = toLowercase(pair);
-        
+        std::cout << "Adding symbol: " << pair << " to stream as: " << formattedPair << std::endl;
+
         // Remove '/' separator if present
         formattedPair.erase(
             std::remove(formattedPair.begin(), formattedPair.end(), '/'),
@@ -387,95 +341,10 @@ std::vector<std::string> ExchangeManager::createStreamNames(
     
     return streams;
 }
-// Add these methods at the end of your file:
-
-void ExchangeManager::handleSubscriptionRequest(const events::SubscriptionRequestEvent& event) {
-    // This runs in the event bus thread - no deadlock possible
-    processSubscriptionInternal(event);
-}
-void ExchangeManager::processSubscriptionInternal(const events::SubscriptionRequestEvent& event) {
-    bool success = false;
-    std::string errorMessage;
-    
-    try {
-        if (!connectionPool_ || !isConnected_.load()) {
-            errorMessage = "Not connected. Call connect() first.";
-        } else {
-            auto connection = connectionPool_->acquireConnection();
-            if (!connection) {
-                errorMessage = "Failed to acquire connection for subscription";
-            } else {
-                // Convert trading pairs to Symbol objects (NOT stream names)
-                // std::vector<core::Symbol> symbols;
-                // symbols.reserve(event.tradingPairs.size());
-                // for (const auto& pair : event.tradingPairs) {
-                //     symbols.emplace_back(core::Symbol::fromString(pair));
-                // }
-                
-                // // Subscribe using the connection
-                // success = connection->subscribe(symbols);
-                // Use createStreamNames to get proper Binance stream format
-                std::vector<std::string> streamNames = createStreamNames(
-                    event.tradingPairs, 
-                    event.dataTypes, 
-                    event.depth
-                );
-
-                std::cout << "[DEBUG] Created " << streamNames.size() << " stream names:" << std::endl;
-                for (const auto& stream : streamNames) {
-                    std::cout << "  " << stream << std::endl;
-                }
-
-                // Convert stream names back to symbols for the WebSocket client
-                std::vector<core::Symbol> symbols;
-                symbols.reserve(event.tradingPairs.size()); // Use original pairs, not streams
-                for (const auto& pair : event.tradingPairs) {
-                    symbols.emplace_back(core::Symbol::fromString(pair));
-                }
-
-                // Subscribe using the connection
-                success = connection->subscribe(symbols);
-
-
-
-                connectionPool_->releaseConnection(connection);
-                
-                if (success) {
-                    SubscriptionRequest request{};
-                    request.exchangeId = core::ExchangeId::binance();
-                    request.tradingPairs = event.tradingPairs;
-                    request.dataTypes = event.dataTypes;
-                    request.depth = event.depth;
-                    
-                    activeSubscriptions_.push_back(std::move(request));
-                    
-                    std::cout << "Successfully subscribed to " << event.tradingPairs.size() 
-                              << " trading pairs\n";
-                } else {
-                    errorMessage = "Failed to subscribe to trading pairs";
-                }
-            }
-        }
-    } catch (const std::exception& e) {
-        success = false;
-        errorMessage = std::string("Error during subscription: ") + e.what();
-    }
-    
-    // Resolve the promise
-    {
-        std::lock_guard<std::mutex> lock(pendingRequestsMutex_);
-        auto it = pendingRequests_.find(event.requestId);
-        if (it != pendingRequests_.end()) {
-            it->second.set_value(success);
-            pendingRequests_.erase(it);
-        }
-    }
-    
-    eventBus_.publish(events::SubscriptionResponseEvent(event.requestId, success, errorMessage));
-}
 
 std::string ExchangeManager::generateRequestId() {
     return "req_" + std::to_string(requestIdCounter_++);
 }
+
 } // namespace data_ingestion
 } // namespace trading

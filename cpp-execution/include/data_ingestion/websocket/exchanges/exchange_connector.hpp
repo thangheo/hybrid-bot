@@ -9,6 +9,7 @@
 #include <chrono>
 #include <thread>
 #include <data_ingestion/orderbook/order_book_types.hpp>
+
 #include <core/market_types.hpp>
 namespace trading {
 namespace data_ingestion {

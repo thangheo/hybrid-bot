@@ -7,6 +7,8 @@
 #include "common/logger.hpp"
 #include <fstream>
 #include <stdexcept>
+#include <iostream>
+#include <nlohmann/json.hpp>
 
 namespace trading {
 namespace data_ingestion {
@@ -17,7 +19,6 @@ Configuration& Configuration::getInstance() {
 }
 
 Configuration::Configuration() {
-    // Initialize with default values
     initializeDefaults();
 }
 
@@ -25,29 +26,211 @@ bool Configuration::loadFromFile(const std::string& configPath) {
     try {
         std::ifstream file(configPath);
         if (!file.is_open()) {
-            throw std::runtime_error("Cannot open config file: " + configPath);
+            std::cerr << "Cannot open config file: " << configPath << std::endl;
+            return false;
         }
         
-        // For now, just return true. In real implementation,
-        // you would parse JSON/YAML here
-        return true;
+        nlohmann::json configJson;
+        file >> configJson;
+        
+        return loadFromJson(configJson.dump());
+        
     } catch (const std::exception& e) {
-        // Log error
+        std::cerr << "Config loading error: " << e.what() << std::endl;
         return false;
     }
 }
 
-bool Configuration::loadFromJson(const std::string& json_string) {
+bool Configuration::loadFromJson(const std::string& jsonString) {
     try {
-        // For now, just return true. In real implementation,
-        // you would parse JSON here
+        auto configJson = nlohmann::json::parse(jsonString);
+        std::lock_guard<std::mutex> lock(configMutex_);
+        
+        if (configJson.contains("publisher")) {
+            loadPublisherConfig(configJson["publisher"]);
+        }
+        
+        if (configJson.contains("exchanges")) {
+            loadExchangeConfigs(configJson["exchanges"]);
+        }
+        
+        if (configJson.contains("normalization")) {
+            loadNormalizationConfig(configJson["normalization"]);
+        }
+        
+        if (configJson.contains("order_book")) {
+            loadOrderBookConfig(configJson["order_book"]);
+        }
+        
+        if (configJson.contains("data_quality")) {
+            loadDataQualityConfig(configJson["data_quality"]);
+        }
+        
+        if (configJson.contains("time_sync")) {
+            loadTimeSyncConfig(configJson["time_sync"]);
+        }
+        
+        if (configJson.contains("storage")) {
+            loadStorageConfig(configJson["storage"]);
+        }
+        
+        if (configJson.contains("enabled_exchanges")) {
+            loadEnabledExchanges(configJson["enabled_exchanges"]);
+        }
+        
         return true;
+        
     } catch (const std::exception& e) {
-        // Log error
+        std::cerr << "JSON parsing error: " << e.what() << std::endl;
         return false;
     }
 }
 
+void Configuration::loadPublisherConfig(const nlohmann::json& pubJson) {
+    publisherConfig_.zeromqEndpoint = pubJson.value("zmq_endpoint", "tcp://*:5560");
+    publisherConfig_.zmq_endpoint = publisherConfig_.zeromqEndpoint;
+    publisherConfig_.zmq_bind_address = publisherConfig_.zeromqEndpoint;
+    publisherConfig_.publisherType = pubJson.value("publisher_type", "zeromq");
+    publisherConfig_.bufferSize = pubJson.value("buffer_size", 10000);
+    publisherConfig_.max_queue_size = pubJson.value("max_queue_size", 10000);
+    publisherConfig_.max_publish_rate = pubJson.value("max_publish_rate", 5000);
+    publisherConfig_.publish_interval_ms = pubJson.value("publish_interval_ms", 50);
+    publisherConfig_.publishInterval = std::chrono::milliseconds(publisherConfig_.publish_interval_ms);
+    publisherConfig_.heartbeat_interval_ms = pubJson.value("heartbeat_interval_ms", 30000);
+    publisherConfig_.zmq_linger_ms = pubJson.value("zmq_linger_ms", 1000);
+    publisherConfig_.zmq_hwm = pubJson.value("zmq_hwm", 10000);
+    publisherConfig_.enableCompression = pubJson.value("enable_compression", false);
+    publisherConfig_.publish_raw_data = pubJson.value("publish_raw_data", true);
+    publisherConfig_.publish_normalized_data = pubJson.value("publish_normalized_data", true);
+    
+    std::string compressionStr = pubJson.value("compression", "none");
+    if (compressionStr == "none") {
+        publisherConfig_.compression = CompressionAlgorithm::NONE;
+    } else if (compressionStr == "lz4") {
+        publisherConfig_.compression = CompressionAlgorithm::LZ4;
+    } else if (compressionStr == "zstd") {
+        publisherConfig_.compression = CompressionAlgorithm::ZSTD;
+    }
+    
+    if (pubJson.contains("topics") && pubJson["topics"].is_array()) {
+        publisherConfig_.topics.clear();
+        for (const auto& topic : pubJson["topics"]) {
+            publisherConfig_.topics.push_back(topic.get<std::string>());
+        }
+    }
+}
+
+void Configuration::loadExchangeConfigs(const nlohmann::json& exchangesJson) {
+    exchangeConfigs_.clear();
+    exchange_configs_.clear();
+    
+    for (auto& [exchangeName, exchangeJson] : exchangesJson.items()) {
+        ExchangeConfig config;
+        
+        std::string exchangeIdStr = exchangeJson.value("exchange_id", exchangeName);
+        config.exchangeId = exchangeIdStr;
+        config.id = ExchangeId::fromString(exchangeIdStr);
+        config.name = exchangeJson.value("name", exchangeName);
+        
+        config.websocketUrl = exchangeJson.value("ws_url", "");
+        config.ws_url = config.websocketUrl;
+        config.restUrl = exchangeJson.value("rest_url", "");
+        config.rest_url = config.restUrl;
+        
+        config.enableWebsocket = exchangeJson.value("enable_websocket", true);
+        config.enableRest = exchangeJson.value("enable_rest", true);
+        config.connection_timeout_ms = exchangeJson.value("connection_timeout_ms", 30000);
+        config.reconnect_interval_ms = exchangeJson.value("reconnect_interval_ms", 5000);
+        config.reconnectDelay = std::chrono::seconds(config.reconnect_interval_ms / 1000);
+        config.maxReconnectAttempts = exchangeJson.value("max_reconnect_attempts", 10);
+        config.max_reconnect_attempts = config.maxReconnectAttempts;
+        
+        config.use_authentication = exchangeJson.value("use_authentication", false);
+        config.api_key = exchangeJson.value("api_key", "");
+        config.api_secret = exchangeJson.value("api_secret", "");
+        
+        if (exchangeJson.contains("symbols") && exchangeJson["symbols"].is_array()) {
+            config.symbols.clear();
+            for (const auto& symbolJson : exchangeJson["symbols"]) {
+                if (symbolJson.is_object()) {
+                    std::string base = symbolJson.value("base", "");
+                    std::string quote = symbolJson.value("quote", "");
+                    config.symbols.emplace_back(base, quote);
+                }
+            }
+        }
+        
+        exchangeConfigs_[exchangeName] = config;
+        exchange_configs_[config.id] = config;
+    }
+}
+
+void Configuration::loadNormalizationConfig(const nlohmann::json& normJson) {
+    normalizationConfig_.enableNormalization = normJson.value("enable_normalization", true);
+    normalizationConfig_.timestampFormat = normJson.value("timestamp_format", "iso8601");
+    normalizationConfig_.priceFormat = normJson.value("price_format", "decimal");
+    normalizationConfig_.volumeFormat = normJson.value("volume_format", "decimal");
+    normalizationConfig_.validateChecksum = normJson.value("validate_checksum", true);
+    normalizationConfig_.maxDepth = normJson.value("max_depth", 20);
+}
+
+void Configuration::loadOrderBookConfig(const nlohmann::json& obJson) {
+    order_book_config_.depth = obJson.value("depth", 20);
+    order_book_config_.track_orders = obJson.value("track_orders", false);
+    order_book_config_.snapshot_interval_ms = obJson.value("snapshot_interval_ms", 60000);
+    order_book_config_.cleanup_interval_ms = obJson.value("cleanup_interval_ms", 300000);
+}
+
+void Configuration::loadDataQualityConfig(const nlohmann::json& dqJson) {
+    data_quality_config_.max_price_deviation = dqJson.value("max_price_deviation", 0.1);
+    data_quality_config_.max_gap_ms = dqJson.value("max_gap_ms", 5000);
+    data_quality_config_.validation_level = dqJson.value("validation_level", 2);
+    data_quality_config_.min_volume_threshold = dqJson.value("min_volume_threshold", 0.001);
+    data_quality_config_.max_spread_percentage = dqJson.value("max_spread_percentage", 0.05);
+    data_quality_config_.max_order_age_seconds = dqJson.value("max_order_age_seconds", 300.0);
+    data_quality_config_.min_order_size = dqJson.value("min_order_size", 0.001);
+    data_quality_config_.enable_sequence_validation = dqJson.value("enable_sequence_validation", true);
+    data_quality_config_.enable_price_range_filter = dqJson.value("enable_price_range_filter", true);
+    data_quality_config_.enable_order_age_filter = dqJson.value("enable_order_age_filter", true);
+    data_quality_config_.enable_checksum_filter = dqJson.value("enable_checksum_filter", true);
+    data_quality_config_.enable_sequence_gap_filter = dqJson.value("enable_sequence_gap_filter", true);
+    data_quality_config_.max_sequence_gap = dqJson.value("max_sequence_gap", 100.0);
+}
+
+void Configuration::loadTimeSyncConfig(const nlohmann::json& tsJson) {
+    time_sync_config_.ntp_server = tsJson.value("ntp_server", "pool.ntp.org");
+    time_sync_config_.sync_interval_ms = tsJson.value("sync_interval_ms", 300000);
+    time_sync_config_.max_drift_ms = tsJson.value("max_drift_ms", 1000);
+    time_sync_config_.max_time_skew_ms = tsJson.value("max_time_skew_ms", 5000);
+    time_sync_config_.enable_ntp_sync = tsJson.value("enable_ntp_sync", true);
+}
+
+void Configuration::loadStorageConfig(const nlohmann::json& storageJson) {
+    storageConfig_.enableStorage = storageJson.value("enable_storage", false);
+    storageConfig_.storageType = storageJson.value("storage_type", "influxdb");
+    storageConfig_.connectionString = storageJson.value("connection_string", "http://localhost:8086");
+    storageConfig_.database = storageJson.value("database", "crypto_trading");
+    storageConfig_.retentionPolicy = storageJson.value("retention_policy", "30d");
+    storageConfig_.batchSize = storageJson.value("batch_size", 100);
+    
+    int flushSeconds = storageJson.value("flush_interval_seconds", 10);
+    storageConfig_.flushInterval = std::chrono::seconds(flushSeconds);
+}
+
+void Configuration::loadEnabledExchanges(const nlohmann::json& enabledJson) {
+    enabled_exchanges_.clear();
+    if (enabledJson.is_array()) {
+        for (const auto& exchangeStr : enabledJson) {
+            std::string exchStr = exchangeStr.get<std::string>();
+            ExchangeId exchId = ExchangeId::fromString(exchStr);
+            if (exchId.isValid()) {
+                enabled_exchanges_.push_back(exchId);
+            }
+        }
+    }
+}
+
+// All your existing getter and setter methods remain unchanged
 PublisherConfig Configuration::getPublisherConfig() const {
     std::lock_guard<std::mutex> lock(configMutex_);
     return publisherConfig_;
@@ -59,7 +242,7 @@ ExchangeConfig Configuration::getExchangeConfig(const std::string& exchangeId) c
     if (it != exchangeConfigs_.end()) {
         return it->second;
     }
-    return ExchangeConfig{}; // Return default config
+    return ExchangeConfig{};
 }
 
 const ExchangeConfig& Configuration::getExchangeConfig(ExchangeId exchange) const {
@@ -69,7 +252,6 @@ const ExchangeConfig& Configuration::getExchangeConfig(ExchangeId exchange) cons
         return it->second;
     }
     
-    // Return a static default config to avoid dangling reference
     static ExchangeConfig defaultConfig;
     return defaultConfig;
 }
@@ -107,8 +289,6 @@ std::vector<ExchangeId> Configuration::getEnabledExchanges() const {
 void Configuration::setPublisherConfig(const PublisherConfig& config) {
     std::lock_guard<std::mutex> lock(configMutex_);
     publisherConfig_ = config;
-    
-    // Sync the alias fields
     publisherConfig_.zmq_endpoint = config.zeromqEndpoint;
     publisherConfig_.zmq_bind_address = config.zeromqEndpoint;
     publisherConfig_.publish_interval_ms = static_cast<int>(config.publishInterval.count());
@@ -117,9 +297,6 @@ void Configuration::setPublisherConfig(const PublisherConfig& config) {
 void Configuration::setExchangeConfig(const std::string& exchangeId, const ExchangeConfig& config) {
     std::lock_guard<std::mutex> lock(configMutex_);
     exchangeConfigs_[exchangeId] = config;
-    
-    // Also store in enum-based map if possible
-    // This would require a mapping from string to ExchangeId
 }
 
 void Configuration::setNormalizationConfig(const NormalizationConfig& config) {
@@ -133,7 +310,6 @@ void Configuration::setStorageConfig(const StorageConfig& config) {
 }
 
 void Configuration::initializeDefaults() {
-    // Initialize default publisher config
     publisherConfig_.zeromqEndpoint = "tcp://*:5555";
     publisherConfig_.zmq_endpoint = "tcp://*:5555";
     publisherConfig_.zmq_bind_address = "tcp://*:5555";
@@ -150,7 +326,6 @@ void Configuration::initializeDefaults() {
     publisherConfig_.publish_normalized_data = true;
     publisherConfig_.compression = CompressionAlgorithm::NONE;
     
-    // Initialize default normalization config
     normalizationConfig_.enableNormalization = true;
     normalizationConfig_.timestampFormat = "iso8601";
     normalizationConfig_.priceFormat = "decimal";
@@ -158,7 +333,6 @@ void Configuration::initializeDefaults() {
     normalizationConfig_.validateChecksum = true;
     normalizationConfig_.maxDepth = 20;
     
-    // Initialize default storage config
     storageConfig_.enableStorage = true;
     storageConfig_.storageType = "influxdb";
     storageConfig_.connectionString = "http://localhost:8086";
@@ -167,13 +341,11 @@ void Configuration::initializeDefaults() {
     storageConfig_.batchSize = 100;
     storageConfig_.flushInterval = std::chrono::seconds(10);
     
-    // Initialize default order book config
     order_book_config_.depth = 20;
     order_book_config_.track_orders = false;
     order_book_config_.snapshot_interval_ms = 60000;
     order_book_config_.cleanup_interval_ms = 300000;
     
-    // Initialize default data quality config
     data_quality_config_.max_price_deviation = 0.1;
     data_quality_config_.max_gap_ms = 5000;
     data_quality_config_.validation_level = 2;
@@ -188,52 +360,15 @@ void Configuration::initializeDefaults() {
     data_quality_config_.enable_sequence_gap_filter = true;
     data_quality_config_.max_sequence_gap = 100;
     
-    // Initialize default time sync config
     time_sync_config_.ntp_server = "pool.ntp.org";
     time_sync_config_.sync_interval_ms = 300000;
     time_sync_config_.max_drift_ms = 1000;
     time_sync_config_.max_time_skew_ms = 5000;
     time_sync_config_.enable_ntp_sync = true;
     
-    // Initialize default exchange configs
-    ExchangeConfig binanceConfig;
-    binanceConfig.exchangeId = "binance";
-    binanceConfig.name = "Binance";
-    binanceConfig.websocketUrl = "wss://stream.binance.com:9443/ws";
-    binanceConfig.ws_url = "wss://stream.binance.com:9443/ws";
-    binanceConfig.restUrl = "https://api.binance.com";
-    binanceConfig.rest_url = "https://api.binance.com";
-    binanceConfig.enableWebsocket = true;
-    binanceConfig.enableRest = true;
-    binanceConfig.reconnectDelay = std::chrono::seconds(5);
-    binanceConfig.reconnect_interval_ms = 5000;
-    binanceConfig.maxReconnectAttempts = 10;
-    binanceConfig.max_reconnect_attempts = 10;
-    binanceConfig.connection_timeout_ms = 30000;
-    binanceConfig.use_authentication = false;
-    exchangeConfigs_["binance"] = binanceConfig;
-    
-    ExchangeConfig coinbaseConfig;
-    coinbaseConfig.exchangeId = "coinbase";
-    coinbaseConfig.name = "Coinbase";
-    coinbaseConfig.websocketUrl = "wss://ws-feed.pro.coinbase.com";
-    coinbaseConfig.ws_url = "wss://ws-feed.pro.coinbase.com";
-    coinbaseConfig.restUrl = "https://api.pro.coinbase.com";
-    coinbaseConfig.rest_url = "https://api.pro.coinbase.com";
-    coinbaseConfig.enableWebsocket = true;
-    coinbaseConfig.enableRest = true;
-    coinbaseConfig.reconnectDelay = std::chrono::seconds(5);
-    coinbaseConfig.reconnect_interval_ms = 5000;
-    coinbaseConfig.maxReconnectAttempts = 10;
-    coinbaseConfig.max_reconnect_attempts = 10;
-    coinbaseConfig.connection_timeout_ms = 30000;
-    coinbaseConfig.use_authentication = false;
-    exchangeConfigs_["coinbase"] = coinbaseConfig;
-    
-    // Initialize enabled exchanges
     enabled_exchanges_ = {
-        core::ExchangeId::binance(),
-        core::ExchangeId::coinbase()
+        ExchangeId::binance(),
+        ExchangeId::coinbase()
     };
 }
 

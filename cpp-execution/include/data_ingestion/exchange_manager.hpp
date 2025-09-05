@@ -1,111 +1,96 @@
-// include/data_ingestion/exchange_manager.hpp
-#pragma once
+/**
+ * @file exchange_manager.hpp
+ * @brief Simplified ExchangeManager without event bus circular dependencies
+ */
 
-#include "data_ingestion/websocket/exchanges/binance_websocket_client.hpp"
-#include "data_ingestion/orderbook/order_book_types.hpp"
-#include "data_ingestion/normalization/order_book_normalizer.hpp"
+#pragma once
+#include <data_ingestion/websocket/exchanges/exchange_connector.hpp>
+#include "data_ingestion/types.hpp"
 #include "data_ingestion/websocket/connection_pool.hpp"
-#include "data_ingestion/websocket/exchanges/exchange_connector.hpp"
-#include "common/event_bus.hpp"
-#include "common/trading_events.hpp"
-#include <string>
+#include "data_ingestion/normalization/order_book_normalizer.hpp"
+#include "data_ingestion/websocket/exchanges/binance_websocket_client.hpp"
 #include <memory>
 #include <vector>
-#include <thread>
+#include <string>
 #include <atomic>
+#include <thread>
 #include <mutex>
-#include <functional>
 #include <future>
-#include <unordered_map>  
+#include <unordered_map>
 
 namespace trading {
 namespace data_ingestion {
 
-// Forward declarations
-class ConnectionPool;
-class OrderBookNormalizer;
-class BinanceWebSocketClient;
-
-// Type definitions
-using MarketDataCallback = std::function<void(const MarketDataUpdate&)>;
-using NormalizedOrderBookCallback = std::function<void(const OrderBookUpdate&)>;
-
 class ExchangeManager {
 public:
-    ExchangeManager(NormalizedOrderBookCallback callback, 
+    using NormalizedOrderBookCallback = std::function<void(const OrderBookUpdate&)>;
+    using WebSocketDataCallback = std::function<void(const core::ExchangeId&, const std::string&, const std::vector<uint8_t>&)>;
+    
+    ExchangeManager(NormalizedOrderBookCallback callback,
                    int minConnections = 2,
-                   int maxConnections = 10);
+                   int maxConnections = 5);
     ~ExchangeManager();
     
+    // Core functionality
     bool initialize();
     bool connect();
     void disconnect();
-    inline std::string toLowercase(const std::string& str) ;
-
-    // bool subscribe(const std::vector<std::string>& tradingPairs,
-    //               const std::vector<DataType>& dataTypes,
-    //               int32_t depth = 10);
-    std::future<bool> subscribe(const std::vector<std::string>& tradingPairs,
-                                           const std::vector<DataType>& dataTypes,
-                                           int32_t depth=10) ;
-
     bool isConnected() const;
     
-    OrderBookUpdate getOrderBook(const std::string& tradingPair,
-                               int32_t depth = 0) const;
+    // SIMPLIFIED: Direct subscription without event bus
+    bool subscribe(const std::vector<std::string>& tradingPairs,
+                  const std::vector<DataType>& dataTypes,
+                  int depth = 20);
     
+    // Query methods
+    OrderBookUpdate getOrderBook(const std::string& tradingPair, int32_t depth = 20) const;
     std::string getConnectionStats() const;
 
-#ifdef TESTING
-    void setConnectionPoolForTesting(std::unique_ptr<ConnectionPool> pool) {
-        connectionPool_ = std::move(pool);
-    }
-#endif
-
 private:
-    common::EventBus& eventBus_;
-    size_t subscriptionRequestHandlerId_;
-    
-    // For tracking async responses
-    std::unordered_map<std::string, std::promise<bool>> pendingRequests_;
-    std::mutex pendingRequestsMutex_;  // Only for the promises map
-    
-    std::atomic<uint64_t> requestIdCounter_{0};
-
-    // Member variables in proper initialization order
-    NormalizedOrderBookCallback normalizedCallback_;
+    // Configuration
     int minConnections_;
     int maxConnections_;
-    std::atomic<bool> running_{false};
-    std::atomic<bool> isConnected_{false};
     
-    // Mutex must be mutable for const methods
-    mutable std::mutex mutex_;
-    
-    // Complex objects
-    std::unique_ptr<OrderBookNormalizer> normalizer_;
+    // Core components
     std::unique_ptr<ConnectionPool> connectionPool_;
+    std::unique_ptr<OrderBookNormalizer> normalizer_;
+    
+    // Callbacks
+    NormalizedOrderBookCallback normalizedCallback_;
+    WebSocketDataCallback websocketCallback_;
+    
+    // Connection management
+    std::atomic<bool> isConnected_{false};
+    std::atomic<bool> running_{false};
     std::thread monitorThread_;
-    
-    // WebSocket callback
-    std::function<void(const core::ExchangeId&, const std::string&, const std::vector<uint8_t>&)> websocketCallback_;
-    
-    // Active subscriptions
+    // mutable std::mutex mutex_;
+    mutable std::recursive_mutex mutex_;
+    // Subscription tracking
+    struct SubscriptionRequest {
+        core::ExchangeId exchangeId;
+        std::vector<std::string> tradingPairs;
+        std::vector<DataType> dataTypes;
+        int depth;
+    };
     std::vector<SubscriptionRequest> activeSubscriptions_;
     
-    // Private methods
+    // Request ID generation
+    std::atomic<uint64_t> requestIdCounter_{1};
+    
+    // Internal methods
     void onWebSocketData(const core::ExchangeId& exchange,
-                        const std::string& symbol, 
+                        const std::string& symbol,
                         const std::vector<uint8_t>& data);
+    
     void monitorConnections();
     
     std::vector<std::string> createStreamNames(
         const std::vector<std::string>& tradingPairs,
         const std::vector<DataType>& dataTypes,
-        int32_t depth);
-    void handleSubscriptionRequest(const events::SubscriptionRequestEvent& event);
-    void processSubscriptionInternal(const events::SubscriptionRequestEvent& event);
+        int depth);
+    
     std::string generateRequestId();
+    std::string toLowercase(const std::string& str);
 };
 
 } // namespace data_ingestion
