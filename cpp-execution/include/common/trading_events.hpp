@@ -7,7 +7,12 @@
 
 #include "common/event_bus.hpp"
 #include "strategy/types.hpp"
+#include "data_ingestion/types.hpp"  // Add this include
 #include <mutex>
+#include <vector>
+#include <string>
+#include "data_ingestion/websocket/exchanges/exchange_connector.hpp"
+
 namespace trading {
 namespace events {
 
@@ -39,6 +44,51 @@ public:
     strategy::ImbalanceEvent imbalance;
     
     explicit ImbalanceDetectedEvent(const strategy::ImbalanceEvent& i) : imbalance(i) {}
+};
+
+// ADD THESE NEW EVENTS FOR DATA INGESTION:
+
+/**
+ * Event for subscription requests
+ */
+class SubscriptionRequestEvent : public common::Event {
+public:
+    std::vector<std::string> tradingPairs;
+    std::vector<data_ingestion::DataType> dataTypes;
+    int32_t depth;
+    std::string requestId;  // For tracking responses
+    
+    SubscriptionRequestEvent(const std::vector<std::string>& pairs,
+                           const std::vector<data_ingestion::DataType>& types,
+                           int32_t d,
+                           const std::string& id)
+        : tradingPairs(pairs), dataTypes(types), depth(d), requestId(id) {}
+};
+
+/**
+ * Event for subscription responses
+ */
+class SubscriptionResponseEvent : public common::Event {
+public:
+    std::string requestId;
+    bool success;
+    std::string errorMessage;
+    
+    SubscriptionResponseEvent(const std::string& id, bool s, const std::string& error = "")
+        : requestId(id), success(s), errorMessage(error) {}
+};
+
+/**
+ * Event fired when connection status changes
+ */
+class ConnectionStatusEvent : public common::Event {
+public:
+    core::ExchangeId exchangeId;
+    bool isConnected;
+    std::string statusMessage;
+    
+    ConnectionStatusEvent(const core::ExchangeId& exchange, bool connected, const std::string& message = "")
+        : exchangeId(exchange), isConnected(connected), statusMessage(message) {}
 };
 
 } // namespace events
