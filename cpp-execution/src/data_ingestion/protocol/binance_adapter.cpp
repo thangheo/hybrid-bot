@@ -11,7 +11,7 @@
 #include <cctype>
 
 using json = nlohmann::json;
-
+using namespace trading::core;
 namespace trading {
 namespace data_ingestion {
 
@@ -185,12 +185,20 @@ OrderBookUpdate BinanceAdapter::convertDepthUpdate(const std::string& jsonData) 
     }
     
     update.exchangeId = common::ExchangeId::binance();
-    update.receivedTimestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::system_clock::now().time_since_epoch()).count();
-    
+    update.receivedTimestamp = core::now();
+
     // Extract timestamps safely
     if (jsonObj.contains("E") && jsonObj["E"].is_number()) {
-        update.exchange_timestamp = jsonObj["E"].get<int64_t>();
+        uint64_t rawTimestamp = jsonObj["E"].get<uint64_t>();
+        
+        // Convert raw timestamp to Timestamp (handles seconds/milliseconds detection)
+        if (rawTimestamp < 1000000000000ULL) {
+            // Timestamp is in seconds, convert to milliseconds first
+            update.exchange_timestamp = core::timestampFromMillis(rawTimestamp * 1000);
+        } else {
+            // Timestamp is already in milliseconds
+            update.exchange_timestamp = core::timestampFromMillis(rawTimestamp);
+        }
     }
     
     // Extract sequence numbers safely
@@ -243,9 +251,7 @@ OrderBookUpdate BinanceAdapter::convertDepthSnapshot(const std::string& jsonData
     
     update.exchangeId = common::ExchangeId::binance();
     update.isSnapshot = true;
-    update.receivedTimestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::system_clock::now().time_since_epoch()).count();
-    
+    update.receivedTimestamp = std::chrono::system_clock::now();    
     // Extract symbol if available
     if (jsonObj.contains("symbol") && jsonObj["symbol"].is_string()) {
         std::string binanceSymbol = jsonObj["symbol"].get<std::string>();

@@ -539,30 +539,7 @@ void BinanceWebSocketClient::runIoLoop() {
     
     LOG_INFO("WebSocket IO loop terminated");
 }
-
-// // Enhanced sendWebSocketMessage with real WebSocket support
-// bool BinanceWebSocketClient::sendWebSocketMessage(const std::string& message) {
-//     if (!connected_.load() || !wsStream_) {
-//         LOG_ERROR("Cannot send message - WebSocket not connected");
-//         return false;
-//     }
-    
-//     try {
-//         std::lock_guard<std::mutex> lock(sendMutex_);
-        
-//         // Send the message
-//         wsStream_->write(net::buffer(message));
-        
-//         LOG_DEBUG("Sent WebSocket message: " + message.substr(0, 100) + 
-//                  (message.length() > 100 ? "..." : ""));
-        
-//         return true;
-        
-//     } catch (const std::exception& e) {
-//         LOG_ERROR("Error sending WebSocket message: " + std::string(e.what()));
-//         return false;
-//     }
-// }
+ 
 
 // Fix sendWebSocketMessage to work with the stored wsStream_
 bool BinanceWebSocketClient::sendWebSocketMessage(const std::string& message) {
@@ -658,52 +635,7 @@ void BinanceWebSocketClient::initializeConnection() {
         LOG_ERROR("Failed to initialize WebSocket connection: " + std::string(e.what()));
         throw;
     }
-}
-
-// void BinanceWebSocketClient::closeConnection() {
-//     try {
-//         LOG_INFO("Closing WebSocket connection");
-        
-//         // Signal threads to stop
-//         keep_running_ = false;
-        
-//         // Close WebSocket if it exists
-//         if (wsStream_ && wsStream_->is_open()) {
-//             try {
-//                 wsStream_->close(websocket::close_code::normal);
-//             } catch (const std::exception& e) {
-//                 LOG_WARN("Error closing WebSocket stream: " + std::string(e.what()));
-//             }
-//         }
-        
-//         // Join the IO thread
-//         if (io_thread_.joinable()) {
-//             LOG_INFO("Waiting for IO thread to terminate...");
-//             io_thread_.join();
-//             LOG_INFO("IO thread terminated");
-//         }
-        
-//         // Clean up WebSocket stream
-//         wsStream_.reset();
-        
-//         LOG_INFO("WebSocket connection closed successfully");
-        
-//     } catch (const std::exception& e) {
-//         LOG_ERROR("Error closing WebSocket connection: " + std::string(e.what()));
-//     }
-// }
-
-
-//  void BinanceWebSocketClient::onWebSocketOpen() {
-//     std::cout << "Connected to Binance WebSocket" << std::endl;
-    
-//     // Resubscribe to previously subscribed streams
-//     std::lock_guard<std::mutex> lock(subscriptionMutex_);
-//     if (!subscribedStreams_.empty()) {
-//         std::cout << "Resubscribing to " << subscribedStreams_.size() << " streams" << std::endl;
-//         subscribeToStreams(subscribedStreams_);
-//     }
-// }
+} 
 
 // Fix onWebSocketOpen - DON'T auto-subscribe
 void BinanceWebSocketClient::onWebSocketOpen() {

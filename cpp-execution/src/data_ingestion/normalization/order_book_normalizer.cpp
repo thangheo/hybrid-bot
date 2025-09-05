@@ -94,14 +94,14 @@ void OrderBookNormalizer::processMarketData(const MarketDataUpdate& update) {
                 normalized.bids, 
                 normalized.asks, 
                 normalized.sequenceNumber, 
-                std::chrono::system_clock::time_point(std::chrono::nanoseconds(normalized.exchange_timestamp))
+                normalized.exchange_timestamp
             );
         } else {
             order_book->applyUpdate(
                 normalized.bids, 
                 normalized.asks, 
                 normalized.sequenceNumber, 
-                std::chrono::system_clock::time_point(std::chrono::nanoseconds(normalized.exchange_timestamp))
+                normalized.exchange_timestamp
             );
         }
         

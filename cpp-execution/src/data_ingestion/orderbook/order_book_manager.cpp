@@ -157,9 +157,7 @@ bool OrderBookManager::processUpdate(const OrderBookUpdate& update) {
     // Apply update to order book
     bool success = false;
     try {
-        auto timestamp = std::chrono::time_point<std::chrono::system_clock>(
-            std::chrono::nanoseconds(update.receivedTimestamp)
-        );
+        auto timestamp = update.receivedTimestamp;
         if (update.isSnapshot) {
             success = orderBook->applySnapshot(
                 update.bids, 
