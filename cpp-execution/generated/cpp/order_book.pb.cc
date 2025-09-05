@@ -74,7 +74,7 @@ PROTOBUF_CONSTEXPR OrderBookUpdate::OrderBookUpdate(
   , /*decltype(_impl_.asks_)*/{}
   , /*decltype(_impl_.checksum_)*/{&::_pbi::fixed_address_empty_string, ::_pbi::ConstantInitialized{}}
   , /*decltype(_impl_.symbol_)*/nullptr
-  , /*decltype(_impl_.exchange_timestamp_)*/nullptr
+  , /*decltype(_impl_.exchangetimestamp_)*/nullptr
   , /*decltype(_impl_.received_timestamp_)*/nullptr
   , /*decltype(_impl_.metadata_)*/nullptr
   , /*decltype(_impl_.exchange_id_)*/0
@@ -177,7 +177,7 @@ const uint32_t TableStruct_order_5fbook_2eproto::offsets[] PROTOBUF_SECTION_VARI
   ~0u,  // no _inlined_string_donated_
   PROTOBUF_FIELD_OFFSET(::trading::data_ingestion::proto::OrderBookUpdate, _impl_.exchange_id_),
   PROTOBUF_FIELD_OFFSET(::trading::data_ingestion::proto::OrderBookUpdate, _impl_.symbol_),
-  PROTOBUF_FIELD_OFFSET(::trading::data_ingestion::proto::OrderBookUpdate, _impl_.exchange_timestamp_),
+  PROTOBUF_FIELD_OFFSET(::trading::data_ingestion::proto::OrderBookUpdate, _impl_.exchangetimestamp_),
   PROTOBUF_FIELD_OFFSET(::trading::data_ingestion::proto::OrderBookUpdate, _impl_.received_timestamp_),
   PROTOBUF_FIELD_OFFSET(::trading::data_ingestion::proto::OrderBookUpdate, _impl_.sequence_number_),
   PROTOBUF_FIELD_OFFSET(::trading::data_ingestion::proto::OrderBookUpdate, _impl_.is_snapshot_),
@@ -244,42 +244,42 @@ const char descriptor_table_protodef_order_5fbook_2eproto[] PROTOBUF_SECTION_VAR
   "\005price\030\001 \001(\t\022\020\n\010quantity\030\002 \001(\t\022>\n\006orders"
   "\030\003 \003(\0132..trading.data_ingestion.proto.Pr"
   "iceLevel.Order\032+\n\005Order\022\020\n\010order_id\030\001 \001("
-  "\t\022\020\n\010quantity\030\002 \001(\t\"\350\004\n\017OrderBookUpdate\022"
+  "\t\022\020\n\010quantity\030\002 \001(\t\"\347\004\n\017OrderBookUpdate\022"
   ":\n\013exchange_id\030\001 \001(\0162%.trading.common.pr"
   "oto.ExchangeIdProto\0221\n\006symbol\030\002 \001(\0132!.tr"
-  "ading.common.proto.SymbolProto\022@\n\022exchan"
-  "ge_timestamp\030\003 \001(\0132$.trading.common.prot"
-  "o.TimestampProto\022@\n\022received_timestamp\030\004"
-  " \001(\0132$.trading.common.proto.TimestampPro"
-  "to\022\027\n\017sequence_number\030\005 \001(\003\022\023\n\013is_snapsh"
-  "ot\030\006 \001(\010\0226\n\004bids\030\007 \003(\0132(.trading.data_in"
-  "gestion.proto.PriceLevel\0226\n\004asks\030\010 \003(\0132("
-  ".trading.data_ingestion.proto.PriceLevel"
-  "\022\020\n\010checksum\030\t \001(\t\022H\n\010metadata\030\n \001(\01326.t"
-  "rading.data_ingestion.proto.OrderBookUpd"
-  "ate.Metadata\032h\n\010Metadata\022\030\n\020source_compo"
-  "nent\030\001 \001(\t\022\017\n\007version\030\002 \001(\t\022\022\n\ncompresse"
-  "d\030\003 \001(\010\022\035\n\025compression_algorithm\030\004 \001(\t\"\341"
-  "\001\n\tHeartbeat\022\024\n\014component_id\030\001 \001(\t\0227\n\tti"
-  "mestamp\030\002 \001(\0132$.trading.common.proto.Tim"
-  "estampProto\022\016\n\006status\030\003 \001(\t\022E\n\007metrics\030\004"
-  " \003(\01324.trading.data_ingestion.proto.Hear"
-  "tbeat.MetricsEntry\032.\n\014MetricsEntry\022\013\n\003ke"
-  "y\030\001 \001(\t\022\r\n\005value\030\002 \001(\t:\0028\001\"\211\002\n\017MessageEn"
-  "velope\022\022\n\nmessage_id\030\001 \001(\t\022\024\n\014message_ty"
-  "pe\030\002 \001(\t\0227\n\ttimestamp\030\003 \001(\0132$.trading.co"
-  "mmon.proto.TimestampProto\022J\n\021order_book_"
-  "update\030\n \001(\0132-.trading.data_ingestion.pr"
-  "oto.OrderBookUpdateH\000\022<\n\theartbeat\030\013 \001(\013"
-  "2\'.trading.data_ingestion.proto.Heartbea"
-  "tH\000B\t\n\007payloadb\006proto3"
+  "ading.common.proto.SymbolProto\022\?\n\021exchan"
+  "geTimestamp\030\003 \001(\0132$.trading.common.proto"
+  ".TimestampProto\022@\n\022received_timestamp\030\004 "
+  "\001(\0132$.trading.common.proto.TimestampProt"
+  "o\022\027\n\017sequence_number\030\005 \001(\003\022\023\n\013is_snapsho"
+  "t\030\006 \001(\010\0226\n\004bids\030\007 \003(\0132(.trading.data_ing"
+  "estion.proto.PriceLevel\0226\n\004asks\030\010 \003(\0132(."
+  "trading.data_ingestion.proto.PriceLevel\022"
+  "\020\n\010checksum\030\t \001(\t\022H\n\010metadata\030\n \001(\01326.tr"
+  "ading.data_ingestion.proto.OrderBookUpda"
+  "te.Metadata\032h\n\010Metadata\022\030\n\020source_compon"
+  "ent\030\001 \001(\t\022\017\n\007version\030\002 \001(\t\022\022\n\ncompressed"
+  "\030\003 \001(\010\022\035\n\025compression_algorithm\030\004 \001(\t\"\341\001"
+  "\n\tHeartbeat\022\024\n\014component_id\030\001 \001(\t\0227\n\ttim"
+  "estamp\030\002 \001(\0132$.trading.common.proto.Time"
+  "stampProto\022\016\n\006status\030\003 \001(\t\022E\n\007metrics\030\004 "
+  "\003(\01324.trading.data_ingestion.proto.Heart"
+  "beat.MetricsEntry\032.\n\014MetricsEntry\022\013\n\003key"
+  "\030\001 \001(\t\022\r\n\005value\030\002 \001(\t:\0028\001\"\211\002\n\017MessageEnv"
+  "elope\022\022\n\nmessage_id\030\001 \001(\t\022\024\n\014message_typ"
+  "e\030\002 \001(\t\0227\n\ttimestamp\030\003 \001(\0132$.trading.com"
+  "mon.proto.TimestampProto\022J\n\021order_book_u"
+  "pdate\030\n \001(\0132-.trading.data_ingestion.pro"
+  "to.OrderBookUpdateH\000\022<\n\theartbeat\030\013 \001(\0132"
+  "\'.trading.data_ingestion.proto.Heartbeat"
+  "H\000B\t\n\007payloadb\006proto3"
   ;
 static const ::_pbi::DescriptorTable* const descriptor_table_order_5fbook_2eproto_deps[1] = {
   &::descriptor_table_common_2eproto,
 };
 static ::_pbi::once_flag descriptor_table_order_5fbook_2eproto_once;
 const ::_pbi::DescriptorTable descriptor_table_order_5fbook_2eproto = {
-    false, false, 1342, descriptor_table_protodef_order_5fbook_2eproto,
+    false, false, 1341, descriptor_table_protodef_order_5fbook_2eproto,
     "order_book.proto",
     &descriptor_table_order_5fbook_2eproto_once, descriptor_table_order_5fbook_2eproto_deps, 1, 7,
     schemas, file_default_instances, TableStruct_order_5fbook_2eproto::offsets,
@@ -1171,7 +1171,7 @@ void OrderBookUpdate_Metadata::InternalSwap(OrderBookUpdate_Metadata* other) {
 class OrderBookUpdate::_Internal {
  public:
   static const ::trading::common::proto::SymbolProto& symbol(const OrderBookUpdate* msg);
-  static const ::trading::common::proto::TimestampProto& exchange_timestamp(const OrderBookUpdate* msg);
+  static const ::trading::common::proto::TimestampProto& exchangetimestamp(const OrderBookUpdate* msg);
   static const ::trading::common::proto::TimestampProto& received_timestamp(const OrderBookUpdate* msg);
   static const ::trading::data_ingestion::proto::OrderBookUpdate_Metadata& metadata(const OrderBookUpdate* msg);
 };
@@ -1181,8 +1181,8 @@ OrderBookUpdate::_Internal::symbol(const OrderBookUpdate* msg) {
   return *msg->_impl_.symbol_;
 }
 const ::trading::common::proto::TimestampProto&
-OrderBookUpdate::_Internal::exchange_timestamp(const OrderBookUpdate* msg) {
-  return *msg->_impl_.exchange_timestamp_;
+OrderBookUpdate::_Internal::exchangetimestamp(const OrderBookUpdate* msg) {
+  return *msg->_impl_.exchangetimestamp_;
 }
 const ::trading::common::proto::TimestampProto&
 OrderBookUpdate::_Internal::received_timestamp(const OrderBookUpdate* msg) {
@@ -1198,11 +1198,11 @@ void OrderBookUpdate::clear_symbol() {
   }
   _impl_.symbol_ = nullptr;
 }
-void OrderBookUpdate::clear_exchange_timestamp() {
-  if (GetArenaForAllocation() == nullptr && _impl_.exchange_timestamp_ != nullptr) {
-    delete _impl_.exchange_timestamp_;
+void OrderBookUpdate::clear_exchangetimestamp() {
+  if (GetArenaForAllocation() == nullptr && _impl_.exchangetimestamp_ != nullptr) {
+    delete _impl_.exchangetimestamp_;
   }
-  _impl_.exchange_timestamp_ = nullptr;
+  _impl_.exchangetimestamp_ = nullptr;
 }
 void OrderBookUpdate::clear_received_timestamp() {
   if (GetArenaForAllocation() == nullptr && _impl_.received_timestamp_ != nullptr) {
@@ -1224,7 +1224,7 @@ OrderBookUpdate::OrderBookUpdate(const OrderBookUpdate& from)
     , decltype(_impl_.asks_){from._impl_.asks_}
     , decltype(_impl_.checksum_){}
     , decltype(_impl_.symbol_){nullptr}
-    , decltype(_impl_.exchange_timestamp_){nullptr}
+    , decltype(_impl_.exchangetimestamp_){nullptr}
     , decltype(_impl_.received_timestamp_){nullptr}
     , decltype(_impl_.metadata_){nullptr}
     , decltype(_impl_.exchange_id_){}
@@ -1244,8 +1244,8 @@ OrderBookUpdate::OrderBookUpdate(const OrderBookUpdate& from)
   if (from._internal_has_symbol()) {
     _this->_impl_.symbol_ = new ::trading::common::proto::SymbolProto(*from._impl_.symbol_);
   }
-  if (from._internal_has_exchange_timestamp()) {
-    _this->_impl_.exchange_timestamp_ = new ::trading::common::proto::TimestampProto(*from._impl_.exchange_timestamp_);
+  if (from._internal_has_exchangetimestamp()) {
+    _this->_impl_.exchangetimestamp_ = new ::trading::common::proto::TimestampProto(*from._impl_.exchangetimestamp_);
   }
   if (from._internal_has_received_timestamp()) {
     _this->_impl_.received_timestamp_ = new ::trading::common::proto::TimestampProto(*from._impl_.received_timestamp_);
@@ -1268,7 +1268,7 @@ inline void OrderBookUpdate::SharedCtor(
     , decltype(_impl_.asks_){arena}
     , decltype(_impl_.checksum_){}
     , decltype(_impl_.symbol_){nullptr}
-    , decltype(_impl_.exchange_timestamp_){nullptr}
+    , decltype(_impl_.exchangetimestamp_){nullptr}
     , decltype(_impl_.received_timestamp_){nullptr}
     , decltype(_impl_.metadata_){nullptr}
     , decltype(_impl_.exchange_id_){0}
@@ -1297,7 +1297,7 @@ inline void OrderBookUpdate::SharedDtor() {
   _impl_.asks_.~RepeatedPtrField();
   _impl_.checksum_.Destroy();
   if (this != internal_default_instance()) delete _impl_.symbol_;
-  if (this != internal_default_instance()) delete _impl_.exchange_timestamp_;
+  if (this != internal_default_instance()) delete _impl_.exchangetimestamp_;
   if (this != internal_default_instance()) delete _impl_.received_timestamp_;
   if (this != internal_default_instance()) delete _impl_.metadata_;
 }
@@ -1319,10 +1319,10 @@ void OrderBookUpdate::Clear() {
     delete _impl_.symbol_;
   }
   _impl_.symbol_ = nullptr;
-  if (GetArenaForAllocation() == nullptr && _impl_.exchange_timestamp_ != nullptr) {
-    delete _impl_.exchange_timestamp_;
+  if (GetArenaForAllocation() == nullptr && _impl_.exchangetimestamp_ != nullptr) {
+    delete _impl_.exchangetimestamp_;
   }
-  _impl_.exchange_timestamp_ = nullptr;
+  _impl_.exchangetimestamp_ = nullptr;
   if (GetArenaForAllocation() == nullptr && _impl_.received_timestamp_ != nullptr) {
     delete _impl_.received_timestamp_;
   }
@@ -1360,10 +1360,10 @@ const char* OrderBookUpdate::_InternalParse(const char* ptr, ::_pbi::ParseContex
         } else
           goto handle_unusual;
         continue;
-      // .trading.common.proto.TimestampProto exchange_timestamp = 3;
+      // .trading.common.proto.TimestampProto exchangeTimestamp = 3;
       case 3:
         if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 26)) {
-          ptr = ctx->ParseMessage(_internal_mutable_exchange_timestamp(), ptr);
+          ptr = ctx->ParseMessage(_internal_mutable_exchangetimestamp(), ptr);
           CHK_(ptr);
         } else
           goto handle_unusual;
@@ -1479,11 +1479,11 @@ uint8_t* OrderBookUpdate::_InternalSerialize(
         _Internal::symbol(this).GetCachedSize(), target, stream);
   }
 
-  // .trading.common.proto.TimestampProto exchange_timestamp = 3;
-  if (this->_internal_has_exchange_timestamp()) {
+  // .trading.common.proto.TimestampProto exchangeTimestamp = 3;
+  if (this->_internal_has_exchangetimestamp()) {
     target = ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::
-      InternalWriteMessage(3, _Internal::exchange_timestamp(this),
-        _Internal::exchange_timestamp(this).GetCachedSize(), target, stream);
+      InternalWriteMessage(3, _Internal::exchangetimestamp(this),
+        _Internal::exchangetimestamp(this).GetCachedSize(), target, stream);
   }
 
   // .trading.common.proto.TimestampProto received_timestamp = 4;
@@ -1582,11 +1582,11 @@ size_t OrderBookUpdate::ByteSizeLong() const {
         *_impl_.symbol_);
   }
 
-  // .trading.common.proto.TimestampProto exchange_timestamp = 3;
-  if (this->_internal_has_exchange_timestamp()) {
+  // .trading.common.proto.TimestampProto exchangeTimestamp = 3;
+  if (this->_internal_has_exchangetimestamp()) {
     total_size += 1 +
       ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::MessageSize(
-        *_impl_.exchange_timestamp_);
+        *_impl_.exchangetimestamp_);
   }
 
   // .trading.common.proto.TimestampProto received_timestamp = 4;
@@ -1646,9 +1646,9 @@ void OrderBookUpdate::MergeImpl(::PROTOBUF_NAMESPACE_ID::Message& to_msg, const 
     _this->_internal_mutable_symbol()->::trading::common::proto::SymbolProto::MergeFrom(
         from._internal_symbol());
   }
-  if (from._internal_has_exchange_timestamp()) {
-    _this->_internal_mutable_exchange_timestamp()->::trading::common::proto::TimestampProto::MergeFrom(
-        from._internal_exchange_timestamp());
+  if (from._internal_has_exchangetimestamp()) {
+    _this->_internal_mutable_exchangetimestamp()->::trading::common::proto::TimestampProto::MergeFrom(
+        from._internal_exchangetimestamp());
   }
   if (from._internal_has_received_timestamp()) {
     _this->_internal_mutable_received_timestamp()->::trading::common::proto::TimestampProto::MergeFrom(

@@ -848,23 +848,23 @@ class OrderBookUpdate final :
       ::trading::common::proto::SymbolProto* symbol);
   ::trading::common::proto::SymbolProto* unsafe_arena_release_symbol();
 
-  // .trading.common.proto.TimestampProto exchange_timestamp = 3;
-  bool has_exchange_timestamp() const;
+  // .trading.common.proto.TimestampProto exchangeTimestamp = 3;
+  bool has_exchangetimestamp() const;
   private:
-  bool _internal_has_exchange_timestamp() const;
+  bool _internal_has_exchangetimestamp() const;
   public:
-  void clear_exchange_timestamp();
-  const ::trading::common::proto::TimestampProto& exchange_timestamp() const;
-  PROTOBUF_NODISCARD ::trading::common::proto::TimestampProto* release_exchange_timestamp();
-  ::trading::common::proto::TimestampProto* mutable_exchange_timestamp();
-  void set_allocated_exchange_timestamp(::trading::common::proto::TimestampProto* exchange_timestamp);
+  void clear_exchangetimestamp();
+  const ::trading::common::proto::TimestampProto& exchangetimestamp() const;
+  PROTOBUF_NODISCARD ::trading::common::proto::TimestampProto* release_exchangetimestamp();
+  ::trading::common::proto::TimestampProto* mutable_exchangetimestamp();
+  void set_allocated_exchangetimestamp(::trading::common::proto::TimestampProto* exchangetimestamp);
   private:
-  const ::trading::common::proto::TimestampProto& _internal_exchange_timestamp() const;
-  ::trading::common::proto::TimestampProto* _internal_mutable_exchange_timestamp();
+  const ::trading::common::proto::TimestampProto& _internal_exchangetimestamp() const;
+  ::trading::common::proto::TimestampProto* _internal_mutable_exchangetimestamp();
   public:
-  void unsafe_arena_set_allocated_exchange_timestamp(
-      ::trading::common::proto::TimestampProto* exchange_timestamp);
-  ::trading::common::proto::TimestampProto* unsafe_arena_release_exchange_timestamp();
+  void unsafe_arena_set_allocated_exchangetimestamp(
+      ::trading::common::proto::TimestampProto* exchangetimestamp);
+  ::trading::common::proto::TimestampProto* unsafe_arena_release_exchangetimestamp();
 
   // .trading.common.proto.TimestampProto received_timestamp = 4;
   bool has_received_timestamp() const;
@@ -941,7 +941,7 @@ class OrderBookUpdate final :
     ::PROTOBUF_NAMESPACE_ID::RepeatedPtrField< ::trading::data_ingestion::proto::PriceLevel > asks_;
     ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr checksum_;
     ::trading::common::proto::SymbolProto* symbol_;
-    ::trading::common::proto::TimestampProto* exchange_timestamp_;
+    ::trading::common::proto::TimestampProto* exchangetimestamp_;
     ::trading::common::proto::TimestampProto* received_timestamp_;
     ::trading::data_ingestion::proto::OrderBookUpdate_Metadata* metadata_;
     int exchange_id_;
@@ -1981,39 +1981,39 @@ inline void OrderBookUpdate::set_allocated_symbol(::trading::common::proto::Symb
   // @@protoc_insertion_point(field_set_allocated:trading.data_ingestion.proto.OrderBookUpdate.symbol)
 }
 
-// .trading.common.proto.TimestampProto exchange_timestamp = 3;
-inline bool OrderBookUpdate::_internal_has_exchange_timestamp() const {
-  return this != internal_default_instance() && _impl_.exchange_timestamp_ != nullptr;
+// .trading.common.proto.TimestampProto exchangeTimestamp = 3;
+inline bool OrderBookUpdate::_internal_has_exchangetimestamp() const {
+  return this != internal_default_instance() && _impl_.exchangetimestamp_ != nullptr;
 }
-inline bool OrderBookUpdate::has_exchange_timestamp() const {
-  return _internal_has_exchange_timestamp();
+inline bool OrderBookUpdate::has_exchangetimestamp() const {
+  return _internal_has_exchangetimestamp();
 }
-inline const ::trading::common::proto::TimestampProto& OrderBookUpdate::_internal_exchange_timestamp() const {
-  const ::trading::common::proto::TimestampProto* p = _impl_.exchange_timestamp_;
+inline const ::trading::common::proto::TimestampProto& OrderBookUpdate::_internal_exchangetimestamp() const {
+  const ::trading::common::proto::TimestampProto* p = _impl_.exchangetimestamp_;
   return p != nullptr ? *p : reinterpret_cast<const ::trading::common::proto::TimestampProto&>(
       ::trading::common::proto::_TimestampProto_default_instance_);
 }
-inline const ::trading::common::proto::TimestampProto& OrderBookUpdate::exchange_timestamp() const {
-  // @@protoc_insertion_point(field_get:trading.data_ingestion.proto.OrderBookUpdate.exchange_timestamp)
-  return _internal_exchange_timestamp();
+inline const ::trading::common::proto::TimestampProto& OrderBookUpdate::exchangetimestamp() const {
+  // @@protoc_insertion_point(field_get:trading.data_ingestion.proto.OrderBookUpdate.exchangeTimestamp)
+  return _internal_exchangetimestamp();
 }
-inline void OrderBookUpdate::unsafe_arena_set_allocated_exchange_timestamp(
-    ::trading::common::proto::TimestampProto* exchange_timestamp) {
+inline void OrderBookUpdate::unsafe_arena_set_allocated_exchangetimestamp(
+    ::trading::common::proto::TimestampProto* exchangetimestamp) {
   if (GetArenaForAllocation() == nullptr) {
-    delete reinterpret_cast<::PROTOBUF_NAMESPACE_ID::MessageLite*>(_impl_.exchange_timestamp_);
+    delete reinterpret_cast<::PROTOBUF_NAMESPACE_ID::MessageLite*>(_impl_.exchangetimestamp_);
   }
-  _impl_.exchange_timestamp_ = exchange_timestamp;
-  if (exchange_timestamp) {
+  _impl_.exchangetimestamp_ = exchangetimestamp;
+  if (exchangetimestamp) {
     
   } else {
     
   }
-  // @@protoc_insertion_point(field_unsafe_arena_set_allocated:trading.data_ingestion.proto.OrderBookUpdate.exchange_timestamp)
+  // @@protoc_insertion_point(field_unsafe_arena_set_allocated:trading.data_ingestion.proto.OrderBookUpdate.exchangeTimestamp)
 }
-inline ::trading::common::proto::TimestampProto* OrderBookUpdate::release_exchange_timestamp() {
+inline ::trading::common::proto::TimestampProto* OrderBookUpdate::release_exchangetimestamp() {
   
-  ::trading::common::proto::TimestampProto* temp = _impl_.exchange_timestamp_;
-  _impl_.exchange_timestamp_ = nullptr;
+  ::trading::common::proto::TimestampProto* temp = _impl_.exchangetimestamp_;
+  _impl_.exchangetimestamp_ = nullptr;
 #ifdef PROTOBUF_FORCE_COPY_IN_RELEASE
   auto* old =  reinterpret_cast<::PROTOBUF_NAMESPACE_ID::MessageLite*>(temp);
   temp = ::PROTOBUF_NAMESPACE_ID::internal::DuplicateIfNonNull(temp);
@@ -2025,45 +2025,45 @@ inline ::trading::common::proto::TimestampProto* OrderBookUpdate::release_exchan
 #endif  // !PROTOBUF_FORCE_COPY_IN_RELEASE
   return temp;
 }
-inline ::trading::common::proto::TimestampProto* OrderBookUpdate::unsafe_arena_release_exchange_timestamp() {
-  // @@protoc_insertion_point(field_release:trading.data_ingestion.proto.OrderBookUpdate.exchange_timestamp)
+inline ::trading::common::proto::TimestampProto* OrderBookUpdate::unsafe_arena_release_exchangetimestamp() {
+  // @@protoc_insertion_point(field_release:trading.data_ingestion.proto.OrderBookUpdate.exchangeTimestamp)
   
-  ::trading::common::proto::TimestampProto* temp = _impl_.exchange_timestamp_;
-  _impl_.exchange_timestamp_ = nullptr;
+  ::trading::common::proto::TimestampProto* temp = _impl_.exchangetimestamp_;
+  _impl_.exchangetimestamp_ = nullptr;
   return temp;
 }
-inline ::trading::common::proto::TimestampProto* OrderBookUpdate::_internal_mutable_exchange_timestamp() {
+inline ::trading::common::proto::TimestampProto* OrderBookUpdate::_internal_mutable_exchangetimestamp() {
   
-  if (_impl_.exchange_timestamp_ == nullptr) {
+  if (_impl_.exchangetimestamp_ == nullptr) {
     auto* p = CreateMaybeMessage<::trading::common::proto::TimestampProto>(GetArenaForAllocation());
-    _impl_.exchange_timestamp_ = p;
+    _impl_.exchangetimestamp_ = p;
   }
-  return _impl_.exchange_timestamp_;
+  return _impl_.exchangetimestamp_;
 }
-inline ::trading::common::proto::TimestampProto* OrderBookUpdate::mutable_exchange_timestamp() {
-  ::trading::common::proto::TimestampProto* _msg = _internal_mutable_exchange_timestamp();
-  // @@protoc_insertion_point(field_mutable:trading.data_ingestion.proto.OrderBookUpdate.exchange_timestamp)
+inline ::trading::common::proto::TimestampProto* OrderBookUpdate::mutable_exchangetimestamp() {
+  ::trading::common::proto::TimestampProto* _msg = _internal_mutable_exchangetimestamp();
+  // @@protoc_insertion_point(field_mutable:trading.data_ingestion.proto.OrderBookUpdate.exchangeTimestamp)
   return _msg;
 }
-inline void OrderBookUpdate::set_allocated_exchange_timestamp(::trading::common::proto::TimestampProto* exchange_timestamp) {
+inline void OrderBookUpdate::set_allocated_exchangetimestamp(::trading::common::proto::TimestampProto* exchangetimestamp) {
   ::PROTOBUF_NAMESPACE_ID::Arena* message_arena = GetArenaForAllocation();
   if (message_arena == nullptr) {
-    delete reinterpret_cast< ::PROTOBUF_NAMESPACE_ID::MessageLite*>(_impl_.exchange_timestamp_);
+    delete reinterpret_cast< ::PROTOBUF_NAMESPACE_ID::MessageLite*>(_impl_.exchangetimestamp_);
   }
-  if (exchange_timestamp) {
+  if (exchangetimestamp) {
     ::PROTOBUF_NAMESPACE_ID::Arena* submessage_arena =
         ::PROTOBUF_NAMESPACE_ID::Arena::InternalGetOwningArena(
-                reinterpret_cast<::PROTOBUF_NAMESPACE_ID::MessageLite*>(exchange_timestamp));
+                reinterpret_cast<::PROTOBUF_NAMESPACE_ID::MessageLite*>(exchangetimestamp));
     if (message_arena != submessage_arena) {
-      exchange_timestamp = ::PROTOBUF_NAMESPACE_ID::internal::GetOwnedMessage(
-          message_arena, exchange_timestamp, submessage_arena);
+      exchangetimestamp = ::PROTOBUF_NAMESPACE_ID::internal::GetOwnedMessage(
+          message_arena, exchangetimestamp, submessage_arena);
     }
     
   } else {
     
   }
-  _impl_.exchange_timestamp_ = exchange_timestamp;
-  // @@protoc_insertion_point(field_set_allocated:trading.data_ingestion.proto.OrderBookUpdate.exchange_timestamp)
+  _impl_.exchangetimestamp_ = exchangetimestamp;
+  // @@protoc_insertion_point(field_set_allocated:trading.data_ingestion.proto.OrderBookUpdate.exchangeTimestamp)
 }
 
 // .trading.common.proto.TimestampProto received_timestamp = 4;

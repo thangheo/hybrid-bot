@@ -439,7 +439,7 @@ void OrderBookReconstructor::publishOrderBook(const std::shared_ptr<OrderBook>& 
     OrderBookUpdate update = order_book->getSnapshot();
     std::string payload = update.exchangeId.toString() + ":" + update.tradingPair + ":" +
         std::to_string(update.sequenceNumber) + ":" +
-        std::to_string(timestampToMillis(update.exchange_timestamp)) + ":" +
+        std::to_string(timestampToMillis(update.exchangeTimestamp)) + ":" +
         std::to_string(timestampToMillis(update.receivedTimestamp));
     std::vector<unsigned char> binary_payload(payload.begin(), payload.end());
     // Serialize the order book data

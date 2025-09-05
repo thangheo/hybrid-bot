@@ -275,7 +275,7 @@ class OrderBookClient:
             return {
                 'exchange_id': order_book.exchange_id,
                 'trading_pair': order_book.trading_pair,
-                'exchange_timestamp': order_book.exchange_timestamp,
+                'exchangeTimestamp': order_book.exchangeTimestamp,
                 'received_timestamp': order_book.received_timestamp,
                 'sequenceNumber': order_book.sequenceNumber,
                 'isSnapshot': order_book.isSnapshot,
@@ -1006,7 +1006,7 @@ class ImbalanceSimulator:
         order_book = {
             'exchange_id': 'SIMULATOR',
             'trading_pair': 'BTC/USDT',
-            'exchange_timestamp': timestamp,
+            'exchangeTimestamp': timestamp,
             'received_timestamp': timestamp,
             'sequenceNumber': self.tick,
             'isSnapshot': True,

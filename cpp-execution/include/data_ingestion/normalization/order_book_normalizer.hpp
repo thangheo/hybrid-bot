@@ -29,7 +29,7 @@ public:
     // Get current state of an order book
     OrderBookUpdate getOrderBook(const ExchangeId exchangeId,
                                const std::string& tradingPair,
-                               int32_t depth = 10) const;
+                               int depth = 10) const;
     
 private:
     NormalizedOrderBookCallback callback_;

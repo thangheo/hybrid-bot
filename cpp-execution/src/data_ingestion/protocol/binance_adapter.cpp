@@ -85,7 +85,7 @@ OrderBookUpdate BinanceAdapter::normalize(const MarketDataUpdate& update) {
         // Set basic fields
         normalized.exchangeId = update.exchangeId;
         normalized.tradingPair = standardizeTradingPair(update.tradingPair);
-        normalized.exchange_timestamp = update.exchange_timestamp;
+        normalized.exchangeTimestamp = update.exchangeTimestamp;
         normalized.receivedTimestamp = update.receivedTimestamp;
         normalized.sequenceNumber = update.sequenceNumber;
         normalized.symbol = core::Symbol::fromString(normalized.tradingPair);
@@ -194,10 +194,10 @@ OrderBookUpdate BinanceAdapter::convertDepthUpdate(const std::string& jsonData) 
         // Convert raw timestamp to Timestamp (handles seconds/milliseconds detection)
         if (rawTimestamp < 1000000000000ULL) {
             // Timestamp is in seconds, convert to milliseconds first
-            update.exchange_timestamp = core::timestampFromMillis(rawTimestamp * 1000);
+            update.exchangeTimestamp = core::timestampFromMillis(rawTimestamp * 1000);
         } else {
             // Timestamp is already in milliseconds
-            update.exchange_timestamp = core::timestampFromMillis(rawTimestamp);
+            update.exchangeTimestamp = core::timestampFromMillis(rawTimestamp);
         }
     }
     
@@ -483,7 +483,7 @@ std::string BinanceAdapter::generateChecksum(const std::vector<PriceLevel>& bids
     
 //     // Extract timestamps safely
 //     if (jsonObj.contains("E") && jsonObj["E"].is_number()) {
-//         update.exchange_timestamp = jsonObj["E"].get<int64_t>();
+//         update.exchangeTimestamp = jsonObj["E"].get<int64_t>();
 //     }
     
 //     // Extract sequence numbers safely

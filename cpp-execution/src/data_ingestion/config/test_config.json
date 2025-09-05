@@ -1,0 +1,22 @@
+{
+    "exchanges": {
+        "binance": {
+            "id": "BINANCE",
+            "name": "Binance",
+            "ws_url": "wss://stream.binance.com:9443/ws",
+            "rest_url": "https://api.binance.com",
+            "symbols": ["BTCUSDT", "ETHUSDT"],
+            "connection_timeout_ms": 5000,
+            "max_reconnect_attempts": 3
+        }
+    },
+    "order_book": {
+        "depth": 20,
+        "snapshot_interval_ms": 30000
+    },
+    "publisher": {
+        "zmq_endpoint": "tcp://*:5555",
+        "max_queue_size": 1000,
+        "publish_interval_ms": 100
+    }
+}

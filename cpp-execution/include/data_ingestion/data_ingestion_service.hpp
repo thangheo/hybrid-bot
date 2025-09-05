@@ -5,7 +5,7 @@
 #include "data_ingestion/orderbook/reconstructor.hpp"
 #include "data_ingestion/orderbook/order_book_manager.hpp"
 #include "data_ingestion/publisher/zeromq_publisher.hpp"
-#include "data_ingestion/config.hpp"
+#include "data_ingestion/config/config.hpp"
 #include "data_ingestion/normalization/order_book_normalizer.hpp"
 #include "common/event_bus.hpp"
 #include <memory>

@@ -42,7 +42,7 @@ struct SubscriptionRequest {
 //     ExchangeId exchangeId;
 //     std::string tradingPair;
 //     std::string updateType;
-//     int64_t exchange_timestamp;
+//     int64_t exchangeTimestamp;
 //     int64_t receivedTimestamp;
 //     std::vector<uint8_t> data;  // Exchange-specific data format
 // };

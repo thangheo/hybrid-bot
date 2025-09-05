@@ -182,7 +182,7 @@ protected:
         update.exchange_id = "binance";
         update.trading_pair = trading_pair;
         update.update_type = "orderbook";
-        update.exchange_timestamp = 1625239046123;
+        update.exchangeTimestamp = 1625239046123;
         update.received_timestamp = 1625239046123;
         update.data = {'t', 'e', 's', 't'};
         return update;

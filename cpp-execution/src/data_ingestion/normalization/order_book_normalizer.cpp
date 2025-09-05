@@ -94,14 +94,14 @@ void OrderBookNormalizer::processMarketData(const MarketDataUpdate& update) {
                 normalized.bids, 
                 normalized.asks, 
                 normalized.sequenceNumber, 
-                normalized.exchange_timestamp
+                normalized.exchangeTimestamp
             );
         } else {
             order_book->applyUpdate(
                 normalized.bids, 
                 normalized.asks, 
                 normalized.sequenceNumber, 
-                normalized.exchange_timestamp
+                normalized.exchangeTimestamp
             );
         }
         
