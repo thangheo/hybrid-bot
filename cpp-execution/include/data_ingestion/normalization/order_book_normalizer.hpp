@@ -21,6 +21,8 @@ using namespace core;
 class OrderBookNormalizer {
 public:
     OrderBookNormalizer(NormalizedOrderBookCallback callback);
+    // OrderBookNormalizer(NormalizedOrderBookCallback callback,std::vector<ExchangeId>& exchangId);
+    
     ~OrderBookNormalizer();
     
     // Process market data from any exchange
@@ -39,39 +41,15 @@ private:
     // Exchange-specific adapters
     std::unordered_map<std::string, std::shared_ptr<ExchangeAdapter>> exchange_adapters_;
     
-    // Order books
-    std::unordered_map<std::string, std::shared_ptr<OrderBook>> order_books_;
-    
     // Initialize exchange adapters
     void initAdapters();
+                             
     
-    // Get or create an order book
-    std::shared_ptr<OrderBook> getOrCreateOrderBook(const ExchangeId& exchangeId, 
-                                                 const std::string& tradingPair);
-                                                
-    
-    // Create a key for the order book map
-    std::string createOrderBookKey(const ExchangeId& exchangeId,
-                                 const std::string& tradingPair) const;
     // Process exchange-specific data
     void processExchangeData(const MarketDataUpdate& update, 
                            const ExchangeId exchangeId);
 };
 
-
-// Concrete adapter for Binance
-// class BinanceAdapter : public ExchangeAdapter {
-// public:
-//     bool canHandle(const MarketDataUpdate& update) const override;
-//     OrderBookUpdate normalize(const MarketDataUpdate& update) const override;
-//     std::string standardizeTradingPair(const std::string& pair) const override;
-// };
-
-// Factory for creating adapters
-// class AdapterFactory {
-// public:
-//     static std::shared_ptr<ExchangeAdapter> createAdapter(const ExchangeId& exchangeId);
-// };
 
 } // namespace data_ingestion
 } // namespace trading

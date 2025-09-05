@@ -87,7 +87,25 @@ bool DataIngestionService::start(const std::vector<std::string>& symbols) {
                 std::cout << "Order book for " << symbol << " already exists or failed to create" << std::endl;
             }
         }
-        
+         // Create order books in reconstructor instead (like your working version)
+        // In DataIngestionService::start(), change this:
+        // for (const auto& symbol : symbols) {
+        //     // REMOVE OrderBookManager creation
+        //     // orderBookManager_->createOrderBook(...);
+            
+        //     // Create order books in reconstructor instead (like your working version)
+        //     std::vector<PriceLevel> empty_bids;
+        //     std::vector<PriceLevel> empty_asks;
+            
+        //     reconstructor_->processSnapshot(
+        //         ExchangeId::binance(), 
+        //         core::Symbol::fromString(symbol),
+        //         empty_bids,
+        //         empty_asks,
+        //         0,
+        //         std::chrono::system_clock::now()
+        //     );
+        // }
         // 3. Start exchange connections
         if (!exchangeManager_->initialize()) {
             std::cerr << "Failed to initialize exchange manager" << std::endl;
@@ -106,11 +124,12 @@ bool DataIngestionService::start(const std::vector<std::string>& symbols) {
         }
         
         std::vector<DataType> dataTypes = {DataType::ORDER_BOOK};        
-        if (!exchangeManager_->subscribe(symbols, dataTypes, 20)) {
+       
+        auto subscriptionFuture = exchangeManager_->subscribe(symbols, dataTypes, 20);
+        if (!subscriptionFuture.get()) {
             std::cerr << "Failed to subscribe to symbols" << std::endl;
             return false;
         }
-        
         // 5. Start monitoring
         running_.store(true);
         monitoringThread_ = std::thread(&DataIngestionService::runMonitoring, this);
@@ -231,47 +250,62 @@ bool DataIngestionService::setupExchangeManager() {
         return false;
     }
 }
-
 void DataIngestionService::setupEventHandling() {
     // Subscribe to relevant events through the event bus
     // This provides loose coupling between components
+    
+    // Example: Subscribe to subscription response events for logging
+    eventBus_->subscribe<trading::events::SubscriptionResponseEvent>(
+        [this](const trading::events::SubscriptionResponseEvent& event) {
+            if (event.success) {
+                std::cout << "Subscription " << event.requestId << " succeeded" << std::endl;
+            } else {
+                std::cout << "Subscription " << event.requestId << " failed: " << event.errorMessage << std::endl;
+            }
+        });
 }
-
 void DataIngestionService::onNormalizedOrderBook(const OrderBookUpdate& update) {
     try {
         messagesProcessed_.fetch_add(1);
+        std::cout << "[DEBUG] Processing update for " 
+                  << update.exchangeId.toString() << ":" << update.symbol.toString() << std::endl;
         
-        // Process through order book manager
+        // // Process through order book manager
         if (orderBookManager_) {
-            orderBookManager_->processUpdate(update);
+            std::cout << "[DEBUG] Calling orderBookManager_->processUpdate" << std::endl;
+            orderBookManager_->processUpdate(update);  // <-- Error comes from here
+            std::cout << "[DEBUG] orderBookManager_->processUpdate completed" << std::endl;
         }
-        
-        // Also process through reconstructor for publishing
-        if (reconstructor_) {
-            if (update.isSnapshot) {
-                reconstructor_->processSnapshot(
-                    update.exchangeId,
-                    update.symbol,
-                    update.bids,
-                    update.asks,
-                    update.sequenceNumber,
-                    update.receivedTimestamp
-                );
-            } else {
-                reconstructor_->processUpdate(
-                    update.exchangeId,
-                    update.symbol,
-                    update.bids,
-                    update.asks,
-                    update.sequenceNumber,
-                    update.receivedTimestamp
-                );
-            }
-        }
+                
+        // if (reconstructor_) {
+        //     if (update.isSnapshot) {
+        //         reconstructor_->processSnapshot(
+        //             update.exchangeId,
+        //             update.symbol,
+        //             update.bids,
+        //             update.asks,
+        //             update.sequenceNumber,
+        //             update.receivedTimestamp
+        //         );
+        //     } else {
+        //         reconstructor_->processUpdate(
+        //             update.exchangeId,
+        //             update.symbol,
+        //             update.bids,
+        //             update.asks,
+        //             update.sequenceNumber,
+        //             update.receivedTimestamp
+        //         );
+        //     }
+        // }
         
         // Notify external callback
         if (orderBookCallback_) {
+            std::cout << "[DEBUG] Calling external orderBookCallback_" << std::endl;            
             orderBookCallback_(update);
+        }
+        else {
+            std::cout << "[ERROR] orderBookCallback_ is null!" << std::endl;
         }
         
     } catch (const std::exception& e) {

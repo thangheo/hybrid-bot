@@ -6,6 +6,8 @@
 #include "data_ingestion/normalization/order_book_normalizer.hpp"
 #include "data_ingestion/websocket/connection_pool.hpp"
 #include "data_ingestion/websocket/exchanges/exchange_connector.hpp"
+#include "common/event_bus.hpp"
+#include "common/trading_events.hpp"
 #include <string>
 #include <memory>
 #include <vector>
@@ -13,6 +15,8 @@
 #include <atomic>
 #include <mutex>
 #include <functional>
+#include <future>
+#include <unordered_map>  
 
 namespace trading {
 namespace data_ingestion {
@@ -36,11 +40,15 @@ public:
     bool initialize();
     bool connect();
     void disconnect();
-    
-    bool subscribe(const std::vector<std::string>& tradingPairs,
-                  const std::vector<DataType>& dataTypes,
-                  int32_t depth = 10);
-    
+    inline std::string toLowercase(const std::string& str) ;
+
+    // bool subscribe(const std::vector<std::string>& tradingPairs,
+    //               const std::vector<DataType>& dataTypes,
+    //               int32_t depth = 10);
+    std::future<bool> subscribe(const std::vector<std::string>& tradingPairs,
+                                           const std::vector<DataType>& dataTypes,
+                                           int32_t depth=10) ;
+
     bool isConnected() const;
     
     OrderBookUpdate getOrderBook(const std::string& tradingPair,
@@ -55,6 +63,15 @@ public:
 #endif
 
 private:
+    common::EventBus& eventBus_;
+    size_t subscriptionRequestHandlerId_;
+    
+    // For tracking async responses
+    std::unordered_map<std::string, std::promise<bool>> pendingRequests_;
+    std::mutex pendingRequestsMutex_;  // Only for the promises map
+    
+    std::atomic<uint64_t> requestIdCounter_{0};
+
     // Member variables in proper initialization order
     NormalizedOrderBookCallback normalizedCallback_;
     int minConnections_;
@@ -86,6 +103,9 @@ private:
         const std::vector<std::string>& tradingPairs,
         const std::vector<DataType>& dataTypes,
         int32_t depth);
+    void handleSubscriptionRequest(const events::SubscriptionRequestEvent& event);
+    void processSubscriptionInternal(const events::SubscriptionRequestEvent& event);
+    std::string generateRequestId();
 };
 
 } // namespace data_ingestion
