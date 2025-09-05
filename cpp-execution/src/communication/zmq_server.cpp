@@ -14,8 +14,8 @@ void TradingCommunicationServer::InitializeSockets() {
         intelligence_publisher_ = std::make_unique<zmq::socket_t>(context_, ZMQ_PUB);
         intelligence_publisher_->bind("tcp://*:5555");
         
-        // Trading Intent Receiver (REP socket) 
-        intent_receiver_ = std::make_unique<zmq::socket_t>(context_, ZMQ_REP);
+        // Trading Intent Receiver (ROUTER socket) 
+        intent_receiver_ = std::make_unique<zmq::socket_t>(context_, ZMQ_ROUTER);
         intent_receiver_->bind("tcp://*:5556");
         
         std::cout << "ZMQ Server initialized successfully" << std::endl;
@@ -120,10 +120,15 @@ void TradingCommunicationServer::IntentHandlerLoop() {
             int timeout_ms = 100;
             intent_receiver_->set(zmq::sockopt::rcvtimeo, timeout_ms);
             
+            zmq::message_t identity;
+            zmq::message_t request_id;
             zmq::message_t request;
-            auto result = intent_receiver_->recv(request, zmq::recv_flags::dontwait);
             
-            if (result) {
+            // ROUTER socket receives: [identity][request_id][data]
+            if (intent_receiver_->recv(identity, zmq::recv_flags::dontwait) &&
+                intent_receiver_->recv(request_id, zmq::recv_flags::dontwait) &&
+                intent_receiver_->recv(request, zmq::recv_flags::dontwait)) {
+                
                 // Parse trading intent
                 trading::TradingIntent intent;
                 std::string data(static_cast<char*>(request.data()), request.size());
@@ -141,15 +146,17 @@ void TradingCommunicationServer::IntentHandlerLoop() {
                         ack = CreateDefaultAcknowledgment(intent);
                     }
                     
-                    // Send acknowledgment back
+                    // Send acknowledgment back: [identity][request_id][response]
                     std::string ack_data = ack.SerializeAsString();
                     zmq::message_t reply(ack_data.size());
                     memcpy(reply.data(), ack_data.c_str(), ack_data.size());
+                    
+                    intent_receiver_->send(identity, zmq::send_flags::sndmore);
+                    intent_receiver_->send(request_id, zmq::send_flags::sndmore);
                     intent_receiver_->send(reply, zmq::send_flags::none);
                     
                 } else {
                     std::cerr << "Failed to parse trading intent" << std::endl;
-                    SendErrorAcknowledgment("Failed to parse message");
                 }
             }
             
@@ -201,5 +208,5 @@ void TradingCommunicationServer::SendErrorAcknowledgment(const std::string& erro
     std::string ack_data = ack.SerializeAsString();
     zmq::message_t reply(ack_data.size());
     memcpy(reply.data(), ack_data.c_str(), ack_data.size());
-    intent_receiver_->send(reply, zmq::send_flags::none);
+    // Note: Cannot send without proper identity routing
 }
