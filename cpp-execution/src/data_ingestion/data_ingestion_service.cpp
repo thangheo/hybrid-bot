@@ -1,4 +1,4 @@
-// src/data_ingestion/data_ingestion_service.cpp
+// Fixed data_ingestion_service.cpp - Use direct subscription
 #include "data_ingestion/data_ingestion_service.hpp"
 #include "common/logger.hpp"
 #include <iostream>
@@ -28,7 +28,7 @@ bool DataIngestionService::initialize() {
             return false;
         }
         
-        // 2. Setup event bus
+        // 2. Setup event bus (still needed for other components)
         eventBus_ = std::make_unique<common::EventBus>();
         eventBus_->start();
         setupEventHandling();
@@ -78,20 +78,8 @@ bool DataIngestionService::start(const std::vector<std::string>& symbols) {
             return false;
         }
         
-        // 2. Create order books for symbols
-        // for (const auto& symbol : symbols) {
-        //     if (!orderBookManager_->createOrderBook(
-        //         ExchangeId::binance(), 
-        //         core::Symbol::fromString(symbol),
-        //         [this](const OrderBook& book) { this->onOrderBookChanged(book); }
-        //     )) {
-        //         std::cout << "Order book for " << symbol << " already exists or failed to create" << std::endl;
-        //     }
-        // }
-         // Create order books in reconstructor instead (like your working version)
-        // In DataIngestionService::start(), change this:
+        // 2. Create order books in reconstructor
         for (const auto& symbol : symbols) {
-            // Create order books in reconstructor instead (like your working version)
             std::vector<PriceLevel> empty_bids;
             std::vector<PriceLevel> empty_asks;
             
@@ -104,6 +92,7 @@ bool DataIngestionService::start(const std::vector<std::string>& symbols) {
                 std::chrono::system_clock::now()
             );
         }
+        
         // 3. Start exchange connections
         if (!exchangeManager_->initialize()) {
             std::cerr << "Failed to initialize exchange manager" << std::endl;
@@ -115,19 +104,22 @@ bool DataIngestionService::start(const std::vector<std::string>& symbols) {
             return false;
         }
         
-        // 4. Subscribe to symbols
-        std::vector<Symbol> symbolObjects;
-        for (const auto& symbol : symbols) {
-            symbolObjects.emplace_back(core::Symbol::fromString(symbol));
-        }
-        
+        // 4. DIRECT SUBSCRIPTION - No more event bus complexity
         std::vector<DataType> dataTypes = {DataType::ORDER_BOOK};        
-       
-        auto subscriptionFuture = exchangeManager_->subscribe(symbols, dataTypes, 20);
-        if (!subscriptionFuture.get()) {
+        
+        std::cout << "=== STARTING SUBSCRIPTION PROCESS ===" << std::endl;
+        for (const auto& symbol : symbols) {
+            std::cout << "Will subscribe to symbol: " << symbol << std::endl;
+        }
+        std::cout << "=====================================" << std::endl;
+        
+        if (!exchangeManager_->subscribe(symbols, dataTypes, 20)) {
             std::cerr << "Failed to subscribe to symbols" << std::endl;
             return false;
         }
+        
+        std::cout << "Successfully subscribed to all symbols!" << std::endl;
+        
         // 5. Start monitoring
         running_.store(true);
         monitoringThread_ = std::thread(&DataIngestionService::runMonitoring, this);
@@ -196,28 +188,12 @@ bool DataIngestionService::setupPublisher() {
 
 bool DataIngestionService::setupOrderBookComponents() {
     try {
-        // 1. Initialize reconstructor
+        // Initialize reconstructor
         reconstructor_ = &OrderBookReconstructor::getInstance();
         if (!reconstructor_->initialize(publisher_)) {
             std::cerr << "Failed to initialize order book reconstructor" << std::endl;
             return false;
         }
-        
-        // 2. Create order book manager
-        // OrderBookManagerConfig managerConfig;
-        // managerConfig.autoCreateOrderBooks = true;
-        // managerConfig.enableStatistics = true;
-        // managerConfig.validateSequenceNumbers = true;
-        
-        // orderBookManager_ = std::make_unique<OrderBookManager>(
-        //     managerConfig,
-        //     [this](const OrderBookKey& key, const std::string& eventType) {
-        //         publishStatus("orderbook_manager", 
-        //             "exchange=" + key.exchangeId.toString() + 
-        //             ",symbol=" + key.symbol.toString() + 
-        //             ",event=" + eventType);
-        //     }
-        // );
         
         return true;
     } catch (const std::exception& e) {
@@ -228,53 +204,30 @@ bool DataIngestionService::setupOrderBookComponents() {
 
 bool DataIngestionService::setupExchangeManager() {
     try {
-        // Create normalizer with proper callback - FIX HERE
-        auto normalizerCallback = [this](const OrderBookUpdate& update) {
-            this->onNormalizedOrderBook(update);
-        };
-        
-        normalizer_ = std::make_unique<OrderBookNormalizer>(normalizerCallback);
-        
-        // Create exchange manager with proper callback
+        // Create exchange manager with proper callback - DIRECT CALLBACK
         auto exchangeCallback = [this](const OrderBookUpdate& update) {
             this->onNormalizedOrderBook(update);
         };
         
         exchangeManager_ = std::make_unique<ExchangeManager>(exchangeCallback, 2, 5);
         
+        std::cout << "Exchange manager setup completed" << std::endl;
         return true;
     } catch (const std::exception& e) {
         std::cerr << "Exchange manager setup failed: " << e.what() << std::endl;
         return false;
     }
 }
+
 void DataIngestionService::setupEventHandling() {
-    // Subscribe to relevant events through the event bus
-    // This provides loose coupling between components
-    
-    // Example: Subscribe to subscription response events for logging
-    eventBus_->subscribe<trading::events::SubscriptionResponseEvent>(
-        [this](const trading::events::SubscriptionResponseEvent& event) {
-            if (event.success) {
-                std::cout << "Subscription " << event.requestId << " succeeded" << std::endl;
-            } else {
-                std::cout << "Subscription " << event.requestId << " failed: " << event.errorMessage << std::endl;
-            }
-        });
+    // Keep minimal event handling for other components that might need it
+    // Remove subscription-related event handling since we're doing direct subscription
 }
+
 void DataIngestionService::onNormalizedOrderBook(const OrderBookUpdate& update) {
     try {
         messagesProcessed_.fetch_add(1);
-        std::cout << "[DEBUG] Processing update for " 
-                  << update.exchangeId.toString() << ":" << update.symbol.toString() << std::endl;
-        
-        // // Process through order book manager
-        // if (orderBookManager_) {
-        //     std::cout << "[DEBUG] Calling orderBookManager_->processUpdate" << std::endl;
-        //     orderBookManager_->processUpdate(update);  // <-- Error comes from here
-        //     std::cout << "[DEBUG] orderBookManager_->processUpdate completed" << std::endl;
-        // }
-                
+       
         if (reconstructor_) {
             if (update.isSnapshot) {
                 reconstructor_->processSnapshot(
@@ -299,10 +252,9 @@ void DataIngestionService::onNormalizedOrderBook(const OrderBookUpdate& update) 
         
         // Notify external callback
         if (orderBookCallback_) {
-            std::cout << "[DEBUG] Calling external orderBookCallback_" << std::endl;            
+            // std::cout << "[DEBUG] Calling external orderBookCallback_" << std::endl;            
             orderBookCallback_(update);
-        }
-        else {
+        } else {
             std::cout << "[ERROR] orderBookCallback_ is null!" << std::endl;
         }
         
@@ -314,12 +266,12 @@ void DataIngestionService::onNormalizedOrderBook(const OrderBookUpdate& update) 
 
 void DataIngestionService::onOrderBookChanged(const OrderBook& orderBook) {
     // Handle order book changes for strategy components
-    // This is where you'd integrate with your strategy engine
 }
 
 void DataIngestionService::onConnectionStatus(const std::string& exchange, const std::string& status) {
     publishStatus("connection", "exchange=" + exchange + ",status=" + status);
 }
+
 std::shared_ptr<OrderBook> DataIngestionService::getOrderBook(
     const ExchangeId& exchange, 
     const core::Symbol& symbol) const {
@@ -343,25 +295,13 @@ SimpleStats DataIngestionService::getStatistics() const {
         stats.updatesPerSecond = static_cast<double>(stats.messagesProcessed) / elapsed;
     }
     
-    // Count active order books (if reconstructor has a way to get them)
-    // If not, you'll need to track this yourself
-    stats.totalOrderBooks = 0; // Set this based on your symbols
+    stats.totalOrderBooks = subscribedSymbols_.size();
     
     return stats;
 }
 
 std::vector<std::string> DataIngestionService::getActiveOrderBooks() const {
-    // Since OrderBookReconstructor doesn't expose active books,
-    // return the symbols you're tracking
-    std::vector<std::string> activeBooks;
-    
-    // You can either:
-    // 1. Track symbols in a member variable during start()
-    // 2. Or hardcode the symbols you subscribed to
-    
-    // Option 1: If you store subscribed symbols (add this to your class):
     return subscribedSymbols_;
-    
 }
 
 bool DataIngestionService::isHealthy() const {
@@ -372,10 +312,6 @@ bool DataIngestionService::isHealthy() const {
     if (exchangeManager_ && !exchangeManager_->isConnected()) {
         return false;
     }
-    
-    // if (orderBookManager_ && !orderBookManager_->isHealthy()) {
-    //     return false;
-    // }
     
     return true;
 }
@@ -424,7 +360,6 @@ void DataIngestionService::cleanup() {
     // Reset in reverse order
     exchangeManager_.reset();
     normalizer_.reset();
-    // orderBookManager_.reset();
     
     if (reconstructor_) {
         reconstructor_->shutdown();

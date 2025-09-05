@@ -266,9 +266,9 @@ using namespace trading::core;
          
          OrderBookKey key{exchange, symbol};
          auto it = order_books_.find(key);
-         
          if (it == order_books_.end()) {
              // Create new order book
+            std::cout << "[DEBUG] Creating NEW OrderBook for " << symbol.toString() << std::endl;             
              order_book = std::make_shared<OrderBook>(exchange, symbol);
              order_books_[key] = order_book;
          } else {

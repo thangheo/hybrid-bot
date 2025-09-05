@@ -1,6 +1,6 @@
 {
     "exchanges": {
-        "binance": {
+        "BINANCE": {
             "id": "BINANCE",
             "name": "Binance",
             "ws_url": "wss://stream.binance.com:9443/ws",

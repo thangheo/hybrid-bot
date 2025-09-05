@@ -80,12 +80,13 @@ bool OrderBook::applySnapshot(const std::vector<PriceLevel>& bids,
                             const std::vector<PriceLevel>& asks,
                             uint64_t sequenceNumber,
                             Timestamp timestamp) {
+    std::lock_guard<std::mutex> lock(mutex_);
+
     // Skip older snapshots
     if (sequenceNumber <= sequence_number_) {
         return false;
     }
     
-    std::lock_guard<std::mutex> lock(mutex_);
     
     // Store the current state for delta calculation
     captureOrderBookState();

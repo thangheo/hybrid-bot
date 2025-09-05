@@ -4,7 +4,7 @@
  */
 
 #pragma once
-
+#include <nlohmann/json.hpp>
 #include <string>
 #include <map>
 #include <vector>
@@ -12,7 +12,13 @@
 #include <mutex>
 #include "core/market_types.hpp"
 #include "orderbook/order_book_types.hpp"
+// Forward declaration for nlohmann::json
 
+// Forward declaration for nlohmann::json
+namespace nlohmann {
+    // class basic_json;
+    using json = basic_json<>;
+}
 namespace trading {
 namespace data_ingestion {
 
@@ -212,6 +218,15 @@ private:
     DataQualityConfig data_quality_config_;
     TimeSyncConfig time_sync_config_;
     std::vector<ExchangeId> enabled_exchanges_;
+    // Add these JSON loading helper method declarations:
+   void loadPublisherConfig(const nlohmann::json& pubJson);
+    void loadExchangeConfigs(const nlohmann::json& exchangesJson);
+    void loadNormalizationConfig(const nlohmann::json& normJson);
+    void loadOrderBookConfig(const nlohmann::json& obJson);
+    void loadDataQualityConfig(const nlohmann::json& dqJson);
+    void loadTimeSyncConfig(const nlohmann::json& tsJson);
+    void loadStorageConfig(const nlohmann::json& storageJson);
+    void loadEnabledExchanges(const nlohmann::json& enabledJson);
 };
 
 } // namespace data_ingestion

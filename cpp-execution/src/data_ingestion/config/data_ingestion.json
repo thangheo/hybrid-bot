@@ -1,0 +1,105 @@
+{
+  "publisher": {
+    "zmq_endpoint": "tcp://*:5560",
+    "publisher_type": "zeromq",
+    "buffer_size": 10000,
+    "max_queue_size": 10000,
+    "max_publish_rate": 5000,
+    "publish_interval_ms": 50,
+    "heartbeat_interval_ms": 30000,
+    "zmq_linger_ms": 1000,
+    "zmq_hwm": 10000,
+    "enable_compression": false,
+    "publish_raw_data": true,
+    "publish_normalized_data": true,
+    "compression": "none",
+    "topics": ["orderbook", "trades", "ticker"]
+  },
+  "exchanges": {
+    "binance": {
+      "exchange_id": "BINANCE",
+      "name": "Binance",
+      "ws_url": "wss://stream.binance.com:9443/ws",
+      "rest_url": "https://api.binance.com",
+      "enable_websocket": true,
+      "enable_rest": true,
+      "connection_timeout_ms": 30000,
+      "reconnect_interval_ms": 5000,
+      "max_reconnect_attempts": 10,
+      "use_authentication": false,
+      "api_key": "",
+      "api_secret": "",
+      "symbols": [
+        {"base": "BTC", "quote": "USDT"},
+        {"base": "ETH", "quote": "USDT"},
+        {"base": "BNB", "quote": "USDT"},
+        {"base": "ADA", "quote": "USDT"},
+        {"base": "DOT", "quote": "USDT"}
+      ]
+    },
+    "coinbase": {
+      "exchange_id": "COINBASE",
+      "name": "Coinbase Pro",
+      "ws_url": "wss://ws-feed.pro.coinbase.com",
+      "rest_url": "https://api.pro.coinbase.com",
+      "enable_websocket": true,
+      "enable_rest": true,
+      "connection_timeout_ms": 30000,
+      "reconnect_interval_ms": 5000,
+      "max_reconnect_attempts": 10,
+      "use_authentication": false,
+      "api_key": "",
+      "api_secret": "",
+      "symbols": [
+        {"base": "BTC", "quote": "USD"},
+        {"base": "ETH", "quote": "USD"}
+      ]
+    }
+  },
+  "normalization": {
+    "enable_normalization": true,
+    "timestamp_format": "iso8601",
+    "price_format": "decimal",
+    "volume_format": "decimal",
+    "validate_checksum": true,
+    "max_depth": 20
+  },
+  "order_book": {
+    "depth": 20,
+    "track_orders": false,
+    "snapshot_interval_ms": 60000,
+    "cleanup_interval_ms": 300000
+  },
+  "data_quality": {
+    "max_price_deviation": 0.1,
+    "max_gap_ms": 5000,
+    "validation_level": 2,
+    "min_volume_threshold": 0.001,
+    "max_spread_percentage": 0.05,
+    "max_order_age_seconds": 300,
+    "min_order_size": 0.001,
+    "enable_sequence_validation": true,
+    "enable_price_range_filter": true,
+    "enable_order_age_filter": true,
+    "enable_checksum_filter": true,
+    "enable_sequence_gap_filter": true,
+    "max_sequence_gap": 100
+  },
+  "time_sync": {
+    "ntp_server": "pool.ntp.org",
+    "sync_interval_ms": 300000,
+    "max_drift_ms": 1000,
+    "max_time_skew_ms": 5000,
+    "enable_ntp_sync": true
+  },
+  "storage": {
+    "enable_storage": false,
+    "storage_type": "influxdb",
+    "connection_string": "http://localhost:8086",
+    "database": "crypto_trading",
+    "retention_policy": "30d",
+    "batch_size": 100,
+    "flush_interval_seconds": 10
+  },
+  "enabled_exchanges": ["BINANCE", "COINBASE"]
+}
