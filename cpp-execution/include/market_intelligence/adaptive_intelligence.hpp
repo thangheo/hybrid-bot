@@ -53,6 +53,11 @@ struct CoinProfile {
     double spread_ema = 0;
     double depth_ema = 0;
     int sample_count = 0;
+    double original_min_liquid_volume = 0;
+    double original_min_thin_volume = 0;
+    double original_tight_spread_threshold = 0;
+    double original_wide_spread_threshold = 0;
+    double liquidity_boost_factor = 1.0;
 };
  
  
@@ -61,16 +66,21 @@ class AdaptiveMarketIntelligence {
 public:
     AdaptiveMarketIntelligence();
     ~AdaptiveMarketIntelligence() = default;
-    
+    // void ApplyEmergencyThresholds() ;
+    // void RestoreOriginalThresholds();
+    void ApplyEmergencyStaticThresholds() ;
+    double CalculateAdaptiveLiquidityRatio(double volume, const CoinProfile& profile) ;
     trading::MarketIntelligence GenerateAdaptiveMarketIntelligence(
     const std::string& symbol,
     std::shared_ptr<OrderBook> orderbook) ;
+    void DebugSampleCounts() ;
+    void ForceAdaptiveMode() ;
 
 private:
     std::unordered_map<std::string, CoinProfile> profiles_;
     std::mutex profiles_mutex_;
     void InitializeDefaultProfiles_conservative() ;
-
+    
     void InitializeDefaultProfiles();
     CoinProfile& GetOrCreateProfile(const std::string& symbol);
     void UpdateProfile(CoinProfile& profile, double volume, double spread, double depth);
@@ -84,8 +94,8 @@ private:
     OrderBookMetrics CalculateOrderBookMetrics(
         const std::vector<PriceLevel>& bids,
         const std::vector<PriceLevel>& asks) ;
-        
-    double CalculateAdaptiveLiquidityRatio(double volume, const CoinProfile& profile);
+   
+    // double CalculateAdaptiveLiquidityRatio(double volume, const CoinProfile& profile) ;
     double EstimateVolatility(const std::string& symbol, double spread, 
                             std::shared_ptr<trading::data_ingestion::OrderBook> orderbook);
     FlowMetrics AnalyzeFlowMetrics(double imbalance, double volatility);

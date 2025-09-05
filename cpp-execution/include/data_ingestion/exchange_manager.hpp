@@ -27,8 +27,8 @@ public:
     using WebSocketDataCallback = std::function<void(const core::ExchangeId&, const std::string&, const std::vector<uint8_t>&)>;
     
     ExchangeManager(NormalizedOrderBookCallback callback,
-                   int minConnections = 2,
-                   int maxConnections = 5);
+                   int minConnections = 3,
+                   int maxConnections = 8);
     ~ExchangeManager();
     
     // Core functionality

@@ -46,7 +46,6 @@ public:
     // Configuration
     void setStatusCallback(StatusCallback callback) { statusCallback_ = std::move(callback); }
     void setOrderBookCallback(OrderBookUpdateCallback callback) { orderBookCallback_ = std::move(callback); }
-    
     // Query interface
     std::shared_ptr<OrderBook> getOrderBook(const ExchangeId& exchange, const core::Symbol& symbol) const;
     // OrderBookManagerStats getStatistics() const;

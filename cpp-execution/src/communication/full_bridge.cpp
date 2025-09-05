@@ -53,7 +53,7 @@ public:
         adaptiveIntel_ = std::make_unique<trading::intelligence::AdaptiveMarketIntelligence>();
         
         // Initialize data ingestion service
-        dataService_ = std::make_unique<DataIngestionService>("config/data_ingestion.json");
+        dataService_ = std::make_unique<DataIngestionService>("data_ingestion.json");
         
         // Initialize ZMQ communication
         zmqServer_ = std::make_unique<TradingCommunicationServer>();
@@ -71,7 +71,7 @@ public:
 
     bool start(const std::vector<std::string>& symbols) {
         std::cout << "Starting Simplified Trading Server..." << std::endl;
-        
+        // adaptiveIntel_->ApplyEmergencyThresholds();
         // 1. Initialize data ingestion service
         if (!dataService_->initialize()) {
             std::cerr << "Failed to initialize data ingestion service" << std::endl;
@@ -384,7 +384,6 @@ int main() {
     signal(SIGTERM, signalHandler);
     
     std::cout << "=== SIMPLIFIED TRADING SERVER ===" << std::endl;
-    
     try {
         SimplifiedTradingServer server;
         

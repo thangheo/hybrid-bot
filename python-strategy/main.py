@@ -810,130 +810,7 @@ class EnhancedTradingBot:
         except Exception as e:
             self.logger.error(f"Error validating signal data for {symbol}: {e}")
             return False
-    # async def _handle_sell_signal(self, symbol: str, signal_data: pd.Series, balance: dict):
-    #     """Handle SELL signals"""
-    #     try:
-    #         # Check position
-    #         position_info = self.position_tracker.has_position(symbol)
-    #         available_quantity = position_info.get('quantity', 0)
-            
-    #         if available_quantity <= 0:
-    #             self.logger.info(f"✅ No {symbol} position found (correctly rejected)")
-    #             return
-            
-    #         # Get current price
-    #         ticker = await self.order_manager.exchange.fetch_ticker(symbol)
-    #         current_price = ticker['last']
-    #         position_value = available_quantity * current_price
-            
-    #         if position_value >= 10:  # Minimum order check
-    #             order = Order(
-    #                 symbol=symbol,
-    #                 side=OrderSide.SELL,
-    #                 order_type=OrderType.MARKET,
-    #                 quantity=available_quantity
-    #             )
-                
-    #             success, message = await self.order_manager.place_order(order)
-                
-    #             if success:
-    #                 # Update position tracker
-    #                 await self.position_tracker.update_position(symbol, 0, current_price, datetime.now())
-                    
-    #                 if self.alert_manager:
-    #                     await self.alert_manager.send_alert(
-    #                         'INFO',
-    #                         f'✅ SELL: {symbol} {available_quantity:.6f} ~${position_value:.2f}',
-    #                         {
-    #                             'symbol': symbol,
-    #                             'direction': 'SELL',
-    #                             'quantity': available_quantity,
-    #                             'value': position_value
-    #                         }
-    #                     )
-    #                 self.logger.error(f"❌ SELL failed: {message}")
-    #         else:
-    #             self.logger.info(f"⚠️ Position too small: {symbol} ${position_value:.2f}")
-                
-    #     except Exception as e:
-    #         self.logger.error(f"❌ SELL handling failed: {e}")
-    
-    # async def _handle_buy_signal(self, symbol: str, signal_data: pd.Series,
-    #                             market_data: pd.DataFrame, balance: dict):
-    #     """Handle BUY signals"""
-    #     try:
-    #         # Build portfolio for risk assessment
-    #         current_portfolio = await self._build_portfolio_from_balance(balance)
-            
-    #         # Prepare signal dictionary
-    #         signal_dict = {
-    #             'symbol': symbol.replace('/', ''),
-    #             'signal_strength': float(signal_data.get('signal_strength', 0.5)),
-    #             'volatility': float(market_data['close'].pct_change().tail(20).std()),
-    #             'direction': 'BUY',
-    #             'raw_signal': float(signal_data.get('final_signal', 1)),
-    #             'confidence': float(signal_data.get('confidence', 0.5))
-    #         }
-            
-    #         # Risk assessment
-    #         risk_approved, position_size, reason = self.risk_manager.evaluate_trade_risk(
-    #             symbol=signal_dict['symbol'],
-    #             signal=signal_dict,
-    #             current_portfolio=current_portfolio
-    #         )
-            
-    #         if risk_approved and position_size > 0:
-    #             # Execute BUY order
-    #             ticker = await self.order_manager.exchange.fetch_ticker(symbol)
-    #             current_price = ticker['last']
-                
-    #             available_balance = balance.get('USDT', {}).get('free', 0)
-    #             order_value = available_balance * position_size
-                
-    #             if order_value >= 10:  # Minimum order check
-    #                 quantity = order_value / current_price
-                    
-    #                 order = Order(
-    #                     symbol=symbol,
-    #                     side=OrderSide.BUY,
-    #                     order_type=OrderType.LIMIT,
-    #                     price=current_price,
-    #                     quantity=quantity
-    #                 )
-                    
-    #                 success, message = await self.order_manager.place_order(order)
-                    
-    #                 if success:
-    #                     # Update position tracker
-    #                     current_position = self.position_tracker.has_position(symbol)
-    #                     current_quantity = current_position.get('quantity', 0)
-    #                     new_quantity = current_quantity + quantity
-                        
-    #                     await self.position_tracker.update_position(
-    #                         symbol, new_quantity, current_price, datetime.now()
-    #                     )
-    #                     if self.alert_manager:
-    #                         await self.alert_manager.send_alert(
-    #                             'INFO',
-    #                             f'✅ BUY: {symbol} {quantity:.6f} (~${order_value:.2f})',
-    #                             {
-    #                                 'symbol': symbol,
-    #                                 'direction': 'BUY',
-    #                                 'quantity': quantity,
-    #                                 'price': current_price,
-    #                                 'value': order_value
-    #                             }
-    #                         )
-
-    #                 else:
-    #                     self.logger.error(f"❌ BUY order failed: {message}")
-    #             else:
-    #                 self.logger.warning(f"⚠️ Insufficient order value: {symbol} ${order_value:.2f}")
-    #         else:
-    #             self.logger.info(f"🚫 BUY signal rejected for {symbol}: {reason}")
-                
-    #     except Exception as e:
-    #         self.logger.error(f"❌ BUY handling failed: {e}")
+     
     
     async def _build_portfolio_from_balance(self, balance: dict) -> dict:
         """Build portfolio from exchange balance"""
@@ -1086,7 +963,238 @@ class EnhancedTradingBot:
         except Exception as e:
             self.logger.error(f"❌ Error during shutdown: {e}")
 
+    # ================================================================
+# IMMEDIATE DEBUG AND FIX FOR SIGNAL SUPPRESSION
+# Add these debug functions to your main.py
+# ================================================================
 
+async def debug_signal_generation(self, symbol: str):
+    """Comprehensive debugging for signal generation issues"""
+    try:
+        self.logger.info(f"🔍 DEBUGGING SIGNAL GENERATION for {symbol}")
+        
+        # 1. Check market data availability
+        multi_tf_data = self.data_manager.get_multi_timeframe_data(symbol, days=100)
+        if '4h' not in multi_tf_data or multi_tf_data['4h'].empty:
+            self.logger.error(f"❌ No 4h data for {symbol}")
+            return False
+            
+        market_data = multi_tf_data['4h']
+        self.logger.info(f"📊 Market data: {len(market_data)} rows, latest: {market_data.index[-1]}")
+        
+        # 2. Check indicators
+        indicators = self.strategy_manager.calculate_indicators(market_data)
+        self.logger.info(f"📈 Indicators calculated: {list(indicators.keys())}")
+        
+        # 3. Check regime detection
+        regime_info = self.strategy_manager.detect_market_regime(indicators)
+        self.logger.info(f"🏛️ Current regime: {regime_info}")
+        
+        # 4. Check C++ intelligence if available
+        if self.intelligence_bridge:
+            intel = self.intelligence_bridge.get_intelligence(symbol)
+            if intel:
+                self.logger.info(f"🤖 C++ Intelligence - Regime: {intel.current_regime}, "
+                               f"Confidence: {intel.regime_confidence:.2f}, "
+                               f"Liquidity: {intel.liquidity_ratio:.2f}")
+            else:
+                self.logger.warning(f"⚠️ No C++ intelligence for {symbol}")
+        
+        # 5. Check signal generation step by step
+        signals = await self.strategy_manager.generate_signals(symbol, market_data, indicators)
+        if signals.empty:
+            self.logger.error(f"❌ No signals generated for {symbol}")
+            return False
+            
+        latest_signal = signals.iloc[-1]
+        self.logger.info(f"📡 Raw signal: {latest_signal.get('signal', 0)}")
+        self.logger.info(f"💪 Signal strength: {latest_signal.get('signal_strength', 0)}")
+        self.logger.info(f"🎯 Confidence: {latest_signal.get('confidence', 0)}")
+        
+        # 6. Check risk management filtering
+        if latest_signal.get('signal', 0) != 0:
+            # Get current balance for risk assessment
+            balance = await self.order_manager.exchange.fetch_balance()
+            current_portfolio = await self._build_portfolio_from_balance(balance)
+            
+            signal_dict = {
+                'symbol': symbol.replace('/', ''),
+                'signal_strength': float(latest_signal.get('signal_strength', 0.5)),
+                'volatility': float(market_data['close'].pct_change().tail(20).std()),
+                'direction': 'BUY' if latest_signal.get('signal', 0) > 0 else 'SELL',
+                'raw_signal': float(latest_signal.get('signal', 0)),
+                'confidence': float(latest_signal.get('confidence', 0.5))
+            }
+            
+            risk_approved, position_size, reason = self.risk_manager.evaluate_trade_risk(
+                symbol=signal_dict['symbol'],
+                signal=signal_dict,
+                current_portfolio=current_portfolio
+            )
+            
+            self.logger.info(f"🛡️ Risk assessment: {risk_approved}, size: {position_size:.3f}, reason: {reason}")
+            
+        return True
+        
+    except Exception as e:
+        self.logger.error(f"❌ Debug failed for {symbol}: {e}")
+        return False
+
+    # ================================================================
+    # TEMPORARY RISK RELAXATION FOR DEBUGGING
+    # Add this method to your EnhancedTradingBot class
+    # ================================================================
+
+    def temporarily_relax_risk_parameters(self):
+        """Temporarily relax risk parameters to restore signal generation"""
+        try:
+            # Relax regime-based restrictions
+            if hasattr(self.risk_manager, 'regime_multipliers'):
+                # Store original values
+                self.original_regime_multipliers = self.risk_manager.regime_multipliers.copy()
+                
+                # Apply relaxed multipliers
+                relaxed_multipliers = {
+                    'accumulation': 1.2,      # Was likely lower
+                    'institutional_fomo': 1.1,
+                    'euphoria': 0.9,          # Was likely much lower  
+                    'sideways': 1.0,
+                    'balanced': 1.0,
+                    'uncertain': 0.8,         # Was likely much lower
+                    'distribution': 0.9,      # Was likely much lower
+                    'profit_taking': 0.9,     # Was likely much lower
+                    'panic': 0.7              # Was likely much lower
+                }
+                
+                self.risk_manager.regime_multipliers.update(relaxed_multipliers)
+                self.logger.info("🔧 Applied relaxed risk parameters")
+            
+            # Relax signal strength thresholds
+            if hasattr(self.risk_manager, 'min_signal_strength'):
+                self.original_min_signal_strength = self.risk_manager.min_signal_strength
+                self.risk_manager.min_signal_strength = 0.05  # Much lower threshold
+                self.logger.info(f"🔧 Relaxed signal strength threshold to {self.risk_manager.min_signal_strength}")
+                
+            # Relax confidence thresholds
+            if hasattr(self.risk_manager, 'min_confidence'):
+                self.original_min_confidence = self.risk_manager.min_confidence
+                self.risk_manager.min_confidence = 0.3  # Lower confidence requirement
+                self.logger.info(f"🔧 Relaxed confidence threshold to {self.risk_manager.min_confidence}")
+                
+        except Exception as e:
+            self.logger.error(f"❌ Failed to relax risk parameters: {e}")
+
+    def restore_original_risk_parameters(self):
+        """Restore original risk parameters"""
+        try:
+            if hasattr(self, 'original_regime_multipliers'):
+                self.risk_manager.regime_multipliers.update(self.original_regime_multipliers)
+                
+            if hasattr(self, 'original_min_signal_strength'):
+                self.risk_manager.min_signal_strength = self.original_min_signal_strength
+                
+            if hasattr(self, 'original_min_confidence'):
+                self.risk_manager.min_confidence = self.original_min_confidence
+                
+            self.logger.info("🔧 Restored original risk parameters")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Failed to restore risk parameters: {e}")
+
+    # ================================================================
+    # ENHANCED SIGNAL PROCESSING WITH DEBUG
+    # Replace your existing _process_symbol_signals method
+    # ================================================================
+
+    async def _process_symbol_signals_with_debug(self, symbol: str):
+        """Enhanced signal processing with comprehensive debugging"""
+        try:
+            if not self.data_manager or not self.strategy_manager:
+                return
+                
+            # Run comprehensive debug for first few symbols
+            static_debug_count = getattr(self, '_debug_count', 0)
+            if static_debug_count < 3:
+                await debug_signal_generation(self, symbol)
+                self._debug_count = static_debug_count + 1
+            
+            # Get market data
+            multi_tf_data = self.data_manager.get_multi_timeframe_data(symbol, days=100)
+            if '4h' not in multi_tf_data or multi_tf_data['4h'].empty:
+                self.logger.warning(f"No data available for {symbol}")
+                return
+                
+            market_data = multi_tf_data['4h']
+            
+            # Calculate indicators
+            indicators = self.strategy_manager.calculate_indicators(market_data)
+            current_volatility = indicators['volatility'].iloc[-1]
+            
+            # Generate signals with debug info
+            self.logger.debug(f"🔄 Generating signals for {symbol}...")
+            signals = await self.strategy_manager.generate_signals(symbol, market_data, indicators)
+            
+            if signals.empty:
+                self.logger.warning(f"❌ No signals generated for {symbol}")
+                return
+                
+            latest_signal = signals.iloc[-1]
+            signal_value = latest_signal.get('signal', 0)
+            
+            # Debug: Log detailed signal info
+            self.logger.info(f"📊 {symbol} Detail - Raw Signal: {signal_value}, "
+                            f"Strength: {latest_signal.get('signal_strength', 0):.3f}, "
+                            f"Confidence: {latest_signal.get('confidence', 0):.2f}, "
+                            f"Regime: {latest_signal.get('regime', 'unknown')}")
+            
+            # Extract regime info for risk management
+            regime_info = {
+                'current_regime': latest_signal.get('regime', 'balanced'),
+                'confidence': latest_signal.get('regime_confidence', 0.5),
+                'strength': latest_signal.get('regime_strength', 0.5)
+            }
+            
+            # Update risk management
+            self._update_risk_management_with_regime(regime_info, current_volatility)
+            
+            # Process non-zero signals
+            if signal_value != 0:
+                self.logger.info(f"🚀 Processing {symbol} signal: {signal_value}")
+                await self._process_signal(symbol, latest_signal, market_data)
+            else:
+                self.logger.debug(f"⭕ {symbol} signal is zero - skipping")
+                
+        except Exception as e:
+            self.logger.error(f"❌ Enhanced signal processing failed for {symbol}: {e}")
+
+    # ================================================================
+    # C++ INTELLIGENCE DEBUGGING
+    # Add this to debug C++ intelligence issues
+    # ================================================================
+
+    def debug_cpp_intelligence(self):
+        """Debug C++ intelligence integration"""
+        if not self.intelligence_bridge:
+            self.logger.warning("❌ C++ Intelligence bridge not available")
+            return
+            
+        if not self.intelligence_bridge.is_available():
+            self.logger.warning("❌ C++ Intelligence bridge not connected")
+            return
+            
+        symbols = self.config.get('data_ingestion', {}).get('symbols', [])[:5]  # Test first 5
+        
+        for symbol in symbols:
+            intel = self.intelligence_bridge.get_intelligence(symbol)
+            if intel:
+                age = time.time() - intel.last_update
+                self.logger.info(f"🤖 {symbol} C++ Intel - "
+                            f"Regime: {intel.current_regime}, "
+                            f"Confidence: {intel.regime_confidence:.2f}, "
+                            f"Liquidity: {intel.liquidity_ratio:.2f}, "
+                            f"Age: {age:.1f}s")
+            else:
+                self.logger.warning(f"❌ No C++ intelligence for {symbol}")
 # ================================================================
 # 🚀 COMMAND LINE INTERFACE
 # ================================================================
