@@ -81,9 +81,10 @@ class MarketIntelligenceBridge:
                     regime_confidence=intel.regime_confidence,
                     last_update=time.time()
                 )
-                
-                self.intelligence_cache[intel.symbol] = state
-                self.intelligence_history[intel.symbol].append(state)
+                symbol = intel.symbol.replace('/', '')
+
+                self.intelligence_cache[symbol] = state
+                self.intelligence_history[symbol].append(state)
                 
             except zmq.Again:
                 continue
