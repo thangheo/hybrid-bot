@@ -95,7 +95,7 @@ public:
      * Unsubscribe from a topic
      */
     bool unsubscribe(const std::string& topic);
-    
+    bool isConnected();
     /**
      * Publish a message to a topic
      */

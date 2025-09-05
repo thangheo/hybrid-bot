@@ -116,6 +116,9 @@ bool ZeroMQClient::start() {
     logWithTimestamp("INFO", "ZeroMQ client started");
     return true;
 }
+bool ZeroMQClient::isConnected(){
+    return (running_);
+}
 
 void ZeroMQClient::stop() {
     if (!running_) return;

@@ -4,11 +4,13 @@
 # Usage: ./trading_manager.sh [start|stop|restart|status|logs]
 
 # Configuration
+CPP_BUILD_DIR="cpp-execution/build"
 CPP_EXEC_PATH="cpp-execution/bin/tactical"
 PYTHON_SCRIPT_PATH="python-strategy/main.py"
 LOG_DIR="logs"
 CPP_LOG_FILE="$LOG_DIR/cpp_bridge.log"
 PYTHON_LOG_FILE="$LOG_DIR/python_strategy.log"
+BUILD_LOG_FILE="$LOG_DIR/cpp_build.log"
 PID_DIR="pids"
 CPP_PID_FILE="$PID_DIR/cpp_bridge.pid"
 PYTHON_PID_FILE="$PID_DIR/python_strategy.pid"
@@ -29,6 +31,7 @@ print_status() {
     local message=$2
     echo -e "${color}[$(date '+%Y-%m-%d %H:%M:%S')] ${message}${NC}"
 }
+
 #source environment
 source venv/bin/activate
 
@@ -47,10 +50,51 @@ is_running() {
     return 1  # PID file doesn't exist
 }
 
+# Function to build C++ project
+build_cpp() {
+    print_status "$BLUE" "Building C++ project..."
+    
+    # Check if build directory exists
+    if [[ ! -d "$CPP_BUILD_DIR" ]]; then
+        print_status "$RED" "ERROR: Build directory not found: $CPP_BUILD_DIR"
+        return 1
+    fi
+    
+    # Save current directory
+    local current_dir=$(pwd)
+    
+    # Change to build directory and run make
+    if cd "$CPP_BUILD_DIR"; then
+        print_status "$BLUE" "Changed to build directory: $(pwd)"
+        
+        # Run make and capture output
+        if make > "$current_dir/$BUILD_LOG_FILE" 2>&1; then
+            print_status "$GREEN" "C++ build completed successfully"
+            # Return to original directory
+            cd "$current_dir"
+            return 0
+        else
+            print_status "$RED" "ERROR: C++ build failed. Check logs: $BUILD_LOG_FILE"
+            # Return to original directory even on failure
+            cd "$current_dir"
+            return 1
+        fi
+    else
+        print_status "$RED" "ERROR: Failed to change to build directory: $CPP_BUILD_DIR"
+        return 1
+    fi
+}
+
 # Function to start C++ bridge
 start_cpp() {
     if is_running "$CPP_PID_FILE"; then
         print_status "$YELLOW" "C++ bridge is already running (PID: $(cat $CPP_PID_FILE))"
+        return 1
+    fi
+
+    # Build C++ project first
+    if ! build_cpp; then
+        print_status "$RED" "ERROR: Failed to build C++ project. Cannot start bridge."
         return 1
     fi
 
@@ -79,7 +123,6 @@ start_cpp() {
     fi
 }
 
-# Function to start Python strategy
 # Function to start Python strategy
 start_python() {
     if is_running "$PYTHON_PID_FILE"; then
@@ -121,6 +164,7 @@ start_python() {
         return 1
     fi
 }
+
 # Function to stop a process
 stop_process() {
     local pid_file=$1
@@ -175,7 +219,8 @@ show_status() {
     
     echo ""
     print_status "$BLUE" "Log files:"
-    print_status "$NC" "  C++: $CPP_LOG_FILE"
+    print_status "$NC" "  C++ Build: $BUILD_LOG_FILE"
+    print_status "$NC" "  C++ Runtime: $CPP_LOG_FILE"
     print_status "$NC" "  Python: $PYTHON_LOG_FILE"
 }
 
@@ -190,7 +235,15 @@ show_logs() {
                 print_status "$BLUE" "=== C++ Bridge Logs (last $lines lines) ==="
                 tail -n "$lines" "$CPP_LOG_FILE"
             else
-                print_status "$RED" "C++ log file not found: $CPP_LOG_FILE"
+                print_status "$RED" "C++ runtime log file not found: $CPP_LOG_FILE"
+            fi
+            ;;
+        "build")
+            if [[ -f "$BUILD_LOG_FILE" ]]; then
+                print_status "$BLUE" "=== C++ Build Logs (last $lines lines) ==="
+                tail -n "$lines" "$BUILD_LOG_FILE"
+            else
+                print_status "$RED" "C++ build log file not found: $BUILD_LOG_FILE"
             fi
             ;;
         "python"|"py")
@@ -202,12 +255,14 @@ show_logs() {
             fi
             ;;
         "all"|"")
+            show_logs "build" "$lines"
+            echo ""
             show_logs "cpp" "$lines"
             echo ""
             show_logs "python" "$lines"
             ;;
         *)
-            print_status "$RED" "Unknown service: $service. Use 'cpp', 'python', or 'all'"
+            print_status "$RED" "Unknown service: $service. Use 'cpp', 'python', 'build', or 'all'"
             ;;
     esac
 }
@@ -217,7 +272,7 @@ case "$1" in
     "start")
         print_status "$BLUE" "=== Starting Trading System ==="
         
-        # Start C++ first (Python depends on it)
+        # Start C++ first (includes build step, Python depends on it)
         if start_cpp; then
             print_status "$BLUE" "Waiting 5 seconds for C++ to initialize..."
             sleep 5
@@ -253,6 +308,16 @@ case "$1" in
         "$0" start
         ;;
         
+    "build")
+        print_status "$BLUE" "=== Building C++ Project Only ==="
+        if build_cpp; then
+            print_status "$GREEN" "Build completed successfully"
+        else
+            print_status "$RED" "Build failed"
+            exit 1
+        fi
+        ;;
+        
     "status")
         show_status
         ;;
@@ -268,42 +333,43 @@ case "$1" in
             "cpp"|"c++")
                 tail -f "$CPP_LOG_FILE"
                 ;;
+            "build")
+                tail -f "$BUILD_LOG_FILE"
+                ;;
             "python"|"py")
                 tail -f "$PYTHON_LOG_FILE"
                 ;;
             "all"|"")
-                print_status "$BLUE" "Following both logs (Ctrl+C to stop)..."
-                tail -f "$CPP_LOG_FILE" "$PYTHON_LOG_FILE"
+                print_status "$BLUE" "Following all logs (Ctrl+C to stop)..."
+                tail -f "$BUILD_LOG_FILE" "$CPP_LOG_FILE" "$PYTHON_LOG_FILE"
                 ;;
         esac
         ;;
         
     *)
-        echo "Usage: $0 {start|stop|restart|status|logs|follow|cleanup|disk} [options]"
+        echo "Usage: $0 {start|stop|restart|build|status|logs|follow} [options]"
         echo ""
         echo "Commands:"
-        echo "  start     - Start both C++ bridge and Python strategy"
+        echo "  start     - Build C++ project, then start both C++ bridge and Python strategy"
         echo "  stop      - Stop both processes gracefully"
-        echo "  restart   - Stop and start both processes"
+        echo "  restart   - Stop and start both processes (includes rebuild)"
+        echo "  build     - Build C++ project only (without starting services)"
         echo "  status    - Show current status of both processes"
         echo "  logs      - Show recent logs"
-        echo "            Usage: $0 logs [cpp|python|all] [number_of_lines]"
+        echo "            Usage: $0 logs [cpp|python|build|all] [number_of_lines]"
         echo "  follow    - Follow logs in real-time"
-        echo "            Usage: $0 follow [cpp|python|all]"
-        echo "  cleanup   - Rotate and clean up old log files"
-        echo "  disk      - Show disk usage of log files"
+        echo "            Usage: $0 follow [cpp|python|build|all]"
         echo ""
         echo "Log Management:"
-        echo "  - Logs are automatically rotated when they exceed $MAX_LOG_SIZE"
-        echo "  - Keeps last $KEEP_LOGS rotated logs"
-        echo "  - C++ debug messages are filtered to reduce log size"
+        echo "  - Build logs: $BUILD_LOG_FILE"
+        echo "  - C++ runtime logs: $CPP_LOG_FILE"
+        echo "  - Python logs: $PYTHON_LOG_FILE"
         echo ""
         echo "Examples:"
         echo "  $0 start"
-        echo "  $0 logs python 100"
+        echo "  $0 build"
+        echo "  $0 logs build 100"
         echo "  $0 follow cpp"
-        echo "  $0 cleanup"
-        echo "  $0 disk"
         exit 1
         ;;
 esac

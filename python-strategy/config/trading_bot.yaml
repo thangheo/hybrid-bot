@@ -560,7 +560,7 @@ compatibility:
 markov_persistence:
   enabled: true
   db_path: "data/markov_persistence.db"
-  save_frequency: 50  # Tăng lên 50 (từ 10)
+  save_frequency: 30  # Tăng lên 50 (từ 10)
   auto_load_on_init: true
   max_history_age_hours: 72  # Giảm xuống 72h (từ 168h)
   
