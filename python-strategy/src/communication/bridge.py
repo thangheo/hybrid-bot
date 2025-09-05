@@ -219,7 +219,7 @@ class MarketIntelligenceIntegrator:
                 intel.ParseFromString(data)
                 
                 symbol = intel.symbol.replace('/', '')
-                
+                print(f"DEBUG: Processing symbol: {symbol}")  # ADD THIS
                 # Ensure symbol exists in intelligence_history
                 if symbol not in self.intelligence_history:
                     self.intelligence_history[symbol] = deque(maxlen=1000)
