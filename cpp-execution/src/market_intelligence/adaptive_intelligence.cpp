@@ -527,17 +527,17 @@ OrderBookMetrics AdaptiveMarketIntelligence::CalculateOrderBookMetrics(
     return metrics;
 }
 
-double AdaptiveMarketIntelligence::CalculateAdaptiveLiquidityRatio(double volume, const CoinProfile& profile) {
-    // Use adaptive threshold based on symbol's characteristics
-    double threshold = profile.min_liquid_volume;
+// double AdaptiveMarketIntelligence::CalculateAdaptiveLiquidityRatio(double volume, const CoinProfile& profile) {
+//     // Use adaptive threshold based on symbol's characteristics
+//     double threshold = profile.min_liquid_volume;
     
-    // Adjust for current market conditions
-    if (profile.sample_count > 100 && profile.volume_ema > 0) {
-        threshold = profile.volume_ema * 0.8; // 80% of average volume
-    }
+//     // Adjust for current market conditions
+//     if (profile.sample_count > 0 && profile.volume_ema > 0) {
+//         threshold = profile.volume_ema * 0.5; // 80% of average volume
+//     }
     
-    return std::min(1.0, volume / threshold);
-}
+//     return std::min(1.0, volume / threshold);
+// }
 
 void AdaptiveMarketIntelligence::UpdateProfile(CoinProfile& profile, double volume, double spread, double depth) {
     const double alpha = 0.1; // EMA smoothing factor
@@ -596,58 +596,278 @@ FlowMetrics AdaptiveMarketIntelligence::AnalyzeFlowMetrics(double imbalance, dou
     return flow;
 }
 
+// RegimeResult AdaptiveMarketIntelligence::ClassifyOrderBookRegimeAdaptive(
+//     const OrderBookMetrics& metrics,
+//     double spread,
+//     const CoinProfile& profile) {
+    
+//     RegimeResult result;
+//     result.confidence = 0.8;
+    
+//     // Use adaptive thresholds
+//     double liquid_threshold = profile.sample_count > 0 ? 
+//         profile.volume_ema * 1.5 : profile.min_liquid_volume;
+//     double thin_threshold = profile.sample_count > 0 ? 
+//         profile.volume_ema * 0.3 : profile.min_thin_volume;
+//     double tight_spread = profile.sample_count > 0 ? 
+//         profile.spread_ema * 0.5 : profile.tight_spread_threshold;
+//     double wide_spread = profile.sample_count > 0 ? 
+//         profile.spread_ema * 2.0 : profile.wide_spread_threshold;
+    
+//     // Multi-factor classification
+//     int liquid_score = 0;
+//     int thin_score = 0;
+//     int volatile_score = 0;
+    
+//     // Volume factors
+//     if (metrics.total_volume > liquid_threshold) liquid_score += 2;
+//     if (metrics.total_volume < thin_threshold) thin_score += 2;
+    
+//     // Spread factors
+//     if (spread < tight_spread) liquid_score += 1;
+//     if (spread > wide_spread) thin_score += 2;
+    
+//     // Imbalance factors
+//     if (std::abs(metrics.imbalance) > 0.3) volatile_score += 2;
+//     if (std::abs(metrics.depth_imbalance) > 0.4) volatile_score += 1;
+    
+//     // Determine regime based on scores
+//     if (liquid_score >= 2 && thin_score == 0 && volatile_score < 2) {
+//         result.regime = trading::OB_LIQUID;
+//         result.confidence = 0.9;
+//     } else if (thin_score >= 2) {
+//         result.regime = trading::OB_THIN;
+//         result.confidence = 0.8;
+//     } else if (volatile_score >= 2) {
+//         result.regime = trading::OB_VOLATILE;
+//         result.confidence = 0.75;
+//     } else {
+//         result.regime = trading::OB_NORMAL;
+//         result.confidence = 0.6;
+//     }
+    
+//     return result;
+// }
+
+// Add this method to your AdaptiveMarketIntelligence class
+// This provides emergency threshold overrides
+
+// void AdaptiveMarketIntelligence::ApplyEmergencyThresholds() {
+//     // Emergency threshold overrides - much more relaxed
+//     for (auto& [symbol, profile] : profiles_) {
+//         // Save original values if not already saved
+//         if (profile.original_min_liquid_volume == 0) {
+//             profile.original_min_liquid_volume = profile.min_liquid_volume;
+//             profile.original_min_thin_volume = profile.min_thin_volume;
+//             profile.original_tight_spread_threshold = profile.tight_spread_threshold;
+//             profile.original_wide_spread_threshold = profile.wide_spread_threshold;
+//         }
+        
+//         // Apply emergency thresholds (70-80% reduction)
+//         profile.min_liquid_volume *= 0.2;        // 80% reduction
+//         profile.min_thin_volume *= 0.3;          // 70% reduction
+//         profile.tight_spread_threshold *= 1.8;   // 80% more generous
+//         profile.wide_spread_threshold *= 0.6;    // 40% tighter
+        
+//         // Boost liquidity ratio calculation
+//         profile.liquidity_boost_factor = 1.5;
+//     }
+    
+//     std::cout << "🚨 EMERGENCY: Applied relaxed thresholds to restore signal generation" << std::endl;
+// }
+
+// void AdaptiveMarketIntelligence::RestoreOriginalThresholds() {
+//     // Restore original thresholds
+//     for (auto& [symbol, profile] : profiles_) {
+//         if (profile.original_min_liquid_volume > 0) {
+//             profile.min_liquid_volume = profile.original_min_liquid_volume;
+//             profile.min_thin_volume = profile.original_min_thin_volume;
+//             profile.tight_spread_threshold = profile.original_tight_spread_threshold;
+//             profile.wide_spread_threshold = profile.original_wide_spread_threshold;
+//             profile.liquidity_boost_factor = 1.0;
+//         }
+//     }
+    
+//     std::cout << "✅ Restored original adaptive intelligence thresholds" << std::endl;
+// }
+
+// Enhanced liquidity calculation with emergency boost
+// double AdaptiveMarketIntelligence::CalculateAdaptiveLiquidityRatio(double volume, const CoinProfile& profile) {
+//     double threshold = profile.min_liquid_volume;
+    
+//     if (profile.sample_count > 0 && profile.volume_ema > 0) {
+//         threshold = profile.volume_ema * 0.5; // Even more relaxed (was 0.8)
+//     }
+    
+//     double ratio = volume / threshold;
+    
+//     // Apply emergency boost if set
+//     if (profile.liquidity_boost_factor > 1.0) {
+//         ratio *= profile.liquidity_boost_factor;
+//     }
+    
+//     return std::min(1.0, ratio);
+// }
+
+// Modified regime classification with emergency overrides
+// Add these methods to your AdaptiveMarketIntelligence class
+
+void AdaptiveMarketIntelligence::DebugSampleCounts() {
+    std::cout << "\n=== ADAPTIVE INTELLIGENCE SAMPLE COUNT DEBUG ===" << std::endl;
+    
+    for (const auto& [symbol, profile] : profiles_) {
+        std::cout << symbol << ":" << std::endl;
+        std::cout << "  Sample Count: " << profile.sample_count << std::endl;
+        std::cout << "  Volume EMA: " << profile.volume_ema << std::endl;
+        std::cout << "  Static min_liquid_volume: " << profile.min_liquid_volume << std::endl;
+        
+        // Check if adaptive threshold is active
+        bool adaptive_active = (profile.sample_count > 100 && profile.volume_ema > 0);
+        double current_threshold = adaptive_active ? 
+            (profile.volume_ema * 0.8) : profile.min_liquid_volume;
+            
+        std::cout << "  Adaptive Active: " << (adaptive_active ? "YES" : "NO") << std::endl;
+        std::cout << "  Current Threshold: " << current_threshold << std::endl;
+        std::cout << "  Spread EMA: " << profile.spread_ema << std::endl;
+        std::cout << "  Depth EMA: " << profile.depth_ema << std::endl;
+        std::cout << "  ---" << std::endl;
+    }
+    std::cout << "=================================================" << std::endl;
+}
+
+// Emergency fix: Force adaptive mode or lower static thresholds
+void AdaptiveMarketIntelligence::ForceAdaptiveMode() {
+    std::cout << "🚨 FORCING ADAPTIVE MODE FOR ALL SYMBOLS" << std::endl;
+    
+    for (auto& [symbol, profile] : profiles_) {
+        if (profile.sample_count < 100) {
+            // Force sample count to enable adaptive mode
+            profile.sample_count = 150;
+            
+            // Set reasonable volume_ema if not available
+            if (profile.volume_ema <= 0) {
+                // Use a fraction of the static threshold as starting EMA
+                profile.volume_ema = profile.min_liquid_volume * 0.4;
+            }
+            
+            std::cout << "  " << symbol << " - Forced adaptive mode, volume_ema: " 
+                      << profile.volume_ema << std::endl;
+        }
+    }
+}
+
+// Alternative: Drastically reduce static thresholds for immediate effect
+void AdaptiveMarketIntelligence::ApplyEmergencyStaticThresholds() {
+    std::cout << "🚨 APPLYING EMERGENCY STATIC THRESHOLDS" << std::endl;
+    
+    for (auto& [symbol, profile] : profiles_) {
+        // Store originals
+        if (profile.original_min_liquid_volume == 0) {
+            profile.original_min_liquid_volume = profile.min_liquid_volume;
+            profile.original_min_thin_volume = profile.min_thin_volume;
+        }
+        
+        // Drastically reduce static thresholds
+        profile.min_liquid_volume *= 0.1;  // 90% reduction!
+        profile.min_thin_volume *= 0.2;    // 80% reduction!
+        
+        std::cout << "  " << symbol << " - New static threshold: " 
+                  << profile.min_liquid_volume << std::endl;
+    }
+}
+
+// Enhanced liquidity calculation with emergency fallbacks
+double AdaptiveMarketIntelligence::CalculateAdaptiveLiquidityRatio(double volume, const CoinProfile& profile) {
+    double threshold = profile.min_liquid_volume;
+    
+    // Check if adaptive mode should be active
+    bool adaptive_active = (profile.sample_count > 100 && profile.volume_ema > 0);
+    
+    if (adaptive_active) {
+        threshold = profile.volume_ema * 0.8; // 80% of average volume
+        
+        // Debug log for first few symbols
+        static std::set<std::string> logged_symbols;
+        if (logged_symbols.size() < 5 && logged_symbols.find(profile.symbol) == logged_symbols.end()) {
+            std::cout << "📊 " << profile.symbol << " using adaptive threshold: " 
+                      << threshold << " (volume_ema: " << profile.volume_ema << ")" << std::endl;
+            logged_symbols.insert(profile.symbol);
+        }
+    } else {
+        // Using static threshold - log this as it might be the problem
+        static std::set<std::string> logged_static;
+        if (logged_static.size() < 5 && logged_static.find(profile.symbol) == logged_static.end()) {
+            std::cout << "⚠️ " << profile.symbol << " using STATIC threshold: " 
+                      << threshold << " (samples: " << profile.sample_count << ")" << std::endl;
+            logged_static.insert(profile.symbol);
+        }
+    }
+    
+    double ratio = volume / threshold;
+    
+    // Apply emergency boost if needed
+    if (profile.liquidity_boost_factor > 1.0) {
+        ratio *= profile.liquidity_boost_factor;
+    }
+    
+    return std::min(1.0, ratio);
+}
+
 RegimeResult AdaptiveMarketIntelligence::ClassifyOrderBookRegimeAdaptive(
     const OrderBookMetrics& metrics,
     double spread,
     const CoinProfile& profile) {
     
     RegimeResult result;
-    result.confidence = 0.8;
+    result.confidence = 0.6; // Lower base confidence requirement
     
-    // Use adaptive thresholds
-    double liquid_threshold = profile.sample_count > 0 ? 
-        profile.volume_ema * 1.5 : profile.min_liquid_volume;
-    double thin_threshold = profile.sample_count > 0 ? 
-        profile.volume_ema * 0.3 : profile.min_thin_volume;
-    double tight_spread = profile.sample_count > 0 ? 
-        profile.spread_ema * 0.5 : profile.tight_spread_threshold;
-    double wide_spread = profile.sample_count > 0 ? 
-        profile.spread_ema * 2.0 : profile.wide_spread_threshold;
+    // Use much more relaxed thresholds
+    double liquid_threshold = profile.min_liquid_volume;
+    double thin_threshold = profile.min_thin_volume;
+    double tight_spread = profile.tight_spread_threshold;
+    double wide_spread = profile.wide_spread_threshold;
     
-    // Multi-factor classification
+    // Emergency mode - even more relaxed
+    if (profile.liquidity_boost_factor > 1.0) {
+        liquid_threshold *= 0.5;  // Half the requirement
+        thin_threshold *= 1.5;    // 50% higher threshold for thin
+        tight_spread *= 2.0;      // Much more generous tight spread
+        wide_spread *= 0.5;       // Much tighter wide spread definition
+    }
+    
+    // Simplified classification with bias toward LIQUID/NORMAL
     int liquid_score = 0;
     int thin_score = 0;
     int volatile_score = 0;
     
-    // Volume factors
-    if (metrics.total_volume > liquid_threshold) liquid_score += 2;
-    if (metrics.total_volume < thin_threshold) thin_score += 2;
+    // Volume factors - more generous scoring
+    if (metrics.total_volume > liquid_threshold * 0.7) liquid_score += 2; // 30% more generous
+    if (metrics.total_volume < thin_threshold * 1.3) thin_score += 1;     // 30% less restrictive
     
-    // Spread factors
-    if (spread < tight_spread) liquid_score += 1;
-    if (spread > wide_spread) thin_score += 2;
+    // Spread factors - more generous
+    if (spread < tight_spread) liquid_score += 2;  // Higher weight for good spreads
+    if (spread > wide_spread * 1.5) thin_score += 1; // Less restrictive wide spread
     
-    // Imbalance factors
-    if (std::abs(metrics.imbalance) > 0.3) volatile_score += 2;
-    if (std::abs(metrics.depth_imbalance) > 0.4) volatile_score += 1;
+    // Imbalance factors - less weight on volatility
+    if (std::abs(metrics.imbalance) > 0.5) volatile_score += 1; // Higher threshold
+    if (std::abs(metrics.depth_imbalance) > 0.6) volatile_score += 1; // Higher threshold
     
-    // Determine regime based on scores
-    if (liquid_score >= 2 && thin_score == 0 && volatile_score < 2) {
+    // Determine regime with bias toward tradeable regimes
+    if (liquid_score >= 2) {
         result.regime = trading::OB_LIQUID;
-        result.confidence = 0.9;
-    } else if (thin_score >= 2) {
-        result.regime = trading::OB_THIN;
         result.confidence = 0.8;
-    } else if (volatile_score >= 2) {
+    } else if (thin_score >= 2 && liquid_score == 0) {
+        result.regime = trading::OB_THIN;
+        result.confidence = 0.7;
+    } else if (volatile_score >= 2 && liquid_score == 0) {
         result.regime = trading::OB_VOLATILE;
-        result.confidence = 0.75;
+        result.confidence = 0.6;
     } else {
-        result.regime = trading::OB_NORMAL;
+        result.regime = trading::OB_NORMAL; // Default to normal (tradeable)
         result.confidence = 0.6;
     }
     
     return result;
 }
-
 } // namespace intelligence  
 } // namespace trading
