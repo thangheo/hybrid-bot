@@ -343,7 +343,7 @@ void ExchangeManager::monitorConnections() {
 std::vector<std::string> ExchangeManager::createStreamNames(
     const std::vector<std::string>& tradingPairs,
     const std::vector<DataType>& dataTypes,
-    int32_t depth) {
+    int depth) {
     
     std::vector<std::string> streams;
     streams.reserve(tradingPairs.size() * dataTypes.size());
@@ -393,91 +393,7 @@ void ExchangeManager::handleSubscriptionRequest(const events::SubscriptionReques
     // This runs in the event bus thread - no deadlock possible
     processSubscriptionInternal(event);
 }
-
-// void ExchangeManager::processSubscriptionInternal(const events::SubscriptionRequestEvent& event) {
-//     bool success = false;
-//     std::string errorMessage;
-    
-//     try {
-//         // Check connection status (atomic read - no lock needed)
-//         if (!connectionPool_ || !isConnected_.load()) {
-//             errorMessage = "Not connected. Call connect() first.";
-//         } else {
-//             // ADD THIS - Convert trading pairs to stream names
-//             std::vector<std::string> streamNames = createStreamNames(
-//                 event.tradingPairs, 
-//                 event.dataTypes, 
-//                 event.depth
-//             );
-            
-//             std::cout << "[DEBUG] Created " << streamNames.size() << " stream names:" << std::endl;
-//             for (const auto& stream : streamNames) {
-//                 std::cout << "  " << stream << std::endl;
-//             }
-            
-//             // Convert stream names to Symbol objects for the WebSocket client
-//             std::vector<core::Symbol> symbols;
-//             symbols.reserve(streamNames.size());
-//             for (const auto& streamName : streamNames) {
-//                 symbols.emplace_back(core::Symbol::fromString(streamName));
-//             }
-            
-//             // Acquire connection
-//             auto connection = connectionPool_->acquireConnection();
-//             if (!connection) {
-//                 errorMessage = "Failed to acquire connection for subscription";
-//             } else {
-//                 // Convert trading pairs to Symbol objects
-//                 std::vector<core::Symbol> symbols;
-//                 symbols.reserve(event.tradingPairs.size());
-//                 for (const auto& pair : event.tradingPairs) {
-//                     symbols.emplace_back(core::Symbol::fromString(pair));
-//                 }
-                
-//                 // Subscribe using the connection
-//                 success = connection->subscribe(symbols);
-                
-//                 // Release the connection back to the pool
-//                 connectionPool_->releaseConnection(connection);
-                
-//                 if (success) {
-//                     // Store the subscription request for reconnection scenarios
-//                     // No mutex needed - this runs in event bus thread
-//                     SubscriptionRequest request{};
-//                     request.exchangeId = core::ExchangeId::binance();
-//                     request.tradingPairs = event.tradingPairs;
-//                     request.dataTypes = event.dataTypes;
-//                     request.depth = event.depth;
-                    
-//                     activeSubscriptions_.push_back(std::move(request));
-                    
-//                     std::cout << "Successfully subscribed to " << event.tradingPairs.size() 
-//                               << " trading pairs\n";
-//                 } else {
-//                     errorMessage = "Failed to subscribe to trading pairs";
-//                 }
-//             }
-//         }
-//     } catch (const std::exception& e) {
-//         success = false;
-//         errorMessage = std::string("Error during subscription: ") + e.what();
-//     }
-    
-//     // Resolve the promise
-//     {
-//         std::lock_guard<std::mutex> lock(pendingRequestsMutex_);
-//         auto it = pendingRequests_.find(event.requestId);
-//         if (it != pendingRequests_.end()) {
-//             it->second.set_value(success);
-//             pendingRequests_.erase(it);
-//         }
-//     }
-    
-//     // Optional: Publish response event for other components
-//     eventBus_.publish(events::SubscriptionResponseEvent(event.requestId, success, errorMessage));
-// }
 void ExchangeManager::processSubscriptionInternal(const events::SubscriptionRequestEvent& event) {
-// void ExchangeManager::processSubscriptionInternal(const SubscriptionRequestEvent& event) {
     bool success = false;
     std::string errorMessage;
     
@@ -489,41 +405,52 @@ void ExchangeManager::processSubscriptionInternal(const events::SubscriptionRequ
             if (!connection) {
                 errorMessage = "Failed to acquire connection for subscription";
             } else {
-                // ADD THIS - Convert trading pairs to stream names
+                // Convert trading pairs to Symbol objects (NOT stream names)
+                // std::vector<core::Symbol> symbols;
+                // symbols.reserve(event.tradingPairs.size());
+                // for (const auto& pair : event.tradingPairs) {
+                //     symbols.emplace_back(core::Symbol::fromString(pair));
+                // }
+                
+                // // Subscribe using the connection
+                // success = connection->subscribe(symbols);
+                // Use createStreamNames to get proper Binance stream format
                 std::vector<std::string> streamNames = createStreamNames(
                     event.tradingPairs, 
                     event.dataTypes, 
                     event.depth
                 );
-                
+
                 std::cout << "[DEBUG] Created " << streamNames.size() << " stream names:" << std::endl;
                 for (const auto& stream : streamNames) {
                     std::cout << "  " << stream << std::endl;
                 }
-                
-                // Convert stream names to Symbol objects for the WebSocket client
+
+                // Convert stream names back to symbols for the WebSocket client
                 std::vector<core::Symbol> symbols;
-                symbols.reserve(streamNames.size());
-                for (const auto& streamName : streamNames) {
-                    symbols.emplace_back(core::Symbol::fromString(streamName));
+                symbols.reserve(event.tradingPairs.size()); // Use original pairs, not streams
+                for (const auto& pair : event.tradingPairs) {
+                    symbols.emplace_back(core::Symbol::fromString(pair));
                 }
-                
-                // Subscribe using the connection with stream names
+
+                // Subscribe using the connection
                 success = connection->subscribe(symbols);
-                
+
+
+
                 connectionPool_->releaseConnection(connection);
                 
                 if (success) {
                     SubscriptionRequest request{};
                     request.exchangeId = core::ExchangeId::binance();
-                    request.tradingPairs = event.tradingPairs;  // Store original pairs
+                    request.tradingPairs = event.tradingPairs;
                     request.dataTypes = event.dataTypes;
                     request.depth = event.depth;
                     
                     activeSubscriptions_.push_back(std::move(request));
                     
-                    std::cout << "Successfully subscribed to " << streamNames.size() 
-                              << " streams for " << event.tradingPairs.size() << " trading pairs\n";
+                    std::cout << "Successfully subscribed to " << event.tradingPairs.size() 
+                              << " trading pairs\n";
                 } else {
                     errorMessage = "Failed to subscribe to trading pairs";
                 }
@@ -533,7 +460,6 @@ void ExchangeManager::processSubscriptionInternal(const events::SubscriptionRequ
         success = false;
         errorMessage = std::string("Error during subscription: ") + e.what();
     }
-    
     
     // Resolve the promise
     {
@@ -545,9 +471,9 @@ void ExchangeManager::processSubscriptionInternal(const events::SubscriptionRequ
         }
     }
     
-    // Optional: Publish response event for other components
     eventBus_.publish(events::SubscriptionResponseEvent(event.requestId, success, errorMessage));
 }
+
 std::string ExchangeManager::generateRequestId() {
     return "req_" + std::to_string(requestIdCounter_++);
 }

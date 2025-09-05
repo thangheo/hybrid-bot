@@ -80,76 +80,99 @@ bool BinanceAdapter::canHandle(const MarketDataUpdate& update) {
 
 OrderBookUpdate BinanceAdapter::normalize(const MarketDataUpdate& update) {
     OrderBookUpdate normalized;
-    
     try {
-        // Set basic fields
         normalized.exchangeId = update.exchangeId;
-        normalized.tradingPair = standardizeTradingPair(update.tradingPair);
         normalized.exchangeTimestamp = update.exchangeTimestamp;
         normalized.receivedTimestamp = update.receivedTimestamp;
         normalized.sequenceNumber = update.sequenceNumber;
+        
+        std::string jsonData(update.data.begin(), update.data.end());
+        json jsonObj = json::parse(jsonData);
+        
+        // Handle stream wrapper format
+        if (jsonObj.contains("stream") && jsonObj.contains("data")) {
+            std::string stream = jsonObj["stream"];
+            jsonObj = jsonObj["data"];
+            normalized.tradingPair = extractSymbolFromStream(stream);
+        } else if (jsonObj.contains("s")) {
+            normalized.tradingPair = jsonObj["s"];
+        } else if (jsonObj.contains("lastUpdateId")) {
+            // Snapshot without symbol - use first subscribed symbol as fallback
+            normalized.tradingPair = "UNKNOWN";
+        }
+        
+        normalized.tradingPair = standardizeTradingPair(normalized.tradingPair);
         normalized.symbol = core::Symbol::fromString(normalized.tradingPair);
         
-        // Parse the raw data based on update type
-        if (update.updateType == "orderbook") {
-            std::string jsonData(update.data.begin(), update.data.end());
-            json jsonObj = json::parse(jsonData);
-            
-            // Determine if this is a snapshot or update
-            normalized.isSnapshot = (jsonObj.contains("bids") && jsonObj.contains("asks"));
-            
-            // Parse bids safely
-            if (jsonObj.contains("bids") && jsonObj["bids"].is_array()) {
-                for (const auto& bidArray : jsonObj["bids"]) {
-                    if (bidArray.is_array() && bidArray.size() >= 2) {
-                        try {
-                            PriceLevel level = parsePriceLevel(bidArray);
-                            if (level.quantity > 0.0) { // Only add non-zero quantities
-                                normalized.bids.push_back(level);
-                            }
-                        } catch (...) {
-                            // Skip invalid price levels
-                            continue;
-                        }
-                    }
-                }
+        // Determine message type
+        if (jsonObj.contains("lastUpdateId") && jsonObj.contains("bids") && jsonObj.contains("asks")) {
+            normalized.isSnapshot = true;
+        } else if (jsonObj.contains("e") && jsonObj["e"] == "depthUpdate") {
+            normalized.isSnapshot = false;
+        } else if (jsonObj.contains("e") && jsonObj["e"] == "bookTicker") {
+            // Handle bookTicker
+            normalized.isSnapshot = false;
+            if (jsonObj.contains("b") && jsonObj.contains("a")) {
+                PriceLevel bid;
+                bid.price = std::stod(jsonObj["b"].get<std::string>());
+                bid.quantity = std::stod(jsonObj["B"].get<std::string>());
+                normalized.bids.push_back(bid);
+                
+                PriceLevel ask;
+                ask.price = std::stod(jsonObj["a"].get<std::string>());
+                ask.quantity = std::stod(jsonObj["A"].get<std::string>());
+                normalized.asks.push_back(ask);
             }
-            
-            // Parse asks safely
-            if (jsonObj.contains("asks") && jsonObj["asks"].is_array()) {
-                for (const auto& askArray : jsonObj["asks"]) {
-                    if (askArray.is_array() && askArray.size() >= 2) {
-                        try {
-                            PriceLevel level = parsePriceLevel(askArray);
-                            if (level.quantity > 0.0) { // Only add non-zero quantities
-                                normalized.asks.push_back(level);
-                            }
-                        } catch (...) {
-                            // Skip invalid price levels
-                            continue;
-                        }
-                    }
-                }
-            }
-            
-            // Handle sequence numbers safely
-            if (jsonObj.contains("lastUpdateId") && jsonObj["lastUpdateId"].is_number()) {
-                normalized.sequenceNumber = jsonObj["lastUpdateId"].get<uint64_t>();
-            } else if (jsonObj.contains("U") && jsonObj["U"].is_number()) {
-                normalized.sequenceNumber = jsonObj["U"].get<uint64_t>();
-            }
-            
-            // Validate sequence number
-            bool validSequence = validateSequenceNumber(normalized.sequenceNumber, normalized.tradingPair);
-            if (!validSequence) {
-                normalized.has_anomaly = true;
-                normalized.anomaly_type = "sequence_gap";
-                normalized.anomaly_details = "Sequence number gap detected";
-            }
-            
-            // Generate checksum for data integrity
-            normalized.checksum = generateChecksum(normalized.bids, normalized.asks);
+            return normalized;
         }
+        
+        // Parse bids
+        if (jsonObj.contains("bids") && jsonObj["bids"].is_array()) {
+            for (const auto& bidArray : jsonObj["bids"]) {
+                if (bidArray.is_array() && bidArray.size() >= 2) {
+                    try {
+                        PriceLevel level = parsePriceLevel(bidArray);
+                        if (level.quantity > 0.0) {
+                            normalized.bids.push_back(level);
+                        }
+                    } catch (...) {
+                        continue;
+                    }
+                }
+            }
+        }
+        
+        // Parse asks
+        if (jsonObj.contains("asks") && jsonObj["asks"].is_array()) {
+            for (const auto& askArray : jsonObj["asks"]) {
+                if (askArray.is_array() && askArray.size() >= 2) {
+                    try {
+                        PriceLevel level = parsePriceLevel(askArray);
+                        if (level.quantity > 0.0) {
+                            normalized.asks.push_back(level);
+                        }
+                    } catch (...) {
+                        continue;
+                    }
+                }
+            }
+        }
+        
+        // Handle sequence numbers
+        if (jsonObj.contains("lastUpdateId") && jsonObj["lastUpdateId"].is_number()) {
+            normalized.sequenceNumber = jsonObj["lastUpdateId"].get<uint64_t>();
+        } else if (jsonObj.contains("U") && jsonObj["U"].is_number()) {
+            normalized.sequenceNumber = jsonObj["U"].get<uint64_t>();
+        }
+        
+        bool validSequence = validateSequenceNumber(normalized.sequenceNumber, normalized.tradingPair);
+        if (!validSequence) {
+            normalized.has_anomaly = true;
+            normalized.anomaly_type = "sequence_gap";
+            normalized.anomaly_details = "Sequence number gap detected";
+        }
+        
+        normalized.checksum = generateChecksum(normalized.bids, normalized.asks);
         
     } catch (const std::exception& e) {
         normalized.has_anomaly = true;
@@ -159,7 +182,15 @@ OrderBookUpdate BinanceAdapter::normalize(const MarketDataUpdate& update) {
     
     return normalized;
 }
-
+std::string BinanceAdapter::extractSymbolFromStream(const std::string& stream) {
+    size_t atPos = stream.find('@');
+    if (atPos != std::string::npos) {
+        std::string symbol = stream.substr(0, atPos);
+        std::transform(symbol.begin(), symbol.end(), symbol.begin(), ::toupper);
+        return symbol;
+    }
+    return "";
+}
 std::string BinanceAdapter::standardizeTradingPair(const std::string& tradingPair) {
     return extractTradingPair(tradingPair);
 }

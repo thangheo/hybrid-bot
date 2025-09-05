@@ -535,7 +535,7 @@ void BinanceWebSocketClient::runIoLoop() {
     // Final cleanup
     connected_.store(false);
     status_.store(ConnectionStatus::DISCONNECTED);
-    wsStream_.reset();
+    // wsStream_.reset();
     
     LOG_INFO("WebSocket IO loop terminated");
 }
@@ -642,63 +642,24 @@ void BinanceWebSocketClient::onWebSocketOpen() {
     LOG_INFO("WebSocket connection opened - ready for subscriptions");
     // DO NOT automatically resubscribe - wait for explicit subscribe() calls
 }
-
 void BinanceWebSocketClient::onWebSocketMessage(const std::string& message) {
     try {
-        // Add debug output for first few messages
-        static std::atomic<int> messageDebugCount{0};
-        if (messageDebugCount.fetch_add(1) < 3) {
-            LOG_INFO("Processing WebSocket message: " + message.substr(0, 100) + "...");
-        }
-        
-        // Parse the JSON message
         json data = json::parse(message);
-        
-        // Update statistics
-        updateStatistics();
-        
-        // Call the message callback
-        if (messageCallback_) {
-            messageCallback_(message, std::chrono::system_clock::now());
-        }
         
         // Handle subscription responses
         if (data.contains("id") && (data.contains("result") || data.contains("error"))) {
-            handleResponse(data);
+            handleResponse(data);  // Use your existing method
             return;
         }
         
-        // Handle stream messages
-        if (data.contains("stream") && data.contains("data")) {
-            handleStreamMessage(data);
-            return;
+        // Forward ALL other messages to callback
+        if (dataCallback_) {
+            std::vector<uint8_t> dataBytes(message.begin(), message.end());
+            dataCallback_(core::ExchangeId::binance(), "RAW_MESSAGE", dataBytes);
         }
         
-        // Handle direct data format (not wrapped in stream)
-        if (data.contains("e")) {
-            std::string event_type = data.value("e", "");
-            
-            std::string symbol = data.value("s", "");
-            
-            if (event_type == "depthUpdate") {
-                processOrderBookData(symbol, "depth", data);
-            } else if (event_type == "trade") {
-                processTrade(symbol, data);
-            } else if (event_type == "24hrTicker") {
-                processTicker(symbol, data);
-            } else if (event_type == "bookTicker") {
-                processBookTicker(symbol, data);
-            } else {
-                LOG_DEBUG("Unhandled event type: " + event_type + " for symbol: " + symbol);
-            }
-            return;
-        }
-        
-        std::cout << "Unhandled Binance message: " << message << std::endl;
-    }
-    catch (const std::exception& e) {
-        std::cerr << "Error processing Binance message: " << e.what() << std::endl;
-        std::cerr << "Message: " << message << std::endl;
+    } catch (const std::exception& e) {
+        LOG_ERROR("JSON parsing failed: " + std::string(e.what()));
     }
 }
 
@@ -885,12 +846,21 @@ bool BinanceWebSocketClient::sendSubscriptionRequest(const std::vector<std::stri
     }
 }
 
+// std::string BinanceWebSocketClient::symbolToStream(const core::Symbol& symbol, const std::string& streamType) const {
+//     std::string symbolStr = symbol.base + symbol.quote;
+//     std::transform(symbolStr.begin(), symbolStr.end(), symbolStr.begin(), ::tolower);
+//     return symbolStr + "@" + streamType;
+// }
 std::string BinanceWebSocketClient::symbolToStream(const core::Symbol& symbol, const std::string& streamType) const {
     std::string symbolStr = symbol.base + symbol.quote;
     std::transform(symbolStr.begin(), symbolStr.end(), symbolStr.begin(), ::tolower);
+    
+    if (streamType == "depth") {
+        return symbolStr + "@depth20@100ms";  // Match your createStreamNames format
+    }
+    
     return symbolStr + "@" + streamType;
 }
-
 core::Symbol BinanceWebSocketClient::streamToSymbol(const std::string& stream) const {
     size_t atPos = stream.find('@');
     if (atPos != std::string::npos) {

@@ -3,7 +3,6 @@
 
 #include "data_ingestion/exchange_manager.hpp"
 #include "data_ingestion/orderbook/reconstructor.hpp"
-#include "data_ingestion/orderbook/order_book_manager.hpp"
 #include "data_ingestion/publisher/zeromq_publisher.hpp"
 #include "data_ingestion/config/config.hpp"
 #include "data_ingestion/normalization/order_book_normalizer.hpp"
@@ -15,8 +14,16 @@
 #include <unordered_map>
 #include <functional>
 
+// Since OrderBookReconstructor doesn't have getStatistics(), create a simple version
+struct SimpleStats {
+    size_t totalOrderBooks = 0;
+    uint64_t messagesProcessed = 0;
+    uint64_t errorsEncountered = 0;
+    double updatesPerSecond = 0.0;
+};
 namespace trading {
 namespace data_ingestion {
+
 
 /**
  * Centralized service that integrates all data ingestion components
@@ -42,14 +49,17 @@ public:
     
     // Query interface
     std::shared_ptr<OrderBook> getOrderBook(const ExchangeId& exchange, const core::Symbol& symbol) const;
-    OrderBookManagerStats getStatistics() const;
-    std::vector<OrderBookKey> getActiveOrderBooks() const;
+    // OrderBookManagerStats getStatistics() const;
+    // std::vector<OrderBookKey> getActiveOrderBooks() const;
     
     // Health monitoring
     bool isHealthy() const;
     std::string getStatusReport() const;
+    SimpleStats getStatistics() const ;
 
+    std::vector<std::string> getActiveOrderBooks() const;
 private:
+    std::vector<std::string> subscribedSymbols_;
     // Core components (proper order for RAII)
     std::string configPath_;
     Configuration* config_;
@@ -62,7 +72,7 @@ private:
     
     // Order book management
     OrderBookReconstructor* reconstructor_;
-    std::unique_ptr<OrderBookManager> orderBookManager_;
+    // std::unique_ptr<OrderBookManager> orderBookManager_;
     
     // Data processing
     std::unique_ptr<OrderBookNormalizer> normalizer_;

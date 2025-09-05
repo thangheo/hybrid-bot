@@ -63,6 +63,7 @@ bool DataIngestionService::initialize() {
 }
 
 bool DataIngestionService::start(const std::vector<std::string>& symbols) {
+    subscribedSymbols_ = symbols;  // Store for later use
     if (!initialized_.load()) {
         std::cerr << "Service not initialized" << std::endl;
         return false;
@@ -78,34 +79,31 @@ bool DataIngestionService::start(const std::vector<std::string>& symbols) {
         }
         
         // 2. Create order books for symbols
-        for (const auto& symbol : symbols) {
-            if (!orderBookManager_->createOrderBook(
-                ExchangeId::binance(), 
-                core::Symbol::fromString(symbol),
-                [this](const OrderBook& book) { this->onOrderBookChanged(book); }
-            )) {
-                std::cout << "Order book for " << symbol << " already exists or failed to create" << std::endl;
-            }
-        }
-         // Create order books in reconstructor instead (like your working version)
-        // In DataIngestionService::start(), change this:
         // for (const auto& symbol : symbols) {
-        //     // REMOVE OrderBookManager creation
-        //     // orderBookManager_->createOrderBook(...);
-            
-        //     // Create order books in reconstructor instead (like your working version)
-        //     std::vector<PriceLevel> empty_bids;
-        //     std::vector<PriceLevel> empty_asks;
-            
-        //     reconstructor_->processSnapshot(
+        //     if (!orderBookManager_->createOrderBook(
         //         ExchangeId::binance(), 
         //         core::Symbol::fromString(symbol),
-        //         empty_bids,
-        //         empty_asks,
-        //         0,
-        //         std::chrono::system_clock::now()
-        //     );
+        //         [this](const OrderBook& book) { this->onOrderBookChanged(book); }
+        //     )) {
+        //         std::cout << "Order book for " << symbol << " already exists or failed to create" << std::endl;
+        //     }
         // }
+         // Create order books in reconstructor instead (like your working version)
+        // In DataIngestionService::start(), change this:
+        for (const auto& symbol : symbols) {
+            // Create order books in reconstructor instead (like your working version)
+            std::vector<PriceLevel> empty_bids;
+            std::vector<PriceLevel> empty_asks;
+            
+            reconstructor_->processSnapshot(
+                ExchangeId::binance(), 
+                core::Symbol::fromString(symbol),
+                empty_bids,
+                empty_asks,
+                0,
+                std::chrono::system_clock::now()
+            );
+        }
         // 3. Start exchange connections
         if (!exchangeManager_->initialize()) {
             std::cerr << "Failed to initialize exchange manager" << std::endl;
@@ -206,20 +204,20 @@ bool DataIngestionService::setupOrderBookComponents() {
         }
         
         // 2. Create order book manager
-        OrderBookManagerConfig managerConfig;
-        managerConfig.autoCreateOrderBooks = true;
-        managerConfig.enableStatistics = true;
-        managerConfig.validateSequenceNumbers = true;
+        // OrderBookManagerConfig managerConfig;
+        // managerConfig.autoCreateOrderBooks = true;
+        // managerConfig.enableStatistics = true;
+        // managerConfig.validateSequenceNumbers = true;
         
-        orderBookManager_ = std::make_unique<OrderBookManager>(
-            managerConfig,
-            [this](const OrderBookKey& key, const std::string& eventType) {
-                publishStatus("orderbook_manager", 
-                    "exchange=" + key.exchangeId.toString() + 
-                    ",symbol=" + key.symbol.toString() + 
-                    ",event=" + eventType);
-            }
-        );
+        // orderBookManager_ = std::make_unique<OrderBookManager>(
+        //     managerConfig,
+        //     [this](const OrderBookKey& key, const std::string& eventType) {
+        //         publishStatus("orderbook_manager", 
+        //             "exchange=" + key.exchangeId.toString() + 
+        //             ",symbol=" + key.symbol.toString() + 
+        //             ",event=" + eventType);
+        //     }
+        // );
         
         return true;
     } catch (const std::exception& e) {
@@ -271,33 +269,33 @@ void DataIngestionService::onNormalizedOrderBook(const OrderBookUpdate& update) 
                   << update.exchangeId.toString() << ":" << update.symbol.toString() << std::endl;
         
         // // Process through order book manager
-        if (orderBookManager_) {
-            std::cout << "[DEBUG] Calling orderBookManager_->processUpdate" << std::endl;
-            orderBookManager_->processUpdate(update);  // <-- Error comes from here
-            std::cout << "[DEBUG] orderBookManager_->processUpdate completed" << std::endl;
-        }
-                
-        // if (reconstructor_) {
-        //     if (update.isSnapshot) {
-        //         reconstructor_->processSnapshot(
-        //             update.exchangeId,
-        //             update.symbol,
-        //             update.bids,
-        //             update.asks,
-        //             update.sequenceNumber,
-        //             update.receivedTimestamp
-        //         );
-        //     } else {
-        //         reconstructor_->processUpdate(
-        //             update.exchangeId,
-        //             update.symbol,
-        //             update.bids,
-        //             update.asks,
-        //             update.sequenceNumber,
-        //             update.receivedTimestamp
-        //         );
-        //     }
+        // if (orderBookManager_) {
+        //     std::cout << "[DEBUG] Calling orderBookManager_->processUpdate" << std::endl;
+        //     orderBookManager_->processUpdate(update);  // <-- Error comes from here
+        //     std::cout << "[DEBUG] orderBookManager_->processUpdate completed" << std::endl;
         // }
+                
+        if (reconstructor_) {
+            if (update.isSnapshot) {
+                reconstructor_->processSnapshot(
+                    update.exchangeId,
+                    update.symbol,
+                    update.bids,
+                    update.asks,
+                    update.sequenceNumber,
+                    update.receivedTimestamp
+                );
+            } else {
+                reconstructor_->processUpdate(
+                    update.exchangeId,
+                    update.symbol,
+                    update.bids,
+                    update.asks,
+                    update.sequenceNumber,
+                    update.receivedTimestamp
+                );
+            }
+        }
         
         // Notify external callback
         if (orderBookCallback_) {
@@ -322,29 +320,48 @@ void DataIngestionService::onOrderBookChanged(const OrderBook& orderBook) {
 void DataIngestionService::onConnectionStatus(const std::string& exchange, const std::string& status) {
     publishStatus("connection", "exchange=" + exchange + ",status=" + status);
 }
-
 std::shared_ptr<OrderBook> DataIngestionService::getOrderBook(
     const ExchangeId& exchange, 
     const core::Symbol& symbol) const {
     
-    if (orderBookManager_) {
-        return orderBookManager_->getOrderBook(exchange, symbol);
+    if (reconstructor_) {
+        return reconstructor_->getOrderBook(exchange, symbol);
     }
     return nullptr;
 }
 
-OrderBookManagerStats DataIngestionService::getStatistics() const {
-    if (orderBookManager_) {
-        return orderBookManager_->getStatistics();
+SimpleStats DataIngestionService::getStatistics() const {
+    SimpleStats stats;
+    stats.messagesProcessed = messagesProcessed_.load();
+    stats.errorsEncountered = errorsEncountered_.load();
+    
+    // Calculate updates per second
+    auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
+        std::chrono::steady_clock::now() - startTime_).count();
+    
+    if (elapsed > 0) {
+        stats.updatesPerSecond = static_cast<double>(stats.messagesProcessed) / elapsed;
     }
-    return OrderBookManagerStats{};
+    
+    // Count active order books (if reconstructor has a way to get them)
+    // If not, you'll need to track this yourself
+    stats.totalOrderBooks = 0; // Set this based on your symbols
+    
+    return stats;
 }
 
-std::vector<OrderBookKey> DataIngestionService::getActiveOrderBooks() const {
-    if (orderBookManager_) {
-        return orderBookManager_->getActiveOrderBooks();
-    }
-    return {};
+std::vector<std::string> DataIngestionService::getActiveOrderBooks() const {
+    // Since OrderBookReconstructor doesn't expose active books,
+    // return the symbols you're tracking
+    std::vector<std::string> activeBooks;
+    
+    // You can either:
+    // 1. Track symbols in a member variable during start()
+    // 2. Or hardcode the symbols you subscribed to
+    
+    // Option 1: If you store subscribed symbols (add this to your class):
+    return subscribedSymbols_;
+    
 }
 
 bool DataIngestionService::isHealthy() const {
@@ -356,9 +373,9 @@ bool DataIngestionService::isHealthy() const {
         return false;
     }
     
-    if (orderBookManager_ && !orderBookManager_->isHealthy()) {
-        return false;
-    }
+    // if (orderBookManager_ && !orderBookManager_->isHealthy()) {
+    //     return false;
+    // }
     
     return true;
 }
@@ -407,7 +424,7 @@ void DataIngestionService::cleanup() {
     // Reset in reverse order
     exchangeManager_.reset();
     normalizer_.reset();
-    orderBookManager_.reset();
+    // orderBookManager_.reset();
     
     if (reconstructor_) {
         reconstructor_->shutdown();

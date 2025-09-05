@@ -32,7 +32,8 @@ class BinanceAdapter : public IProtocolAdapter, public ExchangeAdapter {
 public:
     BinanceAdapter() = default;
     ~BinanceAdapter() override = default;
-    
+    std::string extractSymbolFromStream(const std::string& stream); 
+
     // IProtocolAdapter interface implementation
     bool canHandle(const core::ExchangeData& data) override;
     OrderBookUpdate convertToStandardFormat(const core::ExchangeData& data) override;
