@@ -9,29 +9,27 @@
  * @date May 12, 2025
  */
 
- #pragma once
+#pragma once
 
- #include <string>
- #include <cmath>
- #include <vector>
- #include <algorithm>
- #include <chrono>
- #include <map>
- #include <optional>
- #include <cstdint>
- #include <memory>
- #include <functional>
- #include <unordered_map>
- #include <ostream>
- #include <common/exchange_types.hpp>
- #include "core/direction.hpp"
- namespace trading {
+#include <string>
+#include <cmath>
+#include <vector>
+#include <algorithm>
+#include <chrono>
+#include <map>
+#include <optional>
+#include <cstdint>
+#include <memory>
+#include <functional>
+#include <unordered_map>
+#include <ostream>
+#include <common/exchange_types.hpp>
+#include "core/direction.hpp"
+#include "core/time.hpp"   
+
+namespace trading {
  namespace core {
- 
- // Common timestamp definition
-//  using Timestamp = std::chrono::time_point<std::chrono::system_clock, std::chrono::nanoseconds>;
-// To this:
-using Timestamp = std::chrono::time_point<std::chrono::system_clock>;
+
 
 // Add proper namespace aliases where needed
 // Ensure all files use the same ExchangeId definition
@@ -42,11 +40,11 @@ struct MarketDataUpdate {
     ExchangeId exchangeId;
     std::string tradingPair;
     std::string updateType;  // "orderbook", "trade", "ticker"
-    uint64_t exchange_timestamp;
-    uint64_t receivedTimestamp;
+    core::Timestamp exchange_timestamp;
+    core::Timestamp receivedTimestamp;
     std::vector<uint8_t> data;  // Raw data from exchange
     uint64_t sequenceNumber = 0;      // Optional sequence number
-    std::chrono::system_clock::time_point timestamp;  // Update timestamp
+    core::Timestamp timestamp;  // Update timestamp
     std::string messageType;
     MarketDataUpdate() = default;
 

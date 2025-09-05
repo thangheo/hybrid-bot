@@ -286,11 +286,16 @@ public:
         
         // Normalize timestamps
         if (synchronizer_) {
-            auto receivedTime = time::TimePoint(std::chrono::milliseconds(output.receivedTimestamp));
-            
-            uint64_t exchangeTimestampMs = output.exchange_timestamp;
-            if (exchangeTimestampMs < 1000000000000ULL) { // Convert seconds to milliseconds
-                exchangeTimestampMs *= 1000;
+            // If output.receivedTimestamp is now a Timestamp (recommended)
+            auto receivedTime = output.receivedTimestamp;  // Direct assignment
+
+            // If output.exchangeTimestamp is now a Timestamp (recommended)
+            uint64_t exchangeTimestampMs;
+            if (core::timestampToMillis(output.exchange_timestamp) < 1000000000000ULL) {
+                // If timestamp appears to be in seconds, convert to milliseconds
+                exchangeTimestampMs = core::timestampToMillis(output.exchange_timestamp) * 1000;
+            } else {
+                exchangeTimestampMs = core::timestampToMillis(output.exchange_timestamp);
             }
             
             auto normalizedTime = synchronizer_->normalizeExchangeTimeMs(
@@ -298,8 +303,7 @@ public:
                 exchangeTimestampMs,
                 receivedTime);
             
-            output.exchange_timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
-                normalizedTime.time_since_epoch()).count();
+            output.exchange_timestamp = normalizedTime;
                 
             // Add calibration sample
             synchronizer_->addExchangeTimeSample(

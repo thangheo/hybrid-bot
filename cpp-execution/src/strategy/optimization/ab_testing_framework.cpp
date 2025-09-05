@@ -303,7 +303,7 @@ uint64_t ABTestingFramework::computeConsistentHash(const data_ingestion::OrderBo
             hash = combineHashes(hash, hashString(snapshot.symbol.toString()));
         } else if (field == "timeWindow") {
             // Use daily time buckets for consistency
-            uint64_t timeBucket = snapshot.exchange_timestamp / (24 * 60 * 60 * 1000);
+            uint64_t timeBucket = core::timestampToMillis(snapshot.exchange_timestamp) / (24 * 60 * 60 * 1000);
             hash = combineHashes(hash, timeBucket);
         } else if (field == "price" && !snapshot.bids.empty() && !snapshot.asks.empty()) {
             double midPrice = (snapshot.bids[0].price + snapshot.asks[0].price) / 2.0;

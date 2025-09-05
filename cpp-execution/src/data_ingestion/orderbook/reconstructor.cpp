@@ -14,6 +14,8 @@
 #include <sstream>
 #include <iomanip>
 #include <cmath>
+
+using namespace trading::core;
  namespace trading{
  namespace data_ingestion {
 
@@ -437,8 +439,8 @@ void OrderBookReconstructor::publishOrderBook(const std::shared_ptr<OrderBook>& 
     OrderBookUpdate update = order_book->getSnapshot();
     std::string payload = update.exchangeId.toString() + ":" + update.tradingPair + ":" +
         std::to_string(update.sequenceNumber) + ":" +
-        std::to_string(update.exchange_timestamp) + ":" +
-        std::to_string(update.receivedTimestamp);
+        std::to_string(timestampToMillis(update.exchange_timestamp)) + ":" +
+        std::to_string(timestampToMillis(update.receivedTimestamp));
     std::vector<unsigned char> binary_payload(payload.begin(), payload.end());
     // Serialize the order book data
     // This is a placeholder for actual serialization logic

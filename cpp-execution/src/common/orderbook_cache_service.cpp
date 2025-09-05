@@ -324,12 +324,10 @@ OrderBookCacheService::optimizeOrderBookMemory(
     // Create new orderbook with limited depth
     auto optimized = std::make_shared<data_ingestion::OrderBook>(
         orderBook->getExchangeId(), orderBook->getSymbol());
-    // auto timestamp =
-    auto timestamp = std::chrono::time_point<std::chrono::system_clock>(
-            std::chrono::nanoseconds(snapshot.receivedTimestamp));
+   
     optimized->applySnapshot(
         snapshot.bids, snapshot.asks,
-        snapshot.sequenceNumber, timestamp
+        snapshot.sequenceNumber, snapshot.receivedTimestamp
     );
     
     return optimized;
@@ -376,7 +374,7 @@ std::string OrderBookCacheService::createOrderBookMessage(
     std::string message = "{";
     message += "\"exchange\":\"" + snapshot.exchangeId.toString() + "\",";
     message += "\"tradingPair\":\"" + snapshot.tradingPair + "\",";
-    message += "\"timestamp\":" + std::to_string(snapshot.exchange_timestamp) + ",";
+    message += "\"timestamp\":" + std::to_string(core::timestampToMillis(snapshot.exchange_timestamp)) + ",";
     message += "\"sequence\":" + std::to_string(snapshot.sequenceNumber) + ",";
     // message += "\"isSnapshot\":" + (snapshot.isSnapshot ? "true" : "false") + ",";
     message += std::string("\"isSnapshot\":") 

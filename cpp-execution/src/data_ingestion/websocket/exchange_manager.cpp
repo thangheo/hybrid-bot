@@ -89,8 +89,7 @@ void ExchangeManager::onWebSocketData(const core::ExchangeId& exchange,
         MarketDataUpdate update{};
         update.exchangeId = exchange;
         update.tradingPair = symbol;
-        update.receivedTimestamp = std::chrono::duration_cast<std::chrono::nanoseconds>(
-            std::chrono::system_clock::now().time_since_epoch()).count();
+        update.receivedTimestamp = std::chrono::system_clock::now();
         update.data = data;
         update.updateType = "orderbook"; // Default type, could be parsed from data
         
