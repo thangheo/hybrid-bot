@@ -11,7 +11,7 @@
 #include "data_ingestion/websocket/connection_pool.hpp"
 #include "data_ingestion/publisher/zeromq_publisher.hpp"
 #include "data_ingestion/protocol/binance_adapter.hpp"
-#include "data_ingestion/config.hpp"
+#include "data_ingestion/config/config.hpp"
 #include "data_ingestion/orderbook/order_book.hpp"
 #include "common/exchange_types.hpp"
 #include "core/market_types.hpp"

@@ -40,7 +40,7 @@ struct MarketDataUpdate {
     ExchangeId exchangeId;
     std::string tradingPair;
     std::string updateType;  // "orderbook", "trade", "ticker"
-    core::Timestamp exchange_timestamp;
+    core::Timestamp exchangeTimestamp;
     core::Timestamp receivedTimestamp;
     std::vector<uint8_t> data;  // Raw data from exchange
     uint64_t sequenceNumber = 0;      // Optional sequence number

@@ -15,6 +15,7 @@ file(GLOB_RECURSE DATA_INGESTION_SOURCES
     "storage/*.cpp"
     "time/*.cpp"
     "websocket/*.cpp"
+    "config/config.cpp"
 )
 
 # Remove example files from sources
@@ -51,13 +52,15 @@ target_link_libraries(data_ingestion
 # Add websocket directory for specific build rules if needed
 add_subdirectory(websocket)
 
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../../bin)
+
 # Create executable for pipeline example
-add_executable(pipeline_example
-    pipeline/pipeline_example.cpp
+add_executable(data_ingestion_main
+    data_ingestion_main.cpp
 )
 
 # Include directories for pipeline example
-target_include_directories(pipeline_example
+target_include_directories(data_ingestion_main
     PRIVATE
         ${CMAKE_SOURCE_DIR}/include
         ${CMAKE_SOURCE_DIR}/include/data_ingestion
@@ -65,7 +68,7 @@ target_include_directories(pipeline_example
 )
 
 # Link libraries for pipeline example
-target_link_libraries(pipeline_example
+target_link_libraries(data_ingestion_main
     PRIVATE
         data_ingestion
         common
@@ -76,7 +79,7 @@ target_link_libraries(pipeline_example
         OpenSSL::Crypto
 )
 
-# Set output directory for pipeline example
-set_target_properties(pipeline_example PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
-)
+# # Set output directory for pipeline example
+# set_target_properties(data_ingestion_main PROPERTIES
+#     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+# )

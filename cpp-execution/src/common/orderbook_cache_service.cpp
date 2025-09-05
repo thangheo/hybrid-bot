@@ -374,7 +374,7 @@ std::string OrderBookCacheService::createOrderBookMessage(
     std::string message = "{";
     message += "\"exchange\":\"" + snapshot.exchangeId.toString() + "\",";
     message += "\"tradingPair\":\"" + snapshot.tradingPair + "\",";
-    message += "\"timestamp\":" + std::to_string(core::timestampToMillis(snapshot.exchange_timestamp)) + ",";
+    message += "\"timestamp\":" + std::to_string(core::timestampToMillis(snapshot.exchangeTimestamp)) + ",";
     message += "\"sequence\":" + std::to_string(snapshot.sequenceNumber) + ",";
     // message += "\"isSnapshot\":" + (snapshot.isSnapshot ? "true" : "false") + ",";
     message += std::string("\"isSnapshot\":") 

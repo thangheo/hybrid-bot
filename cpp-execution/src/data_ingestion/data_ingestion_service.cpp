@@ -105,8 +105,7 @@ bool DataIngestionService::start(const std::vector<std::string>& symbols) {
             symbolObjects.emplace_back(core::Symbol::fromString(symbol));
         }
         
-        std::vector<DataType> dataTypes = {DataType::ORDERBOOK_SNAPSHOT, DataType::ORDERBOOK_UPDATE};
-        
+        std::vector<DataType> dataTypes = {DataType::ORDER_BOOK};        
         if (!exchangeManager_->subscribe(symbols, dataTypes, 20)) {
             std::cerr << "Failed to subscribe to symbols" << std::endl;
             return false;
@@ -212,15 +211,19 @@ bool DataIngestionService::setupOrderBookComponents() {
 
 bool DataIngestionService::setupExchangeManager() {
     try {
-        // Create normalizer
-        normalizer_ = std::make_unique<OrderBookNormalizer>();
-        
-        // Create exchange manager with proper callback
-        auto callback = [this](const OrderBookUpdate& update) {
+        // Create normalizer with proper callback - FIX HERE
+        auto normalizerCallback = [this](const OrderBookUpdate& update) {
             this->onNormalizedOrderBook(update);
         };
         
-        exchangeManager_ = std::make_unique<ExchangeManager>(callback, 2, 5);
+        normalizer_ = std::make_unique<OrderBookNormalizer>(normalizerCallback);
+        
+        // Create exchange manager with proper callback
+        auto exchangeCallback = [this](const OrderBookUpdate& update) {
+            this->onNormalizedOrderBook(update);
+        };
+        
+        exchangeManager_ = std::make_unique<ExchangeManager>(exchangeCallback, 2, 5);
         
         return true;
     } catch (const std::exception& e) {
@@ -252,7 +255,7 @@ void DataIngestionService::onNormalizedOrderBook(const OrderBookUpdate& update) 
                     update.bids,
                     update.asks,
                     update.sequenceNumber,
-                    update.timestamp
+                    update.receivedTimestamp
                 );
             } else {
                 reconstructor_->processUpdate(
@@ -261,7 +264,7 @@ void DataIngestionService::onNormalizedOrderBook(const OrderBookUpdate& update) 
                     update.bids,
                     update.asks,
                     update.sequenceNumber,
-                    update.timestamp
+                    update.receivedTimestamp
                 );
             }
         }

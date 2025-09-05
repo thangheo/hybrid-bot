@@ -291,11 +291,11 @@ public:
 
             // If output.exchangeTimestamp is now a Timestamp (recommended)
             uint64_t exchangeTimestampMs;
-            if (core::timestampToMillis(output.exchange_timestamp) < 1000000000000ULL) {
+            if (core::timestampToMillis(output.exchangeTimestamp) < 1000000000000ULL) {
                 // If timestamp appears to be in seconds, convert to milliseconds
-                exchangeTimestampMs = core::timestampToMillis(output.exchange_timestamp) * 1000;
+                exchangeTimestampMs = core::timestampToMillis(output.exchangeTimestamp) * 1000;
             } else {
-                exchangeTimestampMs = core::timestampToMillis(output.exchange_timestamp);
+                exchangeTimestampMs = core::timestampToMillis(output.exchangeTimestamp);
             }
             
             auto normalizedTime = synchronizer_->normalizeExchangeTimeMs(
@@ -303,7 +303,7 @@ public:
                 exchangeTimestampMs,
                 receivedTime);
             
-            output.exchange_timestamp = normalizedTime;
+            output.exchangeTimestamp = normalizedTime;
                 
             // Add calibration sample
             synchronizer_->addExchangeTimeSample(

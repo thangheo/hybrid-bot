@@ -412,7 +412,7 @@ OrderBookUpdate OrderBook::getSnapshot(int depth) const {
     OrderBookUpdate update;
     update.exchangeId = exchangeId_;
     update.tradingPair = symbol_.toString();
-    update.exchange_timestamp = timestamp_;
+    update.exchangeTimestamp = timestamp_;
     update.receivedTimestamp = last_update_time_;
     update.sequenceNumber = sequence_number_;
     update.isSnapshot = true;

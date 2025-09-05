@@ -65,7 +65,7 @@ struct OrderBookKeyHash {
 struct OrderBookUpdate {
     ExchangeId exchangeId;  // Identifier for the exchange (e.g., "binance")
     std::string tradingPair;
-    core::Timestamp exchange_timestamp;
+    core::Timestamp exchangeTimestamp;
     core::Timestamp receivedTimestamp;
     // isSnapshot
     // int64_t processedTimestamp{0};  
@@ -83,12 +83,12 @@ struct OrderBookUpdate {
     // Constructor
     OrderBookUpdate() = default;
     OrderBookUpdate(const ExchangeId& exchangeId, const std::string& tradingPair,
-                    Timestamp exchange_timestamp, Timestamp receivedTimestamp,
+                    Timestamp exchangeTimestamp, Timestamp receivedTimestamp,
                     uint64_t sequenceNumber, bool isSnapshot,
                     const std::vector<PriceLevel>& bids,
                     const std::vector<PriceLevel>& asks)
         : exchangeId(exchangeId), tradingPair(tradingPair),
-          exchange_timestamp(exchange_timestamp), receivedTimestamp(receivedTimestamp),
+          exchangeTimestamp(exchangeTimestamp), receivedTimestamp(receivedTimestamp),
           sequenceNumber(sequenceNumber), isSnapshot(isSnapshot),
           bids(bids), asks(asks) {}
     // Add other constructors or methods as needed

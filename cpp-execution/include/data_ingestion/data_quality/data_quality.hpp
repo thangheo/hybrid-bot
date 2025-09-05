@@ -4,7 +4,7 @@
 #include "data_ingestion/orderbook/order_book_types.hpp"
 #include "data_ingestion/data_quality/filter.hpp"
 #include "data_ingestion/data_quality/validator.hpp"
-#include "data_ingestion/config.hpp"
+#include "data_ingestion/config/config.hpp"
 #include <memory>
 #include <string>
 #include <unordered_map>

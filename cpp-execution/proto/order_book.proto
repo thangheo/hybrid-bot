@@ -22,7 +22,7 @@ message PriceLevel {
 message OrderBookUpdate {
     trading.common.proto.ExchangeIdProto exchange_id = 1;     // Exchange identifier (enum)
     trading.common.proto.SymbolProto symbol = 2;              // Trading pair
-    trading.common.proto.TimestampProto exchange_timestamp = 3; // Timestamp from exchange
+    trading.common.proto.TimestampProto exchangeTimestamp = 3; // Timestamp from exchange
     trading.common.proto.TimestampProto received_timestamp = 4; // When received by our system
     int64 sequence_number = 5;          // Sequence number for ordering updates
     bool is_snapshot = 6;               // True if full snapshot, false for incremental

@@ -31,7 +31,7 @@ void onOrderBookUpdate(const OrderBookUpdate& update) {
     std::cout << "Normalized Order Book Update:" << std::endl;
     std::cout << "Exchange: " << update.exchangeId << std::endl;
     std::cout << "Trading Pair: " << update.tradingPair << std::endl;
-    std::cout << "Timestamp: " << update.exchange_timestamp << std::endl;
+    std::cout << "Timestamp: " << update.exchangeTimestamp << std::endl;
     std::cout << "Latency: " << std::fixed << std::setprecision(3) << latency_ms << "ms" << std::endl;
     
     // Print the top of the book (best bid/ask)

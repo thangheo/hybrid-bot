@@ -345,7 +345,7 @@ class ImbalanceSimulator:
         order_book = {
             'exchange_id': 'SIMULATOR',
             'trading_pair': 'BTC/USDT',
-            'exchange_timestamp': timestamp,
+            'exchangeTimestamp': timestamp,
             'received_timestamp': timestamp,
             'sequenceNumber': self.tick,
             'isSnapshot': True,
