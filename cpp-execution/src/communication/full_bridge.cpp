@@ -392,8 +392,21 @@ int main() {
         std::vector<std::string> symbols = {
             "BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "ADAUSDT",
             "AVAXUSDT", "DOTUSDT", "LINKUSDT", "UNIUSDT", "ATOMUSDT"
-        };
-        
+            , "ALGOUSDT"  
+            , "AAVEUSDT"   
+            , "ARBUSDT"   
+            , "OPUSDT"    
+            , "INJUSDT"    
+            , "SUIUSDT"   
+            , "TRBUSDT"  
+            , "BANDUSDT"  
+            , "CHZUSDT"    
+            , "ENJUSDT"  
+            , "YFIUSDT"    
+            , "1INCHUSDT" 
+            , "DOGEUSDT"  
+            , "WIFUSDT"   
+   };   
         if (!server.start(symbols)) {
             std::cerr << "Failed to start server" << std::endl;
             return 1;
