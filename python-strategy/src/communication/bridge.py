@@ -217,10 +217,10 @@ class MarketIntelligenceIntegrator:
                 # Parse message
                 intel = tm.MarketIntelligence()
                 intel.ParseFromString(data)
-                
+                symbol = intel.symbol.replace('/', '')
                 # Update intelligence history
                 with self.intelligence_lock:
-                    self.intelligence_history[intel.symbol].append({
+                    self.intelligence_history[symbol].append({
                         'timestamp': intel.timestamp,
                         'bid_ask_spread': intel.bid_ask_spread,
                         'order_book_imbalance': intel.order_book_imbalance,
@@ -234,7 +234,7 @@ class MarketIntelligenceIntegrator:
                     })
                 
                 # Update market regime
-                self._update_market_regime(intel.symbol, intel)
+                self._update_market_regime(symbol, intel)
                 
                 intelligence_count += 1
                 if intelligence_count % 20 == 0:
