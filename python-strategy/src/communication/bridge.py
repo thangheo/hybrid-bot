@@ -217,7 +217,13 @@ class MarketIntelligenceIntegrator:
                 # Parse message
                 intel = tm.MarketIntelligence()
                 intel.ParseFromString(data)
+                
                 symbol = intel.symbol.replace('/', '')
+                
+                # Ensure symbol exists in intelligence_history
+                if symbol not in self.intelligence_history:
+                    self.intelligence_history[symbol] = deque(maxlen=1000)
+                
                 # Update intelligence history
                 with self.intelligence_lock:
                     self.intelligence_history[symbol].append({
@@ -246,7 +252,6 @@ class MarketIntelligenceIntegrator:
             except Exception as e:
                 print(f"Error in intelligence loop: {e}")
                 time.sleep(1)
-
     def _update_market_regime(self, symbol: str, intel: tm.MarketIntelligence):
         """Update market regime based on C++ intelligence"""
         
