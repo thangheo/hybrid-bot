@@ -167,12 +167,12 @@ private:
 class SignalHandler {
 public:
     void onNewSignal(const TradingSignal& signal) {
-        LOG_INFO("NEW TRADING SIGNAL RECEIVED!");
-        LOG_INFO("  Signal ID: {}", signal.id);
-        LOG_INFO("  Symbol: {}", signal.symbol.toString());
-        LOG_INFO("  Direction: {}", signal.direction == Direction::BUY ? "BUY" : "SELL");
-        LOG_INFO("  Strength: {:.3f}", signal.strength);
-        LOG_INFO("  Confidence: {}", signal.confidence);
+        // LOG_INFO("NEW TRADING SIGNAL RECEIVED!");
+        // LOG_INFO("  Signal ID: {}", signal.id);
+        // LOG_INFO("  Symbol: {}", signal.symbol.toString());
+        // LOG_INFO("  Direction: {}", signal.direction == Direction::BUY ? "BUY" : "SELL");
+        // LOG_INFO("  Strength: {:.3f}", signal.strength);
+        // LOG_INFO("  Confidence: {}", signal.confidence);
         
         receivedSignals_.push_back(signal);
         simulateSignalExecution(signal);
@@ -200,8 +200,8 @@ private:
                         signal.strength * 100.0;
             result.signalStrength = signal.strength;
             
-            LOG_INFO("SIGNAL EXECUTION COMPLETED: {} with P&L: {:.2f}", 
-                          signal.id, result.pnl);
+            // LOG_INFO("SIGNAL EXECUTION COMPLETED: {} with P&L: {:.2f}", 
+            //               signal.id, result.pnl);
         }).detach();
     }
 };
@@ -259,7 +259,7 @@ int main() {
         auto startTime = std::chrono::steady_clock::now();
         size_t lastMessageCount = 0;
         
-        for (int cycle = 0; cycle < 12000; ++cycle) { // Run for 2 minutes
+        for (int cycle = 0; cycle < 520; ++cycle) { // Run for 2 minutes
             std::this_thread::sleep_for(1s);
             
             // Report every 10 seconds

@@ -48,7 +48,7 @@
          data_points_.pop_front();
      }
      //this log never been triggered
-     LOG_INFO("updateCorrelationModel:Added data point. Total points: {}", data_points_.size());
+    //  LOG_INFO("updateCorrelationModel:Added data point. Total points: {}", data_points_.size());
      // Only calculate correlations when we have enough data
      if (data_points_.size() >= params_.min_data_points) {
          calculateCorrelations();
@@ -378,7 +378,7 @@ void MomentumCorrelation::updateHighestCorrelatedMetrics() {
          current_regime_ = MarketRegime::NORMAL;
          return;
      }
-     std::cout<<"Updating market regime based on recent data...\n";
+    //  std::cout<<"Updating market regime based on recent data...\n";
      
      // Get recent price movements
      std::vector<double> recentMovements;
@@ -420,24 +420,24 @@ void MomentumCorrelation::updateHighestCorrelatedMetrics() {
      } else {
          current_regime_ = MarketRegime::NORMAL;
      }
-     std::cout<<"Current market regime: ";
-     switch (current_regime_) {
-         case MarketRegime::NORMAL:
-             std::cout<<"NORMAL\n";
-             break;
-         case MarketRegime::TRENDING:
-             std::cout<<"TRENDING\n";
-             break;
-         case MarketRegime::RANGE_BOUND:
-             std::cout<<"RANGE_BOUND\n";
-             break;
-         case MarketRegime::HIGH_VOLATILITY:
-             std::cout<<"HIGH_VOLATILITY\n";
-             break;
-         case MarketRegime::QUIET:
-             std::cout<<"QUIET\n";
-             break;
-     }
+    //  std::cout<<"Current market regime: ";
+    //  switch (current_regime_) {
+    //      case MarketRegime::NORMAL:
+    //          std::cout<<"NORMAL\n";
+    //          break;
+    //      case MarketRegime::TRENDING:
+    //          std::cout<<"TRENDING\n";
+    //          break;
+    //      case MarketRegime::RANGE_BOUND:
+    //          std::cout<<"RANGE_BOUND\n";
+    //          break;
+    //      case MarketRegime::HIGH_VOLATILITY:
+    //          std::cout<<"HIGH_VOLATILITY\n";
+    //          break;
+    //      case MarketRegime::QUIET:
+    //          std::cout<<"QUIET\n";
+    //          break;
+    //  }
  }
  
  double MomentumCorrelation::calculateWeightedPrediction(const ImbalanceEvent& event) const {
@@ -501,7 +501,7 @@ void MomentumCorrelation::updateHighestCorrelatedMetrics() {
              // No adjustment
              break;
      }
-     std::cout<<"Predicted price movement: "<<prediction<<"\n";
+    //  std::cout<<"Predicted price movement: "<<prediction<<"\n";
      return prediction;
  }
  

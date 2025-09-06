@@ -271,7 +271,7 @@
      
      double bidVolume = bidVolIt->second;
      double askVolume = askVolIt->second;
-     
+     //print bid and ask volume
      // Avoid division by zero
      if (askVolume < 1e-10) {
          askVolume = 1e-10;
@@ -291,28 +291,23 @@
      
      // If imbalance detected, create an event
      if (isImbalance) {
-            double strength;            
-            if (threshold <= 1.0 + 1e-6) {  // Handle threshold ~= 1.0
-                // Fallback to simple deviation for thresholds near 1.0
-                strength = std::min(1.0, std::abs(volumeRatio - 1.0));
+            double strength;                       
+            //simplified strength calculation
+            if (volumeRatio > threshold) {
+                strength = (volumeRatio - threshold) / threshold; // Normalize above threshold
+            } else if (volumeRatio < 1.0 / threshold) {
+                strength = (1.0/threshold - volumeRatio) / (1.0/threshold); // Normalize below inverse threshold
             } else {
-                // Normal case with proper bounds checking
-                double deviation = std::abs(volumeRatio - 1.0);
-                double maxDeviation = std::max(threshold - 1.0, 1.0 - (1.0/threshold));
-                
-                if (maxDeviation < 1e-10) {
-                    strength = 0.0;  // Avoid division by near-zero
-                } else {
-                    strength = std::min(1.0, deviation / maxDeviation);
-                }
-            }            
+                strength = 0.0; // Should not happen as isImbalance is true
+            }
+            strength = std::min(1.0, strength); // Cap at 1.0
             // Ensure strength is never negative or invalid
             if (strength < 0.0 || !std::isfinite(strength)) {
                 strength = 0.0;
             }
          Direction direction = (volumeRatio > 1.0) ? Direction::BUY : Direction::SELL;
          createImbalanceEvent(ImbalanceType::VOLUME_IMBALANCE, strength, direction, metrics);
-         std::cout<<"[TradingApp]ImbalanceDetectionEngine::detectVolumeImbalance:strength="<<strength<<", volumeRatio="<<volumeRatio<<", threshold="<<threshold<<"\n";
+        //  std::cout<<"[TradingApp]ImbalanceDetectionEngine::detectVolumeImbalance:strength="<<strength<<", volumeRatio="<<volumeRatio<<", threshold="<<threshold<<"\n";
 
      }
      
@@ -344,82 +339,38 @@
      double threshold = thresholds_.getTypeThreshold(ImbalanceType::PRICE_LEVEL_IMBALANCE).activation_threshold;
      
      // Detect imbalance if ratio exceeds threshold or is below its inverse
-     bool isImbalance = (levelRatio >= threshold || levelRatio <= 1.0 / threshold);
-     
+    //  bool isImbalance = (levelRatio >= threshold || levelRatio <= 1.0 / threshold);
+     // Detect imbalance if ratio exceeds threshold or is below its inverse
+    bool isImbalance = (levelRatio > threshold || levelRatio < 1.0 / threshold);
      // Update imbalance state
      imbalanceState_[ImbalanceType::PRICE_LEVEL_IMBALANCE] = isImbalance;
      
      // If imbalance detected, create an event
      if (isImbalance) {
         //  double strength = std::abs(levelRatio - 1.0);
-        double strength ;
-        if (threshold <= 1.0 + 1e-6) {  // Handle threshold ~= 1.0
-            // Fallback to simple deviation for thresholds near 1.0
-            strength = std::min(1.0, std::abs(levelRatio - 1.0));
+        double strength;
+        if (levelRatio > threshold) {
+            strength = (levelRatio - threshold) / threshold; // Normalize above threshold
+        } else if (levelRatio < 1.0 / threshold) {
+            strength = (1.0/threshold - levelRatio) / (1.0/threshold); // Normalize below inverse threshold
         } else {
-            // Logarithmic formula only for proper thresholds > 1.0
-            strength = std::log(std::max(levelRatio, 1.0/levelRatio)) / std::log(threshold);
-            strength = std::min(1.0, strength);
+            strength = 0.0; // Should not happen as isImbalance is true
         }
+        strength = std::min(1.0, strength); // Cap at 1.0
         
         // Ensure strength is never negative or invalid
         if (strength < 0.0 || !std::isfinite(strength)) {
             strength = 0.0;
         }
-        strength = std::min(1.0, strength); // Cap at 1.0
          Direction direction = (levelRatio > 1.0) ? Direction::BUY : Direction::SELL;
-         std::cout<<"[TradingApp] ImbalanceDetectionEngine::detectPriceLevelImbalance: levelRatio="<<levelRatio<<", threshold="<<threshold<<"\n";
+         
+        //  std::cout<<"[TradingApp] ImbalanceDetectionEngine::detectPriceLevelImbalance: strength="<<strength<<", levelRatio="<<levelRatio<<", threshold="<<threshold<<"\n";
          createImbalanceEvent(ImbalanceType::PRICE_LEVEL_IMBALANCE, strength, direction, metrics);
      }
      
      return isImbalance;
  }
  
- // Detect liquidity flow imbalance
-//  bool ImbalanceDetectionEngine::detectLiquidityFlowImbalance(const OrderBookMetrics& metrics) {
-//      // Check if required metrics are available
-//      auto bidFlowIt = metrics.metrics.find("bid_flow");
-//      auto askFlowIt = metrics.metrics.find("ask_flow");
-     
-//      if (bidFlowIt == metrics.metrics.end() || askFlowIt == metrics.metrics.end()) {
-//          return false; // Required metrics not available
-//      }
-     
-//      double bidFlow = bidFlowIt->second;
-//      double askFlow = askFlowIt->second;
-     
-//      // Calculate net flow (positive means bid flow dominates, negative means ask flow dominates)
-//      double netFlow = bidFlow - askFlow;
-     
-//      // Calculate absolute flow ratio (avoid division by zero)
-//      double totalFlow = std::abs(bidFlow) + std::abs(askFlow);
-//      if (totalFlow < 1e-10) {
-//          totalFlow = 1e-10;
-//      }
-     
-//      double flowImbalance = std::abs(netFlow) / totalFlow;
-     
-//      // Get threshold for liquidity flow imbalance
-//     //  double threshold = thresholds_[ImbalanceType::LIQUIDITY_FLOW_IMBALANCE];
-//      double threshold = thresholds_.getTypeThreshold(ImbalanceType::LIQUIDITY_FLOW_IMBALANCE).activation_threshold;
-//      double normalizedThreshold = 1.0 - (1.0 / threshold); // Convert ratio threshold to 0-1 range
-     
-//      // Detect imbalance if normalized flow exceeds threshold
-//      bool isImbalance = (flowImbalance >= normalizedThreshold);
-     
-//      // Update imbalance state
-//      imbalanceState_[ImbalanceType::LIQUIDITY_FLOW_IMBALANCE] = isImbalance;
-     
-//      // If imbalance detected, create an event
-//      if (isImbalance) {
-//          double strength = flowImbalance;
-//          Direction direction = (netFlow > 0) ? Direction::BUY : Direction::SELL;
-//         std::cout<<"[TradingApp] detectLiquidityFlowImbalance: flowImbalance="<<flowImbalance<<", normalizedThreshold="<<normalizedThreshold<<", threshold="<<threshold<<"\n";
-//          createImbalanceEvent(ImbalanceType::LIQUIDITY_FLOW_IMBALANCE, strength, direction, metrics);
-//      }
-     
-//      return isImbalance;
-//  }
 bool ImbalanceDetectionEngine::detectLiquidityFlowImbalance(const OrderBookMetrics& metrics) {
     // Check if required metrics are available
     auto bidFlowIt = metrics.metrics.find("bid_flow");
@@ -457,6 +408,13 @@ bool ImbalanceDetectionEngine::detectLiquidityFlowImbalance(const OrderBookMetri
 
     if (isImbalance) {
         double strength = flowImbalance;
+        // Normalize strength to [0,1]
+        strength = std::min(1.0, strength / threshold);
+        // Ensure strength is valid
+        if (strength < 0.0 || !std::isfinite(strength)) {
+            strength = 0.0;
+        }
+        strength = std::min(1.0, strength); // Cap at 1.0
         Direction direction = (netFlow > 0) ? Direction::BUY : Direction::SELL;
 
         std::cout << "[TradingApp] detectLiquidityFlowImbalance: "
@@ -507,7 +465,14 @@ bool ImbalanceDetectionEngine::detectLiquidityFlowImbalance(const OrderBookMetri
      // If imbalance detected, create an event
      if (isImbalance) {
          double strength = spreadRatio - 1.0;
-         
+         //normalize strength to [0,1]
+         strength = std::min(1.0, strength / (threshold - 1.0));
+         // Ensure strength is never negative or invalid
+         if (strength < 0.0 || !std::isfinite(strength)) {
+             strength = 0.0;
+         }
+         strength = std::min(1.0, strength); // Cap at 1.0
+
          // Widening spread often indicates uncertainty or selling pressure
          // This is a simplified heuristic - in real systems, you'd use additional data
          Direction direction = Direction::SELL;
@@ -525,7 +490,7 @@ bool ImbalanceDetectionEngine::detectLiquidityFlowImbalance(const OrderBookMetri
                  direction = Direction::BUY;
              }
          }
-         std::cout<<"[TradingApp] ImbalanceDetectionEngine::detectAbnormalSpread: spreadRatio="<<spreadRatio<<", threshold="<<threshold<<"\n";
+        //  std::cout<<"[TradingApp] ImbalanceDetectionEngine::detectAbnormalSpread: spreadRatio="<<spreadRatio<<", threshold="<<threshold<<"\n";
          createImbalanceEvent(ImbalanceType::ABNORMAL_SPREAD, strength, direction, metrics);
      }
      
