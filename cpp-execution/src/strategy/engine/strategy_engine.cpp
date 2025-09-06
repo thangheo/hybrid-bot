@@ -426,8 +426,10 @@ void StrategyEngine::processQueuedSignals() {
          // Find the signal
          auto it = activeSignals_.find(signalId);
          if (it == activeSignals_.end()) {
-            LOG_WARN("Received result for unknown signal: {}", signalId);
-             return false;
+            // LOG_WARN("Received result for unknown signal: {} - but still updating performance metrics", signalId);
+            // Still update performance metrics even if signal is not in active list
+            updatePerformanceMetrics(result);
+            return true; // Changed to true so we still track performance
          }
          
          // Record the signal performance for feedback
@@ -616,111 +618,7 @@ std::optional<ImbalanceEvent> StrategyEngine::findSourceEvent(
      std::lock_guard<std::recursive_mutex> lock(mutex_);
      return tradingPairStates_.find(pairId) != tradingPairStates_.end();
  }
-//  bool StrategyEngine::validateOrderBook(const data_ingestion::OrderBook& orderBook) const {
-//     // First check if we're tracking this trading pair
-//     auto symbol = orderBook.getSymbol();
-//     ExchangeId exchangeId = orderBook.getExchangeId();
-//     std::string pairId = exchangeId.toString() + ":" + symbol.toString();
-    
-//     {
-//         std::lock_guard<std::recursive_mutex> lock(mutex_);
-//         if (tradingPairStates_.find(pairId) == tradingPairStates_.end()) {
-//             return false; // Not tracking this pair
-//         }
-//     }
-    
-//     // Validate order book data quality
-//     if (!orderBook.isValid()) {
-//         LOG_WARN("Order book is marked as invalid for {}", pairId);
-//         return false;
-//     }
-    
-//     // Get bids and asks
-//     auto bids = orderBook.getBids(10);  // Get top 10 levels
-//     auto asks = orderBook.getAsks(10);
-    
-//     // Check if we have any data at all
-//     if (bids.empty() && asks.empty()) {
-//         LOG_WARN("Order book has no bids or asks for {}", pairId);
-//         return false;
-//     }
-    
-//     // Validate bid data quality
-//     if (!bids.empty()) {
-//         for (const auto& bid : bids) {
-//             if (bid.price <= 0.0 || bid.quantity <= 0.0) {
-//                 LOG_WARN("Invalid bid data: price={}, quantity={} for {}", 
-//                          bid.price, bid.quantity, pairId);
-//                 return false;
-//             }
-//             if (!std::isfinite(bid.price) || !std::isfinite(bid.quantity)) {
-//                 LOG_WARN("Non-finite bid data: price={}, quantity={} for {}", 
-//                          bid.price, bid.quantity, pairId);
-//                 return false;
-//             }
-//         }
-        
-//         // Check bid ordering (should be descending by price)
-//         for (size_t i = 1; i < bids.size(); ++i) {
-//             if (bids[i].price > bids[i-1].price) {
-//                 LOG_WARN("Bids not properly ordered for {}", pairId);
-//                 return false;
-//             }
-//         }
-//     }
-    
-//     // Validate ask data quality
-//     if (!asks.empty()) {
-//         for (const auto& ask : asks) {
-//             if (ask.price <= 0.0 || ask.quantity <= 0.0) {
-//                 LOG_WARN("Invalid ask data: price={}, quantity={} for {}", 
-//                          ask.price, ask.quantity, pairId);
-//                 return false;
-//             }
-//             if (!std::isfinite(ask.price) || !std::isfinite(ask.quantity)) {
-//                 LOG_WARN("Non-finite ask data: price={}, quantity={} for {}", 
-//                          ask.price, ask.quantity, pairId);
-//                 return false;
-//             }
-//         }
-        
-//         // Check ask ordering (should be ascending by price)
-//         for (size_t i = 1; i < asks.size(); ++i) {
-//             if (asks[i].price < asks[i-1].price) {
-//                 LOG_WARN("Asks not properly ordered for {}", pairId);
-//                 return false;
-//             }
-//         }
-//     }
-    
-//     // Cross-validation: if we have both bids and asks, check spread sanity
-//     if (!bids.empty() && !asks.empty()) {
-//         double bestBid = bids[0].price;
-//         double bestAsk = asks[0].price;
-        
-//         if (bestBid >= bestAsk) {
-//             LOG_WARN("Crossed book: bestBid={} >= bestAsk={} for {}", 
-//                      bestBid, bestAsk, pairId);
-//             return false;
-//         }
-        
-//         // Check for unreasonably wide spread (> 50%)
-//         double spread = (bestAsk - bestBid) / bestBid;
-//         if (spread > 0.5) {
-//             LOG_WARN("Unreasonably wide spread: {}% for {}", 
-//                      spread * 100, pairId);
-//             return false;
-//         }
-//     }
-    
-//     // Require at least one side to have data for meaningful analysis
-//     if (bids.empty() && asks.empty()) {
-//         LOG_WARN("Order book completely empty for {}", pairId);
-//         return false;
-//     }
-    
-//     return true;
-// }
+ 
 
  void StrategyEngine::signalMaintenanceWorker() {
      LOG_INFO("Signal maintenance thread started for strategy: {}", strategyId_);
@@ -880,8 +778,8 @@ bool StrategyEngine::initializeTradingPair(const std::string& symbol, ExchangeId
                 performance_.signalsExecuted;
         }
         
-        LOG_INFO("Updated performance metrics: totalPnl={}, successfulSignals={}, failedSignals={}", 
-                        performance_.totalPnl, performance_.successfulSignals, performance_.failedSignals);
+        // LOG_INFO("Updated performance metrics: totalPnl={}, successfulSignals={}, failedSignals={}", 
+        //                 performance_.totalPnl, performance_.successfulSignals, performance_.failedSignals);
  }
  
  void StrategyEngine::recordSignalPerformance(const std::string& signalId, const SignalExecutionResult& result) {

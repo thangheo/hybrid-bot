@@ -158,7 +158,10 @@ private:
     size_t signalGeneratedSubscriptionId_; //subscription id for signal generated events from event bus
     //event bus
     // size_t eventSubscriptionId_ = 0;  
-        //
+    // signalQueueMutex_
+    std::mutex signalQueueMutex_;
+    // std::vector<TradingSignal> signalQueue_;
+    std::vector<TradingSignal> queuedSignals_;
     // Component instances
     OrderBookAnalyzerPtr orderBookAnalyzer_;
     ImbalanceDetectionEnginePtr imbalanceDetector_;
@@ -193,7 +196,7 @@ private:
     std::atomic<bool> runMaintenanceThread_{false};
     
     TradingSignal enhanceSignalWithEventContext(const TradingSignal& signal, const ImbalanceEvent& event) const;
-
+    void processQueuedSignals();
     // Internal processing methods
     void processImbalanceEvents(const std::vector<ImbalanceEvent>& events);
     void maintainSignals();
