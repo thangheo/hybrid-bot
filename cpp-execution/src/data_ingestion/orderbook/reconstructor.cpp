@@ -431,24 +431,74 @@ void OrderBookReconstructor::registerLiquidityFlowMonitor(
     return true;
 }
  
-void OrderBookReconstructor::publishOrderBook(const std::shared_ptr<OrderBook>& order_book) {
-     if (!publisher_ || !order_book) {
-         return;
-     }
+// void OrderBookReconstructor::publishOrderBook(const std::shared_ptr<OrderBook>& order_book) {
+//      if (!publisher_ || !order_book) {
+//          return;
+//      }
      
-    OrderBookUpdate update = order_book->getSnapshot();
-    std::string payload = update.exchangeId.toString() + ":" + update.tradingPair + ":" +
-        std::to_string(update.sequenceNumber) + ":" +
-        std::to_string(timestampToMillis(update.exchangeTimestamp)) + ":" +
-        std::to_string(timestampToMillis(update.receivedTimestamp));
-    std::vector<unsigned char> binary_payload(payload.begin(), payload.end());
-    // Serialize the order book data
-    // This is a placeholder for actual serialization logic
+//     OrderBookUpdate update = order_book->getSnapshot();
+//     std::string payload = update.exchangeId.toString() + ":" + update.tradingPair + ":" +
+//         std::to_string(update.sequenceNumber) + ":" +
+//         std::to_string(timestampToMillis(update.exchangeTimestamp)) + ":" +
+//         std::to_string(timestampToMillis(update.receivedTimestamp));
+//     std::vector<unsigned char> binary_payload(payload.begin(), payload.end());
+//     // Serialize the order book data
+//     // This is a placeholder for actual serialization logic
 
-    // Publish message
-    publisher_->publish("orderbook", binary_payload);
+//     // Publish message
+//     publisher_->publish("orderbook", binary_payload);
 
- }
- 
+//  }
+ void OrderBookReconstructor::publishOrderBook(const std::shared_ptr<OrderBook>& order_book) {
+    if (!publisher_ || !order_book) {
+        return;
+    }
+    
+    try {
+        // Get the full order book snapshot
+        OrderBookUpdate update = order_book->getSnapshot();
+        
+        // Create a proper message with order book data
+        nlohmann::json message;
+        
+        // Header information
+        message["exchangeId"] = update.exchangeId.toString();
+        message["tradingPair"] = update.tradingPair;
+        message["sequenceNumber"] = update.sequenceNumber;
+        message["exchangeTimestamp"] = timestampToMillis(update.exchangeTimestamp);
+        message["receivedTimestamp"] = timestampToMillis(update.receivedTimestamp);
+        message["isSnapshot"] = update.isSnapshot;
+        
+        // Bids data
+        message["bids"] = nlohmann::json::array();
+        for (const auto& bid : update.bids) {
+            message["bids"].push_back({
+                {"price", bid.price},
+                {"quantity", bid.quantity}
+            });
+        }
+        
+        // Asks data  
+        message["asks"] = nlohmann::json::array();
+        for (const auto& ask : update.asks) {
+            message["asks"].push_back({
+                {"price", ask.price},
+                {"quantity", ask.quantity}
+            });
+        }
+        
+        // Convert to binary payload
+        std::string jsonStr = message.dump();
+        std::vector<unsigned char> binaryPayload(jsonStr.begin(), jsonStr.end());
+        
+        // Publish with proper topic
+        std::string topic = "orderbook." + update.exchangeId.toString() + "." + update.tradingPair;
+        publisher_->publish(topic, binaryPayload);
+        
+    } catch (const std::exception& e) {
+        std::cerr << "Error publishing order book: " << e.what() << std::endl;
+    }
+}
+
  } // namespace data_ingestion
 } // namespace trading
