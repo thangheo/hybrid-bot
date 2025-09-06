@@ -9,7 +9,84 @@
     {
       "symbol": "ETH/USDT", 
       "exchange": "BINANCE"
+    },
+    {
+      "symbol": "BNB/USDT", 
+      "exchange": "BINANCE"
+    },
+    {
+      "symbol": "LTC/USDT", 
+      "exchange": "BINANCE"
+    },
+    {
+      "symbol": "XRP/USDT", 
+      "exchange": "BINANCE"
+    },
+    {
+      "symbol": "BCH/USDT", 
+      "exchange": "BINANCE"
+    },
+    {
+      "symbol": "ADA/USDT", 
+      "exchange": "BINANCE"
+    },
+    {
+      "symbol": "DOT/USDT", 
+      "exchange": "BINANCE"
+    },
+    {
+      "symbol": "LINK/USDT", 
+      "exchange": "BINANCE"
+    },
+    {
+      "symbol": "XLM/USDT", 
+      "exchange": "BINANCE"
+    },
+    {
+      "symbol": "DOGE/USDT", 
+      "exchange": "BINANCE"
+    },
+    {
+      "symbol": "SOL/USDT", 
+      "exchange": "BINANCE"
+    },
+    {
+      "symbol": "MATIC/USDT", 
+      "exchange": "BINANCE"
+    },
+    {
+      "symbol": "AVAX/USDT", 
+      "exchange": "BINANCE"
+    },
+    {
+      "symbol": "SHIB/USDT", 
+      "exchange": "BINANCE"
+    },
+    {
+      "symbol": "TRX/USDT", 
+      "exchange": "BINANCE"
+    },
+    {
+      "symbol": "UNI/USDT", 
+      "exchange": "BINANCE"
+    },
+    {
+      "symbol": "ATOM/USDT", 
+      "exchange": "BINANCE"
+    },
+    {
+      "symbol": "ALGO/USDT", 
+      "exchange": "BINANCE"
+    },
+    {
+      "symbol": "VET/USDT", 
+      "exchange": "BINANCE"
+    },
+    {
+      "symbol": 	"FIL/USDT", 
+      "exchange": 	"BINANCE"
     }
+
   ],
   "parameters": {
     "numeric": {
