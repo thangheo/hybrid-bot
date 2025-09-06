@@ -101,7 +101,7 @@ class OrderManager:
             result = await self.exchange.create_market_order(
                 symbol=order.symbol,
                 side=side_value,
-                amount=order.getQuantity()
+                amount=order.quantity
             )
             
             # Update order with result
@@ -125,7 +125,7 @@ class OrderManager:
     async def _execute_limit_order(self, order: Order) -> Tuple[bool, str]:
         """Execute limit order using CCXT"""
         try:
-            if not order.getPrice():
+            if not order.price:
                 return False, "Limit order requires price"
             
             # CCXT expects lowercase strings
@@ -134,15 +134,15 @@ class OrderManager:
             result = await self.exchange.create_limit_order(
                 symbol=order.symbol,
                 side=side_value,
-                amount=order.getQuantity(),
-                price=order.getPrice()
+                amount=order.quantity,
+                price=order.price
             )
             
             order.exchange_order_id = result['id']
             order.status = OrderStatus.SUBMITTED
-            
-            return True, f"Limit order placed at {order.getPrice()}"
-            
+
+            return True, f"Limit order placed at {order.price}"
+
         except Exception as e:
             return False, f"Limit order failed: {str(e)}"
     
@@ -160,8 +160,8 @@ class OrderManager:
                 symbol=order.symbol,
                 type='stop_loss_limit',
                 side=side_value,
-                amount=order.getQuantity(),
-                price=order.getPrice() or order.stop_price,  # limit price
+                amount=order.quantity,
+                price=order.price or order.stop_price,  # limit price
                 params={'stopPrice': order.stop_price}
             )
             
@@ -176,7 +176,7 @@ class OrderManager:
     async def _execute_take_profit_order(self, order: Order) -> Tuple[bool, str]:
         """Execute take profit order using CCXT"""
         try:
-            if not order.getPrice():
+            if not order.price:
                 return False, "Take profit order requires price"
             
             # CCXT expects lowercase strings
@@ -188,16 +188,16 @@ class OrderManager:
                 symbol=order.symbol,
                 type='take_profit_limit',
                 side=side_value,
-                amount=order.getQuantity(),
-                price=order.getPrice(),  # limit price
-                params={'stopPrice': order.getPrice()}  # trigger price same as limit price
+                amount=order.quantity,
+                price=order.price,  # limit price
+                params={'stopPrice': order.price}  # trigger price same as limit price
             )
             
             order.exchange_order_id = result['id']
             order.status = OrderStatus.SUBMITTED
-            
-            return True, f"Take profit order placed at {order.getPrice()}"
-            
+
+            return True, f"Take profit order placed at {order.price}"
+
         except Exception as e:
             # Fallback to regular limit order if take_profit_limit not supported
             logger.warning(f"Take profit order type not supported, using limit order: {e}")
@@ -266,7 +266,7 @@ class OrderManager:
                     continue
                     
                 total = data.get('total', 0)
-                if total > 0 and asset != 'USDT':  # Skip base currency
+                if isinstance(total, (int, float)) and total > 0 and asset != 'USDT':  # Skip base currency
                     symbol = f"{asset}/USDT"
                     positions[symbol] = total
             
@@ -280,19 +280,19 @@ class OrderManager:
     
     def _validate_order(self, order: Order) -> bool:
         """Basic order validation - keep values as strings for CCXT"""
-        if not order.symbol or order.getQuantity() <= 0:
+        if not order.symbol or order.quantity <= 0:
             return False
         
         # Convert order_type to lowercase string for CCXT compliance
         order_type_str = self._normalize_to_ccxt_string(order.order_type)
-        
-        if order_type_str == 'limit' and not order.getPrice():
+
+        if order_type_str == 'limit' and not order.price:
             return False
         
         if order_type_str == 'stop_loss' and not order.stop_price:
             return False
         
-        if order_type_str == 'take_profit' and not order.getPrice():
+        if order_type_str == 'take_profit' and not order.price:
             return False
         
         return True
