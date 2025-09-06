@@ -24,6 +24,7 @@ target_include_directories(strategy
     PRIVATE
         ${CMAKE_SOURCE_DIR}/include/common
         ${CMAKE_SOURCE_DIR}/include/data_ingestion
+        ${CMAKE_SOURCE_DIR}/include/core
 )
 
 # Link required libraries to the strategy library

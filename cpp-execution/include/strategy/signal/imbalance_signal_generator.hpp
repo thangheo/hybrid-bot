@@ -143,8 +143,6 @@ private:
     std::vector<ImbalanceEvent> pendingImbalances_;
     std::vector<TradingSignal> generatedSignals_;
     std::atomic<uint64_t> signalCount_;
-    trading::core::ConfidenceLevel valueToConfidenceLevel(double value) const;
-    double confidenceLevelToValue(trading::core::ConfidenceLevel level) const;
 
     // Associated components
     MomentumCorrelationPtr momentumCorrelation_;

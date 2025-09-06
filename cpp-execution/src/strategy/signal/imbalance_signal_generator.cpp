@@ -73,13 +73,7 @@ bool ImbalanceSignalGenerator::initialize(const SignalGeneratorConfig& config) {
      // Check if imbalance passes filtering criteria
      if (!passesSignalFilters(imbalance)) {
          return false;
-     }
-     //add exchange and symbol to the debug print
-    //  std::cout<<"Processing imbalance event: Type="<<imbalanceTypeToString(imbalance.type)
-    //           <<", Direction="<<(imbalance.direction == core::Direction::BUY ? "BUY" : (imbalance.direction == core::Direction::SELL ? "SELL" : "NEUTRAL"))
-    //           <<", Strength="<<imbalance.strength<<", Confidence="<<confidenceLevelToValue(imbalance.confidence)<<"\n";
-    //  std::cout<<"Exchange="<<imbalance.exchangeId.toString()<<", Symbol="<<imbalance.symbol.toString()<<"\n";
-
+     } 
      // Store the imbalance for signal generation
      pendingImbalances_.push_back(imbalance);
      
@@ -175,8 +169,8 @@ bool ImbalanceSignalGenerator::initialize(const SignalGeneratorConfig& config) {
     signal.correlationId = imbalance.eventId;  // ← Add this line
      signal.direction = imbalance.direction;
      signal.strength = calculateSignalStrength(imbalance);
-    //  signal.confidence = static_cast<double>(imbalance.confidence) / 100.0; // Convert from enum to 0-1 range
-    signal.confidence = confidenceLevelToValue(imbalance.confidence); // Convert from enum to 0-1 range
+
+     signal.confidence = trading::core::confidenceLevelToValue(imbalance.confidence);
      signal.generation_time = std::chrono::system_clock::now();
      signal.ttl = std::chrono::milliseconds(config_.signalTtlMs);
      signal.source_type = imbalance.type;
@@ -189,9 +183,7 @@ bool ImbalanceSignalGenerator::initialize(const SignalGeneratorConfig& config) {
      // Copy relevant metrics
      for (const auto& metric : imbalance.supportingMetrics) {
          signal.setMetric(metric.first, metric.second);
-     }
-    //  std::cout<<"Creating signal from imbalance: ID="<<signal.id<<", Direction="<< (signal.direction == core::Direction::BUY ? "BUY" : "SELL") 
-    //           <<", Strength="<<signal.strength<<", Confidence="<<signal.confidence<<"\n";
+     } 
      // Apply momentum correlation if available
      if (momentumCorrelation_) {
          double predictedMove = momentumCorrelation_->predictPriceMovement(imbalance);
@@ -202,16 +194,24 @@ bool ImbalanceSignalGenerator::initialize(const SignalGeneratorConfig& config) {
          signal.setMetric("momentum_correlation", correlation);
          
          // Adjust confidence based on correlation
-         if (correlation > 0.5) {
-             signal.confidence = std::min(1.0, signal.confidence * (1.0 + (correlation - 0.5)));
-         } else if (correlation < 0.3) {
-             signal.confidence = signal.confidence * (correlation / 0.3);
-         }
-     }
-     else{
-         std::cout<<"No momentum correlation component set.\n";
-     }
-     
+        // More balanced confidence adjustment based on correlation
+        std::cout << "Momentum correlation for imbalance type " << imbalanceTypeStr << ": " << correlation << "\n";
+        if (correlation >= 0.5) {
+            // Boost confidence for strong positive correlation
+            double boost = 1.0 + 0.5 * (correlation - 0.5); // Max 1.25x boost
+            signal.confidence = std::min(1.0, signal.confidence * boost);
+        } else {
+            // Gradually reduce confidence for weak correlation
+            double penalty = 0.5 + 0.5 * (correlation / 0.5); // Range: 0.5x to 1.0x
+            signal.confidence = signal.confidence * penalty;
+        }
+        // Ensure confidence is within [0, 1]
+        signal.confidence = std::max(0.0, std::min(1.0, signal.confidence));
+        std::cout << "Adjusted signal confidence: " << signal.confidence << "\n";
+    } else {
+        std::cout << "No momentum correlation component set.\n";
+    }
+
      // Apply threshold adjustments if available
      if (thresholdManager_) {
          double sensitivity = thresholdManager_->getGlobalSensitivity();
@@ -226,29 +226,6 @@ bool ImbalanceSignalGenerator::initialize(const SignalGeneratorConfig& config) {
     //           <<", Strength="<<signal.strength<<", Confidence="<<signal.confidence<<"\n";
      return signal;
  }
-trading::core::ConfidenceLevel ImbalanceSignalGenerator::valueToConfidenceLevel(double value)const {       
-        if (value < 0.2) {
-            return trading::core::ConfidenceLevel::VERY_LOW;
-        } else if (value < 0.4) {
-            return trading::core::ConfidenceLevel::LOW;
-        } else if (value < 0.6) {
-            return trading::core::ConfidenceLevel::MEDIUM;
-        } else if (value < 0.8) {
-            return trading::core::ConfidenceLevel::HIGH;
-        } else {
-            return trading::core::ConfidenceLevel::VERY_HIGH;
-        }
-}
-double ImbalanceSignalGenerator::confidenceLevelToValue(trading::core::ConfidenceLevel level) const {
-    switch (level) {
-        case trading::core::ConfidenceLevel::VERY_HIGH: return 1.0;
-        case trading::core::ConfidenceLevel::HIGH: return 0.8;
-        case trading::core::ConfidenceLevel::MEDIUM: return 0.6;
-        case trading::core::ConfidenceLevel::LOW: return 0.4;
-        case trading::core::ConfidenceLevel::VERY_LOW: return 0.2;
-        default: return 0.5;
-    }
-}
 
 // Check if an imbalance event passes signal generation filters
 bool ImbalanceSignalGenerator::passesSignalFilters(const ImbalanceEvent& imbalance) const {
@@ -262,7 +239,7 @@ bool ImbalanceSignalGenerator::passesSignalFilters(const ImbalanceEvent& imbalan
      }
      
      // Check minimum confidence
-     if (confidenceLevelToValue(imbalance.confidence) < config_.confidenceThreshold) {
+     if (trading::core::confidenceLevelToValue(imbalance.confidence) < config_.confidenceThreshold) {
          return false;
      }
      

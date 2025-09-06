@@ -94,7 +94,6 @@ public:
     // void updateParameters(const CorrelationParameters& params);
     void updateParameters(const ParameterSet& params);
     
-    
     /**
      * @brief Get the number of data points used in correlation analysis
      * @return Number of data points
@@ -140,7 +139,9 @@ private:
     std::map<std::string, double> correlation_strengths_;
     std::map<std::string, double> feature_importance_;
     MarketRegime current_regime_ = MarketRegime::NORMAL;
-    
+    double calculatePearsonCorrelation(const std::vector<double>& x, const std::vector<double>& y) const;
+    // std::string imbalanceTypeToString(ImbalanceType type) const;
+
     /**
      * @brief Calculate correlation coefficients from stored data points
      */

@@ -115,7 +115,7 @@ void StrategyEngine::handleSignalGenerated(const TradingSignal& signal) {
         // Queue the signal for later processing
         std::lock_guard<std::mutex> qlock(signalQueueMutex_);
         queuedSignals_.push_back(signal);
-        LOG_WARN("Could not acquire lock in handleSignalGenerated - queued signal {}", signal.id);
+        // LOG_WARN("Could not acquire lock in handleSignalGenerated - queued signal {}", signal.id);
         return;
     }
     activeSignals_[signal.id] = signal;

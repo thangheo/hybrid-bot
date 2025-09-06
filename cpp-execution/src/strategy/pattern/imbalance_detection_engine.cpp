@@ -228,37 +228,24 @@
 }
  // PRIVATE METHODS
 
-
- //strength normalizer helper
-    double ImbalanceDetectionEngine::calculateImbalanceConfidence(ImbalanceType type, double strength, const OrderBookMetrics& metrics) {
-        // Basic normalization based on type-specific thresholds
-        ImbalanceThreshold threshold = thresholds_.getTypeThreshold(type);
-        double normalizedStrength = strength;
-        
-        if (threshold.max_threshold > threshold.min_threshold) {
-            normalizedStrength = (strength - threshold.min_threshold) / (threshold.max_threshold - threshold.min_threshold);
-            normalizedStrength = std::clamp(normalizedStrength, 0.0, 1.0);
-        } else {
-            normalizedStrength = std::clamp(strength, 0.0, 1.0);
-        }
-        
-        // Further adjust confidence based on market conditions
-        // For example, higher confidence during high liquidity or low volatility
-        double liquidityFactor = (metrics.total_bid_volume + metrics.total_ask_volume) / 2.0;
-        double volatilityFactor = metrics.volatility_expectation; // Assuming this is a value between 0 and 1
-        
-        // Simple heuristic: increase confidence with liquidity, decrease with volatility
-        double liquidityWeight = 0.5; // Weight for liquidity impact
-        double volatilityWeight = 0.5; // Weight for volatility impact
-        
-        double liquidityAdjustment = (liquidityFactor > 1000.0) ? liquidityWeight : (liquidityFactor / 1000.0) * liquidityWeight;
-        double volatilityAdjustment = (volatilityFactor < 0.5) ? volatilityWeight : (1.0 - volatilityFactor) * volatilityWeight;
-        
-        double adjustedConfidence = normalizedStrength + liquidityAdjustment - volatilityAdjustment;
-        adjustedConfidence = std::clamp(adjustedConfidence, 0.0, 1.0);
-        
-        return adjustedConfidence;
-    }
+double ImbalanceDetectionEngine::calculateImbalanceConfidence(ImbalanceType type, double strength, const OrderBookMetrics& metrics) {
+    // Strength is already normalized (0-1), so use it directly
+    double baseConfidence = std::clamp(strength, 0.0, 1.0);
+    
+    // Adjust confidence based on market conditions
+    double liquidityFactor = (metrics.total_bid_volume + metrics.total_ask_volume) / 2.0;
+    double volatilityFactor = metrics.volatility_expectation;
+    
+    // Simple heuristic adjustments
+    double liquidityWeight = 0.1; // Reduced impact
+    double volatilityWeight = 0.1; // Reduced impact
+    
+    double liquidityAdjustment = (liquidityFactor > 1000.0) ? liquidityWeight : (liquidityFactor / 1000.0) * liquidityWeight;
+    double volatilityAdjustment = (volatilityFactor < 0.5) ? volatilityWeight : (1.0 - volatilityFactor) * volatilityWeight;
+    
+    double adjustedConfidence = baseConfidence + liquidityAdjustment - volatilityAdjustment;
+    return std::clamp(adjustedConfidence, 0.0, 1.0);
+}
  // Detect volume imbalance
  bool ImbalanceDetectionEngine::detectVolumeImbalance(const OrderBookMetrics& metrics) {
      // Check if required metrics are available
@@ -638,27 +625,6 @@ bool ImbalanceDetectionEngine::detectLiquidityFlowImbalance(const OrderBookMetri
      
      return direction;
  }
-//  valueToConfidenceLevel
-    trading::core::ConfidenceLevel ImbalanceDetectionEngine::valueToConfidenceLevel(double value) {
-        //  enum class ConfidenceLevel {
-        //     VERY_LOW,
-        //     LOW,
-        //     MEDIUM,
-        //     HIGH,
-        //     VERY_HIGH
-        // };
-        if (value < 0.2) {
-            return trading::core::ConfidenceLevel::VERY_LOW;
-        } else if (value < 0.4) {
-            return trading::core::ConfidenceLevel::LOW;
-        } else if (value < 0.6) {
-            return trading::core::ConfidenceLevel::MEDIUM;
-        } else if (value < 0.8) {
-            return trading::core::ConfidenceLevel::HIGH;
-        } else {
-            return trading::core::ConfidenceLevel::VERY_HIGH;
-        }
-    }
 
  void ImbalanceDetectionEngine::createImbalanceEvent(ImbalanceType type, double strength, Direction direction, const OrderBookMetrics& metrics) {
     // Validate inputs
@@ -679,7 +645,7 @@ bool ImbalanceDetectionEngine::detectLiquidityFlowImbalance(const OrderBookMetri
     event.detectionTime = std::chrono::system_clock::now();
     event.exchangeId = metrics.exchangeId;
     event.symbol = metrics.symbol;
-    event.confidence = valueToConfidenceLevel(calculateImbalanceConfidence(type, strength, metrics)); 
+    event.confidence = trading::core::valueToConfidenceLevel(calculateImbalanceConfidence(type, strength, metrics)); 
     event.eventId = generateEventId();
     
     // Copy relevant metrics
