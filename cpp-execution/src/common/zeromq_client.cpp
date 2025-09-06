@@ -56,62 +56,63 @@ bool ZeroMQClient::start() {
         return true;
     }
     
-    // Initialize publisher socket
-    try {
-        publisher_ = std::make_unique<zmq::socket_t>(context_, ZMQ_PUB);
-        
-        // Configure socket options
-        publisher_->set(zmq::sockopt::sndhwm, static_cast<int>(config_.sendHighWaterMark));
-        publisher_->set(zmq::sockopt::linger, static_cast<int>(config_.linger ? config_.lingerTimeoutMs : 0));
-        
-        // Connect the socket
-        publisher_->connect(config_.publisherEndpoint);
-        publisherStatus_ = ConnectionStatus::CONNECTING;
-        
-        logWithTimestamp("INFO", "Publisher connecting to " + config_.publisherEndpoint);
-    } catch (const zmq::error_t& e) {
-        logError("Publisher initialization", e.what());
-        publisherStatus_ = ConnectionStatus::FAILED;
-        return false;
+    // Only initialize publisher socket if endpoint is provided
+    if (!config_.publisherEndpoint.empty()) {
+        try {
+            publisher_ = std::make_unique<zmq::socket_t>(context_, ZMQ_PUB);
+            publisher_->set(zmq::sockopt::sndhwm, static_cast<int>(config_.sendHighWaterMark));
+            publisher_->set(zmq::sockopt::linger, static_cast<int>(config_.linger ? config_.lingerTimeoutMs : 0));
+            publisher_->connect(config_.publisherEndpoint);
+            publisherStatus_ = ConnectionStatus::CONNECTING;
+            logWithTimestamp("INFO", "Publisher connecting to " + config_.publisherEndpoint);
+        } catch (const zmq::error_t& e) {
+            logError("Publisher initialization", e.what());
+            publisherStatus_ = ConnectionStatus::FAILED;
+            return false;
+        }
+    } else {
+        logWithTimestamp("INFO", "No publisher endpoint provided - subscriber only mode");
+        publisherStatus_ = ConnectionStatus::DISCONNECTED; // Not an error, just not used
     }
     
-    // Initialize subscriber socket
-    try {
-        subscriber_ = std::make_unique<zmq::socket_t>(context_, ZMQ_SUB);
-        
-        // Configure socket options
-        subscriber_->set(zmq::sockopt::rcvhwm, static_cast<int>(config_.receiveHighWaterMark));
-        subscriber_->set(zmq::sockopt::linger, static_cast<int>(config_.linger ? config_.lingerTimeoutMs : 0));
-        
-        // Connect the socket
-        subscriber_->connect(config_.subscriberEndpoint);
-        subscriberStatus_ = ConnectionStatus::CONNECTING;
-        
-        // Resubscribe to all topics
-        {
-            std::lock_guard<std::mutex> lock(topicsMutex_);
-            for (const auto& topic : topics_) {
-                try {
-                    subscriber_->set(zmq::sockopt::subscribe, topic);
-                } catch (const zmq::error_t& e) {
-                    logError("Topic resubscription", "Failed to resubscribe to " + topic + ": " + e.what());
+    // Only initialize subscriber socket if endpoint is provided
+    if (!config_.subscriberEndpoint.empty()) {
+        try {
+            subscriber_ = std::make_unique<zmq::socket_t>(context_, ZMQ_SUB);
+            subscriber_->set(zmq::sockopt::rcvhwm, static_cast<int>(config_.receiveHighWaterMark));
+            subscriber_->set(zmq::sockopt::linger, static_cast<int>(config_.linger ? config_.lingerTimeoutMs : 0));
+            subscriber_->connect(config_.subscriberEndpoint);
+            subscriberStatus_ = ConnectionStatus::CONNECTING;
+            
+            // Resubscribe to all topics
+            {
+                std::lock_guard<std::mutex> lock(topicsMutex_);
+                for (const auto& topic : topics_) {
+                    try {
+                        subscriber_->set(zmq::sockopt::subscribe, topic);
+                    } catch (const zmq::error_t& e) {
+                        logError("Topic resubscription", "Failed to resubscribe to " + topic + ": " + e.what());
+                    }
                 }
             }
+            
+            logWithTimestamp("INFO", "Subscriber connecting to " + config_.subscriberEndpoint);
+        } catch (const zmq::error_t& e) {
+            logError("Subscriber initialization", e.what());
+            subscriberStatus_ = ConnectionStatus::FAILED;
+            return false;
         }
-        
-        logWithTimestamp("INFO", "Subscriber connecting to " + config_.subscriberEndpoint);
-    } catch (const zmq::error_t& e) {
-        logError("Subscriber initialization", e.what());
-        subscriberStatus_ = ConnectionStatus::FAILED;
-        return false;
+    } else {
+        logWithTimestamp("INFO", "No subscriber endpoint provided - publisher only mode");
+        subscriberStatus_ = ConnectionStatus::DISCONNECTED; // Not an error, just not used
     }
     
-    // Allow time for connections to establish
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    
-    // Start the receive thread
-    running_ = true;
-    receiveThread_ = std::thread(&ZeroMQClient::receiveWorker, this);
+    // Only start receive thread if we have a subscriber
+    if (subscriber_) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        running_ = true;
+        receiveThread_ = std::thread(&ZeroMQClient::receiveWorker, this);
+    }
     
     logWithTimestamp("INFO", "ZeroMQ client started");
     return true;
