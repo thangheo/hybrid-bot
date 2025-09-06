@@ -16,6 +16,8 @@
 namespace trading {
 namespace events {
 
+    // 
+
 /**
  * Event fired when order book metrics are updated
  */

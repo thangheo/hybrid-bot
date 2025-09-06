@@ -16,7 +16,9 @@
  #include <algorithm>
  #include <sstream>
  #include <iomanip>
- 
+#include <iostream>
+#include <logger.hpp>
+
  namespace trading {
  namespace strategy {
  
@@ -45,7 +47,7 @@
  
  // Initialize the strategy engine with configuration
  bool StrategyEngine::initialize(const StrategyConfig& config) {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     
     if (state_ != StrategyState::CREATED && state_ != StrategyState::STOPPED) {
         LOG_ERROR("Cannot initialize strategy engine in current state: {}", 
@@ -71,25 +73,21 @@
         // Set up component dependencies
         signalGenerator_->setMomentumCorrelation(momentumCorrelator_);
         signalGenerator_->setThresholdManager(thresholdManager_);
-        
-        // Register callbacks between components
-        // size_t callbackId = signalGenerator_->registerSignalCallback([this](const TradingSignal& signal) {
-        //     this->notifySignalCallbacks(signal);
-        //     this->activeSignals_[signal.id] = signal;
-        // });
-        //use event bus
-                
-        // NEW: In StrategyEngine::initialize()
+               
         imbalanceSubscriptionId_ = common::EventBus::getInstance().subscribe<events::ImbalanceDetectedEvent>(
             [this](const events::ImbalanceDetectedEvent& event) {
                 this->processImbalanceEvents({event.imbalance});
             }
         );
-        eventSubscriptionId_ = common::EventBus::getInstance().subscribe<events::SignalGeneratedEvent>(
-            [this](const events::SignalGeneratedEvent& event) {
+        //subscribe to signal generated events
+        signalGeneratedSubscriptionId_ = common::EventBus::getInstance().subscribe<events::SignalGeneratedEvent>(
+            [this](const events::SignalGeneratedEvent& event)
+            {
                 this->handleSignalGenerated(event.signal);
             }
         );
+        // Remove signal generated event subscription to avoid circular dependencies
+        // We use direct callbacks from the signal generator instead
 
         // Initialize trading pairs
         for (const auto& pair : config_.tradingPairs) {
@@ -112,14 +110,23 @@
     }
 }
 void StrategyEngine::handleSignalGenerated(const TradingSignal& signal) {
-    // No locks needed here - this runs in event thread
-    std::lock_guard<std::mutex> lock(mutex_);
+    // Use try_lock to avoid deadlocks - if we can't get the lock, just log a warning
+    std::unique_lock<std::recursive_mutex> lock(mutex_, std::defer_lock);
+    if (!lock.try_lock()) {
+        LOG_WARN("Could not acquire lock in handleSignalGenerated - skipping signal {}", signal.id);
+        return;
+    }
+    
     activeSignals_[signal.id] = signal;
-    notifySignalCallbacks(signal);
+    // Don't call notifySignalCallbacks again here - it would create infinite recursion
+    LOG_INFO("New trading signal generated: ID={}, Symbol={}, Exchange={}, Direction={}, Strength={:.2f}, Confidence={:.2f}",
+             signal.id, signal.symbol.toString(), signal.exchangeId.toString(),
+             (signal.direction == core::Direction::BUY ? "BUY" : (signal.direction == core::Direction::SELL ? "SELL" : "NEUTRAL")),
+             signal.strength, signal.confidence);
 }
  // Start the strategy engine
  bool StrategyEngine::start() {
-     std::lock_guard<std::mutex> lock(mutex_);
+     std::lock_guard<std::recursive_mutex> lock(mutex_);
      
      if (state_ != StrategyState::INITIALIZED && state_ != StrategyState::STOPPED) {
          LOG_ERROR("Cannot start strategy engine in current state: {}", 
@@ -144,7 +151,7 @@ void StrategyEngine::handleSignalGenerated(const TradingSignal& signal) {
  // Stop the strategy engine
  bool StrategyEngine::stop() {
      {
-         std::lock_guard<std::mutex> lock(mutex_);
+         std::lock_guard<std::recursive_mutex> lock(mutex_);
          
          if (state_ != StrategyState::RUNNING) {
              LOG_ERROR("Cannot stop strategy engine in current state: {}", 
@@ -162,7 +169,7 @@ void StrategyEngine::handleSignalGenerated(const TradingSignal& signal) {
      }
      
      {
-         std::lock_guard<std::mutex> lock(mutex_);
+         std::lock_guard<std::recursive_mutex> lock(mutex_);
          state_ = StrategyState::STOPPED;
          LOG_INFO("Strategy Engine stopped: {}", strategyId_);
      }
@@ -176,23 +183,17 @@ void StrategyEngine::handleSignalGenerated(const TradingSignal& signal) {
      if (state_ != StrategyState::RUNNING) {
          return false;
      }
-     
-     // Validate the order book data
      if (!validateOrderBook(orderBook)) {
          return false;
      }
      
      try {
-         // Process through the analysis pipeline
+         // Process through the analysis pipeline (no locking needed for these)
          orderBookAnalyzer_->processOrderBook(orderBook);
          
          // Get the metrics from the analyzer
          auto metrics = orderBookAnalyzer_->getMetrics();
          
-        // Update the liquidity flow monitor
-        // option 1: use the order book directly
-        // Process the order book delta
-        // auto delta = orderBook.getOrderBookDelta();
         OrderBookDelta delta = orderBook.getOrderBookDelta();
         if (!delta.isEmpty()) {
             liquidityMonitor_->processOrderBookDelta(delta);
@@ -203,41 +204,46 @@ void StrategyEngine::handleSignalGenerated(const TradingSignal& signal) {
          // Detect imbalances
          imbalanceDetector_->analyzeMetrics(metrics);
          
-         // Get detected imbalances
-         auto imbalances = imbalanceDetector_->getDetectedImbalances();
-         
-         // Process any detected imbalances
-         if (!imbalances.empty()) {
-             processImbalanceEvents(imbalances);
-         }
-         
-         // Update momentum correlation with this data point
+         // Prepare data for locked section
          auto symbol = orderBook.getSymbol();
          ExchangeId exchangeId = orderBook.getExchangeId();
-        //  std::string pairId = symbol + ":" + std::to_string(static_cast<int>(exchangeId));
-        std::string pairId = orderBook.getExchangeId().toString() + ":" + orderBook.getSymbol().toString();
+         std::string pairId = orderBook.getExchangeId().toString() + ":" + orderBook.getSymbol().toString();
+         auto currentTime = std::chrono::system_clock::now();
+         double currentPrice = orderBook.getMidPrice();
+         //print exchange and symbol
+         std::cout << "Processing order book for " << orderBook.getExchangeId().toString() 
+                   << " - " << orderBook.getSymbol().toString() << " at price " << currentPrice << std::endl;
+         // Variables to store data for processing outside the lock
+         bool shouldUpdateCorrelation = false;
+         PriceMovement movement;
          
-         // Update the trading pair state
-         auto it = tradingPairStates_.find(pairId);
-         if (it != tradingPairStates_.end()) {
-             it->second.lastUpdateTime = std::chrono::system_clock::now();
-             it->second.lastPrice = orderBook.getMidPrice();
-             
-             // Record price movement for correlation analysis
-             PriceMovement movement;
-             movement.symbol = symbol;
-             movement.time_start = it->second.lastUpdateTime;
-             movement.time_end = std::chrono::system_clock::now();
-             movement.price_before = it->second.previousPrice;
-             movement.price_after = orderBook.getMidPrice();
-             movement.absolute_change = movement.price_after - movement.price_before;
-             
-             // Update momentum correlation if we have a valid previous price
-             if (movement.price_before > 0.0) {
-                 momentumCorrelator_->updateCorrelationModel(metrics, movement);
+         // Update the trading pair state - LOCK HERE (minimize lock duration)
+         {
+             std::lock_guard<std::recursive_mutex> lock(mutex_);
+             auto it = tradingPairStates_.find(pairId);
+             if (it != tradingPairStates_.end()) {
+                 double previousPrice = it->second.lastPrice;
+                 it->second.lastUpdateTime = currentTime;
+                 it->second.previousPrice = it->second.lastPrice;
+                 it->second.lastPrice = currentPrice;
+                 
+                 // Prepare movement data for correlation analysis (process outside lock)
+                 if (previousPrice > 0.0) {
+                     shouldUpdateCorrelation = true;
+                     movement.symbol = symbol;
+                     movement.time_start = it->second.lastUpdateTime;
+                     movement.time_end = currentTime;
+                     movement.price_before = previousPrice;
+                     movement.price_after = currentPrice;
+                     movement.absolute_change = movement.price_after - movement.price_before;
+                 }
              }
          }
          
+         // Update momentum correlation OUTSIDE the lock to avoid blocking other threads
+         if (shouldUpdateCorrelation) {
+             momentumCorrelator_->updateCorrelationModel(metrics, movement);
+         }
          // Record metrics for performance tracking
          recordMetrics();
          
@@ -251,7 +257,7 @@ void StrategyEngine::handleSignalGenerated(const TradingSignal& signal) {
  
  // Get all active trading signals
  std::vector<TradingSignal> StrategyEngine::getActiveSignals() const {
-     std::lock_guard<std::mutex> lock(mutex_);
+     std::lock_guard<std::recursive_mutex> lock(mutex_);
      
      std::vector<TradingSignal> signals;
      signals.reserve(activeSignals_.size());
@@ -265,7 +271,7 @@ void StrategyEngine::handleSignalGenerated(const TradingSignal& signal) {
  
  // Register callback for new trading signals
  size_t StrategyEngine::registerSignalCallback(const SignalCallback& callback) {
-     std::lock_guard<std::mutex> lock(callbackMutex_);
+     std::lock_guard<std::recursive_mutex> lock(callbackMutex_);
      
      size_t id = nextCallbackId_++;
      signalCallbacks_[id] = callback;
@@ -275,7 +281,7 @@ void StrategyEngine::handleSignalGenerated(const TradingSignal& signal) {
  
  // Unregister a previously registered callback
  bool StrategyEngine::unregisterSignalCallback(size_t callbackId) {
-     std::lock_guard<std::mutex> lock(callbackMutex_);
+     std::lock_guard<std::recursive_mutex> lock(callbackMutex_);
      
      auto it = signalCallbacks_.find(callbackId);
      if (it != signalCallbacks_.end()) {
@@ -288,7 +294,7 @@ void StrategyEngine::handleSignalGenerated(const TradingSignal& signal) {
  
  // Update strategy parameters
  bool StrategyEngine::updateParameters(const ParameterSet& params) {
-     std::lock_guard<std::mutex> lock(mutex_);
+     std::lock_guard<std::recursive_mutex> lock(mutex_);
      
      try {
          // Update our internal parameters
@@ -314,13 +320,13 @@ void StrategyEngine::handleSignalGenerated(const TradingSignal& signal) {
  
  // Get current strategy parameters
  ParameterSet StrategyEngine::getParameters() const {
-     std::lock_guard<std::mutex> lock(mutex_);
+     std::lock_guard<std::recursive_mutex> lock(mutex_);
      return parameters_;
  }
  
  // Get strategy status as JSON string
  std::string StrategyEngine::getStatus() const {
-     std::lock_guard<std::mutex> lock(mutex_);
+     std::lock_guard<std::recursive_mutex> lock(mutex_);
      
      json status;
      status["strategyId"] = strategyId_;
@@ -364,7 +370,7 @@ void StrategyEngine::handleSignalGenerated(const TradingSignal& signal) {
  
  // Get strategy performance metrics
  StrategyPerformance StrategyEngine::getPerformance() const {
-     std::lock_guard<std::mutex> lock(mutex_);
+     std::lock_guard<std::recursive_mutex> lock(mutex_);
      return performance_;
  }
  
@@ -382,7 +388,7 @@ void StrategyEngine::handleSignalGenerated(const TradingSignal& signal) {
          auto liquidityMetrics = liquidityMonitor_->getLiquidityMetrics();
          
          // Detect imbalances
-         imbalanceDetector_->analyzeMetrics(metrics);
+         auto isImbalances = imbalanceDetector_->analyzeMetrics(metrics);
          // Get detected imbalances
          auto imbalances = imbalanceDetector_->getDetectedImbalances();
          
@@ -398,7 +404,7 @@ void StrategyEngine::handleSignalGenerated(const TradingSignal& signal) {
  
  // Record signal execution result for feedback
  bool StrategyEngine::recordSignalResult(const std::string& signalId, const SignalExecutionResult& result) {
-     std::lock_guard<std::mutex> lock(mutex_);
+     std::lock_guard<std::recursive_mutex> lock(mutex_);
      
      try {
          // Find the signal
@@ -446,61 +452,101 @@ void StrategyEngine::handleSignalGenerated(const TradingSignal& signal) {
  // Private methods
  //
  
- void StrategyEngine::processImbalanceEvents(const std::vector<ImbalanceEvent>& events) {
-     if (events.empty()) {
-         return;
-     }
-     
-     std::lock_guard<std::mutex> lock(mutex_);
-     
-     for (const auto& event : events) {
-         try {
-             // Correlate the imbalance with expected price movement
-             double expectedPriceImpact = momentumCorrelator_->predictPriceMovement(event);
-             
-             // Generate a trading signal
-             signalGenerator_->processImbalances({event});
-             auto signals = signalGenerator_->generateSignals();
-             
-             for (auto& signal : signals) {
-                 // Enhance the signal with correlation data
-                 signal.expectedPriceImpact = expectedPriceImpact;
-                 
-                 // Apply signal decay model
-                 signal.decayRate = signalDecayModel_->calculateDecayRate(event.type);
-                 signal.expirationTime = std::chrono::system_clock::now() + 
-                     std::chrono::seconds(signalDecayModel_->getSignalTTL(event.type));
+TradingSignal StrategyEngine::enhanceSignalWithEventContext(
+    const TradingSignal& baseSignal, 
+    const ImbalanceEvent& sourceEvent) const{
+    
+    // Create a copy to avoid mutating the original
+    TradingSignal enhancedSignal = baseSignal;
+    
+    // Add correlation data from momentum correlator
+    if (momentumCorrelator_) {
+        double expectedPriceImpact = momentumCorrelator_->predictPriceMovement(sourceEvent);
+        enhancedSignal.expectedPriceImpact = expectedPriceImpact;
+        
+        // Add momentum correlation metrics
+        std::string imbalanceTypeStr = imbalanceTypeToString(sourceEvent.type);
+        double correlation = momentumCorrelator_->getCorrelationCoefficient(imbalanceTypeStr);
+        enhancedSignal.setMetric("momentum_correlation", correlation);
+        enhancedSignal.setMetric("predicted_price_move", expectedPriceImpact);
+    }
+    
+    // Apply signal decay model
+    if (signalDecayModel_) {
+        enhancedSignal.decayRate = signalDecayModel_->calculateDecayRate(sourceEvent.type);
+        enhancedSignal.expirationTime = std::chrono::system_clock::now() + 
+            std::chrono::seconds(signalDecayModel_->getSignalTTL(sourceEvent.type));
+    }
+    
+    // Add threshold manager data
+    if (thresholdManager_) {
+        double sensitivity = thresholdManager_->getGlobalSensitivity();
+        enhancedSignal.setMetric("threshold_sensitivity", sensitivity);
+        
+        // Adjust strength based on sensitivity
+        if (sensitivity != 1.0) {
+            enhancedSignal.strength = std::min(1.0, enhancedSignal.strength * sensitivity);
+        }
+    }
+    
+    // Copy event context into signal
+    enhancedSignal.sourceEventId = sourceEvent.eventId;
+    enhancedSignal.setMetric("source_event_strength", sourceEvent.strength);
+    enhancedSignal.setMetric("source_event_confidence", static_cast<double>(sourceEvent.confidence));
+    
+    // Copy supporting metrics from the original imbalance event
+    for (const auto& [metricName, metricValue] : sourceEvent.supportingMetrics) {
+        enhancedSignal.setMetric("event_" + metricName, metricValue);
+    }
+    
+    return enhancedSignal;
+}
+void StrategyEngine::processImbalanceEvents(const std::vector<ImbalanceEvent>& events) {
+    if (events.empty()) return;
+    
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    
+    // Process all events at once for efficiency
+    signalGenerator_->processImbalances(events);
+    auto allSignals = signalGenerator_->generateSignals();
+    
+    // Clear the signal generator's state to prevent accumulation
+    signalGenerator_->clear();
+    
+    for (const auto& signal : allSignals) {
+        try {
+            // Find the source event for this signal
+            auto sourceEvent = findSourceEvent(signal, events);
+            if (sourceEvent) {
+                auto enhancedSignal = enhanceSignalWithEventContext(signal, *sourceEvent);
+                activeSignals_[enhancedSignal.id] = enhancedSignal;
+                notifySignalCallbacks(enhancedSignal);
+            } else {
+                LOG_WARN("Could not correlate signal {} to source event", signal.id);
+            }
+        } catch (const std::exception& e) {
+            LOG_ERROR("Exception processing signal: {}", e.what());
+        }
+    }
+}
 
-                 
-                 // Store and notify
-                 activeSignals_[signal.id] = signal;
-                 notifySignalCallbacks(signal);
-                 
-                 // Update performance tracking
-                 performance_.signalsGenerated++;
-                //  performance_.averageSignalStrength = 
-                //      (performance_.averageSignalStrength * (performance_.signalsGenerated - 1) + signal.strength) / 
-                //      performance_.signalsGenerated;
-                if (performance_.signalsGenerated == 1) {
-                    performance_.averageSignalStrength = signal.strength;
-                } else {
-                    performance_.averageSignalStrength += 
-                        (signal.strength - performance_.averageSignalStrength) / performance_.signalsGenerated;
-                }
-                 LOG_INFO("Generated new trading signal: id={}, direction={}, strength={}, pair={}", 
-                               signal.id, 
-                               signal.direction == Direction::BUY ? "BUY" : "SELL", 
-                               signal.strength, 
-                               signal.symbol);
-             }
-         } catch (const std::exception& e) {
-             LOG_ERROR("Exception processing imbalance event: {}", e.what());
-         }
-     }
- }
- 
+std::optional<ImbalanceEvent> StrategyEngine::findSourceEvent(
+    const TradingSignal& signal, 
+    const std::vector<ImbalanceEvent>& events)const {
+    
+    for (const auto& event : events) {
+        if (signal.sourceEventId == event.eventId ||
+            (signal.symbol == event.symbol && 
+             signal.exchangeId == event.exchangeId &&
+             signal.direction == event.direction)) {
+            return event;
+        }
+    }
+    return std::nullopt;
+}
+
  void StrategyEngine::maintainSignals() {
-     std::lock_guard<std::mutex> lock(mutex_);
+     std::lock_guard<std::recursive_mutex> lock(mutex_);
      
      auto now = std::chrono::system_clock::now();
     //  convert now to uint64_t
@@ -521,15 +567,23 @@ void StrategyEngine::handleSignalGenerated(const TradingSignal& signal) {
  }
  
  void StrategyEngine::notifySignalCallbacks(const TradingSignal& signal) {
-     std::lock_guard<std::mutex> lock(callbackMutex_);
-     
-     for (const auto& [id, callback] : signalCallbacks_) {
-         try {
-             callback(signal);
-         } catch (const std::exception& e) {
-             LOG_ERROR("Exception in signal callback: {}", e.what());
-         }
-     }
+    // std::vector<SignalCallback> callbacks;
+    // {
+    //     std::lock_guard<std::recursive_mutex> lock(callbackMutex_);
+    //     for (const auto& [id, callback] : signalCallbacks_) {
+    //         callbacks.push_back(callback);
+    //     }
+    // }
+    // for (const auto& callback : callbacks) {
+    //     try {
+    //         callback(signal);
+    //     } catch (const std::exception& e) {
+    //         LOG_ERROR("Exception in signal callback: {}", e.what());
+    //     }
+    // }
+    //publish event instead of callbacks to avoid deadlocks
+    // std::cout << "Publishing SignalGeneratedEvent for signal ID: " << signal.id << std::endl;
+    common::EventBus::getInstance().publish(events::SignalGeneratedEvent{signal});
  }
  
  void StrategyEngine::recordMetrics() {
@@ -542,7 +596,8 @@ void StrategyEngine::handleSignalGenerated(const TradingSignal& signal) {
      auto symbol = orderBook.getSymbol();
      ExchangeId exchangeId = orderBook.getExchangeId();
      std::string pairId = exchangeId.toString() + ":" + symbol.toString();
-     // Check if we're tracking this pair
+     // Check if we're tracking this pair - LOCK HERE
+     std::lock_guard<std::recursive_mutex> lock(mutex_);
      return tradingPairStates_.find(pairId) != tradingPairStates_.end();
  }
  
@@ -561,6 +616,7 @@ void StrategyEngine::handleSignalGenerated(const TradingSignal& signal) {
              std::this_thread::sleep_for(100ms);
          } catch (const std::exception& e) {
              LOG_ERROR("Exception in signal maintenance thread: {}", e.what());
+             // Continue the loop even if there's an exception
          }
      }
      
@@ -643,6 +699,7 @@ void StrategyEngine::handleSignalGenerated(const TradingSignal& signal) {
 bool StrategyEngine::initializeTradingPair(const std::string& symbol, ExchangeId exchangeId) {
     std::string pairId = exchangeId.toString() + ":" + symbol;    
      
+     std::lock_guard<std::recursive_mutex> lock(mutex_);
      // Check if already initialized
      if (tradingPairStates_.find(pairId) != tradingPairStates_.end()) {
          return true;
@@ -666,6 +723,7 @@ bool StrategyEngine::initializeTradingPair(const std::string& symbol, ExchangeId
  }
  
  void StrategyEngine::updateTradingPairState(const std::string& symbol, TradingPairState state) {
+     std::lock_guard<std::recursive_mutex> lock(mutex_);
      for (auto& [pairId, pairState] : tradingPairStates_) {
          if (pairState.symbol == symbol) {
              pairState = state;

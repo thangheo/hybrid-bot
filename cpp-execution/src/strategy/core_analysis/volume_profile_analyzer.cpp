@@ -12,7 +12,8 @@
  #include <algorithm>
  #include <numeric>
  #include <cmath>
- 
+ #include <logger.hpp>
+ #include <iostream>
  namespace trading {
  namespace strategy {
  
@@ -124,6 +125,17 @@
      
      // Update last update time
      last_update_time_ = orderbook.getTimestamp();
+    //  std::cout << "Volume profile updated for " << trading_pair_ << " on " << exchangeId_.toString() << std::endl;
+     //print volume      std::vector<VolumeData> volume_data;
+        // for (size_t i = 0; i < current_profile_.price_ranges.size(); ++i) {
+        //     const auto& range = current_profile_.price_ranges[i];
+        //     const auto& data = current_profile_.volume_data[i];
+        //     std::cout << "Range: [" << range.lower_bound << ", " << range.upper_bound << 
+        //                 "] Total Volume: " << data.total_volume << 
+        //                 " Buy Volume: " << data.buy_volume << 
+        //                 " Sell Volume: " << data.sell_volume << 
+        //                 " VWAP: " << data.vwap << std::endl;
+        // }
  }
  
  void VolumeProfileAnalyzer::updateMultiTimeframeProfiles(

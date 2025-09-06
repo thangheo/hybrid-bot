@@ -47,7 +47,8 @@
      while (data_points_.size() > window_size_) {
          data_points_.pop_front();
      }
-     
+     //this log never been triggered
+     LOG_INFO("updateCorrelationModel:Added data point. Total points: {}", data_points_.size());
      // Only calculate correlations when we have enough data
      if (data_points_.size() >= params_.min_data_points) {
          calculateCorrelations();
@@ -197,7 +198,7 @@ void MomentumCorrelation::calculateCorrelations() {
     for (auto& [metric, values] : metricValues) {
         // Skip if we don't have enough data points or sizes don't match
         if (values.size() != priceMovements.size() || values.size() < params_.min_data_points) {
-            LOG_WARN("Skipping correlation for metric {} due to insufficient or mismatched data", metric);
+            // LOG_WARN("Skipping correlation for metric {} due to insufficient or mismatched data", metric);
             correlation_coefficients_[metric] = 0.0;
             continue;
         }
@@ -377,6 +378,7 @@ void MomentumCorrelation::updateHighestCorrelatedMetrics() {
          current_regime_ = MarketRegime::NORMAL;
          return;
      }
+     std::cout<<"Updating market regime based on recent data...\n";
      
      // Get recent price movements
      std::vector<double> recentMovements;
@@ -418,12 +420,30 @@ void MomentumCorrelation::updateHighestCorrelatedMetrics() {
      } else {
          current_regime_ = MarketRegime::NORMAL;
      }
+     std::cout<<"Current market regime: ";
+     switch (current_regime_) {
+         case MarketRegime::NORMAL:
+             std::cout<<"NORMAL\n";
+             break;
+         case MarketRegime::TRENDING:
+             std::cout<<"TRENDING\n";
+             break;
+         case MarketRegime::RANGE_BOUND:
+             std::cout<<"RANGE_BOUND\n";
+             break;
+         case MarketRegime::HIGH_VOLATILITY:
+             std::cout<<"HIGH_VOLATILITY\n";
+             break;
+         case MarketRegime::QUIET:
+             std::cout<<"QUIET\n";
+             break;
+     }
  }
  
  double MomentumCorrelation::calculateWeightedPrediction(const ImbalanceEvent& event) const {
      double prediction = 0.0;
      double totalWeight = 0.0;
-     
+     std::cout<<"Predicting price movement for event type: "<<ImbalanceTypeToString(event.type)<<"\n";
      // Use imbalance metrics and their correlations to predict price movement
      for (const auto& [metric, value] : event.supportingMetrics) {
          // Skip metrics without correlation data

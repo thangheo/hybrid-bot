@@ -78,7 +78,8 @@ public:
      * @param thresholds The thresholds to set
      */
     void setThresholds(const ThresholdSet& thresholds);
-    
+    trading::core::ConfidenceLevel valueToConfidenceLevel(double value) ;
+
     /**
      * @brief Get current detection thresholds
      * @return Current thresholds

@@ -16,7 +16,8 @@
  #include <cmath>
  #include <iostream>
  #include <chrono>
- 
+ #include <sstream>
+#include <logger.hpp>
  namespace trading {
  namespace strategy {
  
@@ -57,18 +58,16 @@
  // Analyze order book metrics to detect imbalances
  bool ImbalanceDetectionEngine::analyzeMetrics(const OrderBookMetrics& metrics) {
      std::lock_guard<std::mutex> lock(mutex_);
-     
      // Store metrics history for time-series analysis
      for (const auto& metric : metrics.metrics) {
          metricHistory_[metric.first] = metric.second;
      }
-     
      // Apply different detection algorithms
      bool volumeImbalance = detectVolumeImbalance(metrics);
      bool priceLevelImbalance = detectPriceLevelImbalance(metrics);
      bool liquidityFlowImbalance = detectLiquidityFlowImbalance(metrics);
      bool abnormalSpread = detectAbnormalSpread(metrics);
-     
+     //data looks correct
      // Return true if any imbalance was detected
      return volumeImbalance || priceLevelImbalance || liquidityFlowImbalance || abnormalSpread;
  }
@@ -252,6 +251,7 @@
      
      // Get threshold for volume imbalance
      double threshold = thresholds_.getTypeThreshold(ImbalanceType::VOLUME_IMBALANCE).activation_threshold;
+    //  std::cout<<"[TradingApp] [2025-09-06 13:43:53.000] [INFO] ImbalanceDetectionEngine::detectVolumeImbalance: volumeRatio="<<volumeRatio<<", threshold="<<threshold<<"\n";
      
      // Detect imbalance if ratio exceeds threshold or is below its inverse
      bool isImbalance = (volumeRatio >= threshold || volumeRatio <= 1.0 / threshold);
@@ -261,7 +261,25 @@
      
      // If imbalance detected, create an event
      if (isImbalance) {
-         double strength = std::abs(volumeRatio - 1.0);
+            double strength;            
+            if (threshold <= 1.0 + 1e-6) {  // Handle threshold ~= 1.0
+                // Fallback to simple deviation for thresholds near 1.0
+                strength = std::min(1.0, std::abs(volumeRatio - 1.0));
+            } else {
+                // Normal case with proper bounds checking
+                double deviation = std::abs(volumeRatio - 1.0);
+                double maxDeviation = std::max(threshold - 1.0, 1.0 - (1.0/threshold));
+                
+                if (maxDeviation < 1e-10) {
+                    strength = 0.0;  // Avoid division by near-zero
+                } else {
+                    strength = std::min(1.0, deviation / maxDeviation);
+                }
+            }            
+            // Ensure strength is never negative or invalid
+            if (strength < 0.0 || !std::isfinite(strength)) {
+                strength = 0.0;
+            }
          Direction direction = (volumeRatio > 1.0) ? Direction::BUY : Direction::SELL;
          createImbalanceEvent(ImbalanceType::VOLUME_IMBALANCE, strength, direction, metrics);
      }
@@ -292,7 +310,7 @@
      
      // Get threshold for price level imbalance
      double threshold = thresholds_.getTypeThreshold(ImbalanceType::PRICE_LEVEL_IMBALANCE).activation_threshold;
-   
+    //  std::cout<<"[TradingApp] [2025-09-06 13:43:53.000] [INFO] ImbalanceDetectionEngine::detectPriceLevelImbalance: levelRatio="<<levelRatio<<", threshold="<<threshold<<"\n";
      
      // Detect imbalance if ratio exceeds threshold or is below its inverse
      bool isImbalance = (levelRatio >= threshold || levelRatio <= 1.0 / threshold);
@@ -302,7 +320,22 @@
      
      // If imbalance detected, create an event
      if (isImbalance) {
-         double strength = std::abs(levelRatio - 1.0);
+        //  double strength = std::abs(levelRatio - 1.0);
+        double strength ;
+        if (threshold <= 1.0 + 1e-6) {  // Handle threshold ~= 1.0
+            // Fallback to simple deviation for thresholds near 1.0
+            strength = std::min(1.0, std::abs(levelRatio - 1.0));
+        } else {
+            // Logarithmic formula only for proper thresholds > 1.0
+            strength = std::log(std::max(levelRatio, 1.0/levelRatio)) / std::log(threshold);
+            strength = std::min(1.0, strength);
+        }
+        
+        // Ensure strength is never negative or invalid
+        if (strength < 0.0 || !std::isfinite(strength)) {
+            strength = 0.0;
+        }
+        strength = std::min(1.0, strength); // Cap at 1.0
          Direction direction = (levelRatio > 1.0) ? Direction::BUY : Direction::SELL;
          createImbalanceEvent(ImbalanceType::PRICE_LEVEL_IMBALANCE, strength, direction, metrics);
      }
@@ -554,52 +587,53 @@
      
      return direction;
  }
- 
- // Create an imbalance event and notify callbacks
+//  valueToConfidenceLevel
+    trading::core::ConfidenceLevel ImbalanceDetectionEngine::valueToConfidenceLevel(double value) {
+        if (value >= 0.9) {
+            return trading::core::ConfidenceLevel::HIGH;
+        } else if (value >= 0.7) {
+            return trading::core::ConfidenceLevel::MEDIUM;
+        } else {
+            return trading::core::ConfidenceLevel::LOW;
+        }
+    }
+
  void ImbalanceDetectionEngine::createImbalanceEvent(ImbalanceType type, double strength, Direction direction, const OrderBookMetrics& metrics) {
-     ImbalanceEvent event;
-     
-     // Fill event data
-     event.type = type;
-     event.strength = strength;
-     event.direction = direction;
-     event.detectionTime = std::chrono::system_clock::now();
-     event.exchangeId = metrics.exchangeId;
-     event.symbol = metrics.symbol;
-     event.confidence = static_cast<trading::core::ConfidenceLevel>(calculateImbalanceConfidence(type, strength, metrics));
-     event.eventId = generateEventId();
-     
-     // Copy relevant metrics
-     for (const auto& metric : metrics.metrics) {
-         event.supportingMetrics[metric.first] = metric.second;
-     }
-     
-     // Add to the list of detected imbalances
-     detectedImbalances_.push_back(event);
-     
-     // Notify callbacks
-    //  notifyImbalanceCallbacks(event);
+    // Validate inputs
+    if (strength < 0.0 || strength > 1.0) {
+        LOG_WARN("Invalid strength value: {}", strength);
+        return;
+    }
+    
+    if (direction == Direction::NEUTRAL) {
+        LOG_WARN("Cannot create imbalance event with NEUTRAL direction");
+        return;
+    }
+    
+    ImbalanceEvent event;
+    event.type = type;
+    event.strength = std::clamp(strength, 0.0, 1.0);
+    event.direction = direction;
+    event.detectionTime = std::chrono::system_clock::now();
+    event.exchangeId = metrics.exchangeId;
+    event.symbol = metrics.symbol;
+    event.confidence = static_cast<trading::core::ConfidenceLevel>(calculateImbalanceConfidence(type, strength, metrics));
+    double confidenceValue = calculateImbalanceConfidence(type, strength, metrics);
+    event.confidence = valueToConfidenceLevel(confidenceValue);  // Use the utility
+    event.eventId = generateEventId();
+    
+    // Copy relevant metrics
+    for (const auto& metric : metrics.metrics) {
+        event.supportingMetrics[metric.first] = metric.second;
+    }
+    
+    // Choose ONE method: either local storage OR event bus, not both
+    // Option 1: Local storage only (current caller pattern)
+    // detectedImbalances_.push_back(event);
+    
+    // Option 2: Event bus only (better for decoupling)
     common::EventBus::getInstance().publish(events::ImbalanceDetectedEvent{event});
- }
- 
- // Notify all registered callbacks about a new imbalance event
-//  void ImbalanceDetectionEngine::notifyImbalanceCallbacks(const ImbalanceEvent& event) {
-//      // Copy callbacks to prevent deadlocks if callback registers/unregisters another callback
-//      std::map<size_t, ImbalanceCallback> callbacksCopy;
-//      {
-//          std::lock_guard<std::mutex> lock(mutex_);
-//          callbacksCopy = callbacks_;
-//      }
-     
-//      // Notify all callbacks
-//      for (const auto& cb : callbacksCopy) {
-//          try {
-//              cb.second(event);
-//          } catch (const std::exception& e) {
-//              std::cerr << "Exception in imbalance callback: " << e.what() << std::endl;
-//          }
-//      }
-//  }
+}
  void ImbalanceDetectionEngine::notifyImbalanceCallbacks(const ImbalanceEvent& event) {
     // Simply publish to event bus - no locks, no deadlocks
     common::EventBus::getInstance().publish(events::ImbalanceDetectedEvent{event});
