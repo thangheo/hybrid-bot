@@ -116,13 +116,22 @@ void StrategyEngine::handleSignalGenerated(const TradingSignal& signal) {
         LOG_WARN("Could not acquire lock in handleSignalGenerated - skipping signal {}", signal.id);
         return;
     }
-    
-    activeSignals_[signal.id] = signal;
-    // Don't call notifySignalCallbacks again here - it would create infinite recursion
-    LOG_INFO("New trading signal generated: ID={}, Symbol={}, Exchange={}, Direction={}, Strength={:.2f}, Confidence={:.2f}",
-             signal.id, signal.symbol.toString(), signal.exchangeId.toString(),
-             (signal.direction == core::Direction::BUY ? "BUY" : (signal.direction == core::Direction::SELL ? "SELL" : "NEUTRAL")),
-             signal.strength, signal.confidence);
+    activeSignals_[signal.id] = signal; 
+    //should call registered callbacks for execution
+    for (const auto& [id, callback] : signalCallbacks_) {
+        try {
+            callback(signal);
+        } catch (const std::exception& e) {
+            LOG_ERROR("Exception in signal callback {}: {}", id, e.what());
+        }
+    }
+    // Debug print for the generated signal
+    // std::cout << "New trading signal generated: ID=" << signal.id 
+    //           << ", Symbol=" << signal.symbol.toString() 
+    //           << ", Exchange=" << signal.exchangeId.toString()
+    //           << ", Direction=" << (signal.direction == core::Direction::BUY ? "BUY" : (signal.direction == core::Direction::SELL ? "SELL" : "NEUTRAL"))
+    //           << ", Strength=" << signal.strength 
+    //           << ", Confidence level=" << signal.confidence << std::endl;
 }
  // Start the strategy engine
  bool StrategyEngine::start() {
@@ -211,8 +220,6 @@ void StrategyEngine::handleSignalGenerated(const TradingSignal& signal) {
          auto currentTime = std::chrono::system_clock::now();
          double currentPrice = orderBook.getMidPrice();
          //print exchange and symbol
-         std::cout << "Processing order book for " << orderBook.getExchangeId().toString() 
-                   << " - " << orderBook.getSymbol().toString() << " at price " << currentPrice << std::endl;
          // Variables to store data for processing outside the lock
          bool shouldUpdateCorrelation = false;
          PriceMovement movement;
@@ -591,16 +598,121 @@ std::optional<ImbalanceEvent> StrategyEngine::findSourceEvent(
      // for monitoring and optimization purposes
  }
  
+//  bool StrategyEngine::validateOrderBook(const data_ingestion::OrderBook& orderBook) const {
+//      // Validate that the order book is for a trading pair we're interested in
+//      auto symbol = orderBook.getSymbol();
+//      ExchangeId exchangeId = orderBook.getExchangeId();
+//      std::string pairId = exchangeId.toString() + ":" + symbol.toString();
+//      // Check if we're tracking this pair - LOCK HERE
+//      std::lock_guard<std::recursive_mutex> lock(mutex_);
+//      return tradingPairStates_.find(pairId) != tradingPairStates_.end();
+//  }
  bool StrategyEngine::validateOrderBook(const data_ingestion::OrderBook& orderBook) const {
-     // Validate that the order book is for a trading pair we're interested in
-     auto symbol = orderBook.getSymbol();
-     ExchangeId exchangeId = orderBook.getExchangeId();
-     std::string pairId = exchangeId.toString() + ":" + symbol.toString();
-     // Check if we're tracking this pair - LOCK HERE
-     std::lock_guard<std::recursive_mutex> lock(mutex_);
-     return tradingPairStates_.find(pairId) != tradingPairStates_.end();
- }
- 
+    // First check if we're tracking this trading pair
+    auto symbol = orderBook.getSymbol();
+    ExchangeId exchangeId = orderBook.getExchangeId();
+    std::string pairId = exchangeId.toString() + ":" + symbol.toString();
+    
+    {
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
+        if (tradingPairStates_.find(pairId) == tradingPairStates_.end()) {
+            return false; // Not tracking this pair
+        }
+    }
+    
+    // Validate order book data quality
+    if (!orderBook.isValid()) {
+        LOG_WARN("Order book is marked as invalid for {}", pairId);
+        return false;
+    }
+    
+    // Get bids and asks
+    auto bids = orderBook.getBids(10);  // Get top 10 levels
+    auto asks = orderBook.getAsks(10);
+    
+    // Check if we have any data at all
+    if (bids.empty() && asks.empty()) {
+        LOG_WARN("Order book has no bids or asks for {}", pairId);
+        return false;
+    }
+    
+    // Validate bid data quality
+    if (!bids.empty()) {
+        for (const auto& bid : bids) {
+            if (bid.price <= 0.0 || bid.quantity <= 0.0) {
+                LOG_WARN("Invalid bid data: price={}, quantity={} for {}", 
+                         bid.price, bid.quantity, pairId);
+                return false;
+            }
+            if (!std::isfinite(bid.price) || !std::isfinite(bid.quantity)) {
+                LOG_WARN("Non-finite bid data: price={}, quantity={} for {}", 
+                         bid.price, bid.quantity, pairId);
+                return false;
+            }
+        }
+        
+        // Check bid ordering (should be descending by price)
+        for (size_t i = 1; i < bids.size(); ++i) {
+            if (bids[i].price > bids[i-1].price) {
+                LOG_WARN("Bids not properly ordered for {}", pairId);
+                return false;
+            }
+        }
+    }
+    
+    // Validate ask data quality
+    if (!asks.empty()) {
+        for (const auto& ask : asks) {
+            if (ask.price <= 0.0 || ask.quantity <= 0.0) {
+                LOG_WARN("Invalid ask data: price={}, quantity={} for {}", 
+                         ask.price, ask.quantity, pairId);
+                return false;
+            }
+            if (!std::isfinite(ask.price) || !std::isfinite(ask.quantity)) {
+                LOG_WARN("Non-finite ask data: price={}, quantity={} for {}", 
+                         ask.price, ask.quantity, pairId);
+                return false;
+            }
+        }
+        
+        // Check ask ordering (should be ascending by price)
+        for (size_t i = 1; i < asks.size(); ++i) {
+            if (asks[i].price < asks[i-1].price) {
+                LOG_WARN("Asks not properly ordered for {}", pairId);
+                return false;
+            }
+        }
+    }
+    
+    // Cross-validation: if we have both bids and asks, check spread sanity
+    if (!bids.empty() && !asks.empty()) {
+        double bestBid = bids[0].price;
+        double bestAsk = asks[0].price;
+        
+        if (bestBid >= bestAsk) {
+            LOG_WARN("Crossed book: bestBid={} >= bestAsk={} for {}", 
+                     bestBid, bestAsk, pairId);
+            return false;
+        }
+        
+        // Check for unreasonably wide spread (> 50%)
+        double spread = (bestAsk - bestBid) / bestBid;
+        if (spread > 0.5) {
+            LOG_WARN("Unreasonably wide spread: {}% for {}", 
+                     spread * 100, pairId);
+            return false;
+        }
+    }
+    
+    // Require at least one side to have data for meaningful analysis
+    if (bids.empty() && asks.empty()) {
+        LOG_WARN("Order book completely empty for {}", pairId);
+        return false;
+    }
+    
+    return true;
+}
+
  void StrategyEngine::signalMaintenanceWorker() {
      LOG_INFO("Signal maintenance thread started for strategy: {}", strategyId_);
      
