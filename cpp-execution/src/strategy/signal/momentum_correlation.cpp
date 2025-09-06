@@ -16,57 +16,132 @@
  namespace trading {
  namespace strategy {
  
- MomentumCorrelation::MomentumCorrelation(size_t window_size)
-     : window_size_(window_size) {
-     // Initialize correlation parameters with defaults
-     params_.min_data_points = 10;
-     params_.significance_threshold = 0.05;
-     params_.correlation_decay_rate = 0.95;
-     params_.regime_detection_window = 20;
- }
-
+MomentumCorrelation::MomentumCorrelation(size_t window_size)
+    : window_size_(window_size) {
+    // Initialize with more reasonable defaults
+    params_.min_data_points = 5;  // Reduced from 10 for faster testing
+    params_.significance_threshold = 0.05;
+    params_.correlation_decay_rate = 0.9;  // Less aggressive decay
+    params_.regime_detection_window = 10;  // Reduced for faster testing
+    params_.time_decay_factor = 0.1;  // Less aggressive time decay
+    params_.min_stddev_threshold = 1e-6;  // Very small threshold
+    params_.strong_correlation_threshold = 0.3;  // Lower threshold for debugging
+    params_.max_level_depth = 5;
+    params_.top_metrics_count = 10;
     
-    MomentumCorrelation::MomentumCorrelation(const MomentumCorrelationConfig& config){
-        window_size_=config.correlationWindowMs;
+    LOG_INFO("MomentumCorrelation initialized with window_size: {}", window_size_);
+}
+
+MomentumCorrelation::MomentumCorrelation(const MomentumCorrelationConfig& config) {
+    window_size_ = config.correlationWindowMs;
     //  int predictionHorizonMs = 5000;        // Prediction horizon in milliseconds
     }
 
- void MomentumCorrelation::updateCorrelationModel(
-     const OrderBookMetrics& metrics, const PriceMovement& movement) {
-     
-     // Create a new data point
-     DataPoint dataPoint;
-     dataPoint.metrics = metrics;
-     dataPoint.price_movement = movement;
-     dataPoint.timestamp = metrics.timestamp;
-     
-     // Add to data points
-     data_points_.push_back(dataPoint);
-     
-     // Maintain window size
-     while (data_points_.size() > window_size_) {
-         data_points_.pop_front();
-     }
-     //this log never been triggered
-    //  LOG_INFO("updateCorrelationModel:Added data point. Total points: {}", data_points_.size());
-     // Only calculate correlations when we have enough data
-     if (data_points_.size() >= params_.min_data_points) {
-         calculateCorrelations();
-         calculateFeatureImportance();
-         updateMarketRegime();
-     }
- }
- 
- double MomentumCorrelation::predictPriceMovement(const ImbalanceEvent& event) {
-     // If we don't have enough data, return zero
-     if (data_points_.size() < params_.min_data_points) {
-         return 0.0;
-     }
-     
-     // Use weighted prediction based on correlation coefficients and feature importance
-     return calculateWeightedPrediction(event);
- }
- 
+void MomentumCorrelation::updateCorrelationModel(
+    const OrderBookMetrics& metrics, const PriceMovement& movement) {
+    
+    // Add debug logging
+    LOG_INFO("updateCorrelationModel called with price movement: {}", movement.percent_change);
+    
+    // Validate inputs
+    if (std::isnan(movement.percent_change) || std::isinf(movement.percent_change)) {
+        LOG_WARN("Invalid price movement detected: {}", movement.percent_change);
+        return;
+    }
+    
+    // Create data point
+    DataPoint dataPoint;
+    dataPoint.metrics = metrics;
+    dataPoint.price_movement = movement;
+    dataPoint.timestamp = metrics.timestamp;
+    
+    // Add to data points
+    data_points_.push_back(dataPoint);
+    
+    // Maintain window size
+    while (data_points_.size() > window_size_) {
+        data_points_.pop_front();
+    }
+    
+    LOG_INFO("Added data point. Total points: {}, Price movement: {}", 
+             data_points_.size(), movement.percent_change);
+    
+    // Calculate correlations with fewer data points for testing
+    if (data_points_.size() >= params_.min_data_points) {
+        LOG_INFO("Calculating correlations with {} data points", data_points_.size());
+        calculateCorrelations();
+        calculateFeatureImportance();
+        updateMarketRegime();
+    } else {
+        LOG_INFO("Not enough data points yet. Have: {}, Need: {}", 
+                 data_points_.size(), params_.min_data_points);
+    }
+} 
+
+// void MomentumCorrelation::calculateCorrelations() {
+//     LOG_INFO("Starting correlation calculation with {} data points", data_points_.size());
+    
+//     if (data_points_.size() < params_.min_data_points) {
+//         LOG_WARN("Insufficient data points for correlation calculation");
+//         return;
+//     }
+
+//     // Extract metrics and price movements
+//     std::map<std::string, std::vector<double>> metricValues;
+//     std::vector<double> priceMovements;
+    
+//     // Collect all data
+//     for (const auto& dataPoint : data_points_) {
+//         priceMovements.push_back(dataPoint.price_movement.percent_change);
+        
+//         // Extract key metrics with validation
+//         auto metricsMap = dataPoint.metrics.toMap();
+//         for (const auto& [key, value] : metricsMap) {
+//             if (!std::isnan(value) && !std::isinf(value)) {
+//                 metricValues[key].push_back(value);
+//             }
+//         }
+        
+//         // Add core metrics explicitly
+//         if (!std::isnan(dataPoint.metrics.bid_ask_volume_ratio)) {
+//             metricValues["bid_ask_ratio"].push_back(dataPoint.metrics.bid_ask_volume_ratio);
+//         }
+//         if (!std::isnan(dataPoint.metrics.volume_imbalance)) {
+//             metricValues["volume_imbalance"].push_back(dataPoint.metrics.volume_imbalance);
+//         }
+//         if (!std::isnan(dataPoint.metrics.spread)) {
+//             metricValues["spread"].push_back(dataPoint.metrics.spread);
+//         }
+//     }
+    
+//     LOG_INFO("Collected metrics for {} different metric types", metricValues.size());
+//     LOG_INFO("Price movements sample: [{}, {}, {}]", 
+//              priceMovements.size() > 0 ? priceMovements[0] : 0.0,
+//              priceMovements.size() > 1 ? priceMovements[1] : 0.0,
+//              priceMovements.size() > 2 ? priceMovements[2] : 0.0);
+
+//     // Calculate correlations for each metric
+//     for (const auto& [metricName, values] : metricValues) {
+//         if (values.size() != priceMovements.size() || values.size() < params_.min_data_points) {
+//             LOG_WARN("Skipping metric {} - size mismatch or insufficient data (values: {}, movements: {})", 
+//                      metricName, values.size(), priceMovements.size());
+//             continue;
+//         }
+        
+//         // Simple Pearson correlation calculation
+//         double correlation = calculatePearsonCorrelation(values, priceMovements);
+        
+//         LOG_INFO("Calculated correlation for {}: {}", metricName, correlation);
+        
+//         // Store result
+//         correlation_coefficients_[metricName] = correlation;
+//         correlation_strengths_[metricName] = std::abs(correlation);
+//     }
+    
+//     LOG_INFO("Calculated correlations for {} metrics", correlation_coefficients_.size());
+//     updateHighestCorrelatedMetrics();
+// }
+  
  CorrelationStats MomentumCorrelation::getCorrelationStats() const {
      CorrelationStats stats;
      stats.coefficients = correlation_coefficients_;
@@ -99,13 +174,13 @@
      return current_regime_;
  }
  
- double MomentumCorrelation::getCorrelationCoefficient(const std::string& metric_name) const {
-     auto it = correlation_coefficients_.find(metric_name);
-     if (it != correlation_coefficients_.end()) {
-         return it->second;
-     }
-     return 0.0;
- }
+//  double MomentumCorrelation::getCorrelationCoefficient(const std::string& metric_name) const {
+//      auto it = correlation_coefficients_.find(metric_name);
+//      if (it != correlation_coefficients_.end()) {
+//          return it->second;
+//      }
+//      return 0.0;
+//  }
  
  std::map<std::string, double> MomentumCorrelation::getFeatureImportance() const {
      return feature_importance_;
@@ -125,6 +200,7 @@ void MomentumCorrelation::updateParameters(const ParameterSet& params) {
     params_.top_metrics_count = params.getInt("top_metrics_count", params_.top_metrics_count);
     // Update the timestamp to reflect the last update
 }
+
 void MomentumCorrelation::calculateCorrelations() {
     // Check if we have enough data points
     if (data_points_.size() < params_.min_data_points) {
@@ -290,6 +366,102 @@ void MomentumCorrelation::calculateCorrelations() {
     // Update highest correlated metrics list
     updateHighestCorrelatedMetrics();
 }
+
+double MomentumCorrelation::calculatePearsonCorrelation(
+    const std::vector<double>& x, const std::vector<double>& y) const {
+    
+    if (x.size() != y.size() || x.size() < 2) {
+        LOG_WARN("Invalid input for correlation calculation");
+        return 0.0;
+    }
+    
+    size_t n = x.size();
+    
+    // Calculate means
+    double meanX = std::accumulate(x.begin(), x.end(), 0.0) / n;
+    double meanY = std::accumulate(y.begin(), y.end(), 0.0) / n;
+    
+    LOG_DEBUG("Correlation calculation - meanX: {}, meanY: {}, n: {}", meanX, meanY, n);
+    
+    // Calculate numerator and denominators
+    double numerator = 0.0;
+    double sumXSquared = 0.0;
+    double sumYSquared = 0.0;
+    
+    for (size_t i = 0; i < n; ++i) {
+        double deltaX = x[i] - meanX;
+        double deltaY = y[i] - meanY;
+        
+        numerator += deltaX * deltaY;
+        sumXSquared += deltaX * deltaX;
+        sumYSquared += deltaY * deltaY;
+    }
+    
+    LOG_DEBUG("Correlation components - numerator: {}, sumXSq: {}, sumYSq: {}", 
+              numerator, sumXSquared, sumYSquared);
+    
+    // Calculate correlation
+    double denominator = std::sqrt(sumXSquared * sumYSquared);
+    
+    if (denominator < params_.min_stddev_threshold) {
+        LOG_DEBUG("Denominator too small: {}, returning 0", denominator);
+        return 0.0;
+    }
+    
+    double correlation = numerator / denominator;
+    
+    // Clamp to valid range
+    correlation = std::max(-1.0, std::min(1.0, correlation));
+    
+    LOG_DEBUG("Final correlation: {}", correlation);
+    return correlation;
+}
+
+double MomentumCorrelation::predictPriceMovement(const ImbalanceEvent& event) {
+    if (data_points_.size() < params_.min_data_points) {
+        LOG_DEBUG("Not enough data for prediction - have {} points", data_points_.size());
+        return 0.0;
+    }
+    
+    // LOG_DEBUG("Predicting price movement for imbalance type: {}", 
+    //           static_cast<int>(event.type));
+    
+    double prediction = calculateWeightedPrediction(event);
+    
+    LOG_INFO("Price movement prediction: {}", prediction);
+    return prediction;
+}
+
+double MomentumCorrelation::getCorrelationCoefficient(const std::string& metric_name) const {
+    auto it = correlation_coefficients_.find(metric_name);
+    if (it != correlation_coefficients_.end()) {
+        LOG_DEBUG("Found correlation for {}: {}", metric_name, it->second);
+        return it->second;
+    }
+    
+    LOG_DEBUG("No correlation found for metric: {}", metric_name);
+    
+    // Debug: print all available correlations
+    LOG_DEBUG("Available correlations:");
+    for (const auto& [name, coeff] : correlation_coefficients_) {
+        LOG_DEBUG("  {}: {}", name, coeff);
+    }
+    
+    return 0.0;
+}
+
+// Add this helper method to your header file
+// std::string MomentumCorrelation::imbalanceTypeToString(ImbalanceType type) const {
+//     switch (type) {
+//         case ImbalanceType::VOLUME_IMBALANCE: return "volume_imbalance";
+//         case ImbalanceType::DEPTH_IMBALANCE: return "depth_imbalance";
+//         case ImbalanceType::PRESSURE_IMBALANCE: return "pressure_imbalance";
+//         case ImbalanceType::BID_ASK_RATIO: return "bid_ask_ratio";
+//         case ImbalanceType::SPREAD_IMBALANCE: return "spread";
+//         default: return "unknown_imbalance";
+//     }
+// }
+
 void MomentumCorrelation::updateHighestCorrelatedMetrics() {
     // Sort metrics by correlation strength
     std::vector<std::pair<std::string, double>> sortedMetrics;

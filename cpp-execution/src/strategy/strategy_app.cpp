@@ -234,7 +234,7 @@ private:
             //          signal.strength, entryPrice);
             
             // Simulate holding period (shorter for testing)
-            std::this_thread::sleep_for(std::chrono::seconds(2));
+            std::this_thread::sleep_for(std::chrono::seconds(3));
             
             // Get REAL current exit price from live order book data
             auto exitTime = std::chrono::system_clock::now();
@@ -349,7 +349,7 @@ int main() {
         auto startTime = std::chrono::steady_clock::now();
         size_t lastMessageCount = 0;
         
-        for (int cycle = 0; cycle < 60; ++cycle) { // Run for 2 minutes
+        for (int cycle = 0; cycle < 666; ++cycle) { // Run for 6 h
             std::this_thread::sleep_for(1s);
             
             // Report every 10 seconds
