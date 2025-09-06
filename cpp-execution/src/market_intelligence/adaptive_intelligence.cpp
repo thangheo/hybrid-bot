@@ -1,498 +1,423 @@
 #include "market_intelligence/adaptive_intelligence.hpp"
 #include <iostream>
 #include <fstream>
-#include <nlohmann/json.hpp>
-#include <data_ingestion/orderbook/order_book.hpp>
-
-#include <string>
-#include <unordered_map>
-#include <memory>
-#include <chrono>
-#include <algorithm>
-#include <cmath>
-
-using namespace trading::data_ingestion;
+#include <filesystem>
+#include <iomanip>
 
 namespace trading {
 namespace intelligence {
- 
-   
+
+// ============================================================================
+// VolumeStatistics Implementation
+// ============================================================================
+
+void VolumeStatistics::updateStatistics() {
+    if (volume_history.size() < 10) return;
+    
+    std::vector<double> sorted_volumes(volume_history.begin(), volume_history.end());
+    std::sort(sorted_volumes.begin(), sorted_volumes.end());
+    
+    size_t size = sorted_volumes.size();
+    percentile_10 = sorted_volumes[static_cast<size_t>(size * 0.1)];
+    percentile_50 = sorted_volumes[static_cast<size_t>(size * 0.5)];
+    percentile_90 = sorted_volumes[static_cast<size_t>(size * 0.9)];
+}
+
+void VolumeStatistics::addVolume(double volume) {
+    if (volume <= 0) return;  // Skip invalid volumes
+    
+    volume_history.push_back(volume);
+    if (volume_history.size() > max_history_size) {
+        volume_history.pop_front();
+    }
+    updateStatistics();
+}
+
+double VolumeStatistics::getVolumePercentile(double current_volume) const {
+    if (volume_history.size() < 10) return 0.5;
+    
+    size_t count_below = 0;
+    for (double vol : volume_history) {
+        if (vol < current_volume) count_below++;
+    }
+    return static_cast<double>(count_below) / volume_history.size();
+}
+
+void VolumeStatistics::saveToStream(std::ostream& stream) const {
+    size_t size = volume_history.size();
+    stream.write(reinterpret_cast<const char*>(&size), sizeof(size));
+    for (double vol : volume_history) {
+        stream.write(reinterpret_cast<const char*>(&vol), sizeof(vol));
+    }
+}
+
+void VolumeStatistics::loadFromStream(std::istream& stream) {
+    size_t size;
+    stream.read(reinterpret_cast<char*>(&size), sizeof(size));
+    if (size > max_history_size) size = max_history_size;
+    
+    volume_history.clear();
+    for (size_t i = 0; i < size; ++i) {
+        double vol;
+        stream.read(reinterpret_cast<char*>(&vol), sizeof(vol));
+        volume_history.push_back(vol);
+    }
+    updateStatistics();
+}
+
+// ============================================================================
+// SpreadStatistics Implementation
+// ============================================================================
+
+void SpreadStatistics::updateStatistics() {
+    if (spread_history.size() < 10) return;
+    
+    std::vector<double> sorted_spreads(spread_history.begin(), spread_history.end());
+    std::sort(sorted_spreads.begin(), sorted_spreads.end());
+    
+    size_t size = sorted_spreads.size();
+    percentile_25 = sorted_spreads[static_cast<size_t>(size * 0.25)];
+    percentile_75 = sorted_spreads[static_cast<size_t>(size * 0.75)];
+}
+
+void SpreadStatistics::addSpread(double spread) {
+    if (spread <= 0) return;  // Skip invalid spreads
+    
+    spread_history.push_back(spread);
+    if (spread_history.size() > max_history_size) {
+        spread_history.pop_front();
+    }
+    updateStatistics();
+}
+
+double SpreadStatistics::getSpreadPercentile(double current_spread) const {
+    if (spread_history.size() < 10) return 0.5;
+    
+    size_t count_below = 0;
+    for (double spread : spread_history) {
+        if (spread < current_spread) count_below++;
+    }
+    return static_cast<double>(count_below) / spread_history.size();
+}
+
+void SpreadStatistics::saveToStream(std::ostream& stream) const {
+    size_t size = spread_history.size();
+    stream.write(reinterpret_cast<const char*>(&size), sizeof(size));
+    for (double spread : spread_history) {
+        stream.write(reinterpret_cast<const char*>(&spread), sizeof(spread));
+    }
+}
+
+void SpreadStatistics::loadFromStream(std::istream& stream) {
+    size_t size;
+    stream.read(reinterpret_cast<char*>(&size), sizeof(size));
+    if (size > max_history_size) size = max_history_size;
+    
+    spread_history.clear();
+    for (size_t i = 0; i < size; ++i) {
+        double spread;
+        stream.read(reinterpret_cast<char*>(&spread), sizeof(spread));
+        spread_history.push_back(spread);
+    }
+    updateStatistics();
+}
+
+// ============================================================================
+// RegimeProbabilities Implementation
+// ============================================================================
+
+void RegimeProbabilities::normalize() {
+    double total = liquid_prob + normal_prob + thin_prob + volatile_prob;
+    if (total > 0) {
+        liquid_prob /= total;
+        normal_prob /= total;
+        thin_prob /= total;
+        volatile_prob /= total;
+    } else {
+        normal_prob = 1.0;  // Default to normal
+    }
+}
+
+std::pair<trading::OrderBookRegime, double> RegimeProbabilities::getBestRegime() const {
+    double max_prob = std::max({liquid_prob, normal_prob, thin_prob, volatile_prob});
+    
+    if (max_prob == liquid_prob) {
+        return {trading::OB_LIQUID, liquid_prob};
+    } else if (max_prob == thin_prob) {
+        return {trading::OB_THIN, thin_prob};
+    } else if (max_prob == volatile_prob) {
+        return {trading::OB_VOLATILE, volatile_prob};
+    } else {
+        return {trading::OB_NORMAL, normal_prob};
+    }
+}
+
+// ============================================================================
+// CoinProfile Implementation
+// ============================================================================
+
+CoinProfile::CoinProfile(const std::string& sym, const std::string& tier, double vol_factor) 
+    : symbol(sym), market_tier(tier), volatility_factor(vol_factor) {
+    persistence_file = "data/adaptive_" + symbol + ".dat";
+    
+    // Create data directory if it doesn't exist
+    std::filesystem::create_directories("data");
+    
+    loadFromFile();
+}
+
+void CoinProfile::saveToFile() const {
+    try {
+        std::ofstream file(persistence_file, std::ios::binary);
+        if (!file) return;
+        
+        // Save volume statistics
+        volume_stats.saveToStream(file);
+        
+        // Save spread statistics
+        spread_stats.saveToStream(file);
+        
+        // Save metadata
+        file.write(reinterpret_cast<const char*>(&volatility_factor), sizeof(volatility_factor));
+        
+    } catch (const std::exception& e) {
+        std::cerr << "Error saving profile for " << symbol << ": " << e.what() << std::endl;
+    }
+}
+
+void CoinProfile::loadFromFile() {
+    try {
+        std::ifstream file(persistence_file, std::ios::binary);
+        if (!file) return;  // File doesn't exist, start fresh
+        
+        // Load volume statistics
+        volume_stats.loadFromStream(file);
+        
+        // Load spread statistics
+        spread_stats.loadFromStream(file);
+        
+        // Load metadata
+        file.read(reinterpret_cast<char*>(&volatility_factor), sizeof(volatility_factor));
+        
+    } catch (const std::exception& e) {
+        // If loading fails, start fresh
+        volume_stats.volume_history.clear();
+        spread_stats.spread_history.clear();
+    }
+}
+// Trong CoinProfile struct/class
+bool CoinProfile::hasEnoughData() const {
+    return volume_stats.volume_history.size() >= 10 &&
+           spread_stats.spread_history.size() >= 10;
+}
+void CoinProfile::updateStatistics(double volume, double spread) {
+    volume_stats.addVolume(volume);
+    spread_stats.addSpread(spread);
+    
+    // Update legacy fields for backward compatibility
+    sample_count = std::max(volume_stats.volume_history.size(), 
+                           spread_stats.spread_history.size());
+    
+    if (volume_stats.volume_history.size() > 0) {
+        volume_ema = volume_stats.percentile_50;  // Use median as EMA approximation
+    }
+    if (spread_stats.spread_history.size() > 0) {
+        spread_ema = (spread_stats.percentile_25 + spread_stats.percentile_75) / 2.0;
+    }
+}
+
+// ============================================================================
+// AdaptiveMarketIntelligence Implementation
+// ============================================================================
+
 AdaptiveMarketIntelligence::AdaptiveMarketIntelligence() {
-    InitializeDefaultProfiles();
-}
-    void AdaptiveMarketIntelligence::InitializeDefaultProfiles_conservative() {
-    // Generated based on comprehensive market analysis for Q1 2025
-    // Data sources: CoinMarketCap, Binance market data, trading volume analysis
-    // Methodology: Tier-based classification with volatility-adjusted parameters
-    
-    // TIER 1 - Major Caps (Highest liquidity, ETF correlation)
-    profiles_["BTCUSDT"] = {
-        "BTCUSDT", "btc", 80000000000, 0.00001, 4629630, 1.0,
-        1000000000, 166666667, 0.000005, 0.00003
-    };
-    profiles_["ETHUSDT"] = {
-        "ETHUSDT", "major", 25000000000, 0.000154, 868056, 1.3,
-        208333333, 31250000, 0.000077, 0.000462
-    };
-
-    // TIER 2 - Large Caps (Strong institutional interest)
-    profiles_["SOLUSDT"] = {
-        "SOLUSDT", "major", 8000000000, 0.000135, 277778, 1.3,
-        66666667, 10000000, 0.000068, 0.000405
-    };
-    profiles_["XRPUSDT"] = {
-        "XRPUSDT", "major", 12000000000, 0.00015, 416667, 1.3,
-        100000000, 15000000, 0.000075, 0.00045
-    };
-    profiles_["ADAUSDT"] = {
-        "ADAUSDT", "alt", 2500000000, 0.0002, 57870, 1.8,
-        15625000, 2083333, 0.0001, 0.0006
-    };
-    profiles_["AVAXUSDT"] = {
-        "AVAXUSDT", "alt", 1200000000, 0.01, 27778, 1.8,
-        7500000, 1000000, 0.005, 0.03
-    };
-    profiles_["DOTUSDT"] = {
-        "DOTUSDT", "alt", 800000000, 0.0017, 18519, 1.8,
-        5000000, 666667, 0.00085, 0.0051
-    };
-    profiles_["LINKUSDT"] = {
-        "LINKUSDT", "alt", 1000000000, 0.0058, 23148, 1.8,
-        6250000, 833333, 0.0029, 0.0174
-    };
-    profiles_["UNIUSDT"] = {
-        "UNIUSDT", "defi", 600000000, 0.0042, 10417, 2.5,
-        2500000, 375000, 0.0021, 0.0126
-    };
-
-    // TIER 3 - Mid Caps (Growing ecosystems)
-    profiles_["ATOMUSDT"] = {
-        "ATOMUSDT", "alt", 200000000, 0.0017, 4630, 1.8,
-        1250000, 166667, 0.00085, 0.0051
-    };
-    profiles_["ALGOUSDT"] = {
-        "ALGOUSDT", "alt", 150000000, 0.00007, 3472, 1.8,
-        937500, 125000, 0.000035, 0.00021
-    };
-    profiles_["AAVEUSDT"] = {
-        "AAVEUSDT", "defi", 400000000, 0.105, 6944, 2.5,
-        1666667, 250000, 0.0525, 0.315
-    };
-
-    // TIER 4 - Layer 2 & Scaling (High growth potential)
-    profiles_["ARBUSDT"] = {
-        "ARBUSDT", "l2", 300000000, 0.00025, 6250, 2.2,
-        1500000, 225000, 0.000125, 0.00075
-    };
-    profiles_["OPUSDT"] = {
-        "OPUSDT", "l2", 250000000, 0.000625, 5208, 2.2,
-        1250000, 187500, 0.000313, 0.001875
-    };
-    profiles_["INJUSDT"] = {
-        "INJUSDT", "defi", 180000000, 0.0081, 3125, 2.5,
-        750000, 112500, 0.00405, 0.0243
-    };
-    profiles_["SUIUSDT"] = {
-        "SUIUSDT", "l2", 1800000000, 0.001175, 37500, 2.2,
-        9000000, 1350000, 0.000588, 0.003525
-    };
-
-    // TIER 5 - Specialized/Oracle/Infrastructure
-    profiles_["TRBUSDT"] = {
-        "TRBUSDT", "oracle", 50000000, 0.04, 579, 3.0,
-        166667, 20833, 0.02, 0.12
-    };
-    profiles_["BANDUSDT"] = {
-        "BANDUSDT", "oracle", 30000000, 0.00064, 347, 3.0,
-        100000, 12500, 0.00032, 0.00192
-    };
-    profiles_["CHZUSDT"] = {
-        "CHZUSDT", "utility", 60000000, 0.000035, 833, 2.8,
-        225000, 30000, 0.000018, 0.000105
-    };
-    profiles_["ENJUSDT"] = {
-        "ENJUSDT", "utility", 40000000, 0.000087, 556, 2.8,
-        150000, 20000, 0.000044, 0.000262
-    };
-
-    // TIER 6 - DeFi Protocols (High volatility, regime-sensitive)
-    profiles_["YFIUSDT"] = {
-        "YFIUSDT", "defi", 100000000, 11.1, 1736, 2.5,
-        416667, 62500, 5.55, 33.3
-    };
-    profiles_["1INCHUSDT"] = {
-        "1INCHUSDT", "defi", 50000000, 0.00018, 868, 2.5,
-        208333, 31250, 0.00009, 0.00054
-    };
-
-    // TIER 7 - Emerging/Trending (High beta to market regimes)
-    profiles_["DOGEUSDT"] = {
-        "DOGEUSDT", "meme", 5000000000, 0.000175, 46296, 4.0,
-        10416667, 1666667, 0.000087, 0.000525
-    };
-    profiles_["WIFUSDT"] = {
-        "WIFUSDT", "meme", 200000000, 0.001075, 1852, 4.0,
-        416667, 66667, 0.000538, 0.003225
-    };
-
-    /*
-    Profile Parameter Explanation:
-    
-    1. symbol: Token symbol (e.g., "BTCUSDT")
-    2. market_tier: Classification ("btc", "major", "alt", "defi", "l2", "oracle", "utility", "meme")
-    3. avg_volume_24h: Average 24-hour trading volume in USD
-    4. typical_spread: Typical bid-ask spread as ratio of price
-    5. typical_depth: Typical order book depth in USD
-    6. volatility_factor: Multiplier for volatility (BTC=1.0, others scaled relative)
-    7. min_liquid_volume: Minimum volume threshold for LIQUID regime (USD/hour)
-    8. min_thin_volume: Minimum volume threshold for THIN regime (USD/hour)  
-    9. tight_spread_threshold: Threshold for tight spread classification
-    10. wide_spread_threshold: Threshold for wide spread classification
-    
-    Tier Characteristics:
-    - BTC: Ultra-stable, highest liquidity, volatility factor 1.0
-    - MAJOR: High liquidity, institutional adoption, volatility factor 1.3
-    - ALT: Medium liquidity, established projects, volatility factor 1.8
-    - DEFI: Protocol volatility, regime-sensitive, volatility factor 2.5
-    - L2: Scaling solutions, growth potential, volatility factor 2.2
-    - ORACLE: Specialized use case, lower liquidity, volatility factor 3.0
-    - UTILITY: Gaming/entertainment tokens, volatility factor 2.8
-    - MEME: Highest volatility, sentiment-driven, volatility factor 4.0
-    
-    Usage in Trading System:
-    - Execution parameters automatically adjust based on tier
-    - Risk management scales with volatility factors
-    - Order book regime detection uses tier-specific thresholds
-    - Market intelligence normalizes metrics per token characteristics
-    */
-}
-    void AdaptiveMarketIntelligence::InitializeDefaultProfiles() {
-        // OPTIMIZED PROFILES - Reduced conservatism for better signal generation
-        // Key changes:
-        // 1. Reduced min_liquid_volume by 60-70% (was major bottleneck)
-        // 2. Tightened spread thresholds by 30-40% 
-        // 3. Lowered depth requirements by 50%
-        // 4. More realistic volume expectations based on current market conditions
-        
-        // TIER 1 - BTC (Reference standard)
-        profiles_["BTCUSDT"] = {
-            "BTCUSDT", "btc", 80000000000, 0.00001, 4629630, 1.0,
-            300000000,    // Reduced from 1B (60% cut)
-            50000000,     // Reduced from 166M (70% cut) 
-            0.000005, 0.00003
-        };
-        
-        profiles_["ETHUSDT"] = {
-            "ETHUSDT", "major", 25000000000, 0.000154, 868056, 1.3,
-            75000000,     // Reduced from 208M (64% cut)
-            12000000,     // Reduced from 31M (62% cut)
-            0.000077, 0.000462
-        };
-
-        // TIER 2 - Large Caps (Significantly more accessible)
-        profiles_["SOLUSDT"] = {
-            "SOLUSDT", "major", 8000000000, 0.000135, 277778, 1.3,
-            25000000,     // Reduced from 67M (62% cut)
-            4000000,      // Reduced from 10M (60% cut)
-            0.00005,      // Tightened from 0.000068 (26% tighter)
-            0.0003        // Tightened from 0.000405 (26% tighter)
-        };
-        
-        profiles_["XRPUSDT"] = {
-            "XRPUSDT", "major", 12000000000, 0.00015, 416667, 1.3,
-            35000000,     // Reduced from 100M (65% cut)
-            6000000,      // Reduced from 15M (60% cut)
-            0.00005, 0.0003
-        };
-        
-        profiles_["ADAUSDT"] = {
-            "ADAUSDT", "alt", 2500000000, 0.0002, 57870, 1.8,
-            6000000,      // Reduced from 15.6M (62% cut)
-            1000000,      // Reduced from 2.08M (52% cut)
-            0.00007,      // Tightened from 0.0001 (30% tighter)
-            0.00042       // Tightened from 0.0006 (30% tighter)
-        };
-        
-        profiles_["AVAXUSDT"] = {
-            "AVAXUSDT", "alt", 1200000000, 0.01, 27778, 1.8,
-            3000000,      // Reduced from 7.5M (60% cut)
-            500000,       // Reduced from 1M (50% cut)
-            0.0035,       // Tightened from 0.005 (30% tighter)
-            0.021         // Tightened from 0.03 (30% tighter)
-        };
-
-        // TIER 3 - Mid Caps (Much more accessible)
-        profiles_["DOTUSDT"] = {
-            "DOTUSDT", "alt", 800000000, 0.0017, 18519, 1.8,
-            2000000,      // Reduced from 5M (60% cut)
-            350000,       // Reduced from 667K (47% cut)
-            0.0006,       // Tightened from 0.00085 (29% tighter)
-            0.0036        // Tightened from 0.0051 (29% tighter)
-        };
-        
-        profiles_["LINKUSDT"] = {
-            "LINKUSDT", "alt", 1000000000, 0.0058, 23148, 1.8,
-            2500000,      // Reduced from 6.25M (60% cut)
-            400000,       // Reduced from 833K (52% cut)
-            0.002,        // Tightened from 0.0029 (31% tighter)
-            0.012         // Tightened from 0.0174 (31% tighter)
-        };
-        
-        profiles_["UNIUSDT"] = {
-            "UNIUSDT", "defi", 600000000, 0.0042, 10417, 2.5,
-            1000000,      // Reduced from 2.5M (60% cut)
-            200000,       // Reduced from 375K (47% cut)
-            0.0015,       // Tightened from 0.0021 (29% tighter)
-            0.009         // Tightened from 0.0126 (29% tighter)
-        };
-
-        // TIER 4 - Layer 2 (More realistic thresholds)
-        profiles_["ARBUSDT"] = {
-            "ARBUSDT", "l2", 300000000, 0.00025, 6250, 2.2,
-            600000,       // Reduced from 1.5M (60% cut)
-            120000,       // Reduced from 225K (47% cut)
-            0.00009,      // Tightened from 0.000125 (28% tighter)
-            0.00053       // Tightened from 0.00075 (29% tighter)
-        };
-        
-        profiles_["OPUSDT"] = {
-            "OPUSDT", "l2", 250000000, 0.000625, 5208, 2.2,
-            500000,       // Reduced from 1.25M (60% cut)
-            100000,       // Reduced from 187K (47% cut)
-            0.00022,      // Tightened from 0.000313 (30% tighter)
-            0.00131       // Tightened from 0.001875 (30% tighter)
-        };
-        
-        profiles_["SUIUSDT"] = {
-            "SUIUSDT", "l2", 1800000000, 0.001175, 37500, 2.2,
-            3500000,      // Reduced from 9M (61% cut)
-            700000,       // Reduced from 1.35M (48% cut)
-            0.0004,       // Tightened from 0.000588 (32% tighter)
-            0.0025        // Tightened from 0.003525 (29% tighter)
-        };
-
-        // TIER 5 - Specialized (Significantly relaxed for signal generation)
-        profiles_["INJUSDT"] = {
-            "INJUSDT", "defi", 180000000, 0.0081, 3125, 2.5,
-            300000,       // Reduced from 750K (60% cut)
-            60000,        // Reduced from 112K (47% cut)
-            0.0028,       // Tightened from 0.00405 (31% tighter)
-            0.017         // Tightened from 0.0243 (30% tighter)
-        };
-        
-        profiles_["TRBUSDT"] = {
-            "TRBUSDT", "oracle", 50000000, 0.04, 579, 3.0,
-            70000,        // Reduced from 167K (58% cut)
-            15000,        // Reduced from 21K (28% cut)
-            0.014,        // Tightened from 0.02 (30% tighter)
-            0.084         // Tightened from 0.12 (30% tighter)
-        };
-        
-        profiles_["BANDUSDT"] = {
-            "BANDUSDT", "oracle", 30000000, 0.00064, 347, 3.0,
-            40000,        // Reduced from 100K (60% cut)
-            8000,         // Reduced from 12.5K (36% cut)
-            0.00022,      // Tightened from 0.00032 (31% tighter)
-            0.00134       // Tightened from 0.00192 (30% tighter)
-        };
-
-        // TIER 6 - Utility tokens (Much more accessible)
-        profiles_["CHZUSDT"] = {
-            "CHZUSDT", "utility", 60000000, 0.000035, 833, 2.8,
-            90000,        // Reduced from 225K (60% cut)
-            18000,        // Reduced from 30K (40% cut)
-            0.000013,     // Tightened from 0.000018 (28% tighter)
-            0.000074      // Tightened from 0.000105 (30% tighter)
-        };
-        
-        profiles_["ENJUSDT"] = {
-            "ENJUSDT", "utility", 40000000, 0.000087, 556, 2.8,
-            60000,        // Reduced from 150K (60% cut)
-            12000,        // Reduced from 20K (40% cut)
-            0.00003,      // Tightened from 0.000044 (32% tighter)
-            0.00018       // Tightened from 0.000262 (31% tighter)
-        };
-
-        // TIER 7 - DeFi (Relaxed for more opportunities)
-        profiles_["YFIUSDT"] = {
-            "YFIUSDT", "defi", 100000000, 11.1, 1736, 2.5,
-            170000,       // Reduced from 417K (59% cut)
-            35000,        // Reduced from 62.5K (44% cut)
-            3.9,          // Tightened from 5.55 (30% tighter)
-            23.3          // Tightened from 33.3 (30% tighter)
-        };
-        
-        profiles_["1INCHUSDT"] = {
-            "1INCHUSDT", "defi", 50000000, 0.00018, 868, 2.5,
-            85000,        // Reduced from 208K (59% cut)
-            18000,        // Reduced from 31K (42% cut)
-            0.000063,     // Tightened from 0.00009 (30% tighter)
-            0.000378      // Tightened from 0.00054 (30% tighter)
-        };
-
-        // TIER 8 - Meme/Trending (Highly relaxed for volatility capture)
-        profiles_["DOGEUSDT"] = {
-            "DOGEUSDT", "meme", 5000000000, 0.000175, 46296, 4.0,
-            4000000,      // Reduced from 10.4M (62% cut)
-            800000,       // Reduced from 1.67M (52% cut)
-            0.00006,      // Tightened from 0.000087 (31% tighter)
-            0.00037       // Tightened from 0.000525 (29% tighter)
-        };
-        
-        profiles_["WIFUSDT"] = {
-            "WIFUSDT", "meme", 200000000, 0.001075, 1852, 4.0,
-            170000,       // Reduced from 417K (59% cut)
-            35000,        // Reduced from 67K (48% cut)
-            0.000377,     // Tightened from 0.000538 (30% tighter)
-            0.00226       // Tightened from 0.003225 (30% tighter)
-        };
-
-        /*
-        KEY OPTIMIZATIONS MADE:
-        
-        1. VOLUME THRESHOLDS (Major bottleneck):
-        - min_liquid_volume: Reduced by 58-65% across all tiers
-        - min_thin_volume: Reduced by 28-70% across all tiers
-        - Reasoning: Original thresholds were based on peak market conditions
-        
-        2. SPREAD THRESHOLDS:
-        - tight_spread_threshold: Tightened by 28-32% (easier to qualify as "tight")
-        - wide_spread_threshold: Tightened by 29-32% (easier to qualify as "normal")
-        - Reasoning: Current market spreads are tighter than historical averages
-        
-        3. TIER-BASED SCALING:
-        - Higher-tier tokens: More aggressive cuts (they have more volume)
-        - Lower-tier tokens: Moderate cuts (they need some protection)
-        - Meme tokens: Significant relaxation (volatility is the opportunity)
-        
-        4. REALISTIC EXPECTATIONS:
-        - Based on current Q1 2025 market conditions
-        - Accounts for reduced institutional activity vs 2024 peaks
-        - Balances signal generation with risk management
-        
-        EXPECTED IMPACT:
-        - 3-5x more signals for major tokens (BTC, ETH, SOL)
-        - 5-8x more signals for alt tokens (ADA, AVAX, DOT)
-        - 8-12x more signals for smaller caps and DeFi
-        - Better regime detection due to more data points
-        
-        MONITORING RECOMMENDATIONS:
-        - Watch first 2-4 hours for signal frequency
-        - If still too conservative, make another 20-30% cut to volume thresholds
-        - If too aggressive (>1 signal per minute), increase by 15-20%
-        - Track execution quality - should maintain >85% successful fills
-        */
-    }
-    // Trong adaptive_intelligence.cpp
-std::vector<trading::PriceLevel> AdaptiveMarketIntelligence::ConvertPriceLevels(
-    const std::vector<trading::data_ingestion::PriceLevel>& input) {
-    
-    std::vector<trading::PriceLevel> result;
-    result.reserve(input.size());
-    
-    for (const auto& level : input) {
-        trading::PriceLevel converted;
-        converted.set_price(level.price);          // Hoặc level.price
-        converted.set_quantity(level.quantity);    // Hoặc level.quantity  
-        // converted.set_order_count(level.getOrderCount()); // Hoặc level.order_count
-        result.push_back(converted);
-    }
-    
-    return result;
+    initializeProfiles();
 }
 
-    
-MarketIntelligence AdaptiveMarketIntelligence::GenerateAdaptiveMarketIntelligence(
-    const std::string& symbol,
-    std::shared_ptr<OrderBook> orderbook) {
-    
-    MarketIntelligence intel;
-    auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::system_clock::now().time_since_epoch()).count();
-        
-    intel.set_symbol(symbol);
-    intel.set_timestamp(now);
-    
-    // Get or create profile for this symbol
-    auto& profile = GetOrCreateProfile(symbol);
-    
-    // Get order book data
-    auto bids = orderbook->getBids(10); // Get deeper book data
-    auto asks = orderbook->getAsks(10);
-    
-    if (bids.empty() || asks.empty()) {
-        return intel; // Return empty intelligence
-    }
-    
-    // Basic calculations
-    double best_bid = bids[0].price;
-    double best_ask = asks[0].price;
-    double spread = best_ask - best_bid;
-    double mid_price = (best_bid + best_ask) / 2.0;
-    double relative_spread = spread / mid_price;
-    
-    intel.set_bid_ask_spread(relative_spread);
-    
-    // Calculate order book depth and imbalance
-    //     OrderBookMetrics CalculateOrderBookMetrics(
-    // const std::vector<PriceLevel>& bids,
-    // const std::vector<PriceLevel>& asks) {
-    auto converted_bids = ConvertPriceLevels(bids);
-    auto converted_asks = ConvertPriceLevels(asks);
-    OrderBookMetrics metrics = CalculateOrderBookMetrics(converted_bids, converted_asks);
-    
-    intel.set_order_book_imbalance(metrics.imbalance);
-    intel.set_depth_imbalance(metrics.depth_imbalance);
-    intel.set_liquidity_ratio(CalculateAdaptiveLiquidityRatio(metrics.total_volume, profile));
-    
-    // Update profile with current observations
-    UpdateProfile(profile, metrics.total_volume, relative_spread, metrics.total_volume);
-    
-    // Advanced volatility estimation
-    double volatility = EstimateVolatility(symbol, relative_spread, orderbook);
-    intel.set_realized_volatility_1m(volatility);
-    
-    // Flow analysis (if trade data available)
-    FlowMetrics flow = AnalyzeFlowMetrics(metrics.imbalance, volatility);
-    intel.set_net_flow_5s(flow.net_flow_5s);
-    intel.set_net_flow_30s(flow.net_flow_30s);
-    intel.set_aggressive_buy_ratio(flow.aggressive_buy_ratio);
-    intel.set_aggressive_sell_ratio(flow.aggressive_sell_ratio);
-    
-    // Adaptive regime classification
-    auto regime_result = ClassifyOrderBookRegimeAdaptive(
-        metrics, relative_spread, profile);
-        
-    intel.set_current_regime(regime_result.regime);
-    intel.set_regime_confidence(regime_result.confidence);
-    
-    return intel;
+AdaptiveMarketIntelligence::~AdaptiveMarketIntelligence() {
+    saveAllProfiles();
 }
 
+void AdaptiveMarketIntelligence::initializeProfiles() {
+    std::lock_guard<std::mutex> lock(profiles_mutex_);
+    
+    // Tier 1: Major caps
+    profiles_["BTCUSDT"] = std::make_unique<CoinProfile>("BTCUSDT", "major", 1.0);
+    profiles_["ETHUSDT"] = std::make_unique<CoinProfile>("ETHUSDT", "major", 1.2);
+    
+    // Tier 2: Large caps  
+    profiles_["SOLUSDT"] = std::make_unique<CoinProfile>("SOLUSDT", "large", 1.4);
+    profiles_["XRPUSDT"] = std::make_unique<CoinProfile>("XRPUSDT", "large", 1.3);
+    profiles_["ADAUSDT"] = std::make_unique<CoinProfile>("ADAUSDT", "alt", 1.6);
+    
+    // Tier 3: Mid caps
+    profiles_["AVAXUSDT"] = std::make_unique<CoinProfile>("AVAXUSDT", "alt", 1.7);
+    profiles_["DOTUSDT"] = std::make_unique<CoinProfile>("DOTUSDT", "alt", 1.6);
+    profiles_["LINKUSDT"] = std::make_unique<CoinProfile>("LINKUSDT", "alt", 1.5);
+    profiles_["UNIUSDT"] = std::make_unique<CoinProfile>("UNIUSDT", "defi", 2.0);
+    
+    // Additional symbols
+    profiles_["ATOMUSDT"] = std::make_unique<CoinProfile>("ATOMUSDT", "alt", 1.8);
+    profiles_["ALGOUSDT"] = std::make_unique<CoinProfile>("ALGOUSDT", "alt", 1.9);
+    profiles_["AAVEUSDT"] = std::make_unique<CoinProfile>("AAVEUSDT", "defi", 2.2);
+    profiles_["ARBUSDT"] = std::make_unique<CoinProfile>("ARBUSDT", "l2", 2.0);
+    profiles_["OPUSDT"] = std::make_unique<CoinProfile>("OPUSDT", "l2", 2.1);
+    profiles_["INJUSDT"] = std::make_unique<CoinProfile>("INJUSDT", "defi", 2.3);
+    profiles_["SUIUSDT"] = std::make_unique<CoinProfile>("SUIUSDT", "l2", 2.0);
+    profiles_["TRBUSDT"] = std::make_unique<CoinProfile>("TRBUSDT", "oracle", 2.8);
+    profiles_["BANDUSDT"] = std::make_unique<CoinProfile>("BANDUSDT", "oracle", 2.7);
+    profiles_["CHZUSDT"] = std::make_unique<CoinProfile>("CHZUSDT", "utility", 2.5);
+    profiles_["ENJUSDT"] = std::make_unique<CoinProfile>("ENJUSDT", "utility", 2.4);
+    profiles_["YFIUSDT"] = std::make_unique<CoinProfile>("YFIUSDT", "defi", 2.8);
+    profiles_["1INCHUSDT"] = std::make_unique<CoinProfile>("1INCHUSDT", "defi", 2.6);
+    profiles_["DOGEUSDT"] = std::make_unique<CoinProfile>("DOGEUSDT", "meme", 3.5);
+    profiles_["WIFUSDT"] = std::make_unique<CoinProfile>("WIFUSDT", "meme", 4.0);
+}
 
-CoinProfile& AdaptiveMarketIntelligence::GetOrCreateProfile(const std::string& symbol) {
+void AdaptiveMarketIntelligence::InitializeDefaultProfiles() {
+    // Legacy method name - delegate to new implementation
+    initializeProfiles();
+}
+
+CoinProfile* AdaptiveMarketIntelligence::getOrCreateProfile(const std::string& symbol) {
+    std::lock_guard<std::mutex> lock(profiles_mutex_);
+    
     auto it = profiles_.find(symbol);
     if (it != profiles_.end()) {
-        return it->second;
+        return it->second.get();
     }
     
     // Create default profile for unknown symbol
     std::string base_symbol = symbol.substr(0, symbol.find("USDT"));
-    profiles_[symbol] = {
-        symbol, "unknown", 50000000, 0.001, 2000, 2.0,
-        2000, 300, 0.0005, 0.005
-    };
-    
-    return profiles_[symbol];
+    profiles_[symbol] = std::make_unique<CoinProfile>(symbol, "unknown", 2.0);
+    return profiles_[symbol].get();
 }
+
+CoinProfile& AdaptiveMarketIntelligence::GetOrCreateProfile(const std::string& symbol) {
+    // Legacy method signature - delegate to new implementation
+    return *getOrCreateProfile(symbol);
+}
+
+// ============================================================================
+// NEW PRIMARY INTERFACE
+// ============================================================================
+
+trading::MarketIntelligence AdaptiveMarketIntelligence::generateIntelligence(
+    const std::string& symbol,
+    const std::vector<trading::PriceLevel>& bids,
+    const std::vector<trading::PriceLevel>& asks) {
     
-OrderBookMetrics AdaptiveMarketIntelligence::CalculateOrderBookMetrics(
-    const std::vector<PriceLevel>& bids,
-    const std::vector<PriceLevel>& asks) {
+    MarketIntelligence intel;
+    intel.set_symbol(symbol);
+    intel.set_timestamp(std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count());
+    
+    if (bids.empty() || asks.empty()) return intel;
+    
+    // Get profile
+    CoinProfile* profile = getOrCreateProfile(symbol);
+    if (!profile) return intel;
+    
+    // Calculate basic metrics
+    double best_bid = bids[0].price();
+    double best_ask = asks[0].price();
+    double spread = best_ask - best_bid;
+    double mid_price = (best_bid + best_ask) / 2.0;
+    double relative_spread = spread / mid_price;
+    
+    // Calculate volume metrics
+    OrderBookMetrics metrics = calculateOrderBookMetrics(bids, asks);
+    
+    // Update historical statistics
+    profile->updateStatistics(metrics.total_volume, relative_spread);
+    
+    // Calculate percentile-based metrics
+    double volume_percentile = profile->volume_stats.getVolumePercentile(metrics.total_volume);
+    double spread_percentile = profile->spread_stats.getSpreadPercentile(relative_spread);
+    
+    // Set basic intelligence fields
+    intel.set_bid_ask_spread(relative_spread);
+    intel.set_order_book_imbalance(metrics.imbalance);
+    intel.set_liquidity_ratio(volume_percentile);
+    
+    // Estimate flow metrics
+    FlowMetrics flow = estimateFlowMetrics(metrics.imbalance, metrics.total_volume);
+    intel.set_aggressive_buy_ratio(flow.aggressive_buy_ratio);
+    intel.set_aggressive_sell_ratio(flow.aggressive_sell_ratio);
+    intel.set_net_flow_5s(flow.net_flow_5s);
+    intel.set_net_flow_30s(flow.net_flow_30s);
+    
+    // Volatility estimation
+    double volatility = estimateSimpleVolatility(relative_spread, profile->volatility_factor);
+    intel.set_realized_volatility_1m(volatility);
+    
+    // Regime classification using probabilities
+    RegimeProbabilities probs = calculateRegimeProbabilities(
+        volume_percentile, spread_percentile, metrics.imbalance, profile->volatility_factor);
+    
+    auto [regime, confidence] = probs.getBestRegime();
+    intel.set_current_regime(regime);
+    intel.set_regime_confidence(confidence);
+    
+    // Periodic saving
+    update_counter_++;
+    if (update_counter_ % save_frequency_ == 0) {
+        profile->saveToFile();
+    }
+    
+    return intel;
+}
+
+// ============================================================================
+// BACKWARD COMPATIBILITY INTERFACE
+// ============================================================================
+
+trading::MarketIntelligence AdaptiveMarketIntelligence::GenerateAdaptiveMarketIntelligence(
+    const std::string& symbol,
+    std::shared_ptr<OrderBook> orderbook) {
+    
+    // Get order book data
+    auto bids_raw = orderbook->getBids(10);
+    auto asks_raw = orderbook->getAsks(10);
+    
+    if (bids_raw.empty() || asks_raw.empty()) {
+        MarketIntelligence intel;
+        intel.set_symbol(symbol);
+        return intel;
+    }
+    
+    // Convert to new format
+    std::vector<trading::PriceLevel> bids, asks;
+    
+    for (const auto& bid : bids_raw) {
+        trading::PriceLevel level;
+        level.set_price(bid.price);
+        level.set_quantity(bid.quantity);
+        bids.push_back(level);
+    }
+    
+    for (const auto& ask : asks_raw) {
+        trading::PriceLevel level;
+        level.set_price(ask.price);
+        level.set_quantity(ask.quantity);
+        asks.push_back(level);
+    }
+    
+    // Delegate to new implementation
+    return generateIntelligence(symbol, bids, asks);
+}
+
+// ============================================================================
+// UTILITY METHODS
+// ============================================================================
+
+OrderBookMetrics AdaptiveMarketIntelligence::calculateOrderBookMetrics(
+    const std::vector<trading::PriceLevel>& bids,
+    const std::vector<trading::PriceLevel>& asks) const {
     
     OrderBookMetrics metrics;
     
-    // Calculate volumes at different depths
+    // Calculate volumes at top 5 levels
     for (size_t i = 0; i < std::min(size_t(5), bids.size()); ++i) {
         metrics.bid_volume_5 += bids[i].quantity();
     }
@@ -501,373 +426,263 @@ OrderBookMetrics AdaptiveMarketIntelligence::CalculateOrderBookMetrics(
         metrics.ask_volume_5 += asks[i].quantity();
     }
     
-    for (size_t i = 0; i < std::min(size_t(10), bids.size()); ++i) {
-        metrics.bid_volume_10 += bids[i].quantity();
-    }
+    metrics.total_volume = metrics.bid_volume_5 + metrics.ask_volume_5;
     
-    for (size_t i = 0; i < std::min(size_t(10), asks.size()); ++i) {
-        metrics.ask_volume_10 += asks[i].quantity();
-    }
-    
-    metrics.total_volume = metrics.bid_volume_10 + metrics.ask_volume_10;
-    
-    // Surface imbalance (top 5 levels)
-    if (metrics.bid_volume_5 + metrics.ask_volume_5 > 0) {
-        metrics.imbalance = (metrics.bid_volume_5 - metrics.ask_volume_5) / 
-                            (metrics.bid_volume_5 + metrics.ask_volume_5);
-    }
-    
-    // Depth imbalance (levels 6-10)
-    double deep_bid = metrics.bid_volume_10 - metrics.bid_volume_5;
-    double deep_ask = metrics.ask_volume_10 - metrics.ask_volume_5;
-    if (deep_bid + deep_ask > 0) {
-        metrics.depth_imbalance = (deep_bid - deep_ask) / (deep_bid + deep_ask);
+    // Surface imbalance
+    if (metrics.total_volume > 0) {
+        metrics.imbalance = (metrics.bid_volume_5 - metrics.ask_volume_5) / metrics.total_volume;
     }
     
     return metrics;
 }
 
-// double AdaptiveMarketIntelligence::CalculateAdaptiveLiquidityRatio(double volume, const CoinProfile& profile) {
-//     // Use adaptive threshold based on symbol's characteristics
-//     double threshold = profile.min_liquid_volume;
+RegimeProbabilities AdaptiveMarketIntelligence::calculateRegimeProbabilities(
+    double volume_percentile,
+    double spread_percentile, 
+    double imbalance,
+    double volatility_factor) const {
     
-//     // Adjust for current market conditions
-//     if (profile.sample_count > 0 && profile.volume_ema > 0) {
-//         threshold = profile.volume_ema * 0.5; // 80% of average volume
-//     }
+    RegimeProbabilities probs;
     
-//     return std::min(1.0, volume / threshold);
-// }
-
-void AdaptiveMarketIntelligence::UpdateProfile(CoinProfile& profile, double volume, double spread, double depth) {
-    const double alpha = 0.1; // EMA smoothing factor
-    
-    if (profile.sample_count == 0) {
-        profile.volume_ema = volume;
-        profile.spread_ema = spread;
-        profile.depth_ema = depth;
+    // Volume-based probabilities
+    if (volume_percentile > 0.8) {
+        probs.liquid_prob += 0.4;
+    } else if (volume_percentile < 0.2) {
+        probs.thin_prob += 0.4;
     } else {
-        profile.volume_ema = alpha * volume + (1 - alpha) * profile.volume_ema;
-        profile.spread_ema = alpha * spread + (1 - alpha) * profile.spread_ema;
-        profile.depth_ema = alpha * depth + (1 - alpha) * profile.depth_ema;
+        probs.normal_prob += 0.3;
     }
     
-    profile.sample_count++;
-    
-    // Periodically update thresholds based on learned patterns
-    if (profile.sample_count % 1000 == 0) {
-        AdaptThresholds(profile);
+    // Spread-based probabilities
+    if (spread_percentile < 0.3) { // Tight spread
+        probs.liquid_prob += 0.3;
+    } else if (spread_percentile > 0.7) { // Wide spread
+        probs.thin_prob += 0.3;
+    } else {
+        probs.normal_prob += 0.2;
     }
-}
-
-void AdaptiveMarketIntelligence::AdaptThresholds(CoinProfile& profile) {
-    // Adapt thresholds based on observed patterns
-    profile.min_liquid_volume = profile.volume_ema * 1.5;
-    profile.min_thin_volume = profile.volume_ema * 0.3;
-    profile.tight_spread_threshold = profile.spread_ema * 0.5;
-    profile.wide_spread_threshold = profile.spread_ema * 2.0;
-}
-
-double AdaptiveMarketIntelligence::EstimateVolatility(const std::string& symbol, double spread, 
-                        std::shared_ptr<OrderBook> orderbook) {
-    // More sophisticated volatility estimation
-    auto& profile = profiles_[symbol];
-    (void)orderbook; // suppress unused parameter warning
-    // Base volatility from spread
-    double spread_vol = spread * profile.volatility_factor;
     
-    // TODO: Add price movement-based volatility if historical data available
-    // double price_vol = CalculatePriceVolatility(symbol);
+    // Imbalance-based probabilities
+    double abs_imbalance = std::abs(imbalance);
+    if (abs_imbalance > 0.4) {
+        probs.volatile_prob += 0.4;
+    } else if (abs_imbalance < 0.1) {
+        probs.liquid_prob += 0.2;
+        probs.normal_prob += 0.1;
+    }
     
-    return spread_vol * 10; // Scale factor
+    // Volatility factor adjustment
+    if (volatility_factor > 2.5) {
+        probs.volatile_prob += 0.2;
+        probs.thin_prob += 0.1;
+    } else if (volatility_factor < 1.5) {
+        probs.liquid_prob += 0.1;
+        probs.normal_prob += 0.1;
+    }
+    
+    probs.normalize();
+    return probs;
 }
 
-FlowMetrics AdaptiveMarketIntelligence::AnalyzeFlowMetrics(double imbalance, double volatility) {
+double AdaptiveMarketIntelligence::calculateLiquidityRatio(double volume, const CoinProfile& profile) const {
+    // Use percentile-based calculation
+    return profile.volume_stats.getVolumePercentile(volume);
+}
+
+double AdaptiveMarketIntelligence::estimateSimpleVolatility(double spread, double volatility_factor) const {
+    return spread * volatility_factor * 5.0;  // Simple volatility estimate
+}
+
+FlowMetrics AdaptiveMarketIntelligence::estimateFlowMetrics(double imbalance, double total_volume) const {
     FlowMetrics flow;
     
-    // Estimate flow based on imbalance and volatility
-    flow.net_flow_5s = imbalance * volatility;
-    flow.net_flow_30s = imbalance * volatility * 0.7; // Decay over time
-    
-    // Estimate aggressive ratios
-    flow.aggressive_buy_ratio = std::max(0.0, std::min(1.0, 0.5 + imbalance * 0.3));
-    flow.aggressive_sell_ratio = std::max(0.0, std::min(1.0, 0.5 - imbalance * 0.3));
+    flow.net_flow_5s = imbalance * total_volume * 0.1;
+    flow.net_flow_30s = imbalance * total_volume * 0.05;
+    flow.aggressive_buy_ratio = std::max(0.0, std::min(1.0, 0.5 + imbalance * 0.4));
+    flow.aggressive_sell_ratio = std::max(0.0, std::min(1.0, 0.5 - imbalance * 0.4));
     
     return flow;
 }
 
-// RegimeResult AdaptiveMarketIntelligence::ClassifyOrderBookRegimeAdaptive(
-//     const OrderBookMetrics& metrics,
-//     double spread,
-//     const CoinProfile& profile) {
-    
-//     RegimeResult result;
-//     result.confidence = 0.8;
-    
-//     // Use adaptive thresholds
-//     double liquid_threshold = profile.sample_count > 0 ? 
-//         profile.volume_ema * 1.5 : profile.min_liquid_volume;
-//     double thin_threshold = profile.sample_count > 0 ? 
-//         profile.volume_ema * 0.3 : profile.min_thin_volume;
-//     double tight_spread = profile.sample_count > 0 ? 
-//         profile.spread_ema * 0.5 : profile.tight_spread_threshold;
-//     double wide_spread = profile.sample_count > 0 ? 
-//         profile.spread_ema * 2.0 : profile.wide_spread_threshold;
-    
-//     // Multi-factor classification
-//     int liquid_score = 0;
-//     int thin_score = 0;
-//     int volatile_score = 0;
-    
-//     // Volume factors
-//     if (metrics.total_volume > liquid_threshold) liquid_score += 2;
-//     if (metrics.total_volume < thin_threshold) thin_score += 2;
-    
-//     // Spread factors
-//     if (spread < tight_spread) liquid_score += 1;
-//     if (spread > wide_spread) thin_score += 2;
-    
-//     // Imbalance factors
-//     if (std::abs(metrics.imbalance) > 0.3) volatile_score += 2;
-//     if (std::abs(metrics.depth_imbalance) > 0.4) volatile_score += 1;
-    
-//     // Determine regime based on scores
-//     if (liquid_score >= 2 && thin_score == 0 && volatile_score < 2) {
-//         result.regime = trading::OB_LIQUID;
-//         result.confidence = 0.9;
-//     } else if (thin_score >= 2) {
-//         result.regime = trading::OB_THIN;
-//         result.confidence = 0.8;
-//     } else if (volatile_score >= 2) {
-//         result.regime = trading::OB_VOLATILE;
-//         result.confidence = 0.75;
-//     } else {
-//         result.regime = trading::OB_NORMAL;
-//         result.confidence = 0.6;
-//     }
-    
-//     return result;
-// }
-
-// Add this method to your AdaptiveMarketIntelligence class
-// This provides emergency threshold overrides
-
-// void AdaptiveMarketIntelligence::ApplyEmergencyThresholds() {
-//     // Emergency threshold overrides - much more relaxed
-//     for (auto& [symbol, profile] : profiles_) {
-//         // Save original values if not already saved
-//         if (profile.original_min_liquid_volume == 0) {
-//             profile.original_min_liquid_volume = profile.min_liquid_volume;
-//             profile.original_min_thin_volume = profile.min_thin_volume;
-//             profile.original_tight_spread_threshold = profile.tight_spread_threshold;
-//             profile.original_wide_spread_threshold = profile.wide_spread_threshold;
-//         }
-        
-//         // Apply emergency thresholds (70-80% reduction)
-//         profile.min_liquid_volume *= 0.2;        // 80% reduction
-//         profile.min_thin_volume *= 0.3;          // 70% reduction
-//         profile.tight_spread_threshold *= 1.8;   // 80% more generous
-//         profile.wide_spread_threshold *= 0.6;    // 40% tighter
-        
-//         // Boost liquidity ratio calculation
-//         profile.liquidity_boost_factor = 1.5;
-//     }
-    
-//     std::cout << "🚨 EMERGENCY: Applied relaxed thresholds to restore signal generation" << std::endl;
-// }
-
-// void AdaptiveMarketIntelligence::RestoreOriginalThresholds() {
-//     // Restore original thresholds
-//     for (auto& [symbol, profile] : profiles_) {
-//         if (profile.original_min_liquid_volume > 0) {
-//             profile.min_liquid_volume = profile.original_min_liquid_volume;
-//             profile.min_thin_volume = profile.original_min_thin_volume;
-//             profile.tight_spread_threshold = profile.original_tight_spread_threshold;
-//             profile.wide_spread_threshold = profile.original_wide_spread_threshold;
-//             profile.liquidity_boost_factor = 1.0;
-//         }
-//     }
-    
-//     std::cout << "✅ Restored original adaptive intelligence thresholds" << std::endl;
-// }
-
-// Enhanced liquidity calculation with emergency boost
-// double AdaptiveMarketIntelligence::CalculateAdaptiveLiquidityRatio(double volume, const CoinProfile& profile) {
-//     double threshold = profile.min_liquid_volume;
-    
-//     if (profile.sample_count > 0 && profile.volume_ema > 0) {
-//         threshold = profile.volume_ema * 0.5; // Even more relaxed (was 0.8)
-//     }
-    
-//     double ratio = volume / threshold;
-    
-//     // Apply emergency boost if set
-//     if (profile.liquidity_boost_factor > 1.0) {
-//         ratio *= profile.liquidity_boost_factor;
-//     }
-    
-//     return std::min(1.0, ratio);
-// }
-
-// Modified regime classification with emergency overrides
-// Add these methods to your AdaptiveMarketIntelligence class
-
-void AdaptiveMarketIntelligence::DebugSampleCounts() {
-    std::cout << "\n=== ADAPTIVE INTELLIGENCE SAMPLE COUNT DEBUG ===" << std::endl;
+// ============================================================================
+// UTILITY AND DEBUG METHODS
+// ============================================================================
+bool AdaptiveMarketIntelligence::hasEnoughData() const {
+    std::lock_guard<std::mutex> lock(profiles_mutex_);
     
     for (const auto& [symbol, profile] : profiles_) {
+        if (!profile->hasEnoughData()) return false;
+    }
+    return true;
+}
+
+bool AdaptiveMarketIntelligence::hasEnoughData(const std::string& symbol) const {
+    std::lock_guard<std::mutex> lock(profiles_mutex_);
+    
+    auto it = profiles_.find(symbol);
+    if (it == profiles_.end()) return false;
+    
+    return it->second->hasEnoughData();
+}
+
+void AdaptiveMarketIntelligence::printStatistics(const std::string& symbol) const {
+    std::lock_guard<std::mutex> lock(profiles_mutex_);  // Now works with mutable mutex
+    
+    auto it = profiles_.find(symbol);
+    if (it == profiles_.end()) {
+        std::cout << "No profile found for " << symbol << std::endl;
+        return;
+    }
+    
+    const CoinProfile* profile = it->second.get();
+    std::cout << "\n=== " << symbol << " Statistics ===" << std::endl;
+    std::cout << "Market Tier: " << profile->market_tier << std::endl;
+    std::cout << "Volatility Factor: " << profile->volatility_factor << std::endl;
+    std::cout << "Volume history size: " << profile->volume_stats.volume_history.size() << std::endl;
+    std::cout << "Volume P10/P50/P90: " << profile->volume_stats.percentile_10 
+              << "/" << profile->volume_stats.percentile_50 
+              << "/" << profile->volume_stats.percentile_90 << std::endl;
+    std::cout << "Spread history size: " << profile->spread_stats.spread_history.size() << std::endl;
+    std::cout << "Spread P25/P75: " << profile->spread_stats.percentile_25 
+              << "/" << profile->spread_stats.percentile_75 << std::endl;
+    std::cout << "Has enough data: " << (profile->hasEnoughData() ? "YES" : "NO") << std::endl;
+    std::cout << "===============================" << std::endl;
+}
+
+
+void AdaptiveMarketIntelligence::saveAllProfiles() {
+    std::lock_guard<std::mutex> lock(profiles_mutex_);
+    
+    for (auto& [symbol, profile] : profiles_) {
+        profile->saveToFile();
+    }
+}
+
+// ============================================================================
+// LEGACY METHODS FOR BACKWARD COMPATIBILITY
+// ============================================================================
+
+OrderBookMetrics AdaptiveMarketIntelligence::CalculateOrderBookMetrics(
+    const std::vector<PriceLevel>& bids,
+    const std::vector<PriceLevel>& asks) {
+    
+    // Convert and delegate to new method
+    std::vector<trading::PriceLevel> converted_bids, converted_asks;
+    
+    for (const auto& bid : bids) {
+        trading::PriceLevel level;
+        level.set_price(bid.price());  // Add parentheses - it's a method call
+        level.set_quantity(bid.quantity());  // Add parentheses - it's a method call
+        converted_bids.push_back(level);
+    }
+    
+    for (const auto& ask : asks) {
+        trading::PriceLevel level;
+        level.set_price(ask.price());  // Add parentheses - it's a method call
+        level.set_quantity(ask.quantity());  // Add parentheses - it's a method call
+        converted_asks.push_back(level);
+    }
+    
+    return calculateOrderBookMetrics(converted_bids, converted_asks);
+}
+
+
+double AdaptiveMarketIntelligence::CalculateAdaptiveLiquidityRatio(double volume, const CoinProfile& profile) {
+    return calculateLiquidityRatio(volume, profile);
+}
+
+void AdaptiveMarketIntelligence::DebugSampleCounts() {
+    std::cout << "\n=== ADAPTIVE INTELLIGENCE DEBUG ===" << std::endl;
+    
+    std::lock_guard<std::mutex> lock(profiles_mutex_);
+    for (const auto& [symbol, profile] : profiles_) {
         std::cout << symbol << ":" << std::endl;
-        std::cout << "  Sample Count: " << profile.sample_count << std::endl;
-        std::cout << "  Volume EMA: " << profile.volume_ema << std::endl;
-        std::cout << "  Static min_liquid_volume: " << profile.min_liquid_volume << std::endl;
-        
-        // Check if adaptive threshold is active
-        bool adaptive_active = (profile.sample_count > 100 && profile.volume_ema > 0);
-        double current_threshold = adaptive_active ? 
-            (profile.volume_ema * 0.8) : profile.min_liquid_volume;
-            
-        std::cout << "  Adaptive Active: " << (adaptive_active ? "YES" : "NO") << std::endl;
-        std::cout << "  Current Threshold: " << current_threshold << std::endl;
-        std::cout << "  Spread EMA: " << profile.spread_ema << std::endl;
-        std::cout << "  Depth EMA: " << profile.depth_ema << std::endl;
+        std::cout << "  Volume history: " << profile->volume_stats.volume_history.size() << std::endl;
+        std::cout << "  Spread history: " << profile->spread_stats.spread_history.size() << std::endl;
+        std::cout << "  Has enough data: " << (profile->hasEnoughData() ? "YES" : "NO") << std::endl;
+        std::cout << "  Legacy sample count: " << profile->sample_count << std::endl;
         std::cout << "  ---" << std::endl;
     }
-    std::cout << "=================================================" << std::endl;
+    std::cout << "======================================" << std::endl;
 }
 
-// Emergency fix: Force adaptive mode or lower static thresholds
 void AdaptiveMarketIntelligence::ForceAdaptiveMode() {
-    std::cout << "🚨 FORCING ADAPTIVE MODE FOR ALL SYMBOLS" << std::endl;
+    std::cout << "🚨 FORCING SUFFICIENT DATA FOR ALL SYMBOLS" << std::endl;
     
+    std::lock_guard<std::mutex> lock(profiles_mutex_);
     for (auto& [symbol, profile] : profiles_) {
-        if (profile.sample_count < 100) {
-            // Force sample count to enable adaptive mode
-            profile.sample_count = 150;
-            
-            // Set reasonable volume_ema if not available
-            if (profile.volume_ema <= 0) {
-                // Use a fraction of the static threshold as starting EMA
-                profile.volume_ema = profile.min_liquid_volume * 0.4;
-            }
-            
-            std::cout << "  " << symbol << " - Forced adaptive mode, volume_ema: " 
-                      << profile.volume_ema << std::endl;
+        // Add dummy data if insufficient
+        while (profile->volume_stats.volume_history.size() < 50) {
+            profile->volume_stats.addVolume(1000000 * (1.0 + (rand() % 100) / 100.0));
         }
+        while (profile->spread_stats.spread_history.size() < 50) {
+            profile->spread_stats.addSpread(0.001 * (1.0 + (rand() % 50) / 100.0));
+        }
+        
+        profile->sample_count = std::max(profile->volume_stats.volume_history.size(),
+                                        profile->spread_stats.spread_history.size());
+        
+        std::cout << "  " << symbol << " - Forced sufficient data" << std::endl;
     }
 }
 
-// Alternative: Drastically reduce static thresholds for immediate effect
 void AdaptiveMarketIntelligence::ApplyEmergencyStaticThresholds() {
-    std::cout << "🚨 APPLYING EMERGENCY STATIC THRESHOLDS" << std::endl;
-    
-    for (auto& [symbol, profile] : profiles_) {
-        // Store originals
-        if (profile.original_min_liquid_volume == 0) {
-            profile.original_min_liquid_volume = profile.min_liquid_volume;
-            profile.original_min_thin_volume = profile.min_thin_volume;
-        }
-        
-        // Drastically reduce static thresholds
-        profile.min_liquid_volume *= 0.1;  // 90% reduction!
-        profile.min_thin_volume *= 0.2;    // 80% reduction!
-        
-        std::cout << "  " << symbol << " - New static threshold: " 
-                  << profile.min_liquid_volume << std::endl;
-    }
+    std::cout << "🚨 Note: This method is deprecated in the new implementation" << std::endl;
+    std::cout << "   The new system uses dynamic percentile-based thresholds" << std::endl;
 }
 
-// Enhanced liquidity calculation with emergency fallbacks
-double AdaptiveMarketIntelligence::CalculateAdaptiveLiquidityRatio(double volume, const CoinProfile& profile) {
-    double threshold = profile.min_liquid_volume;
-    
-    // Check if adaptive mode should be active
-    bool adaptive_active = (profile.sample_count > 100 && profile.volume_ema > 0);
-    
-    if (adaptive_active) {
-        threshold = profile.volume_ema * 0.8; // 80% of average volume
-        
-        // Debug log for first few symbols
-        static std::set<std::string> logged_symbols;
-        if (logged_symbols.size() < 5 && logged_symbols.find(profile.symbol) == logged_symbols.end()) {
-            std::cout << "📊 " << profile.symbol << " using adaptive threshold: " 
-                      << threshold << " (volume_ema: " << profile.volume_ema << ")" << std::endl;
-            logged_symbols.insert(profile.symbol);
-        }
-    } else {
-        // Using static threshold - log this as it might be the problem
-        static std::set<std::string> logged_static;
-        if (logged_static.size() < 5 && logged_static.find(profile.symbol) == logged_static.end()) {
-            std::cout << "⚠️ " << profile.symbol << " using STATIC threshold: " 
-                      << threshold << " (samples: " << profile.sample_count << ")" << std::endl;
-            logged_static.insert(profile.symbol);
-        }
-    }
-    
-    double ratio = volume / threshold;
-    
-    // Apply emergency boost if needed
-    if (profile.liquidity_boost_factor > 1.0) {
-        ratio *= profile.liquidity_boost_factor;
-    }
-    
-    return std::min(1.0, ratio);
+// Placeholder implementations for other legacy methods
+void AdaptiveMarketIntelligence::UpdateProfile(CoinProfile& profile, double volume, double spread, double depth) {
+    profile.updateStatistics(volume, spread);
+}
+
+void AdaptiveMarketIntelligence::AdaptThresholds(CoinProfile& profile) {
+    // No-op in new implementation - thresholds are always adaptive
+}
+
+double AdaptiveMarketIntelligence::EstimateVolatility(const std::string& symbol, double spread,
+                     std::shared_ptr<trading::data_ingestion::OrderBook> orderbook) {
+    auto profile = getOrCreateProfile(symbol);
+    return estimateSimpleVolatility(spread, profile->volatility_factor);
+}
+
+FlowMetrics AdaptiveMarketIntelligence::AnalyzeFlowMetrics(double imbalance, double volatility) {
+    return estimateFlowMetrics(imbalance, volatility * 1000);  // Rough volume estimate
 }
 
 RegimeResult AdaptiveMarketIntelligence::ClassifyOrderBookRegimeAdaptive(
-    const OrderBookMetrics& metrics,
-    double spread,
-    const CoinProfile& profile) {
+    const OrderBookMetrics& metrics, double spread, const CoinProfile& profile) {
+    
+    // Use new probability-based classification
+    double volume_percentile = profile.volume_stats.getVolumePercentile(metrics.total_volume);
+    double spread_percentile = profile.spread_stats.getSpreadPercentile(spread);
+    
+    RegimeProbabilities probs = calculateRegimeProbabilities(
+        volume_percentile, spread_percentile, metrics.imbalance, profile.volatility_factor);
+    
+    auto [regime, confidence] = probs.getBestRegime();
     
     RegimeResult result;
-    result.confidence = 0.6; // Lower base confidence requirement
+    result.regime = regime;
+    result.confidence = confidence;
+    return result;
+}
+
+std::vector<trading::PriceLevel> AdaptiveMarketIntelligence::ConvertPriceLevels(
+    const std::vector<trading::data_ingestion::PriceLevel>& input) {
     
-    // Use much more relaxed thresholds
-    double liquid_threshold = profile.min_liquid_volume;
-    double thin_threshold = profile.min_thin_volume;
-    double tight_spread = profile.tight_spread_threshold;
-    double wide_spread = profile.wide_spread_threshold;
+    std::vector<trading::PriceLevel> result;
+    result.reserve(input.size());
     
-    // Emergency mode - even more relaxed
-    if (profile.liquidity_boost_factor > 1.0) {
-        liquid_threshold *= 0.5;  // Half the requirement
-        thin_threshold *= 1.5;    // 50% higher threshold for thin
-        tight_spread *= 2.0;      // Much more generous tight spread
-        wide_spread *= 0.5;       // Much tighter wide spread definition
-    }
-    
-    // Simplified classification with bias toward LIQUID/NORMAL
-    int liquid_score = 0;
-    int thin_score = 0;
-    int volatile_score = 0;
-    
-    // Volume factors - more generous scoring
-    if (metrics.total_volume > liquid_threshold * 0.7) liquid_score += 2; // 30% more generous
-    if (metrics.total_volume < thin_threshold * 1.3) thin_score += 1;     // 30% less restrictive
-    
-    // Spread factors - more generous
-    if (spread < tight_spread) liquid_score += 2;  // Higher weight for good spreads
-    if (spread > wide_spread * 1.5) thin_score += 1; // Less restrictive wide spread
-    
-    // Imbalance factors - less weight on volatility
-    if (std::abs(metrics.imbalance) > 0.5) volatile_score += 1; // Higher threshold
-    if (std::abs(metrics.depth_imbalance) > 0.6) volatile_score += 1; // Higher threshold
-    
-    // Determine regime with bias toward tradeable regimes
-    if (liquid_score >= 2) {
-        result.regime = trading::OB_LIQUID;
-        result.confidence = 0.8;
-    } else if (thin_score >= 2 && liquid_score == 0) {
-        result.regime = trading::OB_THIN;
-        result.confidence = 0.7;
-    } else if (volatile_score >= 2 && liquid_score == 0) {
-        result.regime = trading::OB_VOLATILE;
-        result.confidence = 0.6;
-    } else {
-        result.regime = trading::OB_NORMAL; // Default to normal (tradeable)
-        result.confidence = 0.6;
+    for (const auto& level : input) {
+        trading::PriceLevel converted;
+        converted.set_price(level.price);
+        converted.set_quantity(level.quantity);
+        result.push_back(converted);
     }
     
     return result;
 }
-} // namespace intelligence  
+
+} // namespace intelligence
 } // namespace trading
