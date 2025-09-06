@@ -443,7 +443,6 @@ void MomentumCorrelation::updateHighestCorrelatedMetrics() {
  double MomentumCorrelation::calculateWeightedPrediction(const ImbalanceEvent& event) const {
      double prediction = 0.0;
      double totalWeight = 0.0;
-     std::cout<<"Predicting price movement for event type: "<<ImbalanceTypeToString(event.type)<<"\n";
      // Use imbalance metrics and their correlations to predict price movement
      for (const auto& [metric, value] : event.supportingMetrics) {
          // Skip metrics without correlation data
@@ -502,7 +501,7 @@ void MomentumCorrelation::updateHighestCorrelatedMetrics() {
              // No adjustment
              break;
      }
-     
+     std::cout<<"Predicted price movement: "<<prediction<<"\n";
      return prediction;
  }
  

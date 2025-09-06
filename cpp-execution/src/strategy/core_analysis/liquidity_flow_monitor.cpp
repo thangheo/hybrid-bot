@@ -84,36 +84,7 @@ void LiquidityFlowMonitor::processOrderBookDelta(const OrderBookDelta& delta) {
     last_update_time_ = delta.timestamp;
     last_sequence_number_ = delta.sequenceNumber;
 }
-//  void LiquidityFlowMonitor::processOrderBookSnapshots(
-//      const data_ingestion::OrderBook& prev_book,
-//      const data_ingestion::OrderBook& curr_book) {
-     
-//      std::lock_guard<std::mutex> lock(mutex_);
-     
-//      // Store books in history
-//      order_book_history_.push_back(curr_book);
-     
-//      // Remove old books based on window size
-//      auto cutoff_time = std::chrono::system_clock::now() - 
-//                        std::chrono::seconds(history_window_seconds_);
-     
-//      while (!order_book_history_.empty() && 
-//             order_book_history_.front().getTimestamp() < cutoff_time) {
-//          order_book_history_.pop_front();
-//      }
-     
-//      // Compute delta between the two snapshots
-//      auto delta = computeDelta(
-//          prev_book.getBids(),
-//          prev_book.getAsks(),
-//          curr_book.getBids(),
-//          curr_book.getAsks(),
-//          curr_book.getTimestamp(),
-//          curr_book.getSequenceNumber());
-     
-//      // Process the computed delta
-//      processOrderBookDelta(delta);
-//  }
+
 void LiquidityFlowMonitor::processOrderBookSnapshots(
     const data_ingestion::OrderBook& prev_book,
     const data_ingestion::OrderBook& curr_book) {

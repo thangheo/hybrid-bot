@@ -227,7 +227,38 @@
     }
 }
  // PRIVATE METHODS
- 
+
+
+ //strength normalizer helper
+    double ImbalanceDetectionEngine::calculateImbalanceConfidence(ImbalanceType type, double strength, const OrderBookMetrics& metrics) {
+        // Basic normalization based on type-specific thresholds
+        ImbalanceThreshold threshold = thresholds_.getTypeThreshold(type);
+        double normalizedStrength = strength;
+        
+        if (threshold.max_threshold > threshold.min_threshold) {
+            normalizedStrength = (strength - threshold.min_threshold) / (threshold.max_threshold - threshold.min_threshold);
+            normalizedStrength = std::clamp(normalizedStrength, 0.0, 1.0);
+        } else {
+            normalizedStrength = std::clamp(strength, 0.0, 1.0);
+        }
+        
+        // Further adjust confidence based on market conditions
+        // For example, higher confidence during high liquidity or low volatility
+        double liquidityFactor = (metrics.total_bid_volume + metrics.total_ask_volume) / 2.0;
+        double volatilityFactor = metrics.volatility_expectation; // Assuming this is a value between 0 and 1
+        
+        // Simple heuristic: increase confidence with liquidity, decrease with volatility
+        double liquidityWeight = 0.5; // Weight for liquidity impact
+        double volatilityWeight = 0.5; // Weight for volatility impact
+        
+        double liquidityAdjustment = (liquidityFactor > 1000.0) ? liquidityWeight : (liquidityFactor / 1000.0) * liquidityWeight;
+        double volatilityAdjustment = (volatilityFactor < 0.5) ? volatilityWeight : (1.0 - volatilityFactor) * volatilityWeight;
+        
+        double adjustedConfidence = normalizedStrength + liquidityAdjustment - volatilityAdjustment;
+        adjustedConfidence = std::clamp(adjustedConfidence, 0.0, 1.0);
+        
+        return adjustedConfidence;
+    }
  // Detect volume imbalance
  bool ImbalanceDetectionEngine::detectVolumeImbalance(const OrderBookMetrics& metrics) {
      // Check if required metrics are available
@@ -251,7 +282,6 @@
      
      // Get threshold for volume imbalance
      double threshold = thresholds_.getTypeThreshold(ImbalanceType::VOLUME_IMBALANCE).activation_threshold;
-    //  std::cout<<"[TradingApp] [2025-09-06 13:43:53.000] [INFO] ImbalanceDetectionEngine::detectVolumeImbalance: volumeRatio="<<volumeRatio<<", threshold="<<threshold<<"\n";
      
      // Detect imbalance if ratio exceeds threshold or is below its inverse
      bool isImbalance = (volumeRatio >= threshold || volumeRatio <= 1.0 / threshold);
@@ -282,6 +312,8 @@
             }
          Direction direction = (volumeRatio > 1.0) ? Direction::BUY : Direction::SELL;
          createImbalanceEvent(ImbalanceType::VOLUME_IMBALANCE, strength, direction, metrics);
+         std::cout<<"[TradingApp]ImbalanceDetectionEngine::detectVolumeImbalance:strength="<<strength<<", volumeRatio="<<volumeRatio<<", threshold="<<threshold<<"\n";
+
      }
      
      return isImbalance;
@@ -310,7 +342,6 @@
      
      // Get threshold for price level imbalance
      double threshold = thresholds_.getTypeThreshold(ImbalanceType::PRICE_LEVEL_IMBALANCE).activation_threshold;
-    //  std::cout<<"[TradingApp] [2025-09-06 13:43:53.000] [INFO] ImbalanceDetectionEngine::detectPriceLevelImbalance: levelRatio="<<levelRatio<<", threshold="<<threshold<<"\n";
      
      // Detect imbalance if ratio exceeds threshold or is below its inverse
      bool isImbalance = (levelRatio >= threshold || levelRatio <= 1.0 / threshold);
@@ -337,6 +368,7 @@
         }
         strength = std::min(1.0, strength); // Cap at 1.0
          Direction direction = (levelRatio > 1.0) ? Direction::BUY : Direction::SELL;
+         std::cout<<"[TradingApp] ImbalanceDetectionEngine::detectPriceLevelImbalance: levelRatio="<<levelRatio<<", threshold="<<threshold<<"\n";
          createImbalanceEvent(ImbalanceType::PRICE_LEVEL_IMBALANCE, strength, direction, metrics);
      }
      
@@ -344,49 +376,103 @@
  }
  
  // Detect liquidity flow imbalance
- bool ImbalanceDetectionEngine::detectLiquidityFlowImbalance(const OrderBookMetrics& metrics) {
-     // Check if required metrics are available
-     auto bidFlowIt = metrics.metrics.find("bid_flow");
-     auto askFlowIt = metrics.metrics.find("ask_flow");
+//  bool ImbalanceDetectionEngine::detectLiquidityFlowImbalance(const OrderBookMetrics& metrics) {
+//      // Check if required metrics are available
+//      auto bidFlowIt = metrics.metrics.find("bid_flow");
+//      auto askFlowIt = metrics.metrics.find("ask_flow");
      
-     if (bidFlowIt == metrics.metrics.end() || askFlowIt == metrics.metrics.end()) {
-         return false; // Required metrics not available
-     }
+//      if (bidFlowIt == metrics.metrics.end() || askFlowIt == metrics.metrics.end()) {
+//          return false; // Required metrics not available
+//      }
      
-     double bidFlow = bidFlowIt->second;
-     double askFlow = askFlowIt->second;
+//      double bidFlow = bidFlowIt->second;
+//      double askFlow = askFlowIt->second;
      
-     // Calculate net flow (positive means bid flow dominates, negative means ask flow dominates)
-     double netFlow = bidFlow - askFlow;
+//      // Calculate net flow (positive means bid flow dominates, negative means ask flow dominates)
+//      double netFlow = bidFlow - askFlow;
      
-     // Calculate absolute flow ratio (avoid division by zero)
-     double totalFlow = std::abs(bidFlow) + std::abs(askFlow);
-     if (totalFlow < 1e-10) {
-         totalFlow = 1e-10;
-     }
+//      // Calculate absolute flow ratio (avoid division by zero)
+//      double totalFlow = std::abs(bidFlow) + std::abs(askFlow);
+//      if (totalFlow < 1e-10) {
+//          totalFlow = 1e-10;
+//      }
      
-     double flowImbalance = std::abs(netFlow) / totalFlow;
+//      double flowImbalance = std::abs(netFlow) / totalFlow;
      
-     // Get threshold for liquidity flow imbalance
-    //  double threshold = thresholds_[ImbalanceType::LIQUIDITY_FLOW_IMBALANCE];
-     double threshold = thresholds_.getTypeThreshold(ImbalanceType::LIQUIDITY_FLOW_IMBALANCE).activation_threshold;
-     double normalizedThreshold = 1.0 - (1.0 / threshold); // Convert ratio threshold to 0-1 range
+//      // Get threshold for liquidity flow imbalance
+//     //  double threshold = thresholds_[ImbalanceType::LIQUIDITY_FLOW_IMBALANCE];
+//      double threshold = thresholds_.getTypeThreshold(ImbalanceType::LIQUIDITY_FLOW_IMBALANCE).activation_threshold;
+//      double normalizedThreshold = 1.0 - (1.0 / threshold); // Convert ratio threshold to 0-1 range
      
-     // Detect imbalance if normalized flow exceeds threshold
-     bool isImbalance = (flowImbalance >= normalizedThreshold);
+//      // Detect imbalance if normalized flow exceeds threshold
+//      bool isImbalance = (flowImbalance >= normalizedThreshold);
      
-     // Update imbalance state
-     imbalanceState_[ImbalanceType::LIQUIDITY_FLOW_IMBALANCE] = isImbalance;
+//      // Update imbalance state
+//      imbalanceState_[ImbalanceType::LIQUIDITY_FLOW_IMBALANCE] = isImbalance;
      
-     // If imbalance detected, create an event
-     if (isImbalance) {
-         double strength = flowImbalance;
-         Direction direction = (netFlow > 0) ? Direction::BUY : Direction::SELL;
-         createImbalanceEvent(ImbalanceType::LIQUIDITY_FLOW_IMBALANCE, strength, direction, metrics);
-     }
+//      // If imbalance detected, create an event
+//      if (isImbalance) {
+//          double strength = flowImbalance;
+//          Direction direction = (netFlow > 0) ? Direction::BUY : Direction::SELL;
+//         std::cout<<"[TradingApp] detectLiquidityFlowImbalance: flowImbalance="<<flowImbalance<<", normalizedThreshold="<<normalizedThreshold<<", threshold="<<threshold<<"\n";
+//          createImbalanceEvent(ImbalanceType::LIQUIDITY_FLOW_IMBALANCE, strength, direction, metrics);
+//      }
      
-     return isImbalance;
- }
+//      return isImbalance;
+//  }
+bool ImbalanceDetectionEngine::detectLiquidityFlowImbalance(const OrderBookMetrics& metrics) {
+    // Check if required metrics are available
+    auto bidFlowIt = metrics.metrics.find("bid_flow");
+    auto askFlowIt = metrics.metrics.find("ask_flow");
+    if (bidFlowIt == metrics.metrics.end() || askFlowIt == metrics.metrics.end()) {
+        return false; // Required metrics not available
+    }
+
+    double bidFlow = bidFlowIt->second;
+    double askFlow = askFlowIt->second;
+
+    // Calculate net and total flow
+    double netFlow   = bidFlow - askFlow;
+    double totalFlow = std::abs(bidFlow) + std::abs(askFlow);
+
+    // If no meaningful flow, no imbalance
+    if (totalFlow < 1e-10) {
+        imbalanceState_[ImbalanceType::LIQUIDITY_FLOW_IMBALANCE] = false;
+        return false;
+    }
+
+    // Flow imbalance ratio: 0 = balanced, 1 = one-sided
+    double flowImbalance = std::abs(netFlow) / totalFlow;
+
+    // Threshold should be configured directly in [0,1]
+    double threshold = thresholds_
+        .getTypeThreshold(ImbalanceType::LIQUIDITY_FLOW_IMBALANCE)
+        .activation_threshold;
+    threshold = std::clamp(threshold, 0.0, 1.0);
+
+    bool isImbalance = (flowImbalance >= threshold);
+
+    // Update imbalance state
+    imbalanceState_[ImbalanceType::LIQUIDITY_FLOW_IMBALANCE] = isImbalance;
+
+    if (isImbalance) {
+        double strength = flowImbalance;
+        Direction direction = (netFlow > 0) ? Direction::BUY : Direction::SELL;
+
+        std::cout << "[TradingApp] detectLiquidityFlowImbalance: "
+                  << "flowImbalance=" << flowImbalance
+                  << ", threshold=" << threshold << "\n";
+
+        createImbalanceEvent(
+            ImbalanceType::LIQUIDITY_FLOW_IMBALANCE,
+            strength,
+            direction,
+            metrics
+        );
+    }
+
+    return isImbalance;
+}
  
  // Detect abnormal spread
  bool ImbalanceDetectionEngine::detectAbnormalSpread(const OrderBookMetrics& metrics) {
@@ -439,7 +525,7 @@
                  direction = Direction::BUY;
              }
          }
-         
+         std::cout<<"[TradingApp] ImbalanceDetectionEngine::detectAbnormalSpread: spreadRatio="<<spreadRatio<<", threshold="<<threshold<<"\n";
          createImbalanceEvent(ImbalanceType::ABNORMAL_SPREAD, strength, direction, metrics);
      }
      
@@ -589,12 +675,23 @@
  }
 //  valueToConfidenceLevel
     trading::core::ConfidenceLevel ImbalanceDetectionEngine::valueToConfidenceLevel(double value) {
-        if (value >= 0.9) {
-            return trading::core::ConfidenceLevel::HIGH;
-        } else if (value >= 0.7) {
-            return trading::core::ConfidenceLevel::MEDIUM;
-        } else {
+        //  enum class ConfidenceLevel {
+        //     VERY_LOW,
+        //     LOW,
+        //     MEDIUM,
+        //     HIGH,
+        //     VERY_HIGH
+        // };
+        if (value < 0.2) {
+            return trading::core::ConfidenceLevel::VERY_LOW;
+        } else if (value < 0.4) {
             return trading::core::ConfidenceLevel::LOW;
+        } else if (value < 0.6) {
+            return trading::core::ConfidenceLevel::MEDIUM;
+        } else if (value < 0.8) {
+            return trading::core::ConfidenceLevel::HIGH;
+        } else {
+            return trading::core::ConfidenceLevel::VERY_HIGH;
         }
     }
 
@@ -617,9 +714,7 @@
     event.detectionTime = std::chrono::system_clock::now();
     event.exchangeId = metrics.exchangeId;
     event.symbol = metrics.symbol;
-    event.confidence = static_cast<trading::core::ConfidenceLevel>(calculateImbalanceConfidence(type, strength, metrics));
-    double confidenceValue = calculateImbalanceConfidence(type, strength, metrics);
-    event.confidence = valueToConfidenceLevel(confidenceValue);  // Use the utility
+    event.confidence = valueToConfidenceLevel(calculateImbalanceConfidence(type, strength, metrics)); 
     event.eventId = generateEventId();
     
     // Copy relevant metrics
@@ -643,38 +738,28 @@
      static uint64_t nextId = 0;
      return ++nextId;
  }
- 
- // Calculate confidence level for an imbalance event
- double ImbalanceDetectionEngine::calculateImbalanceConfidence(ImbalanceType type, double strength, const OrderBookMetrics& metrics) {
-     // Base confidence on the strength relative to the threshold
-     double threshold = thresholds_.getTypeThreshold(type).activation_threshold;
-     double ratio = strength / threshold;
-     
-     // Cap ratio at 3.0 for normalization
-     if (ratio > 3.0) ratio = 3.0;
-     
-     // Convert to confidence (0.5-1.0 range)
-     double confidence = 0.5 + (ratio / 6.0);
-     
-     // Adjust confidence based on market conditions if available
-     auto volatilityIt = metrics.metrics.find("volatility");
-     if (volatilityIt != metrics.metrics.end()) {
-         double volatility = volatilityIt->second;
-         
-         // High volatility reduces confidence
-         if (volatility > 0.01) {  // 1% volatility threshold
-             confidence *= (1.0 - (volatility * 5.0));
-             
-             // Ensure confidence stays in valid range
-             if (confidence < 0.5) confidence = 0.5;
-         }
-     }
-     
-     // Round to 2 decimal places for cleaner values
-     confidence = std::round(confidence * 100.0) / 100.0;
-     
-     return confidence;
- }
+//  double ImbalanceDetectionEngine::calculateImbalanceConfidence(ImbalanceType type, double strength, const OrderBookMetrics& metrics) {
+//     // Base confidence directly on normalized strength (0-1)
+//     double baseConfidence = 0.5 + (strength * 0.5);  // Maps 0-1 strength to 0.5-1.0 confidence
+    
+//     // Adjust confidence based on market conditions if available
+//     auto volatilityIt = metrics.metrics.find("volatility");
+//     if (volatilityIt != metrics.metrics.end()) {
+//         double volatility = volatilityIt->second;
+        
+//         // High volatility reduces confidence (but less aggressively)
+//         if (volatility > 0.01) {  // 1% volatility threshold
+//             double volatilityPenalty = std::min(0.3, volatility * 2.0);  // Cap penalty at 30%
+//             baseConfidence *= (1.0 - volatilityPenalty);
+            
+//             // Ensure confidence stays in valid range
+//             baseConfidence = std::max(0.5, baseConfidence);
+//         }
+//     }
+    
+//     // Round to 2 decimal places
+//     return std::round(baseConfidence * 100.0) / 100.0;
+// }
  
  } // namespace strategy
  } // namespace trading

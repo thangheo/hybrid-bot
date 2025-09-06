@@ -172,7 +172,7 @@ public:
         LOG_INFO("  Symbol: {}", signal.symbol.toString());
         LOG_INFO("  Direction: {}", signal.direction == Direction::BUY ? "BUY" : "SELL");
         LOG_INFO("  Strength: {:.3f}", signal.strength);
-        LOG_INFO("  Confidence: {}", static_cast<int>(signal.confidence));
+        LOG_INFO("  Confidence: {}", signal.confidence);
         
         receivedSignals_.push_back(signal);
         simulateSignalExecution(signal);

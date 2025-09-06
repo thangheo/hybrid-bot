@@ -75,10 +75,10 @@ bool ImbalanceSignalGenerator::initialize(const SignalGeneratorConfig& config) {
          return false;
      }
      //add exchange and symbol to the debug print
-     std::cout<<"Processing imbalance event: Type="<<imbalanceTypeToString(imbalance.type)
-              <<", Direction="<<(imbalance.direction == core::Direction::BUY ? "BUY" : (imbalance.direction == core::Direction::SELL ? "SELL" : "NEUTRAL"))
-              <<", Strength="<<imbalance.strength<<", Confidence="<<confidenceLevelToValue(imbalance.confidence)<<"\n";
-     std::cout<<"Exchange="<<imbalance.exchangeId.toString()<<", Symbol="<<imbalance.symbol.toString()<<"\n";
+    //  std::cout<<"Processing imbalance event: Type="<<imbalanceTypeToString(imbalance.type)
+    //           <<", Direction="<<(imbalance.direction == core::Direction::BUY ? "BUY" : (imbalance.direction == core::Direction::SELL ? "SELL" : "NEUTRAL"))
+    //           <<", Strength="<<imbalance.strength<<", Confidence="<<confidenceLevelToValue(imbalance.confidence)<<"\n";
+    //  std::cout<<"Exchange="<<imbalance.exchangeId.toString()<<", Symbol="<<imbalance.symbol.toString()<<"\n";
 
      // Store the imbalance for signal generation
      pendingImbalances_.push_back(imbalance);
@@ -222,31 +222,36 @@ bool ImbalanceSignalGenerator::initialize(const SignalGeneratorConfig& config) {
              signal.strength = std::min(1.0, signal.strength * sensitivity);
          }
      }
-     std::cout <<"Generated signal: ID="<<signal.id<<", Direction="<< (signal.direction == core::Direction::BUY ? "BUY" : "SELL") 
-              <<", Strength="<<signal.strength<<", Confidence="<<signal.confidence<<"\n";
+    //  std::cout <<"Generated signal: ID="<<signal.id<<", Direction="<< (signal.direction == core::Direction::BUY ? "BUY" : "SELL") 
+    //           <<", Strength="<<signal.strength<<", Confidence="<<signal.confidence<<"\n";
      return signal;
  }
-trading::core::ConfidenceLevel ImbalanceSignalGenerator::valueToConfidenceLevel(double value)const {
-    if (value >= 0.9) {
-        return trading::core::ConfidenceLevel::HIGH;
-    } else if (value >= 0.7) {
-        return trading::core::ConfidenceLevel::MEDIUM;
-    } else {
-        return trading::core::ConfidenceLevel::LOW;
-    }
+trading::core::ConfidenceLevel ImbalanceSignalGenerator::valueToConfidenceLevel(double value)const {       
+        if (value < 0.2) {
+            return trading::core::ConfidenceLevel::VERY_LOW;
+        } else if (value < 0.4) {
+            return trading::core::ConfidenceLevel::LOW;
+        } else if (value < 0.6) {
+            return trading::core::ConfidenceLevel::MEDIUM;
+        } else if (value < 0.8) {
+            return trading::core::ConfidenceLevel::HIGH;
+        } else {
+            return trading::core::ConfidenceLevel::VERY_HIGH;
+        }
 }
 double ImbalanceSignalGenerator::confidenceLevelToValue(trading::core::ConfidenceLevel level) const {
     switch (level) {
         case trading::core::ConfidenceLevel::VERY_HIGH: return 1.0;
-        case trading::core::ConfidenceLevel::HIGH: return 0.9;
-        case trading::core::ConfidenceLevel::MEDIUM: return 0.7;
+        case trading::core::ConfidenceLevel::HIGH: return 0.8;
+        case trading::core::ConfidenceLevel::MEDIUM: return 0.6;
         case trading::core::ConfidenceLevel::LOW: return 0.4;
-        case trading::core::ConfidenceLevel::VERY_LOW: return 0.1;
+        case trading::core::ConfidenceLevel::VERY_LOW: return 0.2;
         default: return 0.5;
     }
 }
- // Check if an imbalance event passes signal generation filters
- bool ImbalanceSignalGenerator::passesSignalFilters(const ImbalanceEvent& imbalance) const {
+
+// Check if an imbalance event passes signal generation filters
+bool ImbalanceSignalGenerator::passesSignalFilters(const ImbalanceEvent& imbalance) const {
 
     // std::cout<<"Applying filters to imbalance: Type="<<imbalanceTypeToString(imbalance.type)
     //          <<", Direction="<<(imbalance.direction == core::Direction::BUY ? "BUY" : (imbalance.direction == core::Direction::SELL ? "SELL" : "NEUTRAL"))
