@@ -83,6 +83,17 @@ public:
         return messagesReceived_.load();
     }
     
+    // Get current mid price for a symbol
+    double getCurrentMidPrice(const std::string& symbol) const {
+        std::lock_guard<std::mutex> lock(const_cast<std::mutex&>(orderBooksMutex_));
+        std::string key = "BINANCE:" + symbol; // Match your key format
+        auto it = orderBooks_.find(key);
+        if (it != orderBooks_.end()) {
+            return it->second->getMidPrice();
+        }
+        return 0.0; // Return 0 if not found
+    }
+    
 private:
     void handleOrderBookMessage(const std::string& topic, const std::string& message) {
         try {
@@ -166,6 +177,9 @@ private:
 // Updated signal handler (same as before)
 class SignalHandler {
 public:
+    SignalHandler(StrategyEngine* engine = nullptr, OrderBookReceiver* receiver = nullptr) 
+        : strategyEngine_(engine), orderBookReceiver_(receiver) {}
+    
     void onNewSignal(const TradingSignal& signal) {
         // LOG_INFO("NEW TRADING SIGNAL RECEIVED!");
         // LOG_INFO("  Signal ID: {}", signal.id);
@@ -173,8 +187,24 @@ public:
         // LOG_INFO("  Direction: {}", signal.direction == Direction::BUY ? "BUY" : "SELL");
         // LOG_INFO("  Strength: {:.3f}", signal.strength);
         // LOG_INFO("  Confidence: {}", signal.confidence);
-        
+
+        std::lock_guard<std::mutex> lock(processedMutex_);
+        //filter duplicate signals
+        //filter signals based on custom criteria (e.g., strength threshold)
+        if (signal.strength < 0.5) return; // Weak signals are ignored
+        if(signal.direction == core::Direction::NEUTRAL) return; // Ignore neutral signals
+        if(signal.confidence < 0.5) return; // Ignore low confidence signals
+        //print signal details for debugging
+        // LOG_INFO("  Signal ID: {}", signal.id);
+        LOG_INFO("  Symbol: {}", signal.symbol.toString());
+        LOG_INFO("  Direction: {}", signal.direction == Direction::BUY ? "BUY" : "SELL");
+        LOG_INFO("  Strength: {:.3f}", signal.strength);
+        LOG_INFO("  Confidence: {}", signal.confidence);
+        if (processedSignals_.count(signal.id)) return; // Already processed
+        processedSignals_.insert(signal.id);
+
         receivedSignals_.push_back(signal);
+
         simulateSignalExecution(signal);
     }
     
@@ -184,24 +214,84 @@ public:
     
 private:
     std::vector<TradingSignal> receivedSignals_;
-    
+    std::unordered_set<std::string> processedSignals_;
+    std::mutex processedMutex_;
+    StrategyEngine* strategyEngine_;
+    OrderBookReceiver* orderBookReceiver_;
+
     void simulateSignalExecution(const TradingSignal& signal) {
         std::thread([this, signal]() {
-            std::this_thread::sleep_for(std::chrono::seconds(5));
+            // Record entry time and get entry price from signal
+            auto entryTime = std::chrono::system_clock::now();
+            double entryPrice = signal.getMetric("mid_price", 0); // Use signal's mid price at generation time
+            if (entryPrice <= 0.0) {
+                LOG_WARN("Signal {} has invalid entry price metric, skipping execution", signal.id);
+                return;
+            }
+            // LOG_INFO("EXECUTING SIGNAL: {} | Symbol: {} | Direction: {} | Strength: {:.3f} | Entry Price: {:.2f}", 
+            //          signal.id, signal.symbol.toString(), 
+            //          signal.direction == Direction::BUY ? "BUY" : "SELL", 
+            //          signal.strength, entryPrice);
             
+            // Simulate holding period (shorter for testing)
+            std::this_thread::sleep_for(std::chrono::seconds(2));
+            
+            // Get REAL current exit price from live order book data
+            auto exitTime = std::chrono::system_clock::now();
+            double exitPrice = entryPrice; // Fallback to entry price
+            
+            if (orderBookReceiver_) {
+                double currentMidPrice = orderBookReceiver_->getCurrentMidPrice(signal.symbol.toString());
+                if (currentMidPrice > 0.0) {
+                    exitPrice = currentMidPrice; // Use real current price
+                } else {
+                    // Fallback: simulate realistic price movement if no real data available
+                    double priceMovementFactor = (signal.strength - 0.5) * 2.0; // Convert 0-1 to -1 to 1
+                    double baseMovement = priceMovementFactor * 0.005; // Max 0.5% movement
+                    double randomFactor = (rand() % 200 - 100) / 10000.0; // ±1% random
+                    double totalMovement = baseMovement + randomFactor;
+                    exitPrice = entryPrice * (1.0 + totalMovement);
+                }
+            }
+            
+            // Calculate actual P&L based on direction
+            double pnl = 0.0;
+            double orderQuantity = 1.0; // 1 unit for simplicity
+            double feeRate = 0.001;     // 0.1% per trade
+
+            double fees = entryPrice * orderQuantity * feeRate 
+                        + exitPrice * orderQuantity * feeRate;
+
+            if (signal.direction == Direction::BUY) {
+                pnl = (exitPrice - entryPrice) * orderQuantity;
+            } else if (signal.direction == Direction::SELL) {
+                pnl = (entryPrice - exitPrice) * orderQuantity;
+            }
+            pnl -= fees;
+
+            // Create execution result
             SignalExecutionResult result;
             result.signal_id = signal.id;
             result.status = SignalExecutionStatus::COMPLETED;
-            result.startTime = std::chrono::system_clock::now() - std::chrono::seconds(5);
-            result.completionTime = std::chrono::system_clock::now();
-            result.orderQuantity = 1;
-            result.orderPrice = 50000.0;
-            result.pnl = (signal.direction == Direction::BUY ? 1.0 : -1.0) * 
-                        signal.strength * 100.0;
+            result.startTime = entryTime;
+            result.completionTime = exitTime;
+            result.orderQuantity = orderQuantity;
+            result.orderPrice = entryPrice;
+            result.pnl = pnl;
             result.signalStrength = signal.strength;
             
-            // LOG_INFO("SIGNAL EXECUTION COMPLETED: {} with P&L: {:.2f}", 
-            //               signal.id, result.pnl);
+            // Log the trade result with detailed info
+            LOG_INFO("TRADE COMPLETED: {} | Entry: {:.2f} | Exit: {:.2f} | P&L: {:.2f} | Duration: {}s | Success: {}", 
+                     signal.id, entryPrice, exitPrice, pnl,
+                     std::chrono::duration_cast<std::chrono::seconds>(exitTime - entryTime).count(),
+                     pnl > 0 ? "YES" : "NO");
+            
+            // Record the result back to strategy engine for performance tracking
+            if (strategyEngine_) {
+                bool recorded = strategyEngine_->recordSignalResult(signal.id, result);
+                // LOG_INFO("Signal result recorded: {} - Success: {}", signal.id, recorded ? "YES" : "NO");
+            }
+            
         }).detach();
     }
 };
@@ -227,8 +317,19 @@ int main() {
             return -1;
         }
         
-        // 3. Set up signal handler
-        SignalHandler signalHandler;
+        // 5. Initialize and start OrderBook receiver
+        OrderBookReceiver orderBookReceiver(&strategyEngine);
+        std::vector<std::string> symbols;
+        for (const auto& pair : config.tradingPairs) {
+            symbols.push_back(pair.first);
+        }
+        if (!orderBookReceiver.start(symbols)) {
+            LOG_ERROR("Failed to start OrderBook receiver");
+            return -1;
+        }
+        
+        // 3. Set up signal handler (after OrderBookReceiver is created)
+        SignalHandler signalHandler(&strategyEngine, &orderBookReceiver);
         size_t callbackId = strategyEngine.registerSignalCallback(
             [&signalHandler](const TradingSignal& signal) {
                 signalHandler.onNewSignal(signal);
@@ -241,17 +342,6 @@ int main() {
             return -1;
         }
         
-        // 5. Initialize and start OrderBook receiver
-        OrderBookReceiver orderBookReceiver(&strategyEngine);
-        std::vector<std::string> symbols;
-        for (const auto& pair : config.tradingPairs) {
-            symbols.push_back(pair.first);
-        }
-        if (!orderBookReceiver.start(symbols)) {
-            LOG_ERROR("Failed to start OrderBook receiver");
-            return -1;
-        }
-        
         LOG_INFO("=== System started - waiting for order book data ===");
         LOG_INFO("Make sure your DataIngestionService is running and publishing data!");
         
@@ -259,7 +349,7 @@ int main() {
         auto startTime = std::chrono::steady_clock::now();
         size_t lastMessageCount = 0;
         
-        for (int cycle = 0; cycle < 520; ++cycle) { // Run for 2 minutes
+        for (int cycle = 0; cycle < 60; ++cycle) { // Run for 2 minutes
             std::this_thread::sleep_for(1s);
             
             // Report every 10 seconds
