@@ -44,6 +44,8 @@
   */
  struct TradingSignal {
      core::SignalId id;                                // Unique identifier
+     uint64_t sourceEventId;                            // Source event ID
+     uint64_t correlationId;                            // Correlation ID
      core::Direction direction;                        // Buy or sell
      double strength;                                  // Signal strength (0.0-1.0)
      double confidence;                                // Confidence level (0.0-1.0)

@@ -34,8 +34,8 @@
 
 // Add this constructor implementation to order_book_analyzer.cpp
 OrderBookAnalyzer::OrderBookAnalyzer(const OrderBookAnalyzerConfig& config)
-    : exchangeId_(config.exchangeId), // Will need to be set later or add to config
-      trading_pair_(config.tradingPair), // Will need to be set later or add to config
+    : exchangeId_(core::ExchangeId::fromString("BINANCE")), // TODO: Add exchangeId to config
+      trading_pair_(""), // TODO: Add tradingPair to config  
       depth_levels_(config.depth),
       price_grouping_factor_(0.0001), // Default value, or add to config
       min_samples_for_stability_(5), // Default value, or add to config
@@ -58,7 +58,7 @@ OrderBookAnalyzer::OrderBookAnalyzer(const OrderBookAnalyzerConfig& config)
     params_.setParameter("orderFlowThreshold", config.orderFlowThreshold);
     params_.setParameter("historySize", config.historySize);
     
-    // Initialize current metrics
+    // Initialize current metrics with proper values
     current_metrics_.exchangeId = exchangeId_;
     current_metrics_.symbol = core::Symbol::fromString(trading_pair_);
 }
@@ -95,9 +95,9 @@ OrderBookAnalyzer::OrderBookAnalyzer(const core::ExchangeId& exchangeId, const s
             asks = groupPriceLevels(asks, false);
         }
         
-        // Initialize metrics with snapshot metadata
-        current_metrics_.exchangeId = exchangeId_;
-        current_metrics_.symbol = core::Symbol::fromString(trading_pair_);
+        // Initialize metrics with snapshot metadata - USE ACTUAL DATA FROM ORDERBOOK
+        current_metrics_.exchangeId = snapshot.getExchangeId();
+        current_metrics_.symbol = snapshot.getSymbol();
         current_metrics_.timestamp = snapshot.getTimestamp();
         current_metrics_.sequenceNumber = snapshot.getSequenceNumber();
         

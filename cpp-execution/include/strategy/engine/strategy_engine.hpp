@@ -50,7 +50,7 @@ public:
      * @param strategyId Unique identifier for this strategy instance
      */
     explicit StrategyEngine(const std::string& strategyId);
-    
+
     /**
      * @brief Register a logistic regression signal generator
      * @param generator The signal generator to register
@@ -155,6 +155,7 @@ private:
     std::string strategyVersion_;
     size_t eventSubscriptionId_;
     size_t imbalanceSubscriptionId_;
+    size_t signalGeneratedSubscriptionId_; //subscription id for signal generated events from event bus
     //event bus
     // size_t eventSubscriptionId_ = 0;  
         //
@@ -183,14 +184,16 @@ private:
     size_t nextCallbackId_ = 1;
     
     // Thread safety
-    mutable std::mutex mutex_;
-    std::mutex callbackMutex_;
+    mutable std::recursive_mutex mutex_;
+    std::recursive_mutex callbackMutex_;
     //previousOrderBook_
     // data_ingestion::OrderBook previousOrderBook_;
     // Periodic processing
     std::unique_ptr<std::thread> signalMaintenanceThread_;
     std::atomic<bool> runMaintenanceThread_{false};
     
+    TradingSignal enhanceSignalWithEventContext(const TradingSignal& signal, const ImbalanceEvent& event) const;
+
     // Internal processing methods
     void processImbalanceEvents(const std::vector<ImbalanceEvent>& events);
     void maintainSignals();
@@ -201,7 +204,10 @@ private:
     void signalMaintenanceWorker();
     void pruneExpiredSignals();
     void loadDefaultParameters();
-    
+    std::optional<ImbalanceEvent> findSourceEvent(
+    const TradingSignal& signal, 
+    const std::vector<ImbalanceEvent>& events) const;
+
     // Optimization methods
     void performAdaptiveAdjustments();
     
