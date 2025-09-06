@@ -27,7 +27,7 @@ void createTestConfig() {
             "name": "Binance",
             "ws_url": "wss://stream.binance.com:9443/ws",
             "rest_url": "https://api.binance.com",
-            "symbols": ["BTCUSDT", "ETHUSDT"],
+            "symbols": ["BTCUSDT", "ETHUSDT", "BNBUSDT", "LTCUSDT", "XRPUSDT", "BCHUSDT", "ADAUSDT", "DOTUSDT", "LINKUSDT", "XLMUSDT", "DOGEUSDT", "SOLUSDT", "MATICUSDT", "AVAXUSDT", "SHIBUSDT", "TRXUSDT", "UNIUSDT", "ATOMUSDT", "ALGOUSDT", "VETUSDT", "FILUSDT"],
             "connection_timeout_ms": 5000,
             "max_reconnect_attempts": 3
         }
@@ -107,7 +107,87 @@ int main() {
         }
         
         // Start with test symbols
-        std::vector<std::string> symbols = {"BTCUSDT", "ETHUSDT", "BNBUSDT"};
+        /*{
+      "symbol": "BTC/USDT",
+      "exchange": "BINANCE"
+    },
+    {
+      "symbol": "ETH/USDT", 
+      "exchange": "BINANCE"
+    },
+    {
+      "symbol": "LTC/USDT", 
+      "exchange": "BINANCE"
+    },
+    {
+      "symbol": "XRP/USDT", 
+      "exchange": "BINANCE"
+    },
+    {
+      "symbol": "BCH/USDT", 
+      "exchange": "BINANCE"
+    },
+    {
+      "symbol": "ADA/USDT", 
+      "exchange": "BINANCE"
+    },
+    {
+      "symbol": "DOT/USDT", 
+      "exchange": "BINANCE"
+    },
+    {
+      "symbol": "LINK/USDT", 
+      "exchange": "BINANCE"
+    },
+    {
+      "symbol": "XLM/USDT", 
+      "exchange": "BINANCE"
+    },
+    {
+      "symbol": "DOGE/USDT", 
+      "exchange": "BINANCE"
+    },
+    {
+      "symbol": "SOL/USDT", 
+      "exchange": "BINANCE"
+    },
+    {
+      "symbol": "MATIC/USDT", 
+      "exchange": "BINANCE"
+    },
+    {
+      "symbol": "AVAX/USDT", 
+      "exchange": "BINANCE"
+    },
+    {
+      "symbol": "SHIB/USDT", 
+      "exchange": "BINANCE"
+    },
+    {
+      "symbol": "TRX/USDT", 
+      "exchange": "BINANCE"
+    },
+    {
+      "symbol": "UNI/USDT", 
+      "exchange": "BINANCE"
+    },
+    {
+      "symbol": "ATOM/USDT", 
+      "exchange": "BINANCE"
+    },
+    {
+      "symbol": "ALGO/USDT", 
+      "exchange": "BINANCE"
+    },
+    {
+      "symbol": "VET/USDT", 
+      "exchange": "BINANCE"
+    },
+    {
+      "symbol": "FIL/USDT", 
+      "exchange": "BINANCE"
+    }*/
+        std::vector<std::string> symbols = {"BTCUSDT", "ETHUSDT", "BNBUSDT", "LTCUSDT", "XRPUSDT", "BCHUSDT", "ADAUSDT", "DOTUSDT", "LINKUSDT", "XLMUSDT", "DOGEUSDT", "SOLUSDT", "MATICUSDT", "AVAXUSDT", "SHIBUSDT", "TRXUSDT", "UNIUSDT", "ATOMUSDT", "ALGOUSDT", "VETUSDT", "FILUSDT"};
         std::cout << "Starting service with symbols: ";
         for (const auto& symbol : symbols) {
             std::cout << symbol << " ";

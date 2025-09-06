@@ -292,18 +292,18 @@ int main() {
             }
             
             // Test parameter updates at 30s mark
-            if (cycle == 30) {
-                LOG_INFO("Testing parameter updates...");
-                ParameterSet newParams = strategyEngine.getParameters();
-                newParams.numeric_params["global_sensitivity"] = 0.9;
-                newParams.numeric_params["signal_strength_threshold"] = 0.4;
+            // if (cycle == 30) {
+            //     LOG_INFO("Testing parameter updates...");
+            //     ParameterSet newParams = strategyEngine.getParameters();
+            //     newParams.numeric_params["global_sensitivity"] = 0.9;
+            //     newParams.numeric_params["signal_strength_threshold"] = 0.4;
                 
-                if (strategyEngine.updateParameters(newParams)) {
-                    LOG_INFO("Parameters updated successfully");
-                } else {
-                    LOG_ERROR("Failed to update parameters");
-                }
-            }
+            //     if (strategyEngine.updateParameters(newParams)) {
+            //         LOG_INFO("Parameters updated successfully");
+            //     } else {
+            //         LOG_ERROR("Failed to update parameters");
+            //     }
+            // }
         }
         
         // 7. Final cleanup
