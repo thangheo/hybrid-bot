@@ -81,7 +81,10 @@ OrderBookAnalyzer::OrderBookAnalyzer(const core::ExchangeId& exchangeId, const s
  
  void OrderBookAnalyzer::processOrderBook(const data_ingestion::OrderBook& snapshot) {
     OrderBookMetrics metrics_to_notify;  // Declare outside the lock
-    
+    //check if the snapshot is valid
+    if (!snapshot.isValid()) {
+        return;
+    }
     {  // Scope the lock
         std::lock_guard<std::mutex> lock(mutex_);
         
@@ -254,6 +257,18 @@ OrderBookMetrics OrderBookAnalyzer::getMetrics() const {
          ema_spread_ = StrategyMetrics::updateEMA(
              ema_spread_, current_metrics_.spread, ema_alpha_);
      }
+    current_metrics_.metrics["mid_price"] = current_metrics_.mid_price;
+    current_metrics_.metrics["spread"] = current_metrics_.spread;
+    current_metrics_.metrics["spread_percent"] = current_metrics_.spread_percent;
+    current_metrics_.metrics["best_bid"] = best_bid;
+    current_metrics_.metrics["best_ask"] = best_ask;
+    
+    // Store EMA values for historical analysis
+    current_metrics_.metrics["ema_mid_price"] = ema_mid_price_;
+    current_metrics_.metrics["ema_spread"] = ema_spread_;
+    
+    // For abnormal spread detection
+    current_metrics_.metrics["average_spread_percent"] = ema_spread_ / current_metrics_.mid_price * 100.0;
  }
  
  void OrderBookAnalyzer::calculateVolumeMetrics(
@@ -309,6 +324,13 @@ OrderBookMetrics OrderBookAnalyzer::getMetrics() const {
          current_metrics_.bid_ask_volume_ratio = 
              current_metrics_.total_bid_volume > 0 ? 10.0 : 1.0;
      }
+         // Store in the metrics map for imbalance detection
+    current_metrics_.metrics["bid_volume"] = current_metrics_.total_bid_volume;
+    current_metrics_.metrics["ask_volume"] = current_metrics_.total_ask_volume;
+    current_metrics_.metrics["bid_level_count"] = static_cast<double>(bids.size());
+    current_metrics_.metrics["ask_level_count"] = static_cast<double>(asks.size());
+    current_metrics_.metrics["mid_price"] = current_metrics_.mid_price;
+    current_metrics_.metrics["spread_percent"] = current_metrics_.spread_percent;
  }
  
  void OrderBookAnalyzer::calculateLevelMetrics(
@@ -335,6 +357,8 @@ OrderBookMetrics OrderBookAnalyzer::getMetrics() const {
          current_metrics_.price_level_imbalance = 
              current_metrics_.bid_density / current_metrics_.ask_density - 1.0;
      }
+    current_metrics_.metrics["bid_density"] = current_metrics_.bid_density;
+    current_metrics_.metrics["ask_density"] = current_metrics_.ask_density;
  }
  
  void OrderBookAnalyzer::calculateImbalanceMetrics(
@@ -391,6 +415,8 @@ OrderBookMetrics OrderBookAnalyzer::getMetrics() const {
          ema_volume_imbalance_ = StrategyMetrics::updateEMA(
              ema_volume_imbalance_, current_metrics_.volume_imbalance, ema_alpha_);
      }
+    current_metrics_.metrics["volume_imbalance"] = current_metrics_.volume_imbalance;
+    current_metrics_.metrics["volatility"] = current_metrics_.volatility_expectation;
  }
  
  void OrderBookAnalyzer::updateTimeSeries() {
