@@ -213,7 +213,7 @@
       "parameters": {
         "minSignalStrength": 0.6,
         "confidenceThreshold": 0.7,
-        "signalTtlMs": 30000
+        "signalTtlMs": 1500  // ✅ 1.5s default for crypto
       }
     },
     "momentumCorrelator": {

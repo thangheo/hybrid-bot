@@ -38,10 +38,10 @@ ImbalanceSignalGenerator::ImbalanceSignalGenerator(const SignalGeneratorConfig& 
 bool ImbalanceSignalGenerator::initialize(const SignalGeneratorConfig& config) {  // ✅ CORRECT CONFIG TYPE
     config_ = config;
     //print configuration for debugging
-    std::cout<<"ImbalanceSignalGenerator initialized with config: "
-             <<"minSignalStrength="<<config_.minSignalStrength
-             <<", confidenceThreshold="<<config_.confidenceThreshold
-             <<", signalTtlMs="<<config_.signalTtlMs<<"\n";
+    // std::cout<<"ImbalanceSignalGenerator initialized with config: "
+    //          <<"minSignalStrength="<<config_.minSignalStrength
+    //          <<", confidenceThreshold="<<config_.confidenceThreshold
+    //          <<", signalTtlMs="<<config_.signalTtlMs<<"\n";
     signalCount_ = 0;
     nextCallbackId_ = 1;
     pendingImbalances_.clear();
@@ -205,8 +205,8 @@ void ImbalanceSignalGenerator::handlePredictionConflict(TradingSignal& signal,
         signal.confidence *= config_.conflictConfidencePenalty;
         signal.setMetric("prediction_conflict_penalty", config_.conflictConfidencePenalty);
         
-        LOG_DEBUG("Prediction conflict penalty applied: correlation={:.3f}, prediction={:.4f}%",
-                    correlation, predictedMove * 100);
+        // LOG_DEBUG("Prediction conflict penalty applied: correlation={:.3f}, prediction={:.4f}%",
+        //             correlation, predictedMove * 100);
     }
 }
 
@@ -375,12 +375,6 @@ bool ImbalanceSignalGenerator::passesSignalFilters(const ImbalanceEvent& imbalan
      }
      auto rawVolatility = volatility; // Store raw volatility for logging
     // CRITICAL DEBUG INFO
-    // LOG_INFO("PRICE TARGET DEBUG:");
-    // LOG_INFO("  Mid Price: {:.2f}", midPrice);
-    // LOG_INFO("  Raw Volatility: {:.6f}", volatility);
-    // LOG_INFO("  Imbalance Strength: {:.3f}", imbalance.strength);
-    // LOG_INFO("  Imbalance Type: {}", static_cast<int>(imbalance.type));
-    // CRITICAL FIX: Much more conservative impact calculation
     double conservativeVolatility = std::min(volatility, 0.03); // Cap at 3%
 
     // Base impact should be a small fraction of volatility for short-term predictions
@@ -421,38 +415,27 @@ bool ImbalanceSignalGenerator::passesSignalFilters(const ImbalanceEvent& imbalan
     if (imbalance.direction == core::Direction::SELL) {
         finalImpactPercent = -finalImpactPercent;
     }
-
+    auto signal_ttl = config_.signalTtlMs;
     // Generate realistic targets with the conservative impact
     PriceTarget shortTarget;
     shortTarget.price = midPrice * (1.0 + (finalImpactPercent * 0.25)); // 25% of full impact
     shortTarget.probability = 0.7;
-    shortTarget.expected_time = std::chrono::milliseconds(5000);
+    // Short target: 25% of signal TTL
+    shortTarget.expected_time = std::chrono::milliseconds(static_cast<int64_t>(signal_ttl * 0.25));
     targets.push_back(shortTarget);
 
     PriceTarget mediumTarget;
     mediumTarget.price = midPrice * (1.0 + (finalImpactPercent * 0.60)); // 60% of full impact
     mediumTarget.probability = 0.5;
-    mediumTarget.expected_time = std::chrono::milliseconds(15000);
+    mediumTarget.expected_time = std::chrono::milliseconds(static_cast<int64_t>(signal_ttl * 0.50));
     targets.push_back(mediumTarget);
 
     PriceTarget longTarget;
     longTarget.price = midPrice * (1.0 + finalImpactPercent); // Full impact
     longTarget.probability = 0.3;
-    longTarget.expected_time = std::chrono::milliseconds(30000);
+    longTarget.expected_time = std::chrono::milliseconds(static_cast<int64_t>(signal_ttl * 0.75));
     targets.push_back(longTarget);
-
-    // Enhanced debug logging
-    // LOG_INFO("CONSERVATIVE PRICE TARGET CALCULATION:");
-    // LOG_INFO("  Mid Price: {:.2f}", midPrice);
-    // LOG_INFO("  Raw Volatility: {:.6f} ({:.2f}%)", rawVolatility, rawVolatility * 100);
-    // LOG_INFO("  Conservative Volatility: {:.6f} ({:.2f}%)", conservativeVolatility, conservativeVolatility * 100);
-    // LOG_INFO("  Normalized Strength: {:.3f} (was {:.3f})", normalizedStrength, imbalance.strength);
-    // LOG_INFO("  Final Impact: {:.6f} ({:.3f}%)", finalImpactPercent, finalImpactPercent * 100);
-    // LOG_INFO("  Conservative Targets:");
-    // LOG_INFO("    5s:  {:.2f} ({:+.3f}%)", shortTarget.price, ((shortTarget.price - midPrice) / midPrice) * 100);
-    // LOG_INFO("    15s: {:.2f} ({:+.3f}%)", mediumTarget.price, ((mediumTarget.price - midPrice) / midPrice) * 100);
-    // LOG_INFO("    30s: {:.2f} ({:+.3f}%)", longTarget.price, ((longTarget.price - midPrice) / midPrice) * 100);
-
+ 
     return targets;
 }
 
@@ -482,22 +465,7 @@ core::SignalId ImbalanceSignalGenerator::generateSignalId() const {
  
  // Notify all registered callbacks about a new signal
  void ImbalanceSignalGenerator::notifySignalCallbacks(const TradingSignal& signal) {
-     // Copy callbacks to prevent deadlocks if callback registers/unregisters another callback
-    //  std::map<size_t, SignalCallback> callbacksCopy;
-    //  {
-    //      std::lock_guard<std::mutex> lock(mutex_);
-    //      callbacksCopy = callbacks_;
-    //  }
-     
-    //  // Notify all callbacks
-    //  for (const auto& cb : callbacksCopy) {
-    //      try {
-    //          cb.second(signal);
-    //      } catch (const std::exception& e) {
-    //          std::cerr << "Exception in signal callback: " << e.what() << std::endl;
-    //      }
-    //  }
-    // std::cout << "Publishing SignalGeneratedEvent for signal ID: " << signal.id << std::endl;
+  
     common::EventBus::getInstance().publish(events::SignalGeneratedEvent{signal});
  }
  

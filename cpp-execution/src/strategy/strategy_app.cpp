@@ -189,7 +189,7 @@ public:
         if (signal.strength < 0.53) return; // Weak signals are ignored
         if(signal.direction == core::Direction::NEUTRAL) return; // Ignore neutral signals
         if(signal.confidence < 0.65) return; // Ignore low confidence signals
-        if(signal.quality < 0.56) return; // Ignore low quality signals
+        if(signal.quality < 0.5) return; // Ignore low quality signals
         
         //if target prices are too close to mid price, ignore
         double midPrice = orderBookReceiver_ ? orderBookReceiver_->getCurrentMidPrice(signal.symbol.toString()) : 0.0;
@@ -207,16 +207,16 @@ public:
         }
  
         //print signal details for debugging
-        LOG_INFO("  Signal ID: {}", signal.id);
-        LOG_INFO("  Symbol: {}", signal.symbol.toString());
-        LOG_INFO("  Direction: {}", signal.direction == Direction::BUY ? "BUY" : "SELL");
-        LOG_INFO("  Current Mid Price: {:.8f}", orderBookReceiver_ ? orderBookReceiver_->getCurrentMidPrice(signal.symbol.toString()) : 0.0);
-        LOG_INFO("  Strength: {:.3f}", signal.strength);
-        LOG_INFO("  Confidence: {}", signal.confidence);
-        LOG_INFO("  Quality: {:.3f}", signal.quality);
+        // LOG_INFO("  Signal ID: {}", signal.id);
+        // LOG_INFO("  Symbol: {}", signal.symbol.toString());
+        // LOG_INFO("  Direction: {}", signal.direction == Direction::BUY ? "BUY" : "SELL");
+        // LOG_INFO("  Current Mid Price: {:.8f}", orderBookReceiver_ ? orderBookReceiver_->getCurrentMidPrice(signal.symbol.toString()) : 0.0);
+        // LOG_INFO("  Strength: {:.3f}", signal.strength);
+        // LOG_INFO("  Confidence: {}", signal.confidence);
+        // LOG_INFO("  Quality: {:.3f}", signal.quality);
         // LOG_INFO("  Generation Time: {}", std::chrono::duration_cast<std::chrono::milliseconds>(
         //     signal.generation_time.time_since_epoch()).count());
-        LOG_INFO("  TTL: {} s", std::chrono::duration_cast<std::chrono::seconds>(signal.ttl).count());
+        // LOG_INFO("  TTL: {} s", std::chrono::duration_cast<std::chrono::seconds>(signal.expirationTime - std::chrono::system_clock::now()).count()/1000.0);
         //          enum class ImbalanceType {
         //      VOLUME_IMBALANCE,              // Significant difference between bid and ask volume
         //      PRICE_LEVEL_IMBALANCE,         // Imbalance across multiple price levels
@@ -236,15 +236,15 @@ public:
         //  };
         //print source type
 
-        LOG_INFO("  Source Type: {}", static_cast<int>(signal.source_type));
-        //log percentage of change % from mid price to each target
-        LOG_INFO("  Price Targets:");
+        // LOG_INFO("  Source Type: {}", static_cast<int>(signal.source_type));
+        // //log percentage of change % from mid price to each target
+        // LOG_INFO("  Price Targets:");
 
         for (const auto& target : signal.targets) {
             double midPrice = orderBookReceiver_ ? orderBookReceiver_->getCurrentMidPrice(signal.symbol.toString()) : 0.0;
             if (midPrice > 0.0) {
                 double priceDiffPercent = std::abs(target.price - midPrice) / midPrice * 100.0;
-                LOG_INFO("    Target Price: {:.8f}, Change: {:.2f}%", target.price, priceDiffPercent);
+                // LOG_INFO("    Target Price: {:.8f}, Change: {:.2f}%", target.price, priceDiffPercent);
             }
         }
         // }
@@ -266,28 +266,33 @@ private:
     std::mutex processedMutex_;
     StrategyEngine* strategyEngine_;
     OrderBookReceiver* orderBookReceiver_;
-std::chrono::milliseconds calculateHoldingDuration(const TradingSignal& signal, 
-                                                   double decayFactor, 
-                                                   int64_t remainingTTL) {
-    // Base holding time depends on signal strength and confidence
-    double baseHoldingMs = 5000 + (signal.strength * 25000); // 5-30 seconds base
-    
-    // Adjust by decay factor - higher decay = shorter hold
-    double adjustedHoldingMs = baseHoldingMs * decayFactor;
-    
-    // Adjust by confidence - higher confidence = longer hold
-    double confidenceMultiplier = 0.5 + (signal.confidence * 1.5); // 0.5x to 2.0x
-    adjustedHoldingMs *= confidenceMultiplier;
-    
-    // Don't exceed remaining TTL
-    adjustedHoldingMs = std::min(adjustedHoldingMs, static_cast<double>(remainingTTL) * 0.8);
-    
-    // Apply limits
-    int64_t finalDuration = static_cast<int64_t>(adjustedHoldingMs);
-    finalDuration = std::max(static_cast<int64_t>(2000), std::min(static_cast<int64_t>(30000), finalDuration)); // 2-30 seconds
-    
-    return std::chrono::milliseconds(finalDuration);
-}
+
+    std::chrono::milliseconds calculateHoldingDuration(const TradingSignal& signal,
+                                                    double decayFactor,
+                                                    int64_t remainingTTL) {
+        // Base holding should be fraction of signal TTL, not fixed time
+        // uint64_t signal_ttl = std::chrono::duration_cast<std::chrono::milliseconds>(signal.ttl).count();
+        //expiration time in ms
+        uint64_t signal_ttl = std::chrono::duration_cast<std::chrono::milliseconds>(signal.expirationTime - now()).count();
+
+        // Hold for 60-90% of signal lifetime based on strength
+        double holdingRatio = 0.6 + (signal.strength * 0.3); // 60%-90% of TTL
+        
+        // Apply confidence multiplier (but keep it reasonable)
+        double confidenceMultiplier = 0.8 + (signal.confidence * 0.4); // 0.8x to 1.2x
+        
+        double targetHoldingMs = signal_ttl * holdingRatio * confidenceMultiplier;
+        
+        // NEVER exceed remaining TTL
+        targetHoldingMs = std::min(targetHoldingMs, static_cast<double>(remainingTTL));
+        
+        // Crypto-appropriate limits: 100ms minimum, signal TTL maximum
+        int64_t finalDuration = static_cast<int64_t>(targetHoldingMs);
+        finalDuration = std::max(100L, std::min(static_cast<int64_t>(signal_ttl), finalDuration));
+        
+        return std::chrono::milliseconds(finalDuration);
+    }
+
     double calculatePositionSize(const TradingSignal& signal, double qualityScore) {
 
         double basePositionSize = 5000; // Base size in USD
@@ -326,23 +331,23 @@ std::chrono::milliseconds calculateHoldingDuration(const TradingSignal& signal,
             auto entryTime = std::chrono::system_clock::now();
             double entryPrice = signal.getMetric("mid_price", 0); // Use signal's mid price at generation time
             if (entryPrice <= 0.0) {
-                LOG_WARN("Signal {} has invalid entry price metric, skipping execution", signal.id);
+                // LOG_WARN("Signal {} has invalid entry price metric, skipping execution", signal.id);
                 return;
             }            
             
             //calculate hold duration based on signal decay and TTL
             auto now = std::chrono::system_clock::now();
             auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - signal.generation_time).count();
-            auto remainingTTL = signal.ttl.count() - elapsed;
-            if (remainingTTL <= 0) {
-                LOG_WARN("Signal {} has expired TTL, skipping execution", signal.id);
+            auto remainingTTL = signal.expirationTime - now;
+            if (remainingTTL <= 0ms) {
+                // LOG_WARN("Signal {} has expired TTL, skipping execution", signal.id);
                 return;
             }
             //calculate position duration using signal decay and remaining TTL
             double decayFactor = calculateDecayFactor(signal, elapsed);
             
             // Calculate optimal holding duration using decay
-            auto position_duration = calculateHoldingDuration(signal, decayFactor, remainingTTL);
+            auto position_duration = calculateHoldingDuration(signal, decayFactor, remainingTTL.count());
             
             LOG_INFO("Signal {} - Decay Factor: {:.3f}, Holding Duration: {}ms", 
                     signal.id, decayFactor, position_duration.count());
@@ -427,6 +432,7 @@ int main() {
         // 1. Load configuration
         std::string configPath = "strategy_config.json";
         StrategyConfig config = loadStrategyConfigFromFile(configPath);
+        
         LOG_INFO("Configuration loaded: {} trading pairs", config.tradingPairs.size());
         
         // 2. Initialize strategy engine
