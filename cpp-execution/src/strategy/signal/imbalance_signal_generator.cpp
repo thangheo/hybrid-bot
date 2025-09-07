@@ -210,27 +210,6 @@ void ImbalanceSignalGenerator::handlePredictionConflict(TradingSignal& signal,
     }
 }
 //function to calculate signal ttl
-// std::chrono::milliseconds ImbalanceSignalGenerator::calculateSignalTTL(const ImbalanceEvent& imbalance, double delta_price) const {
-//     //ttl = kx delta p/(volatilityxPxstrength)
-//     auto volatility = imbalance.getSupportingMetric("volatility_per_unit_time", 0.001);
-//     if (volatility <= 0.0) {
-//         volatility = 0.001; // Prevent division by zero
-//     }
-//     auto price = imbalance.getSupportingMetric("mid_price", 1.0);
-//     //k=3x1000 to scale to milliseconds
-//     uint64_t ttl = static_cast<uint64_t>((3000 * delta_price) / (volatility * price * imbalance.strength));
-//     //print debug info of volatility, price, strength, delta_price, ttl
-//     std::cout<<"Calculating TTL: Volatility="<<volatility
-//              <<", Price="<<price
-//              <<", Strength="<<imbalance.strength
-//              <<", DeltaPrice="<<delta_price
-//              <<", Calculated TTL="<<ttl<<" ms\n";
-//     // Base TTL from config
-//     // uint64_t baseTtlMs = config_.signalTtlMs;
-//     // Adjust TTL based on imbalance strength (stronger imbalances get longer TTL)
-//     ttl = std::clamp(ttl, static_cast<uint64_t>(500), static_cast<uint64_t>(60000)); // Clamp between 0.5s and 60s
-//     return std::chrono::milliseconds(ttl);
-// }
 
 std::chrono::milliseconds ImbalanceSignalGenerator::calculateSignalTTL(const ImbalanceEvent& imbalance, double delta_price) const {
     // Use volatility per unit time instead of regular volatility
@@ -270,7 +249,7 @@ TradingSignal ImbalanceSignalGenerator::createSignalFromImbalance(const Imbalanc
      signal.expirationTime = imbalance.detectionTime + signal.ttl; // Set expiration time
      // Generate price targets
      signal.targets = generatePriceTargets(imbalance);
-     signal.ttl = calculateSignalTTL(imbalance, std::abs(signal.targets[0].price - imbalance.getSupportingMetric("mid_price", 1.0)));
+     signal.ttl = calculateSignalTTL(imbalance, std::abs(signal.targets[2].price - imbalance.getSupportingMetric("mid_price", 1.0)));
      // Copy relevant metrics
      for (const auto& metric : imbalance.supportingMetrics) {
          signal.setMetric(metric.first, metric.second);

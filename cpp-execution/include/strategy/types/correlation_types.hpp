@@ -59,7 +59,7 @@
      size_t top_metrics_count;             // Number of top metrics to consider for correlation~
      // Constructor with defaults
      CorrelationParameters() 
-         : min_data_points(10),
+         : min_data_points(20),
            significance_threshold(0.05),
            correlation_decay_rate(0.95),
            regime_detection_window(20),

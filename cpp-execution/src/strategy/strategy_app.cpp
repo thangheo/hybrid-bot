@@ -188,8 +188,8 @@ public:
         //filter signals based on custom criteria (e.g., strength threshold)
         if (signal.strength < 0.53) return; // Weak signals are ignored
         if(signal.direction == core::Direction::NEUTRAL) return; // Ignore neutral signals
-        if(signal.confidence < 0.6) return; // Ignore low confidence signals
-        if(signal.quality < 0.5) return; // Ignore low quality signals
+        if(signal.confidence < 0.7) return; // Ignore low confidence signals
+        if(signal.quality < 0.53) return; // Ignore low quality signals
         
         //if target prices are too close to mid price, ignore
         double midPrice = orderBookReceiver_ ? orderBookReceiver_->getCurrentMidPrice(signal.symbol.toString()) : 0.0;
@@ -452,8 +452,8 @@ int main() {
         auto startTime = std::chrono::steady_clock::now();
         size_t lastMessageCount = 0;
 
-        for (int cycle = 0; cycle < 9000; ++cycle) { // Run for 280000 cycles max
-            std::this_thread::sleep_for(10ms);
+        for (int cycle = 0; cycle < 180000; ++cycle) { // Run for 6hrs cycles max
+            std::this_thread::sleep_for(100ms);
             // Report every 10 
             if (cycle % 10 == 0) {
                 auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(

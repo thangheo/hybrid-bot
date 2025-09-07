@@ -418,8 +418,8 @@ OrderBookMetrics OrderBookAnalyzer::getMetrics() const {
              ema_volume_imbalance_, current_metrics_.volume_imbalance, ema_alpha_);
      }
     current_metrics_.metrics["volume_imbalance"] = current_metrics_.volume_imbalance;
-    // current_metrics_.metrics["volatility"] = current_metrics_.volatility_expectation;
-    current_metrics_.metrics["volatility"] = calculateRealizedVolatility(); // or your fixed expectation
+    current_metrics_.metrics["volatility_per_unit_time"] = calculateVolatilityPerUnitTime();
+    current_metrics_.metrics["volatility"] =  calculateVolatilityPerUnitTime(); // Realized volatility
     current_metrics_.metrics["volatility_expectation"] = calculateVolatilityExpectation();
     current_metrics_.metrics["weighted_volume_imbalance"] = current_metrics_.weighted_volume_imbalance;
     current_metrics_.metrics["depth_imbalance"] = current_metrics_.depth_imbalance;
