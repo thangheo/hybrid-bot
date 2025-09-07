@@ -494,8 +494,21 @@ TradingSignal StrategyEngine::enhanceSignalWithEventContext(
     // Apply signal decay model
     if (signalDecayModel_) {
         enhancedSignal.decayRate = signalDecayModel_->calculateDecayRate(sourceEvent.type);
-        enhancedSignal.expirationTime = std::chrono::system_clock::now() + 
-            std::chrono::seconds(signalDecayModel_->getSignalTTL(sourceEvent.type));
+        
+        // Debug TTL value
+        uint64_t ttl_value = signalDecayModel_->getSignalTTL(sourceEvent.type);
+        auto current_time = std::chrono::system_clock::now();
+        
+        LOG_DEBUG("Signal TTL value: {} ms, Current time: {}", ttl_value, 
+                  std::chrono::duration_cast<std::chrono::milliseconds>(current_time.time_since_epoch()).count());
+        
+        // Set expiration time (assuming TTL is in milliseconds)
+        enhancedSignal.expirationTime = current_time + std::chrono::milliseconds(ttl_value);
+        enhancedSignal.generation_time = current_time; // Make sure generation time is set
+        LOG_DEBUG("Signal generation time: {}", 
+                  std::chrono::duration_cast<std::chrono::milliseconds>(enhancedSignal.generation_time.time_since_epoch()).count());
+        LOG_DEBUG("Signal expiration time: {}", 
+                  std::chrono::duration_cast<std::chrono::milliseconds>(enhancedSignal.expirationTime.time_since_epoch()).count());
     }
     
     // Add threshold manager data

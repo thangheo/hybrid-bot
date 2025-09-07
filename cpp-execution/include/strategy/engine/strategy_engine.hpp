@@ -69,7 +69,7 @@ public:
      * @return True if initialization successful, false otherwise
      */
     bool initialize(const StrategyConfig& config);
-    
+    /* a function to get the signal expiration */
     /**
      * @brief Start the strategy engine
      * @return True if started successfully, false otherwise
