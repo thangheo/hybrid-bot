@@ -191,11 +191,12 @@ public:
         std::lock_guard<std::mutex> lock(processedMutex_);
         //filter duplicate signals
         //filter signals based on custom criteria (e.g., strength threshold)
-        if (signal.strength < 0.54) return; // Weak signals are ignored
+        if (signal.strength < 0.53) return; // Weak signals are ignored
         if(signal.direction == core::Direction::NEUTRAL) return; // Ignore neutral signals
-        if(signal.confidence < 0.9) return; // Ignore low confidence signals
-        if(signal.targets.empty()) return; // Ignore signals without targets
-        LOG_INFO("  TTL: {} ms", signal.ttl.count());
+        if(signal.confidence < 0.7) return; // Ignore low confidence signals
+        // if(signal.targets.empty()) return; // Ignore signals without targets
+        if(signal.getMetric("predicted_price_move", 0.0) < 0.002) return; // Ignore signals with negligible predicted move
+        // LOG_INFO("  TTL: {} ms", signal.ttl.count());
         if(signal.ttl < std::chrono::milliseconds(15000)) return; // Ignore signals with very short TTL
 
         //print signal details for debugging
@@ -238,8 +239,8 @@ private:
             //          signal.strength, entryPrice);
             
             // Simulate holding period (shorter for testing)
-            std::this_thread::sleep_for(std::chrono::seconds(25)); // Hold for 25 seconds
-            
+            std::this_thread::sleep_for(std::chrono::seconds(10)); // Hold for 15 seconds
+
             // Get REAL current exit price from live order book data
             auto exitTime = std::chrono::system_clock::now();
             double exitPrice = entryPrice; // Fallback to entry price
@@ -353,7 +354,7 @@ int main() {
         auto startTime = std::chrono::steady_clock::now();
         size_t lastMessageCount = 0;
 
-        for (int cycle = 0; cycle < 1800; ++cycle) { // Run for 30 minutes max
+        for (int cycle = 0; cycle < 120; ++cycle) { // Run for 2 minutes max
             std::this_thread::sleep_for(1s);
             
             // Report every 10 seconds

@@ -15,6 +15,12 @@
 #include <map>
 #include <deque>
 #include <vector>
+   // Track metric statistics for normalization
+   struct MetricStatistics {
+       double mean = 0.0;
+       double stddev = 1.0;
+       size_t sampleCount = 0;
+   };
 
 namespace trading {
 namespace strategy {
@@ -132,7 +138,9 @@ private:
         PriceMovement price_movement;
         core::Timestamp timestamp;
     };
-    
+
+    // mutable std::unordered_map<std::string, MetricStatistics> metricStatistics_;
+    std::map<std::string, MetricStatistics> metricStatistics_;
     std::deque<DataPoint> data_points_;
     std::map<std::string, double> correlation_coefficients_;
     // correlation_strengths_
@@ -146,7 +154,8 @@ private:
      * @brief Calculate correlation coefficients from stored data points
      */
     void calculateCorrelations();
-    
+    // double getMarketRegimeMultiplier(MarketRegime regime) const;
+
     /**
      * @brief Calculate feature importance using statistical methods
      */
