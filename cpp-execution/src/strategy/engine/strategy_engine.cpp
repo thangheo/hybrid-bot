@@ -66,7 +66,8 @@
         signalGenerator_ = std::make_shared<ImbalanceSignalGenerator>(config_.signalGeneratorConfig);
         momentumCorrelator_ = std::make_shared<MomentumCorrelation>(config_.momentumCorrelationConfig);
         thresholdManager_ = std::make_shared<ThresholdManager>(config_.thresholdManagerConfig);
-        signalDecayModel_ = std::make_shared<SignalDecayModel>(config_.signalDecayConfig);
+        // signalDecayModel_ = std::make_shared<SignalDecayModel>(config_.signalDecayConfig);
+        signalDecayModel_ = std::make_shared<SignalDecayModel>(DecayModelType::EXPONENTIAL);
         exchangeCalibration_ = std::make_shared<ExchangeCalibration>(config_.exchangeCalibrationConfig);
         adaptiveMechanism_ = std::make_shared<AdaptiveMechanism>(config_.adaptiveMechanismConfig);
         
