@@ -272,7 +272,8 @@
       * @return Volatility expectation
       */
      virtual double calculateVolatilityExpectation() const;
-     
+     double calculateRealizedVolatility() const;
+
      /**
       * Notify callbacks of metrics update
       */
@@ -289,6 +290,8 @@
      // State
      OrderBookMetrics current_metrics_;
      std::deque<OrderBookMetrics> metrics_history_;
+    //  price_history_
+    std::vector<double> price_history_; // If you need to store it as member
      int min_samples_for_stability_;        // Minimum samples for stable metrics
      
      // Callbacks

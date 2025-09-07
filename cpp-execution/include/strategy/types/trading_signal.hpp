@@ -47,6 +47,8 @@
      uint64_t sourceEventId;                            // Source event ID
      uint64_t correlationId;                            // Correlation ID
      core::Direction direction;                        // Buy or sell
+     //signal quality
+     double quality;                                   // Signal quality (0.0-1.0)
      double strength;                                  // Signal strength (0.0-1.0)
      double confidence;                                // Confidence level (0.0-1.0)
      core::Timestamp generation_time;                  // When the signal was generated

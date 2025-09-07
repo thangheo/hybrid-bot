@@ -12,6 +12,7 @@
  #include <numeric>
  #include <cmath>
  #include <thread>
+ #include "logger.hpp"
  namespace trading {
  namespace strategy {
  
@@ -416,7 +417,13 @@ OrderBookMetrics OrderBookAnalyzer::getMetrics() const {
              ema_volume_imbalance_, current_metrics_.volume_imbalance, ema_alpha_);
      }
     current_metrics_.metrics["volume_imbalance"] = current_metrics_.volume_imbalance;
-    current_metrics_.metrics["volatility"] = current_metrics_.volatility_expectation;
+    // current_metrics_.metrics["volatility"] = current_metrics_.volatility_expectation;
+    current_metrics_.metrics["volatility"] = calculateRealizedVolatility(); // or your fixed expectation
+    current_metrics_.metrics["volatility_expectation"] = calculateVolatilityExpectation();
+    current_metrics_.metrics["weighted_volume_imbalance"] = current_metrics_.weighted_volume_imbalance;
+    current_metrics_.metrics["depth_imbalance"] = current_metrics_.depth_imbalance;
+    current_metrics_.metrics["pressure_imbalance"] = current_metrics_.pressure_imbalance;
+    current_metrics_.metrics["ema_volume_imbalance"] = ema_volume_imbalance_;
  }
  
  void OrderBookAnalyzer::updateTimeSeries() {
@@ -454,7 +461,13 @@ OrderBookMetrics OrderBookAnalyzer::getMetrics() const {
  
  void OrderBookAnalyzer::calculateDerivedMetrics() {
      current_metrics_.market_directional_coefficient = calculateDirectionalCoefficient();
-     current_metrics_.volatility_expectation = calculateVolatilityExpectation();
+    //  current_metrics_.volatility_expectation = calculateVolatilityExpectation();//why duplicate call?
+        //we already call it in calculateImbalanceMetrics
+        current_metrics_.realized_volatility = current_metrics_.metrics["volatility"];
+        current_metrics_.realized_volatility = calculateRealizedVolatility();
+        current_metrics_.liquidity_pressure = current_metrics_.pressure_imbalance * 
+                                            (current_metrics_.total_bid_volume + current_metrics_.total_ask_volume);
+        current_metrics_.volatility_expectation = current_metrics_.metrics["volatility_expectation"];                                    
      
      // Liquidity profile score (a composite measure of overall liquidity)
      double bid_liquidity = current_metrics_.total_bid_volume * (1.0 + current_metrics_.bid_density);
@@ -630,61 +643,140 @@ OrderBookMetrics OrderBookAnalyzer::getMetrics() const {
      return std::max(-1.0, std::min(1.0, coefficient));
  }
  
- double OrderBookAnalyzer::calculateVolatilityExpectation() const {
-     // Factors affecting expected volatility:
-     // 1. Spread (wider spread = higher volatility)
-     // 2. Volume imbalance (higher imbalance = higher volatility)
-     // 3. Depth profile (shallow depth = higher volatility)
-     // 4. Recent price movement (higher price velocity = higher volatility)
-     
-     double spread_factor = current_metrics_.spread_percent / 0.1; // Normalize to typical spread
-     double imbalance_factor = std::abs(current_metrics_.volume_imbalance) * 2.0;
-     double depth_factor = 0.0;
-     
-     // Calculate depth factor based on volume in first 3 levels
-     double top_bid_volume = 0.0;
-     double top_ask_volume = 0.0;
-     
-     if (current_metrics_.bid_volumes_by_level.size() >= 3) {
-         for (int i = 0; i < 3; ++i) {
-             top_bid_volume += current_metrics_.bid_volumes_by_level[i];
-         }
-     }
-     
-     if (current_metrics_.ask_volumes_by_level.size() >= 3) {
-         for (int i = 0; i < 3; ++i) {
-             top_ask_volume += current_metrics_.ask_volumes_by_level[i];
-         }
-     }
-     
-     // If we have depth data, calculate depth factor
-     if (top_bid_volume > 0 && top_ask_volume > 0) {
-         double avg_top_volume = (top_bid_volume + top_ask_volume) / 2.0;
-         double mid_price = current_metrics_.mid_price;
-         
-         if (mid_price > 0 && avg_top_volume > 0) {
-             // Normalize by price to make it comparable across assets
-             double normalized_depth = avg_top_volume / mid_price;
-             
-             // Invert so that lower depth = higher volatility factor
-             depth_factor = 1.0 / (normalized_depth + 0.1);
-         }
-     }
-     
-     // Velocity factor based on recent price velocity
-     double velocity_factor = std::abs(current_metrics_.price_velocity) * 10.0;
-     
-     // Combine factors with weights
-     double volatility_expectation = 
-         0.3 * spread_factor + 
-         0.3 * imbalance_factor + 
-         0.2 * depth_factor + 
-         0.2 * velocity_factor;
-     
-     // Normalize to a reasonable range (0-1, where 0.5 is average expected volatility)
-     return std::max(0.0, std::min(1.0, volatility_expectation / 2.0));
- }
- void OrderBookAnalyzer::notifyMetricsUpdated() {
+double OrderBookAnalyzer::calculateRealizedVolatility() const {
+    const int min_periods = 5;   
+    const int max_periods = 30;  
+    
+    // Extract mid_price history from time series metrics
+    auto it = current_metrics_.time_series_metrics.find("mid_price");
+    if (it == current_metrics_.time_series_metrics.end()) {
+        LOG_DEBUG("No mid_price history available, using default volatility");
+        return 0.005; // Default 0.5%
+    }
+    
+    // ✅ FIX: Use vector instead of deque
+    const std::vector<double>& price_history = it->second;
+    
+    if (price_history.size() < min_periods) {
+        LOG_DEBUG("Insufficient price history: {} points, need {}", 
+                  price_history.size(), min_periods);
+        return 0.005;
+    }
+    
+    // Use recent history (but not more than max_periods)
+    int periods_to_use = std::min(static_cast<int>(price_history.size()), max_periods);
+    int start_idx = price_history.size() - periods_to_use;
+    
+    // Calculate price returns
+    std::vector<double> returns;
+    returns.reserve(periods_to_use - 1);
+    
+    for (int i = start_idx + 1; i < static_cast<int>(price_history.size()); ++i) {
+        double prev_price = price_history[i-1];
+        double curr_price = price_history[i];
+        
+        if (prev_price > 0 && curr_price > 0) {
+            double return_pct = (curr_price - prev_price) / prev_price;
+            returns.push_back(return_pct);
+        }
+    }
+    
+    if (returns.empty()) {
+        LOG_WARN("No valid returns calculated from price history");
+        return 0.005;
+    }
+    
+    // Calculate standard deviation of returns
+    double mean_return = 0.0;
+    for (double ret : returns) {
+        mean_return += ret;
+    }
+    mean_return /= returns.size();
+    
+    double variance = 0.0;
+    for (double ret : returns) {
+        double diff = ret - mean_return;
+        variance += diff * diff;
+    }
+    
+    // Use sample variance (n-1) for small samples
+    if (returns.size() > 1) {
+        variance /= (returns.size() - 1);
+    }
+    
+    double volatility = std::sqrt(variance);
+    
+    // Clamp to reasonable short-term volatility range
+    double clamped_vol = std::clamp(volatility, 0.001, 0.05); // 0.1% to 5%
+        
+    return clamped_vol;
+}
+
+double OrderBookAnalyzer::calculateVolatilityExpectation() const {
+    // Calculate individual factors with proper bounds
+    
+    // 1. Spread factor (0.0 to 1.0)
+    double spread_factor = 0.0;
+    if (current_metrics_.spread_percent > 0) {
+        // Normalize spread: 0.1% = low volatility, 1.0% = high volatility
+        spread_factor = std::clamp(current_metrics_.spread_percent / 0.01, 0.0, 1.0);
+    }
+    
+    // 2. Volume imbalance factor (0.0 to 1.0)
+    double imbalance_factor = std::clamp(std::abs(current_metrics_.volume_imbalance), 0.0, 1.0);
+    
+    // 3. Depth factor (0.0 to 1.0)
+    double depth_factor = 0.0;
+    double top_bid_volume = 0.0;
+    double top_ask_volume = 0.0;
+    
+    // Sum volumes from top 3 levels
+    int levels_to_check = std::min(3, static_cast<int>(current_metrics_.bid_volumes_by_level.size()));
+    for (int i = 0; i < levels_to_check; ++i) {
+        top_bid_volume += current_metrics_.bid_volumes_by_level[i];
+    }
+    
+    levels_to_check = std::min(3, static_cast<int>(current_metrics_.ask_volumes_by_level.size()));
+    for (int i = 0; i < levels_to_check; ++i) {
+        top_ask_volume += current_metrics_.ask_volumes_by_level[i];
+    }
+    
+    if (top_bid_volume > 0 && top_ask_volume > 0 && current_metrics_.mid_price > 0) {
+        double avg_top_volume = (top_bid_volume + top_ask_volume) / 2.0;
+        double normalized_depth = avg_top_volume / current_metrics_.mid_price;
+        
+        // Convert to volatility factor: thin books = high volatility
+        // Use exponential decay to keep values bounded
+        depth_factor = std::clamp(1.0 - std::exp(-1.0 / (normalized_depth + 0.001)), 0.0, 1.0);
+    }
+    
+    // 4. Price velocity factor (0.0 to 1.0)
+    double velocity_factor = 0.0;
+    if (current_metrics_.price_velocity != 0.0) {
+        // Normalize velocity: 1% per second = high volatility
+        velocity_factor = std::clamp(std::abs(current_metrics_.price_velocity) * 100.0, 0.0, 1.0);
+    }
+    
+    // Combine factors with weights (all factors now 0.0 to 1.0)
+    double combined_factor = 
+        0.3 * spread_factor +
+        0.3 * imbalance_factor + 
+        0.2 * depth_factor +
+        0.2 * velocity_factor;
+    
+    // Convert to realistic volatility percentage
+    // 0.0 factor = 0.1% volatility (very low)
+    // 1.0 factor = 3.0% volatility (very high for short-term)
+    double volatility_percentage = 0.001 + (combined_factor * 0.029); // 0.1% to 3.0%
+    
+    // Debug logging
+    // LOG_DEBUG("Volatility calculation: spread={:.3f}, imbalance={:.3f}, depth={:.3f}, velocity={:.3f} -> {:.4f} ({:.2f}%)",
+    //           spread_factor, imbalance_factor, depth_factor, velocity_factor, 
+    //           volatility_percentage, volatility_percentage * 100);
+    
+    return volatility_percentage; // Returns 0.001 to 0.03 (0.1% to 3.0%)
+}
+void OrderBookAnalyzer::notifyMetricsUpdated() {
     // Copy callbacks and metrics
     std::vector<MetricsCallback> callbacks;
     OrderBookMetrics metrics_copy;
@@ -705,43 +797,7 @@ OrderBookMetrics OrderBookAnalyzer::getMetrics() const {
         }).detach();
     }
 }
-//   void OrderBookAnalyzer::notifyMetricsUpdated() {
-//     // Copy callbacks to avoid calling them while holding the lock
-//     std::vector<MetricsCallback> callbacks;
-//     OrderBookMetrics metrics_copy;
-//     {
-//         std::lock_guard<std::mutex> lock(mutex_);
-//         callbacks = metrics_callbacks_;
-//         metrics_copy = current_metrics_;  // Copy metrics too
-//     }
-    
-//     // Call all registered callbacks with copied data
-//     for (const auto& callback : callbacks) {
-//         callback(metrics_copy);  // Use copy, not current_metrics_
-//     }
-// }
-//  void OrderBookAnalyzer::notifyMetricsUpdated() {
-//     // Copy both callbacks AND metrics while holding the lock
-//     std::vector<MetricsCallback> callbacks;
-//     OrderBookMetrics metrics_copy;
-//     {
-//         std::lock_guard<std::mutex> lock(mutex_);
-//         callbacks = metrics_callbacks_;
-//         metrics_copy = current_metrics_;
-//     }
-    
-//     // Call callbacks asynchronously to avoid any deadlock
-//     std::thread([callbacks = std::move(callbacks), metrics_copy]() {
-//         for (const auto& callback : callbacks) {
-//             try {
-//                 callback(metrics_copy);
-//             } catch (const std::exception& e) {
-//                 // Log callback exception
-//             }
-//         }
-//     }).detach();
-// }
-
+ 
  std::shared_ptr<OrderBookAnalyzer> createOrderBookAnalyzer(
      const core::ExchangeId& exchangeId, 
      const std::string& tradingPair,
@@ -749,21 +805,7 @@ OrderBookMetrics OrderBookAnalyzer::getMetrics() const {
      
      return std::make_shared<OrderBookAnalyzer>(exchangeId, tradingPair, params);
  }
- //updateParameters function
-// void OrderBookAnalyzer::updateParameters(const ParameterSet& params) {
-//     std::lock_guard<std::mutex> lock(mutex_);
-//     params_ = params;
-    
-//     // Update parameters in the analyzer
-//     depth_levels_ = params_.getInt("depth_levels", depth_levels_);
-//     price_grouping_factor_ = params_.getDouble("price_grouping_factor", price_grouping_factor_);
-//     min_samples_for_stability_ = params_.getInt("min_samples_for_stability", min_samples_for_stability_);
-//     ema_alpha_ = params_.getDouble("ema_alpha", 0.1); // Default EMA alpha
-//     // Update other parameters as needed
-//     // Notify callbacks about parameter update
-//     notifyMetricsUpdated();
-// }
-void OrderBookAnalyzer::updateParameters(const ParameterSet& params) {
+ void OrderBookAnalyzer::updateParameters(const ParameterSet& params) {
     std::lock_guard<std::mutex> lock(mutex_);
     params_ = params;
     

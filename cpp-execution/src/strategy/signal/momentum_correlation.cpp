@@ -349,7 +349,7 @@ void MomentumCorrelation::calculateCorrelations() {
             
             // Log strong correlations for debugging
             if (std::abs(correlation) > params_.strong_correlation_threshold) {
-                LOG_DEBUG("Strong correlation detected: {} = {:.4f}", metric, correlation);
+                LOG_DEBUG("Strong correlation detected: metric: {}, correlation: {:.4f}", metric, correlation);
             }
         }
         catch (const std::exception& e) {
