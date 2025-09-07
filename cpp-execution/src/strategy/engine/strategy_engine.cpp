@@ -393,32 +393,32 @@ void StrategyEngine::processQueuedSignals() {
  }
  
  // Manually trigger signal evaluation
- bool StrategyEngine::triggerSignalEvaluation() {
-     if (state_ != StrategyState::RUNNING) {
-         LOG_ERROR("Cannot trigger signal evaluation in current state: {}", 
-                          static_cast<int>(state_.load()));
-         return false;
-     }
+//  bool StrategyEngine::triggerSignalEvaluation() {
+//      if (state_ != StrategyState::RUNNING) {
+//          LOG_ERROR("Cannot trigger signal evaluation in current state: {}", 
+//                           static_cast<int>(state_.load()));
+//          return false;
+//      }
      
-     try {
-         // Get latest metrics from analyzers
-         auto metrics = orderBookAnalyzer_->getMetrics();
-         auto liquidityMetrics = liquidityMonitor_->getLiquidityMetrics();
+//      try {
+//          // Get latest metrics from analyzers
+//          auto metrics = orderBookAnalyzer_->getMetrics();
+//          auto liquidityMetrics = liquidityMonitor_->getLiquidityMetrics();
          
-         // Detect imbalances
-         auto isImbalances = imbalanceDetector_->analyzeMetrics(metrics);
-         // Get detected imbalances
-         auto imbalances = imbalanceDetector_->getDetectedImbalances();
+//          // Detect imbalances
+//          auto isImbalances = imbalanceDetector_->analyzeMetrics(metrics);
+//          // Get detected imbalances
+//          auto imbalances = imbalanceDetector_->getDetectedImbalances();
          
-         // Process any detected imbalances
-         processImbalanceEvents(imbalances);
+//          // Process any detected imbalances
+//          processImbalanceEvents(imbalances);
          
-         return true;
-     } catch (const std::exception& e) {
-         LOG_ERROR("Exception during signal evaluation: {}", e.what());
-         return false;
-     }
- }
+//          return true;
+//      } catch (const std::exception& e) {
+//          LOG_ERROR("Exception during signal evaluation: {}", e.what());
+//          return false;
+//      }
+//  }
  
  // Record signal execution result for feedback
  bool StrategyEngine::recordSignalResult(const std::string& signalId, const SignalExecutionResult& result) {
@@ -587,20 +587,7 @@ std::optional<ImbalanceEvent> StrategyEngine::findSourceEvent(
  }
  
  void StrategyEngine::notifySignalCallbacks(const TradingSignal& signal) {
-    // std::vector<SignalCallback> callbacks;
-    // {
-    //     std::lock_guard<std::recursive_mutex> lock(callbackMutex_);
-    //     for (const auto& [id, callback] : signalCallbacks_) {
-    //         callbacks.push_back(callback);
-    //     }
-    // }
-    // for (const auto& callback : callbacks) {
-    //     try {
-    //         callback(signal);
-    //     } catch (const std::exception& e) {
-    //         LOG_ERROR("Exception in signal callback: {}", e.what());
-    //     }
-    // }
+   
     //publish event instead of callbacks to avoid deadlocks
     // std::cout << "Publishing SignalGeneratedEvent for signal ID: " << signal.id << std::endl;
     common::EventBus::getInstance().publish(events::SignalGeneratedEvent{signal});
