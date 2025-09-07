@@ -191,15 +191,19 @@ public:
         std::lock_guard<std::mutex> lock(processedMutex_);
         //filter duplicate signals
         //filter signals based on custom criteria (e.g., strength threshold)
-        if (signal.strength < 0.5) return; // Weak signals are ignored
+        if (signal.strength < 0.54) return; // Weak signals are ignored
         if(signal.direction == core::Direction::NEUTRAL) return; // Ignore neutral signals
-        if(signal.confidence < 0.5) return; // Ignore low confidence signals
+        if(signal.confidence < 0.9) return; // Ignore low confidence signals
+        if(signal.targets.empty()) return; // Ignore signals without targets
+        LOG_INFO("  TTL: {} ms", signal.ttl.count());
+        if(signal.ttl < std::chrono::milliseconds(15000)) return; // Ignore signals with very short TTL
+
         //print signal details for debugging
         // LOG_INFO("  Signal ID: {}", signal.id);
-        LOG_INFO("  Symbol: {}", signal.symbol.toString());
-        LOG_INFO("  Direction: {}", signal.direction == Direction::BUY ? "BUY" : "SELL");
-        LOG_INFO("  Strength: {:.3f}", signal.strength);
-        LOG_INFO("  Confidence: {}", signal.confidence);
+        // LOG_INFO("  Symbol: {}", signal.symbol.toString());
+        // LOG_INFO("  Direction: {}", signal.direction == Direction::BUY ? "BUY" : "SELL");
+        // LOG_INFO("  Strength: {:.3f}", signal.strength);
+        // LOG_INFO("  Confidence: {}", signal.confidence);
         if (processedSignals_.count(signal.id)) return; // Already processed
         processedSignals_.insert(signal.id);
 
@@ -234,7 +238,7 @@ private:
             //          signal.strength, entryPrice);
             
             // Simulate holding period (shorter for testing)
-            std::this_thread::sleep_for(std::chrono::seconds(3));
+            std::this_thread::sleep_for(std::chrono::seconds(25)); // Hold for 25 seconds
             
             // Get REAL current exit price from live order book data
             auto exitTime = std::chrono::system_clock::now();
@@ -348,8 +352,8 @@ int main() {
         // 6. Monitor and report status
         auto startTime = std::chrono::steady_clock::now();
         size_t lastMessageCount = 0;
-        
-        for (int cycle = 0; cycle < 666; ++cycle) { // Run for 6 h
+
+        for (int cycle = 0; cycle < 1800; ++cycle) { // Run for 30 minutes max
             std::this_thread::sleep_for(1s);
             
             // Report every 10 seconds
