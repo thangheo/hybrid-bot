@@ -61,7 +61,7 @@
     double decayRate;                            // Decay rate for the signal (if applicable)
     double expectedPriceImpact;                     // Expected price impact of the signal (if applicable)     
     // expirationTime
-     core::Timestamp expirationTime;                // Expiration time for the signal (if applicable)
+     core::Timestamp expirationTime;                // Expiration time for the signal in milliseconds
      /**
       * Default constructor
       */
@@ -73,7 +73,8 @@
            generation_time(core::Timestamp()), 
            ttl(0), 
            source_type(ImbalanceType::VOLUME_IMBALANCE),
-           exchangeId(core::ExchangeId::unknown()) {}
+           exchangeId(core::ExchangeId::unknown()),
+           expirationTime(core::Timestamp()) {}
      
      /**
       * Constructor with required fields
@@ -91,7 +92,8 @@
            generation_time(gt), 
            ttl(0), 
            source_type(ImbalanceType::VOLUME_IMBALANCE),
-           exchangeId(core::ExchangeId::unknown()) {}
+           exchangeId(core::ExchangeId::unknown()),
+           expirationTime(core::Timestamp()) {}
      
      /**
       * Check if signal is still valid based on TTL

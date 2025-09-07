@@ -267,14 +267,12 @@ private:
     StrategyEngine* strategyEngine_;
     OrderBookReceiver* orderBookReceiver_;
 
-    std::chrono::milliseconds calculateHoldingDuration(const TradingSignal& signal,
+        std::chrono::milliseconds calculateHoldingDuration(const TradingSignal& signal,
                                                     double decayFactor,
                                                     int64_t remainingTTL) {
-        // Base holding should be fraction of signal TTL, not fixed time
-        // uint64_t signal_ttl = std::chrono::duration_cast<std::chrono::milliseconds>(signal.ttl).count();
-        //expiration time in ms
-        uint64_t signal_ttl = std::chrono::duration_cast<std::chrono::milliseconds>(signal.expirationTime - now()).count();
-
+        // Use the passed remainingTTL parameter instead of calculating it again
+        uint64_t signal_ttl = remainingTTL; // Already calculated correctly above
+        
         // Hold for 60-90% of signal lifetime based on strength
         double holdingRatio = 0.6 + (signal.strength * 0.3); // 60%-90% of TTL
         
@@ -334,23 +332,39 @@ private:
                 // LOG_WARN("Signal {} has invalid entry price metric, skipping execution", signal.id);
                 return;
             }            
-            
-            //calculate hold duration based on signal decay and TTL
+            //calculate hold duration based on signal decay and TTL            
             auto now = std::chrono::system_clock::now();
-            auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - signal.generation_time).count();
-            auto remainingTTL = signal.expirationTime - now;
-            if (remainingTTL <= 0ms) {
-                // LOG_WARN("Signal {} has expired TTL, skipping execution", signal.id);
+            auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - signal.generation_time);
+            
+            // Debug timing info
+            auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
+            auto generation_ms = std::chrono::duration_cast<std::chrono::milliseconds>(signal.generation_time.time_since_epoch()).count();
+            auto expiration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(signal.expirationTime.time_since_epoch()).count();
+            
+            LOG_DEBUG("Signal {} timing: Now={}ms, Generated={}ms, Expires={}ms, Elapsed={}ms", 
+                     signal.id, now_ms, generation_ms, expiration_ms, elapsed.count());
+        
+                // Check if signal has expired
+            if (now >= signal.expirationTime) {
+                auto expired_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                    now - signal.expirationTime).count();
+                LOG_WARN("Signal {} has expired (expired {} ms ago), skipping execution", 
+                        signal.id, expired_ms);
                 return;
             }
-            //calculate position duration using signal decay and remaining TTL
-            double decayFactor = calculateDecayFactor(signal, elapsed);
+
             
+            //calculate position duration using signal decay and remaining TTL
+            double decayFactor = calculateDecayFactor(signal, elapsed.count());
+
+            // Calculate remaining TTL
+            auto remainingTTL = std::chrono::duration_cast<std::chrono::milliseconds>(signal.expirationTime - now);
+
             // Calculate optimal holding duration using decay
             auto position_duration = calculateHoldingDuration(signal, decayFactor, remainingTTL.count());
-            
-            LOG_INFO("Signal {} - Decay Factor: {:.3f}, Holding Duration: {}ms", 
-                    signal.id, decayFactor, position_duration.count());
+
+            // LOG_INFO("Signal {} - Decay Factor: {:.3f}, Holding Duration: {}ms", 
+            //         signal.id, decayFactor, position_duration.count());
             
             std::this_thread::sleep_for(position_duration);
 
@@ -405,10 +419,10 @@ private:
             result.signalStrength = signal.strength;
             
             // Log the trade result with detailed info
-            LOG_INFO("TRADE COMPLETED: {} | Entry: {:.2f} | Exit: {:.2f} | P&L: {:.2f} | Duration: {}s | Success: {}", 
-                     signal.id, entryPrice, exitPrice, pnl,
-                     std::chrono::duration_cast<std::chrono::seconds>(exitTime - entryTime).count(),
-                     pnl > 0 ? "YES" : "NO");
+            // LOG_INFO("TRADE COMPLETED: {} | Entry: {:.2f} | Exit: {:.2f} | P&L: {:.2f} | Duration: {}s | Success: {}", 
+            //          signal.id, entryPrice, exitPrice, pnl,
+            //          std::chrono::duration_cast<std::chrono::seconds>(exitTime - entryTime).count(),
+            //          pnl > 0 ? "YES" : "NO");
             
             // Record the result back to strategy engine for performance tracking
             if (strategyEngine_) {
@@ -474,9 +488,9 @@ int main() {
         auto startTime = std::chrono::steady_clock::now();
         size_t lastMessageCount = 0;
 
-        for (int cycle = 0; cycle < 240; ++cycle) { // Run for 240 seconds max
-            std::this_thread::sleep_for(1s);
-            // Report every 10 seconds
+        for (int cycle = 0; cycle < 6000; ++cycle) { // Run for 6000 cycles max
+            std::this_thread::sleep_for(5ms);
+            // Report every 10 
             if (cycle % 10 == 0) {
                 auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
                     std::chrono::steady_clock::now() - startTime).count();
@@ -486,23 +500,23 @@ int main() {
                 lastMessageCount = currentMessages;
 
                 auto performance = strategyEngine.getPerformance();
-                std::cout << "=== Status Report (" << elapsed << "s elapsed) ===" << std::endl;
-                std::cout << "  Order book messages received: " << currentMessages << std::endl;
-                std::cout << "  Messages in last 10s: " << newMessages << std::endl;
-                std::cout << "  Active signals: " << strategyEngine.getActiveSignals().size() << std::endl;
-                std::cout << "  Signals received via callback: " << signalHandler.getReceivedSignals().size() << std::endl;
-                std::cout << "  Strategy performance:" << std::endl;
-                std::cout << "    Signals generated: " << performance.signalsGenerated << std::endl;
-                std::cout << std::fixed << std::setprecision(1);
-                double successRate = performance.signalsExecuted > 0 ?
-                    (double)performance.successfulSignals / performance.signalsExecuted * 100.0 : 0.0;
-                std::cout << "    Success rate: " << successRate << "%" << std::endl;
-                std::cout << std::fixed << std::setprecision(2);
-                std::cout << "    Total P&L: " << performance.totalPnl << std::endl;
+                // std::cout << "=== Status Report (" << elapsed << "s elapsed) ===" << std::endl;
+                // std::cout << "  Order book messages received: " << currentMessages << std::endl;
+                // std::cout << "  Messages in last 10s: " << newMessages << std::endl;
+                // std::cout << "  Active signals: " << strategyEngine.getActiveSignals().size() << std::endl;
+                // std::cout << "  Signals received via callback: " << signalHandler.getReceivedSignals().size() << std::endl;
+                // std::cout << "  Strategy performance:" << std::endl;
+                // std::cout << "    Signals generated: " << performance.signalsGenerated << std::endl;
+                // std::cout << std::fixed << std::setprecision(1);
+                // double successRate = performance.signalsExecuted > 0 ?
+                //     (double)performance.successfulSignals / performance.signalsExecuted * 100.0 : 0.0;
+                // std::cout << "    Success rate: " << successRate << "%" << std::endl;
+                // std::cout << std::fixed << std::setprecision(2);
+                // std::cout << "    Total P&L: " << performance.totalPnl << std::endl;
 
-                if (newMessages == 0 && cycle > 20) {
-                    std::cout << "[WARN] No new order book messages received in last 10s - check DataIngestionService" << std::endl;
-                }
+                // if (newMessages == 0 && cycle > 20) {
+                //     std::cout << "[WARN] No new order book messages received in last 10s - check DataIngestionService" << std::endl;
+                // }
             }
             
             // Test parameter updates at 30s mark
