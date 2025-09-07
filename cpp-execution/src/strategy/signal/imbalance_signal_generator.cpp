@@ -165,8 +165,8 @@ bool ImbalanceSignalGenerator::initialize(const SignalGeneratorConfig& config) {
      
      // Basic signal properties
      signal.id = generateSignalId();
-    signal.sourceEventId = imbalance.eventId;  // ← Add this line
-    signal.correlationId = imbalance.eventId;  // ← Add this line
+     signal.sourceEventId = imbalance.eventId;  // ← Add this line
+     signal.correlationId = imbalance.eventId;  // ← Add this line
      signal.direction = imbalance.direction;
      signal.strength = calculateSignalStrength(imbalance);
 
@@ -189,13 +189,15 @@ bool ImbalanceSignalGenerator::initialize(const SignalGeneratorConfig& config) {
          double predictedMove = momentumCorrelation_->predictPriceMovement(imbalance);
          std::string imbalanceTypeStr = imbalanceTypeToString(imbalance.type);
          double correlation = momentumCorrelation_->getCorrelationCoefficient(imbalanceTypeStr);
-         
+         if (predictedMove > 0.01 || predictedMove < -0.01) {
+             std::cout << "Predicted price move for imbalance type " << imbalanceTypeStr << ": " << predictedMove << "\n";
+         }
          signal.setMetric("predicted_price_move", predictedMove);
          signal.setMetric("momentum_correlation", correlation);
          
          // Adjust confidence based on correlation
-        // More balanced confidence adjustment based on correlation
-        std::cout << "Momentum correlation for imbalance type " << imbalanceTypeStr << ": " << correlation << "\n";
+        // More balanced confidence adjustment based on correlation                
+
         if (correlation >= 0.5) {
             // Boost confidence for strong positive correlation
             double boost = 1.0 + 0.5 * (correlation - 0.5); // Max 1.25x boost
@@ -207,7 +209,7 @@ bool ImbalanceSignalGenerator::initialize(const SignalGeneratorConfig& config) {
         }
         // Ensure confidence is within [0, 1]
         signal.confidence = std::max(0.0, std::min(1.0, signal.confidence));
-        std::cout << "Adjusted signal confidence: " << signal.confidence << "\n";
+        // std::cout << "Adjusted signal confidence: " << signal.confidence << "\n";
     } else {
         std::cout << "No momentum correlation component set.\n";
     }
@@ -222,8 +224,6 @@ bool ImbalanceSignalGenerator::initialize(const SignalGeneratorConfig& config) {
              signal.strength = std::min(1.0, signal.strength * sensitivity);
          }
      }
-    //  std::cout <<"Generated signal: ID="<<signal.id<<", Direction="<< (signal.direction == core::Direction::BUY ? "BUY" : "SELL") 
-    //           <<", Strength="<<signal.strength<<", Confidence="<<signal.confidence<<"\n";
      return signal;
  }
 

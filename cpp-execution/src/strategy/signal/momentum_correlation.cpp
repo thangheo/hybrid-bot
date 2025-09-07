@@ -19,7 +19,7 @@
 MomentumCorrelation::MomentumCorrelation(size_t window_size)
     : window_size_(window_size) {
     // Initialize with more reasonable defaults
-    params_.min_data_points = 5;  // Reduced from 10 for faster testing
+    params_.min_data_points = 15;  // Reduced from 10 for faster testing
     params_.significance_threshold = 0.05;
     params_.correlation_decay_rate = 0.9;  // Less aggressive decay
     params_.regime_detection_window = 10;  // Reduced for faster testing
@@ -42,7 +42,7 @@ void MomentumCorrelation::updateCorrelationModel(
     
     // Add debug logging
     LOG_INFO("updateCorrelationModel called with price movement: {}", movement.percent_change);
-    
+    // 
     // Validate inputs
     if (std::isnan(movement.percent_change) || std::isinf(movement.percent_change)) {
         LOG_WARN("Invalid price movement detected: {}", movement.percent_change);
@@ -63,12 +63,12 @@ void MomentumCorrelation::updateCorrelationModel(
         data_points_.pop_front();
     }
     
-    LOG_INFO("Added data point. Total points: {}, Price movement: {}", 
-             data_points_.size(), movement.percent_change);
+    // LOG_INFO("Added data point. Total points: {}, Price movement: {}", 
+            //  data_points_.size(), movement.percent_change);
     
     // Calculate correlations with fewer data points for testing
     if (data_points_.size() >= params_.min_data_points) {
-        LOG_INFO("Calculating correlations with {} data points", data_points_.size());
+        // LOG_INFO("Calculating correlations with {} data points", data_points_.size());
         calculateCorrelations();
         calculateFeatureImportance();
         updateMarketRegime();
@@ -155,7 +155,7 @@ void MomentumCorrelation::updateCorrelationModel(
          sumImportance += importance * std::abs(correlation_coefficients_.at(feature));
      }
      stats.overall_predictive_power = sumImportance;
-     
+     LOG_INFO("Overall predictive power calculated: {}", stats.overall_predictive_power);
      return stats;
  }
  
@@ -173,14 +173,7 @@ void MomentumCorrelation::updateCorrelationModel(
  MarketRegime MomentumCorrelation::detectMarketRegime() const {
      return current_regime_;
  }
- 
-//  double MomentumCorrelation::getCorrelationCoefficient(const std::string& metric_name) const {
-//      auto it = correlation_coefficients_.find(metric_name);
-//      if (it != correlation_coefficients_.end()) {
-//          return it->second;
-//      }
-//      return 0.0;
-//  }
+  
  
  std::map<std::string, double> MomentumCorrelation::getFeatureImportance() const {
      return feature_importance_;
@@ -218,6 +211,8 @@ void MomentumCorrelation::calculateCorrelations() {
     auto currentTime = std::chrono::system_clock::now();
     
     for (const auto& dataPoint : data_points_) {
+        // LOG_DEBUG("Processing data point at {}: {}", dataPoint.timestamp, dataPoint.price_movement.percent_change);
+
         // Add price movement
         priceMovements.push_back(dataPoint.price_movement.percent_change);
         
@@ -419,7 +414,7 @@ double MomentumCorrelation::calculatePearsonCorrelation(
 
 double MomentumCorrelation::predictPriceMovement(const ImbalanceEvent& event) {
     if (data_points_.size() < params_.min_data_points) {
-        LOG_DEBUG("Not enough data for prediction - have {} points", data_points_.size());
+        // LOG_DEBUG("Not enough data for prediction - have {} points", data_points_.size());
         return 0.0;
     }
     
@@ -428,24 +423,27 @@ double MomentumCorrelation::predictPriceMovement(const ImbalanceEvent& event) {
     
     double prediction = calculateWeightedPrediction(event);
     
-    LOG_INFO("Price movement prediction: {}", prediction);
+    // LOG_INFO("Price movement prediction: {}", prediction);
     return prediction;
 }
 
 double MomentumCorrelation::getCorrelationCoefficient(const std::string& metric_name) const {
     auto it = correlation_coefficients_.find(metric_name);
     if (it != correlation_coefficients_.end()) {
-        LOG_DEBUG("Found correlation for {}: {}", metric_name, it->second);
+        //only log if correlation is significant
+        // if (std::abs(it->second) > 0) {
+        //     LOG_DEBUG("Found correlation for {}: {}", metric_name, it->second);
+        // }
         return it->second;
     }
     
-    LOG_DEBUG("No correlation found for metric: {}", metric_name);
+    // LOG_DEBUG("No correlation found for metric: {}", metric_name);
     
     // Debug: print all available correlations
-    LOG_DEBUG("Available correlations:");
-    for (const auto& [name, coeff] : correlation_coefficients_) {
-        LOG_DEBUG("  {}: {}", name, coeff);
-    }
+    // LOG_DEBUG("Available correlations:");
+    // for (const auto& [name, coeff] : correlation_coefficients_) {
+    //     LOG_DEBUG("  {}: {}", name, coeff);
+    // }
     
     return 0.0;
 }

@@ -244,7 +244,7 @@ void StrategyEngine::processQueuedSignals() {
                  it->second.lastPrice = currentPrice;
                  
                  // Prepare movement data for correlation analysis (process outside lock)
-                 if (previousPrice > 0.0) {
+                 if (previousPrice > 0.0 && currentPrice > 0.0 && previousPrice != currentPrice) {
                      shouldUpdateCorrelation = true;
                      movement.symbol = symbol;
                      movement.time_start = it->second.lastUpdateTime;
@@ -252,6 +252,7 @@ void StrategyEngine::processQueuedSignals() {
                      movement.price_before = previousPrice;
                      movement.price_after = currentPrice;
                      movement.absolute_change = movement.price_after - movement.price_before;
+                     movement.percent_change = (movement.absolute_change / movement.price_before) * 100.0;
                  }
              }
          }
