@@ -147,7 +147,7 @@ private:
     // Associated components
     MomentumCorrelationPtr momentumCorrelation_;
     ThresholdManagerPtr thresholdManager_;
-    
+    std::chrono::milliseconds calculateSignalTTL(const ImbalanceEvent& imbalance,double deltaPrice) const ;
     // Signal generation methods
     TradingSignal createSignalFromImbalance(const ImbalanceEvent& imbalance);
     double calculateConfidenceMultiplier(double absCorrelation, bool aligned);

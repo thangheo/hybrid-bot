@@ -65,6 +65,7 @@ struct OrderBookMetrics {
     double liquidity_profile_score = 0.0;         // Score of overall liquidity
     double volatility_expectation = 0.0;          // Expected near-term volatility
     double realized_volatility = 0.0;           // Realized volatility based on recent data
+    double volatility_per_unit_time = 0.0; // Volatility normalized by time
     double liquidity_pressure = 0.0;            // Pressure from liquidity imbalances
     // Historical metrics
     double price_velocity = 0.0;              // Rate of price change
@@ -109,6 +110,9 @@ struct OrderBookMetrics {
         metrics["market_directional_coefficient"] = market_directional_coefficient;
         metrics["liquidity_profile_score"] = liquidity_profile_score;
         metrics["volatility_expectation"] = volatility_expectation;
+        metrics["realized_volatility"] = realized_volatility;
+        metrics["liquidity_pressure"] = liquidity_pressure;
+        metrics["volatility_per_unit_time"] = volatility_per_unit_time;
         
         // Historical metrics
         metrics["price_velocity"] = price_velocity;

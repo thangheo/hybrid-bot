@@ -273,6 +273,7 @@
       */
      virtual double calculateVolatilityExpectation() const;
      double calculateRealizedVolatility() const;
+    double calculateVolatilityPerUnitTime() const ;
 
      /**
       * Notify callbacks of metrics update
@@ -308,7 +309,7 @@
      
      // Timestamps for rate calculations
      core::Timestamp last_update_time_;
-     
+    std::vector<double> historical_timestamps_; // Add this line
      // Moving averages for smoothing
      double ema_mid_price_ = 0.0;
      double ema_spread_ = 0.0;
