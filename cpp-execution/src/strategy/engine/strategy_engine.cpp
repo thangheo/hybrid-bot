@@ -111,6 +111,10 @@
     }
 }
 void StrategyEngine::handleSignalGenerated(const TradingSignal& signal) {
+    // Debug: Check signal when received
+    auto expiration_received = std::chrono::duration_cast<std::chrono::milliseconds>(signal.expirationTime.time_since_epoch()).count();
+    // LOG_DEBUG("handleSignalGenerated - Signal {} expirationTime: {}ms", signal.id, expiration_received);
+    
     std::unique_lock<std::recursive_mutex> lock(mutex_, std::defer_lock);
     if (!lock.try_lock()) {
         // Queue the signal for later processing
@@ -499,16 +503,18 @@ TradingSignal StrategyEngine::enhanceSignalWithEventContext(
         uint64_t ttl_value = signalDecayModel_->getSignalTTL(sourceEvent.type);
         auto current_time = std::chrono::system_clock::now();
         
-        LOG_DEBUG("Signal TTL value: {} ms, Current time: {}", ttl_value, 
-                  std::chrono::duration_cast<std::chrono::milliseconds>(current_time.time_since_epoch()).count());
+        // LOG_DEBUG("Signal TTL value: {} ms, Current time: {}", ttl_value, 
+        //           std::chrono::duration_cast<std::chrono::milliseconds>(current_time.time_since_epoch()).count());
         
         // Set expiration time (assuming TTL is in milliseconds)
-        enhancedSignal.expirationTime = current_time + std::chrono::milliseconds(ttl_value);
-        enhancedSignal.generation_time = current_time; // Make sure generation time is set
-        LOG_DEBUG("Signal generation time: {}", 
-                  std::chrono::duration_cast<std::chrono::milliseconds>(enhancedSignal.generation_time.time_since_epoch()).count());
-        LOG_DEBUG("Signal expiration time: {}", 
-                  std::chrono::duration_cast<std::chrono::milliseconds>(enhancedSignal.expirationTime.time_since_epoch()).count());
+        if (enhancedSignal.expirationTime.time_since_epoch().count() == 0) {
+            enhancedSignal.expirationTime = current_time + std::chrono::milliseconds(ttl_value);
+            enhancedSignal.generation_time = current_time;
+        }
+        // LOG_DEBUG("Signal generation time: {}", 
+        //           std::chrono::duration_cast<std::chrono::milliseconds>(enhancedSignal.generation_time.time_since_epoch()).count());
+        // LOG_DEBUG("Signal expiration time: {}", 
+        //           std::chrono::duration_cast<std::chrono::milliseconds>(enhancedSignal.expirationTime.time_since_epoch()).count());
     }
     
     // Add threshold manager data
@@ -602,7 +608,10 @@ std::optional<ImbalanceEvent> StrategyEngine::findSourceEvent(
  void StrategyEngine::notifySignalCallbacks(const TradingSignal& signal) {
    
     //publish event instead of callbacks to avoid deadlocks
-    // std::cout << "Publishing SignalGeneratedEvent for signal ID: " << signal.id << std::endl;
+    // Debug: Check signal before publishing
+    auto expiration_before = std::chrono::duration_cast<std::chrono::milliseconds>(signal.expirationTime.time_since_epoch()).count();
+    // LOG_DEBUG("Before EventBus publish - Signal {} expirationTime: {}ms", signal.id, expiration_before);
+    
     common::EventBus::getInstance().publish(events::SignalGeneratedEvent{signal});
  }
  

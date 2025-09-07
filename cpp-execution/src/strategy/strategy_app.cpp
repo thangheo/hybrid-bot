@@ -341,8 +341,8 @@ private:
             auto generation_ms = std::chrono::duration_cast<std::chrono::milliseconds>(signal.generation_time.time_since_epoch()).count();
             auto expiration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(signal.expirationTime.time_since_epoch()).count();
             
-            LOG_DEBUG("Signal {} timing: Now={}ms, Generated={}ms, Expires={}ms, Elapsed={}ms", 
-                     signal.id, now_ms, generation_ms, expiration_ms, elapsed.count());
+            // LOG_DEBUG("Signal {} timing: Now={}ms, Generated={}ms, Expires={}ms, Elapsed={}ms", 
+            //          signal.id, now_ms, generation_ms, expiration_ms, elapsed.count());
         
                 // Check if signal has expired
             if (now >= signal.expirationTime) {
@@ -381,12 +381,7 @@ private:
                     //just return idiot why the f u want to trade without price data
                     LOG_WARN("No valid order book data available for signal {}, using fallback", signal.id);
                     return;
-                    // // Fallback: simulate realistic price movement if no real data available
-                    // double priceMovementFactor = (signal.strength - 0.5) * 2.0; // Convert 0-1 to -1 to 1
-                    // double baseMovement = priceMovementFactor * 0.005; // Max 0.5% movement
-                    // double randomFactor = (rand() % 200 - 100) / 10000.0; // ±1% random
-                    // double totalMovement = baseMovement + randomFactor;
-                    // exitPrice = entryPrice * (1.0 + totalMovement);
+                    
                 }
             }
             
@@ -500,38 +495,10 @@ int main() {
                 lastMessageCount = currentMessages;
 
                 auto performance = strategyEngine.getPerformance();
-                // std::cout << "=== Status Report (" << elapsed << "s elapsed) ===" << std::endl;
-                // std::cout << "  Order book messages received: " << currentMessages << std::endl;
-                // std::cout << "  Messages in last 10s: " << newMessages << std::endl;
-                // std::cout << "  Active signals: " << strategyEngine.getActiveSignals().size() << std::endl;
-                // std::cout << "  Signals received via callback: " << signalHandler.getReceivedSignals().size() << std::endl;
-                // std::cout << "  Strategy performance:" << std::endl;
-                // std::cout << "    Signals generated: " << performance.signalsGenerated << std::endl;
-                // std::cout << std::fixed << std::setprecision(1);
-                // double successRate = performance.signalsExecuted > 0 ?
-                //     (double)performance.successfulSignals / performance.signalsExecuted * 100.0 : 0.0;
-                // std::cout << "    Success rate: " << successRate << "%" << std::endl;
-                // std::cout << std::fixed << std::setprecision(2);
-                // std::cout << "    Total P&L: " << performance.totalPnl << std::endl;
-
-                // if (newMessages == 0 && cycle > 20) {
-                //     std::cout << "[WARN] No new order book messages received in last 10s - check DataIngestionService" << std::endl;
-                // }
+                //fuck u
             }
             
-            // Test parameter updates at 30s mark
-            // if (cycle == 30) {
-            //     LOG_INFO("Testing parameter updates...");
-            //     ParameterSet newParams = strategyEngine.getParameters();
-            //     newParams.numeric_params["global_sensitivity"] = 0.9;
-            //     newParams.numeric_params["signal_strength_threshold"] = 0.4;
-                
-            //     if (strategyEngine.updateParameters(newParams)) {
-            //         LOG_INFO("Parameters updated successfully");
-            //     } else {
-            //         LOG_ERROR("Failed to update parameters");
-            //     }
-            // }
+           
         }
         
         // 7. Final cleanup
