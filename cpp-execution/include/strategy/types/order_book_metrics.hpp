@@ -64,7 +64,8 @@ struct OrderBookMetrics {
     double market_directional_coefficient = 0.0;  // Market direction indicator
     double liquidity_profile_score = 0.0;         // Score of overall liquidity
     double volatility_expectation = 0.0;          // Expected near-term volatility
-    
+    double realized_volatility = 0.0;           // Realized volatility based on recent data
+    double liquidity_pressure = 0.0;            // Pressure from liquidity imbalances
     // Historical metrics
     double price_velocity = 0.0;              // Rate of price change
     double volume_velocity = 0.0;             // Rate of volume change

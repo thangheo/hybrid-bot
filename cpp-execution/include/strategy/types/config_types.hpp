@@ -148,7 +148,12 @@
      double minSignalStrength = 0.1;        // Minimum signal strength to generate
      double confidenceThreshold = 0.3;      // Minimum confidence for signal generation
      uint64_t signalTtlMs = 5000;           // Time-to-live for signals in milliseconds
-     
+     double minPredictionThreshold = 0.01;   // Minimum prediction threshold to consider
+     double qualityBase = 0.5;              // Base quality score
+     double qualityFactor = 0.5;            // Factor for quality calculation
+     double minCorrelationForOverride = 0.5; // Minimum correlation to override signal
+     bool enableCorrelationAdjustment = true; // Enable correlation-based confidence adjustment
+     double conflictConfidencePenalty = 0.5; // Penalty factor for conflicting predictions
      SignalGeneratorConfig() = default;
  };
  

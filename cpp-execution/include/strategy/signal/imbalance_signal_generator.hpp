@@ -150,8 +150,16 @@ private:
     
     // Signal generation methods
     TradingSignal createSignalFromImbalance(const ImbalanceEvent& imbalance);
+    double calculateConfidenceMultiplier(double absCorrelation, bool aligned);
+    void handlePredictionConflict(TradingSignal& signal, 
+                                 const ImbalanceEvent& imbalance,
+                                 double predictedMove, 
+                                 double correlation);
+    bool checkPredictionAlignment(core::Direction signalDirection, double predictedMove) ;
+
     bool passesSignalFilters(const ImbalanceEvent& imbalance) const;
     double calculateSignalStrength(const ImbalanceEvent& imbalance) const;
+    double calculateSignalQuality(const TradingSignal& signal, double predictedMove, double correlation) const;
     std::vector<PriceTarget> generatePriceTargets(const ImbalanceEvent& imbalance) const;
     core::SignalId generateSignalId() const;
     

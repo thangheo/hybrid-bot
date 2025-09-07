@@ -19,7 +19,8 @@
 #include <sstream>
 #include <iomanip>
 #include <random>
- 
+#include "logger.hpp"
+
  namespace trading {
  namespace strategy {
  
@@ -158,9 +159,59 @@ bool ImbalanceSignalGenerator::initialize(const SignalGeneratorConfig& config) {
     }
     
  // PRIVATE METHODS
- 
- // Create a trading signal from an imbalance event
- TradingSignal ImbalanceSignalGenerator::createSignalFromImbalance(const ImbalanceEvent& imbalance) {
+ double ImbalanceSignalGenerator::calculateConfidenceMultiplier(double absCorrelation, bool aligned) {
+    if (!aligned) {
+        return 1.0; // Conflict already handled separately
+    }
+    
+    // Boost confidence based on correlation strength
+    if (absCorrelation >= 0.7) {
+        return 1.0 + 0.3 * ((absCorrelation - 0.7) / 0.3); // 1.0x to 1.3x
+    } else if (absCorrelation >= 0.5) {
+        return 1.0 + 0.15 * ((absCorrelation - 0.5) / 0.2); // 1.0x to 1.15x  
+    } else {
+        return 1.0; // No boost for weak correlations
+    }
+}
+bool ImbalanceSignalGenerator::checkPredictionAlignment(core::Direction signalDirection, double predictedMove) {
+    if (std::abs(predictedMove) < config_.minPredictionThreshold) {
+        return true; // Neutral prediction - no conflict
+    }
+    
+    return (signalDirection == core::Direction::BUY && predictedMove > 0) ||
+            (signalDirection == core::Direction::SELL && predictedMove < 0);
+}
+void ImbalanceSignalGenerator::handlePredictionConflict(TradingSignal& signal, 
+                                 const ImbalanceEvent& imbalance,
+                                 double predictedMove, 
+                                 double correlation) {
+        
+    // Only override for strong correlations with significant predictions
+    if (std::abs(correlation) >= config_.minCorrelationForOverride && 
+        std::abs(predictedMove) >= config_.minPredictionThreshold) {
+        
+        // Override signal direction based on prediction
+        core::Direction newDirection = (predictedMove > 0) ? core::Direction::BUY : core::Direction::SELL;
+        
+        LOG_INFO("Direction override: {} -> {} (correlation={:.3f}, prediction={:.4f}%)",
+                directionToString(signal.direction), directionToString(newDirection),
+                correlation, predictedMove * 100);
+        
+        signal.direction = newDirection;
+        signal.setMetric("direction_overridden", 1.0);
+        
+    } else {
+        // Apply confidence penalty for weaker conflicts
+        signal.confidence *= config_.conflictConfidencePenalty;
+        signal.setMetric("prediction_conflict_penalty", config_.conflictConfidencePenalty);
+        
+        LOG_DEBUG("Prediction conflict penalty applied: correlation={:.3f}, prediction={:.4f}%",
+                    correlation, predictedMove * 100);
+    }
+}
+
+// Create a trading signal from an imbalance event
+TradingSignal ImbalanceSignalGenerator::createSignalFromImbalance(const ImbalanceEvent& imbalance) {
      TradingSignal signal;
      
      // Basic signal properties
@@ -169,7 +220,7 @@ bool ImbalanceSignalGenerator::initialize(const SignalGeneratorConfig& config) {
      signal.correlationId = imbalance.eventId;  // ← Add this line
      signal.direction = imbalance.direction;
      signal.strength = calculateSignalStrength(imbalance);
-
+     signal.quality = 0.0; // Will be calculated below
      signal.confidence = trading::core::confidenceLevelToValue(imbalance.confidence);
      signal.generation_time = std::chrono::system_clock::now();
      signal.ttl = std::chrono::milliseconds(config_.signalTtlMs);
@@ -189,26 +240,21 @@ bool ImbalanceSignalGenerator::initialize(const SignalGeneratorConfig& config) {
          double predictedMove = momentumCorrelation_->predictPriceMovement(imbalance);
          std::string imbalanceTypeStr = imbalanceTypeToString(imbalance.type);
          double correlation = momentumCorrelation_->getCorrelationCoefficient(imbalanceTypeStr);
-        //  if (predictedMove > 0.01 || predictedMove < -0.01) {
-        //      std::cout << "Predicted price move for imbalance type " << imbalanceTypeStr << ": " << predictedMove << "\n";
-        //  }
          signal.setMetric("predicted_price_move", predictedMove);
          signal.setMetric("momentum_correlation", correlation);
-         
-         // Adjust confidence based on correlation
-        // More balanced confidence adjustment based on correlation                
 
-        if (correlation >= 0.5) {
-            // Boost confidence for strong positive correlation
-            double boost = 1.0 + 0.5 * (correlation - 0.5); // Max 1.25x boost
-            signal.confidence = std::min(1.0, signal.confidence * boost);
-        } else {
-            // Gradually reduce confidence for weak correlation
-            double penalty = 0.5 + 0.5 * (correlation / 0.5); // Range: 0.5x to 1.0x
-            signal.confidence = signal.confidence * penalty;
+         // Adjust quality based on prediction and correlation
+        signal.quality = calculateSignalQuality(signal, predictedMove, correlation);
+        bool alignmentCorrect = checkPredictionAlignment(imbalance.direction, predictedMove);
+        signal.setMetric("prediction_aligned", alignmentCorrect ? 1.0 : 0.0);
+        if (!alignmentCorrect) {
+            handlePredictionConflict(signal, imbalance, predictedMove, correlation);
         }
-        // Ensure confidence is within [0, 1]
-        signal.confidence = std::max(0.0, std::min(1.0, signal.confidence));
+        double absCorrelation = std::abs(correlation);
+        double confidenceMultiplier = calculateConfidenceMultiplier(absCorrelation, alignmentCorrect);
+        signal.confidence = std::clamp(signal.confidence * confidenceMultiplier, 0.0, 1.0);
+         // Adjust confidence based on correlation
+        // More balanced confidence adjustment based on correlation        
         // std::cout << "Adjusted signal confidence: " << signal.confidence << "\n";
     } else {
         std::cout << "No momentum correlation component set.\n";
@@ -252,7 +298,24 @@ bool ImbalanceSignalGenerator::passesSignalFilters(const ImbalanceEvent& imbalan
      
      return true;
  }
- 
+ double ImbalanceSignalGenerator::calculateSignalQuality(
+    const TradingSignal& signal, double predictedMove, double correlation) const {
+    
+    // Quality components (each 0.0 to 1.0)
+    double strengthComponent = signal.strength;
+    double confidenceComponent = signal.confidence;
+    double predictionComponent = std::min(1.0, std::abs(predictedMove) * 100.0); // Scale to 0-1
+    double correlationComponent = std::abs(correlation);
+    
+    // Weighted average
+    double quality = (strengthComponent * 0.3 + 
+                     confidenceComponent * 0.3 + 
+                     predictionComponent * 0.2 + 
+                     correlationComponent * 0.2);
+    
+    return std::clamp(quality, 0.0, 1.0);
+}
+
  // Calculate signal strength based on imbalance
  double ImbalanceSignalGenerator::calculateSignalStrength(const ImbalanceEvent& imbalance) const {
      double baseStrength = imbalance.strength;
@@ -291,6 +354,7 @@ bool ImbalanceSignalGenerator::passesSignalFilters(const ImbalanceEvent& imbalan
      return std::max(0.0, std::min(1.0, baseStrength));
  }
  
+
  // Generate price targets based on imbalance event
  std::vector<PriceTarget> ImbalanceSignalGenerator::generatePriceTargets(const ImbalanceEvent& imbalance) const {
      std::vector<PriceTarget> targets;
@@ -309,64 +373,91 @@ bool ImbalanceSignalGenerator::passesSignalFilters(const ImbalanceEvent& imbalan
      if (volatilityIt != imbalance.supportingMetrics.end()) {
          volatility = volatilityIt->second;
      }
-     
-     // Calculate expected price impact based on imbalance strength and type
-     double basePriceImpact = volatility * 5.0; // Base impact is 5x volatility
-     double strengthScaling = 0.5 + (imbalance.strength * 1.5); // Scale from 0.5x to 2.0x
-     
-     double priceImpact = basePriceImpact * strengthScaling;
-     
-     // Adjust for imbalance type
-     switch (imbalance.type) {
-         case ImbalanceType::VOLUME_IMBALANCE:
-             priceImpact *= 1.0;
-             break;
-         case ImbalanceType::PRICE_LEVEL_IMBALANCE:
-             priceImpact *= 0.8;
-             break;
-         case ImbalanceType::LIQUIDITY_REMOVAL:
-             priceImpact *= 1.2;
-             break;
-         case ImbalanceType::ABNORMAL_SPREAD:
-             priceImpact *= 0.7;
-             break;
-         default:
-             break;
-     }
-     
-     // Adjust direction
-     if (imbalance.direction == core::Direction::SELL) {
-         priceImpact = -priceImpact;
-     }
-     
-     // Create three targets with different probabilities and time horizons
-     
-     // Short-term target (high probability)
-     PriceTarget shortTarget;
-     shortTarget.price = midPrice * (1.0 + (priceImpact * 0.3));
-     shortTarget.probability = 0.7;
-     shortTarget.expected_time = std::chrono::milliseconds(5000); // 5 seconds
-     targets.push_back(shortTarget);
-     
-     // Medium-term target (medium probability)
-     PriceTarget mediumTarget;
-     mediumTarget.price = midPrice * (1.0 + (priceImpact * 0.7));
-     mediumTarget.probability = 0.5;
-     mediumTarget.expected_time = std::chrono::milliseconds(15000); // 15 seconds
-     targets.push_back(mediumTarget);
-     
-     // Long-term target (low probability)
-     PriceTarget longTarget;
-     longTarget.price = midPrice * (1.0 + priceImpact);
-     longTarget.probability = 0.3;
-     longTarget.expected_time = std::chrono::milliseconds(30000); // 30 seconds
-     targets.push_back(longTarget);
-     
-     return targets;
- }
- 
- // Generate a unique signal ID
- core::SignalId ImbalanceSignalGenerator::generateSignalId() const {
+     auto rawVolatility = volatility; // Store raw volatility for logging
+    // CRITICAL DEBUG INFO
+    // LOG_INFO("PRICE TARGET DEBUG:");
+    // LOG_INFO("  Mid Price: {:.2f}", midPrice);
+    // LOG_INFO("  Raw Volatility: {:.6f}", volatility);
+    // LOG_INFO("  Imbalance Strength: {:.3f}", imbalance.strength);
+    // LOG_INFO("  Imbalance Type: {}", static_cast<int>(imbalance.type));
+    // CRITICAL FIX: Much more conservative impact calculation
+    double conservativeVolatility = std::min(volatility, 0.03); // Cap at 3%
+
+    // Base impact should be a small fraction of volatility for short-term predictions
+    double baseImpactPercent = conservativeVolatility * 0.2; // 20% of volatility as base impact
+
+    // Conservative strength scaling (your strength = 1.0 is too aggressive)
+    double normalizedStrength = std::min(imbalance.strength, 0.8); // Cap strength at 80%
+    double strengthMultiplier = 0.7 + (normalizedStrength * 0.5); // 0.7x to 1.2x range
+
+    double finalImpactPercent = baseImpactPercent * strengthMultiplier;
+
+    // Type-specific adjustments (keep these conservative)
+    switch (imbalance.type) {
+        case ImbalanceType::VOLUME_IMBALANCE:       // Type 0
+            finalImpactPercent *= 1.1; // Slightly boost
+            break;
+        case ImbalanceType::PRICE_LEVEL_IMBALANCE:  // Type 1  
+            finalImpactPercent *= 0.9; 
+            break;
+        case ImbalanceType::LIQUIDITY_REMOVAL:
+            finalImpactPercent *= 1.2;
+            break;
+        case ImbalanceType::ABNORMAL_SPREAD:
+            finalImpactPercent *= 0.7;
+            break;
+        default:
+            finalImpactPercent *= 0.8;
+            break;
+    }
+    // In high volatility periods, be more aggressive
+    if (conservativeVolatility > 0.025) {  // > 2.5%
+        finalImpactPercent *= 1.2;  // 20% more aggressive
+    }
+    // HARD CAP: Never exceed 2% price impact for 30-second targets
+    finalImpactPercent = std::clamp(finalImpactPercent, 0.0005, 0.02); // 0.05% to 2.0% max
+
+    // Apply direction
+    if (imbalance.direction == core::Direction::SELL) {
+        finalImpactPercent = -finalImpactPercent;
+    }
+
+    // Generate realistic targets with the conservative impact
+    PriceTarget shortTarget;
+    shortTarget.price = midPrice * (1.0 + (finalImpactPercent * 0.25)); // 25% of full impact
+    shortTarget.probability = 0.7;
+    shortTarget.expected_time = std::chrono::milliseconds(5000);
+    targets.push_back(shortTarget);
+
+    PriceTarget mediumTarget;
+    mediumTarget.price = midPrice * (1.0 + (finalImpactPercent * 0.60)); // 60% of full impact
+    mediumTarget.probability = 0.5;
+    mediumTarget.expected_time = std::chrono::milliseconds(15000);
+    targets.push_back(mediumTarget);
+
+    PriceTarget longTarget;
+    longTarget.price = midPrice * (1.0 + finalImpactPercent); // Full impact
+    longTarget.probability = 0.3;
+    longTarget.expected_time = std::chrono::milliseconds(30000);
+    targets.push_back(longTarget);
+
+    // Enhanced debug logging
+    // LOG_INFO("CONSERVATIVE PRICE TARGET CALCULATION:");
+    // LOG_INFO("  Mid Price: {:.2f}", midPrice);
+    // LOG_INFO("  Raw Volatility: {:.6f} ({:.2f}%)", rawVolatility, rawVolatility * 100);
+    // LOG_INFO("  Conservative Volatility: {:.6f} ({:.2f}%)", conservativeVolatility, conservativeVolatility * 100);
+    // LOG_INFO("  Normalized Strength: {:.3f} (was {:.3f})", normalizedStrength, imbalance.strength);
+    // LOG_INFO("  Final Impact: {:.6f} ({:.3f}%)", finalImpactPercent, finalImpactPercent * 100);
+    // LOG_INFO("  Conservative Targets:");
+    // LOG_INFO("    5s:  {:.2f} ({:+.3f}%)", shortTarget.price, ((shortTarget.price - midPrice) / midPrice) * 100);
+    // LOG_INFO("    15s: {:.2f} ({:+.3f}%)", mediumTarget.price, ((mediumTarget.price - midPrice) / midPrice) * 100);
+    // LOG_INFO("    30s: {:.2f} ({:+.3f}%)", longTarget.price, ((longTarget.price - midPrice) / midPrice) * 100);
+
+    return targets;
+}
+
+// Generate a unique signal ID
+core::SignalId ImbalanceSignalGenerator::generateSignalId() const {
      // Create a unique ID based on timestamp and counter
      std::ostringstream oss;
      
