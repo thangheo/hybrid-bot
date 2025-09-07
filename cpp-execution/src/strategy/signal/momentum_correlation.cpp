@@ -41,7 +41,7 @@ void MomentumCorrelation::updateCorrelationModel(
     const OrderBookMetrics& metrics, const PriceMovement& movement) {
     
     // Add debug logging
-    LOG_INFO("updateCorrelationModel called with price movement: {}", movement.percent_change);
+    // LOG_INFO("updateCorrelationModel called with price movement: {}", movement.percent_change);
     // 
     // Validate inputs
     if (std::isnan(movement.percent_change) || std::isinf(movement.percent_change)) {
@@ -590,90 +590,100 @@ void MomentumCorrelation::updateHighestCorrelatedMetrics() {
      } else {
          current_regime_ = MarketRegime::NORMAL;
      }
-    //  std::cout<<"Current market regime: ";
-    //  switch (current_regime_) {
-    //      case MarketRegime::NORMAL:
-    //          std::cout<<"NORMAL\n";
-    //          break;
-    //      case MarketRegime::TRENDING:
-    //          std::cout<<"TRENDING\n";
-    //          break;
-    //      case MarketRegime::RANGE_BOUND:
-    //          std::cout<<"RANGE_BOUND\n";
-    //          break;
-    //      case MarketRegime::HIGH_VOLATILITY:
-    //          std::cout<<"HIGH_VOLATILITY\n";
-    //          break;
-    //      case MarketRegime::QUIET:
-    //          std::cout<<"QUIET\n";
-    //          break;
-    //  }
+   
  }
- 
- double MomentumCorrelation::calculateWeightedPrediction(const ImbalanceEvent& event) const {
-     double prediction = 0.0;
-     double totalWeight = 0.0;
-     // Use imbalance metrics and their correlations to predict price movement
-     for (const auto& [metric, value] : event.supportingMetrics) {
-         // Skip metrics without correlation data
-         if (correlation_coefficients_.count(metric) == 0 || feature_importance_.count(metric) == 0) {
-             continue;
-         }
-         
-         double correlation = correlation_coefficients_.at(metric);
-         double importance = feature_importance_.at(metric);
-         
-         // Weight is based on correlation strength and feature importance
-         double weight = std::abs(correlation) * importance;
-         
-         // Direction is based on correlation sign
-         double contribution = value * correlation * weight;
-         
-         prediction += contribution;
-         totalWeight += weight;
-     }
-     
-     // Also use primary metric if available
-     std::string primaryMetricName = ImbalanceTypeToString(event.type);
-     if (correlation_coefficients_.count(primaryMetricName) > 0 && feature_importance_.count(primaryMetricName) > 0) {
-         double correlation = correlation_coefficients_.at(primaryMetricName);
-         double importance = feature_importance_.at(primaryMetricName);
-         double weight = std::abs(correlation) * importance * 1.5; // Extra weight for primary metric
-         
-         prediction += event.primary_metric * correlation * weight;
-         totalWeight += weight;
-     }
-     
-     // Normalize by total weight if possible
-     if (totalWeight > 0.0) {
-         prediction /= totalWeight;
-     }
-     
-     // Apply strength as a scaling factor
-     prediction *= event.strength;
-     
-     // Apply market regime adjustment
-     switch (current_regime_) {
-         case MarketRegime::HIGH_VOLATILITY:
-             prediction *= 0.8; // Reduce prediction magnitude in high volatility
-             break;
-         case MarketRegime::TRENDING:
-             prediction *= 1.2; // Increase prediction in trending markets
-             break;
-         case MarketRegime::RANGE_BOUND:
-             prediction *= 0.7; // Reduce prediction in range-bound markets
-             break;
-         case MarketRegime::QUIET:
-             prediction *= 0.5; // Reduce prediction in quiet markets
-             break;
-         case MarketRegime::NORMAL:
-         default:
-             // No adjustment
-             break;
-     }
-    //  std::cout<<"Predicted price movement: "<<prediction<<"\n";
-     return prediction;
- }
+
+
+double MomentumCorrelation::calculateWeightedPrediction(const ImbalanceEvent& event) const {
+    if (correlation_coefficients_.empty()) {
+        LOG_DEBUG("No correlation data available for prediction");
+        return 0.0;
+    }
+    
+    double prediction = 0.0;
+    double totalWeight = 0.0;
+    
+    // Process supporting metrics
+    for (const auto& [metricName, metricValue] : event.supportingMetrics) {
+        auto corrIt = correlation_coefficients_.find(metricName);
+        auto impIt = feature_importance_.find(metricName);
+        
+        if (corrIt == correlation_coefficients_.end() || impIt == feature_importance_.end()) {
+            continue;
+        }
+        
+        double correlation = corrIt->second;
+        double importance = impIt->second;
+        
+        // Simple normalization: clamp extreme values
+        double normalizedValue = std::clamp(metricValue, -10.0, 10.0);
+        
+        // Weight combines correlation strength and feature importance
+        double weight = std::abs(correlation) * importance;
+        
+        // Contribution: normalized_value * correlation_sign * weight
+        double contribution = normalizedValue * std::copysign(1.0, correlation) * weight;
+        
+        prediction += contribution;
+        totalWeight += weight;
+        
+        // LOG_DEBUG("Metric {}: value={}, normalized={}, correlation={}, weight={}, contribution={}", 
+        //          metricName, metricValue, normalizedValue, correlation, weight, contribution);
+    }
+    
+    // Process primary metric with extra weight
+    std::string primaryMetricName = imbalanceTypeToString(event.type);
+    auto corrIt = correlation_coefficients_.find(primaryMetricName);
+    auto impIt = feature_importance_.find(primaryMetricName);
+    
+    if (corrIt != correlation_coefficients_.end() && impIt != feature_importance_.end()) {
+        double correlation = corrIt->second;
+        double importance = impIt->second;
+        
+        // Simple normalization for primary metric
+        double normalizedPrimary = std::clamp(event.primary_metric, -10.0, 10.0);
+        
+        // Extra weight for primary metric
+        double weight = std::abs(correlation) * importance * 1.5;
+        double contribution = normalizedPrimary * std::copysign(1.0, correlation) * weight;
+        
+        prediction += contribution;
+        totalWeight += weight;
+        
+        // LOG_DEBUG("Primary metric {}: value={}, normalized={}, correlation={}, contribution={}", 
+        //          primaryMetricName, event.primary_metric, normalizedPrimary, correlation, contribution);
+    }
+    
+    // Normalize by total weight
+    if (totalWeight > 0.0) {
+        prediction /= totalWeight;
+    }
+    
+    // Scale by event strength (0.0 to 1.0)
+    prediction *= event.strength;
+    
+    // Apply market regime adjustments
+    double regimeMultiplier = 1.0;
+    switch (current_regime_) {
+        case MarketRegime::HIGH_VOLATILITY: regimeMultiplier = 0.8; break;
+        case MarketRegime::TRENDING:        regimeMultiplier = 1.2; break;
+        case MarketRegime::RANGE_BOUND:     regimeMultiplier = 0.7; break;
+        case MarketRegime::QUIET:           regimeMultiplier = 0.6; break;
+        case MarketRegime::NORMAL:
+        default:                            regimeMultiplier = 1.0; break;
+    }
+    prediction *= regimeMultiplier;
+    
+    // Convert to reasonable percentage range and clamp
+    prediction *= 0.01; // Scale down to percentage units
+    prediction = std::clamp(prediction, -0.05, 0.05); // Clamp to ±5%
+    
+    // LOG_INFO("Final prediction: {:.4f}% ({} basis points)", 
+    //          prediction * 100.0, static_cast<int>(prediction * 10000));
+    
+    return prediction; // Return as percentage (e.g., 0.01 = 1%)
+}
+
  
  } // namespace strategy
  } // namespace trading

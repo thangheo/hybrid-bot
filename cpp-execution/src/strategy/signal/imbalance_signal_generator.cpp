@@ -189,9 +189,9 @@ bool ImbalanceSignalGenerator::initialize(const SignalGeneratorConfig& config) {
          double predictedMove = momentumCorrelation_->predictPriceMovement(imbalance);
          std::string imbalanceTypeStr = imbalanceTypeToString(imbalance.type);
          double correlation = momentumCorrelation_->getCorrelationCoefficient(imbalanceTypeStr);
-         if (predictedMove > 0.01 || predictedMove < -0.01) {
-             std::cout << "Predicted price move for imbalance type " << imbalanceTypeStr << ": " << predictedMove << "\n";
-         }
+        //  if (predictedMove > 0.01 || predictedMove < -0.01) {
+        //      std::cout << "Predicted price move for imbalance type " << imbalanceTypeStr << ": " << predictedMove << "\n";
+        //  }
          signal.setMetric("predicted_price_move", predictedMove);
          signal.setMetric("momentum_correlation", correlation);
          
