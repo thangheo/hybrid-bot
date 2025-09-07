@@ -15,6 +15,7 @@
 #include <thread>
 #include <chrono>
 #include <nlohmann/json.hpp>
+#include <atomic>
 
 using namespace trading;
 using namespace trading::strategy;
@@ -187,31 +188,29 @@ public:
         //filter signals based on custom criteria (e.g., strength threshold)
         if (signal.strength < 0.53) return; // Weak signals are ignored
         if(signal.direction == core::Direction::NEUTRAL) return; // Ignore neutral signals
-        if(signal.confidence < 0.7) return; // Ignore low confidence signals
-        if(signal.quality < 0.5) return; // Ignore low quality signals
+        if(signal.confidence < 0.65) return; // Ignore low confidence signals
+        if(signal.quality < 0.56) return; // Ignore low quality signals
+        
         //if target prices are too close to mid price, ignore
         double midPrice = orderBookReceiver_ ? orderBookReceiver_->getCurrentMidPrice(signal.symbol.toString()) : 0.0;
+        double percentage_change_threshold = 0.0015; // 0.15%
         if(midPrice > 0.0) {
             bool allTargetsTooClose = true;
             for (const auto& target : signal.targets) {
                 double priceDiffPercent = std::abs(target.price - midPrice) / midPrice;
-                if (priceDiffPercent >= 0.0013) { // At least 0.13% away
+                if (priceDiffPercent >= percentage_change_threshold) {
                     allTargetsTooClose = false;
                     break;
                 }
             }
             if (allTargetsTooClose) return; // Ignore signals with all targets too close
         }
-
-        // if(signal.targets.empty()) return; // Ignore signals without targets
-        // LOG_INFO("  TTL: {} ms", signal.ttl.count());
-        // if(signal.ttl < std::chrono::milliseconds(1000)) return; // Ignore signals with very short TTL
-
+ 
         //print signal details for debugging
         LOG_INFO("  Signal ID: {}", signal.id);
         LOG_INFO("  Symbol: {}", signal.symbol.toString());
         LOG_INFO("  Direction: {}", signal.direction == Direction::BUY ? "BUY" : "SELL");
-        LOG_INFO("  Currnt Mid Price: {:.2f}", orderBookReceiver_ ? orderBookReceiver_->getCurrentMidPrice(signal.symbol.toString()) : 0.0);
+        LOG_INFO("  Current Mid Price: {:.8f}", orderBookReceiver_ ? orderBookReceiver_->getCurrentMidPrice(signal.symbol.toString()) : 0.0);
         LOG_INFO("  Strength: {:.3f}", signal.strength);
         LOG_INFO("  Confidence: {}", signal.confidence);
         LOG_INFO("  Quality: {:.3f}", signal.quality);
@@ -238,11 +237,17 @@ public:
         //print source type
 
         LOG_INFO("  Source Type: {}", static_cast<int>(signal.source_type));
+        //log percentage of change % from mid price to each target
+        LOG_INFO("  Price Targets:");
+
         for (const auto& target : signal.targets) {
-            LOG_INFO("    Target Price: {:.2f}, Probability: {:.2f}, Expected Time: {}s", 
-                     target.price, target.probability, 
-                     std::chrono::duration_cast<std::chrono::seconds>(target.expected_time).count());
+            double midPrice = orderBookReceiver_ ? orderBookReceiver_->getCurrentMidPrice(signal.symbol.toString()) : 0.0;
+            if (midPrice > 0.0) {
+                double priceDiffPercent = std::abs(target.price - midPrice) / midPrice * 100.0;
+                LOG_INFO("    Target Price: {:.8f}, Change: {:.2f}%", target.price, priceDiffPercent);
+            }
         }
+        // }
         if (processedSignals_.count(signal.id)) return; // Already processed
         processedSignals_.insert(signal.id);
 
@@ -261,8 +266,30 @@ private:
     std::mutex processedMutex_;
     StrategyEngine* strategyEngine_;
     OrderBookReceiver* orderBookReceiver_;
-
+std::chrono::milliseconds calculateHoldingDuration(const TradingSignal& signal, 
+                                                   double decayFactor, 
+                                                   int64_t remainingTTL) {
+    // Base holding time depends on signal strength and confidence
+    double baseHoldingMs = 5000 + (signal.strength * 25000); // 5-30 seconds base
+    
+    // Adjust by decay factor - higher decay = shorter hold
+    double adjustedHoldingMs = baseHoldingMs * decayFactor;
+    
+    // Adjust by confidence - higher confidence = longer hold
+    double confidenceMultiplier = 0.5 + (signal.confidence * 1.5); // 0.5x to 2.0x
+    adjustedHoldingMs *= confidenceMultiplier;
+    
+    // Don't exceed remaining TTL
+    adjustedHoldingMs = std::min(adjustedHoldingMs, static_cast<double>(remainingTTL) * 0.8);
+    
+    // Apply limits
+    int64_t finalDuration = static_cast<int64_t>(adjustedHoldingMs);
+    finalDuration = std::max(static_cast<int64_t>(2000), std::min(static_cast<int64_t>(30000), finalDuration)); // 2-30 seconds
+    
+    return std::chrono::milliseconds(finalDuration);
+}
     double calculatePositionSize(const TradingSignal& signal, double qualityScore) {
+
         double basePositionSize = 5000; // Base size in USD
         
         // Scale position size by quality (0.3x to 2.0x multiplier)
@@ -274,11 +301,24 @@ private:
         }
         
         double adjustedSize = basePositionSize * qualityMultiplier;
-        
+        if (adjustedSize > 5000) adjustedSize = 5000; // Max cap
         LOG_INFO("Position sizing - Base: ${}, Quality: {:.3f}, Multiplier: {:.2f}x, Final: ${}", 
                 basePositionSize, qualityScore, qualityMultiplier, adjustedSize);
         
         return adjustedSize;
+    }
+    double calculateDecayFactor(const TradingSignal& signal, int64_t elapsedMs) {
+        // Base decay rate depends on signal strength
+        double baseDecayRate = 1.0 - signal.strength; // Stronger signals decay slower
+        
+        // Time-based decay (signals lose value over time)
+        double timeDecayFactor = 1.0 - (static_cast<double>(elapsedMs) / signal.ttl.count());
+        
+        // Quality affects decay rate
+        double qualityMultiplier = 0.5 + (signal.quality * 0.5); // 0.5 to 1.0
+        
+        double decayFactor = timeDecayFactor * qualityMultiplier * (1.0 - baseDecayRate);
+        return std::max(0.1, std::min(1.0, decayFactor)); // Clamp between 0.1 and 1.0
     }
     void simulateSignalExecution(const TradingSignal& signal) {
         std::thread([this, signal]() {
@@ -298,17 +338,17 @@ private:
                 LOG_WARN("Signal {} has expired TTL, skipping execution", signal.id);
                 return;
             }
-            auto position_duration = std::chrono::milliseconds(remainingTTL / 2);
-            //max hold time is half the TTL and min 5 seconds
-            if (position_duration > std::chrono::milliseconds(30000)) {
-                position_duration = std::chrono::milliseconds(30000); // Cap at 30 seconds
-            }
-            if (position_duration < std::chrono::milliseconds(5000)) {
-                position_duration = std::chrono::milliseconds(5000); // Cap at 5 seconds
-            }
-            LOG_INFO("Simulating trade for signal {} - Entry Price: {:.2f}, Holding for {} ms", 
-                     signal.id, entryPrice, position_duration.count());
+            //calculate position duration using signal decay and remaining TTL
+            double decayFactor = calculateDecayFactor(signal, elapsed);
+            
+            // Calculate optimal holding duration using decay
+            auto position_duration = calculateHoldingDuration(signal, decayFactor, remainingTTL);
+            
+            LOG_INFO("Signal {} - Decay Factor: {:.3f}, Holding Duration: {}ms", 
+                    signal.id, decayFactor, position_duration.count());
+            
             std::this_thread::sleep_for(position_duration);
+
 
             // Get REAL current exit price from live order book data
             auto exitTime = std::chrono::system_clock::now();
@@ -319,12 +359,15 @@ private:
                 if (currentMidPrice > 0.0) {
                     exitPrice = currentMidPrice; // Use real current price
                 } else {
-                    // Fallback: simulate realistic price movement if no real data available
-                    double priceMovementFactor = (signal.strength - 0.5) * 2.0; // Convert 0-1 to -1 to 1
-                    double baseMovement = priceMovementFactor * 0.005; // Max 0.5% movement
-                    double randomFactor = (rand() % 200 - 100) / 10000.0; // ±1% random
-                    double totalMovement = baseMovement + randomFactor;
-                    exitPrice = entryPrice * (1.0 + totalMovement);
+                    //just return idiot why the f u want to trade without price data
+                    LOG_WARN("No valid order book data available for signal {}, using fallback", signal.id);
+                    return;
+                    // // Fallback: simulate realistic price movement if no real data available
+                    // double priceMovementFactor = (signal.strength - 0.5) * 2.0; // Convert 0-1 to -1 to 1
+                    // double baseMovement = priceMovementFactor * 0.005; // Max 0.5% movement
+                    // double randomFactor = (rand() % 200 - 100) / 10000.0; // ±1% random
+                    // double totalMovement = baseMovement + randomFactor;
+                    // exitPrice = entryPrice * (1.0 + totalMovement);
                 }
             }
             
@@ -425,7 +468,7 @@ int main() {
         auto startTime = std::chrono::steady_clock::now();
         size_t lastMessageCount = 0;
 
-        for (int cycle = 0; cycle < 90; ++cycle) { // Run for 90 seconds max
+        for (int cycle = 0; cycle < 240; ++cycle) { // Run for 240 seconds max
             std::this_thread::sleep_for(1s);
             // Report every 10 seconds
             if (cycle % 10 == 0) {
@@ -489,7 +532,17 @@ int main() {
         LOG_INFO("  Total signals generated: {}", finalPerformance.signalsGenerated);
         LOG_INFO("  Total signals via callback: {}", signalHandler.getReceivedSignals().size());
         LOG_INFO("  Final P&L: {:.2f}", finalPerformance.totalPnl);
+        // percentage profit per trade
+                // Replace lines 500-502 with this corrected calculation:
+        double profitPerTradePercent = finalPerformance.signalsExecuted > 0 ?
+            (finalPerformance.totalPnl / (finalPerformance.signalsExecuted * 5000)) * 100.0 : 0.0;
+
+        LOG_INFO("  Profit per trade: {:.3f}%", profitPerTradePercent);
         
+        // Also add success rate for better analysis:
+        double finalSuccessRate = finalPerformance.signalsExecuted > 0 ?
+            (double)finalPerformance.successfulSignals / finalPerformance.signalsExecuted * 100.0 : 0.0;
+        LOG_INFO("  Success rate: {:.2f}%", finalSuccessRate);
         eventBus.stop();
         LOG_INFO("=== Strategy Engine with Real Data Completed ===");
         

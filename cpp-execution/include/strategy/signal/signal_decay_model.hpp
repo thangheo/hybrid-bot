@@ -181,7 +181,8 @@ private:
     std::map<ImbalanceType, double> type_specific_decay_rates_;
     std::map<ImbalanceType, uint64_t> type_specific_ttl_;
     std::vector<MarketEvent> recent_market_events_;
-    
+    double volatility_multiplier_ = 1.0;
+    void updateVolatilityAdjustment(double current_volatility);
     /**
      * @brief Calculate exponential decay
      * @param signal The trading signal
@@ -189,7 +190,9 @@ private:
      * @return Remaining signal strength
      */
     double exponentialDecay(const TradingSignal& signal, uint64_t current_time);
-    
+    std::map<core::ExchangeId, double> exchange_decay_multipliers_;
+    bool validateConfiguration() const;
+
     /**
      * @brief Calculate linear decay
      * @param signal The trading signal

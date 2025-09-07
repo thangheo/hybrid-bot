@@ -7,82 +7,169 @@
  #include <cmath>
  #include <algorithm>
  #include <functional>
- 
+ #include <iostream>
+ #include "logger.hpp"
  namespace trading {
  namespace strategy 
  {
+    
     SignalDecayModel::SignalDecayModel(const SignalDecayConfig& config){
         params_.base_decay_rate = config.defaultDecayRate;       // Default decay rate per second
         params_.min_valid_strength = config.minSignalStrength ;       // Minimum signal strength before expiration
+        exchange_decay_multipliers_[core::ExchangeId::binance()] = 1.0;    // Baseline
+        exchange_decay_multipliers_[core::ExchangeId::coinbase()] = 0.8;   // Slower
+        exchange_decay_multipliers_[core::ExchangeId::ftx()] = 1.2;        // Faster
+        exchange_decay_multipliers_[core::ExchangeId::kraken()] = 0.9;     // Slightly slower
     }
 
  SignalDecayModel::SignalDecayModel(DecayModelType model_type)
-     : model_type_(model_type) {
+    : model_type_(model_type) {
+    exchange_decay_multipliers_[core::ExchangeId::binance()] = 1.0;    // Baseline
+
+    exchange_decay_multipliers_[core::ExchangeId::coinbase()] = 0.8;   // Slower
+
+    exchange_decay_multipliers_[core::ExchangeId::ftx()] = 1.2;        // Faster
+
+    exchange_decay_multipliers_[core::ExchangeId::kraken()] = 0.9;     // Slightly slower
      // Initialize with default decay parameters
      params_.base_decay_rate = 0.5;
      params_.time_unit_ms = 1000;  // 1 second time units
-     params_.step_intervals = {0.0, 0.5, 0.8, 1.0};
-     params_.step_values = {1.0, 0.8, 0.4, 0.0};
+    //  params_.step_intervals = {0.0, 0.5, 0.8, 1.0};
+    //  params_.step_values = {1.0, 0.8, 0.4, 0.0};
+    // Smoother decay progression
+    params_.step_intervals = {0.0, 0.3, 0.6, 0.8, 1.0};
+    params_.step_values = {1.0, 0.9, 0.7, 0.3, 0.0};
      params_.min_ttl_ms = 500;  // Minimum signal life of 500ms
      params_.min_valid_strength = 0.2;  // Minimum strength to be valid
      
      // Set default type-specific decay rates
-     type_specific_decay_rates_[ImbalanceType::VOLUME_IMBALANCE] = 0.7;       // Faster decay
-     type_specific_decay_rates_[ImbalanceType::PRICE_LEVEL_IMBALANCE] = 0.5;  // Medium decay
-     type_specific_decay_rates_[ImbalanceType::LIQUIDITY_IMBALANCE] = 0.4;    // Slower decay
-     type_specific_decay_rates_[ImbalanceType::ABNORMAL_SPREAD] = 0.8;        // Very fast decay
-     type_specific_decay_rates_[ImbalanceType::TREND_CONTINUATION] = 0.3;     // Very slow decay
-     type_specific_decay_rates_[ImbalanceType::TREND_REVERSAL] = 0.4;         // Slow decay
-     
+    //  type_specific_decay_rates_[ImbalanceType::VOLUME_IMBALANCE] = 0.7;       // Faster decay
+    //  type_specific_decay_rates_[ImbalanceType::PRICE_LEVEL_IMBALANCE] = 0.5;  // Medium decay
+    //  type_specific_decay_rates_[ImbalanceType::LIQUIDITY_IMBALANCE] = 0.4;    // Slower decay
+    //  type_specific_decay_rates_[ImbalanceType::ABNORMAL_SPREAD] = 0.8;        // Very fast decay
+    //  type_specific_decay_rates_[ImbalanceType::TREND_CONTINUATION] = 0.3;     // Very slow decay
+    //  type_specific_decay_rates_[ImbalanceType::TREND_REVERSAL] = 0.4;         // Slow decay
+     // More aggressive for crypto markets
+    type_specific_decay_rates_[ImbalanceType::VOLUME_IMBALANCE] = 0.8;      // Very fast
+    type_specific_decay_rates_[ImbalanceType::PRICE_LEVEL_IMBALANCE] = 0.6; // Fast
+    type_specific_decay_rates_[ImbalanceType::LIQUIDITY_IMBALANCE] = 0.7;   // Fast
+    type_specific_decay_rates_[ImbalanceType::ABNORMAL_SPREAD] = 0.9;       // Extremely fast
+    type_specific_decay_rates_[ImbalanceType::TREND_CONTINUATION] = 0.7;    // Fast
+    type_specific_decay_rates_[ImbalanceType::TREND_REVERSAL] = 0.6;        // Fast
      // Set default type-specific TTLs
-     type_specific_ttl_[ImbalanceType::VOLUME_IMBALANCE] = 2000;        // 2 seconds
-     type_specific_ttl_[ImbalanceType::PRICE_LEVEL_IMBALANCE] = 3000;   // 3 seconds
-     type_specific_ttl_[ImbalanceType::LIQUIDITY_IMBALANCE] = 4000;     // 4 seconds
-     type_specific_ttl_[ImbalanceType::ABNORMAL_SPREAD] = 1000;         // 1 second
-     type_specific_ttl_[ImbalanceType::TREND_CONTINUATION] = 5000;      // 5 seconds
-     type_specific_ttl_[ImbalanceType::TREND_REVERSAL] = 4000;          // 4 seconds
+    //  type_specific_ttl_[ImbalanceType::VOLUME_IMBALANCE] = 2000;        // 2 seconds
+    //  type_specific_ttl_[ImbalanceType::PRICE_LEVEL_IMBALANCE] = 3000;   // 3 seconds
+    //  type_specific_ttl_[ImbalanceType::LIQUIDITY_IMBALANCE] = 4000;     // 4 seconds
+    //  type_specific_ttl_[ImbalanceType::ABNORMAL_SPREAD] = 1000;         // 1 second
+    //  type_specific_ttl_[ImbalanceType::TREND_CONTINUATION] = 5000;      // 5 seconds
+    //  type_specific_ttl_[ImbalanceType::TREND_REVERSAL] = 4000;          // 4 seconds
+     // Shorter TTLs for crypto reality
+    type_specific_ttl_[ImbalanceType::VOLUME_IMBALANCE] = 1500;      // 1.5s
+    type_specific_ttl_[ImbalanceType::PRICE_LEVEL_IMBALANCE] = 2500; // 2.5s
+    type_specific_ttl_[ImbalanceType::LIQUIDITY_IMBALANCE] = 2000;   // 2s
+    type_specific_ttl_[ImbalanceType::ABNORMAL_SPREAD] = 800;        // 800ms
+    type_specific_ttl_[ImbalanceType::TREND_CONTINUATION] = 2000;    // 2s
+    type_specific_ttl_[ImbalanceType::TREND_REVERSAL] = 2500;        // 2.5s
  }
- 
+ void SignalDecayModel::updateVolatilityAdjustment(double current_volatility) {
+    // Scale 0.5-2.0 based on volatility (0.1-0.5 range)
+    volatility_multiplier_ = 0.5 + (current_volatility / 0.4) * 1.5;
+    volatility_multiplier_ = std::clamp(volatility_multiplier_, 0.5, 2.0);
+}
  void SignalDecayModel::configureDecayParameters(const DecayParameters& params) {
      params_ = params;
  }
- 
+//  enum class MarketRegime {
+//     BULL,
+//     BEAR,
+//     SIDEWAYS,
+//     HIGH_VOLATILITY,
+//     LOW_VOLATILITY
+// };
+
+// MarketRegime SignalDecayModel::detectMarketRegime(const MarketState& market_state) {
+//     // Simple regime detection based on price change and volatility
+//     double price_change_24h = market_state.price_change_24h;
+//     double volatility = market_state.volatility;
+    
+//     if (volatility > 0.05) return MarketRegime::HIGH_VOLATILITY;
+//     if (volatility < 0.01) return MarketRegime::LOW_VOLATILITY;
+//     if (price_change_24h > 0.05) return MarketRegime::BULL;
+//     if (price_change_24h < -0.05) return MarketRegime::BEAR;
+//     return MarketRegime::SIDEWAYS;
+// }
+bool SignalDecayModel::validateConfiguration() const {
+    // Validate step intervals are sorted
+    for (size_t i = 1; i < params_.step_intervals.size(); ++i) {
+        if (params_.step_intervals[i] <= params_.step_intervals[i-1]) {
+            return false;
+        }
+    }
+    
+    // Validate step values match intervals
+    if (params_.step_intervals.size() != params_.step_values.size()) {
+        return false;
+    }
+    
+    // Validate ranges
+    if (params_.base_decay_rate <= 0.0 || params_.base_decay_rate > 1.0) {
+        return false;
+    }
+    
+    if (params_.min_valid_strength < 0.0 || params_.min_valid_strength > 1.0) {
+        return false;
+    }
+    
+    if (params_.min_ttl_ms < 100) {  // Minimum 100ms
+        return false;
+    }
+    
+    return true;
+}
  double SignalDecayModel::calculateRemainingStrength(const TradingSignal& signal, uint64_t current_time) {
-     // Get timestamp values in milliseconds for proper comparison
-     auto signal_time_ms = std::chrono::time_point_cast<std::chrono::milliseconds>(signal.generation_time)
-                               .time_since_epoch().count();
-     auto expiration_time_ms = signal_time_ms + 
-                               std::chrono::duration_cast<std::chrono::milliseconds>(signal.ttl).count();
-     
-     // Check if signal has already expired based on TTL
-     if (current_time > expiration_time_ms) {
-         return 0.0;
-     }
-     
-     // Select decay function based on model type
-     switch (model_type_) {
-         case DecayModelType::EXPONENTIAL:
-             return exponentialDecay(signal, current_time);
-         case DecayModelType::LINEAR:
-             return linearDecay(signal, current_time);
-         case DecayModelType::STEP:
-             return stepDecay(signal, current_time);
-         case DecayModelType::CONDITIONAL:
-             return conditionalDecay(signal, current_time);
-         case DecayModelType::CUSTOM:
-             if (custom_decay_func_) {
-                 return custom_decay_func_(signal, current_time);
-             }
-             // Fall back to exponential if no custom function set
-             return exponentialDecay(signal, current_time);
-         default:
-             return exponentialDecay(signal, current_time);
-     }
- }
- 
- bool SignalDecayModel::isSignalValid(const TradingSignal& signal, uint64_t current_time) {
-     // Get timestamp values in milliseconds for proper comparison
-     auto signal_time_ms = std::chrono::time_point_cast<std::chrono::milliseconds>(signal.generation_time)
+    try{
+    // Get timestamp values in milliseconds for proper comparison
+        auto signal_time_ms = std::chrono::time_point_cast<std::chrono::milliseconds>(signal.generation_time)
+                                .time_since_epoch().count();
+        // auto expiration_time_ms = signal_time_ms + 
+        //                         std::chrono::duration_cast<std::chrono::milliseconds>(signal.ttl).count();
+        // std::cout << "signal_time_ms: " << signal_time_ms << ", current_time: " << current_time << std::endl;
+        uint64_t dynamic_ttl = getSignalTTL(signal.source_type);
+        auto expiration_time_ms = signal_time_ms + dynamic_ttl;
+        
+        // Check if signal has already expired based on TTL
+        if (current_time > expiration_time_ms) {
+            return 0.0;
+        }
+        
+        // Select decay function based on model type
+        switch (model_type_) {
+            case DecayModelType::EXPONENTIAL:
+                return exponentialDecay(signal, current_time);
+            case DecayModelType::LINEAR:
+                return linearDecay(signal, current_time);
+            case DecayModelType::STEP:
+                return stepDecay(signal, current_time);
+            case DecayModelType::CONDITIONAL:
+                return conditionalDecay(signal, current_time);
+            case DecayModelType::CUSTOM:
+                if (custom_decay_func_) {
+                    return custom_decay_func_(signal, current_time);
+                }
+                // Fall back to exponential if no custom function set
+                return exponentialDecay(signal, current_time);
+            default:
+                return exponentialDecay(signal, current_time);
+        }
+    } catch (const std::exception& ex) {
+        LOG_ERROR("Error calculating remaining strength: {}", ex.what());
+        return 0.0;
+    }
+}
+
+bool SignalDecayModel::isSignalValid(const TradingSignal& signal, uint64_t current_time) {
+    // Get timestamp values in milliseconds for proper comparison
+    auto signal_time_ms = std::chrono::time_point_cast<std::chrono::milliseconds>(signal.generation_time)
                                .time_since_epoch().count();
      auto expiration_time_ms = signal_time_ms + 
                                std::chrono::duration_cast<std::chrono::milliseconds>(signal.ttl).count();
@@ -228,13 +315,31 @@
         return params_.base_decay_rate;  // Default decay rate
     }
     // getSignalTTL
+    // uint64_t SignalDecayModel::getSignalTTL(ImbalanceType imbalance_type) const {
+    //     auto it = type_specific_ttl_.find(imbalance_type);
+    //     if (it != type_specific_ttl_.end()) {
+    //         return it->second;
+    //     }
+    //     return params_.min_ttl_ms;  // Default TTL
+    // }
     uint64_t SignalDecayModel::getSignalTTL(ImbalanceType imbalance_type) const {
-        auto it = type_specific_ttl_.find(imbalance_type);
-        if (it != type_specific_ttl_.end()) {
-            return it->second;
-        }
-        return params_.min_ttl_ms;  // Default TTL
-    }
+    auto it = type_specific_ttl_.find(imbalance_type);
+    uint64_t base_ttl = (it != type_specific_ttl_.end()) 
+                        ? it->second 
+                        : params_.min_ttl_ms;
+    
+    // Apply volatility adjustment (higher volatility = shorter TTL)
+    double ttl_adjustment = 2.0 - volatility_multiplier_;
+    ttl_adjustment = std::clamp(ttl_adjustment, 0.5, 1.5);
+    
+    // return static_cast<uint64_t>(base_ttl * ttl_adjustment);
+    uint64_t adjusted_ttl = static_cast<uint64_t>(base_ttl * ttl_adjustment);
+    
+    // Safety: Never go below absolute minimum
+    const uint64_t ABSOLUTE_MIN_TTL = 200;  // 200ms absolute minimum
+    return std::max(adjusted_ttl, ABSOLUTE_MIN_TTL);
+}
+
  double SignalDecayModel::exponentialDecay(const TradingSignal& signal, uint64_t current_time) {
      // Convert timestamps to milliseconds for calculation
      auto signal_time_ms = std::chrono::time_point_cast<std::chrono::milliseconds>(signal.generation_time)
@@ -415,15 +520,24 @@
      return false;
  }
  
- double SignalDecayModel::getTypeSpecificDecayRate(const TradingSignal& signal) {
-     auto it = type_specific_decay_rates_.find(signal.source_type);
-     if (it != type_specific_decay_rates_.end()) {
-         return it->second;
-     }
+//  double SignalDecayModel::getTypeSpecificDecayRate(const TradingSignal& signal) {
+//      auto it = type_specific_decay_rates_.find(signal.source_type);
+//      if (it != type_specific_decay_rates_.end()) {
+//          return it->second;
+//      }
      
-     // Default to base decay rate if type-specific rate not found
-     return params_.base_decay_rate;
- }
- 
+//      // Default to base decay rate if type-specific rate not found
+//      return params_.base_decay_rate;
+//  }
+ double SignalDecayModel::getTypeSpecificDecayRate(const TradingSignal& signal) {
+    auto it = type_specific_decay_rates_.find(signal.source_type);
+    double base_rate = (it != type_specific_decay_rates_.end()) 
+                       ? it->second 
+                       : params_.base_decay_rate;
+    
+    // Apply volatility adjustment
+    return base_rate * volatility_multiplier_;
+}
+
  } // namespace strategy
  } // namespace trading
