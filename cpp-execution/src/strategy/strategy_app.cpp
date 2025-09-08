@@ -184,16 +184,26 @@ public:
     void onNewSignal(const TradingSignal& signal) {
       
         std::lock_guard<std::mutex> lock(processedMutex_);
+        // LOG_DEBUG("Received new signal: ID={}, Symbol={}, Direction={}, Strength={:.3f}, Confidence={:.2f}, Quality={:.2f}, GeneratedAt={}, TTL={}ms, Expiration={}",
+        //           signal.id,
+        //           signal.symbol.toString(),
+        //           (signal.direction == core::Direction::BUY ? "BUY" : (signal.direction == core::Direction::SELL ? "SELL" : "NEUTRAL")),
+        //           signal.strength,
+        //           signal.confidence,
+        //           signal.quality,
+        //           std::chrono::duration_cast<std::chrono::milliseconds>(signal.generation_time.time_since_epoch()).count(),
+        //           signal.ttl.count()/1000000,
+        //           std::chrono::duration_cast<std::chrono::milliseconds>(signal.expirationTime.time_since_epoch()).count());
         //filter duplicate signals
         //filter signals based on custom criteria (e.g., strength threshold)
-        if (signal.strength < 0.53) return; // Weak signals are ignored
+        if (signal.strength < 0.5) return; // Weak signals are ignored
         if(signal.direction == core::Direction::NEUTRAL) return; // Ignore neutral signals
-        if(signal.confidence < 0.7) return; // Ignore low confidence signals
-        if(signal.quality < 0.53) return; // Ignore low quality signals
+        if(signal.confidence < 0.6) return; // Ignore low confidence signals
+        if(signal.quality < 0.5) return; // Ignore low quality signals
         
         //if target prices are too close to mid price, ignore
         double midPrice = orderBookReceiver_ ? orderBookReceiver_->getCurrentMidPrice(signal.symbol.toString()) : 0.0;
-        double percentage_change_threshold = 0.0025; // 0.25%
+        double percentage_change_threshold = 0.0015; // 0.25%
         if(midPrice > 0.0) {
             bool allTargetsTooClose = true;
             for (const auto& target : signal.targets) {
@@ -308,8 +318,8 @@ private:
             auto generation_ms = std::chrono::duration_cast<std::chrono::milliseconds>(signal.generation_time.time_since_epoch()).count();
             auto expiration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(signal.expirationTime.time_since_epoch()).count();
             
-            LOG_DEBUG("Signal {} timing: Now={}ms, Generated={}ms, TTL={}ms, Elapsed={}ms", 
-                     signal.id, now_ms, generation_ms, signal.ttl.count(), elapsed.count());
+            // LOG_DEBUG("Signal {} timing: Now={}ms, Generated={}ms, TTL={}ms, Elapsed={}ms", 
+            //          signal.id, now_ms, generation_ms, signal.ttl.count(), elapsed.count());
 
                 // Check if signal has expired
             if (now >= signal.expirationTime) {
@@ -328,7 +338,7 @@ private:
 
             // Calculate optimal holding duration using decay
             // auto position_duration = calculateHoldingDuration(signal, decayFactor, remainingTTL.count());
-            auto position_duration = signal.ttl;
+            auto position_duration = signal.ttl/1000000;
             // position_duration = (position_duration < signal.ttl) ? signal.ttl : position_duration; // Never exceed TTL
             // LOG_INFO("Signal {} - Decay Factor: {:.3f}, Holding Duration: {}ms", 
             //         signal.id, decayFactor, position_duration.count());
@@ -352,8 +362,7 @@ private:
                     return;
                     
                 }
-            }
-            
+            }            
             // Calculate actual P&L based on direction
             double pnl = 0.0;
             // double orderQuantity = 1.0; // 1 unit for simplicity
@@ -452,8 +461,8 @@ int main() {
         auto startTime = std::chrono::steady_clock::now();
         size_t lastMessageCount = 0;
 
-        for (int cycle = 0; cycle < 180000; ++cycle) { // Run for 6hrs cycles max
-            std::this_thread::sleep_for(100ms);
+        for (int cycle = 0; cycle < 120000; ++cycle) { // Run for 6hrs cycles max
+            std::this_thread::sleep_for(1ms);
             // Report every 10 
             if (cycle % 10 == 0) {
                 auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
