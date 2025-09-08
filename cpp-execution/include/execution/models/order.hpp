@@ -34,6 +34,8 @@ enum class OrderType {
     STOP_LIMIT,       // Stop limit order
     ICEBERG,          // Iceberg/hidden order
     TRAILING_STOP,    // Trailing stop order
+    TAKE_PROFIT,      // Take profit order
+    TAKE_PROFIT_LIMIT,// Take profit limit order
     FILL_OR_KILL,     // Fill or kill order
     IMMEDIATE_OR_CANCEL, // IOC order
     POST_ONLY         // Post only order

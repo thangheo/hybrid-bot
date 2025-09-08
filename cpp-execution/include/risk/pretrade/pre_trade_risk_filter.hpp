@@ -10,8 +10,8 @@
 
 #include "../risk_types.hpp"
 #include "../risk_config.hpp"
-// #include "risk/pretrade/position_limit_checker.hpp"
-// #include "risk/pretrade/exposure_calculator.hpp"
+#include "risk/pretrade/position_limit_checker.hpp"
+#include "risk/pretrade/exposure_calculator.hpp"
 #include "risk/pretrade/order_validator.hpp"
 #include "risk/pretrade/fat_finger_protection.hpp"
 #include "execution/trading_signal.hpp"
@@ -114,13 +114,13 @@ public:
 
 private:
     // Sub-components
-    // std::unique_ptr<PositionLimitChecker> m_positionLimitChecker;
-    // std::unique_ptr<ExposureCalculator> m_exposureCalculator;
+    std::unique_ptr<PositionLimitChecker> m_positionLimitChecker;
+    std::unique_ptr<ExposureCalculator> m_exposureCalculator;
     std::unique_ptr<OrderValidator> m_orderValidator;
     std::unique_ptr<FatFingerProtection> m_fatFingerProtection;
     
     // Dependencies
-    // std::shared_ptr<PositionTracker> m_positionTracker;
+    std::shared_ptr<PositionTracker> m_positionTracker;
     std::shared_ptr<DataInterface> m_dataInterface;
     
     // Configuration and state

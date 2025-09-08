@@ -528,6 +528,11 @@ core::MarketData MarketDataInterface::convertOrderBookToMarketData(
     return marketData;
 }
 
+// Factory function implementation
+std::unique_ptr<DataInterface> createDataInterface() {
+    return std::make_unique<MarketDataInterface>();
+}
+
 // Implementation
 void MarketDataInterface::updateBalance(const core::ExchangeId& exchangeId, 
                                        const std::string& asset, 

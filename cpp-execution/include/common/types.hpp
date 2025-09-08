@@ -5,19 +5,17 @@
 #include <unordered_map>
 #include <chrono>
 #include <strategy/types.hpp>
+#include <execution/models/order.hpp>
 namespace trading {
 namespace common {
 
 using Timestamp = std::chrono::time_point<std::chrono::system_clock>;
 using TradingSignal = trading::strategy::TradingSignal;
+using OrderType = trading::execution::models::OrderType;
+
 enum class OrderSide {
     BUY,
     SELL
-};
-
-enum class OrderType {
-    MARKET,
-    LIMIT
 };
  
 // using OrderBook = std::unordered_map<double, PriceLevel>;
@@ -30,15 +28,6 @@ struct ImbalanceMetrics {
     Timestamp timestamp;
 };
 
-// struct TradingSignal {
-//     std::string instrument;
-//     OrderSide side;
-//     double confidence;
-//     double target_price;
-//     double stop_price;
-//     Timestamp expiry;
-//     Timestamp timestamp;
-// };
 
 struct Order {
     std::string instrument;
