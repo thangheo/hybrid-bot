@@ -4,12 +4,12 @@
 #include <vector>
 #include <unordered_map>
 #include <chrono>
-
+#include <strategy/types.hpp>
 namespace trading {
 namespace common {
 
 using Timestamp = std::chrono::time_point<std::chrono::system_clock>;
-
+using TradingSignal = trading::strategy::TradingSignal;
 enum class OrderSide {
     BUY,
     SELL
@@ -30,15 +30,15 @@ struct ImbalanceMetrics {
     Timestamp timestamp;
 };
 
-struct TradingSignal {
-    std::string instrument;
-    OrderSide side;
-    double confidence;
-    double target_price;
-    double stop_price;
-    Timestamp expiry;
-    Timestamp timestamp;
-};
+// struct TradingSignal {
+//     std::string instrument;
+//     OrderSide side;
+//     double confidence;
+//     double target_price;
+//     double stop_price;
+//     Timestamp expiry;
+//     Timestamp timestamp;
+// };
 
 struct Order {
     std::string instrument;

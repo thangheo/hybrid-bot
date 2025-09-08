@@ -9,8 +9,8 @@
 #pragma once
 
 #include "strategy/types.hpp"
-#include "strategy/signal/hawkes_predictor.hpp"
-#include "strategy/signal/hawkes_parameters.hpp"
+#include "signal/hawkes/hawkes_predictor.hpp"
+#include "signal/hawkes/hawkes_parameters.hpp"
 #include "core/time.hpp"
 #include "core/direction.hpp"
 #include <vector>
@@ -28,6 +28,22 @@ namespace strategy {
 /**
  * Configuration for signal generation
  */
+ /**
+     * Get statistics about signal generation
+     */
+struct GenerationStats {
+    size_t totalImbalancesProcessed = 0;
+    size_t totalSignalsGenerated = 0;
+    size_t hawkesEnhancedSignals = 0;
+    size_t filteredDuplicates = 0;
+    size_t rateLimitedSignals = 0;
+    double averageSignalStrength = 0.0;
+    double averageEnhancementFactor = 0.0;
+    core::Timestamp lastSignalTime;
+    std::map<core::Direction, size_t> signalsByDirection;
+    std::map<std::string, size_t> signalsByType;
+};
+
 struct SignalGenerationConfig {
     double minSignalStrength = 0.1;         // Minimum strength to generate signal
     double maxSignalStrength = 1.0;         // Maximum allowed signal strength
@@ -69,17 +85,16 @@ public:
      * Constructor
      */
     explicit ImbalanceSignalGenerator(const SignalGenerationConfig& config = SignalGenerationConfig());
-    
-    /**
-     * Destructor
-     */
-    ~ImbalanceSignalGenerator() = default;
-    
+
     // Non-copyable but movable
     ImbalanceSignalGenerator(const ImbalanceSignalGenerator&) = delete;
     ImbalanceSignalGenerator& operator=(const ImbalanceSignalGenerator&) = delete;
     ImbalanceSignalGenerator(ImbalanceSignalGenerator&&) = default;
     ImbalanceSignalGenerator& operator=(ImbalanceSignalGenerator&&) = default;
+    /**
+     * Destructor
+     */
+    ~ImbalanceSignalGenerator() = default;
     
     /**
      * Process detected imbalances and add to signal generation queue
@@ -133,22 +148,7 @@ public:
      */
     void clear();
     
-    /**
-     * Get statistics about signal generation
-     */
-    struct GenerationStats {
-        size_t totalImbalancesProcessed = 0;
-        size_t totalSignalsGenerated = 0;
-        size_t hawkesEnhancedSignals = 0;
-        size_t filteredDuplicates = 0;
-        size_t rateLimitedSignals = 0;
-        double averageSignalStrength = 0.0;
-        double averageEnhancementFactor = 0.0;
-        core::Timestamp lastSignalTime;
-        std::map<core::Direction, size_t> signalsByDirection;
-        std::map<std::string, size_t> signalsByType;
-    };
-    
+   
     GenerationStats getStats() const;
     
     /**
@@ -170,9 +170,9 @@ private:
     // Configuration
     SignalGenerationConfig config_;
     mutable std::mutex configMutex_;
-    
-    // Hawkes enhancement
+    // hawkesEnabled_
     std::atomic<bool> hawkesEnabled_{false};
+    // Hawkes enhancement
     std::unique_ptr<HawkesPredictor> hawkesPredictor_;
     mutable std::mutex hawkesMutex_;
     
@@ -222,8 +222,9 @@ private:
     /**
      * Check if signal should be filtered due to rate limiting
      */
-    bool isRateLimited() const;
-    
+    bool isRateLimited();
+
+    bool isRateLimitedCheck() const;
     /**
      * Update rate limiting state
      */
@@ -232,8 +233,8 @@ private:
     /**
      * Check if signal is duplicate of recent signal
      */
-    bool isDuplicateSignal(const TradingSignal& signal) const;
-    
+    bool isDuplicateSignal(const TradingSignal& signal);
+
     /**
      * Add signal to recent signals for duplicate filtering
      */
@@ -320,43 +321,6 @@ private:
     void updateAverages() const;
 };
 
-// Inline implementations for performance-critical methods
-
-inline bool ImbalanceSignalGenerator::isHawkesEnhancementEnabled() const {
-    return hawkesEnabled_.load();
-}
-
-inline double ImbalanceSignalGenerator::normalizeSignalStrength(double strength) const {
-    return std::clamp(strength, config_.minSignalStrength, config_.maxSignalStrength);
-}
-
-inline std::chrono::milliseconds ImbalanceSignalGenerator::calculateSignalTtl(
-    double strength, double persistence) const {
-    
-    // Base TTL scaled by strength
-    auto baseTtl = config_.baseTtl;
-    double strengthFactor = strength * 2.0; // 0.5 strength = 1x TTL, 1.0 strength = 2x TTL
-    
-    // Apply persistence factor if available
-    double persistenceFactor = (persistence > 0.0) ? (1.0 + persistence) : 1.0;
-    
-    auto calculatedTtl = std::chrono::duration_cast<std::chrono::milliseconds>(
-        baseTtl * strengthFactor * persistenceFactor);
-    
-    return std::clamp(calculatedTtl, baseTtl, config_.maxTtl);
-}
-
-inline core::Direction ImbalanceSignalGenerator::determineSignalDirection(
-    const ImbalanceEvent& imbalance) const {
-    return imbalance.direction;
-}
-
-inline double ImbalanceSignalGenerator::calculateTargetSize(
-    const ImbalanceEvent& imbalance) const {
-    // Base size scaled by imbalance strength
-    double baseSize = 1.0; // Default base size
-    return baseSize * imbalance.strength;
-}
 
 } // namespace strategy
 } // namespace trading
