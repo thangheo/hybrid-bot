@@ -213,7 +213,7 @@ message MarketIntelligence {
     // Order Book Metrics
     double bid_ask_spread = 3;
     double order_book_imbalance = 4;
-    double depth_imbalance = 5;         // Imbalance in deeper levels
+    double depthImbalance = 5;         // Imbalance in deeper levels
     double liquidity_ratio = 6;
     double spread_stability = 7;        // How stable the spread has been
     

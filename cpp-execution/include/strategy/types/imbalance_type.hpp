@@ -42,8 +42,8 @@
   */
  inline std::string imbalanceTypeToString(ImbalanceType type) {
      switch (type) {
-         case ImbalanceType::VOLUME_IMBALANCE: return "volume_imbalance";
-         case ImbalanceType::PRICE_LEVEL_IMBALANCE: return "price_level_imbalance";
+         case ImbalanceType::VOLUME_IMBALANCE: return "volumeImbalance ";
+         case ImbalanceType::PRICE_LEVEL_IMBALANCE: return "priceLevelImbalance";
          case ImbalanceType::LIQUIDITY_REMOVAL: return "liquidity_removal";
          case ImbalanceType::ORDER_FLOW_IMBALANCE: return "order_flow_imbalance";
          case ImbalanceType::LARGE_ORDER_APPEARANCE: return "large_order_appearance";
@@ -65,8 +65,8 @@
   * Convert string to ImbalanceType enum
   */
  inline ImbalanceType imbalanceTypeFromString(const std::string& str) {
-     if (str == "volume_imbalance") return ImbalanceType::VOLUME_IMBALANCE;
-     if (str == "price_level_imbalance") return ImbalanceType::PRICE_LEVEL_IMBALANCE;
+     if (str == "volumeImbalance ") return ImbalanceType::VOLUME_IMBALANCE;
+     if (str == "priceLevelImbalance") return ImbalanceType::PRICE_LEVEL_IMBALANCE;
      if (str == "liquidity_removal") return ImbalanceType::LIQUIDITY_REMOVAL;
      if (str == "order_flow_imbalance") return ImbalanceType::ORDER_FLOW_IMBALANCE;
      if (str == "large_order_appearance") return ImbalanceType::LARGE_ORDER_APPEARANCE;

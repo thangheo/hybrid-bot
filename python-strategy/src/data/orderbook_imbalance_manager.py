@@ -41,8 +41,8 @@ class ImbalanceMetrics:
     symbol: str
     imbalance_ratio: float      # -1 to 1 (negative = ask heavy, positive = bid heavy)
     imbalance_strength: float   # 0 to 1 (how strong the imbalance)
-    depth_imbalance: float      # Weighted by price levels
-    volume_imbalance: float     # Pure volume comparison
+    depthImbalance: float      # Weighted by price levels
+    volumeImbalance : float     # Pure volume comparison
     spread_pressure: float      # Pressure on bid-ask spread
     market_depth_score: float   # Overall market depth quality
     spoofing_detected: bool     # Unusual wall detection
@@ -346,9 +346,9 @@ class OrderBookImbalanceAnalyzer:
         levels_to_use = min(self.depth_levels, len(snapshot.bids), len(snapshot.asks))
         
         # Calculate total volume
-        total_bid_volume = sum(bid.quantity for bid in snapshot.bids[:levels_to_use])
-        total_ask_volume = sum(ask.quantity for ask in snapshot.asks[:levels_to_use])
-        total_volume = total_bid_volume + total_ask_volume
+        totalBidVolume  = sum(bid.quantity for bid in snapshot.bids[:levels_to_use])
+        totalAskVolume = sum(ask.quantity for ask in snapshot.asks[:levels_to_use])
+        total_volume = totalBidVolume  + totalAskVolume
         
         # Calculate spread
         if snapshot.bids and snapshot.asks:
@@ -376,15 +376,15 @@ class OrderBookImbalanceAnalyzer:
         """Comprehensive imbalance analysis"""
         
         # Calculate different imbalance measures
-        volume_imbalance = self.calculate_basic_imbalance(snapshot)
-        depth_imbalance = self.calculate_weighted_imbalance(snapshot)
+        volumeImbalance  = self.calculate_basic_imbalance(snapshot)
+        depthImbalance = self.calculate_weighted_imbalance(snapshot)
         value_imbalance = self.calculate_depth_imbalance(snapshot)
         spread_pressure = self.calculate_spread_pressure(snapshot)
         
         # Overall imbalance (weighted combination)
         overall_imbalance = (
-            volume_imbalance * 0.3 +
-            depth_imbalance * 0.4 +
+            volumeImbalance  * 0.3 +
+            depthImbalance * 0.4 +
             value_imbalance * 0.3
         )
         
@@ -404,8 +404,8 @@ class OrderBookImbalanceAnalyzer:
             symbol=snapshot.symbol,
             imbalance_ratio=overall_imbalance,
             imbalance_strength=imbalance_strength,
-            depth_imbalance=depth_imbalance,
-            volume_imbalance=volume_imbalance,
+            depthImbalance=depthImbalance,
+            volumeImbalance =volumeImbalance ,
             spread_pressure=spread_pressure,
             market_depth_score=market_depth_score,
             spoofing_detected=spoofing_detected,

@@ -184,8 +184,8 @@ void testOrderBookMetrics() {
     double ask_volume = order_book.getAskVolume();
     double mid_price = order_book.getMidPrice();
     double spread = order_book.getSpread();
-    double spread_percent = order_book.getSpreadPercent();
-    double volume_imbalance = order_book.getVolumeImbalance();
+    double spreadPercent = order_book.getSpreadPercent();
+    double volumeImbalance  = order_book.getVolumeImbalance();
     
     // Expected values
     double expected_bid_volume = 1.5 + 2.3 + 3.1;
@@ -199,7 +199,7 @@ void testOrderBookMetrics() {
     assert(std::abs(ask_volume - expected_ask_volume) < 0.001);
     assert(std::abs(mid_price - expected_mid_price) < 0.001);
     assert(std::abs(spread - expected_spread) < 0.001);
-    assert(std::abs(spread_percent - expected_spread_percent) < 0.001);
+    assert(std::abs(spreadPercent - expected_spread_percent) < 0.001);
     
     std::cout << "Order book metrics test passed" << std::endl;
 }

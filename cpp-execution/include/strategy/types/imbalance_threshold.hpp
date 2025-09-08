@@ -39,7 +39,7 @@
       
      // Common threshold getters
      double getVolumeImbalanceThreshold() const {
-         return getThreshold("volume_imbalance");
+         return getThreshold("volumeImbalance ");
      }
       
      double getLiquidityRemovalThreshold() const {
@@ -47,7 +47,7 @@
      }
       
      double getPriceLevelImbalanceThreshold() const {
-         return getThreshold("price_level_imbalance");
+         return getThreshold("priceLevelImbalance");
      }
       
      // Generic threshold getter with default value

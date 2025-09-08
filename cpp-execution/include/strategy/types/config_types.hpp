@@ -31,6 +31,10 @@
         double imbalanceThreshold = 0.6;       // Threshold for imbalance detection
         double liquidityPressureThreshold = 0.7; // Threshold for liquidity pressure detection
         double orderFlowThreshold = 0.5;       // Threshold for order flow detection
+    // ADD THESE MISSING ONES:
+        double priceGroupingFactor = 0.0001;
+        int minSamplesForStability = 5;
+        double emaAlpha = 0.2;
      OrderBookAnalyzerConfig() = default;
  };
  

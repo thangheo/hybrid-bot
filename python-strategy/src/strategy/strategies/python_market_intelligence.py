@@ -61,7 +61,7 @@ class MarketIntelligenceProcessor:
                 'timestamp': intel.timestamp,
                 'bid_ask_spread': intel.bid_ask_spread,
                 'order_book_imbalance': intel.order_book_imbalance,
-                'depth_imbalance': intel.depth_imbalance,
+                'depthImbalance': intel.depthImbalance,
                 'liquidity_ratio': intel.liquidity_ratio,
                 'net_flow_5s': intel.net_flow_5s,
                 'net_flow_30s': intel.net_flow_30s,

@@ -367,7 +367,7 @@ HawkesEventType HawkesPredictor::mapSignalToEventType(const TradingSignal& signa
     const auto& metrics = signal.signalMetrics;
     
     // Check for specific metric indicators
-    if (metrics.find("volume_imbalance") != metrics.end()) {
+    if (metrics.find("volumeImbalance ") != metrics.end()) {
         return HawkesEventType::VOLUME_IMBALANCE;
     } else if (metrics.find("price_imbalance") != metrics.end()) {
         return HawkesEventType::PRICE_IMBALANCE;

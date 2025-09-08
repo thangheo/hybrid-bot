@@ -140,8 +140,8 @@
         "maxHistorySize": 500,
         "global_sensitivity": 0.75,
         "thresholds": {
-          "volume_imbalance": 0.35,
-          "price_level_imbalance": 0.25,
+          "volumeImbalance ": 0.35,
+          "priceLevelImbalance": 0.25,
           "liquidity_pressure": 0.4,
           "order_flow": 0.3
         }

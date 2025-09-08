@@ -6,799 +6,667 @@
  * @date May 6, 2025
  */
 
- #include "strategy/core_analysis/order_book_analyzer.hpp"
- #include "strategy/core_analysis/strategy_metrics.hpp" // Include for StrategyMetrics::updateEMA function
- #include <algorithm>
- #include <numeric>
- #include <cmath>
- #include <thread>
- namespace trading {
- namespace strategy {
- 
- OrderBookAnalyzer::OrderBookAnalyzer(const core::ExchangeId& exchangeId, const std::string& tradingPair,
-                                    const ParameterSet& params)
-     : exchangeId_(exchangeId),
-       trading_pair_(tradingPair),
-       depth_levels_(params.getInt("depth_levels", 10)),
-       price_grouping_factor_(params.getDouble("price_grouping_factor", 0.0001)),
-       min_samples_for_stability_(params.getInt("min_samples_for_stability", 5)),
-       last_update_time_(std::chrono::system_clock::now()) {
-     
-     // Initialize historical data containers with zeros
-     historical_mid_prices_.reserve(100);
-     historical_spreads_.reserve(100);
-     historical_volumes_.reserve(100);
-     historical_imbalances_.reserve(100);
- }
- // Add this to order_book_analyzer.cpp
+#include "strategy/core_analysis/order_book_analyzer.hpp"
+#include "strategy/core_analysis/strategy_metrics.hpp"
+#include <algorithm>
+#include <numeric>
+#include <cmath>
+#include <thread>
 
-// Add this constructor implementation to order_book_analyzer.cpp
+namespace trading {
+namespace strategy {
+
+// OrderBookAnalyzer Implementation
+
+OrderBookAnalyzer::OrderBookAnalyzer(const core::ExchangeId& exchangeId, 
+                                   const std::string& tradingPair,
+                                   const ParameterSet& params)
+    : exchangeId_(exchangeId)
+    , tradingPair_(tradingPair)
+    , depthLevels_(params.getInt("depth_levels", 10))
+    , priceGroupingFactor_(params.getDouble("price_grouping_factor", 0.0001))
+    , minSamplesForStability_(params.getInt("min_samples_for_stability", 5))
+    , emaAlpha_(params.getDouble("ema_alpha", 0.2))
+    , params_(params)
+    , lastUpdateTime_(std::chrono::system_clock::now()) {
+    
+    initializeHistoricalData(100);
+}
+
+OrderBookAnalyzer::OrderBookAnalyzer(const core::ExchangeId& exchangeId, 
+                                   const std::string& tradingPair,
+                                   int depthLevels, 
+                                   double priceGroupingFactor)
+    : exchangeId_(exchangeId)
+    , tradingPair_(tradingPair)
+    , depthLevels_(depthLevels)
+    , priceGroupingFactor_(priceGroupingFactor)
+    , minSamplesForStability_(5)
+    , emaAlpha_(0.2)
+    , lastUpdateTime_(std::chrono::system_clock::now()) {
+    
+    initializeHistoricalData(100);
+}
+
 OrderBookAnalyzer::OrderBookAnalyzer(const OrderBookAnalyzerConfig& config)
-    : exchangeId_(core::ExchangeId::fromString("BINANCE")), // TODO: Add exchangeId to config
-      trading_pair_(""), // TODO: Add tradingPair to config  
-      depth_levels_(config.depth),
-      price_grouping_factor_(0.0001), // Default value, or add to config
-      min_samples_for_stability_(5), // Default value, or add to config
-      ema_alpha_(0.2), // Default value, or add to config
-      last_update_time_(std::chrono::system_clock::now()) {
+    : exchangeId_(core::ExchangeId::binance()) // Default exchange, should be configurable
+    , tradingPair_("") // Should be part of config
+    , depthLevels_(config.depth)
+    , priceGroupingFactor_(config.priceGroupingFactor)
+    , minSamplesForStability_(config.minSamplesForStability)
+    , emaAlpha_(config.emaAlpha)
+    , lastUpdateTime_(std::chrono::system_clock::now()) {
     
-    // Initialize historical data containers with configured capacity
-    historical_mid_prices_.reserve(config.historySize);
-    historical_spreads_.reserve(config.historySize);
-    historical_volumes_.reserve(config.historySize);
-    historical_imbalances_.reserve(config.historySize);
+    initializeHistoricalData(config.historySize);
     
-    // Store config values that might be used in calculations
-    // You can add these as member variables if needed
-    // For now, they could be stored in params_
+    // Store config values in parameters
     params_.setParameter("priceWeightFactor", config.priceWeightFactor);
     params_.setParameter("volumeWeightFactor", config.volumeWeightFactor);
     params_.setParameter("imbalanceThreshold", config.imbalanceThreshold);
     params_.setParameter("liquidityPressureThreshold", config.liquidityPressureThreshold);
     params_.setParameter("orderFlowThreshold", config.orderFlowThreshold);
-    params_.setParameter("historySize", config.historySize);
+    params_.setParameter("historySize", static_cast<double>(config.historySize));
     
-    // Initialize current metrics with proper values
-    current_metrics_.exchangeId = exchangeId_;
-    current_metrics_.symbol = core::Symbol::fromString(trading_pair_);
+    // Initialize current metrics
+    currentMetrics_.exchangeId = exchangeId_;
+    currentMetrics_.symbol = core::Symbol::fromString(tradingPair_);
 }
 
-OrderBookAnalyzer::OrderBookAnalyzer(const core::ExchangeId& exchangeId, const std::string& tradingPair,
-                                    int depth_levels, double price_grouping_factor)
-     : exchangeId_(exchangeId),
-       trading_pair_(tradingPair),
-       depth_levels_(depth_levels),
-       price_grouping_factor_(price_grouping_factor),
-       min_samples_for_stability_(5),
-       last_update_time_(std::chrono::system_clock::now()) {
-     
-     // Initialize historical data containers with zeros
-     historical_mid_prices_.reserve(100);
-     historical_spreads_.reserve(100);
-     historical_volumes_.reserve(100);
-     historical_imbalances_.reserve(100);
- }
- 
- void OrderBookAnalyzer::processOrderBook(const data_ingestion::OrderBook& snapshot) {
-    OrderBookMetrics metrics_to_notify;  // Declare outside the lock
-    //check if the snapshot is valid
+void OrderBookAnalyzer::processOrderBook(const data_ingestion::OrderBook& snapshot) {
     if (!snapshot.isValid()) {
         return;
     }
-    {  // Scope the lock
+    
+    OrderBookMetrics metricsToNotify;
+    
+    {
         std::lock_guard<std::mutex> lock(mutex_);
         
-        // Get bids and asks limited to our depth level
-        auto bids = snapshot.getBids(depth_levels_);
-        auto asks = snapshot.getAsks(depth_levels_);
+        // Get price levels limited to our depth
+        auto bids = snapshot.getBids(depthLevels_);
+        auto asks = snapshot.getAsks(depthLevels_);
         
-        // Group price levels if grouping factor is non-zero
-        if (price_grouping_factor_ > 0.0) {
+        // Apply price grouping if configured
+        if (priceGroupingFactor_ > 0.0) {
             bids = groupPriceLevels(bids, true);
             asks = groupPriceLevels(asks, false);
         }
         
-        // Initialize metrics with snapshot metadata - USE ACTUAL DATA FROM ORDERBOOK
-        current_metrics_.exchangeId = snapshot.getExchangeId();
-        current_metrics_.symbol = snapshot.getSymbol();
-        current_metrics_.timestamp = snapshot.getTimestamp();
-        current_metrics_.sequenceNumber = snapshot.getSequenceNumber();
+        // Initialize metrics with snapshot metadata
+        currentMetrics_.exchangeId = snapshot.getExchangeId();
+        currentMetrics_.symbol = snapshot.getSymbol();
+        currentMetrics_.timestamp = snapshot.getTimestamp();
+        currentMetrics_.sequenceNumber = snapshot.getSequenceNumber();
         
-        // Calculate various metrics
+        // Calculate all metrics
         calculatePriceMetrics(bids, asks);
-        calculateVolumeMetrics(bids, asks, depth_levels_);
+        calculateVolumeMetrics(bids, asks, depthLevels_);
         calculateLevelMetrics(bids, asks);
         calculateImbalanceMetrics(bids, asks);
         
-        // Update time series data
+        // Update time series and derived metrics
         updateTimeSeries();
-        
-        // Calculate derived metrics based on time series
         calculateDerivedMetrics();
-        
-        // Calculate time-based metrics
         calculateTimeBasedMetrics();
         
-        // Store snapshot in history (limit to 100 items)
-        metrics_history_.push_back(current_metrics_);
-        if (metrics_history_.size() > 100) {
-            metrics_history_.pop_front();
+        // Store in history with size limit
+        metricsHistory_.push_back(currentMetrics_);
+        if (metricsHistory_.size() > 100) {
+            metricsHistory_.pop_front();
         }
         
-        // Update timestamps
-        last_update_time_ = snapshot.getTimestamp();
-        
-        // Copy metrics for notification
-        metrics_to_notify = current_metrics_;
-        
-    }  // Lock is released here
+        lastUpdateTime_ = snapshot.getTimestamp();
+        metricsToNotify = currentMetrics_;
+    }
     
-    // Notify callbacks AFTER releasing the lock
-    common::EventBus::getInstance().publish(events::MetricsUpdatedEvent{current_metrics_});
+    // Publish event outside of lock to prevent deadlocks
+    common::EventBus::getInstance().publish(events::MetricsUpdatedEvent{metricsToNotify});
 }
 
 OrderBookMetrics OrderBookAnalyzer::getMetrics() const {
-     std::lock_guard<std::mutex> lock(mutex_);
-     return current_metrics_;
- }
- 
- double OrderBookAnalyzer::getMetric(const std::string& metric_name, int depth) const {
-     std::lock_guard<std::mutex> lock(mutex_);
-     
-     // Handle depth-specific metrics
-     if (metric_name == "bid_volume" && depth > 0 && 
-         depth <= static_cast<int>(current_metrics_.bid_volumes_by_level.size())) {
-         return current_metrics_.bid_volumes_by_level[depth - 1];
-     }
-     
-     if (metric_name == "ask_volume" && depth > 0 && 
-         depth <= static_cast<int>(current_metrics_.ask_volumes_by_level.size())) {
-         return current_metrics_.ask_volumes_by_level[depth - 1];
-     }
-     
-     if (metric_name == "cumulative_bid_volume" && depth > 0 && 
-         depth <= static_cast<int>(current_metrics_.cumulative_bid_volumes.size())) {
-         return current_metrics_.cumulative_bid_volumes[depth - 1];
-     }
-     
-     if (metric_name == "cumulative_ask_volume" && depth > 0 && 
-         depth <= static_cast<int>(current_metrics_.cumulative_ask_volumes.size())) {
-         return current_metrics_.cumulative_ask_volumes[depth - 1];
-     }
-     
-     // For non-depth metrics, use the getMetric method from OrderBookMetrics
-     // Fix: Resolve ambiguous function call by specifying default value
-     return current_metrics_.getMetric(metric_name, 0.0);
- }
- 
- void OrderBookAnalyzer::registerMetricsCallback(MetricsCallback callback) {
-     std::lock_guard<std::mutex> lock(mutex_);
-     metrics_callbacks_.push_back(callback);
- }
- 
- bool OrderBookAnalyzer::hasStableMetrics() const {
-     std::lock_guard<std::mutex> lock(mutex_);
-     return metrics_history_.size() >= static_cast<size_t>(min_samples_for_stability_);
- }
- 
- void OrderBookAnalyzer::reset() {
-     std::lock_guard<std::mutex> lock(mutex_);
-     
-     // Clear historical data
-     metrics_history_.clear();
-     historical_mid_prices_.clear();
-     historical_spreads_.clear();
-     historical_volumes_.clear();
-     historical_imbalances_.clear();
-     
-     // Reset EMAs
-     ema_mid_price_ = 0.0;
-     ema_spread_ = 0.0;
-     ema_volume_imbalance_ = 0.0;
-     
-     // Reset current metrics to defaults
-     current_metrics_ = OrderBookMetrics();
-     current_metrics_.exchangeId = exchangeId_;
-     // Using factory method to create Symbol
-     current_metrics_.symbol = core::Symbol::fromString(trading_pair_);
-     
-     // Reset timestamps
-     last_update_time_ = std::chrono::system_clock::now();
- }
- 
- void OrderBookAnalyzer::setDepthLevels(int depth_levels) {
-     std::lock_guard<std::mutex> lock(mutex_);
-     depth_levels_ = depth_levels;
- }
- 
- void OrderBookAnalyzer::setPriceGroupingFactor(double factor) {
-     std::lock_guard<std::mutex> lock(mutex_);
-     price_grouping_factor_ = factor;
- }
- 
- void OrderBookAnalyzer::calculatePriceMetrics(
-     const std::vector<data_ingestion::PriceLevel>& bids,
-     const std::vector<data_ingestion::PriceLevel>& asks) {
-     
-     // Need at least one bid and one ask
-     if (bids.empty() || asks.empty()) {
-         return;
-     }
-     
-     // Best bid and ask are the first elements (assuming sorted)
-     double best_bid = bids[0].price;
-     double best_ask = asks[0].price;
-     
-     // Calculate mid price
-     current_metrics_.mid_price = (best_bid + best_ask) / 2.0;
-     
-     // Calculate spread
-     current_metrics_.spread = best_ask - best_bid;
-     
-     // Calculate spread percent
-     if (current_metrics_.mid_price > 0) {
-         current_metrics_.spread_percent = (current_metrics_.spread / current_metrics_.mid_price) * 100.0;
-     }
-     
-     // Update EMA of mid price if we have a previous value
-     if (ema_mid_price_ == 0.0) {
-         ema_mid_price_ = current_metrics_.mid_price;
-     } else {
-         // Using the StrategyMetrics::updateEMA function from strategy namespace
-         ema_mid_price_ = StrategyMetrics::updateEMA(
-             ema_mid_price_, current_metrics_.mid_price, ema_alpha_);
-     }
-     
-     // Update EMA of spread if we have a previous value
-     if (ema_spread_ == 0.0) {
-         ema_spread_ = current_metrics_.spread;
-     } else {
-         // Using the StrategyMetrics::updateEMA function from strategy namespace
-         ema_spread_ = StrategyMetrics::updateEMA(
-             ema_spread_, current_metrics_.spread, ema_alpha_);
-     }
-    current_metrics_.metrics["mid_price"] = current_metrics_.mid_price;
-    current_metrics_.metrics["spread"] = current_metrics_.spread;
-    current_metrics_.metrics["spread_percent"] = current_metrics_.spread_percent;
-    current_metrics_.metrics["best_bid"] = best_bid;
-    current_metrics_.metrics["best_ask"] = best_ask;
+    std::lock_guard<std::mutex> lock(mutex_);
+    return currentMetrics_;
+}
+
+double OrderBookAnalyzer::getMetric(const std::string& metricName, int depth) const {
+    std::lock_guard<std::mutex> lock(mutex_);
     
-    // Store EMA values for historical analysis
-    current_metrics_.metrics["ema_mid_price"] = ema_mid_price_;
-    current_metrics_.metrics["ema_spread"] = ema_spread_;
-    
-    // For abnormal spread detection
-    current_metrics_.metrics["average_spread_percent"] = ema_spread_ / current_metrics_.mid_price * 100.0;
- }
- 
- void OrderBookAnalyzer::calculateVolumeMetrics(
-     const std::vector<data_ingestion::PriceLevel>& bids,
-     const std::vector<data_ingestion::PriceLevel>& asks,
-     int depth) {
-     
-     // Resize level-specific arrays
-     current_metrics_.bid_volumes_by_level.resize(depth, 0.0);
-     current_metrics_.ask_volumes_by_level.resize(depth, 0.0);
-     current_metrics_.cumulative_bid_volumes.resize(depth, 0.0);
-     current_metrics_.cumulative_ask_volumes.resize(depth, 0.0);
-     
-     // Calculate total volumes and level-specific volumes
-     current_metrics_.total_bid_volume = 0.0;
-     current_metrics_.total_ask_volume = 0.0;
-     
-     // Process bid levels
-     for (size_t i = 0; i < bids.size() && i < static_cast<size_t>(depth); ++i) {
-         double level_volume = bids[i].quantity;
-         current_metrics_.bid_volumes_by_level[i] = level_volume;
-         current_metrics_.total_bid_volume += level_volume;
-         
-         // Calculate cumulative volume
-         if (i == 0) {
-             current_metrics_.cumulative_bid_volumes[i] = level_volume;
-         } else {
-             current_metrics_.cumulative_bid_volumes[i] = 
-                 current_metrics_.cumulative_bid_volumes[i-1] + level_volume;
-         }
-     }
-     
-     // Process ask levels
-     for (size_t i = 0; i < asks.size() && i < static_cast<size_t>(depth); ++i) {
-         double level_volume = asks[i].quantity;
-         current_metrics_.ask_volumes_by_level[i] = level_volume;
-         current_metrics_.total_ask_volume += level_volume;
-         
-         // Calculate cumulative volume
-         if (i == 0) {
-             current_metrics_.cumulative_ask_volumes[i] = level_volume;
-         } else {
-             current_metrics_.cumulative_ask_volumes[i] = 
-                 current_metrics_.cumulative_ask_volumes[i-1] + level_volume;
-         }
-     }
-     
-     // Calculate bid/ask volume ratio (avoid division by zero)
-     if (current_metrics_.total_ask_volume > 0) {
-         current_metrics_.bid_ask_volume_ratio = 
-             current_metrics_.total_bid_volume / current_metrics_.total_ask_volume;
-     } else {
-         current_metrics_.bid_ask_volume_ratio = 
-             current_metrics_.total_bid_volume > 0 ? 10.0 : 1.0;
-     }
-         // Store in the metrics map for imbalance detection
-    current_metrics_.metrics["bid_volume"] = current_metrics_.total_bid_volume;
-    current_metrics_.metrics["ask_volume"] = current_metrics_.total_ask_volume;
-    current_metrics_.metrics["bid_level_count"] = static_cast<double>(bids.size());
-    current_metrics_.metrics["ask_level_count"] = static_cast<double>(asks.size());
-    current_metrics_.metrics["mid_price"] = current_metrics_.mid_price;
-    current_metrics_.metrics["spread_percent"] = current_metrics_.spread_percent;
- }
- 
- void OrderBookAnalyzer::calculateLevelMetrics(
-     const std::vector<data_ingestion::PriceLevel>& bids,
-     const std::vector<data_ingestion::PriceLevel>& asks) {
-     
-     // Calculate price level densities
-     if (!bids.empty() && bids.size() > 1) {
-         double price_range = bids.front().price - bids.back().price;
-         if (price_range > 0) {
-             current_metrics_.bid_density = static_cast<double>(bids.size()) / price_range;
-         }
-     }
-     
-     if (!asks.empty() && asks.size() > 1) {
-         double price_range = asks.back().price - asks.front().price;
-         if (price_range > 0) {
-             current_metrics_.ask_density = static_cast<double>(asks.size()) / price_range;
-         }
-     }
-     
-     // Calculate price level imbalance
-     if (current_metrics_.ask_density > 0) {
-         current_metrics_.price_level_imbalance = 
-             current_metrics_.bid_density / current_metrics_.ask_density - 1.0;
-     }
-    current_metrics_.metrics["bid_density"] = current_metrics_.bid_density;
-    current_metrics_.metrics["ask_density"] = current_metrics_.ask_density;
- }
- 
- void OrderBookAnalyzer::calculateImbalanceMetrics(
-     const std::vector<data_ingestion::PriceLevel>& bids,
-     const std::vector<data_ingestion::PriceLevel>& asks) {
-     
-     // Calculate simple volume imbalance
-     if (current_metrics_.total_bid_volume + current_metrics_.total_ask_volume > 0) {
-         current_metrics_.volume_imbalance = 
-             (current_metrics_.total_bid_volume - current_metrics_.total_ask_volume) / 
-             (current_metrics_.total_bid_volume + current_metrics_.total_ask_volume);
-     }
-     
-     // Calculate weighted volume imbalance
-     auto linear_weight = [](int level) { return 1.0 / (level + 1); };
-     current_metrics_.weighted_volume_imbalance = 
-         calculateWeightedImbalance(bids, asks, linear_weight);
-     
-     // Calculate depth imbalance
-     double bid_depth_score = 0.0;
-     double ask_depth_score = 0.0;
-     
-     if (!bids.empty() && !asks.empty()) {
-         // Use price of the best bid/ask as reference
-         double ref_price = (bids[0].price + asks[0].price) / 2.0;
-         
-         for (size_t i = 0; i < bids.size() && i < 5; ++i) {
-             double price_distance = (ref_price - bids[i].price) / ref_price;
-             bid_depth_score += bids[i].quantity / (1.0 + 10.0 * price_distance);
-         }
-         
-         for (size_t i = 0; i < asks.size() && i < 5; ++i) {
-             double price_distance = (asks[i].price - ref_price) / ref_price;
-             ask_depth_score += asks[i].quantity / (1.0 + 10.0 * price_distance);
-         }
-         
-         if (bid_depth_score + ask_depth_score > 0) {
-             current_metrics_.depth_imbalance = 
-                 (bid_depth_score - ask_depth_score) / (bid_depth_score + ask_depth_score);
-         }
-     }
-     
-     // Calculate pressure imbalance
-     current_metrics_.pressure_imbalance = 
-         0.4 * current_metrics_.volume_imbalance + 
-         0.4 * current_metrics_.weighted_volume_imbalance + 
-         0.2 * current_metrics_.depth_imbalance;
-     
-     // Update EMA of volume imbalance
-     if (ema_volume_imbalance_ == 0.0) {
-         ema_volume_imbalance_ = current_metrics_.volume_imbalance;
-     } else {
-         // Using the StrategyMetrics::updateEMA function from strategy namespace
-         ema_volume_imbalance_ = StrategyMetrics::updateEMA(
-             ema_volume_imbalance_, current_metrics_.volume_imbalance, ema_alpha_);
-     }
-    current_metrics_.metrics["volume_imbalance"] = current_metrics_.volume_imbalance;
-    current_metrics_.metrics["volatility"] = current_metrics_.volatility_expectation;
- }
- 
- void OrderBookAnalyzer::updateTimeSeries() {
-     // Keep time series limited to a reasonable size
-     const size_t MAX_HISTORY = 100;
-     
-     historical_mid_prices_.push_back(current_metrics_.mid_price);
-     historical_spreads_.push_back(current_metrics_.spread);
-     historical_volumes_.push_back(current_metrics_.total_bid_volume + current_metrics_.total_ask_volume);
-     historical_imbalances_.push_back(current_metrics_.volume_imbalance);
-     
-     // Trim if necessary
-     if (historical_mid_prices_.size() > MAX_HISTORY) {
-         historical_mid_prices_.erase(historical_mid_prices_.begin());
-     }
-     
-     if (historical_spreads_.size() > MAX_HISTORY) {
-         historical_spreads_.erase(historical_spreads_.begin());
-     }
-     
-     if (historical_volumes_.size() > MAX_HISTORY) {
-         historical_volumes_.erase(historical_volumes_.begin());
-     }
-     
-     if (historical_imbalances_.size() > MAX_HISTORY) {
-         historical_imbalances_.erase(historical_imbalances_.begin());
-     }
-     
-     // Update time series in the metrics struct for external use
-     current_metrics_.time_series_metrics["mid_price"] = historical_mid_prices_;
-     current_metrics_.time_series_metrics["spread"] = historical_spreads_;
-     current_metrics_.time_series_metrics["volume"] = historical_volumes_;
-     current_metrics_.time_series_metrics["imbalance"] = historical_imbalances_;
- }
- 
- void OrderBookAnalyzer::calculateDerivedMetrics() {
-     current_metrics_.market_directional_coefficient = calculateDirectionalCoefficient();
-     current_metrics_.volatility_expectation = calculateVolatilityExpectation();
-     
-     // Liquidity profile score (a composite measure of overall liquidity)
-     double bid_liquidity = current_metrics_.total_bid_volume * (1.0 + current_metrics_.bid_density);
-     double ask_liquidity = current_metrics_.total_ask_volume * (1.0 + current_metrics_.ask_density);
-     current_metrics_.liquidity_profile_score = (bid_liquidity + ask_liquidity) / 2.0;
- }
- 
- void OrderBookAnalyzer::calculateTimeBasedMetrics() {
-     // Need at least 2 data points to calculate velocities
-     if (metrics_history_.size() < 2) {
-         return;
-     }
-     
-     const auto& prev_metrics = metrics_history_.back();
-     
-     // Calculate time difference in seconds
-     double time_diff = std::chrono::duration<double>(
-         current_metrics_.timestamp - prev_metrics.timestamp).count();
-     
-     if (time_diff > 0) {
-         // Price velocity (rate of change of mid price)
-         current_metrics_.price_velocity = 
-             (current_metrics_.mid_price - prev_metrics.mid_price) / time_diff;
-         
-         // Spread velocity (rate of change of spread)
-         current_metrics_.spread_velocity = 
-             (current_metrics_.spread - prev_metrics.spread) / time_diff;
-         
-         // Volume velocity (rate of change of total volume)
-         double current_total_volume = current_metrics_.total_bid_volume + current_metrics_.total_ask_volume;
-         double prev_total_volume = prev_metrics.total_bid_volume + prev_metrics.total_ask_volume;
-         current_metrics_.volume_velocity = 
-             (current_total_volume - prev_total_volume) / time_diff;
-     }
- }
- 
- std::vector<data_ingestion::PriceLevel> OrderBookAnalyzer::groupPriceLevels(
-     const std::vector<data_ingestion::PriceLevel>& levels,
-     bool is_bids) const {
-     
-     if (levels.empty() || price_grouping_factor_ <= 0.0) {
-         return levels;
-     }
-     
-     std::vector<data_ingestion::PriceLevel> grouped_levels;
-     std::map<double, double> price_groups;
-     
-     for (const auto& level : levels) {
-         // Round price to the nearest group
-         double price = level.price;
-         double group_price;
-         
-         if (is_bids) {
-             // For bids, round down to ensure we don't overestimate
-             group_price = std::floor(price / price_grouping_factor_) * price_grouping_factor_;
-         } else {
-             // For asks, round up to ensure we don't underestimate
-             group_price = std::ceil(price / price_grouping_factor_) * price_grouping_factor_;
-         }
-         
-         // Accumulate quantities at the same price level
-         price_groups[group_price] += level.quantity;
-     }
-     
-     // Convert the map back to a vector
-     for (const auto& group : price_groups) {
-         grouped_levels.emplace_back(group.first, group.second);
-     }
-     
-     // Sort the levels appropriately
-     if (is_bids) {
-         // Bids in descending order by price
-         std::sort(grouped_levels.begin(), grouped_levels.end(), 
-             [](const data_ingestion::PriceLevel& a, const data_ingestion::PriceLevel& b) {
-                 return a.price > b.price;
-             });
-     } else {
-         // Asks in ascending order by price
-         std::sort(grouped_levels.begin(), grouped_levels.end(), 
-             [](const data_ingestion::PriceLevel& a, const data_ingestion::PriceLevel& b) {
-                 return a.price < b.price;
-             });
-     }
-     
-     return grouped_levels;
- }
- 
- double OrderBookAnalyzer::calculateWeightedImbalance(
-     const std::vector<data_ingestion::PriceLevel>& bids,
-     const std::vector<data_ingestion::PriceLevel>& asks,
-     const std::function<double(int)>& weighting_function) const {
-     
-     double weighted_bid_volume = 0.0;
-     double weighted_ask_volume = 0.0;
-     
-     // Process bid levels with weights
-     for (size_t i = 0; i < bids.size(); ++i) {
-         double weight = weighting_function(static_cast<int>(i));
-         weighted_bid_volume += bids[i].quantity * weight;
-     }
-     
-     // Process ask levels with weights
-     for (size_t i = 0; i < asks.size(); ++i) {
-         double weight = weighting_function(static_cast<int>(i));
-         weighted_ask_volume += asks[i].quantity * weight;
-     }
-     
-     // Calculate weighted imbalance
-     if (weighted_bid_volume + weighted_ask_volume > 0) {
-         return (weighted_bid_volume - weighted_ask_volume) / 
-                (weighted_bid_volume + weighted_ask_volume);
-     }
-     
-     return 0.0;
- }
- 
- std::vector<int> OrderBookAnalyzer::detectLiquidityWalls(
-     const std::vector<data_ingestion::PriceLevel>& levels,
-     double threshold) const {
-     
-     if (levels.size() < 3) {
-         return {};
-     }
-     
-     std::vector<int> wall_indices;
-     
-     // Calculate average volume
-     double avg_volume = 0.0;
-     for (const auto& level : levels) {
-         avg_volume += level.quantity;
-     }
-     avg_volume /= levels.size();
-     
-     // Detect levels with volume above threshold * average
-     for (size_t i = 0; i < levels.size(); ++i) {
-         if (levels[i].quantity > threshold * avg_volume) {
-             wall_indices.push_back(static_cast<int>(i));
-         }
-     }
-     
-     return wall_indices;
- }
- 
- double OrderBookAnalyzer::calculateDirectionalCoefficient() const {
-     // Need at least a few data points for meaningful analysis
-     if (historical_mid_prices_.size() < 5 || historical_imbalances_.size() < 5) {
-         return 0.0;
-     }
-     
-     // Calculate recent price trend
-     auto recent_prices = std::vector<double>(
-         historical_mid_prices_.end() - std::min(historical_mid_prices_.size(), size_t(5)),
-         historical_mid_prices_.end());
-     
-     double price_trend = 0.0;
-     for (size_t i = 1; i < recent_prices.size(); ++i) {
-         price_trend += recent_prices[i] - recent_prices[i-1];
-     }
-     price_trend = price_trend > 0 ? 1.0 : (price_trend < 0 ? -1.0 : 0.0);
-     
-     // Calculate recent imbalance average
-     auto recent_imbalances = std::vector<double>(
-         historical_imbalances_.end() - std::min(historical_imbalances_.size(), size_t(5)),
-         historical_imbalances_.end());
-     
-     double avg_imbalance = std::accumulate(
-         recent_imbalances.begin(), recent_imbalances.end(), 0.0) / recent_imbalances.size();
-     
-     // Combine price trend and imbalance
-     double coefficient = 0.7 * avg_imbalance + 0.3 * price_trend;
-     
-     // Ensure result is in [-1, 1] range
-     return std::max(-1.0, std::min(1.0, coefficient));
- }
- 
- double OrderBookAnalyzer::calculateVolatilityExpectation() const {
-     // Factors affecting expected volatility:
-     // 1. Spread (wider spread = higher volatility)
-     // 2. Volume imbalance (higher imbalance = higher volatility)
-     // 3. Depth profile (shallow depth = higher volatility)
-     // 4. Recent price movement (higher price velocity = higher volatility)
-     
-     double spread_factor = current_metrics_.spread_percent / 0.1; // Normalize to typical spread
-     double imbalance_factor = std::abs(current_metrics_.volume_imbalance) * 2.0;
-     double depth_factor = 0.0;
-     
-     // Calculate depth factor based on volume in first 3 levels
-     double top_bid_volume = 0.0;
-     double top_ask_volume = 0.0;
-     
-     if (current_metrics_.bid_volumes_by_level.size() >= 3) {
-         for (int i = 0; i < 3; ++i) {
-             top_bid_volume += current_metrics_.bid_volumes_by_level[i];
-         }
-     }
-     
-     if (current_metrics_.ask_volumes_by_level.size() >= 3) {
-         for (int i = 0; i < 3; ++i) {
-             top_ask_volume += current_metrics_.ask_volumes_by_level[i];
-         }
-     }
-     
-     // If we have depth data, calculate depth factor
-     if (top_bid_volume > 0 && top_ask_volume > 0) {
-         double avg_top_volume = (top_bid_volume + top_ask_volume) / 2.0;
-         double mid_price = current_metrics_.mid_price;
-         
-         if (mid_price > 0 && avg_top_volume > 0) {
-             // Normalize by price to make it comparable across assets
-             double normalized_depth = avg_top_volume / mid_price;
-             
-             // Invert so that lower depth = higher volatility factor
-             depth_factor = 1.0 / (normalized_depth + 0.1);
-         }
-     }
-     
-     // Velocity factor based on recent price velocity
-     double velocity_factor = std::abs(current_metrics_.price_velocity) * 10.0;
-     
-     // Combine factors with weights
-     double volatility_expectation = 
-         0.3 * spread_factor + 
-         0.3 * imbalance_factor + 
-         0.2 * depth_factor + 
-         0.2 * velocity_factor;
-     
-     // Normalize to a reasonable range (0-1, where 0.5 is average expected volatility)
-     return std::max(0.0, std::min(1.0, volatility_expectation / 2.0));
- }
- void OrderBookAnalyzer::notifyMetricsUpdated() {
-    // Copy callbacks and metrics
-    std::vector<MetricsCallback> callbacks;
-    OrderBookMetrics metrics_copy;
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        callbacks = metrics_callbacks_;
-        metrics_copy = current_metrics_;
+    // Handle depth-specific metrics
+    if (metricName == "bid_volume" && depth > 0 && 
+        depth <= static_cast<int>(currentMetrics_.bidVolumesByLevel.size())) {
+        return currentMetrics_.bidVolumesByLevel[depth - 1];
     }
     
-    // Execute callbacks asynchronously to break any deadlock cycle
+    if (metricName == "ask_volume" && depth > 0 && 
+        depth <= static_cast<int>(currentMetrics_.askVolumesByLevel.size())) {
+        return currentMetrics_.askVolumesByLevel[depth - 1];
+    }
+    
+    if (metricName == "cumulative_bid_volume" && depth > 0 && 
+        depth <= static_cast<int>(currentMetrics_.cumulativeBidVolumes.size())) {
+        return currentMetrics_.cumulativeBidVolumes[depth - 1];
+    }
+    
+    if (metricName == "cumulative_ask_volume" && depth > 0 && 
+        depth <= static_cast<int>(currentMetrics_.cumulativeAskVolumes.size())) {
+        return currentMetrics_.cumulativeAskVolumes[depth - 1];
+    }
+    
+    // For non-depth metrics, use the getMetric method from OrderBookMetrics
+    return currentMetrics_.getMetric(metricName, 0.0);
+}
+
+void OrderBookAnalyzer::registerMetricsCallback(MetricsCallback callback) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    metricsCallbacks_.push_back(std::move(callback));
+}
+
+bool OrderBookAnalyzer::hasStableMetrics() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return metricsHistory_.size() >= static_cast<size_t>(minSamplesForStability_);
+}
+
+void OrderBookAnalyzer::reset() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    
+    // Clear all historical data
+    metricsHistory_.clear();
+    historicalMidPrices_.clear();
+    historicalSpreads_.clear();
+    historicalVolumes_.clear();
+    historicalImbalances_.clear();
+    priceHistory_.clear();
+    historicalTimestamps_.clear();
+    
+    // Reset EMAs
+    emaMidPrice_ = 0.0;
+    emaSpread_ = 0.0;
+    emaVolumeImbalance_ = 0.0;
+    
+    // Reset current metrics
+    currentMetrics_ = OrderBookMetrics{};
+    currentMetrics_.exchangeId = exchangeId_;
+    currentMetrics_.symbol = core::Symbol::fromString(tradingPair_);
+    
+    lastUpdateTime_ = std::chrono::system_clock::now();
+}
+
+void OrderBookAnalyzer::updateParameters(const ParameterSet& params) {
+    OrderBookMetrics metricsCopy;
+    std::vector<MetricsCallback> callbacks;
+    
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        params_ = params;
+        
+        // Update configuration parameters
+        depthLevels_ = params_.getInt("depth_levels", depthLevels_);
+        priceGroupingFactor_ = params_.getDouble("price_grouping_factor", priceGroupingFactor_);
+        minSamplesForStability_ = params_.getInt("min_samples_for_stability", minSamplesForStability_);
+        emaAlpha_ = params_.getDouble("ema_alpha", emaAlpha_);
+        
+        metricsCopy = currentMetrics_;
+        callbacks = metricsCallbacks_;
+    }
+    
+    // Notify callbacks outside of lock
     for (const auto& callback : callbacks) {
-        std::thread([callback, metrics_copy]() {
+        try {
+            callback(metricsCopy);
+        } catch (const std::exception& e) {
+            // Log exception but continue
+        }
+    }
+}
+
+void OrderBookAnalyzer::calculatePriceMetrics(
+    const std::vector<data_ingestion::PriceLevel>& bids,
+    const std::vector<data_ingestion::PriceLevel>& asks) {
+    
+    if (bids.empty() || asks.empty()) {
+        return;
+    }
+    
+    const double bestBid = bids[0].price;
+    const double bestAsk = asks[0].price;
+    
+    // Calculate basic price metrics
+    currentMetrics_.mid_price = (bestBid + bestAsk) / 2.0;
+    currentMetrics_.spread = bestAsk - bestBid;
+    
+    if (currentMetrics_.mid_price > 0) {
+        // currentMetrics_. = (currentMetrics_.spread / currentMetrics_.mid_price) * 100.0;
+        currentMetrics_.spreadPercent = (currentMetrics_.spread / currentMetrics_.mid_price) * 100.0;
+    }
+    
+    // Update EMAs
+    if (emaMidPrice_ == 0.0) {
+        emaMidPrice_ = currentMetrics_.mid_price;
+    } else {
+        emaMidPrice_ = StrategyMetrics::updateEMA(emaMidPrice_, currentMetrics_.mid_price, emaAlpha_);
+    }
+    
+    if (emaSpread_ == 0.0) {
+        emaSpread_ = currentMetrics_.spread;
+    } else {
+        emaSpread_ = StrategyMetrics::updateEMA(emaSpread_, currentMetrics_.spread, emaAlpha_);
+    }
+    
+    // Store in metrics map for easy access
+    currentMetrics_.metrics["mid_price"] = currentMetrics_.mid_price;
+    currentMetrics_.metrics["spread"] = currentMetrics_.spread;
+    currentMetrics_.metrics["spreadPercent"] = currentMetrics_.spreadPercent;
+    currentMetrics_.metrics["best_bid"] = bestBid;
+    currentMetrics_.metrics["best_ask"] = bestAsk;
+    currentMetrics_.metrics["ema_mid_price"] = emaMidPrice_;
+    currentMetrics_.metrics["ema_spread"] = emaSpread_;
+    currentMetrics_.metrics["average_spread_percent"] = emaSpread_ / currentMetrics_.mid_price * 100.0;
+}
+
+void OrderBookAnalyzer::calculateVolumeMetrics(
+    const std::vector<data_ingestion::PriceLevel>& bids,
+    const std::vector<data_ingestion::PriceLevel>& asks,
+    int depth) {
+    
+    // Resize level-specific arrays
+    currentMetrics_.bidVolumesByLevel.resize(depth, 0.0);
+    currentMetrics_.askVolumesByLevel.resize(depth, 0.0);
+    currentMetrics_.cumulativeBidVolumes.resize(depth, 0.0);
+    currentMetrics_.cumulativeAskVolumes.resize(depth, 0.0);
+    
+    // Calculate bid volumes
+    currentMetrics_.totalBidVolume = 0.0;
+    for (size_t i = 0; i < bids.size() && i < static_cast<size_t>(depth); ++i) {
+        const double levelVolume = bids[i].quantity;
+        currentMetrics_.bidVolumesByLevel[i] = levelVolume;
+        currentMetrics_.totalBidVolume += levelVolume;
+        
+        currentMetrics_.cumulativeBidVolumes[i] = 
+            (i == 0) ? levelVolume : currentMetrics_.cumulativeBidVolumes[i-1] + levelVolume;
+    }
+    
+    // Calculate ask volumes
+    currentMetrics_.totalAskVolume = 0.0;
+    for (size_t i = 0; i < asks.size() && i < static_cast<size_t>(depth); ++i) {
+        const double levelVolume = asks[i].quantity;
+        currentMetrics_.askVolumesByLevel[i] = levelVolume;
+        currentMetrics_.totalAskVolume += levelVolume;
+        
+        currentMetrics_.cumulativeAskVolumes[i] = 
+            (i == 0) ? levelVolume : currentMetrics_.cumulativeAskVolumes[i-1] + levelVolume;
+    }
+    
+    // Calculate bid/ask ratio
+    if (currentMetrics_.totalAskVolume > 0) {
+        currentMetrics_.bidAskVolumeRatio = currentMetrics_.totalBidVolume / currentMetrics_.totalAskVolume;
+    } else {
+        currentMetrics_.bidAskVolumeRatio = currentMetrics_.totalBidVolume > 0 ? 10.0 : 1.0;
+    }
+    
+    // Store in metrics map
+    currentMetrics_.metrics["bid_volume"] = currentMetrics_.totalBidVolume;
+    currentMetrics_.metrics["ask_volume"] = currentMetrics_.totalAskVolume;
+    currentMetrics_.metrics["bid_level_count"] = static_cast<double>(bids.size());
+    currentMetrics_.metrics["ask_level_count"] = static_cast<double>(asks.size());
+}
+
+void OrderBookAnalyzer::calculateLevelMetrics(
+    const std::vector<data_ingestion::PriceLevel>& bids,
+    const std::vector<data_ingestion::PriceLevel>& asks) {
+    
+    // Calculate price level densities
+    if (bids.size() > 1) {
+        const double priceRange = bids.front().price - bids.back().price;
+        if (priceRange > 0) {
+            currentMetrics_.bidDensity = static_cast<double>(bids.size()) / priceRange;
+        }
+    }
+    
+    if (asks.size() > 1) {
+        const double priceRange = asks.back().price - asks.front().price;
+        if (priceRange > 0) {
+            currentMetrics_.askDensity = static_cast<double>(asks.size()) / priceRange;
+        }
+    }
+    
+    // Calculate price level imbalance
+    if (currentMetrics_.askDensity > 0) {
+        currentMetrics_.priceLevelImbalance = 
+            currentMetrics_.bidDensity / currentMetrics_.askDensity - 1.0;
+    }
+    
+    currentMetrics_.metrics["bidDensity"] = currentMetrics_.bidDensity;
+    currentMetrics_.metrics["askDensity"] = currentMetrics_.askDensity;
+}
+
+void OrderBookAnalyzer::calculateImbalanceMetrics(
+    const std::vector<data_ingestion::PriceLevel>& bids,
+    const std::vector<data_ingestion::PriceLevel>& asks) {
+    
+    // Simple volume imbalance
+    const double totalVolume = currentMetrics_.totalBidVolume + currentMetrics_.totalAskVolume;
+    if (totalVolume > 0) {
+        currentMetrics_.volumeImbalance = 
+            (currentMetrics_.totalBidVolume - currentMetrics_.totalAskVolume) / totalVolume;
+    }
+    
+    // Weighted volume imbalance
+    auto linearWeight = [](int level) { return 1.0 / (level + 1); };
+    currentMetrics_.weightedVolumeImbalance = calculateWeightedImbalance(bids, asks, linearWeight);
+    
+    // Depth imbalance calculation
+    double bidDepthScore = 0.0;
+    double askDepthScore = 0.0;
+    
+    if (!bids.empty() && !asks.empty()) {
+        const double refPrice = (bids[0].price + asks[0].price) / 2.0;
+        
+        for (size_t i = 0; i < std::min(bids.size(), size_t(5)); ++i) {
+            const double priceDistance = (refPrice - bids[i].price) / refPrice;
+            bidDepthScore += bids[i].quantity / (1.0 + 10.0 * priceDistance);
+        }
+        
+        for (size_t i = 0; i < std::min(asks.size(), size_t(5)); ++i) {
+            const double priceDistance = (asks[i].price - refPrice) / refPrice;
+            askDepthScore += asks[i].quantity / (1.0 + 10.0 * priceDistance);
+        }
+        
+        const double totalDepth = bidDepthScore + askDepthScore;
+        if (totalDepth > 0) {
+            currentMetrics_.depthImbalance = (bidDepthScore - askDepthScore) / totalDepth;
+        }
+    }
+    
+    // Composite pressure imbalance
+    currentMetrics_.pressureImbalance = 
+        0.4 * currentMetrics_.volumeImbalance + 
+        0.4 * currentMetrics_.weightedVolumeImbalance + 
+        0.2 * currentMetrics_.depthImbalance;
+    
+    // Update EMA of volume imbalance
+    if (emaVolumeImbalance_ == 0.0) {
+        emaVolumeImbalance_ = currentMetrics_.volumeImbalance;
+    } else {
+        emaVolumeImbalance_ = StrategyMetrics::updateEMA(
+            emaVolumeImbalance_, currentMetrics_.volumeImbalance, emaAlpha_);
+    }
+    
+    currentMetrics_.metrics["volumeImbalance "] = currentMetrics_.volumeImbalance;
+    currentMetrics_.metrics["volatility"] = currentMetrics_.volatilityExpectation;
+}
+
+void OrderBookAnalyzer::updateTimeSeries() {
+    constexpr size_t MAX_HISTORY = 100;
+    
+    // Add new data points
+    historicalMidPrices_.push_back(currentMetrics_.mid_price);
+    historicalSpreads_.push_back(currentMetrics_.spread);
+    historicalVolumes_.push_back(currentMetrics_.totalBidVolume + currentMetrics_.totalAskVolume);
+    historicalImbalances_.push_back(currentMetrics_.volumeImbalance);
+    
+    // Trim to maintain size limit
+    trimHistoricalData(MAX_HISTORY);
+    
+    // Update time series in metrics for external access
+    currentMetrics_.timeSeriesMetrics["mid_price"] = historicalMidPrices_;
+    currentMetrics_.timeSeriesMetrics["spread"] = historicalSpreads_;
+    currentMetrics_.timeSeriesMetrics["volume"] = historicalVolumes_;
+    currentMetrics_.timeSeriesMetrics["imbalance"] = historicalImbalances_;
+}
+
+void OrderBookAnalyzer::calculateDerivedMetrics() {
+    currentMetrics_.marketDirectionalCoefficient = calculateDirectionalCoefficient();
+    currentMetrics_.volatilityExpectation = calculateVolatilityExpectation();
+    
+    // Composite liquidity score
+    const double bidLiquidity = currentMetrics_.totalBidVolume * (1.0 + currentMetrics_.bidDensity);
+    const double askLiquidity = currentMetrics_.totalAskVolume * (1.0 + currentMetrics_.askDensity);
+    currentMetrics_.liquidityProfileScore = (bidLiquidity + askLiquidity) / 2.0;
+}
+
+void OrderBookAnalyzer::calculateTimeBasedMetrics() {
+    if (metricsHistory_.size() < 2) {
+        return;
+    }
+    
+    const auto& prevMetrics = metricsHistory_.back();
+    const double timeDiff = std::chrono::duration<double>(
+        currentMetrics_.timestamp - prevMetrics.timestamp).count();
+    
+    if (timeDiff > 0) {
+        // Calculate velocities
+        currentMetrics_.priceVelocity = 
+            (currentMetrics_.mid_price - prevMetrics.mid_price) / timeDiff;
+        
+        currentMetrics_.spreadVelocity = 
+            (currentMetrics_.spread - prevMetrics.spread) / timeDiff;
+        
+        const double currentTotalVolume = currentMetrics_.totalBidVolume + currentMetrics_.totalAskVolume;
+        const double prevTotalVolume = prevMetrics.totalBidVolume + prevMetrics.totalAskVolume;
+        currentMetrics_.volumeVelocity = (currentTotalVolume - prevTotalVolume) / timeDiff;
+    }
+}
+
+std::vector<data_ingestion::PriceLevel> OrderBookAnalyzer::groupPriceLevels(
+    const std::vector<data_ingestion::PriceLevel>& levels,
+    bool isBids) const {
+    
+    if (levels.empty() || priceGroupingFactor_ <= 0.0) {
+        return levels;
+    }
+    
+    std::map<double, double> priceGroups;
+    
+    for (const auto& level : levels) {
+        double groupPrice;
+        
+        if (isBids) {
+            groupPrice = std::floor(level.price / priceGroupingFactor_) * priceGroupingFactor_;
+        } else {
+            groupPrice = std::ceil(level.price / priceGroupingFactor_) * priceGroupingFactor_;
+        }
+        
+        priceGroups[groupPrice] += level.quantity;
+    }
+    
+    // Convert map back to vector
+    std::vector<data_ingestion::PriceLevel> groupedLevels;
+    groupedLevels.reserve(priceGroups.size());
+    
+    for (const auto& [price, quantity] : priceGroups) {
+        groupedLevels.emplace_back(price, quantity);
+    }
+    
+    // Sort appropriately
+    if (isBids) {
+        std::sort(groupedLevels.begin(), groupedLevels.end(), 
+            [](const auto& a, const auto& b) { return a.price > b.price; });
+    } else {
+        std::sort(groupedLevels.begin(), groupedLevels.end(), 
+            [](const auto& a, const auto& b) { return a.price < b.price; });
+    }
+    
+    return groupedLevels;
+}
+
+double OrderBookAnalyzer::calculateWeightedImbalance(
+    const std::vector<data_ingestion::PriceLevel>& bids,
+    const std::vector<data_ingestion::PriceLevel>& asks,
+    const std::function<double(int)>& weightingFunction) const {
+    
+    double weightedBidVolume = 0.0;
+    double weightedAskVolume = 0.0;
+    
+    // Process bid levels with weights
+    for (size_t i = 0; i < bids.size(); ++i) {
+        const double weight = weightingFunction(static_cast<int>(i));
+        weightedBidVolume += bids[i].quantity * weight;
+    }
+    
+    // Process ask levels with weights
+    for (size_t i = 0; i < asks.size(); ++i) {
+        const double weight = weightingFunction(static_cast<int>(i));
+        weightedAskVolume += asks[i].quantity * weight;
+    }
+    
+    // Calculate weighted imbalance
+    const double totalWeightedVolume = weightedBidVolume + weightedAskVolume;
+    if (totalWeightedVolume > 0) {
+        return (weightedBidVolume - weightedAskVolume) / totalWeightedVolume;
+    }
+    
+    return 0.0;
+}
+
+std::vector<int> OrderBookAnalyzer::detectLiquidityWalls(
+    const std::vector<data_ingestion::PriceLevel>& levels,
+    double threshold) const {
+    
+    if (levels.size() < 3) {
+        return {};
+    }
+    
+    // Calculate average volume
+    const double avgVolume = std::accumulate(levels.begin(), levels.end(), 0.0,
+        [](double sum, const auto& level) { return sum + level.quantity; }) / levels.size();
+    
+    std::vector<int> wallIndices;
+    
+    // Detect levels with volume above threshold * average
+    for (size_t i = 0; i < levels.size(); ++i) {
+        if (levels[i].quantity > threshold * avgVolume) {
+            wallIndices.push_back(static_cast<int>(i));
+        }
+    }
+    
+    return wallIndices;
+}
+
+double OrderBookAnalyzer::calculateDirectionalCoefficient() const {
+    constexpr size_t MIN_SAMPLES = 5;
+    
+    if (historicalMidPrices_.size() < MIN_SAMPLES || historicalImbalances_.size() < MIN_SAMPLES) {
+        return 0.0;
+    }
+    
+    // Calculate recent price trend
+    const size_t sampleSize = std::min(historicalMidPrices_.size(), MIN_SAMPLES);
+    const auto recentPrices = std::vector<double>(
+        historicalMidPrices_.end() - sampleSize, historicalMidPrices_.end());
+    
+    double priceTrend = 0.0;
+    for (size_t i = 1; i < recentPrices.size(); ++i) {
+        priceTrend += recentPrices[i] - recentPrices[i-1];
+    }
+    priceTrend = (priceTrend > 0) ? 1.0 : (priceTrend < 0) ? -1.0 : 0.0;
+    
+    // Calculate recent imbalance average
+    const auto recentImbalances = std::vector<double>(
+        historicalImbalances_.end() - sampleSize, historicalImbalances_.end());
+    
+    const double avgImbalance = std::accumulate(
+        recentImbalances.begin(), recentImbalances.end(), 0.0) / recentImbalances.size();
+    
+    // Combine trend and imbalance
+    const double coefficient = 0.7 * avgImbalance + 0.3 * priceTrend;
+    
+    return std::clamp(coefficient, -1.0, 1.0);
+}
+
+double OrderBookAnalyzer::calculateVolatilityExpectation() const {
+    // Factors affecting expected volatility
+    const double spreadFactor = currentMetrics_.spreadPercent / 0.1; // Normalize to typical spread
+    const double imbalanceFactor = std::abs(currentMetrics_.volumeImbalance) * 2.0;
+    
+    // Calculate depth factor
+    double depthFactor = 0.0;
+    if (currentMetrics_.bidVolumesByLevel.size() >= 3 && 
+        currentMetrics_.askVolumesByLevel.size() >= 3) {
+        
+        double topBidVolume = 0.0;
+        double topAskVolume = 0.0;
+        
+        for (int i = 0; i < 3; ++i) {
+            topBidVolume += currentMetrics_.bidVolumesByLevel[i];
+            topAskVolume += currentMetrics_.askVolumesByLevel[i];
+        }
+        
+        if (topBidVolume > 0 && topAskVolume > 0 && currentMetrics_.mid_price > 0) {
+            const double avgTopVolume = (topBidVolume + topAskVolume) / 2.0;
+            const double normalizedDepth = avgTopVolume / currentMetrics_.mid_price;
+            depthFactor = 1.0 / (normalizedDepth + 0.1);
+        }
+    }
+    
+    const double velocityFactor = std::abs(currentMetrics_.priceVelocity) * 10.0;
+    
+    // Combine factors with weights
+    const double volatilityExpectation = 
+        0.3 * spreadFactor + 
+        0.3 * imbalanceFactor + 
+        0.2 * depthFactor + 
+        0.2 * velocityFactor;
+    
+    return std::clamp(volatilityExpectation / 2.0, 0.0, 1.0);
+}
+
+void OrderBookAnalyzer::notifyMetricsUpdated() {
+    std::vector<MetricsCallback> callbacks;
+    OrderBookMetrics metricsCopy;
+    
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        callbacks = metricsCallbacks_;
+        metricsCopy = currentMetrics_;
+    }
+    
+    // Execute callbacks asynchronously to prevent deadlocks
+    for (const auto& callback : callbacks) {
+        std::thread([callback, metricsCopy]() {
             try {
-                callback(metrics_copy);
+                callback(metricsCopy);
             } catch (const std::exception& e) {
-                // Log error
+                // Log error but continue
             }
         }).detach();
     }
 }
-//   void OrderBookAnalyzer::notifyMetricsUpdated() {
-//     // Copy callbacks to avoid calling them while holding the lock
-//     std::vector<MetricsCallback> callbacks;
-//     OrderBookMetrics metrics_copy;
-//     {
-//         std::lock_guard<std::mutex> lock(mutex_);
-//         callbacks = metrics_callbacks_;
-//         metrics_copy = current_metrics_;  // Copy metrics too
-//     }
-    
-//     // Call all registered callbacks with copied data
-//     for (const auto& callback : callbacks) {
-//         callback(metrics_copy);  // Use copy, not current_metrics_
-//     }
-// }
-//  void OrderBookAnalyzer::notifyMetricsUpdated() {
-//     // Copy both callbacks AND metrics while holding the lock
-//     std::vector<MetricsCallback> callbacks;
-//     OrderBookMetrics metrics_copy;
-//     {
-//         std::lock_guard<std::mutex> lock(mutex_);
-//         callbacks = metrics_callbacks_;
-//         metrics_copy = current_metrics_;
-//     }
-    
-//     // Call callbacks asynchronously to avoid any deadlock
-//     std::thread([callbacks = std::move(callbacks), metrics_copy]() {
-//         for (const auto& callback : callbacks) {
-//             try {
-//                 callback(metrics_copy);
-//             } catch (const std::exception& e) {
-//                 // Log callback exception
-//             }
-//         }
-//     }).detach();
-// }
 
- std::shared_ptr<OrderBookAnalyzer> createOrderBookAnalyzer(
-     const core::ExchangeId& exchangeId, 
-     const std::string& tradingPair,
-     const ParameterSet& params) {
-     
-     return std::make_shared<OrderBookAnalyzer>(exchangeId, tradingPair, params);
- }
- //updateParameters function
-// void OrderBookAnalyzer::updateParameters(const ParameterSet& params) {
-//     std::lock_guard<std::mutex> lock(mutex_);
-//     params_ = params;
-    
-//     // Update parameters in the analyzer
-//     depth_levels_ = params_.getInt("depth_levels", depth_levels_);
-//     price_grouping_factor_ = params_.getDouble("price_grouping_factor", price_grouping_factor_);
-//     min_samples_for_stability_ = params_.getInt("min_samples_for_stability", min_samples_for_stability_);
-//     ema_alpha_ = params_.getDouble("ema_alpha", 0.1); // Default EMA alpha
-//     // Update other parameters as needed
-//     // Notify callbacks about parameter update
-//     notifyMetricsUpdated();
-// }
-void OrderBookAnalyzer::updateParameters(const ParameterSet& params) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    params_ = params;
-    
-    // Update parameters
-    depth_levels_ = params_.getInt("depth_levels", depth_levels_);
-    price_grouping_factor_ = params_.getDouble("price_grouping_factor", price_grouping_factor_);
-    min_samples_for_stability_ = params_.getInt("min_samples_for_stability", min_samples_for_stability_);
-    ema_alpha_ = params_.getDouble("ema_alpha", 0.1);
-    
-    // COPY current_metrics_ while we have the lock
-    OrderBookMetrics metrics_copy = current_metrics_;
-    
-    // Release lock, then notify with the copy
-    lock.~lock_guard();  // Explicit unlock
-    
-    // Now call callbacks with the copied metrics (no mutex needed)
-    std::vector<MetricsCallback> callbacks;
-    {
-        std::lock_guard<std::mutex> callback_lock(mutex_);
-        callbacks = metrics_callbacks_;
-    }
-    
-    for (const auto& callback : callbacks) {
-        try {
-            callback(metrics_copy);  // Use copy instead of current_metrics_
-        } catch (const std::exception& e) {
-            // Log exception
-        }
-    }
+void OrderBookAnalyzer::initializeHistoricalData(size_t capacity) {
+    historicalMidPrices_.reserve(capacity);
+    historicalSpreads_.reserve(capacity);
+    historicalVolumes_.reserve(capacity);
+    historicalImbalances_.reserve(capacity);
+    priceHistory_.reserve(capacity);
+    historicalTimestamps_.reserve(capacity);
 }
 
-// OrderBookAnalyzerManager implementation
-OrderBookAnalyzerManager::OrderBookAnalyzerManager() {}
+void OrderBookAnalyzer::trimHistoricalData(size_t maxSize) {
+    auto trimVector = [maxSize](std::vector<double>& vec) {
+        if (vec.size() > maxSize) {
+            vec.erase(vec.begin());
+        }
+    };
+    
+    trimVector(historicalMidPrices_);
+    trimVector(historicalSpreads_);
+    trimVector(historicalVolumes_);
+    trimVector(historicalImbalances_);
+    trimVector(priceHistory_);
+    trimVector(historicalTimestamps_);
+}
 
-OrderBookAnalyzerManager::~OrderBookAnalyzerManager() {}
+// OrderBookAnalyzerManager Implementation
+
+OrderBookAnalyzerManager::OrderBookAnalyzerManager(const ParameterSet& params) 
+    : params_(params) {}
+// In OrderBookAnalyzerManager class
+OrderBookAnalyzerManager::OrderBookAnalyzerManager(const OrderBookAnalyzerConfig& config) {
+    // Convert config to ParameterSet if needed
+    params_.setParameter("depth", config.depth);
+    params_.setParameter("priceWeightFactor", config.priceWeightFactor);
+    // etc...
+}
 
 std::shared_ptr<OrderBookAnalyzer> OrderBookAnalyzerManager::getAnalyzerForSymbol(
     const std::string& symbol, 
@@ -807,7 +675,7 @@ std::shared_ptr<OrderBookAnalyzer> OrderBookAnalyzerManager::getAnalyzerForSymbo
     
     std::lock_guard<std::mutex> lock(mutex_);
     
-    std::string key = exchangeId.toString() + ":" + symbol;
+    const std::string key = createKey(symbol, exchangeId);
     auto it = analyzers_.find(key);
     
     if (it != analyzers_.end()) {
@@ -821,10 +689,22 @@ std::shared_ptr<OrderBookAnalyzer> OrderBookAnalyzerManager::getAnalyzerForSymbo
     return analyzer;
 }
 
-void OrderBookAnalyzerManager::removeAnalyzer(const std::string& symbol, const core::ExchangeId& exchangeId) {
+std::shared_ptr<OrderBookAnalyzer> OrderBookAnalyzerManager::getAnalyzerForSymbol(
+    const std::string& symbol, 
+    const core::ExchangeId& exchangeId) const {
+    
     std::lock_guard<std::mutex> lock(mutex_);
     
-    std::string key = exchangeId.toString() + ":" + symbol;
+    const std::string key = createKey(symbol, exchangeId);
+    auto it = analyzers_.find(key);
+    
+    return (it != analyzers_.end()) ? it->second : nullptr;
+}
+
+void OrderBookAnalyzerManager::removeAnalyzer(const std::string& symbol, 
+                                             const core::ExchangeId& exchangeId) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    const std::string key = createKey(symbol, exchangeId);
     analyzers_.erase(key);
 }
 
@@ -834,8 +714,8 @@ std::vector<std::shared_ptr<OrderBookAnalyzer>> OrderBookAnalyzerManager::getAll
     std::vector<std::shared_ptr<OrderBookAnalyzer>> result;
     result.reserve(analyzers_.size());
     
-    for (const auto& pair : analyzers_) {
-        result.push_back(pair.second);
+    for (const auto& [key, analyzer] : analyzers_) {
+        result.push_back(analyzer);
     }
     
     return result;
@@ -844,7 +724,7 @@ std::vector<std::shared_ptr<OrderBookAnalyzer>> OrderBookAnalyzerManager::getAll
 void OrderBookAnalyzerManager::processOrderBook(const data_ingestion::OrderBook& snapshot) {
     std::lock_guard<std::mutex> lock(mutex_);
     
-    std::string key = snapshot.exchange_id.toString() + ":" + snapshot.symbol;
+    const std::string key = createKey(snapshot.getSymbol().toString(), snapshot.getExchangeId());
     auto it = analyzers_.find(key);
     
     if (it != analyzers_.end()) {
@@ -852,34 +732,32 @@ void OrderBookAnalyzerManager::processOrderBook(const data_ingestion::OrderBook&
     }
 }
 
-OrderBookMetrics OrderBookAnalyzerManager::getMetrics(const Symbol& symbol, const core::ExchangeId& exchange) const {
+OrderBookMetrics OrderBookAnalyzerManager::getMetrics(const core::Symbol& symbol, 
+                                                     const core::ExchangeId& exchange) const {
     std::lock_guard<std::mutex> lock(mutex_);
     
-    std::string key = exchange.toString() + ":" + symbol;
+    const std::string key = createKey(symbol.toString(), exchange);
     auto it = analyzers_.find(key);
     
-    if (it != analyzers_.end()) {
-        return it->second->getMetrics();
-    }
-    
-    return OrderBookMetrics{}; // Return empty metrics if analyzer not found
+    return (it != analyzers_.end()) ? it->second->getMetrics() : OrderBookMetrics{};
 }
 
-void OrderBookAnalyzerManager::cleanupInactiveAnalyzers(std::chrono::seconds inactive_threshold) {
+void OrderBookAnalyzerManager::cleanupInactiveAnalyzers(std::chrono::seconds inactiveThreshold) {
     std::lock_guard<std::mutex> lock(mutex_);
     
-    auto now = std::chrono::steady_clock::now();
+    const auto now = std::chrono::steady_clock::now();
     auto it = analyzers_.begin();
     
     while (it != analyzers_.end()) {
-        auto& analyzer = it->second;
-        auto metrics = analyzer->getMetrics();
+        const auto& analyzer = it->second;
+        const auto metrics = analyzer->getMetrics();
         
-        // Check if analyzer has been inactive for too long
-        auto last_update = std::chrono::time_point<std::chrono::steady_clock>(
-            std::chrono::milliseconds(metrics.timestamp));
+        // Convert timestamp for comparison
+        const auto lastUpdate = std::chrono::time_point<std::chrono::steady_clock>(
+            std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+                metrics.timestamp.time_since_epoch()));
         
-        if (now - last_update > inactive_threshold) {
+        if (now - lastUpdate > inactiveThreshold) {
             it = analyzers_.erase(it);
         } else {
             ++it;
@@ -887,32 +765,30 @@ void OrderBookAnalyzerManager::cleanupInactiveAnalyzers(std::chrono::seconds ina
     }
 }
 
-std::shared_ptr<OrderBookAnalyzer> OrderBookAnalyzerManager::getAnalyzerForSymbol(
-    const std::string& symbol, 
-    const core::ExchangeId& exchange) const {
-    
-    std::lock_guard<std::mutex> lock(mutex_);
-    
-    std::string key = exchange.toString() + ":" + symbol;
-    auto it = analyzers_.find(key);
-    
-    if (it != analyzers_.end()) {
-        return it->second;
-    }
-    
-    return nullptr; // Return null if analyzer not found
-}
-
 void OrderBookAnalyzerManager::updateParameters(const ParameterSet& params) {
     std::lock_guard<std::mutex> lock(mutex_);
     
     params_ = params;
     
-    // Update parameters for all existing analyzers
-    for (auto& pair : analyzers_) {
-        pair.second->updateParameters(params);
+    // Update all existing analyzers
+    for (const auto& [key, analyzer] : analyzers_) {
+        analyzer->updateParameters(params);
     }
 }
 
- } // namespace strategy
- } // namespace trading
+std::string OrderBookAnalyzerManager::createKey(const std::string& symbol, 
+                                               const core::ExchangeId& exchangeId) const {
+    return exchangeId.toString() + ":" + symbol;
+}
+
+// Factory function
+std::shared_ptr<OrderBookAnalyzer> createOrderBookAnalyzer(
+    const core::ExchangeId& exchangeId, 
+    const std::string& tradingPair,
+    const ParameterSet& params) {
+    
+    return std::make_shared<OrderBookAnalyzer>(exchangeId, tradingPair, params);
+}
+
+} // namespace strategy
+} // namespace trading

@@ -42,9 +42,9 @@
      // Initialize thresholds with defaults if not specified
      if (thresholds_.empty()) {
          // Set default thresholds if none provided
-         thresholds_.setThreshold("volume_imbalance", 2.0); // Volume imbalance threshold
+         thresholds_.setThreshold("volumeImbalance ", 2.0); // Volume imbalance threshold
          thresholds_.setThreshold("liquidity_removal", 1.5); // Liquidity removal threshold
-         thresholds_.setThreshold("price_level_imbalance", 1.5); // Price level imbalance threshold
+         thresholds_.setThreshold("priceLevelImbalance", 1.5); // Price level imbalance threshold
          thresholds_.setThreshold("abnormal_spread", 2.5); // Abnormal spread threshold
         thresholds_.setThreshold("liquidity_flow_imbalance", 3.0); // Liquidity flow imbalance threshold
      }
@@ -172,7 +172,7 @@
     // Update volume imbalance threshold
     if (params.numeric_params.find("volume_imbalance_threshold") != params.numeric_params.end()) {
         double threshold = params.getDouble("volume_imbalance_threshold", DEFAULT_VOLUME_IMBALANCE);
-        thresholds_.setThreshold("volume_imbalance", threshold);
+        thresholds_.setThreshold("volumeImbalance ", threshold);
         
         // If thresholds_ also has a map for ImbalanceType enum
         if (thresholds_.type_thresholds.find(ImbalanceType::VOLUME_IMBALANCE) != thresholds_.type_thresholds.end()) {
@@ -185,7 +185,7 @@
     // Update price level imbalance threshold
     if (params.numeric_params.find("price_level_imbalance_threshold") != params.numeric_params.end()) {
         double threshold = params.getDouble("price_level_imbalance_threshold", DEFAULT_PRICE_LEVEL_IMBALANCE);
-        thresholds_.setThreshold("price_level_imbalance", threshold);
+        thresholds_.setThreshold("priceLevelImbalance", threshold);
         
         // If thresholds_ also has a map for ImbalanceType enum
         if (thresholds_.type_thresholds.find(ImbalanceType::PRICE_LEVEL_IMBALANCE) != thresholds_.type_thresholds.end()) {
@@ -233,8 +233,8 @@ double ImbalanceDetectionEngine::calculateImbalanceConfidence(ImbalanceType type
     double baseConfidence = std::clamp(strength, 0.0, 1.0);
     
     // Adjust confidence based on market conditions
-    double liquidityFactor = (metrics.total_bid_volume + metrics.total_ask_volume) / 2.0;
-    double volatilityFactor = metrics.volatility_expectation;
+    double liquidityFactor = (metrics.totalBidVolume  + metrics.totalAskVolume) / 2.0;
+    double volatilityFactor = metrics.volatilityExpectation;
     
     // Simple heuristic adjustments
     double liquidityWeight = 0.1; // Reduced impact
@@ -422,7 +422,7 @@ bool ImbalanceDetectionEngine::detectLiquidityFlowImbalance(const OrderBookMetri
  // Detect abnormal spread
  bool ImbalanceDetectionEngine::detectAbnormalSpread(const OrderBookMetrics& metrics) {
      // Check if required metrics are available
-     auto spreadIt = metrics.metrics.find("spread_percent");
+     auto spreadIt = metrics.metrics.find("spreadPercent");
      auto avgSpreadIt = metrics.metrics.find("average_spread_percent");
      
      if (spreadIt == metrics.metrics.end() || avgSpreadIt == metrics.metrics.end()) {
@@ -536,7 +536,7 @@ bool ImbalanceDetectionEngine::detectLiquidityFlowImbalance(const OrderBookMetri
              break;
          }
          case ImbalanceType::ABNORMAL_SPREAD: {
-             auto spreadIt = metrics.metrics.find("spread_percent");
+             auto spreadIt = metrics.metrics.find("spreadPercent");
              auto avgSpreadIt = metrics.metrics.find("average_spread_percent");
              
              if (spreadIt != metrics.metrics.end() && avgSpreadIt != metrics.metrics.end()) {

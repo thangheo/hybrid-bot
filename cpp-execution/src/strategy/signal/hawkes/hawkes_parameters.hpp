@@ -260,7 +260,7 @@ struct HawkesParameters {
  * Convert imbalance type string to HawkesEventType enum
  */
 inline HawkesEventType stringToHawkesEventType(const std::string& typeStr) {
-    if (typeStr == "volume_imbalance" || typeStr == "VOLUME_IMBALANCE") {
+    if (typeStr == "volumeImbalance " || typeStr == "VOLUME_IMBALANCE") {
         return HawkesEventType::VOLUME_IMBALANCE;
     } else if (typeStr == "price_imbalance" || typeStr == "PRICE_IMBALANCE") {
         return HawkesEventType::PRICE_IMBALANCE;
@@ -275,7 +275,7 @@ inline HawkesEventType stringToHawkesEventType(const std::string& typeStr) {
  */
 inline std::string hawkesEventTypeToString(HawkesEventType eventType) {
     switch (eventType) {
-        case HawkesEventType::VOLUME_IMBALANCE:    return "volume_imbalance";
+        case HawkesEventType::VOLUME_IMBALANCE:    return "volumeImbalance ";
         case HawkesEventType::PRICE_IMBALANCE:     return "price_imbalance";
         case HawkesEventType::LIQUIDITY_IMBALANCE: return "liquidity_imbalance";
         default:                                   return "unknown";

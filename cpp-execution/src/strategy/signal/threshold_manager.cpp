@@ -21,17 +21,17 @@
      base_thresholds_.global_sensitivity = 1.0;
      
      // Default imbalance type thresholds
-     ImbalanceThreshold volume_imbalance;
-     volume_imbalance.min_threshold = 0.2;
-     volume_imbalance.max_threshold = 0.8;
-     volume_imbalance.activation_threshold = 0.3;
-     base_thresholds_.type_thresholds[ImbalanceType::VOLUME_IMBALANCE] = volume_imbalance;
+     ImbalanceThreshold volumeImbalance ;
+     volumeImbalance .min_threshold = 0.2;
+     volumeImbalance .max_threshold = 0.8;
+     volumeImbalance .activation_threshold = 0.3;
+     base_thresholds_.type_thresholds[ImbalanceType::VOLUME_IMBALANCE] = volumeImbalance ;
      
-     ImbalanceThreshold price_level_imbalance;
-     price_level_imbalance.min_threshold = 0.15;
-     price_level_imbalance.max_threshold = 0.7;
-     price_level_imbalance.activation_threshold = 0.25;
-     base_thresholds_.type_thresholds[ImbalanceType::PRICE_LEVEL_IMBALANCE] = price_level_imbalance;
+     ImbalanceThreshold priceLevelImbalance;
+     priceLevelImbalance.min_threshold = 0.15;
+     priceLevelImbalance.max_threshold = 0.7;
+     priceLevelImbalance.activation_threshold = 0.25;
+     base_thresholds_.type_thresholds[ImbalanceType::PRICE_LEVEL_IMBALANCE] = priceLevelImbalance;
      
      ImbalanceThreshold liquidity_imbalance;
      liquidity_imbalance.min_threshold = 0.25;
