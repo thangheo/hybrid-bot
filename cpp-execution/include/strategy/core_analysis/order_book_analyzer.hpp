@@ -23,6 +23,7 @@
  #include "data_ingestion/orderbook/order_book.hpp"
  #include "common/event_bus.hpp"
  #include "common/trading_events.hpp"
+
 //  #include "core/market_types.hpp"
 //  #include "core/types.hpp"
 
@@ -37,6 +38,41 @@
   */
  using MetricsCallback = std::function<void(const OrderBookMetrics&)>;
  
+class OrderBookAnalyzerManager {
+public:
+// Constructor
+    OrderBookAnalyzerManager(const ParameterSet& params = ParameterSet()) : params_(params) {}
+    virtual ~OrderBookAnalyzerManager() = default;
+    // Delete copy constructor and assignment
+    OrderBookAnalyzerManager(const OrderBookAnalyzerManager&) = delete;
+    OrderBookAnalyzerManager& operator=(const OrderBookAnalyzerManager&) = delete;
+    // Allow move semantics
+    OrderBookAnalyzerManager(OrderBookAnalyzerManager&&) = default;
+    OrderBookAnalyzerManager& operator=(OrderBookAnalyzerManager&&) = default;
+    //default constructor for this using OrderBookAnalyzerPtr = std::shared_ptr<OrderBookAnalyzerManager>;
+   //fucking empty constructor
+    OrderBookAnalyzerManager() = default;
+    //destructor
+    // virtual ~OrderBookAnalyzerManager() = default;
+// Methods
+    void processOrderBook(const data_ingestion::OrderBook& snapshot) ;
+    OrderBookMetrics getMetrics(const Symbol& symbol, const core::ExchangeId& exchange) const;
+    void cleanupInactiveAnalyzers(std::chrono::seconds inactive_threshold);
+
+    std::shared_ptr<OrderBookAnalyzer>  getAnalyzerForSymbol(const std::string& symbol, const core::ExchangeId& exchange) const;
+    // std::shared_ptr<OrderBookAnalyzer>  getAnalyzerForSymbol(const std::string& symbol, const core::ExchangeId& exchange);
+
+    void updateParameters(const ParameterSet& params) ;
+
+private:
+    std::unordered_map<std::string, std::shared_ptr<OrderBookAnalyzer>> analyzers_;
+    // params_ declare
+    ParameterSet params_;
+    std::mutex mutex_;
+    // std::lock_guard<std::mutex> lock(mutex_); // MISSING - cần add thread safety
+    mutable std::mutex manager_mutex_; // Mutex for thread-safe access
+    
+};
  /**
   * OrderBookAnalyzer processes order book data to extract trading signals
   * based on order book imbalances and other market microstructure patterns.

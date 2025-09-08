@@ -225,7 +225,10 @@ std::chrono::milliseconds ImbalanceSignalGenerator::calculateSignalTTL(const Imb
     uint64_t ttl = static_cast<uint64_t>((config_.signalTtlMs * delta_price) / (volatility_per_time * price * imbalance.strength));
     
     ttl = std::clamp(ttl, static_cast<uint64_t>(500), static_cast<uint64_t>(60000)); // Clamp between 0.5s and 60s
-    
+    //print debug info
+    std::cout << "Calculated TTL: " << ttl << " ms (Delta Price: " << delta_price
+              << ", Volatility/Time: " << volatility_per_time << ", Price: " << price
+              << ", Strength: " << imbalance.strength << ")\n";
     return std::chrono::milliseconds(ttl);
 }
 
