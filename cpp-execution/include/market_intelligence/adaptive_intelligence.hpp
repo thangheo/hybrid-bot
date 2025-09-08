@@ -102,7 +102,7 @@ struct OrderBookMetrics {
     double ask_volume_5 = 0;
     double total_volume = 0;
     double imbalance = 0;
-    double depth_imbalance = 0;
+    double depthImbalance = 0;
 };
 
 // Flow analysis results

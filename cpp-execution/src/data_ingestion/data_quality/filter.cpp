@@ -70,14 +70,14 @@ bool SpreadFilter::detectAnomaly(OrderBookUpdate& update) {
         return true; // Skip empty order books
     }
     
-    double spread_percent = calculateSpreadPercent(update);
+    double spreadPercent = calculateSpreadPercent(update);
     
-    if (spread_percent > max_spread_percent_) {
+    if (spreadPercent > max_spread_percent_) {
         std::cerr << "Abnormal spread detected for " << update.exchangeId.toString() << ":" << update.tradingPair
-                  << ": " << spread_percent << "% (threshold: " << max_spread_percent_ << "%)" << std::endl;
+                  << ": " << spreadPercent << "% (threshold: " << max_spread_percent_ << "%)" << std::endl;
         update.has_anomaly = true;
         update.anomaly_type = "wide_spread";
-        update.anomaly_details = "Spread of " + std::to_string(spread_percent) + "%";
+        update.anomaly_details = "Spread of " + std::to_string(spreadPercent) + "%";
         return false;
     }
     

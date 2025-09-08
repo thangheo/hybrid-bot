@@ -121,7 +121,7 @@ struct MarketIntelligence {
     int64_t timestamp;
     double bid_ask_spread;
     double order_book_imbalance;
-    double depth_imbalance;
+    double depthImbalance;
     double liquidity_ratio;
     double net_flow_5s;
     double net_flow_30s;
@@ -183,7 +183,7 @@ public:
         intel.order_book_imbalance = calculate_imbalance(ob);
         
         // Calculate depth imbalance
-        intel.depth_imbalance = calculate_depth_imbalance(ob);
+        intel.depthImbalance = calculate_depth_imbalance(ob);
         
         // Calculate liquidity ratio
         intel.liquidity_ratio = calculate_liquidity_ratio(ob);
@@ -517,7 +517,7 @@ private:
                 {"timestamp", intel.timestamp},
                 {"bid_ask_spread", intel.bid_ask_spread},
                 {"order_book_imbalance", intel.order_book_imbalance},
-                {"depth_imbalance", intel.depth_imbalance},
+                {"depthImbalance", intel.depthImbalance},
                 {"liquidity_ratio", intel.liquidity_ratio},
                 {"net_flow_5s", intel.net_flow_5s},
                 {"net_flow_30s", intel.net_flow_30s}

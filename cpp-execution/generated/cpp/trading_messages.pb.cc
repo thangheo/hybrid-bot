@@ -4368,7 +4368,7 @@ const char* MarketIntelligence::_InternalParse(const char* ptr, ::_pbi::ParseCon
         } else
           goto handle_unusual;
         continue;
-      // double depth_imbalance = 5;
+      // double depthImbalance = 5;
       case 5:
         if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 41)) {
           _impl_.depth_imbalance_ = ::PROTOBUF_NAMESPACE_ID::internal::UnalignedLoad<double>(ptr);
@@ -4610,7 +4610,7 @@ uint8_t* MarketIntelligence::_InternalSerialize(
     target = ::_pbi::WireFormatLite::WriteDoubleToArray(4, this->_internal_order_book_imbalance(), target);
   }
 
-  // double depth_imbalance = 5;
+  // double depthImbalance = 5;
   static_assert(sizeof(uint64_t) == sizeof(double), "Code assumes uint64_t and double are the same size.");
   double tmp_depth_imbalance = this->_internal_depth_imbalance();
   uint64_t raw_depth_imbalance;
@@ -4873,7 +4873,7 @@ size_t MarketIntelligence::ByteSizeLong() const {
     total_size += 1 + 8;
   }
 
-  // double depth_imbalance = 5;
+  // double depthImbalance = 5;
   static_assert(sizeof(uint64_t) == sizeof(double), "Code assumes uint64_t and double are the same size.");
   double tmp_depth_imbalance = this->_internal_depth_imbalance();
   uint64_t raw_depth_imbalance;

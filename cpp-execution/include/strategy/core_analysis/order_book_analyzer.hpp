@@ -10,356 +10,285 @@
  * @date May 6, 2025
  */
 
- #pragma once
+#pragma once
 
- #include <string>
- #include <vector>
- #include <map>
- #include <deque>
- #include <mutex>
- #include <memory>
- #include <functional>
- #include "strategy/types.hpp"
- #include "data_ingestion/orderbook/order_book.hpp"
- #include "common/event_bus.hpp"
- #include "common/trading_events.hpp"
+#include <string>
+#include <vector>
+#include <map>
+#include <unordered_map>
+#include <deque>
+#include <mutex>
+#include <memory>
+#include <functional>
+#include <chrono>
+#include "strategy/types.hpp"
+#include "data_ingestion/orderbook/order_book.hpp"
+#include "common/event_bus.hpp"
+#include "common/trading_events.hpp"
+#include "core/market_types.hpp"
 
-//  #include "core/market_types.hpp"
-//  #include "core/types.hpp"
+namespace trading {
+namespace strategy {
 
- // Use the appropriate timestamp type
-//  using Timestamp = trading::core::Timestamp;
+/**
+ * Callback type for metric updates
+ */
+using MetricsCallback = std::function<void(const OrderBookMetrics&)>;
 
- namespace trading {
- namespace strategy {
- 
- /**
-  * Callback type for metric updates
-  */
- using MetricsCallback = std::function<void(const OrderBookMetrics&)>;
- 
+/**
+ * Configuration for OrderBookAnalyzer
+ */
+// struct OrderBookAnalyzerConfig {
+//     int depth = 10;
+//     double priceWeightFactor = 1.0;
+//     double volumeWeightFactor = 1.0;
+//     double imbalanceThreshold = 0.1;
+//     double liquidityPressureThreshold = 0.05;
+//     double orderFlowThreshold = 0.2;
+//     size_t historySize = 100;
+//     double emaAlpha = 0.2;
+//     double priceGroupingFactor = 0.0001;
+//     int minSamplesForStability = 5;
+// };
+/**
+ * OrderBookAnalyzer processes order book data to extract trading signals
+ * based on order book imbalances and other market microstructure patterns.
+ */
+class OrderBookAnalyzer {
+public:
+    /**
+     * Creates an order book analyzer for a specific exchange and trading pair
+     */
+    OrderBookAnalyzer(const core::ExchangeId& exchangeId, 
+                     const std::string& tradingPair, 
+                     const ParameterSet& params = ParameterSet{});
+
+    /**
+     * Creates an order book analyzer with explicit configuration
+     */
+    OrderBookAnalyzer(const core::ExchangeId& exchangeId, 
+                     const std::string& tradingPair, 
+                     int depthLevels, 
+                     double priceGroupingFactor);
+
+    /**
+     * Creates an order book analyzer with configuration struct
+     */
+    explicit OrderBookAnalyzer(const OrderBookAnalyzerConfig& config);
+
+    virtual ~OrderBookAnalyzer() = default;
+
+    // Delete copy semantics to prevent accidental copying
+    OrderBookAnalyzer(const OrderBookAnalyzer&) = delete;
+    OrderBookAnalyzer& operator=(const OrderBookAnalyzer&) = delete;
+
+    // Allow move semantics
+    OrderBookAnalyzer(OrderBookAnalyzer&&) = default;
+    OrderBookAnalyzer& operator=(OrderBookAnalyzer&&) = default;
+
+    /**
+     * Process an order book snapshot
+     */
+    virtual void processOrderBook(const data_ingestion::OrderBook& snapshot);
+
+    /**
+     * Get current order book metrics
+     */
+    virtual OrderBookMetrics getMetrics() const;
+
+    /**
+     * Get a specific metric value
+     */
+    virtual double getMetric(const std::string& metricName, int depth = 10) const;
+
+    /**
+     * Register a callback for metrics updates
+     */
+    virtual void registerMetricsCallback(MetricsCallback callback);
+
+    /**
+     * Check if enough data has been processed for reliable metrics
+     */
+    virtual bool hasStableMetrics() const;
+
+    /**
+     * Reset the analyzer state
+     */
+    virtual void reset();
+
+    /**
+     * Update configuration parameters
+     */
+    virtual void updateParameters(const ParameterSet& params);
+
+    // Getters
+    const core::ExchangeId& getExchangeId() const { return exchangeId_; }
+    const std::string& getTradingPair() const { return tradingPair_; }
+    const ParameterSet& getParameters() const { return params_; }
+    core::Timestamp getLastUpdateTime() const { return lastUpdateTime_; }
+
+    // Historical data accessors
+    const std::vector<double>& getHistoricalMidPrices() const { return historicalMidPrices_; }
+    const std::vector<double>& getHistoricalSpreads() const { return historicalSpreads_; }
+    const std::vector<double>& getHistoricalVolumes() const { return historicalVolumes_; }
+    const std::vector<double>& getHistoricalImbalances() const { return historicalImbalances_; }
+
+protected:
+    // Core calculation methods
+    virtual void calculatePriceMetrics(const std::vector<data_ingestion::PriceLevel>& bids,
+                                     const std::vector<data_ingestion::PriceLevel>& asks);
+    
+    virtual void calculateVolumeMetrics(const std::vector<data_ingestion::PriceLevel>& bids,
+                                      const std::vector<data_ingestion::PriceLevel>& asks,
+                                      int depth);
+    
+    virtual void calculateLevelMetrics(const std::vector<data_ingestion::PriceLevel>& bids,
+                                     const std::vector<data_ingestion::PriceLevel>& asks);
+    
+    virtual void calculateImbalanceMetrics(const std::vector<data_ingestion::PriceLevel>& bids,
+                                         const std::vector<data_ingestion::PriceLevel>& asks);
+    
+    virtual void calculateDerivedMetrics();
+    virtual void updateTimeSeries();
+    virtual void calculateTimeBasedMetrics();
+
+    // Utility methods
+    virtual std::vector<data_ingestion::PriceLevel> groupPriceLevels(
+        const std::vector<data_ingestion::PriceLevel>& levels,
+        bool isBids) const;
+    
+    virtual double calculateWeightedImbalance(
+        const std::vector<data_ingestion::PriceLevel>& bids,
+        const std::vector<data_ingestion::PriceLevel>& asks,
+        const std::function<double(int)>& weightingFunction) const;
+    
+    virtual std::vector<int> detectLiquidityWalls(
+        const std::vector<data_ingestion::PriceLevel>& levels,
+        double threshold = 3.0) const;
+    
+    virtual double calculateDirectionalCoefficient() const;
+    virtual double calculateVolatilityExpectation() const;
+    virtual void notifyMetricsUpdated();
+
+private:
+    // Configuration
+    core::ExchangeId exchangeId_;
+    std::string tradingPair_;
+    int depthLevels_;
+    double priceGroupingFactor_;
+    int minSamplesForStability_;
+    double emaAlpha_;
+    ParameterSet params_;
+
+    // State
+    OrderBookMetrics currentMetrics_;
+    std::deque<OrderBookMetrics> metricsHistory_;
+    
+    // Historical data
+    std::vector<double> historicalMidPrices_;
+    std::vector<double> historicalSpreads_;
+    std::vector<double> historicalVolumes_;
+    std::vector<double> historicalImbalances_;
+    std::vector<double> priceHistory_;
+    std::vector<double> historicalTimestamps_;
+    
+    // Moving averages
+    double emaMidPrice_ = 0.0;
+    double emaSpread_ = 0.0;
+    double emaVolumeImbalance_ = 0.0;
+    
+    // Callbacks and timing
+    std::vector<MetricsCallback> metricsCallbacks_;
+    core::Timestamp lastUpdateTime_;
+    
+    // Thread safety
+    mutable std::mutex mutex_;
+
+    // Helper methods
+    void initializeHistoricalData(size_t capacity);
+    void trimHistoricalData(size_t maxSize);
+};
+
+/**
+ * Manager class for multiple OrderBookAnalyzers
+ */
 class OrderBookAnalyzerManager {
 public:
-// Constructor
-    OrderBookAnalyzerManager(const ParameterSet& params = ParameterSet()) : params_(params) {}
-    // virtual ~OrderBookAnalyzerManager() = default;
-    // Delete copy constructor and assignment
+    OrderBookAnalyzerManager() = default;
+    explicit OrderBookAnalyzerManager(const ParameterSet& params);
+    explicit OrderBookAnalyzerManager(const OrderBookAnalyzerConfig& config) ;
+
+    ~OrderBookAnalyzerManager() = default;
+
+    // Delete copy semantics
     OrderBookAnalyzerManager(const OrderBookAnalyzerManager&) = delete;
     OrderBookAnalyzerManager& operator=(const OrderBookAnalyzerManager&) = delete;
+
     // Allow move semantics
     OrderBookAnalyzerManager(OrderBookAnalyzerManager&&) = default;
     OrderBookAnalyzerManager& operator=(OrderBookAnalyzerManager&&) = default;
-    //default constructor for this using OrderBookAnalyzerPtr = std::shared_ptr<OrderBookAnalyzerManager>;
-   //fucking empty constructor
-    OrderBookAnalyzerManager() = default;
-    //destructor
-    // virtual ~OrderBookAnalyzerManager() = default;
-// Methods
-    void processOrderBook(const data_ingestion::OrderBook& snapshot) ;
-    OrderBookMetrics getMetrics(const Symbol& symbol, const core::ExchangeId& exchange) const;
-    void cleanupInactiveAnalyzers(std::chrono::seconds inactive_threshold);
 
-    std::shared_ptr<OrderBookAnalyzer>  getAnalyzerForSymbol(const std::string& symbol, const core::ExchangeId& exchange) const;
-    // std::shared_ptr<OrderBookAnalyzer>  getAnalyzerForSymbol(const std::string& symbol, const core::ExchangeId& exchange);
+    /**
+     * Get or create analyzer for a specific symbol and exchange
+     */
+    std::shared_ptr<OrderBookAnalyzer> getAnalyzerForSymbol(
+        const std::string& symbol, 
+        const core::ExchangeId& exchangeId,
+        const ParameterSet& params = ParameterSet{});
 
-    void updateParameters(const ParameterSet& params) ;
+    /**
+     * Get existing analyzer (returns nullptr if not found)
+     */
+    std::shared_ptr<OrderBookAnalyzer> getAnalyzerForSymbol(
+        const std::string& symbol, 
+        const core::ExchangeId& exchangeId) const;
+
+    /**
+     * Remove analyzer for specific symbol and exchange
+     */
+    void removeAnalyzer(const std::string& symbol, const core::ExchangeId& exchangeId);
+
+    /**
+     * Get all active analyzers
+     */
+    std::vector<std::shared_ptr<OrderBookAnalyzer>> getAllAnalyzers() const;
+
+    /**
+     * Process order book data through appropriate analyzer
+     */
+    void processOrderBook(const data_ingestion::OrderBook& snapshot);
+
+    /**
+     * Get metrics for specific symbol and exchange
+     */
+    OrderBookMetrics getMetrics(const core::Symbol& symbol, 
+                               const core::ExchangeId& exchange) const;
+
+    /**
+     * Cleanup analyzers that haven't been updated recently
+     */
+    void cleanupInactiveAnalyzers(std::chrono::seconds inactiveThreshold);
+
+    /**
+     * Update parameters for all analyzers
+     */
+    void updateParameters(const ParameterSet& params);
 
 private:
     std::unordered_map<std::string, std::shared_ptr<OrderBookAnalyzer>> analyzers_;
-    // params_ declare
     ParameterSet params_;
-    mutable std::mutex mutex_;    // std::lock_guard<std::mutex> lock(mutex_); // MISSING - cần add thread safety
-    mutable std::mutex manager_mutex_; // Mutex for thread-safe access
-    
+    mutable std::mutex mutex_;
+
+    std::string createKey(const std::string& symbol, const core::ExchangeId& exchangeId) const;
 };
- /**
-  * OrderBookAnalyzer processes order book data to extract trading signals
-  * based on order book imbalances and other market microstructure patterns.
-  */
- class OrderBookAnalyzer {
- public:
-     /**
-      * Creates an order book analyzer for a specific exchange and trading pair
-      */
-     OrderBookAnalyzer(const core::ExchangeId& exchangeId, const std::string& tradingPair, 
-                      const ParameterSet& params = ParameterSet());
-     
-     /**
-      * Creates an order book analyzer with parameters explicitly specified
-      */
-     OrderBookAnalyzer(const core::ExchangeId& exchangeId, const std::string& tradingPair, 
-                      int depth_levels, double price_grouping_factor);
-    OrderBookAnalyzer(const OrderBookAnalyzerConfig& config);
 
+/**
+ * Factory function to create OrderBookAnalyzer instances
+ */
+std::shared_ptr<OrderBookAnalyzer> createOrderBookAnalyzer(
+    const core::ExchangeId& exchangeId, 
+    const std::string& tradingPair,
+    const ParameterSet& params = ParameterSet{});
 
-
-     virtual ~OrderBookAnalyzer() = default;
-     
-     /**
-      * Process an order book snapshot
-      * 
-      * @param snapshot Order book snapshot to analyze
-      */
-     virtual void processOrderBook(const data_ingestion::OrderBook& snapshot);
-     
-     /**
-      * Get current order book metrics
-      * 
-      * @return Order book metrics
-      */
-     virtual OrderBookMetrics getMetrics() const;
-     
-     /**
-      * Get a specific metric value
-      * 
-      * @param type Metric type
-      * @param depth Depth level for level-specific metrics
-      * @return Metric value
-      */
-     virtual double getMetric(const std::string& metric_name, int depth = 10) const;
-     
-     /**
-      * Register a callback for metrics updates
-      * 
-      * @param callback Function to call when metrics are updated
-      */
-     virtual void registerMetricsCallback(MetricsCallback callback);
-     
-     /**
-      * Check if enough data has been processed for reliable metrics
-      * 
-      * @return True if metrics are stable, false otherwise
-      */
-     virtual bool hasStableMetrics() const;
-     
-     /**
-      * Reset the analyzer state
-      */
-     virtual void reset();
-     
-     /**
-      * Set the depth of analysis
-      * 
-      * @param depth_levels Number of price levels to analyze
-      */
-     virtual void setDepthLevels(int depth_levels);
-     
-     /**
-      * Set price grouping factor
-      * 
-      * @param factor Price grouping factor
-      */
-     virtual void setPriceGroupingFactor(double factor);
-     
-     /**
-      * Get the exchange ID
-      * @return Exchange ID
-      */
-     const core::ExchangeId& getExchangeId() const { return exchangeId_; }
-     
-     /**
-      * Get the trading pair
-      * @return Trading pair
-      */
-     const std::string& getTradingPair() const { return trading_pair_; }
-    //  updateParameters function
-     virtual void updateParameters(const ParameterSet& params);
-     
-     /**
-      * Get the current parameters
-      * @return Current parameters
-      */
-     const ParameterSet& getParameters() const { return params_; }
-     
-     /**
-      * Get the last update time
-      * @return Last update time
-      */
-     core::Timestamp getLastUpdateTime() const { return last_update_time_; }
-     
-     /**
-      * Get the historical mid prices
-      * @return Historical mid prices
-      */
-     const std::vector<double>& getHistoricalMidPrices() const { return historical_mid_prices_; }
-     
-     /**
-      * Get the historical spreads
-      * @return Historical spreads
-      */
-     const std::vector<double>& getHistoricalSpreads() const { return historical_spreads_; }
-     
-     /**
-      * Get the historical volumes
-      * @return Historical volumes
-      */
-     const std::vector<double>& getHistoricalVolumes() const { return historical_volumes_; }
-     
-     /**
-      * Get the historical imbalances
-      * @return Historical imbalances
-      */
-     const std::vector<double>& getHistoricalImbalances() const { return historical_imbalances_; }
-
- protected:
-     /**
-      * Calculate basic price metrics
-      * 
-      * @param bids Bid price levels
-      * @param asks Ask price levels
-      */
-     virtual void calculatePriceMetrics(
-         const std::vector<data_ingestion::PriceLevel>& bids,
-         const std::vector<data_ingestion::PriceLevel>& asks);
-     
-     /**
-      * Calculate volume-based metrics
-      * 
-      * @param bids Bid price levels
-      * @param asks Ask price levels
-      * @param depth Depth level to consider
-      */
-     virtual void calculateVolumeMetrics(
-         const std::vector<data_ingestion::PriceLevel>& bids,
-         const std::vector<data_ingestion::PriceLevel>& asks,
-         int depth);
-     
-     /**
-      * Calculate metrics for each price level
-      * 
-      * @param bids Bid price levels
-      * @param asks Ask price levels
-      */
-     virtual void calculateLevelMetrics(
-         const std::vector<data_ingestion::PriceLevel>& bids,
-         const std::vector<data_ingestion::PriceLevel>& asks);
-     
-     /**
-      * Calculate imbalance metrics
-      * 
-      * @param bids Bid price levels
-      * @param asks Ask price levels
-      */
-     virtual void calculateImbalanceMetrics(
-         const std::vector<data_ingestion::PriceLevel>& bids,
-         const std::vector<data_ingestion::PriceLevel>& asks);
-     
-     /**
-      * Calculate derived metrics based on time series data
-      */
-     virtual void calculateDerivedMetrics();
-     
-     /**
-      * Update the time series data
-      */
-     virtual void updateTimeSeries();
-     
-     /**
-      * Calculate time-based metrics (velocities, accelerations)
-      */
-     virtual void calculateTimeBasedMetrics();
-     
-     /**
-      * Process level data with price grouping
-      * 
-      * @param levels Original price levels
-      * @param is_bids Whether these are bid levels
-      * @return Grouped price levels
-      */
-     virtual std::vector<data_ingestion::PriceLevel> groupPriceLevels(
-         const std::vector<data_ingestion::PriceLevel>& levels,
-         bool is_bids) const;
-     
-     /**
-      * Calculate weighted imbalance metric
-      * 
-      * @param bids Bid price levels
-      * @param asks Ask price levels
-      * @param weighting_function Function to weight each level
-      * @return Weighted imbalance
-      */
-     virtual double calculateWeightedImbalance(
-         const std::vector<data_ingestion::PriceLevel>& bids,
-         const std::vector<data_ingestion::PriceLevel>& asks,
-         const std::function<double(int)>& weighting_function) const;
-     
-     /**
-      * Detect liquidity walls (large orders at specific levels)
-      * 
-      * @param levels Price levels to analyze
-      * @param threshold Volume threshold factor
-      * @return Vector of indices with liquidity walls
-      */
-     virtual std::vector<int> detectLiquidityWalls(
-         const std::vector<data_ingestion::PriceLevel>& levels,
-         double threshold = 3.0) const;
-     
-     /**
-      * Calculate market directional coefficient
-      * 
-      * @return Directional coefficient (-1 to 1)
-      */
-     virtual double calculateDirectionalCoefficient() const;
-     
-     /**
-      * Calculate volatility expectation based on order book structure
-      * 
-      * @return Volatility expectation
-      */
-     virtual double calculateVolatilityExpectation() const;
-     double calculateRealizedVolatility() const;
-    double calculateVolatilityPerUnitTime() const ;
-
-     /**
-      * Notify callbacks of metrics update
-      */
-     virtual void notifyMetricsUpdated();
-
-     // Exchange and trading pair identification
-     core::ExchangeId exchangeId_;
-     std::string trading_pair_;
-     
-     // Configuration
-     int depth_levels_;                    // Number of price levels to analyze
-     double price_grouping_factor_;        // Factor for grouping close prices
-     
-     // State
-     OrderBookMetrics current_metrics_;
-     std::deque<OrderBookMetrics> metrics_history_;
-    //  price_history_
-    std::vector<double> price_history_; // If you need to store it as member
-     int min_samples_for_stability_;        // Minimum samples for stable metrics
-     
-     // Callbacks
-     std::vector<MetricsCallback> metrics_callbacks_;
-     
-     // Thread safety
-     mutable std::mutex mutex_;
-     
-     // Historical data
-     std::vector<double> historical_mid_prices_;
-     std::vector<double> historical_spreads_;
-     std::vector<double> historical_volumes_;
-     std::vector<double> historical_imbalances_;
-     
-     // Timestamps for rate calculations
-     core::Timestamp last_update_time_;
-    std::vector<double> historical_timestamps_; // Add this line
-     // Moving averages for smoothing
-     double ema_mid_price_ = 0.0;
-     double ema_spread_ = 0.0;
-     double ema_volume_imbalance_ = 0.0;
-     double ema_alpha_ = 0.2;              // Smoothing factor for EMAs
-
-        // Parameters
-        ParameterSet params_;
- };
- 
- // Factory function to create OrderBookAnalyzer instances
- std::shared_ptr<OrderBookAnalyzer> createOrderBookAnalyzer(
-     const core::ExchangeId& exchangeId, 
-     const std::string& tradingPair,
-     const ParameterSet& params = ParameterSet());
- 
- } // namespace strategy
- } // namespace trading
+} // namespace strategy
+} // namespace trading

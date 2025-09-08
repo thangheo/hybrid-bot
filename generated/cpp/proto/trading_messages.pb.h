@@ -2087,9 +2087,9 @@ class MarketIntelligence final :
   void _internal_set_order_book_imbalance(double value);
   public:
 
-  // double depth_imbalance = 5;
+  // double depthImbalance = 5;
   void clear_depth_imbalance();
-  double depth_imbalance() const;
+  double depthImbalance() const;
   void set_depth_imbalance(double value);
   private:
   double _internal_depth_imbalance() const;
@@ -7263,15 +7263,15 @@ inline void MarketIntelligence::set_order_book_imbalance(double value) {
   // @@protoc_insertion_point(field_set:trading.MarketIntelligence.order_book_imbalance)
 }
 
-// double depth_imbalance = 5;
+// double depthImbalance = 5;
 inline void MarketIntelligence::clear_depth_imbalance() {
   _impl_.depth_imbalance_ = 0;
 }
 inline double MarketIntelligence::_internal_depth_imbalance() const {
   return _impl_.depth_imbalance_;
 }
-inline double MarketIntelligence::depth_imbalance() const {
-  // @@protoc_insertion_point(field_get:trading.MarketIntelligence.depth_imbalance)
+inline double MarketIntelligence::depthImbalance() const {
+  // @@protoc_insertion_point(field_get:trading.MarketIntelligence.depthImbalance)
   return _internal_depth_imbalance();
 }
 inline void MarketIntelligence::_internal_set_depth_imbalance(double value) {
@@ -7280,7 +7280,7 @@ inline void MarketIntelligence::_internal_set_depth_imbalance(double value) {
 }
 inline void MarketIntelligence::set_depth_imbalance(double value) {
   _internal_set_depth_imbalance(value);
-  // @@protoc_insertion_point(field_set:trading.MarketIntelligence.depth_imbalance)
+  // @@protoc_insertion_point(field_set:trading.MarketIntelligence.depthImbalance)
 }
 
 // double liquidity_ratio = 6;

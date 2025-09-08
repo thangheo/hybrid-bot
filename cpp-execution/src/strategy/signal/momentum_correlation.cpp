@@ -103,11 +103,11 @@ void MomentumCorrelation::updateCorrelationModel(
 //         }
         
 //         // Add core metrics explicitly
-//         if (!std::isnan(dataPoint.metrics.bid_ask_volume_ratio)) {
-//             metricValues["bid_ask_ratio"].push_back(dataPoint.metrics.bid_ask_volume_ratio);
+//         if (!std::isnan(dataPoint.metrics.bidAskVolumeRatio)) {
+//             metricValues["bid_ask_ratio"].push_back(dataPoint.metrics.bidAskVolumeRatio);
 //         }
-//         if (!std::isnan(dataPoint.metrics.volume_imbalance)) {
-//             metricValues["volume_imbalance"].push_back(dataPoint.metrics.volume_imbalance);
+//         if (!std::isnan(dataPoint.metrics.volumeImbalance )) {
+//             metricValues["volumeImbalance "].push_back(dataPoint.metrics.volumeImbalance );
 //         }
 //         if (!std::isnan(dataPoint.metrics.spread)) {
 //             metricValues["spread"].push_back(dataPoint.metrics.spread);
@@ -224,34 +224,34 @@ void MomentumCorrelation::calculateCorrelations() {
         
         // Extract and store key metrics from OrderBookMetrics
         // Directly access all relevant metrics using the OrderBookMetrics struct
-        metricValues["bid_ask_ratio"].push_back(dataPoint.metrics.bid_ask_volume_ratio);
-        metricValues["volume_imbalance"].push_back(dataPoint.metrics.volume_imbalance);
-        metricValues["weighted_volume_imbalance"].push_back(dataPoint.metrics.weighted_volume_imbalance);
-        metricValues["depth_imbalance"].push_back(dataPoint.metrics.depth_imbalance);
-        metricValues["pressure_imbalance"].push_back(dataPoint.metrics.pressure_imbalance);
+        metricValues["bid_ask_ratio"].push_back(dataPoint.metrics.bidAskVolumeRatio);
+        metricValues["volumeImbalance "].push_back(dataPoint.metrics.volumeImbalance );
+        metricValues["weightedVolumeImbalance"].push_back(dataPoint.metrics.weightedVolumeImbalance);
+        metricValues["depthImbalance"].push_back(dataPoint.metrics.depthImbalance);
+        metricValues["pressureImbalance"].push_back(dataPoint.metrics.pressureImbalance);
         metricValues["spread"].push_back(dataPoint.metrics.spread);
-        metricValues["spread_percent"].push_back(dataPoint.metrics.spread_percent);
-        metricValues["price_level_imbalance"].push_back(dataPoint.metrics.price_level_imbalance);
-        metricValues["market_directional_coefficient"].push_back(dataPoint.metrics.market_directional_coefficient);
-        metricValues["liquidity_profile_score"].push_back(dataPoint.metrics.liquidity_profile_score);
+        metricValues["spreadPercent"].push_back(dataPoint.metrics.spreadPercent);
+        metricValues["priceLevelImbalance"].push_back(dataPoint.metrics.priceLevelImbalance);
+        metricValues["marketDirectionalCoefficient"].push_back(dataPoint.metrics.marketDirectionalCoefficient);
+        metricValues["liquidityProfileScore"].push_back(dataPoint.metrics.liquidityProfileScore);
         
         // Add time-based metrics if they exist
-        if (dataPoint.metrics.price_velocity != 0.0) {
-            metricValues["price_velocity"].push_back(dataPoint.metrics.price_velocity);
+        if (dataPoint.metrics.priceVelocity != 0.0) {
+            metricValues["priceVelocity"].push_back(dataPoint.metrics.priceVelocity);
         }
-        if (dataPoint.metrics.volume_velocity != 0.0) {
-            metricValues["volume_velocity"].push_back(dataPoint.metrics.volume_velocity);
+        if (dataPoint.metrics.volumeVelocity != 0.0) {
+            metricValues["volumeVelocity"].push_back(dataPoint.metrics.volumeVelocity);
         }
-        if (dataPoint.metrics.spread_velocity != 0.0) {
-            metricValues["spread_velocity"].push_back(dataPoint.metrics.spread_velocity);
+        if (dataPoint.metrics.spreadVelocity != 0.0) {
+            metricValues["spreadVelocity"].push_back(dataPoint.metrics.spreadVelocity);
         }
         
-        // Process level-specific metrics from time_series_metrics if available
+        // Process level-specific metrics from timeSeriesMetrics if available
         for (size_t level = 1; level <= params_.max_level_depth; ++level) {
             std::string levelKey = "level_" + std::to_string(level) + "_imbalance";
             // Check if we have level-specific imbalance data
-            auto levelData = dataPoint.metrics.time_series_metrics.find("level_imbalances");
-            if (levelData != dataPoint.metrics.time_series_metrics.end() && 
+            auto levelData = dataPoint.metrics.timeSeriesMetrics.find("level_imbalances");
+            if (levelData != dataPoint.metrics.timeSeriesMetrics.end() && 
                 level <= levelData->second.size()) {
                 metricValues[levelKey].push_back(levelData->second[level-1]);
             }
@@ -451,9 +451,9 @@ double MomentumCorrelation::getCorrelationCoefficient(const std::string& metric_
 // Add this helper method to your header file
 // std::string MomentumCorrelation::imbalanceTypeToString(ImbalanceType type) const {
 //     switch (type) {
-//         case ImbalanceType::VOLUME_IMBALANCE: return "volume_imbalance";
-//         case ImbalanceType::DEPTH_IMBALANCE: return "depth_imbalance";
-//         case ImbalanceType::PRESSURE_IMBALANCE: return "pressure_imbalance";
+//         case ImbalanceType::VOLUME_IMBALANCE: return "volumeImbalance ";
+//         case ImbalanceType::DEPTH_IMBALANCE: return "depthImbalance";
+//         case ImbalanceType::PRESSURE_IMBALANCE: return "pressureImbalance";
 //         case ImbalanceType::BID_ASK_RATIO: return "bid_ask_ratio";
 //         case ImbalanceType::SPREAD_IMBALANCE: return "spread";
 //         default: return "unknown_imbalance";

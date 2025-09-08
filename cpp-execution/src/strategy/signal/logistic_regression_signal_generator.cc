@@ -51,13 +51,13 @@
      features.reserve(weights_.size());
      
      // Extract order book features
-     features.push_back(metrics.bid_ask_volume_ratio);
+     features.push_back(metrics.bidAskVolumeRatio);
      features.push_back(metrics.bid_ask_price_gap);
      features.push_back(metrics.mid_price);
      features.push_back(metrics.spread);
-     features.push_back(metrics.spread_percent);
-     features.push_back(metrics.volume_imbalance);
-     features.push_back(metrics.price_level_imbalance);
+     features.push_back(metrics.spreadPercent);
+     features.push_back(metrics.volumeImbalance );
+     features.push_back(metrics.priceLevelImbalance);
      features.push_back(metrics.order_flow);
      
      // Add additional features if available

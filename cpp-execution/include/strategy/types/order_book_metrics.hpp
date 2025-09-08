@@ -36,44 +36,44 @@ struct OrderBookMetrics {
     // Price metrics
     double mid_price = 0.0;
     double spread = 0.0;
-    double spread_percent = 0.0;
+    double spreadPercent = 0.0;
     
     // Volume metrics
-    double total_bid_volume = 0.0;
-    double total_ask_volume = 0.0;
-    double bid_ask_volume_ratio = 1.0;
+    double totalBidVolume  = 0.0;
+    double totalAskVolume = 0.0;
+    double bidAskVolumeRatio = 1.0;
     
     // Depth metrics
-    std::vector<double> bid_volumes_by_level;
-    std::vector<double> ask_volumes_by_level;
-    std::vector<double> cumulative_bid_volumes;
-    std::vector<double> cumulative_ask_volumes;
+    std::vector<double> bidVolumesByLevel;
+    std::vector<double> askVolumesByLevel;
+    std::vector<double> cumulativeBidVolumes;
+    std::vector<double> cumulativeAskVolumes;
     
     // Imbalance metrics
-    double volume_imbalance = 0.0;            // Overall volume imbalance
-    double weighted_volume_imbalance = 0.0;   // Price-weighted volume imbalance
-    double depth_imbalance = 0.0;             // Imbalance in market depth
-    double pressure_imbalance = 0.0;          // Combined pressure imbalance
+    double volumeImbalance  = 0.0;            // Overall volume imbalance
+    double weightedVolumeImbalance = 0.0;   // Price-weighted volume imbalance
+    double depthImbalance = 0.0;             // Imbalance in market depth
+    double pressureImbalance = 0.0;          // Combined pressure imbalance
     
     // Level metrics
-    double bid_density = 0.0;                 // Density of orders on bid side
-    double ask_density = 0.0;                 // Density of orders on ask side
-    double price_level_imbalance = 0.0;       // Imbalance in number of price levels
+    double bidDensity = 0.0;                 // Density of orders on bid side
+    double askDensity = 0.0;                 // Density of orders on ask side
+    double priceLevelImbalance = 0.0;       // Imbalance in number of price levels
     
     // Derived metrics
-    double market_directional_coefficient = 0.0;  // Market direction indicator
-    double liquidity_profile_score = 0.0;         // Score of overall liquidity
-    double volatility_expectation = 0.0;          // Expected near-term volatility
+    double marketDirectionalCoefficient = 0.0;  // Market direction indicator
+    double liquidityProfileScore = 0.0;         // Score of overall liquidity
+    double volatilityExpectation = 0.0;          // Expected near-term volatility
     double realized_volatility = 0.0;           // Realized volatility based on recent data
     double volatility_per_unit_time = 0.0; // Volatility normalized by time
     double liquidity_pressure = 0.0;            // Pressure from liquidity imbalances
     // Historical metrics
-    double price_velocity = 0.0;              // Rate of price change
-    double volume_velocity = 0.0;             // Rate of volume change
-    double spread_velocity = 0.0;             // Rate of spread change
+    double priceVelocity = 0.0;              // Rate of price change
+    double volumeVelocity = 0.0;             // Rate of volume change
+    double spreadVelocity = 0.0;             // Rate of spread change
     
     // Time-series metrics
-    std::map<std::string, std::vector<double>> time_series_metrics;
+    std::map<std::string, std::vector<double>> timeSeriesMetrics;
     
     // Constructor to initialize metrics map
     OrderBookMetrics() {
@@ -84,46 +84,46 @@ struct OrderBookMetrics {
     void updateMetricsMap() {
         metrics["mid_price"] = mid_price;
         metrics["spread"] = spread;
-        metrics["spread_percent"] = spread_percent;
+        metrics["spreadPercent"] = spreadPercent;
         
         // Map standard volume metrics to both original and expected names
-        metrics["total_bid_volume"] = total_bid_volume;
-        metrics["total_ask_volume"] = total_ask_volume;
-        metrics["bid_volume"] = total_bid_volume;  // Additional mapping for compatibility
-        metrics["ask_volume"] = total_ask_volume;  // Additional mapping for compatibility
-        metrics["bid_ask_volume_ratio"] = bid_ask_volume_ratio;
+        metrics["totalBidVolume "] = totalBidVolume ;
+        metrics["totalAskVolume"] = totalAskVolume;
+        metrics["bid_volume"] = totalBidVolume ;  // Additional mapping for compatibility
+        metrics["ask_volume"] = totalAskVolume;  // Additional mapping for compatibility
+        metrics["bidAskVolumeRatio"] = bidAskVolumeRatio;
         
         // Imbalance metrics
-        metrics["volume_imbalance"] = volume_imbalance;
-        metrics["weighted_volume_imbalance"] = weighted_volume_imbalance;
-        metrics["depth_imbalance"] = depth_imbalance;
-        metrics["pressure_imbalance"] = pressure_imbalance;
+        metrics["volumeImbalance "] = volumeImbalance ;
+        metrics["weightedVolumeImbalance"] = weightedVolumeImbalance;
+        metrics["depthImbalance"] = depthImbalance;
+        metrics["pressureImbalance"] = pressureImbalance;
         
         // Level metrics
-        metrics["bid_density"] = bid_density;
-        metrics["ask_density"] = ask_density;
-        metrics["price_level_imbalance"] = price_level_imbalance;
-        metrics["bid_level_count"] = bid_volumes_by_level.size();  // Derived from vector size
-        metrics["ask_level_count"] = ask_volumes_by_level.size();  // Derived from vector size
+        metrics["bidDensity"] = bidDensity;
+        metrics["askDensity"] = askDensity;
+        metrics["priceLevelImbalance"] = priceLevelImbalance;
+        metrics["bid_level_count"] = bidVolumesByLevel.size();  // Derived from vector size
+        metrics["ask_level_count"] = askVolumesByLevel.size();  // Derived from vector size
         
         // Derived metrics
-        metrics["market_directional_coefficient"] = market_directional_coefficient;
-        metrics["liquidity_profile_score"] = liquidity_profile_score;
-        metrics["volatility_expectation"] = volatility_expectation;
+        metrics["marketDirectionalCoefficient"] = marketDirectionalCoefficient;
+        metrics["liquidityProfileScore"] = liquidityProfileScore;
+        metrics["volatilityExpectation"] = volatilityExpectation;
         metrics["realized_volatility"] = realized_volatility;
         metrics["liquidity_pressure"] = liquidity_pressure;
         metrics["volatility_per_unit_time"] = volatility_per_unit_time;
         
         // Historical metrics
-        metrics["price_velocity"] = price_velocity;
-        metrics["volume_velocity"] = volume_velocity;
-        metrics["spread_velocity"] = spread_velocity;
+        metrics["priceVelocity"] = priceVelocity;
+        metrics["volumeVelocity"] = volumeVelocity;
+        metrics["spreadVelocity"] = spreadVelocity;
         
         // Additional metrics that might be referenced in the code
         metrics["bid_flow"] = 0.0;  // Fill in with actual values if available
         metrics["ask_flow"] = 0.0;  // Fill in with actual values if available
         metrics["average_spread_percent"] = 0.0;  // Fill in with actual values if available
-        metrics["volatility"] = volatility_expectation;  // Map to existing value
+        metrics["volatility"] = volatilityExpectation;  // Map to existing value
     }
     
     // Method to set a metric value
@@ -133,23 +133,23 @@ struct OrderBookMetrics {
         // Also update the corresponding class member if it exists
         if (name == "mid_price") mid_price = value;
         else if (name == "spread") spread = value;
-        else if (name == "spread_percent") spread_percent = value;
-        else if (name == "bid_volume" || name == "total_bid_volume") total_bid_volume = value;
-        else if (name == "ask_volume" || name == "total_ask_volume") total_ask_volume = value;
-        else if (name == "bid_ask_volume_ratio") bid_ask_volume_ratio = value;
-        else if (name == "volume_imbalance") volume_imbalance = value;
-        else if (name == "weighted_volume_imbalance") weighted_volume_imbalance = value;
-        else if (name == "depth_imbalance") depth_imbalance = value;
-        else if (name == "pressure_imbalance") pressure_imbalance = value;
-        else if (name == "bid_density") bid_density = value;
-        else if (name == "ask_density") ask_density = value;
-        else if (name == "price_level_imbalance") price_level_imbalance = value;
-        else if (name == "market_directional_coefficient") market_directional_coefficient = value;
-        else if (name == "liquidity_profile_score") liquidity_profile_score = value;
-        else if (name == "volatility_expectation") volatility_expectation = value;
-        else if (name == "price_velocity") price_velocity = value;
-        else if (name == "volume_velocity") volume_velocity = value;
-        else if (name == "spread_velocity") spread_velocity = value;
+        else if (name == "spreadPercent") spreadPercent = value;
+        else if (name == "bid_volume" || name == "totalBidVolume ") totalBidVolume  = value;
+        else if (name == "ask_volume" || name == "totalAskVolume") totalAskVolume = value;
+        else if (name == "bidAskVolumeRatio") bidAskVolumeRatio = value;
+        else if (name == "volumeImbalance ") volumeImbalance  = value;
+        else if (name == "weightedVolumeImbalance") weightedVolumeImbalance = value;
+        else if (name == "depthImbalance") depthImbalance = value;
+        else if (name == "pressureImbalance") pressureImbalance = value;
+        else if (name == "bidDensity") bidDensity = value;
+        else if (name == "askDensity") askDensity = value;
+        else if (name == "priceLevelImbalance") priceLevelImbalance = value;
+        else if (name == "marketDirectionalCoefficient") marketDirectionalCoefficient = value;
+        else if (name == "liquidityProfileScore") liquidityProfileScore = value;
+        else if (name == "volatilityExpectation") volatilityExpectation = value;
+        else if (name == "priceVelocity") priceVelocity = value;
+        else if (name == "volumeVelocity") volumeVelocity = value;
+        else if (name == "spreadVelocity") spreadVelocity = value;
     }
     
     // Get a specific metric by name

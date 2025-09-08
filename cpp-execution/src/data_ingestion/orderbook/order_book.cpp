@@ -490,19 +490,42 @@ PriceLevel OrderBook::getBestAsk() const {
     return asks_.begin()->second;
 }
 
+// double OrderBook::getMidPrice() const {
+//     std::lock_guard<std::mutex> lock(mutex_);
+    
+//     if (bids_.empty() || asks_.empty()) {
+//         return 0.0;
+//     }
+    
+//     double best_bid = bids_.begin()->first;
+//     double best_ask = asks_.begin()->first;
+    
+//     return (best_bid + best_ask) / 2.0;
+// }
 double OrderBook::getMidPrice() const {
     std::lock_guard<std::mutex> lock(mutex_);
     
+    // DEBUG: Print order book state
+    std::cout << "DEBUG getMidPrice: Exchange=" << exchangeId_.toString() 
+              << " Symbol=" << symbol_.toString()
+              << " Bids size=" << bids_.size() 
+              << " Asks size=" << asks_.size() 
+              << " Valid=" << is_valid_ << std::endl;
+    
     if (bids_.empty() || asks_.empty()) {
+        std::cout << "DEBUG getMidPrice: Empty order book - returning 0.0" << std::endl;
         return 0.0;
     }
     
     double best_bid = bids_.begin()->first;
     double best_ask = asks_.begin()->first;
     
+    std::cout << "DEBUG getMidPrice: best_bid=" << best_bid 
+              << " best_ask=" << best_ask 
+              << " mid=" << (best_bid + best_ask) / 2.0 << std::endl;
+    
     return (best_bid + best_ask) / 2.0;
 }
-
 double OrderBook::getSpread() const {
     std::lock_guard<std::mutex> lock(mutex_);
     
