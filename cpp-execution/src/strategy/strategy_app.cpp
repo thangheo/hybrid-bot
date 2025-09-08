@@ -196,7 +196,7 @@ public:
         //           std::chrono::duration_cast<std::chrono::milliseconds>(signal.generation_time.time_since_epoch()).count(),
         //           signal.ttl.count()/1000000,
         //           std::chrono::duration_cast<std::chrono::milliseconds>(signal.expirationTime.time_since_epoch()).count());
-        // // type of event which generated the signal
+        // //source of signal event
         // LOG_DEBUG("  Source Type: {}", static_cast<int>(signal.source_type));
         //  enum class ImbalanceType {
         //     VOLUME_IMBALANCE,              // Significant difference between bid and ask volume
@@ -221,9 +221,9 @@ public:
         //filter signals based on custom criteria (e.g., strength threshold)
         if (signal.strength < 0.5) return; // Weak signals are ignored
         if(signal.direction == core::Direction::NEUTRAL) return; // Ignore neutral signals
-        if(signal.confidence < 0.6) return; // Ignore low confidence signals
+        if(signal.confidence < 0.5) return; // Ignore low confidence signals
         if(signal.quality < 0.5) return; // Ignore low quality signals
-        
+
         //if target prices are too close to mid price, ignore
         double percentage_change_threshold = 0.0018; // 0.25%
         if(midPrice > 0.0) {
@@ -325,11 +325,14 @@ private:
             // Calculate hold duration
             auto remainingTTL = std::chrono::duration_cast<std::chrono::milliseconds>(
                 signal.expirationTime - entryTime);
+            // auto holdDuration = std::min(
+            //     std::chrono::duration_cast<std::chrono::milliseconds>(signal.ttl), 
+            //     remainingTTL);
             auto holdDuration = std::min(
-                std::chrono::duration_cast<std::chrono::milliseconds>(signal.ttl), 
-                remainingTTL);
-            
-            LOG_INFO("TRADE EXECUTED: {} | {} | {} | Entry: {:.8f} | Duration: {}ms",
+                std::chrono::duration_cast<std::chrono::milliseconds>(signal.ttl),std::chrono::milliseconds(15000));
+            //min = 1s
+            if(holdDuration < 1s) holdDuration = 1s;
+                LOG_INFO("TRADE EXECUTED: {} | {} | {} | Entry: {:.8f} | Duration: {}ms",
                     signal.id, signal.symbol.toString(),
                     signal.direction == Direction::BUY ? "BUY" : "SELL", 
                     entryPrice, holdDuration.count());

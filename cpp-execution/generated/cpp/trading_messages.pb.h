@@ -2088,12 +2088,12 @@ class MarketIntelligence final :
   public:
 
   // double depthImbalance = 5;
-  void clear_depth_imbalance();
-  double depthImbalance() const;
-  void set_depth_imbalance(double value);
+  void clear_depthimbalance();
+  double depthimbalance() const;
+  void set_depthimbalance(double value);
   private:
-  double _internal_depth_imbalance() const;
-  void _internal_set_depth_imbalance(double value);
+  double _internal_depthimbalance() const;
+  void _internal_set_depthimbalance(double value);
   public:
 
   // double liquidity_ratio = 6;
@@ -2297,7 +2297,7 @@ class MarketIntelligence final :
     int64_t timestamp_;
     double bid_ask_spread_;
     double order_book_imbalance_;
-    double depth_imbalance_;
+    double depthimbalance_;
     double liquidity_ratio_;
     double spread_stability_;
     double net_flow_5s_;
@@ -7264,22 +7264,22 @@ inline void MarketIntelligence::set_order_book_imbalance(double value) {
 }
 
 // double depthImbalance = 5;
-inline void MarketIntelligence::clear_depth_imbalance() {
-  _impl_.depth_imbalance_ = 0;
+inline void MarketIntelligence::clear_depthimbalance() {
+  _impl_.depthimbalance_ = 0;
 }
-inline double MarketIntelligence::_internal_depth_imbalance() const {
-  return _impl_.depth_imbalance_;
+inline double MarketIntelligence::_internal_depthimbalance() const {
+  return _impl_.depthimbalance_;
 }
-inline double MarketIntelligence::depthImbalance() const {
+inline double MarketIntelligence::depthimbalance() const {
   // @@protoc_insertion_point(field_get:trading.MarketIntelligence.depthImbalance)
-  return _internal_depth_imbalance();
+  return _internal_depthimbalance();
 }
-inline void MarketIntelligence::_internal_set_depth_imbalance(double value) {
+inline void MarketIntelligence::_internal_set_depthimbalance(double value) {
   
-  _impl_.depth_imbalance_ = value;
+  _impl_.depthimbalance_ = value;
 }
-inline void MarketIntelligence::set_depth_imbalance(double value) {
-  _internal_set_depth_imbalance(value);
+inline void MarketIntelligence::set_depthimbalance(double value) {
+  _internal_set_depthimbalance(value);
   // @@protoc_insertion_point(field_set:trading.MarketIntelligence.depthImbalance)
 }
 

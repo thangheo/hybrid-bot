@@ -1,5 +1,5 @@
 # src/strategy/CMakeLists.txt
-
+# Exclude hawkes/imbalance_signal_generator.cpp from sources
 # Collect all source files for the strategy library
 file(GLOB_RECURSE STRATEGY_SOURCES
     "core_analysis/*.cpp"
@@ -7,8 +7,11 @@ file(GLOB_RECURSE STRATEGY_SOURCES
     "optimization/*.cpp"
     "pattern/*.cpp"
     "signal/*.cpp"
+    # "signal/hawkes/*.cpp"
     "*.cpp"  # Include any cpp files in the strategy root directory
 )
+list(FILTER STRATEGY_SOURCES EXCLUDE REGEX "signal/hawkes/imbalance_signal_generator\\.cpp$")
+list(FILTER STRATEGY_SOURCES EXCLUDE REGEX "signal/hawkes/hawkes_predictor\\.cpp$")
 
 # Remove strategy_app.cpp from the library sources if it exists
 list(FILTER STRATEGY_SOURCES EXCLUDE REGEX "strategy_app\\.cpp$")
@@ -58,4 +61,5 @@ target_link_libraries(strategy_app
 target_include_directories(strategy_app
     PRIVATE
         ${CMAKE_SOURCE_DIR}/include
+
 )

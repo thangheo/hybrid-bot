@@ -340,7 +340,8 @@ double ImbalanceDetectionEngine::calculateImbalanceConfidence(ImbalanceType type
     if (emaIt != metrics.metrics.end()) {
         double emaVolumeImbalance = emaIt->second;
         // Combine raw ratio and EMA for a smoothed ratio
-        volumeRatio = (volumeRatio + emaVolumeImbalance) / 2.0;
+        // volumeRatio = (volumeRatio + emaVolumeImbalance) / 2.0;
+        volumeRatio = emaVolumeImbalance; // Use EMA directly for detection
     }
     
     // Get current threshold

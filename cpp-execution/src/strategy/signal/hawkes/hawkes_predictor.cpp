@@ -6,7 +6,7 @@
  * @date September 07, 2025
  */
 
-#include "strategy/signal/hawkes_predictor.hpp"
+#include "strategy/signal/hawkes/hawkes_predictor.hpp"
 #include <algorithm>
 #include <numeric>
 #include <cmath>
@@ -364,8 +364,8 @@ double HawkesPredictor::calculatePersistence(
 
 HawkesEventType HawkesPredictor::mapSignalToEventType(const TradingSignal& signal) const {
     // Use signal metrics to determine event type
-    const auto& metrics = signal.signalMetrics;
-    
+    const auto& metrics = signal.signal_metrics;
+
     // Check for specific metric indicators
     if (metrics.find("volumeImbalance ") != metrics.end()) {
         return HawkesEventType::VOLUME_IMBALANCE;
