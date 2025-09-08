@@ -42,7 +42,7 @@ class OrderBookAnalyzerManager {
 public:
 // Constructor
     OrderBookAnalyzerManager(const ParameterSet& params = ParameterSet()) : params_(params) {}
-    virtual ~OrderBookAnalyzerManager() = default;
+    // virtual ~OrderBookAnalyzerManager() = default;
     // Delete copy constructor and assignment
     OrderBookAnalyzerManager(const OrderBookAnalyzerManager&) = delete;
     OrderBookAnalyzerManager& operator=(const OrderBookAnalyzerManager&) = delete;
@@ -68,8 +68,7 @@ private:
     std::unordered_map<std::string, std::shared_ptr<OrderBookAnalyzer>> analyzers_;
     // params_ declare
     ParameterSet params_;
-    std::mutex mutex_;
-    // std::lock_guard<std::mutex> lock(mutex_); // MISSING - cần add thread safety
+    mutable std::mutex mutex_;    // std::lock_guard<std::mutex> lock(mutex_); // MISSING - cần add thread safety
     mutable std::mutex manager_mutex_; // Mutex for thread-safe access
     
 };
