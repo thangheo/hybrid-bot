@@ -2,14 +2,13 @@
  * @file risk_config.hpp (Fixed version)
  * @brief Risk configuration structures and parameter definitions
  * 
- * Fix for duplicate getCircuitBreakerConfig() method and missing declarations
+ * Fix for namespace ambiguity with nlohmann::json
  * 
  * @author Trading System Team
  * @date May 25, 2025
  */
 
 #pragma once
-#include <nlohmann/json.hpp>
 
 #include "risk_types.hpp"
 #include "risk_events.hpp"
@@ -20,16 +19,21 @@
 #include <memory>
 #include <chrono>
 #include <optional>
+#include <nlohmann/json.hpp>
+#include <common/types.hpp>
+#include <chrono>
 
-// Forward declare json for nlohmann/json.hpp
+using namespace trading;
+using namespace trading::common;
+using namespace trading::risk;
 namespace nlohmann {
-    // class json;
+    // class basic_json;
+    using json = basic_json<>;
 }
 
-namespace trading::risk {
-
+// REMOVE FORWARD DECLARATION - causes ambiguity with nlohmann::json
 // Forward declarations for helper methods
-using json = nlohmann::json;
+// using json = nlohmann::json;  // Move this to implementation file only
 
 /**
  * Configuration structure for position limits
@@ -315,7 +319,6 @@ struct PortfolioConfig {
 struct RiskLoggingConfig {
     std::string logLevel = "INFO";
     std::string logDirectory = "/var/log/riskmanagement";
-    std::string logFileName = ""; // If empty, generate based on date/time
     bool enableDetailedLogs = true;
     bool logToConsole = true;
     bool logToFile = true;
@@ -338,11 +341,11 @@ struct OrderValidationConfig {
     double maxOrderSize = 1000000.0;           // Default maximum order size
     
     // Allowed order types and time in force values
-    std::vector<OrderType> allowedOrderTypes = {
-        OrderType::MARKET, 
-        OrderType::LIMIT, 
-        OrderType::STOP, 
-        OrderType::STOP_LIMIT
+    std::vector<trading::common::OrderType> allowedOrderTypes = {
+        trading::common::OrderType::MARKET,
+        trading::common::OrderType::LIMIT,
+        trading::common::OrderType::STOP,
+        trading::common::OrderType::STOP_LIMIT
     };
     
     std::vector<std::string> allowedTimeInForce = {
@@ -413,7 +416,7 @@ struct OrderValidationConfig {
     }
     
     // Helper method to check if order type is allowed
-    bool isOrderTypeAllowed(OrderType type) const {
+    bool isOrderTypeAllowed(trading::common::OrderType type) const {
         return std::find(allowedOrderTypes.begin(), allowedOrderTypes.end(), type) != allowedOrderTypes.end();
     }
     
@@ -422,6 +425,13 @@ struct OrderValidationConfig {
         return std::find(allowedTimeInForce.begin(), allowedTimeInForce.end(), tif) != allowedTimeInForce.end();
     }
 };
+
+namespace trading::risk {
+
+// Forward declaration for the implementation file
+namespace nlohmann {
+    class json;
+}
 
 /**
  * Main risk configuration container
@@ -492,37 +502,36 @@ public:
     PortfolioConfig portfolioConfig;
 
 private:
-    PositionLimitConfig m_positionLimitConfig;
-    ExposureLimitConfig m_exposureLimitConfig;
-    CircuitBreakerConfig m_circuitBreakerConfig;
-    StopLossConfig m_stopLossConfig;
-    DrawdownConfig m_drawdownConfig;
-    FatFingerConfig m_fatFingerConfig;
-    OrderValidationConfig m_orderValidationConfig;
-    BalanceReconciliationConfig m_balanceReconciliationConfig;
-    RebalancingConfig m_rebalancingConfig;
-    CollateralConfig m_collateralConfig;
-    PortfolioConfig m_portfolioConfig;
-    RiskLoggingConfig m_loggingConfig;
+    PositionLimitConfig positionLimitConfig_;
+    ExposureLimitConfig exposureLimitConfig_;
+    CircuitBreakerConfig circuitBreakerConfig_;
+    StopLossConfig stopLossConfig_;
+    DrawdownConfig drawdownConfig_;
+    FatFingerConfig fatFingerConfig_;
+    OrderValidationConfig orderValidationConfig_;
+    BalanceReconciliationConfig balanceReconciliationConfig_;
+    RebalancingConfig rebalancingConfig_;
+    CollateralConfig collateralConfig_;
+    PortfolioConfig portfolioConfig_;
+    RiskLoggingConfig loggingConfig_;
     
-    // Private helper methods for JSON loading
+    // Private helper methods for JSON loading - use forward declared json
     bool loadJsonConfiguration(const std::string& jsonStr);
-    // void loadPositionLimitConfig(const json& pl);
-    // void loadExposureLimitConfig(const json& el);
-    void loadCircuitBreakerConfig(const json& cb);
-    // void loadStopLossConfig(const json& sl);
-    // void loadDrawdownConfig(const json& dd);
-    void loadFatFingerConfig(const json& ff);
-    void loadOrderValidationConfig(const json& ov);
-    // void loadBalanceReconciliationConfig(const json& br);
-    // void loadRebalancingConfig(const json& rb);
-    // void loadCollateralConfig(const json& co);
-    // void loadPortfolioConfig(const json& po);
-    void loadLoggingConfig(const json& lg);
+    void loadPositionLimitConfig(const nlohmann::json& pl);
+    void loadExposureLimitConfig(const nlohmann::json& el);
+    void loadCircuitBreakerConfig(const nlohmann::json& cb);
+    void loadStopLossConfig(const nlohmann::json& sl);
+    void loadDrawdownConfig(const nlohmann::json& dd);
+    void loadFatFingerConfig(const nlohmann::json& ff);
+    void loadOrderValidationConfig(const nlohmann::json& ov);
+    void loadBalanceReconciliationConfig(const nlohmann::json& br);
+    void loadRebalancingConfig(const nlohmann::json& rb);
+    void loadCollateralConfig(const nlohmann::json& co);
+    void loadPortfolioConfig(const nlohmann::json& po);
+    void loadLoggingConfig(const nlohmann::json& lg);
     
     // Helper method for saving other configs
-    void saveOtherConfigs(json& j) const;
+    void saveOtherConfigs(nlohmann::json& j) const;
 };
-
 
 } // namespace trading::risk

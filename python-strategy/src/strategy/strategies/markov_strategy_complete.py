@@ -894,7 +894,13 @@ class MarkovETFStrategyPersistent(BaseStrategy):
             
             signals.loc[buy_mask, 'signal'] = 1
             signals.loc[sell_mask, 'signal'] = -1
-            
+            if continuous_signal is None or pd.isna(continuous_signal).any():
+                logger.warning(f"Continuous signal contains null values for {symbol}")
+                return pd.DataFrame(index=data.index if not data.empty else pd.Index([]))
+
+            if indicators is None or any(pd.isna(v) if isinstance(v, (int, float)) else False for v in indicators.values()):
+                logger.warning(f"Indicators contain null values for {symbol}")
+                return pd.DataFrame(index=data.index if not data.empty else pd.Index([]))
             # FIXED: Signal strength calculation (always use absolute value)
             signals['signal_strength'] = abs(continuous_signal).clip(0.0, 1.0)
             
@@ -920,9 +926,11 @@ class MarkovETFStrategyPersistent(BaseStrategy):
             
             # Validate final signals
             assert signals['signal'].isin([-1, 0, 1]).all(), "Signal column contains invalid values"
-            assert not signals['signal_strength'].isnull().any(), "Signal strength contains null values"
+            # assert not signals['signal_strength'].isnull().any(), "Signal strength contains null values"
             assert (signals['signal_strength'] >= 0).all(), "Signal strength contains negative values"
-            
+            if signals['signal_strength'].isnull().any():
+                logger.error(f"Signal strength contains null values for {symbol}")
+                return pd.DataFrame(index=data.index if not data.empty else pd.Index([]))
             # Persistence
             self.signals_generated += 1
             if self.signals_generated == 1 or self.signals_generated % self.save_frequency == 0:
@@ -940,7 +948,7 @@ class MarkovETFStrategyPersistent(BaseStrategy):
 
         except Exception as e:
             logger.error(f"Error in signal generation for {symbol}: {e}")
-            logger.error(f"Stack trace: {traceback.format_exc()}")
+            # logger.error(f"Stack trace: {traceback.format_exc()}")
             # Return empty DataFrame with proper index to prevent downstream errors
             return pd.DataFrame(index=data.index if not data.empty else pd.Index([]))
     # Also add this method to handle the else case in generate_signals:

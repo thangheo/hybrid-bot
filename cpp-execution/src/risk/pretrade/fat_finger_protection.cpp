@@ -65,29 +65,40 @@ bool OrderPatternAnalyzer::isOutlier(double value, double thresholdSigmas) const
 }
 
 OrderPatternAnalyzer::Statistics OrderPatternAnalyzer::calculateStatistics() const {
-    Statistics stats;
-    const size_t n = samples_.size();
-    stats.sampleSize = n;
-    if (n == 0) return stats;
-
-    // Calculate mean
-    stats.mean = std::accumulate(samples_.begin(), samples_.end(), 0.0) / n;
-
-    // Calculate standard deviation
-    if (n > 1) {
-        double variance = 0.0;
-        for (double sample : samples_) {
-            double diff = sample - stats.mean;
-            variance += diff * diff;
-        }
-        variance /= (n - 1);
-        stats.stdDev = std::sqrt(variance);
-    } else {
-        stats.stdDev = 0.0;
+    if (samples_.empty()) {
+        return Statistics{};
     }
-
+    
+    Statistics stats;
+    stats.sampleSize = samples_.size();
+    
+    // Convert to vector for algorithms
+    std::vector<double> sortedSamples(samples_.begin(), samples_.end());
+    std::sort(sortedSamples.begin(), sortedSamples.end());
+    
+    // Calculate mean
+    stats.mean = std::accumulate(sortedSamples.begin(), sortedSamples.end(), 0.0) / sortedSamples.size();
+    
+    // Calculate median
+    const size_t n = sortedSamples.size();
+    if (n % 2 == 0) {
+        stats.median = (sortedSamples[n/2 - 1] + sortedSamples[n/2]) / 2.0;
+    } else {
+        stats.median = sortedSamples[n/2];
+    }
+    
+    // Calculate standard deviation
+    double variance = 0.0;
+    for (double sample : sortedSamples) {
+        double diff = sample - stats.mean;
+        variance += diff * diff;
+    }
+    variance /= (sortedSamples.size() - 1);
+    stats.stdDev = std::sqrt(variance);
+    
     return stats;
 }
+
 // FatFingerProtection Implementation
 
 FatFingerProtection::FatFingerProtection(std::shared_ptr<DataInterface> dataInterface)
@@ -168,7 +179,7 @@ bool FatFingerProtection::checkFatFinger(const OrderRequest& orderRequest,
 void FatFingerProtection::recordOrder(const OrderRequest& order) {
     try {
         auto& analyzer = getOrCreateAnalyzer(order.tradingPair);
-        analyzer.addSample(order.price);
+        analyzer.addSample(order.quantity);
         
         LOG_DEBUG("Recorded order for {}: size={}", order.tradingPair, order.quantity);
     } catch (const std::exception& e) {

@@ -31,15 +31,15 @@ bool PreTradeRiskFilter::initialize() {
         }
 
         // Create shared dependencies
-        // m_positionTracker = std::make_shared<PositionTracker>(m_config, nullptr);
+        m_positionTracker = std::make_shared<PositionTracker>(m_config, nullptr);
         // m_dataInterface = std::make_shared<DataInterface>();
         m_dataInterface = std::shared_ptr<DataInterface>(dataInterface.release());
 
         // Initialize position tracker and data interface
-        // if (!m_positionTracker->initialize()) {
-        //     LOG_ERROR("Failed to initialize position tracker");
-        //     return false;
-        // }
+        if (!m_positionTracker->initialize()) {
+            LOG_ERROR("Failed to initialize position tracker");
+            return false;
+        }
         
         if (!m_dataInterface->initialize()) {
             LOG_ERROR("Failed to initialize data interface");
@@ -47,18 +47,18 @@ bool PreTradeRiskFilter::initialize() {
         }
         
         // Create and initialize each component
-        // m_positionLimitChecker = std::make_unique<PositionLimitChecker>(m_config, m_positionTracker);
-        // if (!m_positionLimitChecker->initialize()) {
-        //     LOG_ERROR("Failed to initialize position limit checker");
-        //     return false;
-        // }
+        m_positionLimitChecker = std::make_unique<PositionLimitChecker>(m_config, m_positionTracker);
+        if (!m_positionLimitChecker->initialize()) {
+            LOG_ERROR("Failed to initialize position limit checker");
+            return false;
+        }
         
         // Initialize exposure calculator with the new interface
-        // m_exposureCalculator = std::make_unique<ExposureCalculator>(m_positionTracker, m_dataInterface);
-        // if (!m_exposureCalculator->initialize(m_config)) {
-        //     LOG_ERROR("Failed to initialize exposure calculator");
-        //     return false;
-        // }
+        m_exposureCalculator = std::make_unique<ExposureCalculator>(m_positionTracker, m_dataInterface);
+        if (!m_exposureCalculator->initialize(m_config)) {
+            LOG_ERROR("Failed to initialize exposure calculator");
+            return false;
+        }
         
         m_orderValidator = std::make_unique<OrderValidator>(m_config, m_dataInterface);
         if (!m_orderValidator->initialize()) {
@@ -148,25 +148,25 @@ bool PreTradeRiskFilter::updateRiskParameters(const RiskParameters& params) {
                 params.exchangeId.toString(), params.tradingPair.getSymbol(), params.strategyId);
         
         // Update position limits if provided
-        // if (params.maxPositionSize > 0) {
-        //     std::string baseAsset = getBaseAsset(params.tradingPair.getSymbol());
-        //     if (!m_positionLimitChecker->updatePositionLimit(
-        //             baseAsset, params.strategyId, params.maxPositionSize)) {
-        //         LOG_ERROR("Failed to update position limit");
-        //         return false;
-        //     }
-        // }
+        if (params.maxPositionSize > 0) {
+            std::string baseAsset = getBaseAsset(params.tradingPair.getSymbol());
+            if (!m_positionLimitChecker->updatePositionLimit(
+                    baseAsset, params.strategyId, params.maxPositionSize)) {
+                LOG_ERROR("Failed to update position limit");
+                return false;
+            }
+        }
         
         // Update exposure limits if provided
-        // if (params.maxExposure > 0) {
-        //     ExposureLimitConfig exposureLimits = m_exposureCalculator->getExposureLimits();
+        if (params.maxExposure > 0) {
+            ExposureLimitConfig exposureLimits = m_exposureCalculator->getExposureLimits();
             
-        //     // Update relevant limits based on what's provided
-        //     std::string baseAsset = getBaseAsset(params.tradingPair.getSymbol());
-        //     exposureLimits.maxAssetExposure = params.maxExposure;
+            // Update relevant limits based on what's provided
+            std::string baseAsset = getBaseAsset(params.tradingPair.getSymbol());
+            exposureLimits.maxAssetExposure = params.maxExposure;
             
-        //     m_exposureCalculator->updateExposureLimits(exposureLimits);
-        // }
+            m_exposureCalculator->updateExposureLimits(exposureLimits);
+        }
         
         // Update order size limits if provided
         if (params.minOrderSize > 0) {
@@ -194,11 +194,11 @@ RiskParameters PreTradeRiskFilter::getRiskParameters(const core::ExchangeId& exc
     
     // Get position limits
     std::string baseAsset = getBaseAsset(tradingPair.getSymbol());
-    // params.maxPositionSize = m_positionLimitChecker->getPositionLimit(baseAsset, strategyId);
+    params.maxPositionSize = m_positionLimitChecker->getPositionLimit(baseAsset, strategyId);
     
     // Get exposure limits
-    // const ExposureLimitConfig& exposureLimits = m_exposureCalculator->getExposureLimits();
-    // params.maxExposure = exposureLimits.maxAssetExposure;
+    const ExposureLimitConfig& exposureLimits = m_exposureCalculator->getExposureLimits();
+    params.maxExposure = exposureLimits.maxAssetExposure;
     
     return params;
 }
@@ -212,57 +212,57 @@ RiskManagerMode PreTradeRiskFilter::getMode() const {
     return m_activeMode;
 }
 
-// ValidationResult PreTradeRiskFilter::performAllChecks(const TradingSignal& signal) {
-//     ValidationResult result;
-//     result.signalId = signal.getSignalId();
-//     result.approved = true;
-//     result.timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
-//         std::chrono::system_clock::now().time_since_epoch()).count();
+ValidationResult PreTradeRiskFilter::performAllChecks(const TradingSignal& signal) {
+    ValidationResult result;
+    result.signalId = signal.getSignalId();
+    result.approved = true;
+    result.timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
     
-//     // Check basic validation first
-//     if (!passesBasicValidation(signal, result.violations)) {
-//         result.approved = false;
-//         LOG_INFO("Signal {} rejected: failed basic validation", signal.getSignalId());
-//         return result;
-//     }
+    // Check basic validation first
+    if (!passesBasicValidation(signal, result.violations)) {
+        result.approved = false;
+        LOG_INFO("Signal {} rejected: failed basic validation", signal.getSignalId());
+        return result;
+    }
     
-//     // Check position limits
-//     if (!m_positionLimitChecker->checkPositionLimit(signal, result.violations)) {
-//         result.approved = false;
-//         LOG_INFO("Signal {} rejected: failed position limit check", signal.getSignalId());
-//     }
+    // Check position limits
+    if (!m_positionLimitChecker->checkPositionLimit(signal, result.violations)) {
+        result.approved = false;
+        LOG_INFO("Signal {} rejected: failed position limit check", signal.getSignalId());
+    }
     
-//     // Check exposure limits
-//     auto exposureResult = m_exposureCalculator->validateExposure(signal);
-//     if (exposureResult != ExposureValidationResult::APPROVED) {
-//         auto exposureViolations = m_exposureCalculator->getViolationDetails(signal);
-//         result.violations.insert(result.violations.end(), 
-//                                 exposureViolations.begin(), 
-//                                 exposureViolations.end());
-//         result.approved = false;
-//         LOG_INFO("Signal {} rejected: failed exposure check", signal.getSignalId());
-//     }
+    // Check exposure limits
+    auto exposureResult = m_exposureCalculator->validateExposure(signal);
+    if (exposureResult != ExposureValidationResult::APPROVED) {
+        auto exposureViolations = m_exposureCalculator->getViolationDetails(signal);
+        result.violations.insert(result.violations.end(), 
+                                exposureViolations.begin(), 
+                                exposureViolations.end());
+        result.approved = false;
+        LOG_INFO("Signal {} rejected: failed exposure check", signal.getSignalId());
+    }
     
-//     // Check order validation
-//     if (!m_orderValidator->validateOrder(signal, result.violations)) {
-//         result.approved = false;
-//         LOG_INFO("Signal {} rejected: failed order validation", signal.getSignalId());
-//     }
+    // Check order validation
+    if (!m_orderValidator->validateOrder(signal, result.violations)) {
+        result.approved = false;
+        LOG_INFO("Signal {} rejected: failed order validation", signal.getSignalId());
+    }
     
-//     // Check fat finger protection
-//     if (!m_fatFingerProtection->checkFatFinger(signal, result.violations)) {
-//         result.approved = false;
-//         LOG_INFO("Signal {} rejected: failed fat finger check", signal.getSignalId());
-//     }
+    // Check fat finger protection
+    if (!m_fatFingerProtection->checkFatFinger(signal, result.violations)) {
+        result.approved = false;
+        LOG_INFO("Signal {} rejected: failed fat finger check", signal.getSignalId());
+    }
     
-//     // If approved, adjust size if needed (e.g., due to risk constraints)
-//     if (result.approved) {
-//         result.adjustedSize = signal.getTargetSize();
-//         LOG_INFO("Signal {} approved", signal.getSignalId());
-//     }
+    // If approved, adjust size if needed (e.g., due to risk constraints)
+    if (result.approved) {
+        result.adjustedSize = signal.getTargetSize();
+        LOG_INFO("Signal {} approved", signal.getSignalId());
+    }
     
-//     return result;
-// }
+    return result;
+}
 
 ValidationResult PreTradeRiskFilter::performAllChecks(const OrderRequest& orderRequest) {
     ValidationResult result;
@@ -279,29 +279,29 @@ ValidationResult PreTradeRiskFilter::performAllChecks(const OrderRequest& orderR
     }
     
     // Check position limits
-    // if (!m_positionLimitChecker->checkPositionLimit(orderRequest, result.violations)) {
-    //     result.approved = false;
-    //     LOG_INFO("Order {} rejected: failed position limit check", orderRequest.clientOrderId);
-    // }
+    if (!m_positionLimitChecker->checkPositionLimit(orderRequest, result.violations)) {
+        result.approved = false;
+        LOG_INFO("Order {} rejected: failed position limit check", orderRequest.clientOrderId);
+    }
     
     // Check exposure limits
-    // auto exposureResult = m_exposureCalculator->validateExposure(orderRequest);
-    // if (exposureResult != ExposureValidationResult::APPROVED) {
-    //     // For OrderRequest, we need to create a temporary signal for violation details
-    //     TradingSignal tempSignal;
-    //     tempSignal.signal_id = orderRequest.clientOrderId;
-    //     tempSignal.tradingPair = orderRequest.tradingPair;
-    //     tempSignal.direction = orderRequest.side;
-    //     tempSignal.target_size = orderRequest.quantity;
-    //     tempSignal.exchange = orderRequest.exchangeId;
+    auto exposureResult = m_exposureCalculator->validateExposure(orderRequest);
+    if (exposureResult != ExposureValidationResult::APPROVED) {
+        // For OrderRequest, we need to create a temporary signal for violation details
+        TradingSignal tempSignal;
+        tempSignal.signal_id = orderRequest.clientOrderId;
+        tempSignal.tradingPair = orderRequest.tradingPair;
+        tempSignal.direction = orderRequest.side;
+        tempSignal.target_size = orderRequest.quantity;
+        tempSignal.exchange = orderRequest.exchangeId;
         
-    //     auto exposureViolations = m_exposureCalculator->getViolationDetails(tempSignal);
-    //     result.violations.insert(result.violations.end(), 
-    //                             exposureViolations.begin(), 
-    //                             exposureViolations.end());
-    //     result.approved = false;
-    //     LOG_INFO("Order {} rejected: failed exposure check", orderRequest.clientOrderId);
-    // }
+        auto exposureViolations = m_exposureCalculator->getViolationDetails(tempSignal);
+        result.violations.insert(result.violations.end(), 
+                                exposureViolations.begin(), 
+                                exposureViolations.end());
+        result.approved = false;
+        LOG_INFO("Order {} rejected: failed exposure check", orderRequest.clientOrderId);
+    }
     
     // Check order validation
     if (!m_orderValidator->validateOrder(orderRequest, result.violations)) {

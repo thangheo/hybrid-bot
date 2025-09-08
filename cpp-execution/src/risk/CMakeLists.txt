@@ -1,9 +1,13 @@
 # src/risk/CMakeLists.txt
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 
 # Collect all source files
 file(GLOB_RECURSE RISK_SOURCES
     "*.cpp"
     "interfaces/*.cpp"
+    "portfolio/*.cpp"
     "posttrade/*.cpp"
     "pretrade/*.cpp"
     "service/*.cpp"
@@ -27,7 +31,36 @@ target_link_libraries(risk
         common
         execution
     PRIVATE
-        # strategy
+        strategy
         data_ingestion
         nlohmann_json::nlohmann_json
 )
+
+# Add compiler-specific flags
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    target_compile_options(risk PRIVATE 
+        -Wall 
+        -Wextra 
+        -Wpedantic
+        -Wno-unused-parameter        # Suppress unused parameter warnings
+        -Wno-unused-variable         # Suppress unused variable warnings
+        -Wno-unused-function         # Suppress unused function warnings
+    )
+elseif(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    target_compile_options(risk PRIVATE 
+        /W4
+        /wd4100  # unreferenced formal parameter
+        /wd4101  # unreferenced local variable
+        /wd4189  # local variable initialized but not referenced
+    )
+endif()
+
+# Ensure C++20 features are properly enabled
+target_compile_features(risk PRIVATE cxx_std_20)
+
+# Add format library for std::format (if using GCC < 13)
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS "13.0")
+    find_package(fmt REQUIRED)
+    target_link_libraries(risk PRIVATE fmt::fmt)
+    target_compile_definitions(risk PRIVATE USE_FMT_FORMAT)
+endif()

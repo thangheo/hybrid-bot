@@ -18,10 +18,14 @@
 #include <optional>
 #include <stdexcept>
 #include <cstdint>
+#include <execution/models/order.hpp>
+
+using OrderType = trading::execution::models::OrderType;
+using OrderSide = trading::execution::models::OrderSide;
 
 namespace trading {
 namespace risk {
-
+using namespace trading::execution::models;
 // Forward declarations
 class Position;
 class OrderRequest;
@@ -109,19 +113,6 @@ enum class CircuitBreakerState {
 };
 
 /**
- * Enum for order type
- */
-enum class OrderType {
-    MARKET,
-    LIMIT,
-    STOP,
-    STOP_LIMIT,
-    TAKE_PROFIT,
-    TAKE_PROFIT_LIMIT,
-    TRAILING_STOP
-};
-
-/**
  * Helper function to convert OrderType to string
  */
 inline std::string toString(OrderType type) {
@@ -132,7 +123,7 @@ inline std::string toString(OrderType type) {
         case OrderType::STOP_LIMIT: return "STOP_LIMIT";
         case OrderType::TAKE_PROFIT: return "TAKE_PROFIT";
         case OrderType::TAKE_PROFIT_LIMIT: return "TAKE_PROFIT_LIMIT";
-        case OrderType::TRAILING_STOP: return "TRAILING_STOP";
+        // case OrderType::TRAILING_STOP: return "TRAILING_STOP";
         default: return "UNKNOWN";
     }
 }
@@ -161,7 +152,7 @@ inline OrderType orderTypeFromString(const std::string& str) {
     if (str == "STOP_LIMIT") return OrderType::STOP_LIMIT;
     if (str == "TAKE_PROFIT") return OrderType::TAKE_PROFIT;
     if (str == "TAKE_PROFIT_LIMIT") return OrderType::TAKE_PROFIT_LIMIT;
-    if (str == "TRAILING_STOP") return OrderType::TRAILING_STOP;
+    // if (str == "TRAILING_STOP") return OrderType::TRAILING_STOP;
     return OrderType::MARKET; // Default fallback
 }
 
