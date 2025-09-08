@@ -43,6 +43,9 @@
      if (thresholds_.empty()) {
          // Set default thresholds if none provided
          thresholds_.setThreshold("volumeImbalance ", 2.0); // Volume imbalance threshold
+         thresholds_.setThreshold("emaVolumeImbalance", 1.5); // EMA volume imbalance threshold
+         thresholds_.setThreshold("priceLevelImbalance", 1.5); // Price level imbalance threshold
+         thresholds_.setThreshold("liquidity_flow_imbalance", 3.0); // Liquidity flow imbalance threshold
          thresholds_.setThreshold("liquidity_removal", 1.5); // Liquidity removal threshold
          thresholds_.setThreshold("priceLevelImbalance", 1.5); // Price level imbalance threshold
          thresholds_.setThreshold("abnormal_spread", 2.5); // Abnormal spread threshold
@@ -332,6 +335,13 @@ double ImbalanceDetectionEngine::calculateImbalanceConfidence(ImbalanceType type
     }
 
     double volumeRatio = bidVolume / askVolume;
+    //try emaVolumeImbalance
+    auto emaIt = metrics.metrics.find("emaVolumeImbalance");
+    if (emaIt != metrics.metrics.end()) {
+        double emaVolumeImbalance = emaIt->second;
+        // Combine raw ratio and EMA for a smoothed ratio
+        volumeRatio = (volumeRatio + emaVolumeImbalance) / 2.0;
+    }
     
     // Get current threshold
     double baseThreshold = thresholds_.getTypeThreshold(ImbalanceType::VOLUME_IMBALANCE).activation_threshold;

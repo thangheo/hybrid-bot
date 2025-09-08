@@ -219,13 +219,13 @@ public:
 
         //filter duplicate signals
         //filter signals based on custom criteria (e.g., strength threshold)
-        if (signal.strength < 0.4) return; // Weak signals are ignored
+        if (signal.strength < 0.5) return; // Weak signals are ignored
         if(signal.direction == core::Direction::NEUTRAL) return; // Ignore neutral signals
         if(signal.confidence < 0.6) return; // Ignore low confidence signals
-        if(signal.quality < 0.45) return; // Ignore low quality signals
+        if(signal.quality < 0.5) return; // Ignore low quality signals
         
         //if target prices are too close to mid price, ignore
-        double percentage_change_threshold = 0.0015; // 0.25%
+        double percentage_change_threshold = 0.0018; // 0.25%
         if(midPrice > 0.0) {
             bool allTargetsTooClose = true;
             for (const auto& target : signal.targets) {
