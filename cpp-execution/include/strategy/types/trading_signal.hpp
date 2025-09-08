@@ -98,47 +98,46 @@
      /**
       * Copy constructor - explicitly copy all fields including expirationTime
       */
-     TradingSignal(const TradingSignal& other)
-         : id(other.id),
-           sourceEventId(other.sourceEventId),
-           correlationId(other.correlationId),
-           direction(other.direction),
-           quality(other.quality),
-           strength(other.strength),
-           confidence(other.confidence),
-           generation_time(other.generation_time),
-           ttl(other.ttl),
-           targets(other.targets),
-           source_type(other.source_type),
-           signal_metrics(other.signal_metrics),
-           symbol(other.symbol),
-           exchangeId(other.exchangeId),
-           decayRate(other.decayRate),
-           expectedPriceImpact(other.expectedPriceImpact),
-           expirationTime(other.expirationTime) {}
-           expirationTime(core::Timestamp()) {}
+    //  TradingSignal(const TradingSignal& other)
+    //      : id(other.id),
+    //        sourceEventId(other.sourceEventId),
+    //        correlationId(other.correlationId),
+    //        direction(other.direction),
+    //        quality(other.quality),
+    //        strength(other.strength),
+    //        confidence(other.confidence),
+    //        generation_time(other.generation_time),
+    //        ttl(other.ttl),
+    //        targets(other.targets),
+    //        source_type(other.source_type),
+    //        signal_metrics(other.signal_metrics),
+    //        symbol(other.symbol),
+    //        exchangeId(other.exchangeId),
+    //        decayRate(other.decayRate),
+    //        expectedPriceImpact(other.expectedPriceImpact),
+    //        expirationTime(other.expirationTime) {}
      
      /**
       * Copy constructor - explicitly copy all fields including expirationTime
       */
-     TradingSignal(const TradingSignal& other)
-         : id(other.id),
-           sourceEventId(other.sourceEventId),
-           correlationId(other.correlationId),
-           direction(other.direction),
-           quality(other.quality),
-           strength(other.strength),
-           confidence(other.confidence),
-           generation_time(other.generation_time),
-           ttl(other.ttl),
-           targets(other.targets),
-           source_type(other.source_type),
-           signal_metrics(other.signal_metrics),
-           symbol(other.symbol),
-           exchangeId(other.exchangeId),
-           decayRate(other.decayRate),
-           expectedPriceImpact(other.expectedPriceImpact),
-           expirationTime(other.expirationTime) {}
+    //  TradingSignal(const TradingSignal& other)
+    //      : id(other.id),
+    //        sourceEventId(other.sourceEventId),
+    //        correlationId(other.correlationId),
+    //        direction(other.direction),
+    //        quality(other.quality),
+    //        strength(other.strength),
+    //        confidence(other.confidence),
+    //        generation_time(other.generation_time),
+    //        ttl(other.ttl),
+    //        targets(other.targets),
+    //        source_type(other.source_type),
+    //        signal_metrics(other.signal_metrics),
+    //        symbol(other.symbol),
+    //        exchangeId(other.exchangeId),
+    //        decayRate(other.decayRate),
+    //        expectedPriceImpact(other.expectedPriceImpact),
+    //        expirationTime(other.expirationTime) {}
      
      /**
       * Check if signal is still valid based on TTL
