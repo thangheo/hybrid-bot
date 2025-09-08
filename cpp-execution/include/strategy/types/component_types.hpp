@@ -27,9 +27,10 @@
  class ExchangeCalibration;
  class AdaptiveMechanism;
  class LogisticRegressionSignalGenerator;
- 
+ class OrderBookAnalyzerManager;
  // Define pointer type aliases for easier usage
- using OrderBookAnalyzerPtr = std::shared_ptr<OrderBookAnalyzer>;
+//  using OrderBookAnalyzerPtr = std::shared_ptr<OrderBookAnalyzer>;
+using OrderBookAnalyzerPtr = std::shared_ptr<OrderBookAnalyzerManager>;
  using ImbalanceDetectionEnginePtr = std::shared_ptr<ImbalanceDetectionEngine>;
  using LiquidityFlowMonitorPtr = std::shared_ptr<LiquidityFlowMonitor>;
  using VolumeProfileAnalyzerPtr = std::shared_ptr<VolumeProfileAnalyzer>;

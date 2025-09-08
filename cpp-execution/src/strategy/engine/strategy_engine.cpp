@@ -59,7 +59,7 @@
         config_ = config;
         
         // Initialize components
-        orderBookAnalyzer_ = std::make_shared<OrderBookAnalyzer>(config_.orderBookAnalyzerConfig);
+        orderBookAnalyzer_ = std::make_shared<OrderBookAnalyzerManager>(config_.orderBookAnalyzerConfig);
         imbalanceDetector_ = std::make_shared<ImbalanceDetectionEngine>(config_.imbalanceDetectionConfig);
         liquidityMonitor_ = std::make_shared<LiquidityFlowMonitor>(config_.liquidityFlowConfig);
         volumeProfileAnalyzer_ = std::make_shared<VolumeProfileAnalyzer>(config_.volumeProfileConfig);
@@ -212,7 +212,7 @@ void StrategyEngine::processQueuedSignals() {
          orderBookAnalyzer_->processOrderBook(orderBook);
          
          // Get the metrics from the analyzer
-         auto metrics = orderBookAnalyzer_->getMetrics();
+         auto metrics = orderBookAnalyzer_->getMetrics(orderBook.getSymbol(), orderBook.getExchangeId());
          //print bids and asks and volumes       
 
          // Process imbalance detection
