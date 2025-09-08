@@ -497,34 +497,24 @@ PriceLevel OrderBook::getBestAsk() const {
 //         return 0.0;
 //     }
     
-//     double best_bid = bids_.begin()->first;
-//     double best_ask = asks_.begin()->first;
+//     double bestBid = bids_.begin()->first;
+//     double bestAsk = asks_.begin()->first;
     
-//     return (best_bid + best_ask) / 2.0;
+//     return (bestBid + bestAsk) / 2.0;
 // }
 double OrderBook::getMidPrice() const {
     std::lock_guard<std::mutex> lock(mutex_);
     
     // DEBUG: Print order book state
-    std::cout << "DEBUG getMidPrice: Exchange=" << exchangeId_.toString() 
-              << " Symbol=" << symbol_.toString()
-              << " Bids size=" << bids_.size() 
-              << " Asks size=" << asks_.size() 
-              << " Valid=" << is_valid_ << std::endl;
     
     if (bids_.empty() || asks_.empty()) {
-        std::cout << "DEBUG getMidPrice: Empty order book - returning 0.0" << std::endl;
         return 0.0;
     }
     
-    double best_bid = bids_.begin()->first;
-    double best_ask = asks_.begin()->first;
+    double bestBid = bids_.begin()->first;
+    double bestAsk = asks_.begin()->first;
     
-    std::cout << "DEBUG getMidPrice: best_bid=" << best_bid 
-              << " best_ask=" << best_ask 
-              << " mid=" << (best_bid + best_ask) / 2.0 << std::endl;
-    
-    return (best_bid + best_ask) / 2.0;
+    return (bestBid + bestAsk) / 2.0;
 }
 double OrderBook::getSpread() const {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -533,10 +523,10 @@ double OrderBook::getSpread() const {
         return -1.0;
     }
     
-    double best_bid = bids_.begin()->first;
-    double best_ask = asks_.begin()->first;
+    double bestBid = bids_.begin()->first;
+    double bestAsk = asks_.begin()->first;
     
-    return best_ask - best_bid;
+    return bestAsk - bestBid;
 }
 
 double OrderBook::getSpreadPercent() const {
@@ -546,15 +536,15 @@ double OrderBook::getSpreadPercent() const {
         return -1.0;
     }
     
-    double best_bid = bids_.begin()->first;
-    double best_ask = asks_.begin()->first;
+    double bestBid = bids_.begin()->first;
+    double bestAsk = asks_.begin()->first;
     
-    double mid_price = (best_bid + best_ask) / 2.0;
-    if (mid_price <= 0.0) {
+    double midPrice = (bestBid + bestAsk) / 2.0;
+    if (midPrice <= 0.0) {
         return -1.0;
     }
     
-    return (best_ask - best_bid) / mid_price * 100.0;
+    return (bestAsk - bestBid) / midPrice * 100.0;
 }
 
 double OrderBook::getBidVolume(int depth) const {
@@ -588,15 +578,15 @@ double OrderBook::getAskVolume(int depth) const {
 double OrderBook::getVolumeImbalance(int depth) const {
     std::lock_guard<std::mutex> lock(mutex_);
     
-    double bid_volume = getBidVolume(depth);
-    double ask_volume = getAskVolume(depth);
+    double bidVolume = getBidVolume(depth);
+    double askVolume = getAskVolume(depth);
     
-    double total_volume = bid_volume + ask_volume;
+    double total_volume = bidVolume + askVolume;
     if (total_volume <= 0.0) {
         return 0.0;
     }
     
-    return (bid_volume - ask_volume) / total_volume;
+    return (bidVolume - askVolume) / total_volume;
 }
 
 std::string OrderBook::calculateChecksum() const {

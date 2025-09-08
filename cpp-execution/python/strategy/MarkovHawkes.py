@@ -108,12 +108,12 @@ class MarkovHawkesTrader:
         # Thực tế sẽ phức tạp hơn nhiều
         
         # 1. Tính toán imbalance orderbook
-        bid_volume = sum(level['volume'] for level in orderbook['bids'][:5])
-        ask_volume = sum(level['volume'] for level in orderbook['asks'][:5])
+        bidVolume = sum(level['volume'] for level in orderbook['bids'][:5])
+        askVolume = sum(level['volume'] for level in orderbook['asks'][:5])
         
-        if bid_volume > ask_volume * 1.5:
+        if bidVolume > askVolume * 1.5:
             imbalance = 0  # Áp lực mua mạnh
-        elif ask_volume > bid_volume * 1.5:
+        elif askVolume > bidVolume * 1.5:
             imbalance = 2  # Áp lực bán mạnh
         else:
             imbalance = 1  # Cân bằng
@@ -149,7 +149,7 @@ class MarkovHawkesTrader:
                 volatility = 0  # Biến động thấp
         
         # 4. Độ sâu thị trường
-        total_depth = bid_volume + ask_volume
+        total_depth = bidVolume + askVolume
         if total_depth < 100:  # Ngưỡng này phụ thuộc vào cặp tiền
             depth = 1  # Thị trường nông
         else:

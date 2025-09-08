@@ -817,7 +817,7 @@ execution_quality:
     - fill_rate
     - execution_time
     - market_impact
-  comparison_baseline: mid_price
+  comparison_baseline: midPrice
   # TODO: Add additional execution quality settings
 
 # Strategy performance monitoring parameters

@@ -185,10 +185,10 @@ class OrderBookVisualizer:
         
         # Add mid price line
         if bid_prices and ask_prices:
-            mid_price = (bid_prices[0] + ask_prices[0]) / 2
+            midPrice = (bid_prices[0] + ask_prices[0]) / 2
             self.ax.axvline(len(bid_prices) - 0.5, color='black', linestyle='--')
             self.ax.text(len(bid_prices) - 0.5, max(bid_quantities + ask_quantities) * 0.9, 
-                        f"Mid: {mid_price:.2f}", rotation=90)
+                        f"Mid: {midPrice:.2f}", rotation=90)
         
         # Add timestamp
         if self.last_update_time:

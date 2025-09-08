@@ -109,9 +109,9 @@ public:
     
     /**
      * @brief Set the momentum correlation component for signal enhancement
-     * @param momentum_correlation Pointer to momentum correlation component
+     * @param momentumCorrelation Pointer to momentum correlation component
      */
-    void setMomentumCorrelation(MomentumCorrelationPtr momentum_correlation);
+    void setMomentumCorrelation(MomentumCorrelationPtr momentumCorrelation);
     
     /**
      * @brief Set the threshold manager for adaptive thresholding

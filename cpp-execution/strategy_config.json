@@ -39,7 +39,7 @@
   "signal_generator_config": {
     "max_signals_per_second": 10
   },
-  "momentum_correlation_config": {
+  "momentumCorrelation_config": {
     "correlation_window": 50
   },
   "threshold_manager_config": {

@@ -53,7 +53,7 @@
      // Extract order book features
      features.push_back(metrics.bidAskVolumeRatio);
      features.push_back(metrics.bid_ask_price_gap);
-     features.push_back(metrics.mid_price);
+     features.push_back(metrics.midPrice);
      features.push_back(metrics.spread);
      features.push_back(metrics.spreadPercent);
      features.push_back(metrics.volumeImbalance );

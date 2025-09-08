@@ -491,8 +491,8 @@ TradingSignal StrategyEngine::enhanceSignalWithEventContext(
         // Add momentum correlation metrics
         std::string imbalanceTypeStr = imbalanceTypeToString(sourceEvent.type);
         double correlation = momentumCorrelator_->getCorrelationCoefficient(imbalanceTypeStr);
-        enhancedSignal.setMetric("momentum_correlation", correlation);
-        enhancedSignal.setMetric("predicted_price_move", expectedPriceImpact);
+        enhancedSignal.setMetric("momentumCorrelation", correlation);
+        enhancedSignal.setMetric("predictedPriceMove", expectedPriceImpact);
     }
     
     // Apply signal decay model
@@ -520,7 +520,7 @@ TradingSignal StrategyEngine::enhanceSignalWithEventContext(
     // Add threshold manager data
     if (thresholdManager_) {
         double sensitivity = thresholdManager_->getGlobalSensitivity();
-        enhancedSignal.setMetric("threshold_sensitivity", sensitivity);
+        enhancedSignal.setMetric("thresholdSensitivity", sensitivity);
         
         // Adjust strength based on sensitivity
         if (sensitivity != 1.0) {
@@ -530,8 +530,8 @@ TradingSignal StrategyEngine::enhanceSignalWithEventContext(
     
     // Copy event context into signal
     enhancedSignal.sourceEventId = sourceEvent.eventId;
-    enhancedSignal.setMetric("source_event_strength", sourceEvent.strength);
-    enhancedSignal.setMetric("source_event_confidence", static_cast<double>(sourceEvent.confidence));
+    enhancedSignal.setMetric("sourceEventStrength", sourceEvent.strength);
+    enhancedSignal.setMetric("sourceEventConfidence", static_cast<double>(sourceEvent.confidence));
     
     // Copy supporting metrics from the original imbalance event
     for (const auto& [metricName, metricValue] : sourceEvent.supportingMetrics) {

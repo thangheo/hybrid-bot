@@ -81,6 +81,15 @@ bool ImbalanceSignalGenerator::initialize(const SignalGeneratorConfig& config) {
      // Create and emit signal immediately
      TradingSignal signal = createSignalFromImbalance(imbalance);
      generatedSignals_.push_back(signal);
+     auto price = imbalance.getSupportingMetric("midPrice", 0.0);
+    //  print price for debug.price
+    // LOG_DEBUG("Generated signal from imbalance: Type={}, Direction={}, Strength={:.3f}, Confidence={:.2f}, Price={:.2f}, SignalID={}",
+    //           imbalanceTypeToString(imbalance.type),
+    //           (imbalance.direction == core::Direction::BUY ? "BUY" : (imbalance.direction == core::Direction::SELL ? "SELL" : "NEUTRAL")),
+    //           imbalance.strength,
+    //           trading::core::confidenceLevelToValue(imbalance.confidence),
+    //           price,
+    //           signal.id);
      
      // Notify callbacks
      notifySignalCallbacks(signal);
@@ -137,9 +146,9 @@ bool ImbalanceSignalGenerator::initialize(const SignalGeneratorConfig& config) {
  }
  
  // Set the momentum correlation component for signal enhancement
- void ImbalanceSignalGenerator::setMomentumCorrelation(MomentumCorrelationPtr momentum_correlation) {
+ void ImbalanceSignalGenerator::setMomentumCorrelation(MomentumCorrelationPtr momentumCorrelation) {
      std::lock_guard<std::mutex> lock(mutex_);
-     momentumCorrelation_ = momentum_correlation;
+     momentumCorrelation_ = momentumCorrelation;
  }
  
  // Set the threshold manager for adaptive thresholding
@@ -198,12 +207,12 @@ void ImbalanceSignalGenerator::handlePredictionConflict(TradingSignal& signal,
                 correlation, predictedMove * 100);
         
         signal.direction = newDirection;
-        signal.setMetric("direction_overridden", 1.0);
+        signal.setMetric("directionOverridden", 1.0);
         
     } else {
         // Apply confidence penalty for weaker conflicts
         signal.confidence *= config_.conflictConfidencePenalty;
-        signal.setMetric("prediction_conflict_penalty", config_.conflictConfidencePenalty);
+        signal.setMetric("predictionConflictPenalty", config_.conflictConfidencePenalty);
         
         // LOG_DEBUG("Prediction conflict penalty applied: correlation={:.3f}, prediction={:.4f}%",
         //             correlation, predictedMove * 100);
@@ -213,22 +222,22 @@ void ImbalanceSignalGenerator::handlePredictionConflict(TradingSignal& signal,
 
 std::chrono::milliseconds ImbalanceSignalGenerator::calculateSignalTTL(const ImbalanceEvent& imbalance, double delta_price) const {
     // Use volatility per unit time instead of regular volatility
-    auto volatility_per_time = imbalance.getSupportingMetric("volatility_per_unit_time", 0.001);
+    auto volatility_per_time = imbalance.getSupportingMetric("volatilityPerUnitTime", 0.001);
     
     if (volatility_per_time <= 0.0) {
         volatility_per_time = 0.001; // Prevent division by zero
     }
     
-    auto price = imbalance.getSupportingMetric("mid_price", 1.0);
+    auto price = imbalance.getSupportingMetric("midPrice", 1.0);
     
     // TTL calculation now uses time-normalized volatility
     uint64_t ttl = static_cast<uint64_t>((config_.signalTtlMs * delta_price) / (volatility_per_time * price * imbalance.strength));
     
     ttl = std::clamp(ttl, static_cast<uint64_t>(500), static_cast<uint64_t>(60000)); // Clamp between 0.5s and 60s
     //print debug info
-    std::cout << "Calculated TTL: " << ttl << " ms (Delta Price: " << delta_price
-              << ", Volatility/Time: " << volatility_per_time << ", Price: " << price
-              << ", Strength: " << imbalance.strength << ")\n";
+    // std::cout << "Calculated TTL: " << ttl << " ms (Delta Price: " << delta_price
+    //           << ", Volatility/Time: " << volatility_per_time << ", Price: " << price
+    //           << ", Strength: " << imbalance.strength << ")\n";
     return std::chrono::milliseconds(ttl);
 }
 
@@ -252,7 +261,7 @@ TradingSignal ImbalanceSignalGenerator::createSignalFromImbalance(const Imbalanc
      signal.expirationTime = imbalance.detectionTime + signal.ttl; // Set expiration time
      // Generate price targets
      signal.targets = generatePriceTargets(imbalance);
-     signal.ttl = calculateSignalTTL(imbalance, std::abs(signal.targets[2].price - imbalance.getSupportingMetric("mid_price", 1.0)));
+     signal.ttl = calculateSignalTTL(imbalance, std::abs(signal.targets[2].price - imbalance.getSupportingMetric("midPrice", 1.0)));
      // Copy relevant metrics
      for (const auto& metric : imbalance.supportingMetrics) {
          signal.setMetric(metric.first, metric.second);
@@ -262,13 +271,13 @@ TradingSignal ImbalanceSignalGenerator::createSignalFromImbalance(const Imbalanc
          double predictedMove = momentumCorrelation_->predictPriceMovement(imbalance);
          std::string imbalanceTypeStr = imbalanceTypeToString(imbalance.type);
          double correlation = momentumCorrelation_->getCorrelationCoefficient(imbalanceTypeStr);
-         signal.setMetric("predicted_price_move", predictedMove);
-         signal.setMetric("momentum_correlation", correlation);
+         signal.setMetric("predictedPriceMove", predictedMove);
+         signal.setMetric("momentumCorrelation", correlation);
 
          // Adjust quality based on prediction and correlation
         signal.quality = calculateSignalQuality(signal, predictedMove, correlation);
         bool alignmentCorrect = checkPredictionAlignment(imbalance.direction, predictedMove);
-        signal.setMetric("prediction_aligned", alignmentCorrect ? 1.0 : 0.0);
+        signal.setMetric("predictionAligned", alignmentCorrect ? 1.0 : 0.0);
         if (!alignmentCorrect) {
             handlePredictionConflict(signal, imbalance, predictedMove, correlation);
         }
@@ -285,7 +294,7 @@ TradingSignal ImbalanceSignalGenerator::createSignalFromImbalance(const Imbalanc
      // Apply threshold adjustments if available
      if (thresholdManager_) {
          double sensitivity = thresholdManager_->getGlobalSensitivity();
-         signal.setMetric("threshold_sensitivity", sensitivity);
+         signal.setMetric("thresholdSensitivity", sensitivity);
          
          // Adjust strength based on sensitivity
          if (sensitivity != 1.0) {
@@ -381,7 +390,7 @@ bool ImbalanceSignalGenerator::passesSignalFilters(const ImbalanceEvent& imbalan
  std::vector<PriceTarget> ImbalanceSignalGenerator::generatePriceTargets(const ImbalanceEvent& imbalance) const {
      std::vector<PriceTarget> targets;
      // Get mid price from supporting metrics
-     auto midPriceIt = imbalance.supportingMetrics.find("mid_price");
+     auto midPriceIt = imbalance.supportingMetrics.find("midPrice");
      if (midPriceIt == imbalance.supportingMetrics.end()) {
          return targets; // Can't generate targets without price
      }
@@ -390,7 +399,7 @@ bool ImbalanceSignalGenerator::passesSignalFilters(const ImbalanceEvent& imbalan
      
      // Get volatility if available
      double volatility = 0.001; // Default 0.1% volatility
-     auto volatilityIt = imbalance.supportingMetrics.find("volatility_per_unit_time");
+     auto volatilityIt = imbalance.supportingMetrics.find("volatilityPerUnitTime");
      if (volatilityIt != imbalance.supportingMetrics.end()) {
          volatility = volatilityIt->second;
      }

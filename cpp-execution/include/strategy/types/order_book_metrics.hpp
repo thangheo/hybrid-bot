@@ -34,7 +34,7 @@ struct OrderBookMetrics {
     std::map<std::string, double> metrics;
     
     // Price metrics
-    double mid_price = 0.0;
+    double midPrice = 0.0;
     double spread = 0.0;
     double spreadPercent = 0.0;
     
@@ -64,9 +64,9 @@ struct OrderBookMetrics {
     double marketDirectionalCoefficient = 0.0;  // Market direction indicator
     double liquidityProfileScore = 0.0;         // Score of overall liquidity
     double volatilityExpectation = 0.0;          // Expected near-term volatility
-    double realized_volatility = 0.0;           // Realized volatility based on recent data
-    double volatility_per_unit_time = 0.0; // Volatility normalized by time
-    double liquidity_pressure = 0.0;            // Pressure from liquidity imbalances
+    double realizedVolatility = 0.0;           // Realized volatility based on recent data
+    double volatilityPerUnitTime = 0.0; // Volatility normalized by time
+    double liquidityPressure = 0.0;            // Pressure from liquidity imbalances
     // Historical metrics
     double priceVelocity = 0.0;              // Rate of price change
     double volumeVelocity = 0.0;             // Rate of volume change
@@ -82,15 +82,15 @@ struct OrderBookMetrics {
     
     // Update metrics map with current values
     void updateMetricsMap() {
-        metrics["mid_price"] = mid_price;
+        metrics["midPrice"] = midPrice;
         metrics["spread"] = spread;
         metrics["spreadPercent"] = spreadPercent;
         
         // Map standard volume metrics to both original and expected names
         metrics["totalBidVolume "] = totalBidVolume ;
         metrics["totalAskVolume"] = totalAskVolume;
-        metrics["bid_volume"] = totalBidVolume ;  // Additional mapping for compatibility
-        metrics["ask_volume"] = totalAskVolume;  // Additional mapping for compatibility
+        metrics["bidVolume"] = totalBidVolume ;  // Additional mapping for compatibility
+        metrics["askVolume"] = totalAskVolume;  // Additional mapping for compatibility
         metrics["bidAskVolumeRatio"] = bidAskVolumeRatio;
         
         // Imbalance metrics
@@ -103,16 +103,16 @@ struct OrderBookMetrics {
         metrics["bidDensity"] = bidDensity;
         metrics["askDensity"] = askDensity;
         metrics["priceLevelImbalance"] = priceLevelImbalance;
-        metrics["bid_level_count"] = bidVolumesByLevel.size();  // Derived from vector size
-        metrics["ask_level_count"] = askVolumesByLevel.size();  // Derived from vector size
+        metrics["bidLevelCount"] = bidVolumesByLevel.size();  // Derived from vector size
+        metrics["askLevelCount"] = askVolumesByLevel.size();  // Derived from vector size
         
         // Derived metrics
         metrics["marketDirectionalCoefficient"] = marketDirectionalCoefficient;
         metrics["liquidityProfileScore"] = liquidityProfileScore;
         metrics["volatilityExpectation"] = volatilityExpectation;
-        metrics["realized_volatility"] = realized_volatility;
-        metrics["liquidity_pressure"] = liquidity_pressure;
-        metrics["volatility_per_unit_time"] = volatility_per_unit_time;
+        metrics["realizedVolatility"] = realizedVolatility;
+        metrics["liquidityPressure"] = liquidityPressure;
+        metrics["volatilityPerUnitTime"] = volatilityPerUnitTime;
         
         // Historical metrics
         metrics["priceVelocity"] = priceVelocity;
@@ -120,9 +120,9 @@ struct OrderBookMetrics {
         metrics["spreadVelocity"] = spreadVelocity;
         
         // Additional metrics that might be referenced in the code
-        metrics["bid_flow"] = 0.0;  // Fill in with actual values if available
-        metrics["ask_flow"] = 0.0;  // Fill in with actual values if available
-        metrics["average_spread_percent"] = 0.0;  // Fill in with actual values if available
+        metrics["bidFlow"] = 0.0;  // Fill in with actual values if available
+        metrics["askFlow"] = 0.0;  // Fill in with actual values if available
+        metrics["averageSpreadPercent"] = 0.0;  // Fill in with actual values if available
         metrics["volatility"] = volatilityExpectation;  // Map to existing value
     }
     
@@ -131,11 +131,11 @@ struct OrderBookMetrics {
         metrics[name] = value;
         
         // Also update the corresponding class member if it exists
-        if (name == "mid_price") mid_price = value;
+        if (name == "midPrice") midPrice = value;
         else if (name == "spread") spread = value;
         else if (name == "spreadPercent") spreadPercent = value;
-        else if (name == "bid_volume" || name == "totalBidVolume ") totalBidVolume  = value;
-        else if (name == "ask_volume" || name == "totalAskVolume") totalAskVolume = value;
+        else if (name == "bidVolume" || name == "totalBidVolume ") totalBidVolume  = value;
+        else if (name == "askVolume" || name == "totalAskVolume") totalAskVolume = value;
         else if (name == "bidAskVolumeRatio") bidAskVolumeRatio = value;
         else if (name == "volumeImbalance ") volumeImbalance  = value;
         else if (name == "weightedVolumeImbalance") weightedVolumeImbalance = value;

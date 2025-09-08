@@ -286,7 +286,7 @@ public:
     /**
      * Get best bid/ask prices across all exchanges for a symbol
      * @param symbol Symbol to query
-     * @return Pair of (best_bid, best_ask) across all exchanges
+     * @return Pair of (bestBid, bestAsk) across all exchanges
      */
     std::pair<double, double> getBestPricesAcrossExchanges(const core::Symbol& symbol) const;
     

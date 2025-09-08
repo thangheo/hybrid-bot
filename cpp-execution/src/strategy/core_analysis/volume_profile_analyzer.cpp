@@ -23,9 +23,9 @@
      const ParameterSet& params)
      : exchangeId_(exchangeId),
        trading_pair_(tradingPair),
-       num_price_ranges_(params.getInt("num_price_ranges", 20)),
-       range_size_percent_(params.getDouble("range_size_percent", 0.001)),
-       time_frame_minutes_(params.getInt("time_frame_minutes", 60)),
+       num_price_ranges_(params.getInt("numPriceRanges", 20)),
+       range_size_percent_(params.getDouble("rangeSizePercent", 0.001)),
+       time_frame_minutes_(params.getInt("timeFrameMinutes", 60)),
        current_profile_(exchangeId, tradingPair),
        last_update_time_(std::chrono::system_clock::now()) {
      
@@ -42,9 +42,9 @@
     : VolumeProfileAnalyzer(config.exchangeId, config.tradingPair, config.params) // or use other fields as needed
 {
     // Initialize with config
-    num_price_ranges_ = config.num_price_ranges;
-    range_size_percent_ = config.range_size_percent;
-    time_frame_minutes_ = config.time_frame_minutes;
+    num_price_ranges_ = config.numPriceRanges;
+    range_size_percent_ = config.rangeSizePercent;
+    time_frame_minutes_ = config.timeFrameMinutes;
     
     // Initialize multi-timeframe profiles
     timeframe_profiles_["1m"] = VolumeProfile(config.exchangeId, config.tradingPair);
@@ -57,12 +57,12 @@
  VolumeProfileAnalyzer::VolumeProfileAnalyzer(
      const core::ExchangeId& exchangeId, 
      const std::string& tradingPair, 
-     int num_price_ranges, 
-     double range_size_percent)
+     int numPriceRanges, 
+     double rangeSizePercent)
      : exchangeId_(exchangeId),
        trading_pair_(tradingPair),
-       num_price_ranges_(num_price_ranges),
-       range_size_percent_(range_size_percent),
+       num_price_ranges_(numPriceRanges),
+       range_size_percent_(rangeSizePercent),
        time_frame_minutes_(60),
        current_profile_(exchangeId, tradingPair),
        last_update_time_(std::chrono::system_clock::now()) {
@@ -181,9 +181,9 @@
          // Update VWAP for the profile
          double volume_price_sum = 0.0;
          for (size_t i = 0; i < profile.price_ranges.size(); ++i) {
-             double mid_price = (profile.price_ranges[i].lower_bound + 
+             double midPrice = (profile.price_ranges[i].lower_bound + 
                                 profile.price_ranges[i].upper_bound) / 2.0;
-             volume_price_sum += mid_price * profile.volume_data[i].total_volume;
+             volume_price_sum += midPrice * profile.volume_data[i].total_volume;
          }
          
          if (profile.total_volume > 0) {
@@ -336,9 +336,9 @@
      last_update_time_ = std::chrono::system_clock::now();
  }
  
- void VolumeProfileAnalyzer::setTimeFrame(int time_frame_minutes) {
+ void VolumeProfileAnalyzer::setTimeFrame(int timeFrameMinutes) {
      std::lock_guard<std::mutex> lock(mutex_);
-     time_frame_minutes_ = time_frame_minutes;
+     time_frame_minutes_ = timeFrameMinutes;
  }
  
  void VolumeProfileAnalyzer::initializePriceRanges(double current_price) {
@@ -373,9 +373,9 @@
         std::lock_guard<std::mutex> lock(mutex_);
         
         // Update parameters
-        num_price_ranges_ = params.getInt("num_price_ranges", num_price_ranges_);
-        range_size_percent_ = params.getDouble("range_size_percent", range_size_percent_);
-        time_frame_minutes_ = params.getInt("time_frame_minutes", time_frame_minutes_);
+        num_price_ranges_ = params.getInt("numPriceRanges", num_price_ranges_);
+        range_size_percent_ = params.getDouble("rangeSizePercent", range_size_percent_);
+        time_frame_minutes_ = params.getInt("timeFrameMinutes", time_frame_minutes_);
         
         // Reinitialize price ranges
         if (!current_profile_.price_ranges.empty()) {
@@ -394,9 +394,9 @@
              // Update VWAP
              double volume_price_sum = 0.0;
              for (size_t j = 0; j < current_profile_.price_ranges.size(); ++j) {
-                 double mid_price = (current_profile_.price_ranges[j].lower_bound + 
+                 double midPrice = (current_profile_.price_ranges[j].lower_bound + 
                                     current_profile_.price_ranges[j].upper_bound) / 2.0;
-                 volume_price_sum += mid_price * current_profile_.volume_data[j].total_volume;
+                 volume_price_sum += midPrice * current_profile_.volume_data[j].total_volume;
              }
              
              if (current_profile_.total_volume > 0) {
@@ -465,9 +465,9 @@
      size_t max_volume_index = 0;
      
      for (size_t i = 0; i < current_profile_.price_ranges.size(); ++i) {
-         double mid_price = (current_profile_.price_ranges[i].lower_bound + 
+         double midPrice = (current_profile_.price_ranges[i].lower_bound + 
                             current_profile_.price_ranges[i].upper_bound) / 2.0;
-         volume_price_sum += mid_price * current_profile_.volume_data[i].total_volume;
+         volume_price_sum += midPrice * current_profile_.volume_data[i].total_volume;
          
          if (current_profile_.volume_data[i].total_volume > max_volume) {
              max_volume = current_profile_.volume_data[i].total_volume;
@@ -535,10 +535,10 @@
              double rate = total_volume / time_span;
              
              // Use midpoint of price range as key
-             double mid_price = (current_profile_.price_ranges[level_idx].lower_bound + 
+             double midPrice = (current_profile_.price_ranges[level_idx].lower_bound + 
                                 current_profile_.price_ranges[level_idx].upper_bound) / 2.0;
              
-             rates[mid_price] = rate;
+             rates[midPrice] = rate;
          }
      }
      
@@ -568,9 +568,9 @@
      // Detect high volume nodes
      for (size_t i = 0; i < current_profile_.volume_data.size(); ++i) {
          if (current_profile_.volume_data[i].total_volume > avg_volume + threshold * std_dev) {
-             double mid_price = (current_profile_.price_ranges[i].lower_bound + 
+             double midPrice = (current_profile_.price_ranges[i].lower_bound + 
                                 current_profile_.price_ranges[i].upper_bound) / 2.0;
-             nodes.push_back(mid_price);
+             nodes.push_back(midPrice);
          }
      }
      
@@ -618,9 +618,9 @@
          
          // Check for significant imbalance (either buy or sell heavy)
          if (ratio > threshold || ratio < 1.0 / threshold) {
-             double mid_price = (current_profile_.price_ranges[i].lower_bound + 
+             double midPrice = (current_profile_.price_ranges[i].lower_bound + 
                                 current_profile_.price_ranges[i].upper_bound) / 2.0;
-             zones.push_back(mid_price);
+             zones.push_back(midPrice);
          }
      }
      

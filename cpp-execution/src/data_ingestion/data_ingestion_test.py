@@ -170,16 +170,16 @@ class DataIngestionTester:
         print(f"  Bids: {len(bids)}, Asks: {len(asks)}")
         
         if bids and asks:
-            best_bid = bids[0] if isinstance(bids[0], dict) else {'price': bids[0], 'quantity': 'N/A'}
-            best_ask = asks[0] if isinstance(asks[0], dict) else {'price': asks[0], 'quantity': 'N/A'}
+            bestBid = bids[0] if isinstance(bids[0], dict) else {'price': bids[0], 'quantity': 'N/A'}
+            bestAsk = asks[0] if isinstance(asks[0], dict) else {'price': asks[0], 'quantity': 'N/A'}
             
-            print(f"  Best Bid: {best_bid.get('price', 'N/A')} @ {best_bid.get('quantity', 'N/A')}")
-            print(f"  Best Ask: {best_ask.get('price', 'N/A')} @ {best_ask.get('quantity', 'N/A')}")
+            print(f"  Best Bid: {bestBid.get('price', 'N/A')} @ {bestBid.get('quantity', 'N/A')}")
+            print(f"  Best Ask: {bestAsk.get('price', 'N/A')} @ {bestAsk.get('quantity', 'N/A')}")
             
             try:
-                spread = float(best_ask.get('price', 0)) - float(best_bid.get('price', 0))
-                mid_price = (float(best_ask.get('price', 0)) + float(best_bid.get('price', 0))) / 2
-                print(f"  Spread: {spread:.6f}, Mid: {mid_price:.6f}")
+                spread = float(bestAsk.get('price', 0)) - float(bestBid.get('price', 0))
+                midPrice = (float(bestAsk.get('price', 0)) + float(bestBid.get('price', 0))) / 2
+                print(f"  Spread: {spread:.6f}, Mid: {midPrice:.6f}")
             except (ValueError, TypeError):
                 print("  Spread/Mid: Unable to calculate")
     

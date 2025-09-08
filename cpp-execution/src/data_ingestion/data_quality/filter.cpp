@@ -16,8 +16,8 @@ bool PriceJumpFilter::detectAnomaly(OrderBookUpdate& update) {
     std::string key = update.exchangeId.toString() + ":" + update.tradingPair;
     
     // Calculate mid price
-    double mid_price = calculateMidPrice(update);
-    if (mid_price <= 0.0) {
+    double midPrice = calculateMidPrice(update);
+    if (midPrice <= 0.0) {
         return true; // Skip empty order books
     }
     
@@ -25,7 +25,7 @@ bool PriceJumpFilter::detectAnomaly(OrderBookUpdate& update) {
     auto it = last_mid_prices_.find(key);
     if (it != last_mid_prices_.end()) {
         double last_price = it->second;
-        double percent_change = std::abs(mid_price - last_price) / last_price * 100.0;
+        double percent_change = std::abs(midPrice - last_price) / last_price * 100.0;
         
         if (percent_change > threshold_percent_) {
             std::cerr << "Price jump detected for " << key << ": " 
@@ -38,7 +38,7 @@ bool PriceJumpFilter::detectAnomaly(OrderBookUpdate& update) {
     }
     
     // Update last price
-    last_mid_prices_[key] = mid_price;
+    last_mid_prices_[key] = midPrice;
     return true;
 }
 
@@ -48,16 +48,16 @@ double PriceJumpFilter::calculateMidPrice(const OrderBookUpdate& update) const {
     }
     
     // Get best bid and ask
-    double best_bid = update.bids[0].price;
-    if (best_bid <= 0.0) {
+    double bestBid = update.bids[0].price;
+    if (bestBid <= 0.0) {
         return 0.0; // Avoid division by zero
     }
-    double best_ask = update.asks[0].price;
-    if (best_ask <= 0.0) {
+    double bestAsk = update.asks[0].price;
+    if (bestAsk <= 0.0) {
         return 0.0; // Avoid division by zero
     }
     
-    return (best_bid + best_ask) / 2.0;
+    return (bestBid + bestAsk) / 2.0;
 }
 
 // SpreadFilter implementation
@@ -89,12 +89,12 @@ double SpreadFilter::calculateSpread(const OrderBookUpdate& update) const {
         return 0.0;
     }
     // Get best bid and ask
-    double best_bid =  update.bids[0].price;
-    if (best_bid <= 0.0) {
+    double bestBid =  update.bids[0].price;
+    if (bestBid <= 0.0) {
         return 0.0; // Avoid division by zero
     }
-    double best_ask = update.asks[0].price;
-    if (best_ask <= 0.0) {
+    double bestAsk = update.asks[0].price;
+    if (bestAsk <= 0.0) {
         return 0.0; // Avoid division by zero
     }
     // Calculate spread
@@ -105,7 +105,7 @@ double SpreadFilter::calculateSpread(const OrderBookUpdate& update) const {
     // or use a more complex formula.
     // Here we just return the difference
     // between the best ask and best bid prices.
-    return best_ask - best_bid;
+    return bestAsk - bestBid;
 }
 
 double SpreadFilter::calculateSpreadPercent(const OrderBookUpdate& update) const {
@@ -113,17 +113,17 @@ double SpreadFilter::calculateSpreadPercent(const OrderBookUpdate& update) const
         return 0.0;
     }
     // Get best bid and ask
-    double best_bid = update.bids[0].price;
+    double bestBid = update.bids[0].price;
   
-    double best_ask = update.asks[0].price;
-    if (best_ask <= 0.0) {
+    double bestAsk = update.asks[0].price;
+    if (bestAsk <= 0.0) {
         return 0.0; // Avoid division by zero
     }
-    if (best_bid <= 0.0) {
+    if (bestBid <= 0.0) {
         return 100.0; // Avoid division by zero
     }
     
-    return (best_ask - best_bid) / best_bid * 100.0;
+    return (bestAsk - bestBid) / bestBid * 100.0;
 }
 
 // VolumeFilter implementation

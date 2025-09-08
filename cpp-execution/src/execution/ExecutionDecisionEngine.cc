@@ -14,7 +14,7 @@ private:
         std::vector<PriceLevel> bids;
         std::vector<PriceLevel> asks;
         double timestamp;
-        double mid_price;
+        double midPrice;
         double spread;
         double imbalance;
     };
@@ -29,22 +29,22 @@ public:
                                 const std::vector<PriceLevel>& asks) {
         
         double spread = asks[0].price() - bids[0].price();
-        double mid_price = (asks[0].price() + bids[0].price()) / 2.0;
-        double relative_spread = spread / mid_price;
+        double midPrice = (asks[0].price() + bids[0].price()) / 2.0;
+        double relative_spread = spread / midPrice;
         
         // Calculate order book imbalance
-        double bid_volume = 0, ask_volume = 0;
+        double bidVolume = 0, askVolume = 0;
         for (int i = 0; i < std::min(5, (int)bids.size()); ++i) {
-            bid_volume += bids[i].quantity();
+            bidVolume += bids[i].quantity();
         }
         for (int i = 0; i < std::min(5, (int)asks.size()); ++i) {
-            ask_volume += asks[i].quantity();
+            askVolume += asks[i].quantity();
         }
         
-        double imbalance = (bid_volume - ask_volume) / (bid_volume + ask_volume);
+        double imbalance = (bidVolume - askVolume) / (bidVolume + askVolume);
         
         // Calculate depth and liquidity metrics
-        double total_depth = bid_volume + ask_volume;
+        double total_depth = bidVolume + askVolume;
         double volatility = CalculateRecentVolatility(symbol);
         
         // Regime classification logic
@@ -93,7 +93,7 @@ private:
         const auto& snapshots = it->second;
         
         for (size_t i = 1; i < std::min(30ul, snapshots.size()); ++i) {
-            double ret = std::log(snapshots[i].mid_price / snapshots[i-1].mid_price);
+            double ret = std::log(snapshots[i].midPrice / snapshots[i-1].midPrice);
             returns.push_back(ret);
         }
         
@@ -202,9 +202,9 @@ public:
         
         OrderDecision decision;
         
-        double best_bid = bids[0].price();
-        double best_ask = asks[0].price();
-        double mid_price = (best_bid + best_ask) / 2.0;
+        double bestBid = bids[0].price();
+        double bestAsk = asks[0].price();
+        double midPrice = (bestBid + bestAsk) / 2.0;
         
         if (params.aggression_level > 0.8) {
             // Aggressive: use market orders
@@ -215,18 +215,18 @@ public:
         } else if (params.aggression_level > 0.6) {
             // Moderately aggressive: limit at best price
             decision.order_type = OrderDecision::LIMIT;
-            decision.limit_price = (intent.side() == TradeSide::BUY) ? best_ask : best_bid;
+            decision.limit_price = (intent.side() == TradeSide::BUY) ? bestAsk : bestBid;
             decision.post_only = false;
             decision.time_in_force_ms = 5000;
             
         } else if (params.aggression_level > 0.3) {
             // Balanced: limit with slight improvement
             decision.order_type = OrderDecision::LIMIT;
-            double improvement = (best_ask - best_bid) * 0.3;
+            double improvement = (bestAsk - bestBid) * 0.3;
             if (intent.side() == TradeSide::BUY) {
-                decision.limit_price = best_bid + improvement;
+                decision.limit_price = bestBid + improvement;
             } else {
-                decision.limit_price = best_ask - improvement;
+                decision.limit_price = bestAsk - improvement;
             }
             decision.post_only = true;
             decision.time_in_force_ms = 15000;
@@ -236,7 +236,7 @@ public:
             decision.order_type = params.use_hidden_orders ? 
                 OrderDecision::HIDDEN : OrderDecision::LIMIT;
             
-            decision.limit_price = mid_price;
+            decision.limit_price = midPrice;
             decision.post_only = true;
             decision.time_in_force_ms = 30000;
         }

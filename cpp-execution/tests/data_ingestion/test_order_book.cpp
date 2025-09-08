@@ -133,13 +133,13 @@ void testOrderBookUpdates() {
     assert(asks_result.size() == 3); // 2 from before + 1 new - 1 removed = 2
     
     // Check best bid/ask
-    PriceLevel best_bid = order_book.getBestBid();
-    PriceLevel best_ask = order_book.getBestAsk();
+    PriceLevel bestBid = order_book.getBestBid();
+    PriceLevel bestAsk = order_book.getBestAsk();
     
-    assert(best_bid.price == 10101.00);
-    assert(best_bid.quantity == 0.5);
-    assert(best_ask.price == 10100.50);
-    assert(best_ask.quantity == 1.0);
+    assert(bestBid.price == 10101.00);
+    assert(bestBid.quantity == 0.5);
+    assert(bestAsk.price == 10100.50);
+    assert(bestAsk.quantity == 1.0);
     
     std::cout << "Order book updates test passed" << std::endl;
 }
@@ -180,9 +180,9 @@ void testOrderBookMetrics() {
     assert(result == true);
     
     // Get metrics
-    double bid_volume = order_book.getBidVolume();
-    double ask_volume = order_book.getAskVolume();
-    double mid_price = order_book.getMidPrice();
+    double bidVolume = order_book.getBidVolume();
+    double askVolume = order_book.getAskVolume();
+    double midPrice = order_book.getMidPrice();
     double spread = order_book.getSpread();
     double spreadPercent = order_book.getSpreadPercent();
     double volumeImbalance  = order_book.getVolumeImbalance();
@@ -195,9 +195,9 @@ void testOrderBookMetrics() {
     double expected_spread_percent = expected_spread / expected_mid_price * 100.0;
     
     // Check with some tolerance for floating point comparison
-    assert(std::abs(bid_volume - expected_bid_volume) < 0.001);
-    assert(std::abs(ask_volume - expected_ask_volume) < 0.001);
-    assert(std::abs(mid_price - expected_mid_price) < 0.001);
+    assert(std::abs(bidVolume - expected_bid_volume) < 0.001);
+    assert(std::abs(askVolume - expected_ask_volume) < 0.001);
+    assert(std::abs(midPrice - expected_mid_price) < 0.001);
     assert(std::abs(spread - expected_spread) < 0.001);
     assert(std::abs(spreadPercent - expected_spread_percent) < 0.001);
     
