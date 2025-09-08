@@ -110,12 +110,12 @@ bool DataValidator::validateBidAskSpread(const OrderBookUpdate& update, std::str
         return true;
     }
     
-    double best_bid = update.bids[0].price;
-    double best_ask = update.asks[0].price;
+    double bestBid = update.bids[0].price;
+    double bestAsk = update.asks[0].price;
     
-    if (best_bid >= best_ask) {
-        error = "Invalid spread: best bid (" + std::to_string(best_bid) + 
-                ") >= best ask (" + std::to_string(best_ask) + ")";
+    if (bestBid >= bestAsk) {
+        error = "Invalid spread: best bid (" + std::to_string(bestBid) + 
+                ") >= best ask (" + std::to_string(bestAsk) + ")";
         return false;
     }
     

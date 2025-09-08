@@ -18,7 +18,7 @@ class OrderBookSnapshot:
     bids: List[PriceLevel]
     asks: List[PriceLevel]
     spread: float
-    mid_price: float
+    midPrice: float
 
 class OrderBookClient:
     """Client to subscribe to normalized order book data"""
@@ -72,7 +72,7 @@ class OrderBookClient:
             bids=bids,
             asks=asks,
             spread=data["spread"],
-            mid_price=data["mid_price"]
+            midPrice=data["midPrice"]
         )
     
     def _parse_update(self, data):

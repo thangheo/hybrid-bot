@@ -72,7 +72,7 @@ class BinanceOrderBookManager:
     def __init__(self, config: dict):
         self.config = config
         self.symbols = config.get('symbols', ['BTCUSDT', 'ETHUSDT'])
-        self.depth_levels = config.get('depth_levels', 20)  # Top 20 levels
+        self.depthLevels = config.get('depthLevels', 20)  # Top 20 levels
         self.update_speed = config.get('update_speed', '1000ms')  # 1000ms or 100ms
         
         # Data storage
@@ -111,7 +111,7 @@ class BinanceOrderBookManager:
         """Start WebSocket stream for single symbol"""
         
         symbol_lower = symbol.lower()
-        ws_url = f"wss://stream.binance.com:9443/ws/{symbol_lower}@depth{self.depth_levels}@{self.update_speed}"
+        ws_url = f"wss://stream.binance.com:9443/ws/{symbol_lower}@depth{self.depthLevels}@{self.update_speed}"
         
         while self.is_running:
             try:
@@ -185,12 +185,12 @@ class OrderBookImbalanceAnalyzer:
         self.config = config
         
         # Analysis parameters
-        self.depth_levels = config.get('analysis_depth', 10)  # Analyze top 10 levels
+        self.depthLevels = config.get('analysis_depth', 10)  # Analyze top 10 levels
         self.volume_threshold = config.get('min_volume_threshold', 1000)  # Min $1000
         self.imbalance_threshold = config.get('imbalance_threshold', 0.6)  # 60% threshold
         
         # Weighted analysis settings
-        self.level_weights = self._generate_level_weights(self.depth_levels)
+        self.level_weights = self._generate_level_weights(self.depthLevels)
         
         logger.info("Order Book Imbalance Analyzer initialized")
     
@@ -213,7 +213,7 @@ class OrderBookImbalanceAnalyzer:
             return 0.0
         
         # Sum top N levels
-        levels_to_use = min(self.depth_levels, len(snapshot.bids), len(snapshot.asks))
+        levels_to_use = min(self.depthLevels, len(snapshot.bids), len(snapshot.asks))
         
         bid_volume = sum(bid.quantity for bid in snapshot.bids[:levels_to_use])
         ask_volume = sum(ask.quantity for ask in snapshot.asks[:levels_to_use])
@@ -235,7 +235,7 @@ class OrderBookImbalanceAnalyzer:
         if not snapshot.bids or not snapshot.asks:
             return 0.0
         
-        levels_to_use = min(self.depth_levels, len(snapshot.bids), len(snapshot.asks))
+        levels_to_use = min(self.depthLevels, len(snapshot.bids), len(snapshot.asks))
         
         weighted_bid_volume = 0.0
         weighted_ask_volume = 0.0
@@ -265,7 +265,7 @@ class OrderBookImbalanceAnalyzer:
         if not snapshot.bids or not snapshot.asks:
             return 0.0
         
-        levels_to_use = min(self.depth_levels, len(snapshot.bids), len(snapshot.asks))
+        levels_to_use = min(self.depthLevels, len(snapshot.bids), len(snapshot.asks))
         
         bid_value = sum(bid.price * bid.quantity for bid in snapshot.bids[:levels_to_use])
         ask_value = sum(ask.price * ask.quantity for ask in snapshot.asks[:levels_to_use])
@@ -288,9 +288,9 @@ class OrderBookImbalanceAnalyzer:
         
         # Get typical order sizes
         all_sizes = []
-        for bid in snapshot.bids[:self.depth_levels]:
+        for bid in snapshot.bids[:self.depthLevels]:
             all_sizes.append(bid.quantity)
-        for ask in snapshot.asks[:self.depth_levels]:
+        for ask in snapshot.asks[:self.depthLevels]:
             all_sizes.append(ask.quantity)
         
         if len(all_sizes) < 5:  # Need enough data
@@ -343,7 +343,7 @@ class OrderBookImbalanceAnalyzer:
         if not snapshot.bids or not snapshot.asks:
             return 0.0
         
-        levels_to_use = min(self.depth_levels, len(snapshot.bids), len(snapshot.asks))
+        levels_to_use = min(self.depthLevels, len(snapshot.bids), len(snapshot.asks))
         
         # Calculate total volume
         totalBidVolume  = sum(bid.quantity for bid in snapshot.bids[:levels_to_use])
@@ -361,7 +361,7 @@ class OrderBookImbalanceAnalyzer:
         # Score components
         volume_score = min(total_volume / 10000, 1.0)  # Normalize to 10k volume
         spread_score = max(0, 1.0 - spread_pct * 1000)  # Penalty for wide spreads
-        depth_score = min(levels_to_use / self.depth_levels, 1.0)  # Level availability
+        depth_score = min(levels_to_use / self.depthLevels, 1.0)  # Level availability
         
         # Weighted average
         depth_quality = (
@@ -930,7 +930,7 @@ async def test_orderbook_manager():
     
     config = {
         'symbols': ['BTCUSDT', 'ETHUSDT'],
-        'depth_levels': 20,
+        'depthLevels': 20,
         'update_speed': '1000ms',
         'analysis_interval': 10,  # Analyze every 10 seconds
         'imbalance_threshold': 0.6,

@@ -368,9 +368,9 @@ VolumeProfileConfig parseVolumeProfileConfig(const json& componentJson) {
         if (params.contains("priceLevels")) config.priceLevels = params["priceLevels"].get<int>();
         if (params.contains("exchangeId")) config.exchangeId = ExchangeId::fromString(params["exchangeId"].get<std::string>());
         if (params.contains("tradingPair")) config.tradingPair = params["tradingPair"].get<std::string>();
-        if (params.contains("range_size_percent")) config.range_size_percent = params["range_size_percent"].get<double>();
-        if (params.contains("time_frame_minutes")) config.time_frame_minutes = params["time_frame_minutes"].get<int>();
-        if (params.contains("num_price_ranges")) config.num_price_ranges = params["num_price_ranges"].get<int>();
+        if (params.contains("rangeSizePercent")) config.rangeSizePercent = params["rangeSizePercent"].get<double>();
+        if (params.contains("timeFrameMinutes")) config.timeFrameMinutes = params["timeFrameMinutes"].get<int>();
+        if (params.contains("numPriceRanges")) config.numPriceRanges = params["numPriceRanges"].get<int>();
         
         // Parse params if present
         if (params.contains("params") && params["params"].is_object()) {
@@ -847,9 +847,9 @@ json volumeProfileConfigToJson(const VolumeProfileConfig& config) {
     params["priceLevels"] = config.priceLevels;
     params["exchangeId"] = config.exchangeId.toString();
     params["tradingPair"] = config.tradingPair;
-    params["range_size_percent"] = config.range_size_percent;
-    params["time_frame_minutes"] = config.time_frame_minutes;
-    params["num_price_ranges"] = config.num_price_ranges;
+    params["rangeSizePercent"] = config.rangeSizePercent;
+    params["timeFrameMinutes"] = config.timeFrameMinutes;
+    params["numPriceRanges"] = config.numPriceRanges;
     
     // Add params as a nested object
     json paramsJson;

@@ -249,8 +249,8 @@ double ImbalanceDetectionEngine::calculateImbalanceConfidence(ImbalanceType type
  // Detect volume imbalance
  bool ImbalanceDetectionEngine::detectVolumeImbalance(const OrderBookMetrics& metrics) {
      // Check if required metrics are available
-     auto bidVolIt = metrics.metrics.find("bid_volume");
-     auto askVolIt = metrics.metrics.find("ask_volume");
+     auto bidVolIt = metrics.metrics.find("bidVolume");
+     auto askVolIt = metrics.metrics.find("askVolume");
      
      if (bidVolIt == metrics.metrics.end() || askVolIt == metrics.metrics.end()) {
          return false; // Required metrics not available
@@ -304,8 +304,8 @@ double ImbalanceDetectionEngine::calculateImbalanceConfidence(ImbalanceType type
  // Detect price level imbalance
  bool ImbalanceDetectionEngine::detectPriceLevelImbalance(const OrderBookMetrics& metrics) {
      // Check if required metrics are available
-     auto bidLevelsIt = metrics.metrics.find("bid_level_count");
-     auto askLevelsIt = metrics.metrics.find("ask_level_count");
+     auto bidLevelsIt = metrics.metrics.find("bidLevelCount");
+     auto askLevelsIt = metrics.metrics.find("askLevelCount");
      
      if (bidLevelsIt == metrics.metrics.end() || askLevelsIt == metrics.metrics.end()) {
          return false; // Required metrics not available
@@ -360,8 +360,8 @@ double ImbalanceDetectionEngine::calculateImbalanceConfidence(ImbalanceType type
  
 bool ImbalanceDetectionEngine::detectLiquidityFlowImbalance(const OrderBookMetrics& metrics) {
     // Check if required metrics are available
-    auto bidFlowIt = metrics.metrics.find("bid_flow");
-    auto askFlowIt = metrics.metrics.find("ask_flow");
+    auto bidFlowIt = metrics.metrics.find("bidFlow");
+    auto askFlowIt = metrics.metrics.find("askFlow");
     if (bidFlowIt == metrics.metrics.end() || askFlowIt == metrics.metrics.end()) {
         return false; // Required metrics not available
     }
@@ -423,7 +423,7 @@ bool ImbalanceDetectionEngine::detectLiquidityFlowImbalance(const OrderBookMetri
  bool ImbalanceDetectionEngine::detectAbnormalSpread(const OrderBookMetrics& metrics) {
      // Check if required metrics are available
      auto spreadIt = metrics.metrics.find("spreadPercent");
-     auto avgSpreadIt = metrics.metrics.find("average_spread_percent");
+     auto avgSpreadIt = metrics.metrics.find("averageSpreadPercent");
      
      if (spreadIt == metrics.metrics.end() || avgSpreadIt == metrics.metrics.end()) {
          return false; // Required metrics not available
@@ -465,8 +465,8 @@ bool ImbalanceDetectionEngine::detectLiquidityFlowImbalance(const OrderBookMetri
          Direction direction = Direction::SELL;
          
          // Check if there's additional data to determine direction more accurately
-         auto bidVolumeIt = metrics.metrics.find("bid_volume");
-         auto askVolumeIt = metrics.metrics.find("ask_volume");
+         auto bidVolumeIt = metrics.metrics.find("bidVolume");
+         auto askVolumeIt = metrics.metrics.find("askVolume");
          
          if (bidVolumeIt != metrics.metrics.end() && askVolumeIt != metrics.metrics.end()) {
              double bidVolume = bidVolumeIt->second;
@@ -490,8 +490,8 @@ bool ImbalanceDetectionEngine::detectLiquidityFlowImbalance(const OrderBookMetri
      
      switch (type) {
          case ImbalanceType::VOLUME_IMBALANCE: {
-             auto bidVolIt = metrics.metrics.find("bid_volume");
-             auto askVolIt = metrics.metrics.find("ask_volume");
+             auto bidVolIt = metrics.metrics.find("bidVolume");
+             auto askVolIt = metrics.metrics.find("askVolume");
              
              if (bidVolIt != metrics.metrics.end() && askVolIt != metrics.metrics.end()) {
                  double bidVol = bidVolIt->second;
@@ -505,8 +505,8 @@ bool ImbalanceDetectionEngine::detectLiquidityFlowImbalance(const OrderBookMetri
              break;
          }
          case ImbalanceType::PRICE_LEVEL_IMBALANCE: {
-             auto bidLevelsIt = metrics.metrics.find("bid_level_count");
-             auto askLevelsIt = metrics.metrics.find("ask_level_count");
+             auto bidLevelsIt = metrics.metrics.find("bidLevelCount");
+             auto askLevelsIt = metrics.metrics.find("askLevelCount");
              
              if (bidLevelsIt != metrics.metrics.end() && askLevelsIt != metrics.metrics.end()) {
                  double bidLevels = bidLevelsIt->second;
@@ -520,8 +520,8 @@ bool ImbalanceDetectionEngine::detectLiquidityFlowImbalance(const OrderBookMetri
              break;
          }
          case ImbalanceType::LIQUIDITY_FLOW_IMBALANCE: {
-             auto bidFlowIt = metrics.metrics.find("bid_flow");
-             auto askFlowIt = metrics.metrics.find("ask_flow");
+             auto bidFlowIt = metrics.metrics.find("bidFlow");
+             auto askFlowIt = metrics.metrics.find("askFlow");
              
              if (bidFlowIt != metrics.metrics.end() && askFlowIt != metrics.metrics.end()) {
                  double bidFlow = bidFlowIt->second;
@@ -537,7 +537,7 @@ bool ImbalanceDetectionEngine::detectLiquidityFlowImbalance(const OrderBookMetri
          }
          case ImbalanceType::ABNORMAL_SPREAD: {
              auto spreadIt = metrics.metrics.find("spreadPercent");
-             auto avgSpreadIt = metrics.metrics.find("average_spread_percent");
+             auto avgSpreadIt = metrics.metrics.find("averageSpreadPercent");
              
              if (spreadIt != metrics.metrics.end() && avgSpreadIt != metrics.metrics.end()) {
                  double currentSpread = spreadIt->second;
@@ -564,8 +564,8 @@ bool ImbalanceDetectionEngine::detectLiquidityFlowImbalance(const OrderBookMetri
      
      switch (type) {
          case ImbalanceType::VOLUME_IMBALANCE: {
-             auto bidVolIt = metrics.metrics.find("bid_volume");
-             auto askVolIt = metrics.metrics.find("ask_volume");
+             auto bidVolIt = metrics.metrics.find("bidVolume");
+             auto askVolIt = metrics.metrics.find("askVolume");
              
              if (bidVolIt != metrics.metrics.end() && askVolIt != metrics.metrics.end()) {
                  double bidVol = bidVolIt->second;
@@ -576,8 +576,8 @@ bool ImbalanceDetectionEngine::detectLiquidityFlowImbalance(const OrderBookMetri
              break;
          }
          case ImbalanceType::PRICE_LEVEL_IMBALANCE: {
-             auto bidLevelsIt = metrics.metrics.find("bid_level_count");
-             auto askLevelsIt = metrics.metrics.find("ask_level_count");
+             auto bidLevelsIt = metrics.metrics.find("bidLevelCount");
+             auto askLevelsIt = metrics.metrics.find("askLevelCount");
              
              if (bidLevelsIt != metrics.metrics.end() && askLevelsIt != metrics.metrics.end()) {
                  double bidLevels = bidLevelsIt->second;
@@ -588,8 +588,8 @@ bool ImbalanceDetectionEngine::detectLiquidityFlowImbalance(const OrderBookMetri
              break;
          }
          case ImbalanceType::LIQUIDITY_FLOW_IMBALANCE: {
-             auto bidFlowIt = metrics.metrics.find("bid_flow");
-             auto askFlowIt = metrics.metrics.find("ask_flow");
+             auto bidFlowIt = metrics.metrics.find("bidFlow");
+             auto askFlowIt = metrics.metrics.find("askFlow");
              
              if (bidFlowIt != metrics.metrics.end() && askFlowIt != metrics.metrics.end()) {
                  double bidFlow = bidFlowIt->second;
@@ -605,8 +605,8 @@ bool ImbalanceDetectionEngine::detectLiquidityFlowImbalance(const OrderBookMetri
              direction = Direction::SELL;
              
              // Check if there's additional data to determine direction more accurately
-             auto bidVolumeIt = metrics.metrics.find("bid_volume");
-             auto askVolumeIt = metrics.metrics.find("ask_volume");
+             auto bidVolumeIt = metrics.metrics.find("bidVolume");
+             auto askVolumeIt = metrics.metrics.find("askVolume");
              
              if (bidVolumeIt != metrics.metrics.end() && askVolumeIt != metrics.metrics.end()) {
                  double bidVolume = bidVolumeIt->second;

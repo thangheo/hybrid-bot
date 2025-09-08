@@ -209,21 +209,21 @@ private:
     double calculate_imbalance(const OrderBook& ob) {
         if (ob.bids.empty() || ob.asks.empty()) return 0.0;
         
-        double bid_volume = 0.0;
-        double ask_volume = 0.0;
+        double bidVolume = 0.0;
+        double askVolume = 0.0;
         
         // Sum top 5 levels
         for (size_t i = 0; i < std::min(size_t(5), ob.bids.size()); ++i) {
-            bid_volume += ob.bids[i].quantity;
+            bidVolume += ob.bids[i].quantity;
         }
         for (size_t i = 0; i < std::min(size_t(5), ob.asks.size()); ++i) {
-            ask_volume += ob.asks[i].quantity;
+            askVolume += ob.asks[i].quantity;
         }
         
-        double total_volume = bid_volume + ask_volume;
+        double total_volume = bidVolume + askVolume;
         if (total_volume == 0.0) return 0.0;
         
-        return (bid_volume - ask_volume) / total_volume;
+        return (bidVolume - askVolume) / total_volume;
     }
     
     double calculate_depth_imbalance(const OrderBook& ob) {
@@ -232,17 +232,17 @@ private:
         // Calculate weighted imbalance considering price distance
         double weighted_bid = 0.0;
         double weighted_ask = 0.0;
-        double mid_price = ob.get_mid_price();
+        double midPrice = ob.get_mid_price();
         
-        if (mid_price == 0.0) return 0.0;
+        if (midPrice == 0.0) return 0.0;
         
         for (const auto& bid : ob.bids) {
-            double distance_weight = 1.0 - std::abs(bid.price - mid_price) / mid_price;
+            double distance_weight = 1.0 - std::abs(bid.price - midPrice) / midPrice;
             weighted_bid += bid.quantity * distance_weight;
         }
         
         for (const auto& ask : ob.asks) {
-            double distance_weight = 1.0 - std::abs(ask.price - mid_price) / mid_price;
+            double distance_weight = 1.0 - std::abs(ask.price - midPrice) / midPrice;
             weighted_ask += ask.quantity * distance_weight;
         }
         
@@ -258,12 +258,12 @@ private:
         for (const auto& ask : ob.asks) total_volume += ask.quantity;
         
         double spread = ob.get_spread();
-        double mid_price = ob.get_mid_price();
+        double midPrice = ob.get_mid_price();
         
-        if (mid_price == 0.0 || spread == 0.0) return 0.0;
+        if (midPrice == 0.0 || spread == 0.0) return 0.0;
         
         // Higher volume and tighter spread = higher liquidity
-        double spread_ratio = spread / mid_price;
+        double spread_ratio = spread / midPrice;
         return total_volume / (1.0 + spread_ratio * 1000.0);
     }
     

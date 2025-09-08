@@ -319,11 +319,11 @@ trading::MarketIntelligence AdaptiveMarketIntelligence::generateIntelligence(
     if (!profile) return intel;
     
     // Calculate basic metrics
-    double best_bid = bids[0].price();
-    double best_ask = asks[0].price();
-    double spread = best_ask - best_bid;
-    double mid_price = (best_bid + best_ask) / 2.0;
-    double relative_spread = spread / mid_price;
+    double bestBid = bids[0].price();
+    double bestAsk = asks[0].price();
+    double spread = bestAsk - bestBid;
+    double midPrice = (bestBid + bestAsk) / 2.0;
+    double relative_spread = spread / midPrice;
     
     // Calculate volume metrics
     OrderBookMetrics metrics = calculateOrderBookMetrics(bids, asks);

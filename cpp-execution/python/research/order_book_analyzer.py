@@ -100,29 +100,29 @@ class OrderBookData:
                 return {}
                 
             # Calculate basic metrics
-            bid_volume = sum(qty for _, qty in bids)
-            ask_volume = sum(qty for _, qty in asks)
+            bidVolume = sum(qty for _, qty in bids)
+            askVolume = sum(qty for _, qty in asks)
             
             # Bid/Ask volume ratio
-            bid_ask_ratio = bid_volume / ask_volume if ask_volume > 0 else float('inf')
+            bid_ask_ratio = bidVolume / askVolume if askVolume > 0 else float('inf')
             
             # Calculate mid price and spread
-            best_bid = max(p for p, _ in bids) if bids else 0
-            best_ask = min(p for p, _ in asks) if asks else 0
-            mid_price = (best_bid + best_ask) / 2 if best_bid > 0 and best_ask > 0 else 0
-            spread = best_ask - best_bid if best_bid > 0 and best_ask > 0 else 0
-            spread_pct = (spread / mid_price) * 100 if mid_price > 0 else 0
+            bestBid = max(p for p, _ in bids) if bids else 0
+            bestAsk = min(p for p, _ in asks) if asks else 0
+            midPrice = (bestBid + bestAsk) / 2 if bestBid > 0 and bestAsk > 0 else 0
+            spread = bestAsk - bestBid if bestBid > 0 and bestAsk > 0 else 0
+            spread_pct = (spread / midPrice) * 100 if midPrice > 0 else 0
             
             # Weighted mid price
-            bid_weighted_price = sum(price * qty for price, qty in bids) / bid_volume if bid_volume > 0 else 0
-            ask_weighted_price = sum(price * qty for price, qty in asks) / ask_volume if ask_volume > 0 else 0
-            weighted_mid_price = (bid_weighted_price * ask_volume + ask_weighted_price * bid_volume) / (bid_volume + ask_volume) if (bid_volume + ask_volume) > 0 else 0
+            bid_weighted_price = sum(price * qty for price, qty in bids) / bidVolume if bidVolume > 0 else 0
+            ask_weighted_price = sum(price * qty for price, qty in asks) / askVolume if askVolume > 0 else 0
+            weighted_mid_price = (bid_weighted_price * askVolume + ask_weighted_price * bidVolume) / (bidVolume + askVolume) if (bidVolume + askVolume) > 0 else 0
             
             # Calculate imbalance at different depth levels
             imbalance_metrics = {}
-            depth_levels = [5, 10, 20, 50, 100]
+            depthLevels = [5, 10, 20, 50, 100]
             
-            for depth in depth_levels:
+            for depth in depthLevels:
                 top_bids = bids[:min(depth, len(bids))]
                 top_asks = asks[:min(depth, len(asks))]
                 
@@ -164,12 +164,12 @@ class OrderBookData:
             ask_impact_10 = price_impact('ask', 10)
             
             return {
-                'bid_volume': bid_volume,
-                'ask_volume': ask_volume,
+                'bidVolume': bidVolume,
+                'askVolume': askVolume,
                 'bid_ask_ratio': bid_ask_ratio,
-                'best_bid': best_bid,
-                'best_ask': best_ask,
-                'mid_price': mid_price,
+                'bestBid': bestBid,
+                'bestAsk': bestAsk,
+                'midPrice': midPrice,
                 'spread': spread,
                 'spread_pct': spread_pct,
                 'weighted_mid_price': weighted_mid_price,
@@ -205,9 +205,9 @@ class OrderBookData:
                 imbalances.append({
                     'timestamp': self.timestamps[i],
                     'imbalance': metrics['imbalance_d20'],
-                    'mid_price': metrics['mid_price'],
-                    'bid_volume': metrics['bid_volume'],
-                    'ask_volume': metrics['ask_volume']
+                    'midPrice': metrics['midPrice'],
+                    'bidVolume': metrics['bidVolume'],
+                    'askVolume': metrics['askVolume']
                 })
         
         return imbalances
@@ -561,14 +561,14 @@ class OrderBookVisualizer:
             if not bids or not asks:
                 return (self.heatmap,)
                 
-            best_bid = max(p for p, _ in bids)
-            best_ask = min(p for p, _ in asks)
-            mid_price = (best_bid + best_ask) / 2
+            bestBid = max(p for p, _ in bids)
+            bestAsk = min(p for p, _ in asks)
+            midPrice = (bestBid + bestAsk) / 2
             
             # Create price levels around mid price
-            price_step = (best_ask - best_bid) / 4
-            price_levels = np.linspace(mid_price - price_step * 10, 
-                                      mid_price + price_step * 10, 
+            price_step = (bestAsk - bestBid) / 4
+            price_levels = np.linspace(midPrice - price_step * 10, 
+                                      midPrice + price_step * 10, 
                                       40)
             
             # Build heatmap matrix
@@ -637,7 +637,7 @@ class OrderBookVisualizer:
             
             # Update lines
             timestamps = df.index
-            mid_prices = df['mid_price'].values
+            mid_prices = df['midPrice'].values
             imbalances = df['imbalance_d20'].values
             
             self.price_line.set_data(timestamps, mid_prices)
@@ -681,9 +681,9 @@ class OrderBookVisualizer:
             
             # Extract timestamps and metrics
             timestamps = df.index
-            mid_prices = df['mid_price'].values
-            bid_volumes = df['bid_volume'].values
-            ask_volumes = df['ask_volume'].values
+            mid_prices = df['midPrice'].values
+            bid_volumes = df['bidVolume'].values
+            ask_volumes = df['askVolume'].values
             bid_ask_ratios = df['bid_ask_ratio'].values
             spread_pcts = df['spread_pct'].values
             imbalances = df['imbalance_d20'].values
@@ -853,7 +853,7 @@ class OrderBookAnalyzer:
             strength = abs(imbalance)
             
             logger.warning(f"*** IMBALANCE ALERT *** {direction.upper()} imbalance detected! "
-                          f"Strength: {strength:.2f}, Price: {latest_metrics['mid_price']:.2f}")
+                          f"Strength: {strength:.2f}, Price: {latest_metrics['midPrice']:.2f}")
             
             # Update last alert time
             self.last_alert_time = current_time
@@ -961,11 +961,11 @@ class ImbalanceSimulator:
         num_levels = 20
         
         # Reference price points
-        mid_price = self.current_price
+        midPrice = self.current_price
         
         # Create bid levels
         for i in range(num_levels):
-            price = mid_price * (1 - 0.0001 * (i + 1))
+            price = midPrice * (1 - 0.0001 * (i + 1))
             
             # Base quantity
             quantity = np.random.lognormal(3, 0.5)
@@ -984,7 +984,7 @@ class ImbalanceSimulator:
         
         # Create ask levels
         for i in range(num_levels):
-            price = mid_price * (1 + 0.0001 * (i + 1))
+            price = midPrice * (1 + 0.0001 * (i + 1))
             
             # Base quantity
             quantity = np.random.lognormal(3, 0.5)

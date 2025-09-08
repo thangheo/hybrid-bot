@@ -137,7 +137,7 @@
         "thresholds": {
           "volumeImbalance ": 0.35,
           "priceLevelImbalance": 0.25,
-          "liquidity_pressure": 0.4,
+          "liquidityPressure": 0.4,
           "order_flow": 0.3
         }
       }
@@ -181,9 +181,9 @@
         "priceLevels": 50,
         "exchangeId": "BINANCE",
         "tradingPair": "BTC/USDT",
-        "range_size_percent": 2.0,
-        "time_frame_minutes": 15,
-        "num_price_ranges": 20,
+        "rangeSizePercent": 2.0,
+        "timeFrameMinutes": 15,
+        "numPriceRanges": 20,
         "params": {
           "numeric": {
             "volume_clustering_threshold": 0.3,

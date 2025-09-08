@@ -131,14 +131,14 @@
     //  exchangeId
         core::ExchangeId exchangeId;               // Exchange ID
         std::string tradingPair;               // Trading pair
-        double range_size_percent = 0.01;        // Size of each price range as percentage of price
-        // time_frame_minutes
-        int time_frame_minutes = 60;            // Time frame in minutes
+        double rangeSizePercent = 0.01;        // Size of each price range as percentage of price
+        // timeFrameMinutes
+        int timeFrameMinutes = 60;            // Time frame in minutes
 
         // params
         ParameterSet params;                  // Parameters for volume profile analysis
-        //num_price_ranges  
-        int num_price_ranges = 20;            // Number of price ranges to track
+        //numPriceRanges  
+        int numPriceRanges = 20;            // Number of price ranges to track
         // price_ranges
         // std::vector<PriceRange> price_ranges; // Price ranges for volume profile
      

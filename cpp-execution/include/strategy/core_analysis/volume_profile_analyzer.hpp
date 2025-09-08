@@ -131,7 +131,7 @@
       * Creates a volume profile analyzer with parameters explicitly specified
       */
      VolumeProfileAnalyzer(const core::ExchangeId& exchangeId, const std::string& tradingPair, 
-                           int num_price_ranges, double range_size_percent);
+                           int numPriceRanges, double rangeSizePercent);
      
      virtual ~VolumeProfileAnalyzer() = default;
      
@@ -188,9 +188,9 @@
      /**
       * Set time frame for analysis
       * 
-      * @param time_frame_minutes Length of time frame in minutes
+      * @param timeFrameMinutes Length of time frame in minutes
       */
-     virtual void setTimeFrame(int time_frame_minutes);
+     virtual void setTimeFrame(int timeFrameMinutes);
      
      /**
       * Get the exchange ID

@@ -294,7 +294,7 @@ private:
         std::thread([this, signal]() {
             // Record entry time and get entry price from signal
             auto entryTime = std::chrono::system_clock::now();
-            double entryPrice = signal.getMetric("mid_price", 0); // Use signal's mid price at generation time
+            double entryPrice = signal.getMetric("midPrice", 0); // Use signal's mid price at generation time
             if (entryPrice <= 0.0) {
                 // LOG_WARN("Signal {} has invalid entry price metric, skipping execution", signal.id);
                 return;
