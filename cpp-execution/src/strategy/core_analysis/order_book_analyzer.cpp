@@ -12,6 +12,7 @@
 #include <numeric>
 #include <cmath>
 #include <thread>
+#include <logger.hpp>
 
 namespace trading {
 namespace strategy {
@@ -434,7 +435,13 @@ void OrderBookAnalyzer::calculateImbalanceMetrics(
     }
     
     currentMetrics_.metrics["volumeImbalance "] = currentMetrics_.volumeImbalance;
-    currentMetrics_.metrics["volatility"] = currentMetrics_.volatilityExpectation;
+    currentMetrics_.metrics["volatility"] = currentMetrics_.realizedVolatility;
+    currentMetrics_.metrics["liquidityPressure"] = currentMetrics_.liquidityPressure;
+    currentMetrics_.metrics["emaVolumeImbalance"] = emaVolumeImbalance_;
+    currentMetrics_.metrics["averageVolumeImbalance"] = emaVolumeImbalance_;
+    currentMetrics_.metrics["pressureImbalance"] = currentMetrics_.pressureImbalance;
+    // currentMetrics_.metrics["volatilityExpectation"] =
+    //currentMetrics_.volatilityExpectation;
 }
 
 void OrderBookAnalyzer::updateTimeSeries() {
@@ -459,6 +466,7 @@ void OrderBookAnalyzer::updateTimeSeries() {
 void OrderBookAnalyzer::calculateDerivedMetrics() {
     currentMetrics_.marketDirectionalCoefficient = calculateDirectionalCoefficient();
     currentMetrics_.volatilityExpectation = calculateVolatilityExpectation();
+    currentMetrics_.realizedVolatility = calculateRealizedVolatility(60.0); // 1-minute interval
     
     // Composite liquidity score
     const double bidLiquidity = currentMetrics_.totalBidVolume * (1.0 + currentMetrics_.bidDensity);
@@ -614,6 +622,63 @@ double OrderBookAnalyzer::calculateDirectionalCoefficient() const {
     
     return std::clamp(coefficient, -1.0, 1.0);
 }
+// calculate realized volatility based on order book metrics
+double OrderBookAnalyzer::calculateRealizedVolatility(double sample_interval_sec) const {
+    const int min_periods = 5;   
+    const int max_periods = 30;  
+    
+    auto it = currentMetrics_.timeSeriesMetrics.find("midPrice");
+    if (it == currentMetrics_.timeSeriesMetrics.end()) {
+        LOG_DEBUG("No midPrice history available, using default volatility");
+        return 0.005; // Default 0.5%
+    }
+    
+    const std::vector<double>& price_history = it->second;
+    if (price_history.size() < min_periods) {
+        LOG_DEBUG("Insufficient price history: {} points, need {}", 
+                  price_history.size(), min_periods);
+        return 0.005;
+    }
+    
+    int periods_to_use = std::min(static_cast<int>(price_history.size()), max_periods);
+    int start_idx = price_history.size() - periods_to_use;
+    
+    std::vector<double> returns;
+    returns.reserve(periods_to_use - 1);
+    
+    for (int i = start_idx + 1; i < static_cast<int>(price_history.size()); ++i) {
+        double prev_price = price_history[i-1];
+        double curr_price = price_history[i];
+        
+        if (prev_price > 0 && curr_price > 0) {
+            double log_ret = std::log(curr_price / prev_price);
+            returns.push_back(log_ret);
+        }
+    }
+    
+    if (returns.size() < 2) {
+        LOG_WARN("Not enough valid returns for volatility");
+        return 0.005;
+    }
+    
+    double mean_return = std::accumulate(returns.begin(), returns.end(), 0.0) / returns.size();
+    
+    double variance = 0.0;
+    for (double r : returns) {
+        double diff = r - mean_return;
+        variance += diff * diff;
+    }
+    variance /= (returns.size() - 1); // sample variance
+    
+    double sigma = std::sqrt(variance);
+    
+    // Annualization rule: volatility scales with sqrt(time)
+    // Here: scale to per-second volatility
+    double sigma_per_sec = sigma / std::sqrt(sample_interval_sec);
+    
+    return std::clamp(sigma_per_sec, 0.001, 0.05); // 0.1%–5%
+}
+
 
 double OrderBookAnalyzer::calculateVolatilityExpectation() const {
     // Factors affecting expected volatility

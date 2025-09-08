@@ -168,6 +168,8 @@ protected:
     
     virtual double calculateDirectionalCoefficient() const;
     virtual double calculateVolatilityExpectation() const;
+    virtual double calculateRealizedVolatility(double sample_interval_sec) const;
+
     virtual void notifyMetricsUpdated();
 
 private:
@@ -179,7 +181,6 @@ private:
     int minSamplesForStability_;
     double emaAlpha_;
     ParameterSet params_;
-
     // State
     OrderBookMetrics currentMetrics_;
     std::deque<OrderBookMetrics> metricsHistory_;
