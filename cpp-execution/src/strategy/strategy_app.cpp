@@ -319,7 +319,7 @@ private:
             auto expiration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(signal.expirationTime.time_since_epoch()).count();
             
             // LOG_DEBUG("Signal {} timing: Now={}ms, Generated={}ms, TTL={}ms, Elapsed={}ms", 
-            //          signal.id, now_ms, generation_ms, signal.ttl.count(), elapsed.count());
+            //          signal.id, now_ms, generation_ms, signal.ttl.count()/1000000, elapsed.count());
 
                 // Check if signal has expired
             if (now >= signal.expirationTime) {
@@ -338,14 +338,16 @@ private:
 
             // Calculate optimal holding duration using decay
             // auto position_duration = calculateHoldingDuration(signal, decayFactor, remainingTTL.count());
-            auto position_duration = signal.ttl/1000000;
+            auto position_duration = std::chrono::duration_cast<std::chrono::milliseconds>(signal.ttl); // For simplicity, hold for full TTL for now
+            // but the value is too big
+            position_duration = std::min(position_duration, remainingTTL); // Never exceed remaining TTL
             // position_duration = (position_duration < signal.ttl) ? signal.ttl : position_duration; // Never exceed TTL
             // LOG_INFO("Signal {} - Decay Factor: {:.3f}, Holding Duration: {}ms", 
             //         signal.id, decayFactor, position_duration.count());
             LOG_INFO("TRADE EXECUTED: {} | Direction: {} | Entry Price: {:.8f} | Holding Duration: {}ms",
                 signal.id, signal.direction == Direction::BUY ? "BUY" : "SELL", entryPrice,
                 std::chrono::duration_cast<std::chrono::milliseconds>(position_duration).count());
-            std::this_thread::sleep_for(position_duration); // Simulate holding period (40s for testing)
+            std::this_thread::sleep_for(position_duration);
 
 
             // Get REAL current exit price from live order book data
@@ -461,7 +463,7 @@ int main() {
         auto startTime = std::chrono::steady_clock::now();
         size_t lastMessageCount = 0;
 
-        for (int cycle = 0; cycle < 120000; ++cycle) { // Run for 6hrs cycles max
+        for (int cycle = 0; cycle < 600000; ++cycle) { // Run for 6hrs cycles max
             std::this_thread::sleep_for(1ms);
             // Report every 10 
             if (cycle % 10 == 0) {
