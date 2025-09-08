@@ -222,7 +222,7 @@ public:
         if (signal.strength < 0.4) return; // Weak signals are ignored
         if(signal.direction == core::Direction::NEUTRAL) return; // Ignore neutral signals
         if(signal.confidence < 0.6) return; // Ignore low confidence signals
-        if(signal.quality < 0.4) return; // Ignore low quality signals
+        if(signal.quality < 0.45) return; // Ignore low quality signals
         
         //if target prices are too close to mid price, ignore
         double percentage_change_threshold = 0.0015; // 0.25%
@@ -301,113 +301,204 @@ private:
     }
     void simulateSignalExecution(const TradingSignal& signal) {
         std::thread([this, signal]() {
-            // Record entry time and get entry price from signal
             auto entryTime = std::chrono::system_clock::now();
-            double entryPrice = signal.getMetric("bestAsk", 0); // Use signal's best ask price
-            if (entryPrice <= 0.0) {
-                // LOG_WARN("Signal {} has invalid entry price metric, skipping execution", signal.id);
-                return;
-            }            
-            //calculate hold duration based on signal decay and TTL            
-            auto now = std::chrono::system_clock::now();
-            auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - signal.generation_time);
             
-            // Debug timing info
-            auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
-            auto generation_ms = std::chrono::duration_cast<std::chrono::milliseconds>(signal.generation_time.time_since_epoch()).count();
-            auto expiration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(signal.expirationTime.time_since_epoch()).count();
-            
-            // LOG_DEBUG("Signal {} timing: Now={}ms, Generated={}ms, TTL={}ms, Elapsed={}ms", 
-            //          signal.id, now_ms, generation_ms, signal.ttl.count()/1000000, elapsed.count());
-
-                // Check if signal has expired
-            if (now >= signal.expirationTime + 1ms) {
-                auto expired_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                                    now - signal.expirationTime).count();
-                LOG_WARN("Signal {} has expired (expired {} ms ago), skipping execution", 
-                        signal.id, expired_ms);
-                return;
-            }
-
-            //calculate position duration using signal decay and remaining TTL
-            double decayFactor = calculateDecayFactor(signal, elapsed.count());
-
-            // Calculate remaining TTL
-            auto remainingTTL = std::chrono::duration_cast<std::chrono::milliseconds>(signal.expirationTime - now);
-
-            // Calculate optimal holding duration using decay
-            // auto position_duration = calculateHoldingDuration(signal, decayFactor, remainingTTL.count());
-            auto position_duration = std::chrono::duration_cast<std::chrono::milliseconds>(signal.ttl); // For simplicity, hold for full TTL for now
-            // but the value is too big
-            position_duration = std::min(position_duration, remainingTTL); // Never exceed remaining TTL
-            // position_duration = (position_duration < signal.ttl) ? signal.ttl : position_duration; // Never exceed TTL
-            // LOG_INFO("Signal {} - Decay Factor: {:.3f}, Holding Duration: {}ms", 
-            //         signal.id, decayFactor, position_duration.count());
-            LOG_INFO("TRADE EXECUTED: {} | Direction: {} | Entry Price: {:.8f} | Holding Duration: {}ms",
-                signal.id, signal.direction == Direction::BUY ? "BUY" : "SELL", entryPrice,
-                std::chrono::duration_cast<std::chrono::milliseconds>(position_duration).count());
-            std::this_thread::sleep_for(position_duration);
-
-
-            // Get REAL current exit price from live order book data
-            auto exitTime = std::chrono::system_clock::now();
-            double exitPrice = entryPrice; // Fallback to entry price
-            
+            // Get entry price from current order book
+            double entryPrice = 0.0;
             if (orderBookReceiver_) {
-                double currentMidPrice = orderBookReceiver_->getCurrentMidPrice(signal.symbol.toString());
-                //sell = best bid, buy = best ask
-                auto sellPrice = orderBookReceiver_->getCurrentMidPrice(signal.symbol.toString()) * 0.999; // Assume we sell at slightly below mid
-                if (sellPrice > 0.0) {
-                    exitPrice = sellPrice; // Use real current price
-                } else {
-                    //just return idiot why the f u want to trade without price data
-                    LOG_WARN("No valid order book data available for signal {}, using fallback", signal.id);
-                    return;
-                    
-                }
-            }            
-            // Calculate actual P&L based on direction
-            double pnl = 0.0;
-            // double orderQuantity = 1.0; // 1 unit for simplicity
-            double qualityScore = signal.quality; // Use signal quality for sizing
-            double orderQuantity = calculatePositionSize(signal, qualityScore) / entryPrice; // Size
-            double feeRate = 0.001;     // 0.1% per trade
-
-            double fees = entryPrice * orderQuantity * feeRate 
-                        + exitPrice * orderQuantity * feeRate;
-
-            if (signal.direction == Direction::BUY) {
-                pnl = (exitPrice - entryPrice) * orderQuantity;
-            } else if (signal.direction == Direction::SELL) {
-                pnl = (entryPrice - exitPrice) * orderQuantity;
+                entryPrice = orderBookReceiver_->getCurrentMidPrice(signal.symbol.toString());
             }
-            pnl -= fees;
-
-            // Create execution result
-            SignalExecutionResult result;
-            result.signal_id = signal.id;
-            result.status = SignalExecutionStatus::COMPLETED;
-            result.startTime = entryTime;
-            result.completionTime = exitTime;
-            result.orderQuantity = orderQuantity;
-            result.orderPrice = entryPrice;
-            result.pnl = pnl;
-            result.signalStrength = signal.strength;
             
-            // Log the trade result with detailed info for symbol, quantity, fees, etc.
-            LOG_INFO("TRADE COMPLETED: {}| symbol {} | Entry: {:.8f} | Exit: {:.8f} | P&L: {:.8f} | Duration: {}ms | Success: {}", 
-                     signal.id, signal.symbol.toString(), entryPrice, exitPrice, pnl,
-                     std::chrono::duration_cast<std::chrono::milliseconds>(exitTime - entryTime).count(),
-                     pnl > 0 ? "YES" : "NO");
+            if (entryPrice <= 0.0) {
+                return; // Skip if no valid price
+            }
             
-            // Record the result back to strategy engine for performance tracking
+            // Check if signal expired
+            if (entryTime >= signal.expirationTime) {
+                return;
+            }
+            
+            // Calculate position size
+            double positionValueUSD = calculatePositionSize(signal, signal.quality);
+            double orderQuantity = positionValueUSD / entryPrice;
+            
+            // Calculate hold duration
+            auto remainingTTL = std::chrono::duration_cast<std::chrono::milliseconds>(
+                signal.expirationTime - entryTime);
+            auto holdDuration = std::min(
+                std::chrono::duration_cast<std::chrono::milliseconds>(signal.ttl), 
+                remainingTTL);
+            
+            LOG_INFO("TRADE EXECUTED: {} | {} | {} | Entry: {:.8f} | Duration: {}ms",
+                    signal.id, signal.symbol.toString(),
+                    signal.direction == Direction::BUY ? "BUY" : "SELL", 
+                    entryPrice, holdDuration.count());
+            
+            // Hold position
+            std::this_thread::sleep_for(holdDuration);
+            
+            // Get exit price
+            auto exitTime = std::chrono::system_clock::now();
+            double exitPrice = 0.0;
+            if (orderBookReceiver_) {
+                exitPrice = orderBookReceiver_->getCurrentMidPrice(signal.symbol.toString());
+            }
+            
+            if (exitPrice <= 0.0) {
+                exitPrice = entryPrice; // Fallback to entry price
+            }
+            
+            // Price sanity check
+            double priceChangePercent = std::abs((exitPrice / entryPrice) - 1.0);
+            if (priceChangePercent > 0.20) { // 20% change seems suspicious for short hold
+                exitPrice = entryPrice; // Use entry price if exit looks wrong
+            }
+            
+            // Calculate P&L
+            double entryValue = entryPrice * orderQuantity;
+            double exitValue = exitPrice * orderQuantity;
+            double feeRate = 0.001;
+            double fees = (entryValue + exitValue) * feeRate;
+            
+            double grossPnl = 0.0;
+            if (signal.direction == Direction::BUY) {
+                grossPnl = exitValue - entryValue;
+            } else {
+                grossPnl = entryValue - exitValue;
+            }
+            
+            double netPnl = grossPnl - fees;
+            
+            LOG_INFO("TRADE COMPLETED: {} | Entry: {:.8f} | Exit: {:.8f} | P&L: {:.8f} | {}",
+                    signal.id, entryPrice, exitPrice, netPnl, 
+                    netPnl > 0 ? "WIN" : "LOSS");
+            
+            // Record result
             if (strategyEngine_) {
-                bool recorded = strategyEngine_->recordSignalResult(signal.id, result);
-                // LOG_INFO("Signal result recorded: {} - Success: {}", signal.id, recorded ? "YES" : "NO");
+                SignalExecutionResult result;
+                result.signal_id = signal.id;
+                result.status = SignalExecutionStatus::COMPLETED;
+                result.startTime = entryTime;
+                result.completionTime = exitTime;
+                result.orderQuantity = orderQuantity;
+                result.orderPrice = entryPrice;
+                result.pnl = netPnl;
+                result.signalStrength = signal.strength;
+                
+                strategyEngine_->recordSignalResult(signal.id, result);
             }
             
         }).detach();
     }
+    // void simulateSignalExecution(const TradingSignal& signal) {
+    //     std::thread([this, signal]() {
+    //         // Record entry time and get entry price from signal
+    //         auto entryTime = std::chrono::system_clock::now();
+    //         double entryPrice = signal.getMetric("bestAsk", 0); // Use signal's best ask price
+    //         if (entryPrice <= 0.0) {
+    //             // LOG_WARN("Signal {} has invalid entry price metric, skipping execution", signal.id);
+    //             return;
+    //         }            
+    //         //calculate hold duration based on signal decay and TTL            
+    //         auto now = std::chrono::system_clock::now();
+    //         auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - signal.generation_time);
+            
+    //         // Debug timing info
+    //         auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
+    //         auto generation_ms = std::chrono::duration_cast<std::chrono::milliseconds>(signal.generation_time.time_since_epoch()).count();
+    //         auto expiration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(signal.expirationTime.time_since_epoch()).count();
+            
+    //         // LOG_DEBUG("Signal {} timing: Now={}ms, Generated={}ms, TTL={}ms, Elapsed={}ms", 
+    //         //          signal.id, now_ms, generation_ms, signal.ttl.count()/1000000, elapsed.count());
+
+    //             // Check if signal has expired
+    //         if (now >= signal.expirationTime + 1ms) {
+    //             auto expired_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+    //                                 now - signal.expirationTime).count();
+    //             LOG_WARN("Signal {} has expired (expired {} ms ago), skipping execution", 
+    //                     signal.id, expired_ms);
+    //             return;
+    //         }
+
+    //         //calculate position duration using signal decay and remaining TTL
+    //         double decayFactor = calculateDecayFactor(signal, elapsed.count());
+
+    //         // Calculate remaining TTL
+    //         auto remainingTTL = std::chrono::duration_cast<std::chrono::milliseconds>(signal.expirationTime - now);
+
+    //         // Calculate optimal holding duration using decay
+    //         // auto position_duration = calculateHoldingDuration(signal, decayFactor, remainingTTL.count());
+    //         auto position_duration = std::chrono::duration_cast<std::chrono::milliseconds>(signal.ttl); // For simplicity, hold for full TTL for now
+    //         // but the value is too big
+    //         position_duration = std::min(position_duration, remainingTTL); // Never exceed remaining TTL
+    //         // position_duration = (position_duration < signal.ttl) ? signal.ttl : position_duration; // Never exceed TTL
+    //         // LOG_INFO("Signal {} - Decay Factor: {:.3f}, Holding Duration: {}ms", 
+    //         //         signal.id, decayFactor, position_duration.count());
+    //         LOG_INFO("TRADE EXECUTED: {} | Direction: {} | Entry Price: {:.8f} | Holding Duration: {}ms",
+    //             signal.id, signal.direction == Direction::BUY ? "BUY" : "SELL", entryPrice,
+    //             std::chrono::duration_cast<std::chrono::milliseconds>(position_duration).count());
+    //         std::this_thread::sleep_for(position_duration);
+
+
+    //         // Get REAL current exit price from live order book data
+    //         auto exitTime = std::chrono::system_clock::now();
+    //         double exitPrice = entryPrice; // Fallback to entry price
+            
+    //         if (orderBookReceiver_) {
+    //             double currentMidPrice = orderBookReceiver_->getCurrentMidPrice(signal.symbol.toString());
+    //             //sell = best bid, buy = best ask
+    //             auto sellPrice = orderBookReceiver_->getCurrentMidPrice(signal.symbol.toString()) * 0.999; // Assume we sell at slightly below mid
+    //             if (sellPrice > 0.0) {
+    //                 exitPrice = sellPrice; // Use real current price
+    //             } else {
+    //                 //just return idiot why the f u want to trade without price data
+    //                 LOG_WARN("No valid order book data available for signal {}, using fallback", signal.id);
+    //                 return;
+                    
+    //             }
+    //         }            
+    //         // Calculate actual P&L based on direction
+    //         double pnl = 0.0;
+    //         // double orderQuantity = 1.0; // 1 unit for simplicity
+    //         double qualityScore = signal.quality; // Use signal quality for sizing
+    //         double orderQuantity = calculatePositionSize(signal, qualityScore) / entryPrice; // Size
+    //         double feeRate = 0.001;     // 0.1% per trade
+
+    //         double fees = entryPrice * orderQuantity * feeRate 
+    //                     + exitPrice * orderQuantity * feeRate;
+
+    //         if (signal.direction == Direction::BUY) {
+    //             pnl = (exitPrice - entryPrice) * orderQuantity;
+    //         } else if (signal.direction == Direction::SELL) {
+    //             pnl = (entryPrice - exitPrice) * orderQuantity;
+    //         }
+    //         pnl -= fees;
+
+    //         // Create execution result
+    //         SignalExecutionResult result;
+    //         result.signal_id = signal.id;
+    //         result.status = SignalExecutionStatus::COMPLETED;
+    //         result.startTime = entryTime;
+    //         result.completionTime = exitTime;
+    //         result.orderQuantity = orderQuantity;
+    //         result.orderPrice = entryPrice;
+    //         result.pnl = pnl;
+    //         result.signalStrength = signal.strength;
+            
+    //         // Log the trade result with detailed info for symbol, quantity, fees, etc.
+    //         LOG_INFO("TRADE COMPLETED: {}| symbol {} | Entry: {:.8f} | Exit: {:.8f} | P&L: {:.8f} | Duration: {}ms | Success: {}", 
+    //                  signal.id, signal.symbol.toString(), entryPrice, exitPrice, pnl,
+    //                  std::chrono::duration_cast<std::chrono::milliseconds>(exitTime - entryTime).count(),
+    //                  pnl > 0 ? "YES" : "NO");
+            
+    //         // Record the result back to strategy engine for performance tracking
+    //         if (strategyEngine_) {
+    //             bool recorded = strategyEngine_->recordSignalResult(signal.id, result);
+    //             // LOG_INFO("Signal result recorded: {} - Success: {}", signal.id, recorded ? "YES" : "NO");
+    //         }
+            
+    //     }).detach();
+    // }
 };
 
 int main() {
