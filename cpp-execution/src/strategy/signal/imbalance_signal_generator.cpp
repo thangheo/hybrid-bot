@@ -262,10 +262,13 @@ TradingSignal ImbalanceSignalGenerator::createSignalFromImbalance(const Imbalanc
      signal.symbol = imbalance.symbol;
      signal.exchangeId = imbalance.exchangeId;
     //  signal.expirationTime = imbalance.detectionTime + signal.ttl; // Set expiration time
-     signal.expirationTime = imbalance.detectionTime + std::chrono::duration_cast<core::Timestamp::duration>(signal.ttl);
+
      // Generate price targets
      signal.targets = generatePriceTargets(imbalance);
      signal.ttl = calculateSignalTTL(imbalance, std::abs(signal.targets[2].price - imbalance.getSupportingMetric("midPrice", 1.0)));
+    //  signal.expirationTime = imbalance.detectionTime + std::chrono::duration_cast<core::Timestamp::duration>(signal.ttl);
+     signal.expirationTime = imbalance.detectionTime + signal.ttl;
+
      // Copy relevant metrics
      for (const auto& metric : imbalance.supportingMetrics) {
          signal.setMetric(metric.first, metric.second);

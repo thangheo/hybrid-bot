@@ -182,11 +182,13 @@ public:
         : strategyEngine_(engine), orderBookReceiver_(receiver) {}
     
     void onNewSignal(const TradingSignal& signal) {
-      
+            double midPrice = orderBookReceiver_ ? orderBookReceiver_->getCurrentMidPrice(signal.symbol.toString()) : 0.0;
+
         std::lock_guard<std::mutex> lock(processedMutex_);
-        // LOG_DEBUG("Received new signal: ID={}, Symbol={}, Direction={}, Strength={:.3f}, Confidence={:.2f}, Quality={:.2f}, GeneratedAt={}, TTL={}ms, Expiration={}",
+        // LOG_DEBUG("Received new signal: ID={}, Symbol={}, Price={}, Direction={}, Strength={:.3f}, Confidence={:.2f}, Quality={:.2f}, GeneratedAt={}, TTL={}ms, Expiration={}",
         //           signal.id,
         //           signal.symbol.toString(),
+        //           midPrice,
         //           (signal.direction == core::Direction::BUY ? "BUY" : (signal.direction == core::Direction::SELL ? "SELL" : "NEUTRAL")),
         //           signal.strength,
         //           signal.confidence,
@@ -194,15 +196,35 @@ public:
         //           std::chrono::duration_cast<std::chrono::milliseconds>(signal.generation_time.time_since_epoch()).count(),
         //           signal.ttl.count()/1000000,
         //           std::chrono::duration_cast<std::chrono::milliseconds>(signal.expirationTime.time_since_epoch()).count());
+        // // type of event which generated the signal
+        // LOG_DEBUG("  Source Type: {}", static_cast<int>(signal.source_type));
+        //  enum class ImbalanceType {
+        //     VOLUME_IMBALANCE,              // Significant difference between bid and ask volume
+        //     PRICE_LEVEL_IMBALANCE,         // Imbalance across multiple price levels
+        //     LIQUIDITY_REMOVAL,             // Sudden removal of liquidity from one side
+        //     ORDER_FLOW_IMBALANCE,          // Directional bias in order submissions
+        //     LARGE_ORDER_APPEARANCE,        // Large orders appearing in the book
+        //     LARGE_ORDER_DISAPPEARANCE,     // Large orders being removed from the book
+        //     PRICE_LEVEL_CONCENTRATION,     // Concentration of volume at specific price levels
+        //     BID_ASK_SPREAD_CHANGE,         // Significant change in the bid-ask spread
+        //     MARKET_DEPTH_CHANGE,           // Significant change in market depth
+        //     LIQUIDITY_FLOW_IMBALANCE,      // Imbalance in liquidity flow
+        //     ABNORMAL_SPREAD,               // Abnormal spread between bid and ask prices
+        //     LIQUIDITY_IMBALANCE,           // General liquidity imbalance
+        //     TREND_CONTINUATION,            // Continuation of a price trend
+        //     TREND_REVERSAL,                // Reversal of a price trend
+        //     CUSTOM                         // Custom imbalance type defined by strategy
+        // };
+
+
         //filter duplicate signals
         //filter signals based on custom criteria (e.g., strength threshold)
-        if (signal.strength < 0.5) return; // Weak signals are ignored
+        if (signal.strength < 0.4) return; // Weak signals are ignored
         if(signal.direction == core::Direction::NEUTRAL) return; // Ignore neutral signals
         if(signal.confidence < 0.6) return; // Ignore low confidence signals
-        if(signal.quality < 0.5) return; // Ignore low quality signals
+        if(signal.quality < 0.4) return; // Ignore low quality signals
         
         //if target prices are too close to mid price, ignore
-        double midPrice = orderBookReceiver_ ? orderBookReceiver_->getCurrentMidPrice(signal.symbol.toString()) : 0.0;
         double percentage_change_threshold = 0.0015; // 0.25%
         if(midPrice > 0.0) {
             bool allTargetsTooClose = true;
@@ -244,30 +266,7 @@ private:
     StrategyEngine* strategyEngine_;
     OrderBookReceiver* orderBookReceiver_;
 
-    //     std::chrono::milliseconds calculateHoldingDuration(const TradingSignal& signal,
-    //                                                 double decayFactor,
-    //                                                 int64_t remainingTTL) {
-    //     // Use the passed remainingTTL parameter instead of calculating it again
-    //     uint64_t signal_ttl = remainingTTL; // Already calculated correctly above
-        
-    //     // Hold for 60-90% of signal lifetime based on strength
-    //     double holdingRatio = 0.6 + (signal.strength * 0.3); // 60%-90% of TTL
-        
-    //     // Apply confidence multiplier (but keep it reasonable)
-    //     double confidenceMultiplier = 0.8 + (signal.confidence * 0.4); // 0.8x to 1.2x
-        
-    //     double targetHoldingMs = signal_ttl * holdingRatio * confidenceMultiplier;
-        
-    //     // NEVER exceed remaining TTL
-    //     targetHoldingMs = std::min(targetHoldingMs, static_cast<double>(remainingTTL));
-        
-    //     // Crypto-appropriate limits: 100ms minimum, signal TTL maximum
-    //     int64_t finalDuration = static_cast<int64_t>(targetHoldingMs);
-    //     finalDuration = std::max(100L, std::min(static_cast<int64_t>(signal_ttl), finalDuration));
-        
-    //     return std::chrono::milliseconds(finalDuration);
-    // }
-
+   
     double calculatePositionSize(const TradingSignal& signal, double qualityScore) {
 
         double basePositionSize = 5000; // Base size in USD
@@ -304,7 +303,7 @@ private:
         std::thread([this, signal]() {
             // Record entry time and get entry price from signal
             auto entryTime = std::chrono::system_clock::now();
-            double entryPrice = signal.getMetric("midPrice", 0); // Use signal's mid price at generation time
+            double entryPrice = signal.getMetric("bestAsk", 0); // Use signal's best ask price
             if (entryPrice <= 0.0) {
                 // LOG_WARN("Signal {} has invalid entry price metric, skipping execution", signal.id);
                 return;
@@ -322,7 +321,7 @@ private:
             //          signal.id, now_ms, generation_ms, signal.ttl.count()/1000000, elapsed.count());
 
                 // Check if signal has expired
-            if (now >= signal.expirationTime) {
+            if (now >= signal.expirationTime + 1ms) {
                 auto expired_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                                     now - signal.expirationTime).count();
                 LOG_WARN("Signal {} has expired (expired {} ms ago), skipping execution", 
@@ -356,8 +355,10 @@ private:
             
             if (orderBookReceiver_) {
                 double currentMidPrice = orderBookReceiver_->getCurrentMidPrice(signal.symbol.toString());
-                if (currentMidPrice > 0.0) {
-                    exitPrice = currentMidPrice; // Use real current price
+                //sell = best bid, buy = best ask
+                auto sellPrice = orderBookReceiver_->getCurrentMidPrice(signal.symbol.toString()) * 0.999; // Assume we sell at slightly below mid
+                if (sellPrice > 0.0) {
+                    exitPrice = sellPrice; // Use real current price
                 } else {
                     //just return idiot why the f u want to trade without price data
                     LOG_WARN("No valid order book data available for signal {}, using fallback", signal.id);
@@ -393,10 +394,10 @@ private:
             result.pnl = pnl;
             result.signalStrength = signal.strength;
             
-            // Log the trade result with detailed info
-            LOG_INFO("TRADE COMPLETED: {} | Entry: {:.8f} | Exit: {:.8f} | P&L: {:.8f} | Duration: {}s | Success: {}", 
-                     signal.id, entryPrice, exitPrice, pnl,
-                     std::chrono::duration_cast<std::chrono::seconds>(exitTime - entryTime).count(),
+            // Log the trade result with detailed info for symbol, quantity, fees, etc.
+            LOG_INFO("TRADE COMPLETED: {}| symbol {} | Entry: {:.8f} | Exit: {:.8f} | P&L: {:.8f} | Duration: {}ms | Success: {}", 
+                     signal.id, signal.symbol.toString(), entryPrice, exitPrice, pnl,
+                     std::chrono::duration_cast<std::chrono::milliseconds>(exitTime - entryTime).count(),
                      pnl > 0 ? "YES" : "NO");
             
             // Record the result back to strategy engine for performance tracking
@@ -463,7 +464,7 @@ int main() {
         auto startTime = std::chrono::steady_clock::now();
         size_t lastMessageCount = 0;
 
-        for (int cycle = 0; cycle < 600000; ++cycle) { // Run for 6hrs cycles max
+        for (int cycle = 0; cycle < 60000; ++cycle) { // Run for 1hr cycles max
             std::this_thread::sleep_for(1ms);
             // Report every 10 
             if (cycle % 10 == 0) {

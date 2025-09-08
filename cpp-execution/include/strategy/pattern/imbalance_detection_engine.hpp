@@ -123,6 +123,8 @@ private:
     // Additional private methods
     uint64_t generateEventId();
     double calculateImbalanceConfidence(ImbalanceType type, double strength, const OrderBookMetrics& metrics);
+    double calculateImbalanceStrength(double volumeRatio, double threshold);
+
     // Configuration
     ImbalanceDetectionConfig config_;
     ThresholdSet thresholds_;

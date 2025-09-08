@@ -228,6 +228,21 @@
 }
  // PRIVATE METHODS
 
+double ImbalanceDetectionEngine::calculateImbalanceStrength(double volumeRatio, double threshold) {
+    double strength;
+    if (volumeRatio > threshold) {
+        strength = (volumeRatio - threshold) / threshold;
+    } else if (volumeRatio < 1.0 / threshold) {
+        strength = (1.0/threshold - volumeRatio) / (1.0/threshold);
+    } else {
+        strength = 0.0;
+    }
+    
+    strength = std::min(1.0, std::max(0.0, strength)); // Clamp [0,1]
+    return strength;
+}
+
+
 double ImbalanceDetectionEngine::calculateImbalanceConfidence(ImbalanceType type, double strength, const OrderBookMetrics& metrics) {
     // Strength is already normalized (0-1), so use it directly
     double baseConfidence = std::clamp(strength, 0.0, 1.0);
@@ -246,61 +261,126 @@ double ImbalanceDetectionEngine::calculateImbalanceConfidence(ImbalanceType type
     double adjustedConfidence = baseConfidence + liquidityAdjustment - volatilityAdjustment;
     return std::clamp(adjustedConfidence, 0.0, 1.0);
 }
- // Detect volume imbalance
- bool ImbalanceDetectionEngine::detectVolumeImbalance(const OrderBookMetrics& metrics) {
-     // Check if required metrics are available
-     auto bidVolIt = metrics.metrics.find("bidVolume");
-     auto askVolIt = metrics.metrics.find("askVolume");
+//  // Detect volume imbalance
+//  bool ImbalanceDetectionEngine::detectVolumeImbalance(const OrderBookMetrics& metrics) {
+//      // Check if required metrics are available
+//      auto bidVolIt = metrics.metrics.find("bidVolume");
+//      auto askVolIt = metrics.metrics.find("askVolume");
      
-     if (bidVolIt == metrics.metrics.end() || askVolIt == metrics.metrics.end()) {
-         return false; // Required metrics not available
-     }
+//      if (bidVolIt == metrics.metrics.end() || askVolIt == metrics.metrics.end()) {
+//          return false; // Required metrics not available
+//      }
      
-     double bidVolume = bidVolIt->second;
-     double askVolume = askVolIt->second;
-     //print bid and ask volume
-     // Avoid division by zero
-     if (askVolume < 1e-10) {
-         askVolume = 1e-10;
-     }
+//      double bidVolume = bidVolIt->second;
+//      double askVolume = askVolIt->second;
+//      //print bid and ask volume
+//      // Avoid division by zero
+//      if (askVolume < 1e-10) {
+//          askVolume = 1e-10;
+//      }
      
-     // Calculate bid/ask volume ratio
-     double volumeRatio = bidVolume / askVolume;
+//      // Calculate bid/ask volume ratio
+//      double volumeRatio = bidVolume / askVolume;
      
-     // Get threshold for volume imbalance
-     double threshold = thresholds_.getTypeThreshold(ImbalanceType::VOLUME_IMBALANCE).activation_threshold;
+//      // Get threshold for volume imbalance
+//      double threshold = thresholds_.getTypeThreshold(ImbalanceType::VOLUME_IMBALANCE).activation_threshold;
      
-     // Detect imbalance if ratio exceeds threshold or is below its inverse
-     bool isImbalance = (volumeRatio >= threshold || volumeRatio <= 1.0 / threshold);
+//      // Detect imbalance if ratio exceeds threshold or is below its inverse
+//      bool isImbalance = (volumeRatio >= threshold || volumeRatio <= 1.0 / threshold);
      
-     // Update imbalance state
-     imbalanceState_[ImbalanceType::VOLUME_IMBALANCE] = isImbalance;
+//      // Update imbalance state
+//      imbalanceState_[ImbalanceType::VOLUME_IMBALANCE] = isImbalance;
      
-     // If imbalance detected, create an event
-     if (isImbalance) {
-            double strength;                       
-            //simplified strength calculation
-            if (volumeRatio > threshold) {
-                strength = (volumeRatio - threshold) / threshold; // Normalize above threshold
-            } else if (volumeRatio < 1.0 / threshold) {
-                strength = (1.0/threshold - volumeRatio) / (1.0/threshold); // Normalize below inverse threshold
-            } else {
-                strength = 0.0; // Should not happen as isImbalance is true
-            }
-            strength = std::min(1.0, strength); // Cap at 1.0
-            // Ensure strength is never negative or invalid
-            if (strength < 0.0 || !std::isfinite(strength)) {
-                strength = 0.0;
-            }
-         Direction direction = (volumeRatio > 1.0) ? Direction::BUY : Direction::SELL;
-         createImbalanceEvent(ImbalanceType::VOLUME_IMBALANCE, strength, direction, metrics);
-        //  std::cout<<"[TradingApp]ImbalanceDetectionEngine::detectVolumeImbalance:strength="<<strength<<", volumeRatio="<<volumeRatio<<", threshold="<<threshold<<"\n";
+//      // If imbalance detected, create an event
+//      if (isImbalance) {
+//             double strength;                       
+//             //simplified strength calculation
+//             if (volumeRatio > threshold) {
+//                 strength = (volumeRatio - threshold) / threshold; // Normalize above threshold
+//             } else if (volumeRatio < 1.0 / threshold) {
+//                 strength = (1.0/threshold - volumeRatio) / (1.0/threshold); // Normalize below inverse threshold
+//             } else {
+//                 strength = 0.0; // Should not happen as isImbalance is true
+//             }
+//             strength = std::min(1.0, strength); // Cap at 1.0
+//             // Ensure strength is never negative or invalid
+//             if (strength < 0.0 || !std::isfinite(strength)) {
+//                 strength = 0.0;
+//             }
+//          Direction direction = (volumeRatio > 1.0) ? Direction::BUY : Direction::SELL;
+//          createImbalanceEvent(ImbalanceType::VOLUME_IMBALANCE, strength, direction, metrics);
+//         //  std::cout<<"[TradingApp]ImbalanceDetectionEngine::detectVolumeImbalance:strength="<<strength<<", volumeRatio="<<volumeRatio<<", threshold="<<threshold<<"\n";
 
-     }
+//      }
      
-     return isImbalance;
- }
- 
+//      return isImbalance;
+//  }
+ bool ImbalanceDetectionEngine::detectVolumeImbalance(const OrderBookMetrics& metrics) {
+    // Check if required metrics are available
+    auto bidVolIt = metrics.metrics.find("bidVolume");
+    auto askVolIt = metrics.metrics.find("askVolume");
+    if (bidVolIt == metrics.metrics.end() || askVolIt == metrics.metrics.end()) {
+        return false;
+    }
+
+    double bidVolume = bidVolIt->second;
+    double askVolume = askVolIt->second;
+
+    // Avoid division by zero
+    if (askVolume < 1e-10) {
+        askVolume = 1e-10;
+    }
+
+    double volumeRatio = bidVolume / askVolume;
+    
+    // Get current threshold
+    double baseThreshold = thresholds_.getTypeThreshold(ImbalanceType::VOLUME_IMBALANCE).activation_threshold;
+    
+    // HYSTERESIS: Use different thresholds based on current state
+    bool currentlyImbalanced = imbalanceState_[ImbalanceType::VOLUME_IMBALANCE];
+    
+    double enterThreshold = baseThreshold;           // e.g., 1.5
+    double exitThreshold = baseThreshold * 0.8;     // e.g., 1.2 (20% lower)
+    
+    double effectiveThreshold = currentlyImbalanced ? exitThreshold : enterThreshold;
+    
+    // Detect imbalance with hysteresis
+    bool isImbalance = (volumeRatio >= effectiveThreshold || volumeRatio <= 1.0 / effectiveThreshold);
+    
+    // Add minimum change requirement
+    static double lastVolumeRatio = 1.0;
+    double ratioChange = std::abs(volumeRatio - lastVolumeRatio) / lastVolumeRatio;
+    double minChangeThreshold = 0.05; // Require 5% change
+    
+    if (ratioChange < minChangeThreshold && currentlyImbalanced) {
+        // Not enough change, keep current state
+        lastVolumeRatio = volumeRatio;
+        return currentlyImbalanced;
+    }
+    
+    lastVolumeRatio = volumeRatio;
+    
+    // Update state
+    imbalanceState_[ImbalanceType::VOLUME_IMBALANCE] = isImbalance;
+    
+    // Create event only if state changed
+    if (isImbalance && (!currentlyImbalanced || ratioChange >= minChangeThreshold)) {
+        double strength = calculateImbalanceStrength(volumeRatio, effectiveThreshold);
+        Direction direction = (volumeRatio > 1.0) ? Direction::BUY : Direction::SELL;
+        
+        // std::cout << "[VolumeImbalance] Ratio=" << volumeRatio 
+        //           << ", Threshold=" << effectiveThreshold 
+        //           << ", Strength=" << strength 
+        //           << ", Direction=" << (direction == Direction::BUY ? "BUY" : "SELL")
+        //           << ", Change=" << (ratioChange * 100) << "%" << std::endl;
+        
+        createImbalanceEvent(ImbalanceType::VOLUME_IMBALANCE, strength, direction, metrics);
+    }
+    
+    return isImbalance;
+}
+
+
  // Detect price level imbalance
  bool ImbalanceDetectionEngine::detectPriceLevelImbalance(const OrderBookMetrics& metrics) {
      // Check if required metrics are available

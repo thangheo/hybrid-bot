@@ -131,16 +131,16 @@
     },
     "imbalanceDetector": {
       "parameters": {
-        "strategy_id": "order_imbalance_btc_usdt",
+        "strategy_id": "order_imbalance_test",
         "version": "1.2.0",
-        "volumeImbalanceThreshold": 0.35,
+        "volumeImbalanceThreshold": 0.55,
         "priceLevelImbalanceThreshold": 0.25,
         "liquidityRemovalThreshold": 0.5,
         "detectionWindowMs": 5000,
         "maxHistorySize": 500,
         "global_sensitivity": 0.75,
         "thresholds": {
-          "volumeImbalance ": 0.35,
+          "volumeImbalance ": 0.55,
           "priceLevelImbalance": 0.25,
           "liquidityPressure": 0.4,
           "order_flow": 0.3
@@ -185,7 +185,6 @@
         "timeWindowMs": 60000,
         "priceLevels": 50,
         "exchangeId": "BINANCE",
-        "tradingPair": "BTC/USDT",
         "rangeSizePercent": 2.0,
         "timeFrameMinutes": 15,
         "numPriceRanges": 20,
