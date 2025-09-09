@@ -75,7 +75,8 @@ public:
     }
     // fetchCurrentPositions
     virtual std::vector<Position> fetchCurrentPositions() {
-        return {}; // Default empty implementation
+        // return empty vector by default
+        return {};
     }
     /**
      * Get historical prices for a trading pair

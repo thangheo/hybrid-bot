@@ -302,71 +302,71 @@ CoinProfile& AdaptiveMarketIntelligence::GetOrCreateProfile(const std::string& s
 // NEW PRIMARY INTERFACE
 // ============================================================================
 
-trading::MarketIntelligence AdaptiveMarketIntelligence::generateIntelligence(
-    const std::string& symbol,
-    const std::vector<trading::PriceLevel>& bids,
-    const std::vector<trading::PriceLevel>& asks) {
+// trading::MarketIntelligence AdaptiveMarketIntelligence::generateIntelligence(
+//     const std::string& symbol,
+//     const std::vector<trading::PriceLevel>& bids,
+//     const std::vector<trading::PriceLevel>& asks) {
     
-    MarketIntelligence intel;
-    intel.set_symbol(symbol);
-    intel.set_timestamp(std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::system_clock::now().time_since_epoch()).count());
+//     MarketIntelligence intel;
+//     intel.set_symbol(symbol);
+//     intel.set_timestamp(std::chrono::duration_cast<std::chrono::milliseconds>(
+//         std::chrono::system_clock::now().time_since_epoch()).count());
     
-    if (bids.empty() || asks.empty()) return intel;
+//     if (bids.empty() || asks.empty()) return intel;
     
-    // Get profile
-    CoinProfile* profile = getOrCreateProfile(symbol);
-    if (!profile) return intel;
+//     // Get profile
+//     CoinProfile* profile = getOrCreateProfile(symbol);
+//     if (!profile) return intel;
     
-    // Calculate basic metrics
-    double bestBid = bids[0].price();
-    double bestAsk = asks[0].price();
-    double spread = bestAsk - bestBid;
-    double midPrice = (bestBid + bestAsk) / 2.0;
-    double relative_spread = spread / midPrice;
+//     // Calculate basic metrics
+//     double bestBid = bids[0].price();
+//     double bestAsk = asks[0].price();
+//     double spread = bestAsk - bestBid;
+//     double midPrice = (bestBid + bestAsk) / 2.0;
+//     double relative_spread = spread / midPrice;
     
-    // Calculate volume metrics
-    OrderBookMetrics metrics = calculateOrderBookMetrics(bids, asks);
+//     // Calculate volume metrics
+//     OrderBookMetrics metrics = calculateOrderBookMetrics(bids, asks);
     
-    // Update historical statistics
-    profile->updateStatistics(metrics.total_volume, relative_spread);
+//     // Update historical statistics
+//     profile->updateStatistics(metrics.total_volume, relative_spread);
     
-    // Calculate percentile-based metrics
-    double volume_percentile = profile->volume_stats.getVolumePercentile(metrics.total_volume);
-    double spread_percentile = profile->spread_stats.getSpreadPercentile(relative_spread);
+//     // Calculate percentile-based metrics
+//     double volume_percentile = profile->volume_stats.getVolumePercentile(metrics.total_volume);
+//     double spread_percentile = profile->spread_stats.getSpreadPercentile(relative_spread);
     
-    // Set basic intelligence fields
-    intel.set_bid_ask_spread(relative_spread);
-    intel.set_order_book_imbalance(metrics.imbalance);
-    intel.set_liquidity_ratio(volume_percentile);
+//     // Set basic intelligence fields
+//     intel.set_bid_ask_spread(relative_spread);
+//     intel.set_order_book_imbalance(metrics.imbalance);
+//     intel.set_liquidity_ratio(volume_percentile);
     
-    // Estimate flow metrics
-    FlowMetrics flow = estimateFlowMetrics(metrics.imbalance, metrics.total_volume);
-    intel.set_aggressive_buy_ratio(flow.aggressive_buy_ratio);
-    intel.set_aggressive_sell_ratio(flow.aggressive_sell_ratio);
-    intel.set_net_flow_5s(flow.net_flow_5s);
-    intel.set_net_flow_30s(flow.net_flow_30s);
+//     // Estimate flow metrics
+//     FlowMetrics flow = estimateFlowMetrics(metrics.imbalance, metrics.total_volume);
+//     intel.set_aggressive_buy_ratio(flow.aggressive_buy_ratio);
+//     intel.set_aggressive_sell_ratio(flow.aggressive_sell_ratio);
+//     intel.set_net_flow_5s(flow.net_flow_5s);
+//     intel.set_net_flow_30s(flow.net_flow_30s);
     
-    // Volatility estimation
-    double volatility = estimateSimpleVolatility(relative_spread, profile->volatility_factor);
-    intel.set_realized_volatility_1m(volatility);
+//     // Volatility estimation
+//     double volatility = estimateSimpleVolatility(relative_spread, profile->volatility_factor);
+//     intel.set_realized_volatility_1m(volatility);
     
-    // Regime classification using probabilities
-    RegimeProbabilities probs = calculateRegimeProbabilities(
-        volume_percentile, spread_percentile, metrics.imbalance, profile->volatility_factor);
+//     // Regime classification using probabilities
+//     RegimeProbabilities probs = calculateRegimeProbabilities(
+//         volume_percentile, spread_percentile, metrics.imbalance, profile->volatility_factor);
     
-    auto [regime, confidence] = probs.getBestRegime();
-    intel.set_current_regime(regime);
-    intel.set_regime_confidence(confidence);
+//     auto [regime, confidence] = probs.getBestRegime();
+//     intel.set_current_regime(regime);
+//     intel.set_regime_confidence(confidence);
     
-    // Periodic saving
-    update_counter_++;
-    if (update_counter_ % save_frequency_ == 0) {
-        profile->saveToFile();
-    }
+//     // Periodic saving
+//     update_counter_++;
+//     if (update_counter_ % save_frequency_ == 0) {
+//         profile->saveToFile();
+//     }
     
-    return intel;
-}
+//     return intel;
+// }
 
 // ============================================================================
 // BACKWARD COMPATIBILITY INTERFACE
@@ -683,6 +683,219 @@ std::vector<trading::PriceLevel> AdaptiveMarketIntelligence::ConvertPriceLevels(
     
     return result;
 }
+trading::MarketIntelligence AdaptiveMarketIntelligence::generateIntelligence(
+    const std::string& symbol,
+    const std::vector<trading::PriceLevel>& bids,
+    const std::vector<trading::PriceLevel>& asks) {
+    
+    MarketIntelligence intel;
+    intel.set_symbol(symbol);
+    intel.set_timestamp(std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count());
+    
+    if (bids.empty() || asks.empty()) return intel;
+    
+    // Get profile
+    CoinProfile* profile = getOrCreateProfile(symbol);
+    if (!profile) return intel;
+    
+    // Calculate basic metrics
+    double bestBid = bids[0].price();
+    double bestAsk = asks[0].price();
+    double spread = bestAsk - bestBid;
+    double midPrice = (bestBid + bestAsk) / 2.0;
+    double relative_spread = spread / midPrice;
+    
+    // Calculate volume metrics
+    OrderBookMetrics metrics = calculateOrderBookMetrics(bids, asks);
+    
+    // Update historical statistics
+    profile->updateStatistics(metrics.total_volume, relative_spread);
+    
+    // Calculate percentile-based metrics
+    double volume_percentile = profile->volume_stats.getVolumePercentile(metrics.total_volume);
+    double spread_percentile = profile->spread_stats.getSpreadPercentile(relative_spread);
+    
+    // === SET ALL BASIC FIELDS ===
+    intel.set_bid_ask_spread(relative_spread);
+    intel.set_order_book_imbalance(metrics.imbalance);
+    intel.set_liquidity_ratio(volume_percentile);
+    
+    // === NEW: SET MISSING CRITICAL FIELDS ===
+    
+    // Depth imbalance (imbalance in deeper levels 6-10)
+    double depth_imbalance = calculateDepthImbalance(bids, asks, 5, 10);
+    intel.set_depth_imbalance(depth_imbalance);  // Field 5
+    
+    // Spread stability (how stable the spread has been)
+    double spread_stability = calculateSpreadStability(profile);
+    intel.set_spread_stability(spread_stability);  // Field 7
+    
+    // Volume analysis
+    double volume_ratio_to_avg = calculateVolumeRatio(metrics.total_volume, profile);
+    intel.set_volume_ratio_to_avg(volume_ratio_to_avg);  // Field 21
+    intel.set_volume_5s(metrics.total_volume * 0.2);     // Field 19 - estimated
+    intel.set_volume_30s(metrics.total_volume * 0.8);    // Field 20 - estimated
+    
+    // === CRITICAL FIX: SET volatility_trend ===
+    double volatility_trend = calculateVolatilityTrend(profile, relative_spread);
+    intel.set_volatility_trend(volatility_trend);  // Field 18 - REQUIRED BY PYTHON!
+    
+    // Price impact estimate
+    double price_impact = estimatePriceImpact(metrics.total_volume, relative_spread, profile);
+    intel.set_price_impact_estimate(price_impact);  // Field 17
+    
+    // Extended volatility metrics
+    double volatility_1m = estimateSimpleVolatility(relative_spread, profile->volatility_factor);
+    intel.set_realized_volatility_1m(volatility_1m);     // Field 15
+    intel.set_realized_volatility_5m(volatility_1m * 1.2); // Field 16 - estimated
+    intel.set_expected_volatility_5m(volatility_1m * 1.1); // Field 25 - estimated
+    
+    // Flow metrics
+    FlowMetrics flow = estimateFlowMetrics(metrics.imbalance, metrics.total_volume);
+    intel.set_aggressive_buy_ratio(flow.aggressive_buy_ratio);   // Field 11
+    intel.set_aggressive_sell_ratio(flow.aggressive_sell_ratio); // Field 12
+    intel.set_net_flow_5s(flow.net_flow_5s);                    // Field 8
+    intel.set_net_flow_30s(flow.net_flow_30s);                  // Field 9
+    
+    // Extended flow metrics
+    intel.set_net_flow_5m(flow.net_flow_30s * 10.0);            // Field 10 - estimated
+    intel.set_passive_buy_ratio(1.0 - flow.aggressive_buy_ratio); // Field 13
+    intel.set_passive_sell_ratio(1.0 - flow.aggressive_sell_ratio); // Field 14
+    intel.set_flow_momentum(calculateFlowMomentum(flow));        // Field 26
+    
+    // Regime classification
+    RegimeProbabilities probs = calculateRegimeProbabilities(
+        volume_percentile, spread_percentile, metrics.imbalance, profile->volatility_factor);
+    
+    auto [regime, confidence] = probs.getBestRegime();
+    intel.set_current_regime(regime);           // Field 22
+    intel.set_regime_confidence(confidence);    // Field 23 - CRITICAL FOR PYTHON!
+    
+    // Regime stability
+    double regime_stability = calculateRegimeStability(profile, regime);
+    intel.set_regime_stability(regime_stability); // Field 24
+    
+    // Periodic saving
+    update_counter_++;
+    if (update_counter_ % save_frequency_ == 0) {
+        profile->saveToFile();
+    }
+    
+    return intel;
+}
 
+// ============================================================================
+// NEW HELPER METHODS TO IMPLEMENT
+// ============================================================================
+
+double AdaptiveMarketIntelligence::calculateDepthImbalance(
+    const std::vector<trading::PriceLevel>& bids,
+    const std::vector<trading::PriceLevel>& asks,
+    size_t start_level, size_t end_level) const {
+    
+    double bid_depth = 0.0, ask_depth = 0.0;
+    
+    for (size_t i = start_level; i < std::min(end_level, bids.size()); ++i) {
+        bid_depth += bids[i].quantity();
+    }
+    for (size_t i = start_level; i < std::min(end_level, asks.size()); ++i) {
+        ask_depth += asks[i].quantity();
+    }
+    
+    double total_depth = bid_depth + ask_depth;
+    return (total_depth > 0) ? (bid_depth - ask_depth) / total_depth : 0.0;
+}
+
+double AdaptiveMarketIntelligence::calculateSpreadStability(CoinProfile* profile) const {
+    if (profile->spread_stats.spread_history.size() < 10) {
+        return 0.5; // Default stability
+    }
+    
+    // Calculate coefficient of variation of recent spreads
+    auto& spreads = profile->spread_stats.spread_history;
+    double sum = 0.0, sum_sq = 0.0;
+    size_t count = 0;
+    
+    // Use last 20 spreads
+    auto it = spreads.rbegin();
+    for (size_t i = 0; i < 20 && it != spreads.rend(); ++i, ++it) {
+        sum += *it;
+        sum_sq += (*it) * (*it);
+        count++;
+    }
+    
+    if (count < 5) return 0.5;
+    
+    double mean = sum / count;
+    double variance = (sum_sq / count) - (mean * mean);
+    double std_dev = std::sqrt(variance);
+    
+    // Stability = 1 - coefficient_of_variation (capped at 1.0)
+    double cv = (mean > 0) ? (std_dev / mean) : 0.0;
+    return std::max(0.0, std::min(1.0, 1.0 - cv));
+}
+
+double AdaptiveMarketIntelligence::calculateVolatilityTrend(CoinProfile* profile, double current_spread) const {
+    // CRITICAL: This field is REQUIRED by Python
+    if (profile->spread_stats.spread_history.size() < 5) {
+        return current_spread * profile->volatility_factor; // Default
+    }
+    
+    // Simple trend: compare current spread to recent average
+    auto& spreads = profile->spread_stats.spread_history;
+    double recent_avg = 0.0;
+    size_t count = 0;
+    
+    auto it = spreads.rbegin();
+    for (size_t i = 0; i < 10 && it != spreads.rend(); ++i, ++it) {
+        recent_avg += *it;
+        count++;
+    }
+    
+    if (count > 0) {
+        recent_avg /= count;
+        // Return trend as ratio: current/recent_avg
+        return (recent_avg > 0) ? (current_spread / recent_avg) : 1.0;
+    }
+    
+    return current_spread * profile->volatility_factor * 0.1; // Fallback
+}
+
+double AdaptiveMarketIntelligence::calculateVolumeRatio(double current_volume, CoinProfile* profile) const {
+    if (profile->volume_stats.volume_history.empty()) {
+        return 1.0; // Default ratio
+    }
+    
+    // Compare current volume to median historical volume
+    double median_volume = profile->volume_stats.percentile_50;
+    return (median_volume > 0) ? (current_volume / median_volume) : 1.0;
+}
+
+double AdaptiveMarketIntelligence::estimatePriceImpact(double volume, double spread, CoinProfile* profile) const {
+    // Simple price impact estimate: spread * volume_factor * volatility_factor
+    double base_impact = spread * profile->volatility_factor * 0.1;
+    
+    // Adjust for volume (higher volume = higher impact)
+    double volume_factor = 1.0;
+    if (volume > profile->volume_stats.percentile_90) {
+        volume_factor = 1.5;
+    } else if (volume < profile->volume_stats.percentile_10) {
+        volume_factor = 0.5;
+    }
+    
+    return base_impact * volume_factor;
+}
+
+double AdaptiveMarketIntelligence::calculateFlowMomentum(const FlowMetrics& flow) const {
+    // Flow momentum = difference between short-term and long-term flow
+    return flow.net_flow_5s - flow.net_flow_30s;
+}
+
+double AdaptiveMarketIntelligence::calculateRegimeStability(CoinProfile* profile, trading::OrderBookRegime current_regime) const {
+    // For now, return moderate stability
+    // In full implementation, this would track regime changes over time
+    return 0.7; // Moderate stability
+}
 } // namespace intelligence
 } // namespace trading

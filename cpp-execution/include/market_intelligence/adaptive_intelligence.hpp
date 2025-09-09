@@ -149,6 +149,17 @@ public:
     void saveAllProfiles();
     void setSaveFrequency(size_t frequency) { save_frequency_ = frequency; }
 
+    double calculateDepthImbalance(
+        const std::vector<trading::PriceLevel>& bids,
+        const std::vector<trading::PriceLevel>& asks,
+        size_t start_level, size_t end_level) const ;
+    double calculateSpreadStability(CoinProfile* profile) const ;
+    double calculateVolatilityTrend(CoinProfile* profile, double current_spread) const ;
+    double calculateVolumeRatio(double current_volume, CoinProfile* profile) const ;
+        double estimatePriceImpact(double volume, double spread, CoinProfile* profile) const ;
+    double calculateRegimeStability(CoinProfile* profile, trading::OrderBookRegime current_regime) const ;
+    double calculateFlowMomentum(const FlowMetrics& flow) const ;
+
 private:
 
     std::unordered_map<std::string, std::unique_ptr<CoinProfile>> profiles_;
