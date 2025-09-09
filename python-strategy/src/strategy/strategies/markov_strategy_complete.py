@@ -430,7 +430,9 @@ class MarkovETFStrategyPersistent(BaseStrategy):
         intel = self.intelligence_bridge.get_intelligence(symbol)
         if not intel:
             return signals
-        
+        # check if signals are empty
+        if signals.empty:
+            return signals
         # Create enhanced columns
         signals = signals.copy()
         
@@ -858,24 +860,10 @@ class MarkovETFStrategyPersistent(BaseStrategy):
             # Option 1: Check if C++ intelligence is enabled
             if hasattr(self, 'cpp_intelligence_enabled') and self.cpp_intelligence_enabled:
                 signals = self._enhance_signals_with_cpp_intelligence(signals, symbol)
-                if 'enhanced_final_signal' in signals.columns:
+                if 'enhanced_final_signal' in signals.columns and not signals['enhanced_final_signal'].isnull().all():
                     continuous_signal = signals['enhanced_final_signal']
             
-            # Option 2: Check if we have market intelligence indicators
-            elif any(key.startswith('orderbook_') or key.startswith('flow_') for key in indicators.keys()):
-                signals = self._enhance_signals_with_cpp_intelligence(signals, symbol)
-                if 'enhanced_final_signal' in signals.columns:
-                    continuous_signal = signals['enhanced_final_signal']
                     
-            # Option 3: Check if the enhancement function exists and is callable
-            elif hasattr(self, '_enhance_signals_with_cpp_intelligence'):
-                try:
-                    signals = self._enhance_signals_with_cpp_intelligence(signals, symbol)
-                    if 'enhanced_final_signal' in signals.columns:
-                        continuous_signal = signals['enhanced_final_signal']
-                except Exception as e:
-                    logger.warning(f"C++ intelligence enhancement failed for {symbol}: {e}")
-            
             # Safety check for continuous signal
             if continuous_signal is None or continuous_signal.isnull().all():
                 logger.warning(f"Continuous signal is None/null for {symbol}, using default neutral signal")
