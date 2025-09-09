@@ -68,6 +68,37 @@ PostTradeMonitor::PostTradeMonitor(const RiskConfig& config) : config_(config) {
 PostTradeMonitor::~PostTradeMonitor() {
     shutdown();
 }
+// isHealthy
+bool PostTradeMonitor::isHealthy() const {
+    // Check if all main components are initialized and healthy
+    if (!stopLossManager_ || !drawdownMonitor_ || !circuitBreaker_ || !balanceReconciliation_) {
+        return false;
+    }
+    
+    // Check individual component health if they have isHealthy method
+    bool stopLossHealthy = true;
+    bool drawdownHealthy = true;
+    bool circuitBreakerHealthy = true;
+    bool reconciliationHealthy = true;
+    
+    if (auto ptr = dynamic_cast<const StopLossManager*>(stopLossManager_.get())) {
+        stopLossHealthy = ptr->isHealthy();
+    }
+    
+    if (auto ptr = dynamic_cast<const DrawdownMonitor*>(drawdownMonitor_.get())) {
+        drawdownHealthy = ptr->isHealthy();
+    }
+    
+    if (auto ptr = dynamic_cast<const CircuitBreaker*>(circuitBreaker_.get())) {
+        circuitBreakerHealthy = ptr->isHealthy();
+    }
+    
+    if (auto ptr = dynamic_cast<const BalanceReconciliation*>(balanceReconciliation_.get())) {
+        reconciliationHealthy = ptr->isHealthy();
+    }
+    
+    return stopLossHealthy && drawdownHealthy && circuitBreakerHealthy && reconciliationHealthy;
+}
 
 bool PostTradeMonitor::initialize() {
     if (!initializeComponents()) {

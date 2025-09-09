@@ -23,7 +23,10 @@ PositionLimitChecker::PositionLimitChecker(const RiskConfig& config,
 {
     // Initialize empty maps for limits
 }
-
+// isHealthy
+bool PositionLimitChecker::isHealthy() const {
+    return m_positionTracker != nullptr;
+}
 bool PositionLimitChecker::initialize() {
     try {
         loadLimitsFromConfig();

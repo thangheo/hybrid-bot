@@ -20,6 +20,13 @@ PreTradeRiskFilter::PreTradeRiskFilter(const RiskConfig& config)
 {
     // Components will be initialized in initialize()
 }
+//isHealthy
+bool PreTradeRiskFilter::isHealthy() const {
+    return m_positionLimitChecker && m_positionLimitChecker->isHealthy() &&
+              m_exposureCalculator && m_exposureCalculator->isHealthy() &&
+              m_orderValidator && m_orderValidator->isHealthy() &&
+              m_fatFingerProtection && m_fatFingerProtection->isHealthy();
+}
 
 bool PreTradeRiskFilter::initialize() {
     try {

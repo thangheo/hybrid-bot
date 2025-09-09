@@ -45,13 +45,15 @@ public:
      * @return true if initialization was successful, false otherwise
      */
     bool initialize();
-    
+    // isHealthy
+    bool isHealthy() const;
     /**
      * Process an execution report
      * @param executionReport The execution report to process (from execution component)
      */
     void processExecutionReport(const trading::execution::models::ExecutionReport& executionReport);
-    
+    // reconcilePositions
+    bool reconcilePositions();
     /**
      * Update market data
      * @param marketData New market data
@@ -122,7 +124,8 @@ public:
      * @param callback The function to call when portfolio events occur
      */
     void registerPortfolioCallback(const std::function<void(const std::string&, const std::string&)>& callback);
-
+    // processExecution
+    void processExecution(const trading::execution::models::ExecutionReport& executionReport);
 private:
     // Sub-components
     std::shared_ptr<PositionTracker> m_positionTracker;

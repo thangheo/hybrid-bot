@@ -132,6 +132,14 @@ PositionTracker::PositionTracker(const RiskConfig& config, std::shared_ptr<DataI
     : m_dataInterface(dataInterface)
     , m_config(config) {
 }
+// updatePositions
+void PositionTracker::updatePositions(const ExecutionReport& executionReport) {
+    processExecutionReport(executionReport);
+}
+// isHealthy
+bool PositionTracker::isHealthy() const {
+    return m_dataInterface && m_dataInterface->isHealthy();
+}
 
 bool PositionTracker::initialize() {
     try {
@@ -158,7 +166,40 @@ bool PositionTracker::initialize() {
         return false;
     }
 }
-
+// // reconcilePositions
+// bool PositionTracker::reconcilePositions() {
+//     try {
+//         // Fetch latest positions from external source (e.g. exchange API)
+//         auto externalPositions = m_dataInterface->fetchCurrentPositions();
+        
+//         std::lock_guard<std::mutex> lock(m_positionsMutex);
+        
+//         // Clear current positions and rebuild from external data
+//         m_positions.clear();
+        
+//         for (const auto& extPos : externalPositions) {
+//             Position position(
+//                 extPos.exchangeId,
+//                 extPos.tradingPair,
+//                 extPos.strategyId,
+//                 extPos.quantity,
+//                 extPos.averageEntryPrice
+//             );
+//             position.setCurrentPrice(extPos.currentPrice);
+//             position.setUnrealizedPnl(extPos.unrealizedPnl);
+//             position.setRealizedPnl(extPos.realizedPnl);
+//             position.setLastUpdated(std::chrono::system_clock::now());
+            
+//             std::string key = createPositionKey(extPos.exchangeId, extPos.tradingPair);
+//             m_positions.emplace(key, std::move(position));
+//         }
+        
+//         return true;
+//     } catch (const std::exception& e) {
+//         std::cerr << "Error reconciling positions: " << e.what() << std::endl;
+//         return false;
+//     }
+// }
 void PositionTracker::processExecutionReport(const ExecutionReport& executionReport) {
     try {
         if (executionReport.fills().empty()) {
@@ -233,7 +274,40 @@ void PositionTracker::processExecutionReport(const ExecutionReport& executionRep
         std::cerr << "Error processing execution report: " << e.what() << std::endl;
     }
 }
-
+// reconcilePositions
+bool PositionTracker::reconcilePositions() {
+    try {
+        // Fetch latest positions from external source (e.g. exchange API)
+        auto externalPositions = m_dataInterface->fetchCurrentPositions();
+        
+        std::lock_guard<std::mutex> lock(m_positionsMutex);
+        
+        // Clear current positions and rebuild from external data
+        m_positions.clear();
+        
+        for (const auto& extPos : externalPositions) {
+            Position position(
+                extPos.exchangeId,
+                extPos.tradingPair,
+                extPos.strategyId,
+                extPos.quantity,
+                extPos.averageEntryPrice
+            );
+            position.setCurrentPrice(extPos.currentPrice);
+            position.setUnrealizedPnl(extPos.unrealizedPnl);
+            position.setRealizedPnl(extPos.realizedPnl);
+            position.setLastUpdated(std::chrono::system_clock::now());
+            
+            std::string key = createPositionKey(extPos.exchangeId, extPos.tradingPair);
+            m_positions.emplace(key, std::move(position));
+        }
+        
+        return true;
+    } catch (const std::exception& e) {
+        std::cerr << "Error reconciling positions: " << e.what() << std::endl;
+        return false;
+    }
+}
 void PositionTracker::updateMarketData(const MarketData& marketData) {
     try {
         // Update price cache

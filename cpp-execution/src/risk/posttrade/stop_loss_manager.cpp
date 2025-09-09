@@ -498,7 +498,7 @@ std::map<std::string, std::string> StopLossManager::getDiagnostics() const {
 
 // Private helper methods implementation
 
-std::string StopLossManager::createPositionKey(
+// std::string StopLossManager::createPositionKey(
 std::string StopLossManager::createPositionKey(
     const core::ExchangeId& exchangeId, 
     const std::string& tradingPair) const {

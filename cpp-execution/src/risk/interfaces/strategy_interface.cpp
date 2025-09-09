@@ -48,7 +48,7 @@ private:
     std::function<void(const StrategyId&, const std::string&)> strategyEventCallback_;
     
     // Mutex for thread safety
-    std::mutex mutex_;
+    mutable std::mutex mutex_;
     
     // Flag to indicate if initialization was successful
     bool initialized_ = false;
@@ -185,7 +185,12 @@ public:
             return false;
         }
     }
-    
+    // isConnected
+    bool isConnected() const override {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return initialized_ && requestClient_ && requestClient_->isConnected() &&
+               subscriptionClient_ && subscriptionClient_->isConnected();
+    }
     bool sendRiskFeedback(const StrategyId& strategyId, const std::string& feedback) override {
         if (!initialized_) {
             logWithTimestamp("ERROR", "Strategy interface not initialized");

@@ -72,7 +72,11 @@ public:
             return false;
         }
     }
-
+    //isHealthy
+    bool isHealthy() const {
+        return positionTracker_ && dataInterface_ &&
+               positionTracker_->isHealthy() && dataInterface_->isConnected();
+    }
     ExposureValidationResult validateExposure(const TradingSignal& signal) const {
         try {
             const ExposureContext context = buildExposureContext(signal);
@@ -482,7 +486,10 @@ ExposureCalculator::~ExposureCalculator() = default;
 bool ExposureCalculator::initialize(const RiskConfig& config) {
     return impl_->initialize(config);
 }
-
+//isHealthy
+bool ExposureCalculator::isHealthy() const {
+    return impl_->isHealthy();
+}
 ExposureValidationResult ExposureCalculator::validateExposure(const TradingSignal& signal) const {
     return impl_->validateExposure(signal);
 }

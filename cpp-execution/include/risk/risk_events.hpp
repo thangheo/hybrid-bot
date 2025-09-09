@@ -31,7 +31,8 @@ enum class RiskEventType {
     BALANCE_RECONCILIATION_MISMATCH,
     RISK_MODE_CHANGE,
     PARAMETER_UPDATE,
-    EMERGENCY_ACTION
+    EMERGENCY_ACTION,
+    SYSTEM_ERROR
 };
 
 /**
@@ -54,7 +55,13 @@ struct RiskEvent {
           
     virtual ~RiskEvent() = default;
 };
-
+// RiskEventSeverity
+enum class RiskEventSeverity {
+    LOW,
+    MEDIUM,
+    HIGH,
+    CRITICAL
+};
 /**
  * Event for when a risk limit is breached
  */
@@ -83,36 +90,7 @@ struct LimitBreachEvent : public RiskEvent {
         limitValue(limit),
         actualValue(actual) {}
 };
-
-// /**
-//  * Event for when a circuit breaker is triggered
-//  */
-// struct CircuitBreakerEvent : public RiskEvent {
-//     CircuitBreakerState oldState;
-//     CircuitBreakerState newState;
-//     std::string metricName;
-//     double thresholdValue;
-//     double actualValue;
-//     std::optional<Timestamp> resumeTime;
-    
-//     CircuitBreakerEvent(
-//         Timestamp eventTime,
-//         CircuitBreakerState oldSt,
-//         CircuitBreakerState newSt,
-//         std::string metric,
-//         double threshold,
-//         double actual,
-//         std::optional<Timestamp> resume,
-//         std::string desc
-//     ) : RiskEvent(RiskEventType::CIRCUIT_BREAKER_TRIGGERED, eventTime, std::move(desc), "critical"),
-//         oldState(oldSt),
-//         newState(newSt),
-//         metricName(std::move(metric)),
-//         thresholdValue(threshold),
-//         actualValue(actual),
-//         resumeTime(resume) {}
-// };
-
+ 
 /**
  * Enhanced CircuitBreakerEvent structure
  * Add this to your risk_events.hpp file or create a separate header

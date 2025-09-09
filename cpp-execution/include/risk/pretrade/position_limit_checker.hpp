@@ -41,7 +41,8 @@ public:
      * @return true if initialization was successful, false otherwise
      */
     bool initialize();
-    
+    // isHealthy
+    bool isHealthy() const;
     /**
      * Check if adding a new position would exceed position limits
      * @param signal The trading signal to check

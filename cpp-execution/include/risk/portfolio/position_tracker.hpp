@@ -102,25 +102,29 @@ public:
      * @param dataInterface Interface to access market data
      */
     PositionTracker(const RiskConfig& config, std::shared_ptr<DataInterface> dataInterface);
-    
+    // updatePositions
+    void updatePositions(const ExecutionReport& executionReport);
     /**
      * Initialize the position tracker
      * @return true if initialization was successful, false otherwise
      */
     bool initialize();
-    
+    // isHealthy
+    bool isHealthy() const;
     /**
      * Process an execution report to update positions
      * @param executionReport The execution report to process
      */
     void processExecutionReport(const ExecutionReport& executionReport);
-    
+    // reconcilePositions
+    // bool reconcilePositions();
     /**
      * Update market data for position valuation
      * @param marketData New market data
      */
     void updateMarketData(const MarketData& marketData);
-    
+    // reconcilePositions
+    bool reconcilePositions();
     /**
      * Get all positions
      * @return Vector of all positions

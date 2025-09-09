@@ -87,7 +87,11 @@ public:
     [[nodiscard]] CircuitBreakerState getState() const noexcept {
         return state_.load(std::memory_order_acquire);
     }
-    
+    // isHealthy
+    [[nodiscard]] bool isHealthy() const noexcept {
+        auto state = state_.load(std::memory_order_acquire);
+        return state == CircuitBreakerState::OFF || state == CircuitBreakerState::WARNING;
+    }
     /**
      * @brief Manually trigger the circuit breaker
      * @param reason Reason for manual triggering

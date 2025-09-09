@@ -93,13 +93,38 @@ bool PortfolioManager::initialize() {
     }
 }
 
+bool PortfolioManager::isHealthy() const{   
+    // Check if all sub-components are initialized and healthy
+    if (!m_positionTracker || !m_collateralManager || !m_rebalancingEngine) {
+        return false;
+    }
+    // Additional health checks can be added here
+    return true;
+}
+
 void PortfolioManager::processExecutionReport(const trading::execution::models::ExecutionReport& executionReport) {
     // Directly forward to position tracker - no conversion needed
     m_positionTracker->processExecutionReport(executionReport);
     
     // Portfolio metrics will be updated via callback
 }
-
+// reconcilePositions
+bool PortfolioManager::reconcilePositions() {
+    try {
+        // PostTradeMonitor::reconcilePositions
+        bool success = m_positionTracker->reconcilePositions();
+        if (success) {
+            notifyPortfolioEvent("reconciliation", "Position reconciliation completed successfully");
+        } else {
+            notifyPortfolioEvent("reconciliation_failed", "Position reconciliation encountered issues");
+        }
+        return success;
+    } catch (const std::exception& e) {
+        std::cerr << "Error during position reconciliation: " << e.what() << std::endl;
+        notifyPortfolioEvent("reconciliation_error", std::string("Exception: ") + e.what());
+        return false;
+    }
+}
 void PortfolioManager::updateMarketData(const MarketData& marketData) {
     // Forward to position tracker
     m_positionTracker->updateMarketData(marketData);
@@ -238,6 +263,12 @@ void PortfolioManager::registerPortfolioCallback(
     const std::function<void(const std::string&, const std::string&)>& callback) {
     std::lock_guard<std::mutex> lock(m_callbackMutex);
     m_portfolioCallbacks.push_back(callback);
+}
+
+void PortfolioManager::processExecution(const trading::execution::models::ExecutionReport& executionReport) {
+    // Process the execution report and update portfolio metrics
+    m_positionTracker->updatePositions(executionReport);
+    recalculatePortfolioMetrics();
 }
 
 void PortfolioManager::recalculatePortfolioMetrics() {

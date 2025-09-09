@@ -42,6 +42,10 @@ BalanceReconciliation::BalanceReconciliation(
 BalanceReconciliation::~BalanceReconciliation() {
     shutdown();
 }
+// isHealthy
+bool BalanceReconciliation::isHealthy() const {
+    return m_dataInterface && m_dataInterface->isConnected();
+}
 
 bool BalanceReconciliation::initialize() {
     std::lock_guard<std::mutex> lock(m_stateMutex);

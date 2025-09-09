@@ -80,7 +80,8 @@ public:
      * @return Order ID if successful, empty string otherwise
      */
     virtual std::string submitOrder(const OrderRequest& orderRequest) = 0;
-    
+    // isConnected
+    virtual bool isConnected() const = 0;
     /**
      * Cancel an order
      * 

@@ -67,7 +67,8 @@ public:
      * @return true if initialization was successful, false otherwise
      */
     bool initialize();
-    
+    //isHealthy
+    bool isHealthy() const;
     /**
      * Validate a trading signal
      * @param signal The trading signal to validate

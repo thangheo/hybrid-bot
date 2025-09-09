@@ -22,7 +22,13 @@
      , m_validationTimeoutMs(500) // Default 500ms timeout
  {
  }
- 
+// RiskValidationService::RiskValidationService(const RiskConfig& config, std::shared_ptr<RiskManager> riskManager)
+//     : m_riskManager(riskManager)
+//     , m_config(config)
+//     , m_validationTimeoutMs(500) // Default 500ms timeout
+// {
+// }
+
  bool RiskValidationService::initialize() {
      // Load validation configuration
      if (m_config.hasKey("validation.timeout_ms")) {
@@ -105,11 +111,11 @@
  
  ValidationResult RiskValidationService::createTimeoutResult(const TradingSignal& signal) {
      ValidationResult result;
-     result.signalId = signal.id;
+     result.signalId = signal.signal_id;
      result.approved = false;
      
      RiskViolation violation;
-     violation.violationType = "TIMEOUT";
+     violation.type = ViolationType::TIMEOUT;
      violation.description = "Risk validation timed out";
      violation.limitValue = static_cast<double>(m_validationTimeoutMs);
      violation.actualValue = 0.0; // Not applicable for timeout
@@ -126,10 +132,10 @@
      if (!m_riskManager) {
          // No risk manager available
          RiskViolation violation;
-         violation.violationType = "SYSTEM_ERROR";
+         violation.type = ViolationType::SYSTEM_ERROR;
          violation.description = "Risk manager unavailable";
          
-         result.signalId = signal.id;
+         result.signalId = signal.signal_id;
          result.approved = false;
          result.violations.push_back(violation);
          result.timestamp = std::chrono::system_clock::now().time_since_epoch().count();
@@ -148,11 +154,11 @@
          } catch (const std::exception& e) {
              // Create error result
              ValidationResult errorResult;
-             errorResult.signalId = signal.id;
+             errorResult.signalId = signal.signal_id;
              errorResult.approved = false;
              
              RiskViolation violation;
-             violation.violationType = "SYSTEM_ERROR";
+             violation.type = ViolationType::SYSTEM_ERROR;
              violation.description = std::string("Exception during validation: ") + e.what();
              errorResult.violations.push_back(violation);
              errorResult.timestamp = std::chrono::system_clock::now().time_since_epoch().count();

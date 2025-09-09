@@ -257,7 +257,8 @@ public:
      * Destructor ensures proper cleanup
      */
     ~PostTradeMonitor();
-    
+    // isHealthy
+    bool isHealthy() const;
     // Disable copy operations, enable move
     PostTradeMonitor(const PostTradeMonitor&) = delete;
     PostTradeMonitor& operator=(const PostTradeMonitor&) = delete;
