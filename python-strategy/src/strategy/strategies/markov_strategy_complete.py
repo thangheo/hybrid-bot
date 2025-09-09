@@ -20,6 +20,7 @@ import time
 logger = logging.getLogger(__name__)
 
 from src.data.etf_flow_manager import CompositeETFFlow , ETFFlowManager
+
 try:
     from src.strategy.indicators.enhanced_technical_indicators import EnhancedTechnicalIndicators
     ENHANCED_INDICATORS_AVAILABLE = True
@@ -350,7 +351,8 @@ class MarkovETFStrategyPersistent(BaseStrategy):
             except Exception as e:
                 logger.error(f"ETF manager initialization failed: {e}")
                 self.etf_enabled = False
-        
+        # set bridge?why?
+        self.intelligence_bridge = None
         # Persistence setup
         db_path = config.get('markov_persistence', {}).get('db_path', 'data/markov_persistence.db')
         self.persistence_manager = MarkovPersistenceManager(db_path)
@@ -411,7 +413,6 @@ class MarkovETFStrategyPersistent(BaseStrategy):
 
         # Add intelligence integration flag
         self.cpp_intelligence_enabled = config.get('cpp_intelligence', {}).get('enabled', False)
-        self.intelligence_bridge = None
     
     def set_intelligence_bridge(self, bridge):
         """Set the intelligence bridge - called from main.py"""
@@ -429,12 +430,14 @@ class MarkovETFStrategyPersistent(BaseStrategy):
                 
             intel = self.intelligence_bridge.get_intelligence(symbol)
             if not intel:
+                logger.debug(f"No C++ intelligence available for {symbol}")
                 return signals
             # check if signals are empty
             if signals.empty:
+                logger.debug(f"No signals available for {symbol}")
                 return signals
             # Create enhanced columns
-            enhanced_signals = signals.copy()
+            enhanced_signals = signals.copy().fillna(0.0)
             
             # Initialize boost factors - all start at 1.0 (neutral)
             liquidity_boost = 1.0
@@ -495,7 +498,7 @@ class MarkovETFStrategyPersistent(BaseStrategy):
             if 'signal_strength' in enhanced_signals.columns:
                 original_signal_strength = enhanced_signals['signal_strength'].copy()
             else:
-                return enhanced_signals
+                original_signal_strength = pd.Series(0.5, index=enhanced_signals.index)
             # Boost the continuous signals
             enhanced_signals['enhanced_final_signal'] = enhanced_signals['final_signal'] * final_boost
             enhanced_signals['enhanced_signal_strength'] = original_signal_strength * final_boost
@@ -863,7 +866,7 @@ class MarkovETFStrategyPersistent(BaseStrategy):
             # Check for conditions that indicate C++ orderbook data is available
             # Option 1: Check if C++ intelligence is enabled
             if hasattr(self, 'cpp_intelligence_enabled') and self.cpp_intelligence_enabled:
-                signals = self._enhance_signals_with_cpp_intelligence(signals, symbol).fillna(0.0)
+                signals = self._enhance_signals_with_cpp_intelligence(signals, symbol) 
                 # Use enhanced_final_signal if available
                 if 'enhanced_final_signal' in signals.columns:
                     continuous_signal = signals['enhanced_final_signal']
