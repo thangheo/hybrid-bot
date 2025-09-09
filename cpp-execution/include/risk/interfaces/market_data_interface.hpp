@@ -118,7 +118,7 @@ public:
     bool unsubscribeMarketData(
         const std::string& tradingPair, 
         const std::optional<std::string>& exchangeId = std::nullopt) override;
-    
+    bool isConnected() const override;
     std::map<std::string, double> getTradingFees(
         const core::ExchangeId& exchangeId, 
         const std::optional<std::string>& tradingPair = std::nullopt) override;

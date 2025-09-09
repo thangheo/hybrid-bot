@@ -42,50 +42,6 @@ struct Fill {
 };
 
 /**
- * Position class representing a trading position
- */
-class Position {
-public:
-    Position(const ExchangeId& exchangeId, const TradingPair& tradingPair, 
-            const StrategyId& strategyId, double quantity, double averageEntryPrice);
-    
-    // Getters
-    const ExchangeId& getExchangeId() const;
-    const TradingPair& getTradingPair() const;
-    const StrategyId& getStrategyId() const;
-    double getQuantity() const;
-    double getAverageEntryPrice() const;
-    double getCurrentPrice() const;
-    double getUnrealizedPnl() const;
-    double getRealizedPnl() const;
-    Timestamp getLastUpdated() const;
-    
-    // Setters
-    void setCurrentPrice(double price);
-    void setUnrealizedPnl(double pnl);
-    void setRealizedPnl(double pnl);
-    void setLastUpdated(Timestamp timestamp);
-    
-    // Operations
-    void updatePosition(double quantity, double price);
-    double getNotionalValue() const;
-    
-private:
-    ExchangeId m_exchangeId;
-    TradingPair m_tradingPair;
-    StrategyId m_strategyId;
-    double m_quantity;
-    double m_averageEntryPrice;
-    double m_currentPrice;
-    double m_unrealizedPnl;
-    double m_realizedPnl;
-    Timestamp m_lastUpdated;
-    
-    // Helper method
-    void updateUnrealizedPnl();
-};
-
-/**
  * Function type for position update callback
  */
 using PositionUpdateCallback = std::function<void(const Position&, const std::string&)>;

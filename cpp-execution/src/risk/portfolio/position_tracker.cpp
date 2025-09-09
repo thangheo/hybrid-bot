@@ -287,18 +287,18 @@ bool PositionTracker::reconcilePositions() {
         
         for (const auto& extPos : externalPositions) {
             Position position(
-                extPos.exchangeId,
-                extPos.tradingPair,
-                extPos.strategyId,
-                extPos.quantity,
-                extPos.averageEntryPrice
+                extPos.getExchangeId(),
+                extPos.getTradingPair(),
+                extPos.getStrategyId(),
+                extPos.getQuantity(),
+                extPos.getAverageEntryPrice()
             );
-            position.setCurrentPrice(extPos.currentPrice);
-            position.setUnrealizedPnl(extPos.unrealizedPnl);
-            position.setRealizedPnl(extPos.realizedPnl);
+            position.setCurrentPrice(extPos.getCurrentPrice());
+            position.setUnrealizedPnl(extPos.getUnrealizedPnl());
+            position.setRealizedPnl(extPos.getRealizedPnl());
             position.setLastUpdated(std::chrono::system_clock::now());
-            
-            std::string key = createPositionKey(extPos.exchangeId, extPos.tradingPair);
+
+            std::string key = createPositionKey(extPos.getExchangeId(), extPos.getTradingPair());
             m_positions.emplace(key, std::move(position));
         }
         

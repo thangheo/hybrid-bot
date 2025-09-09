@@ -320,6 +320,7 @@ struct PortfolioConfig {
 struct RiskLoggingConfig {
     std::string logLevel = "INFO";
     std::string logDirectory = "/var/log/riskmanagement";
+    std::string logFileName = "risk_manager.log";
     bool enableDetailedLogs = true;
     bool logToConsole = true;
     bool logToFile = true;

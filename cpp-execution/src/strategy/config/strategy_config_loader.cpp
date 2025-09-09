@@ -189,8 +189,8 @@ StrategyConfig loadStrategyConfigFromFile(const std::string& filePath) {
         }
         
         LOG_INFO("Successfully loaded strategy configuration: id={}, version={}, tradingPairs={}",
-                       config.strategy_id, config.version, config.tradingPairs.size());
-        
+                       config.strategy_id.id, config.version, config.tradingPairs.size());
+
         return config;
     } catch (const std::exception& e) {
         LOG_ERROR("Error parsing strategy configuration file: {}", e.what());
@@ -244,7 +244,7 @@ ImbalanceDetectionConfig parseImbalanceDetectionConfig(const json& componentJson
         const auto& params = componentJson["parameters"];
         
         // Parse specific fields
-        if (params.contains("strategy_id")) config.strategy_id = params["strategy_id"].get<std::string>();
+        if (params.contains("strategy_id")) config.strategy_id = params["strategy_id"].get<std::string>(), config.version = "1.0";
         if (params.contains("version")) config.version = params["version"].get<std::string>();
         if (params.contains("volumeImbalanceThreshold")) config.volumeImbalanceThreshold = params["volumeImbalanceThreshold"].get<double>();
         if (params.contains("priceLevelImbalanceThreshold")) config.priceLevelImbalanceThreshold = params["priceLevelImbalanceThreshold"].get<double>();
@@ -606,7 +606,7 @@ bool saveStrategyConfigToFile(const StrategyConfig& config, const std::string& f
         json configJson;
         
         // General settings
-        configJson["strategy_id"] = config.strategy_id;
+        configJson["strategy_id"] = config.strategy_id.id;
         configJson["version"] = config.version;
         
         // Trading pairs

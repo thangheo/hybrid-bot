@@ -159,7 +159,7 @@ double PositionLimitChecker::calculateNewPosition(const TradingPair& tradingPair
 }
 
 bool PositionLimitChecker::updatePositionLimit(const std::string& assetId, 
-                                              const std::string& strategyId, 
+                                              const StrategyId& strategyId, 
                                               double newLimit) {
     if (newLimit <= 0) {
         LOG_ERROR("Invalid position limit value: {}", newLimit);
@@ -167,11 +167,11 @@ bool PositionLimitChecker::updatePositionLimit(const std::string& assetId,
     }
     
     std::lock_guard<std::mutex> lock(m_limitsLock);
-    
-    if (!strategyId.empty()) {
+
+    if (!strategyId.id.empty()) {
         // Update strategy limit
-        m_strategyLimits[strategyId] = newLimit;
-        LOG_INFO("Updated position limit for strategy {}: {}", strategyId, newLimit);
+        m_strategyLimits[strategyId.id] = newLimit;
+        LOG_INFO("Updated position limit for strategy {}: {}", strategyId.id, newLimit);
     } else if (!assetId.empty()) {
         // Update asset limit
         m_assetLimits[assetId] = newLimit;

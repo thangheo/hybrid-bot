@@ -222,7 +222,7 @@ RiskParameters RiskManager::getRiskParameters(const ExchangeId& exchangeId,
                                           const TradingPair& tradingPair,
                                           const StrategyId& strategyId) const {
     if (m_preTradeFilter) {
-        return m_preTradeFilter->getRiskParameters(exchangeId, tradingPair, strategyId);
+        return m_preTradeFilter->getRiskParameters(exchangeId, tradingPair, strategyId.id);
     }
     
     // Return empty parameters if pre-trade filter is not available

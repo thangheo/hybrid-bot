@@ -222,13 +222,18 @@ std::optional<Position> PortfolioManager::getPosition(const TradingPair& trading
         
         // Create a virtual position representing the aggregate
         // Need to properly construct StrategyId with both id and version
+        // Position(const ExchangeId& exchangeId, const TradingPair& tradingPair, 
+        //     const StrategyId& strategyId, double quantity, double averageEntryPrice);
+    
         Position aggregatedPosition(
             ExchangeId::all(),
             tradingPair,
-            StrategyId{"AGGREGATED", "1.0"}, // Provide both id and version
+            // StrategyId{"AGGREGATED", "1.0"}, // Provide both id and version
+            StrategyId{"AGGREGATED", "1.0"},
             totalQuantity,
             weightedPrice
         );
+
         return aggregatedPosition;
     }
 }

@@ -40,7 +40,7 @@ public:
      */
     virtual bool initialize() = 0;
     // isConnected
-    virtual bool isConnected() const;
+    virtual bool isConnected() const = 0;
     // isHealthy
     virtual bool isHealthy() const {
         return true; // Default implementation, can be overridden
@@ -75,8 +75,7 @@ public:
     }
     // fetchCurrentPositions
     virtual std::vector<Position> fetchCurrentPositions() {
-        // return empty vector by default
-        return {};
+        return {}; // Default empty implementation
     }
     /**
      * Get historical prices for a trading pair

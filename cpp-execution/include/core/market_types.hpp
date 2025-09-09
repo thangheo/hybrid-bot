@@ -34,6 +34,7 @@ namespace trading {
 // Add proper namespace aliases where needed
 // Ensure all files use the same ExchangeId definition
 using ExchangeId = common::ExchangeId;
+// using StrategyId = core::StrategyId;
 
 // Raw market data from an exchange
 struct MarketDataUpdate {
@@ -303,7 +304,6 @@ struct PriceLevel {
  /**
   * Common identifiers for strategy, signals, and other components
   */
- using StrategyId = std::string;
  using SignalId = std::string;
  using ExperimentId = std::string;
  using OrderId = std::string;

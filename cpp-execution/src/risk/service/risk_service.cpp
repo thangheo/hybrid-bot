@@ -86,7 +86,7 @@
          result.approved = false;
          
          RiskViolation violation;
-         violation.violationType = "SYSTEM_ERROR";
+         violation.type = ViolationType::SYSTEM_ERROR;
          violation.description = "Validation service unavailable";
          result.violations.push_back(violation);
          result.timestamp = std::chrono::system_clock::now().time_since_epoch().count();
@@ -209,14 +209,14 @@
              TradingSignal signal;
              
              // Populate signal from JSON
-             signal.id = signalJson["id"];
-             signal.exchangeId = signalJson["exchangeId"];
-             signal.tradingPair = signalJson["tradingPair"];
-             signal.direction = signalJson["direction"] == "buy" ? Direction::BUY : Direction::SELL;
-             signal.strength = signalJson["strength"];
-             signal.targetSize = signalJson["target_size"];
-             signal.strategyId = signalJson["strategy_id"];
-             
+             signal.setId(signalJson["id"]);
+             signal.setExchangeId(signalJson["exchangeId"]);
+             signal.setTradingPair(signalJson["tradingPair"]);
+             signal.setDirection(signalJson["direction"] == "buy" ? Direction::BUY : Direction::SELL);
+             signal.setStrength(signalJson["strength"]);
+            //  signal.setTargetSize(signalJson["target_size"]);
+             signal.setStrategyId(StrategyId(signalJson["strategy_id"]));
+
              // Validate the signal
              ValidationResult result = validateSignal(signal);
              
@@ -230,7 +230,7 @@
              json violationsJson = json::array();
              for (const auto& violation : result.violations) {
                  json violationJson;
-                 violationJson["type"] = violation.violationType;
+                 violationJson["type"] = violation.type;
                  violationJson["description"] = violation.description;
                  violationJson["limit_value"] = violation.limitValue;
                  violationJson["actual_value"] = violation.actualValue;
@@ -249,17 +249,17 @@
              // Parse the payload
              json paramsJson = json::parse(payload);
              
-             ExchangeId exchangeId = paramsJson["exchangeId"];
-             TradingPair tradingPair = paramsJson["tradingPair"];
-             StrategyId strategyId = paramsJson["strategy_id"];
+             ExchangeId exchangeId = ExchangeId::fromString(paramsJson["exchangeId"]);
+             TradingPair tradingPair = TradingPair::fromString(paramsJson["tradingPair"]);
+             StrategyId strategyId = StrategyId::fromString(paramsJson["strategy_id"]);
              
              // Get the parameters
              RiskParameters params = getRiskParameters(exchangeId, tradingPair, strategyId);
              
              // Create response JSON
              json paramsResultJson;
-             paramsResultJson["exchangeId"] = params.exchangeId;
-             paramsResultJson["tradingPair"] = params.tradingPair;
+             paramsResultJson["exchangeId"] = params.exchangeId.toString();
+             paramsResultJson["tradingPair"] = params.tradingPair.toString();
              paramsResultJson["max_position_size"] = params.maxPositionSize;
              paramsResultJson["max_order_size"] = params.maxOrderSize;
              paramsResultJson["maxDrawdown"] = params.maxDrawdown;

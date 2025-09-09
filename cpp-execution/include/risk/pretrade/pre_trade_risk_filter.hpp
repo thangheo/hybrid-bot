@@ -27,29 +27,6 @@ namespace risk {
 // Use the execution TradingSignal as the primary type
 using TradingSignal = execution::TradingSignal;
 
-// Forward declarations for missing types
-struct ValidationResult {
-    std::string signalId;
-    bool approved = false;
-    double adjustedSize = 0.0;
-    uint64_t timestamp = 0;
-    std::vector<RiskViolation> violations;
-    
-    ValidationResult() = default;
-};
-
-struct RiskParameters {
-    core::ExchangeId exchangeId;
-    TradingPair tradingPair;
-    std::string strategyId;
-    double maxPositionSize = 0.0;
-    double maxExposure = 0.0;
-    double maxOrderSize = 0.0;
-    double minOrderSize = 0.0;
-    
-    RiskParameters() = default;
-};
-
 /**
  * PreTradeRiskFilter orchestrates all pre-trade risk checks.
  * It validates trading signals before they become orders.
