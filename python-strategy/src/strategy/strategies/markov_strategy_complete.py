@@ -504,10 +504,10 @@ class MarkovETFStrategyPersistent(BaseStrategy):
             enhanced_signals['enhanced_signal_strength'] = original_signal_strength * final_boost
             
             # For discrete signals, only boost if original signal exists and boost is significant
-            enhanced_signals['enhanced_signal'] = enhanced_signals['signal'].copy()  # Start with original
-            
+            enhanced_signals['enhanced_signal'] = enhanced_signals['final_signal'].copy()  # Start with original
+
             # Apply enhanced thresholds only where we have boost AND original signal
-            significant_boost_mask = (final_boost > 1.1) & (enhanced_signals['signal'] != 0)
+            significant_boost_mask = (final_boost > 1.1) & (enhanced_signals['final_signal'] != 0)
             
             if significant_boost_mask.any():
                 signal_threshold = self.config.get('signal_threshold', 0.3)
