@@ -860,7 +860,8 @@ class MarkovETFStrategyPersistent(BaseStrategy):
             # Check for conditions that indicate C++ orderbook data is available
             # Option 1: Check if C++ intelligence is enabled
             if hasattr(self, 'cpp_intelligence_enabled') and self.cpp_intelligence_enabled:
-                signals = self._enhance_signals_with_cpp_intelligence(signals, symbol)
+                signals = self._enhance_signals_with_cpp_intelligence(signals, symbol).fillna(0.0)
+                # Use enhanced_final_signal if available
                 if 'enhanced_final_signal' in signals.columns and not signals['enhanced_final_signal'].isnull().all():
                     continuous_signal = signals['enhanced_final_signal']
                     logger.warning(f"Continuous signal for {symbol} enhanced with C++ intelligence: {continuous_signal.iloc[-1] if not continuous_signal.empty else 'N/A'}")
