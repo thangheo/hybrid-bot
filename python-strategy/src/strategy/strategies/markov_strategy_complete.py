@@ -853,9 +853,9 @@ class MarkovETFStrategyPersistent(BaseStrategy):
                 signals['final_signal'] = signals['final_signal'] * confidence_factor
 
             # FIXED LOGIC: Initialize continuous_signal properly
-            # check if 
-            continuous_signal = signals['final_signal'].copy()
-            logger.warning(f"Initial continuous signal for {symbol} using final_signal: {continuous_signal.iloc[-1] if not continuous_signal.empty else 'N/A'}")
+            # continuous_signal = signals['final_signal'].copy()
+            continuous_signal = signals['final_signal'].fillna(0.0).copy()
+            # logger.warning(f"Initial continuous signal for {symbol} using final_signal: {continuous_signal.iloc[-1] if not continuous_signal.empty else 'N/A'}")
             # Apply orderbook intelligence enhancement if available
             # Check for conditions that indicate C++ orderbook data is available
             # Option 1: Check if C++ intelligence is enabled
