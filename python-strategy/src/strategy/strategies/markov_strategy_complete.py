@@ -855,7 +855,7 @@ class MarkovETFStrategyPersistent(BaseStrategy):
             # FIXED LOGIC: Initialize continuous_signal properly
             # check if 
             continuous_signal = signals['final_signal'].copy()
-            
+            logger.warning(f"Initial continuous signal for {symbol} using final_signal: {continuous_signal.iloc[-1] if not continuous_signal.empty else 'N/A'}")
             # Apply orderbook intelligence enhancement if available
             # Check for conditions that indicate C++ orderbook data is available
             # Option 1: Check if C++ intelligence is enabled
@@ -863,16 +863,19 @@ class MarkovETFStrategyPersistent(BaseStrategy):
                 signals = self._enhance_signals_with_cpp_intelligence(signals, symbol)
                 if 'enhanced_final_signal' in signals.columns and not signals['enhanced_final_signal'].isnull().all():
                     continuous_signal = signals['enhanced_final_signal']
-                
-                    
+                    logger.warning(f"Continuous signal for {symbol} enhanced with C++ intelligence: {continuous_signal.iloc[-1] if not continuous_signal.empty else 'N/A'}")
+                else:
+                    logger.warning(f"C++ intelligence enabled but enhanced_final_signal is not available for {symbol}")
+            else:
+                logger.warning(f"C++ intelligence not enabled for {symbol}, using final_signal as continuous signal")
             # Safety check for continuous signal
             if continuous_signal is None or continuous_signal.isnull().all():
-                logger.warning(f"Continuous signal is None/null for {symbol}, using default neutral signal")
+                logger.warning(f"Continuous signal is None/null for {symbol}, using default final_signal signal")
                 continuous_signal = signals['final_signal'].copy()
 
             # FIXED: Clamp continuous signal to reasonable bounds
             continuous_signal = continuous_signal.clip(-1.0, 1.0)
-            
+            logger.warning(f"Clamped continuous signal for {symbol}: {continuous_signal.iloc[-1] if not continuous_signal.empty else 'N/A'}")
             # Generate discrete signals from the continuous signal
             signal_threshold = self.config.get('signal_threshold', 0.3)
             signals['signal'] = 0  # Initialize discrete signals
