@@ -863,12 +863,12 @@ class MarkovETFStrategyPersistent(BaseStrategy):
                 signals = self._enhance_signals_with_cpp_intelligence(signals, symbol)
                 if 'enhanced_final_signal' in signals.columns and not signals['enhanced_final_signal'].isnull().all():
                     continuous_signal = signals['enhanced_final_signal']
-            
+                
                     
             # Safety check for continuous signal
             if continuous_signal is None or continuous_signal.isnull().all():
                 logger.warning(f"Continuous signal is None/null for {symbol}, using default neutral signal")
-                continuous_signal = pd.Series(0.0, index=signals.index)
+                continuous_signal = signals['final_signal'].copy()
 
             # FIXED: Clamp continuous signal to reasonable bounds
             continuous_signal = continuous_signal.clip(-1.0, 1.0)
