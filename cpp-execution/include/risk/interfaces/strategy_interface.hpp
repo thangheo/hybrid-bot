@@ -32,7 +32,8 @@ public:
      * Destructor
      */
     virtual ~StrategyInterface() = default;
-    
+    // isConnected
+    virtual bool isConnected() const = 0;
     /**
      * Initialize the interface
      * @return true if initialization was successful, false otherwise

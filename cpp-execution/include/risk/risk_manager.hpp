@@ -19,6 +19,7 @@
 #include "interfaces/data_interface.hpp"
 #include "execution/models/execution_report.hpp"
 #include "interfaces/strategy_interface.hpp"
+#include "service/risk_validation_service.hpp"
 #include <atomic>
 #include <memory>
 #include <mutex>

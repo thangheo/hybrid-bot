@@ -39,7 +39,12 @@ public:
      * @return true if successful, false otherwise
      */
     virtual bool initialize() = 0;
-    
+    // isConnected
+    virtual bool isConnected() const;
+    // isHealthy
+    virtual bool isHealthy() const {
+        return true; // Default implementation, can be overridden
+    }
     /**
      * Get market data for a trading pair
      * 
@@ -68,7 +73,10 @@ public:
     virtual double getPrice(const std::string& tradingPair) {
         return getCurrentPrice(tradingPair);
     }
-    
+    // fetchCurrentPositions
+    virtual std::vector<Position> fetchCurrentPositions() {
+        return {}; // Default empty implementation
+    }
     /**
      * Get historical prices for a trading pair
      * 
@@ -198,7 +206,10 @@ public:
         }
         return prices;
     }
-    
+    // fetchCurrentPositions
+    std::vector<Position> fetchCurrentPositions() override {
+        return {}; // Empty for mock
+    }
     double getVolatility(const std::string& tradingPair, const std::string& timeframe, const std::optional<std::string>& exchangeId = std::nullopt) override {
         return 0.02; // 2% mock volatility
     }

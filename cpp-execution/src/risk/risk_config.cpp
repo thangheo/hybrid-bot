@@ -13,93 +13,93 @@
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
-#include <format>
+#include <sstream>
 #include <chrono>
 
 // Use a fully qualified namespace to avoid ambiguity
-using json = nlohmann::json;
+// using json = nlohmann::json;
 
 namespace trading::risk {
     
 // Default constructor with reasonable default values
 RiskConfig::RiskConfig() {
     // Initialize position limit config
-    m_positionLimitConfig.defaultLimit = 1000.0;
-    m_positionLimitConfig.enforceStrictly = true;
+    positionLimitConfig_.defaultLimit = 1000.0;
+    positionLimitConfig_.enforceStrictly = true;
 
     // Initialize exposure limit config
-    m_exposureLimitConfig.maxTotalExposure = 10000.0;
-    m_exposureLimitConfig.maxAssetExposure = 2000.0;
-    m_exposureLimitConfig.maxStrategyExposure = 5000.0;
-    m_exposureLimitConfig.maxExchangeExposure = 8000.0;
-    m_exposureLimitConfig.volatilityMultiplier = 1.5;
-    m_exposureLimitConfig.includeUnrealizedPnl = true;
+    exposureLimitConfig_.maxTotalExposure = 10000.0;
+    exposureLimitConfig_.maxAssetExposure = 2000.0;
+    exposureLimitConfig_.maxStrategyExposure = 5000.0;
+    exposureLimitConfig_.maxExchangeExposure = 8000.0;
+    exposureLimitConfig_.volatilityMultiplier = 1.5;
+    exposureLimitConfig_.includeUnrealizedPnl = true;
 
     // Initialize enhanced circuit breaker config
-    m_circuitBreakerConfig = CircuitBreakerConfig{}; // Uses default constructor
-    
-    // Add additional custom thresholds if needed
-    m_circuitBreakerConfig.metricThresholds["pnl_drawdown"] = MetricThreshold(0.03, 0.05, true);  // 3% warning, 5% critical
-    m_circuitBreakerConfig.metricThresholds["order_rejection_rate"] = MetricThreshold(0.02, 0.05, false); // 2% warning, 5% critical
+    circuitBreakerConfig_ = CircuitBreakerConfig{}; // Uses default constructor
 
-    // Initialize stop loss config  
-    m_stopLossConfig.maxLossPercentage = 0.05;
-    m_stopLossConfig.trailingStopDistance = 0.02;
-    m_stopLossConfig.enableTrailingStop = true;
-    m_stopLossConfig.forceLiquidation = true;
-    m_stopLossConfig.liquidationDelay = std::chrono::seconds(5);
+    // Add additional custom thresholds if needed
+    circuitBreakerConfig_.metricThresholds["pnl_drawdown"] = MetricThreshold(0.03, 0.05, true);  // 3% warning, 5% critical
+    circuitBreakerConfig_.metricThresholds["order_rejection_rate"] = MetricThreshold(0.02, 0.05, false); // 2% warning, 5% critical
+
+    // Initialize stop loss config
+    stopLossConfig_.maxLossPercentage = 0.05;
+    stopLossConfig_.trailingStopDistance = 0.02;
+    stopLossConfig_.enableTrailingStop = true;
+    stopLossConfig_.forceLiquidation = true;
+    stopLossConfig_.liquidationDelay = std::chrono::seconds(5);
 
     // Initialize drawdown config
-    m_drawdownConfig.warningThreshold = 0.10;
-    m_drawdownConfig.criticalThreshold = 0.20;
-    m_drawdownConfig.lookbackPeriod = std::chrono::hours(24);
-    m_drawdownConfig.enableAutoRiskReduction = true;
-    m_drawdownConfig.riskReductionFactor = 0.5;
+    drawdownConfig_.warningThreshold = 0.10;
+    drawdownConfig_.criticalThreshold = 0.20;
+    drawdownConfig_.lookbackPeriod = std::chrono::hours(24);
+    drawdownConfig_.enableAutoRiskReduction = true;
+    drawdownConfig_.riskReductionFactor = 0.5;
 
     // Initialize fat finger config
-    m_fatFingerConfig.maxPriceDeviation = 0.05;
-    m_fatFingerConfig.maxOrderSize = 10.0;
-    m_fatFingerConfig.typicalOrderSize = 1.0;
-    m_fatFingerConfig.notionalValueLimit = 10000.0;
-    m_fatFingerConfig.enforceAdditionalVerification = true;
+    fatFingerConfig_.maxPriceDeviation = 0.05;
+    fatFingerConfig_.maxOrderSize = 10.0;
+    fatFingerConfig_.typicalOrderSize = 1.0;
+    fatFingerConfig_.notionalValueLimit = 10000.0;
+    fatFingerConfig_.enforceAdditionalVerification = true;
 
     // Initialize order validation config
-    m_orderValidationConfig.validateMinOrderSize = true;
-    m_orderValidationConfig.validatePriceRange = true;
-    m_orderValidationConfig.maxPriceDeviationPercent = 0.1;
-    m_orderValidationConfig.enforceSymbolWhitelist = false;
+    orderValidationConfig_.validateMinOrderSize = true;
+    orderValidationConfig_.validatePriceRange = true;
+    orderValidationConfig_.maxPriceDeviationPercent = 0.1;
+    orderValidationConfig_.enforceSymbolWhitelist = false;
 
     // Initialize balance reconciliation config with defaults
-    m_balanceReconciliationConfig = BalanceReconciliationConfig{}; // Uses default constructor
+    balanceReconciliationConfig_ = BalanceReconciliationConfig{}; // Uses default constructor
 
     // Initialize rebalancing config
-    m_rebalancingConfig.autoRebalancingEnabled = true;
-    m_rebalancingConfig.autoExecuteRebalancing = true;
-    m_rebalancingConfig.parallelExecution = false;
-    m_rebalancingConfig.rebalancingIntervalMinutes = 60;
-    m_rebalancingConfig.allocationDeviationThreshold = 0.05; // 5%
-    m_rebalancingConfig.minimumOrderSize = 0.01;
+    rebalancingConfig_.autoRebalancingEnabled = true;
+    rebalancingConfig_.autoExecuteRebalancing = true;
+    rebalancingConfig_.parallelExecution = false;
+    rebalancingConfig_.rebalancingIntervalMinutes = 60;
+    rebalancingConfig_.allocationDeviationThreshold = 0.05; // 5%
+    rebalancingConfig_.minimumOrderSize = 0.01;
 
     // Initialize collateral config
-    m_collateralConfig.fundingSources = {"main_wallet", "backup_wallet"};
-    m_collateralConfig.emergencyFundingSource = "main_wallet";
-    m_collateralConfig.targetFreeCollateralRatio = 0.2;
-    m_collateralConfig.enableEmergencyFunding = false;
-    m_collateralConfig.maxFundingAmount = 10000.0;
+    collateralConfig_.fundingSources = {"main_wallet", "backup_wallet"};
+    collateralConfig_.emergencyFundingSource = "main_wallet";
+    collateralConfig_.targetFreeCollateralRatio = 0.2;
+    collateralConfig_.enableEmergencyFunding = false;
+    collateralConfig_.maxFundingAmount = 10000.0;
 
     // Initialize portfolio config
-    m_portfolioConfig.autoRebalancingEnabled = false;
-    m_portfolioConfig.enableRealTimeMetrics = true;
-    m_portfolioConfig.minimumPortfolioValue = 1000.0;
-    m_portfolioConfig.baseCurrency = "USD";
+    portfolioConfig_.autoRebalancingEnabled = false;
+    portfolioConfig_.enableRealTimeMetrics = true;
+    portfolioConfig_.minimumPortfolioValue = 1000.0;
+    portfolioConfig_.baseCurrency = "USD";
 
     // Initialize logging config
-    m_loggingConfig.logLevel = "INFO";
-    m_loggingConfig.logDirectory = "/var/log/riskmanagement";
-    m_loggingConfig.enableDetailedLogs = true;
-    m_loggingConfig.logToConsole = true;
-    m_loggingConfig.logToFile = true;
-    m_loggingConfig.logRetentionPeriod = std::chrono::days(30);
+    loggingConfig_.logLevel = "INFO";
+    loggingConfig_.logDirectory = "/var/log/riskmanagement";
+    loggingConfig_.enableDetailedLogs = true;
+    loggingConfig_.logToConsole = true;
+    loggingConfig_.logToFile = true;
+    loggingConfig_.logRetentionPeriod = std::chrono::hours(30 * 24); // 30 days
 }
 
 // Constructor with file path
@@ -114,7 +114,7 @@ bool RiskConfig::loadFromFile(const std::string& configFilePath) {
     try {
         std::ifstream file(configFilePath);
         if (!file.is_open()) {
-            std::cerr << std::format("Failed to open configuration file: {}\n", configFilePath);
+            std::cerr << "Failed to open configuration file: " << configFilePath << "\n";
             return false;
         }
         
@@ -124,7 +124,7 @@ bool RiskConfig::loadFromFile(const std::string& configFilePath) {
         
         return loadJsonConfiguration(jsonStr);
     } catch (const std::exception& e) {
-        std::cerr << std::format("Exception while loading configuration: {}\n", e.what());
+        std::cerr << "Exception while loading configuration: " << e.what() << "\n";
         return false;
     }
 }
@@ -194,11 +194,111 @@ bool RiskConfig::loadJsonConfiguration(const std::string& jsonStr) {
         
         return true;
     } catch (const std::exception& e) {
-        std::cerr << std::format("Exception while parsing JSON configuration: {}\n", e.what());
+        std::cerr << "Exception while parsing JSON configuration: " << e.what() << "\n";
         return false;
     }
 }
 
+const bool RiskConfig::getBoolValue(std::string key) {
+    try {
+        if (key == "positionLimit.enforceStrictly") {
+            return positionLimitConfig_.enforceStrictly;
+        } else if (key == "exposureLimit.includeUnrealizedPnl") {
+            return exposureLimitConfig_.includeUnrealizedPnl;
+        } else if (key == "circuitBreaker.autoResume") {
+            return circuitBreakerConfig_.autoResume;
+        } else if (key == "stopLoss.enableTrailingStop") {
+            return stopLossConfig_.enableTrailingStop;
+        } else if (key == "stopLoss.forceLiquidation") {
+            return stopLossConfig_.forceLiquidation;
+        } else if (key == "drawdown.enableAutoRiskReduction") {
+            return drawdownConfig_.enableAutoRiskReduction;
+        } else if (key == "fatFinger.enforceAdditionalVerification") {
+            return fatFingerConfig_.enforceAdditionalVerification;
+        } else if (key == "orderValidation.validateMinOrderSize") {
+            return orderValidationConfig_.validateMinOrderSize;
+        } else if (key == "orderValidation.validatePriceRange") {
+            return orderValidationConfig_.validatePriceRange;
+        } else if (key == "orderValidation.enforceSymbolWhitelist") {
+            return orderValidationConfig_.enforceSymbolWhitelist;
+        } else if (key == "rebalancing.autoRebalancingEnabled") {
+            return rebalancingConfig_.autoRebalancingEnabled;
+        } else if (key == "rebalancing.autoExecuteRebalancing") {
+            return rebalancingConfig_.autoExecuteRebalancing;
+        } else if (key == "collateral.enableEmergencyFunding") {
+            return collateralConfig_.enableEmergencyFunding;
+        } else if (key == "logging.enableDetailedLogs") {
+            return loggingConfig_.enableDetailedLogs;
+        } else if (key == "logging.logToConsole") {
+            return loggingConfig_.logToConsole;
+        } else if (key == "logging.logToFile") {
+            return loggingConfig_.logToFile;
+        } else {
+            throw std::invalid_argument("Unknown boolean configuration key: " + key);
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "Exception while retrieving boolean config value for key '" << key << "': " << e.what() << "\n";
+        throw; // Rethrow to indicate failure
+    }
+}
+const bool RiskConfig::hasKey(std::string key) {
+    try {
+        if (key == "positionLimit.enforceStrictly" ||
+            key == "exposureLimit.includeUnrealizedPnl" ||
+            key == "circuitBreaker.autoResume" ||
+            key == "stopLoss.enableTrailingStop" ||
+            key == "stopLoss.forceLiquidation" ||
+            key == "drawdown.enableAutoRiskReduction" ||
+            key == "fatFinger.enforceAdditionalVerification" ||
+            key == "orderValidation.validateMinOrderSize" ||
+            key == "orderValidation.validatePriceRange" ||
+            key == "orderValidation.enforceSymbolWhitelist" ||
+            key == "rebalancing.autoRebalancingEnabled" ||
+            key == "rebalancing.autoExecuteRebalancing" ||
+            key == "collateral.enableEmergencyFunding" ||
+            key == "logging.enableDetailedLogs" ||
+            key == "logging.logToConsole" ||
+            key == "logging.logToFile") {
+            return true;
+        } else {
+            return false;
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "Exception while checking existence of config key '" << key << "': " << e.what() << "\n";
+        throw; // Rethrow to indicate failure
+    }
+}
+// getIntValue
+const int RiskConfig::getIntValue(std::string key) {
+    try {
+        if (key == "circuitBreaker.coolingPeriodSeconds") {
+            return circuitBreakerConfig_.coolingPeriodSeconds;
+        } else if (key == "circuitBreaker.mandatoryHaltPeriodSeconds") {
+            return circuitBreakerConfig_.mandatoryHaltPeriodSeconds;
+        } else if (key == "circuitBreaker.maxTriggersPerDay") {
+            return circuitBreakerConfig_.maxTriggersPerDay;
+        } else if (key == "circuitBreaker.maxTriggersBeforeExtendedHalt") {
+            return circuitBreakerConfig_.maxTriggersBeforeExtendedHalt;
+        } else if (key == "circuitBreaker.extendedHaltMultiplier") {
+            return circuitBreakerConfig_.extendedHaltMultiplier;
+        } else if (key == "circuitBreaker.triggerCountResetMinutes") {
+            return circuitBreakerConfig_.triggerCountResetMinutes;
+        } else if (key == "stopLoss.liquidationDelaySeconds") {
+            return static_cast<int>(stopLossConfig_.liquidationDelay.count());
+        } else if (key == "drawdown.lookbackPeriodHours") {
+            return static_cast<int>(drawdownConfig_.lookbackPeriod.count() / 3600);
+        } else if (key == "rebalancing.rebalancingIntervalMinutes") {
+            return rebalancingConfig_.rebalancingIntervalMinutes;
+        } else if (key == "logging.logRetentionPeriodHours") {
+            return static_cast<int>(loggingConfig_.logRetentionPeriod.count() / 3600);
+        } else {
+            throw std::invalid_argument("Unknown integer configuration key: " + key);
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "Exception while retrieving integer config value for key '" << key << "': " << e.what() << "\n";
+        throw; // Rethrow to indicate failure
+    }
+}
 // Enhanced Circuit Breaker config loading
 void RiskConfig::loadCircuitBreakerConfig(const json& cb) {
     // Load metric thresholds
@@ -209,7 +309,7 @@ void RiskConfig::loadCircuitBreakerConfig(const json& cb) {
                 threshold.warningThreshold = thresholdObj.value("warning", 0.0);
                 threshold.criticalThreshold = thresholdObj.value("critical", 0.0);
                 threshold.isHigherBetter = thresholdObj.value("isHigherBetter", false);
-                m_circuitBreakerConfig.metricThresholds[metricName] = threshold;
+                circuitBreakerConfig_.metricThresholds[metricName] = threshold;
             }
         }
     }
@@ -217,48 +317,48 @@ void RiskConfig::loadCircuitBreakerConfig(const json& cb) {
     // Load timing configuration
     if (cb.contains("coolingPeriodSeconds")) {
         int seconds = cb["coolingPeriodSeconds"].get<int>();
-        m_circuitBreakerConfig.coolingPeriod = std::chrono::seconds(seconds);
-        m_circuitBreakerConfig.coolingPeriodSeconds = seconds;
+        circuitBreakerConfig_.coolingPeriod = std::chrono::seconds(seconds);
+        circuitBreakerConfig_.coolingPeriodSeconds = seconds;
     }
     
     if (cb.contains("warmupPeriodSeconds")) {
         int seconds = cb["warmupPeriodSeconds"].get<int>();
-        m_circuitBreakerConfig.warmupPeriod = std::chrono::seconds(seconds);
+        circuitBreakerConfig_.warmupPeriod = std::chrono::seconds(seconds);
     }
     
     if (cb.contains("mandatoryHaltPeriodSeconds")) {
-        m_circuitBreakerConfig.mandatoryHaltPeriodSeconds = cb["mandatoryHaltPeriodSeconds"].get<int>();
+        circuitBreakerConfig_.mandatoryHaltPeriodSeconds = cb["mandatoryHaltPeriodSeconds"].get<int>();
     }
     
     // Load trigger and reset behavior
     if (cb.contains("autoResume")) {
-        m_circuitBreakerConfig.autoResume = cb["autoResume"].get<bool>();
+        circuitBreakerConfig_.autoResume = cb["autoResume"].get<bool>();
     }
     
     if (cb.contains("maxTriggersPerDay")) {
-        m_circuitBreakerConfig.maxTriggersPerDay = cb["maxTriggersPerDay"].get<int>();
+        circuitBreakerConfig_.maxTriggersPerDay = cb["maxTriggersPerDay"].get<int>();
     }
     
     if (cb.contains("maxTriggersBeforeExtendedHalt")) {
-        m_circuitBreakerConfig.maxTriggersBeforeExtendedHalt = cb["maxTriggersBeforeExtendedHalt"].get<int>();
+        circuitBreakerConfig_.maxTriggersBeforeExtendedHalt = cb["maxTriggersBeforeExtendedHalt"].get<int>();
     }
     
     if (cb.contains("extendedHaltMultiplier")) {
-        m_circuitBreakerConfig.extendedHaltMultiplier = cb["extendedHaltMultiplier"].get<int>();
+        circuitBreakerConfig_.extendedHaltMultiplier = cb["extendedHaltMultiplier"].get<int>();
     }
     
     if (cb.contains("triggerCountResetMinutes")) {
-        m_circuitBreakerConfig.triggerCountResetMinutes = cb["triggerCountResetMinutes"].get<int>();
+        circuitBreakerConfig_.triggerCountResetMinutes = cb["triggerCountResetMinutes"].get<int>();
     }
     
     // Load history and monitoring
     if (cb.contains("maxHistorySize")) {
-        m_circuitBreakerConfig.maxHistorySize = cb["maxHistorySize"].get<size_t>();
+        circuitBreakerConfig_.maxHistorySize = cb["maxHistorySize"].get<size_t>();
     }
     
     // Load gradual recovery
     if (cb.contains("gradualTradingResumption")) {
-        m_circuitBreakerConfig.gradualTradingResumption = cb["gradualTradingResumption"].get<bool>();
+        circuitBreakerConfig_.gradualTradingResumption = cb["gradualTradingResumption"].get<bool>();
     }
 }
 
@@ -266,108 +366,108 @@ void RiskConfig::loadCircuitBreakerConfig(const json& cb) {
 void RiskConfig::loadPositionLimitConfig(const json& pl) {
     if (pl.contains("assetLimits") && pl["assetLimits"].is_object()) {
         for (const auto& [asset, limit] : pl["assetLimits"].items()) {
-            m_positionLimitConfig.assetLimits[asset] = limit.get<double>();
+            positionLimitConfig_.assetLimits[asset] = limit.get<double>();
         }
     }
     if (pl.contains("strategyLimits") && pl["strategyLimits"].is_object()) {
         for (const auto& [strategy, limit] : pl["strategyLimits"].items()) {
-            m_positionLimitConfig.strategyLimits[strategy] = limit.get<double>();
+            positionLimitConfig_.strategyLimits[strategy] = limit.get<double>();
         }
     }
     if (pl.contains("exchangeLimits") && pl["exchangeLimits"].is_object()) {
         for (const auto& [exchange, limit] : pl["exchangeLimits"].items()) {
-            m_positionLimitConfig.exchangeLimits[exchange] = limit.get<double>();
+            positionLimitConfig_.exchangeLimits[exchange] = limit.get<double>();
         }
     }
     if (pl.contains("defaultLimit")) {
-        m_positionLimitConfig.defaultLimit = pl["defaultLimit"].get<double>();
+        positionLimitConfig_.defaultLimit = pl["defaultLimit"].get<double>();
     }
     if (pl.contains("enforceStrictly")) {
-        m_positionLimitConfig.enforceStrictly = pl["enforceStrictly"].get<bool>();
+        positionLimitConfig_.enforceStrictly = pl["enforceStrictly"].get<bool>();
     }
 }
 
 void RiskConfig::loadExposureLimitConfig(const json& el) {
     if (el.contains("maxTotalExposure")) {
-        m_exposureLimitConfig.maxTotalExposure = el["maxTotalExposure"].get<double>();
+        exposureLimitConfig_.maxTotalExposure = el["maxTotalExposure"].get<double>();
     }
     if (el.contains("maxAssetExposure")) {
-        m_exposureLimitConfig.maxAssetExposure = el["maxAssetExposure"].get<double>();
+        exposureLimitConfig_.maxAssetExposure = el["maxAssetExposure"].get<double>();
     }
     if (el.contains("maxStrategyExposure")) {
-        m_exposureLimitConfig.maxStrategyExposure = el["maxStrategyExposure"].get<double>();
+        exposureLimitConfig_.maxStrategyExposure = el["maxStrategyExposure"].get<double>();
     }
     if (el.contains("maxExchangeExposure")) {
-        m_exposureLimitConfig.maxExchangeExposure = el["maxExchangeExposure"].get<double>();
+        exposureLimitConfig_.maxExchangeExposure = el["maxExchangeExposure"].get<double>();
     }
     if (el.contains("volatilityMultiplier")) {
-        m_exposureLimitConfig.volatilityMultiplier = el["volatilityMultiplier"].get<double>();
+        exposureLimitConfig_.volatilityMultiplier = el["volatilityMultiplier"].get<double>();
     }
     if (el.contains("includeUnrealizedPnl")) {
-        m_exposureLimitConfig.includeUnrealizedPnl = el["includeUnrealizedPnl"].get<bool>();
+        exposureLimitConfig_.includeUnrealizedPnl = el["includeUnrealizedPnl"].get<bool>();
     }
 }
 
 void RiskConfig::loadStopLossConfig(const json& sl) {
     if (sl.contains("maxLossPercentage")) {
-        m_stopLossConfig.maxLossPercentage = sl["maxLossPercentage"].get<double>();
+        stopLossConfig_.maxLossPercentage = sl["maxLossPercentage"].get<double>();
     }
     if (sl.contains("trailingStopDistance")) {
-        m_stopLossConfig.trailingStopDistance = sl["trailingStopDistance"].get<double>();
+        stopLossConfig_.trailingStopDistance = sl["trailingStopDistance"].get<double>();
     }
     if (sl.contains("enableTrailingStop")) {
-        m_stopLossConfig.enableTrailingStop = sl["enableTrailingStop"].get<bool>();
+        stopLossConfig_.enableTrailingStop = sl["enableTrailingStop"].get<bool>();
     }
     if (sl.contains("forceLiquidation")) {
-        m_stopLossConfig.forceLiquidation = sl["forceLiquidation"].get<bool>();
+        stopLossConfig_.forceLiquidation = sl["forceLiquidation"].get<bool>();
     }
     if (sl.contains("liquidationDelaySeconds")) {
-        m_stopLossConfig.liquidationDelay = std::chrono::seconds(sl["liquidationDelaySeconds"].get<int>());
+        stopLossConfig_.liquidationDelay = std::chrono::seconds(sl["liquidationDelaySeconds"].get<int>());
     }
 }
 
 void RiskConfig::loadDrawdownConfig(const json& dd) {
     if (dd.contains("warningThreshold")) {
-        m_drawdownConfig.warningThreshold = dd["warningThreshold"].get<double>();
+        drawdownConfig_.warningThreshold = dd["warningThreshold"].get<double>();
     }
     if (dd.contains("criticalThreshold")) {
-        m_drawdownConfig.criticalThreshold = dd["criticalThreshold"].get<double>();
+        drawdownConfig_.criticalThreshold = dd["criticalThreshold"].get<double>();
     }
     if (dd.contains("lookbackPeriodHours")) {
-        m_drawdownConfig.lookbackPeriod = std::chrono::hours(dd["lookbackPeriodHours"].get<int>());
+        drawdownConfig_.lookbackPeriod = std::chrono::hours(dd["lookbackPeriodHours"].get<int>());
     }
     if (dd.contains("enableAutoRiskReduction")) {
-        m_drawdownConfig.enableAutoRiskReduction = dd["enableAutoRiskReduction"].get<bool>();
+        drawdownConfig_.enableAutoRiskReduction = dd["enableAutoRiskReduction"].get<bool>();
     }
     if (dd.contains("riskReductionFactor")) {
-        m_drawdownConfig.riskReductionFactor = dd["riskReductionFactor"].get<double>();
+        drawdownConfig_.riskReductionFactor = dd["riskReductionFactor"].get<double>();
     }
 }
 
 void RiskConfig::loadFatFingerConfig(const json& ff) {
     if (ff.contains("maxPriceDeviation")) {
-        m_fatFingerConfig.maxPriceDeviation = ff["maxPriceDeviation"].get<double>();
+        fatFingerConfig_.maxPriceDeviation = ff["maxPriceDeviation"].get<double>();
     }
     if (ff.contains("maxOrderSize")) {
-        m_fatFingerConfig.maxOrderSize = ff["maxOrderSize"].get<double>();
+        fatFingerConfig_.maxOrderSize = ff["maxOrderSize"].get<double>();
     }
     if (ff.contains("typicalOrderSize")) {
-        m_fatFingerConfig.typicalOrderSize = ff["typicalOrderSize"].get<double>();
+        fatFingerConfig_.typicalOrderSize = ff["typicalOrderSize"].get<double>();
     }
     if (ff.contains("notionalValueLimit")) {
-        m_fatFingerConfig.notionalValueLimit = ff["notionalValueLimit"].get<double>();
+        fatFingerConfig_.notionalValueLimit = ff["notionalValueLimit"].get<double>();
     }
     if (ff.contains("enforceAdditionalVerification")) {
-        m_fatFingerConfig.enforceAdditionalVerification = ff["enforceAdditionalVerification"].get<bool>();
+        fatFingerConfig_.enforceAdditionalVerification = ff["enforceAdditionalVerification"].get<bool>();
     }
 }
 
 void RiskConfig::loadOrderValidationConfig(const json& ov) {
     if (ov.contains("validateMinOrderSize")) {
-        m_orderValidationConfig.validateMinOrderSize = ov["validateMinOrderSize"].get<bool>();
+        orderValidationConfig_.validateMinOrderSize = ov["validateMinOrderSize"].get<bool>();
     }
     if (ov.contains("validatePriceRange")) {
-        m_orderValidationConfig.validatePriceRange = ov["validatePriceRange"].get<bool>();
+        orderValidationConfig_.validatePriceRange = ov["validatePriceRange"].get<bool>();
     }
     if (ov.contains("minOrderSizes") && ov["minOrderSizes"].is_object()) {
         for (const auto& [exchangeIdStr, pairs] : ov["minOrderSizes"].items()) {
@@ -382,73 +482,73 @@ void RiskConfig::loadOrderValidationConfig(const json& ov) {
                         pair.base = symbolStr.substr(0, separatorPos);
                         pair.quote = symbolStr.substr(separatorPos + 1);
                     }
-                    m_orderValidationConfig.minOrderSizes[exchangeId][pair] = minSize.get<double>();
+                    orderValidationConfig_.minOrderSizes[exchangeId][pair] = minSize.get<double>();
                 }
             }
         }
     }
     if (ov.contains("maxPriceDeviationPercent")) {
-        m_orderValidationConfig.maxPriceDeviationPercent = ov["maxPriceDeviationPercent"].get<double>();
+        orderValidationConfig_.maxPriceDeviationPercent = ov["maxPriceDeviationPercent"].get<double>();
     }
     if (ov.contains("enforceSymbolWhitelist")) {
-        m_orderValidationConfig.enforceSymbolWhitelist = ov["enforceSymbolWhitelist"].get<bool>();
+        orderValidationConfig_.enforceSymbolWhitelist = ov["enforceSymbolWhitelist"].get<bool>();
     }
     if (ov.contains("symbolWhitelist") && ov["symbolWhitelist"].is_array()) {
-        m_orderValidationConfig.symbolWhitelist.clear();
+        orderValidationConfig_.symbolWhitelist.clear();
         for (const auto& symbol : ov["symbolWhitelist"]) {
-            m_orderValidationConfig.symbolWhitelist.push_back(symbol.get<std::string>());
+            orderValidationConfig_.symbolWhitelist.push_back(symbol.get<std::string>());
         }
     }
 }
 
 void RiskConfig::loadBalanceReconciliationConfig(const json& br) {
     if (br.contains("reconciliationFrequencyMinutes")) {
-        m_balanceReconciliationConfig.reconciliationFrequency = 
+        balanceReconciliationConfig_.reconciliationFrequency = 
             std::chrono::minutes(br["reconciliationFrequencyMinutes"].get<int>());
     }
     if (br.contains("maxDiscrepancyPercent")) {
-        m_balanceReconciliationConfig.maxDiscrepancyPercent = br["maxDiscrepancyPercent"].get<double>();
+        balanceReconciliationConfig_.maxDiscrepancyPercent = br["maxDiscrepancyPercent"].get<double>();
     }
     if (br.contains("autoCorrectDiscrepancies")) {
-        m_balanceReconciliationConfig.autoCorrectDiscrepancies = br["autoCorrectDiscrepancies"].get<bool>();
+        balanceReconciliationConfig_.autoCorrectDiscrepancies = br["autoCorrectDiscrepancies"].get<bool>();
     }
     if (br.contains("alertOnDiscrepancy")) {
-        m_balanceReconciliationConfig.alertOnDiscrepancy = br["alertOnDiscrepancy"].get<bool>();
+        balanceReconciliationConfig_.alertOnDiscrepancy = br["alertOnDiscrepancy"].get<bool>();
     }
     if (br.contains("maxConsecutiveFailures")) {
-        m_balanceReconciliationConfig.maxConsecutiveFailures = br["maxConsecutiveFailures"].get<int>();
+        balanceReconciliationConfig_.maxConsecutiveFailures = br["maxConsecutiveFailures"].get<int>();
     }
     
     // Load extended settings
     if (br.contains("minimumPositionSize")) {
-        m_balanceReconciliationConfig.minimumPositionSize = br["minimumPositionSize"].get<double>();
+        balanceReconciliationConfig_.minimumPositionSize = br["minimumPositionSize"].get<double>();
     }
     if (br.contains("exchangeTimeoutSeconds")) {
-        m_balanceReconciliationConfig.exchangeTimeoutSeconds = 
+        balanceReconciliationConfig_.exchangeTimeoutSeconds = 
             std::chrono::seconds(br["exchangeTimeoutSeconds"].get<int>());
     }
     if (br.contains("enableDetailedLogging")) {
-        m_balanceReconciliationConfig.enableDetailedLogging = br["enableDetailedLogging"].get<bool>();
+        balanceReconciliationConfig_.enableDetailedLogging = br["enableDetailedLogging"].get<bool>();
     }
     // Add other extended settings as needed...
 }
 
 void RiskConfig::loadRebalancingConfig(const json& rb) {
     if (rb.contains("autoRebalancingEnabled")) {
-        m_rebalancingConfig.autoRebalancingEnabled = rb["autoRebalancingEnabled"].get<bool>();
+        rebalancingConfig_.autoRebalancingEnabled = rb["autoRebalancingEnabled"].get<bool>();
     }
     if (rb.contains("autoExecuteRebalancing")) {
-        m_rebalancingConfig.autoExecuteRebalancing = rb["autoExecuteRebalancing"].get<bool>();
+        rebalancingConfig_.autoExecuteRebalancing = rb["autoExecuteRebalancing"].get<bool>();
     }
     if (rb.contains("allocationDeviationThreshold")) {
-        m_rebalancingConfig.allocationDeviationThreshold = rb["allocationDeviationThreshold"].get<double>();
+        rebalancingConfig_.allocationDeviationThreshold = rb["allocationDeviationThreshold"].get<double>();
     }
     if (rb.contains("minimumOrderSize")) {
-        m_rebalancingConfig.minimumOrderSize = rb["minimumOrderSize"].get<double>();
+        rebalancingConfig_.minimumOrderSize = rb["minimumOrderSize"].get<double>();
     }
     if (rb.contains("targetAllocations") && rb["targetAllocations"].is_object()) {
         for (const auto& [asset, allocation] : rb["targetAllocations"].items()) {
-            m_rebalancingConfig.targetAllocations[asset] = allocation.get<double>();
+            rebalancingConfig_.targetAllocations[asset] = allocation.get<double>();
         }
     }
     // Add other rebalancing settings...
@@ -456,54 +556,54 @@ void RiskConfig::loadRebalancingConfig(const json& rb) {
 
 void RiskConfig::loadCollateralConfig(const json& co) {
     if (co.contains("targetFreeCollateralRatio")) {
-        m_collateralConfig.targetFreeCollateralRatio = co["targetFreeCollateralRatio"].get<double>();
+        collateralConfig_.targetFreeCollateralRatio = co["targetFreeCollateralRatio"].get<double>();
     }
     if (co.contains("enableEmergencyFunding")) {
-        m_collateralConfig.enableEmergencyFunding = co["enableEmergencyFunding"].get<bool>();
+        collateralConfig_.enableEmergencyFunding = co["enableEmergencyFunding"].get<bool>();
     }
     if (co.contains("fundingSources") && co["fundingSources"].is_array()) {
-        m_collateralConfig.fundingSources.clear();
+        collateralConfig_.fundingSources.clear();
         for (const auto& source : co["fundingSources"]) {
-            m_collateralConfig.fundingSources.push_back(source.get<std::string>());
+            collateralConfig_.fundingSources.push_back(source.get<std::string>());
         }
     }
     if (co.contains("maxFundingAmount")) {
-        m_collateralConfig.maxFundingAmount = co["maxFundingAmount"].get<double>();
+        collateralConfig_.maxFundingAmount = co["maxFundingAmount"].get<double>();
     }
     // Add other collateral settings...
 }
 
 void RiskConfig::loadPortfolioConfig(const json& po) {
     if (po.contains("enableRealTimeMetrics")) {
-        m_portfolioConfig.enableRealTimeMetrics = po["enableRealTimeMetrics"].get<bool>();
+        portfolioConfig_.enableRealTimeMetrics = po["enableRealTimeMetrics"].get<bool>();
     }
     if (po.contains("minimumPortfolioValue")) {
-        m_portfolioConfig.minimumPortfolioValue = po["minimumPortfolioValue"].get<double>();
+        portfolioConfig_.minimumPortfolioValue = po["minimumPortfolioValue"].get<double>();
     }
     if (po.contains("baseCurrency")) {
-        m_portfolioConfig.baseCurrency = po["baseCurrency"].get<std::string>();
+        portfolioConfig_.baseCurrency = po["baseCurrency"].get<std::string>();
     }
     // Add other portfolio settings...
 }
 
 void RiskConfig::loadLoggingConfig(const json& lg) {
     if (lg.contains("logLevel")) {
-        m_loggingConfig.logLevel = lg["logLevel"].get<std::string>();
+        loggingConfig_.logLevel = lg["logLevel"].get<std::string>();
     }
     if (lg.contains("logDirectory")) {
-        m_loggingConfig.logDirectory = lg["logDirectory"].get<std::string>();
+        loggingConfig_.logDirectory = lg["logDirectory"].get<std::string>();
     }
     if (lg.contains("enableDetailedLogs")) {
-        m_loggingConfig.enableDetailedLogs = lg["enableDetailedLogs"].get<bool>();
+        loggingConfig_.enableDetailedLogs = lg["enableDetailedLogs"].get<bool>();
     }
     if (lg.contains("logToConsole")) {
-        m_loggingConfig.logToConsole = lg["logToConsole"].get<bool>();
+        loggingConfig_.logToConsole = lg["logToConsole"].get<bool>();
     }
     if (lg.contains("logToFile")) {
-        m_loggingConfig.logToFile = lg["logToFile"].get<bool>();
+        loggingConfig_.logToFile = lg["logToFile"].get<bool>();
     }
     if (lg.contains("logRetentionDays")) {
-        m_loggingConfig.logRetentionPeriod = std::chrono::days(lg["logRetentionDays"].get<int>());
+        loggingConfig_.logRetentionPeriod = std::chrono::hours(lg["logRetentionDays"].get<int>() * 24);
     }
 }
 
@@ -514,26 +614,26 @@ bool RiskConfig::saveToFile(const std::string& configFilePath) const {
         
         // Position limit config
         j["positionLimit"] = {
-            {"assetLimits", m_positionLimitConfig.assetLimits},
-            {"strategyLimits", m_positionLimitConfig.strategyLimits},
-            {"exchangeLimits", m_positionLimitConfig.exchangeLimits},
-            {"defaultLimit", m_positionLimitConfig.defaultLimit},
-            {"enforceStrictly", m_positionLimitConfig.enforceStrictly}
+            {"assetLimits", positionLimitConfig_.assetLimits},
+            {"strategyLimits", positionLimitConfig_.strategyLimits},
+            {"exchangeLimits", positionLimitConfig_.exchangeLimits},
+            {"defaultLimit", positionLimitConfig_.defaultLimit},
+            {"enforceStrictly", positionLimitConfig_.enforceStrictly}
         };
         
         // Exposure limit config
         j["exposureLimit"] = {
-            {"maxTotalExposure", m_exposureLimitConfig.maxTotalExposure},
-            {"maxAssetExposure", m_exposureLimitConfig.maxAssetExposure},
-            {"maxStrategyExposure", m_exposureLimitConfig.maxStrategyExposure},
-            {"maxExchangeExposure", m_exposureLimitConfig.maxExchangeExposure},
-            {"volatilityMultiplier", m_exposureLimitConfig.volatilityMultiplier},
-            {"includeUnrealizedPnl", m_exposureLimitConfig.includeUnrealizedPnl}
+            {"maxTotalExposure", exposureLimitConfig_.maxTotalExposure},
+            {"maxAssetExposure", exposureLimitConfig_.maxAssetExposure},
+            {"maxStrategyExposure", exposureLimitConfig_.maxStrategyExposure},
+            {"maxExchangeExposure", exposureLimitConfig_.maxExchangeExposure},
+            {"volatilityMultiplier", exposureLimitConfig_.volatilityMultiplier},
+            {"includeUnrealizedPnl", exposureLimitConfig_.includeUnrealizedPnl}
         };
         
         // Enhanced circuit breaker config
         json metricThresholds;
-        for (const auto& [metricName, threshold] : m_circuitBreakerConfig.metricThresholds) {
+        for (const auto& [metricName, threshold] : circuitBreakerConfig_.metricThresholds) {
             metricThresholds[metricName] = {
                 {"warning", threshold.warningThreshold},
                 {"critical", threshold.criticalThreshold},
@@ -543,25 +643,25 @@ bool RiskConfig::saveToFile(const std::string& configFilePath) const {
         
         j["circuitBreaker"] = {
             {"metricThresholds", metricThresholds},
-            {"coolingPeriodSeconds", m_circuitBreakerConfig.coolingPeriod.count()},
-            {"warmupPeriodSeconds", m_circuitBreakerConfig.warmupPeriod.count()},
-            {"mandatoryHaltPeriodSeconds", m_circuitBreakerConfig.mandatoryHaltPeriodSeconds},
-            {"autoResume", m_circuitBreakerConfig.autoResume},
-            {"maxTriggersPerDay", m_circuitBreakerConfig.maxTriggersPerDay},
-            {"maxTriggersBeforeExtendedHalt", m_circuitBreakerConfig.maxTriggersBeforeExtendedHalt},
-            {"extendedHaltMultiplier", m_circuitBreakerConfig.extendedHaltMultiplier},
-            {"triggerCountResetMinutes", m_circuitBreakerConfig.triggerCountResetMinutes},
-            {"maxHistorySize", m_circuitBreakerConfig.maxHistorySize},
-            {"gradualTradingResumption", m_circuitBreakerConfig.gradualTradingResumption}
+            {"coolingPeriodSeconds", circuitBreakerConfig_.coolingPeriod.count()},
+            {"warmupPeriodSeconds", circuitBreakerConfig_.warmupPeriod.count()},
+            {"mandatoryHaltPeriodSeconds", circuitBreakerConfig_.mandatoryHaltPeriodSeconds},
+            {"autoResume", circuitBreakerConfig_.autoResume},
+            {"maxTriggersPerDay", circuitBreakerConfig_.maxTriggersPerDay},
+            {"maxTriggersBeforeExtendedHalt", circuitBreakerConfig_.maxTriggersBeforeExtendedHalt},
+            {"extendedHaltMultiplier", circuitBreakerConfig_.extendedHaltMultiplier},
+            {"triggerCountResetMinutes", circuitBreakerConfig_.triggerCountResetMinutes},
+            {"maxHistorySize", circuitBreakerConfig_.maxHistorySize},
+            {"gradualTradingResumption", circuitBreakerConfig_.gradualTradingResumption}
         };
         
         // Stop loss config
         j["stopLoss"] = {
-            {"maxLossPercentage", m_stopLossConfig.maxLossPercentage},
-            {"trailingStopDistance", m_stopLossConfig.trailingStopDistance},
-            {"enableTrailingStop", m_stopLossConfig.enableTrailingStop},
-            {"forceLiquidation", m_stopLossConfig.forceLiquidation},
-            {"liquidationDelaySeconds", m_stopLossConfig.liquidationDelay.count()}
+            {"maxLossPercentage", stopLossConfig_.maxLossPercentage},
+            {"trailingStopDistance", stopLossConfig_.trailingStopDistance},
+            {"enableTrailingStop", stopLossConfig_.enableTrailingStop},
+            {"forceLiquidation", stopLossConfig_.forceLiquidation},
+            {"liquidationDelaySeconds", stopLossConfig_.liquidationDelay.count()}
         };
         
         // Add other configuration sections...
@@ -570,7 +670,7 @@ bool RiskConfig::saveToFile(const std::string& configFilePath) const {
         // Write to file with pretty formatting
         std::ofstream file(configFilePath);
         if (!file.is_open()) {
-            std::cerr << std::format("Failed to open file for writing: {}\n", configFilePath);
+            std::cerr << "Failed to open file for writing: " << configFilePath << "\n";
             return false;
         }
         
@@ -579,7 +679,7 @@ bool RiskConfig::saveToFile(const std::string& configFilePath) const {
         
         return true;
     } catch (const std::exception& e) {
-        std::cerr << std::format("Exception while saving configuration: {}\n", e.what());
+        std::cerr << "Exception while saving configuration: " << e.what() << "\n";
         return false;
     }
 }
@@ -587,11 +687,11 @@ bool RiskConfig::saveToFile(const std::string& configFilePath) const {
 void RiskConfig::saveOtherConfigs(json& j) const {
     // Drawdown config
     j["drawdown"] = {
-        {"warningThreshold", m_drawdownConfig.warningThreshold},
-        {"criticalThreshold", m_drawdownConfig.criticalThreshold},
-        {"lookbackPeriodHours", m_drawdownConfig.lookbackPeriod.count()},
-        {"enableAutoRiskReduction", m_drawdownConfig.enableAutoRiskReduction},
-        {"riskReductionFactor", m_drawdownConfig.riskReductionFactor}
+        {"warningThreshold", drawdownConfig_.warningThreshold},
+        {"criticalThreshold", drawdownConfig_.criticalThreshold},
+        {"lookbackPeriodHours", drawdownConfig_.lookbackPeriod.count()},
+        {"enableAutoRiskReduction", drawdownConfig_.enableAutoRiskReduction},
+        {"riskReductionFactor", drawdownConfig_.riskReductionFactor}
     };
     
     // Add other configs as needed...
@@ -601,156 +701,156 @@ void RiskConfig::saveOtherConfigs(json& j) const {
 bool RiskConfig::validate() const {
     try {
         // Validate circuit breaker config using its own validation
-        if (!m_circuitBreakerConfig.isValid()) {
+        if (!circuitBreakerConfig_.isValid()) {
             std::cerr << "Circuit breaker configuration is invalid\n";
             return false;
         }
         
         // Validate balance reconciliation config
-        if (!m_balanceReconciliationConfig.isValid()) {
+        if (!balanceReconciliationConfig_.isValid()) {
             std::cerr << "Balance reconciliation configuration is invalid\n";
             return false;
         }
         
         // Validate position limits
-        if (m_positionLimitConfig.defaultLimit <= 0) {
+        if (positionLimitConfig_.defaultLimit <= 0) {
             std::cerr << "Invalid default position limit: must be positive\n";
             return false;
         }
         
         // Validate exposure limits
-        if (m_exposureLimitConfig.maxTotalExposure <= 0 ||
-            m_exposureLimitConfig.maxAssetExposure <= 0 ||
-            m_exposureLimitConfig.maxStrategyExposure <= 0 ||
-            m_exposureLimitConfig.maxExchangeExposure <= 0) {
+        if (exposureLimitConfig_.maxTotalExposure <= 0 ||
+            exposureLimitConfig_.maxAssetExposure <= 0 ||
+            exposureLimitConfig_.maxStrategyExposure <= 0 ||
+            exposureLimitConfig_.maxExchangeExposure <= 0) {
             std::cerr << "Invalid exposure limits: all limits must be positive\n";
             return false;
         }
         
         // Validate metric thresholds consistency
-        for (const auto& [metricName, threshold] : m_circuitBreakerConfig.metricThresholds) {
+        for (const auto& [metricName, threshold] : circuitBreakerConfig_.metricThresholds) {
             if (threshold.isHigherBetter) {
                 // For "higher is better" metrics, warning should be higher than critical
                 if (threshold.warningThreshold <= threshold.criticalThreshold) {
-                    std::cerr << std::format("Invalid thresholds for {}: warning ({}) should be higher than critical ({})\n",
-                        metricName, threshold.warningThreshold, threshold.criticalThreshold);
+                    std::cerr << "Invalid thresholds for " << metricName << ": warning (" 
+                              << threshold.warningThreshold << ") should be higher than critical (" 
+                              << threshold.criticalThreshold << ")\n";
                     return false;
                 }
             } else {
-                // For "lower is better" metrics, critical should be higher than warning
                 if (threshold.criticalThreshold <= threshold.warningThreshold) {
-                    std::cerr << std::format("Invalid thresholds for {}: critical ({}) should be higher than warning ({})\n",
-                        metricName, threshold.criticalThreshold, threshold.warningThreshold);
+                    std::cerr << "Invalid thresholds for " << metricName << ": critical (" 
+                              << threshold.criticalThreshold << ") should be higher than warning (" 
+                              << threshold.warningThreshold << ")\n";
                     return false;
                 }
+                }
             }
-        }
-        
+                
         // Add other validation logic as needed...
-        
-        return true;
     } catch (const std::exception& e) {
-        std::cerr << std::format("Exception during configuration validation: {}\n", e.what());
+        std::cerr << "Exception during configuration validation: " << e.what() << "\n";
         return false;
     }
+       
 }
 
 // Getter implementations (unchanged from original)
 const PositionLimitConfig& RiskConfig::getPositionLimitConfig() const {
-    return m_positionLimitConfig;
+    return positionLimitConfig_;
 }
 
 const ExposureLimitConfig& RiskConfig::getExposureLimitConfig() const {
-    return m_exposureLimitConfig;
+    return exposureLimitConfig_;
 }
 
 const CircuitBreakerConfig& RiskConfig::getCircuitBreakerConfig() const {
-    return m_circuitBreakerConfig;
+    return circuitBreakerConfig_;
 }
 
 const StopLossConfig& RiskConfig::getStopLossConfig() const {
-    return m_stopLossConfig;
+    return stopLossConfig_;
 }
 
 const DrawdownConfig& RiskConfig::getDrawdownConfig() const {
-    return m_drawdownConfig;
+    return drawdownConfig_;
 }
 
 const FatFingerConfig& RiskConfig::getFatFingerConfig() const {
-    return m_fatFingerConfig;
+    return fatFingerConfig_;
 }
 
 const OrderValidationConfig& RiskConfig::getOrderValidationConfig() const {
-    return m_orderValidationConfig;
+    return orderValidationConfig_; 
 }
 
 const BalanceReconciliationConfig& RiskConfig::getBalanceReconciliationConfig() const {
-    return m_balanceReconciliationConfig;
+    return balanceReconciliationConfig_;
 }
 
 const RebalancingConfig& RiskConfig::getRebalancingConfig() const {
-    return m_rebalancingConfig;
+    return rebalancingConfig_;
 }
 
 const CollateralConfig& RiskConfig::getCollateralConfig() const {
-    return m_collateralConfig;
+    return collateralConfig_;
 }
 
 const PortfolioConfig& RiskConfig::getPortfolioConfig() const {
-    return m_portfolioConfig;
+    return portfolioConfig_;
 }
 
 const RiskLoggingConfig& RiskConfig::getLoggingConfig() const {
-    return m_loggingConfig;
+    return loggingConfig_;
 }
 
 // Setter implementations (unchanged from original)
 void RiskConfig::setPositionLimitConfig(const PositionLimitConfig& config) {
-    m_positionLimitConfig = config;
+    positionLimitConfig_ = config;
 }
 
 void RiskConfig::setExposureLimitConfig(const ExposureLimitConfig& config) {
-    m_exposureLimitConfig = config;
+    exposureLimitConfig_ = config;
 }
 
 void RiskConfig::setCircuitBreakerConfig(const CircuitBreakerConfig& config) {
-    m_circuitBreakerConfig = config;
+    circuitBreakerConfig_ = config;
 }
 
 void RiskConfig::setStopLossConfig(const StopLossConfig& config) {
-    m_stopLossConfig = config;
+    stopLossConfig_ = config;
 }
 
 void RiskConfig::setDrawdownConfig(const DrawdownConfig& config) {
-    m_drawdownConfig = config;
+    drawdownConfig_ = config;
 }
 
 void RiskConfig::setFatFingerConfig(const FatFingerConfig& config) {
-    m_fatFingerConfig = config;
+    fatFingerConfig_ = config;
 }
 
 void RiskConfig::setOrderValidationConfig(const OrderValidationConfig& config) {
-    m_orderValidationConfig = config;
+    orderValidationConfig_ = config;
 }
 
 void RiskConfig::setBalanceReconciliationConfig(const BalanceReconciliationConfig& config) {
-    m_balanceReconciliationConfig = config;
+    balanceReconciliationConfig_ = config;
 }
 
 void RiskConfig::setRebalancingConfig(const RebalancingConfig& config) {
-    m_rebalancingConfig = config;
+    rebalancingConfig_ = config;
 }
 
 void RiskConfig::setCollateralConfig(const CollateralConfig& config) {
-    m_collateralConfig = config;
+    collateralConfig_ = config;
 }
 
 void RiskConfig::setPortfolioConfig(const PortfolioConfig& config) {
-    m_portfolioConfig = config;
+    portfolioConfig_ = config;
 }
 
 void RiskConfig::setLoggingConfig(const RiskLoggingConfig& config) {
-    m_loggingConfig = config;
+    loggingConfig_ = config;
 }
 
 } // namespace trading::risk

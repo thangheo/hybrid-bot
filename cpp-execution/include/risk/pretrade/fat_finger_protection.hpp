@@ -108,7 +108,10 @@ public:
     );
     
     bool initialize();
-    
+    // isHealthy
+    bool isHealthy() const {
+        return dataInterface_ != nullptr && config_.isValid();
+    }
     // Main validation methods
     bool checkFatFinger(const execution::TradingSignal& signal, 
                        std::vector<RiskViolation>& violations);

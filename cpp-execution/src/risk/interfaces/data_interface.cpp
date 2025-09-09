@@ -23,7 +23,8 @@ private:
     
     // Track initialization state
     bool initialized_ = false;
-    
+    // mutex_ for thread safety
+    mutable std::mutex mutex_;
     // For compatibility - track callbacks
     std::function<void(const MarketData&)> marketDataCallback_;
     
@@ -92,7 +93,12 @@ public:
             return std::nullopt;
         }
     }
-    
+    // isConnected
+    bool isConnected() const override {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return initialized_ && marketDataInterface_ && marketDataInterface_->isConnected();
+    }
+
     double getCurrentPrice(const std::string& tradingPair, 
                           const std::optional<std::string>& exchangeId) override {
         if (!initialized_) {

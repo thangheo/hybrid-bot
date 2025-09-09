@@ -89,6 +89,8 @@ enum class ViolationType {
     RATE_LIMIT,
     COLLATERAL_REQUIREMENT,
     EXCHANGE_CONSTRAINT,
+    SYSTEM_ERROR,
+    TIMEOUT,
     OTHER
 };
 

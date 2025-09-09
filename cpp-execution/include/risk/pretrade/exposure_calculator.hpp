@@ -58,7 +58,7 @@ public:
 
     // Initialize the calculator
     bool initialize(const RiskConfig& config);
-
+    bool isHealthy() const;
     // Validate exposure for trading signals
     ExposureValidationResult validateExposure(const TradingSignal& signal) const;
 

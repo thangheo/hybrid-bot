@@ -22,7 +22,10 @@ OrderValidator::OrderValidator(const RiskConfig& config,
 {
     // Initialize with empty whitelist and validation rules
 }
-
+// isHealthy
+bool OrderValidator::isHealthy() const {
+    return m_dataInterface && m_dataInterface->isConnected();
+}
 bool OrderValidator::initialize() {
     try {
         // Load validation configuration from config

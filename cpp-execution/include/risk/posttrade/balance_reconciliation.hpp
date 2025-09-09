@@ -101,6 +101,8 @@ public:
     BalanceReconciliation(const BalanceReconciliation&) = delete;
     BalanceReconciliation& operator=(const BalanceReconciliation&) = delete;
     
+    // isHealthy
+    bool isHealthy() const;
     /**
      * @brief Initialize the reconciliation system
      * @return true if initialization successful, false otherwise

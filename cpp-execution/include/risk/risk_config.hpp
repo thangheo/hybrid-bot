@@ -26,6 +26,7 @@
 using namespace trading;
 using namespace trading::common;
 using namespace trading::risk;
+using namespace nlohmann;
 namespace nlohmann {
     // class basic_json;
     using json = basic_json<>;
@@ -428,10 +429,6 @@ struct OrderValidationConfig {
 
 namespace trading::risk {
 
-// Forward declaration for the implementation file
-namespace nlohmann {
-    class json;
-}
 
 /**
  * Main risk configuration container
@@ -482,7 +479,13 @@ public:
     const CollateralConfig& getCollateralConfig() const;
     const PortfolioConfig& getPortfolioConfig() const;
     const RiskLoggingConfig& getLoggingConfig() const;
-    
+    const bool getBoolValue(std::string key) ;
+    // const double getDoubleValue(std::string key) ;
+    const bool hasKey(std::string key) ;
+    // const std::string getStringValue(std::string key) ;
+    // getIntValue
+    const int getIntValue(std::string key) ;
+
     // Setters
     void setPositionLimitConfig(const PositionLimitConfig& config);
     void setExposureLimitConfig(const ExposureLimitConfig& config);
@@ -496,12 +499,13 @@ public:
     void setCollateralConfig(const CollateralConfig& config);
     void setPortfolioConfig(const PortfolioConfig& config);
     void setLoggingConfig(const RiskLoggingConfig& config);
-
     // Public member for direct access (as shown in original code)
     CollateralConfig collateralConfig;
     PortfolioConfig portfolioConfig;
 
 private:
+    // m_positionLimitConfig
+
     PositionLimitConfig positionLimitConfig_;
     ExposureLimitConfig exposureLimitConfig_;
     CircuitBreakerConfig circuitBreakerConfig_;
@@ -532,6 +536,7 @@ private:
     
     // Helper method for saving other configs
     void saveOtherConfigs(nlohmann::json& j) const;
+    
 };
 
 } // namespace trading::risk
