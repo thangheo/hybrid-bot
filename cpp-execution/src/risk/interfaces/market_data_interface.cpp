@@ -351,7 +351,10 @@ bool MarketDataInterface::subscribeMarketData(
     
     return success;
 }
-
+bool MarketDataInterface::isConnected() const {
+    return initialized_.load() && running_.load() && 
+           zmqClient_ && zmqClient_->isConnected();
+}
 bool MarketDataInterface::unsubscribeMarketData(
     const std::string& tradingPair, 
     const std::optional<std::string>& exchangeId) {

@@ -38,7 +38,7 @@
          m_loggingConfig = config.getLoggingConfig();
          
          // Set log level from config
-         m_logLevel = stringToLevel(m_loggingConfig.level);
+         m_logLevel = stringToLevel(m_loggingConfig.logLevel);
          
          // Initialize file logging if enabled
          if (m_loggingConfig.logToFile) {
@@ -50,7 +50,7 @@
              }
              
              // Create log file path
-             std::string filename = m_loggingConfig.logFilename;
+             std::string filename = m_loggingConfig.logFileName;
              if (filename.empty()) {
                  auto now = std::chrono::system_clock::now();
                  auto time = std::chrono::system_clock::to_time_t(now);

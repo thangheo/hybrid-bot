@@ -16,7 +16,7 @@
  #include "core/market_types.hpp"
  #include <string>
  #include <map>
- 
+ using namespace trading::common;
  namespace trading {
  namespace core {
  

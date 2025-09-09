@@ -8,6 +8,7 @@
 #pragma once
 
 #include "core/market_types.hpp"
+#include "core/types.hpp"
 #include "core/direction.hpp"
 
 #include <string>
@@ -20,19 +21,22 @@
 #include <cstdint>
 #include <execution/models/order.hpp>
 
-using OrderType = trading::execution::models::OrderType;
-using OrderSide = trading::execution::models::OrderSide;
+using namespace trading::core;
+using namespace trading;
+using namespace trading::execution::models;
 
 namespace trading {
 namespace risk {
-using namespace trading::execution::models;
+
+using OrderType = trading::execution::models::OrderType;
+using ExchangeId = trading::core::ExchangeId;
 // Forward declarations
-class Position;
-class OrderRequest;
-class ValidationResult;
+// class ValidationResult;
 class ThresholdSet;
-class RiskParameters;
+// class RiskParameters;
 class PerformanceMetrics;
+
+using StrategyId = trading::core::StrategyId;
 
 /**
  * Type for timestamp representation
@@ -41,6 +45,32 @@ using Timestamp = core::Timestamp;
 using MarketDataUpdate = core::MarketDataUpdate;    
 using MarketData = core::MarketData;
 using OrderSide = core::Direction;
+
+
+// Forward declarations for missing types
+struct ValidationResult {
+    std::string signalId;
+    bool approved = false;
+    double adjustedSize = 0.0;
+    uint64_t timestamp = 0;
+    std::vector<RiskViolation> violations;
+    
+    ValidationResult() = default;
+};
+
+struct RiskParameters {
+    core::ExchangeId exchangeId;
+    TradingPair tradingPair;
+    core::StrategyId strategyId;
+    double maxPositionSize = 0.0;
+    double maxExposure = 0.0;
+    double maxOrderSize = 0.0;
+    double minOrderSize = 0.0;
+    double maxDrawdown = 0.0; // as a fraction, e.g. 0.2 for 20%
+    uint64_t lastUpdated = 0; // epoch time in milliseconds
+    
+    RiskParameters() = default;
+};
 
 /**
  * Struct for trading pair (symbol)
@@ -75,6 +105,58 @@ struct TradingPair {
     bool operator<(const TradingPair& other) const {
         return getSymbol() < other.getSymbol();
     }
+    // from string
+    static TradingPair fromString(const std::string& str) {
+        return TradingPair(str);
+    }
+    // to string
+    std::string toString() const {
+        return getSymbol();
+    }
+};
+
+/**
+ * Position class representing a trading position
+ */
+class Position {
+public:
+    Position(const ExchangeId& exchangeId, const TradingPair& tradingPair, 
+            const StrategyId& strategyId, double quantity, double averageEntryPrice);
+    
+    // Getters
+    const ExchangeId& getExchangeId() const;
+    const TradingPair& getTradingPair() const;
+    const StrategyId& getStrategyId() const;
+    double getQuantity() const;
+    double getAverageEntryPrice() const;
+    double getCurrentPrice() const;
+    double getUnrealizedPnl() const;
+    double getRealizedPnl() const;
+    Timestamp getLastUpdated() const;
+    
+    // Setters
+    void setCurrentPrice(double price);
+    void setUnrealizedPnl(double pnl);
+    void setRealizedPnl(double pnl);
+    void setLastUpdated(Timestamp timestamp);
+    
+    // Operations
+    void updatePosition(double quantity, double price);
+    double getNotionalValue() const;
+    
+private:
+    ExchangeId m_exchangeId;
+    TradingPair m_tradingPair;
+    StrategyId m_strategyId;
+    double m_quantity;
+    double m_averageEntryPrice;
+    double m_currentPrice;
+    double m_unrealizedPnl;
+    double m_realizedPnl;
+    Timestamp m_lastUpdated;
+    
+    // Helper method
+    void updateUnrealizedPnl();
 };
 
 /**
@@ -196,21 +278,6 @@ struct OrderRequest {
           timestamp(std::chrono::system_clock::now()) {}
 };
 
-/**
- * Struct for strategy identification
- */
-struct StrategyId {
-    std::string id;
-    std::string version;
-    
-    bool operator==(const StrategyId& other) const {
-        return id == other.id && version == other.version;
-    }
-    
-    bool operator<(const StrategyId& other) const {
-        return (id == other.id) ? (version < other.version) : (id < other.id);
-    }
-};
 
 /**
  * Custom exceptions for Risk Management System

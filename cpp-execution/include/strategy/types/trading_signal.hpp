@@ -60,11 +60,9 @@
      core::ExchangeId exchangeId;                        // Exchange identifier (if needed)
     double decayRate;                            // Decay rate for the signal (if applicable)
     double expectedPriceImpact;                     // Expected price impact of the signal (if applicable)     
-    // expirationTime
      core::Timestamp expirationTime;                // Expiration time for the signal in milliseconds
-     /**
-      * Default constructor
-      */
+    StrategyId strategy_id;                          // Strategy identifier
+     
      TradingSignal()
          : id(""), 
            direction(core::Direction::NEUTRAL), 
@@ -98,46 +96,28 @@
      /**
       * Copy constructor - explicitly copy all fields including expirationTime
       */
-    //  TradingSignal(const TradingSignal& other)
-    //      : id(other.id),
-    //        sourceEventId(other.sourceEventId),
-    //        correlationId(other.correlationId),
-    //        direction(other.direction),
-    //        quality(other.quality),
-    //        strength(other.strength),
-    //        confidence(other.confidence),
-    //        generation_time(other.generation_time),
-    //        ttl(other.ttl),
-    //        targets(other.targets),
-    //        source_type(other.source_type),
-    //        signal_metrics(other.signal_metrics),
-    //        symbol(other.symbol),
-    //        exchangeId(other.exchangeId),
-    //        decayRate(other.decayRate),
-    //        expectedPriceImpact(other.expectedPriceImpact),
-    //        expirationTime(other.expirationTime) {}
+     TradingSignal(const TradingSignal& other)
+         : id(other.id),
+           sourceEventId(other.sourceEventId),
+           correlationId(other.correlationId),
+           direction(other.direction),
+           quality(other.quality),
+           strength(other.strength),
+           confidence(other.confidence),
+           generation_time(other.generation_time),
+           ttl(other.ttl),
+           targets(other.targets),
+           source_type(other.source_type),
+           signal_metrics(other.signal_metrics),
+           symbol(other.symbol),
+           exchangeId(other.exchangeId),
+           decayRate(other.decayRate),
+           expectedPriceImpact(other.expectedPriceImpact),
+           expirationTime(other.expirationTime) {}
      
      /**
       * Copy constructor - explicitly copy all fields including expirationTime
       */
-    //  TradingSignal(const TradingSignal& other)
-    //      : id(other.id),
-    //        sourceEventId(other.sourceEventId),
-    //        correlationId(other.correlationId),
-    //        direction(other.direction),
-    //        quality(other.quality),
-    //        strength(other.strength),
-    //        confidence(other.confidence),
-    //        generation_time(other.generation_time),
-    //        ttl(other.ttl),
-    //        targets(other.targets),
-    //        source_type(other.source_type),
-    //        signal_metrics(other.signal_metrics),
-    //        symbol(other.symbol),
-    //        exchangeId(other.exchangeId),
-    //        decayRate(other.decayRate),
-    //        expectedPriceImpact(other.expectedPriceImpact),
-    //        expirationTime(other.expirationTime) {}
      
      /**
       * Check if signal is still valid based on TTL
@@ -192,6 +172,33 @@
      void setMetric(const std::string& name, double value) {
          signal_metrics[name] = value;
      }
+     //setId
+     void setId(const std::string& id) {
+         this->id = id;
+     }
+     void setExchangeId(const ExchangeId& exchangeId) {
+         this->exchangeId = exchangeId;
+     }
+     void setDirection(Direction d) {
+         this->direction = d;
+     }
+     void setStrength(double s) {
+         this->strength = s;
+     }
+   
+     void setStrategyId(const StrategyId& st_id) {
+         this->strategy_id = st_id;
+     }
+    
+     /**
+      * Check if this is a buy signal
+      */
+     bool isBuySignal() const { return direction == core::Direction::BUY; }
+     
+     /**
+      * Check if this is a sell signal
+      */
+     bool isSellSignal() const { return direction == core::Direction::SELL; }
  };
  
  } // namespace strategy
@@ -209,3 +216,130 @@
  }
  
  } // namespace trading
+
+
+
+//  /**
+//   * Represents a trading signal for the execution engine
+//   */
+//  struct TradingSignal {
+//      std::string signal_id;                        // Unique signal identifier
+//      std::string tradingPair;                     // Trading pair (e.g., "BTC/USDT")
+//      core::Direction direction;                    // Buy or sell direction
+//      double strength;                              // Signal strength (0.0-1.0)
+//      double target_size;                           // Suggested position size
+//      std::chrono::milliseconds signal_ttl;         // Time-to-live for the signal
+//      std::string strategy_id;                      // ID of the strategy that generated the signal
+//      std::string strategy_version;                 // Version of the strategy
+//      core::ExchangeId exchange;                      // Exchange to execute on
+//      std::map<std::string, double> signal_metrics; // Additional metrics for this signal
+     
+//      /**
+//       * Default constructor
+//       */
+//      TradingSignal()
+//          : signal_id(""),
+//            tradingPair(""),
+//            direction(core::Direction::NEUTRAL),
+//            strength(0.0),
+//            target_size(0.0),
+//            signal_ttl(std::chrono::milliseconds(0)),
+//            strategy_id(""),
+//            strategy_version(""),
+//            exchange(core::ExchangeId()) {}
+     
+//      /**
+//       * Constructor with required fields
+//       */
+//      TradingSignal(
+//          const std::string& id,
+//          const std::string& pair,
+//          core::Direction dir,
+//          double str
+//      )
+//          : signal_id(id),
+//            tradingPair(pair),
+//            direction(dir),
+//            strength(str),
+//            target_size(0.0),
+//            signal_ttl(std::chrono::milliseconds(5000)), // Default 5 seconds
+//            strategy_id(""),
+//            strategy_version(""),
+//            exchange(core::ExchangeId()) {}
+     
+//      /**
+//       * Get the signal ID
+//       */
+//      const std::string& getSignalId() const { return signal_id; }
+     
+//      /**
+//       * Get the trading pair
+//       */
+//      const std::string& getTradingPair() const { return tradingPair; }
+     
+//      /**
+//       * Get the direction
+//       */
+//      core::Direction getDirection() const { return direction; }
+     
+//      /**
+//       * Get the strength
+//       */
+//      double getStrength() const { return strength; }
+     
+//      /**
+//       * Get the target size
+//       */
+//      double getTargetSize() const { return target_size; }
+     
+//      /**
+//       * Get the signal TTL
+//       */
+//      const std::chrono::milliseconds& getSignalTtl() const { return signal_ttl; }
+     
+//      /**
+//       * Get the strategy ID
+//       */
+//      const std::string& getStrategyId() const { return strategy_id; }
+     
+//      /**
+//       * Get the strategy version
+//       */
+//      const std::string& getStrategyVersion() const { return strategy_version; }
+     
+//      /**
+//       * Get the signal metrics
+//       */
+//      const std::map<std::string, double>& getSignalMetrics() const { return signal_metrics; }
+     
+//      /**
+//       * Check if this is a buy signal
+//       */
+//      bool isBuySignal() const { return direction == core::Direction::BUY; }
+     
+//      /**
+//       * Check if this is a sell signal
+//       */
+//      bool isSellSignal() const { return direction == core::Direction::SELL; }
+     
+//      /**
+//       * Check if the signal is still valid based on its TTL and a reference time
+//       */
+//     //  bool isValid(const core::Timestamp& current_time) const {
+//     //      // Implementation would need the signal's generation time, which
+//     //      // is not currently included in this structure. Consider adding it.
+//     //      return true; // Placeholder
+//     //  }
+
+//     /**
+//      * Check if the signal is still valid based on its TTL and a reference time
+//      */
+//     bool isValid(const core::Timestamp& current_time) const {
+//         // Suppress unused parameter warning
+//         (void)current_time;
+        
+//         // TODO: Implement proper TTL validation when generation time is added
+//         // For now, assume all signals are valid
+//         return true;
+//     }
+//  };

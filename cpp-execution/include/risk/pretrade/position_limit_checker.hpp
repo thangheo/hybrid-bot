@@ -66,7 +66,7 @@ public:
      * @param newLimit The new position limit
      * @return true if update was successful, false otherwise
      */
-    bool updatePositionLimit(const std::string& assetId, const std::string& strategyId, double newLimit);
+    bool updatePositionLimit(const std::string& assetId, const core::StrategyId& strategyId, double newLimit);
     
     /**
      * Get the current position limit for an asset and strategy

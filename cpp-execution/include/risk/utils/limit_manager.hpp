@@ -108,6 +108,16 @@ public:
      * @return true if reset was successful, false otherwise
      */
     bool resetLimits();
+    double getDefaultAssetLimit() const { return defaultAssetLimit_; }
+    double getDefaultStrategyLimit() const { return defaultStrategyLimit_; }
+    double getDefaultExchangeLimit() const { return defaultExchangeLimit_; }
+    double getDefaultExposureLimit() const { return defaultExposureLimit_; }
+
+    const std::unordered_map<std::string, double>& getAssetLimits() const { return assetLimits_; }
+    const std::unordered_map<std::string, double>& getStrategyLimits() const { return strategyLimits_; }
+    const std::unordered_map<std::string, double>& getExchangeLimits() const { return exchangeLimits_; }
+    const std::unordered_map<std::string, double>& getExposureLimits() const { return exposureLimits_; }
+
 
 private:
     RiskConfig m_config;
@@ -116,11 +126,15 @@ private:
     mutable std::mutex m_limitsMutex;
     std::map<std::string, std::map<std::string, RiskLimit>> m_limits;
     
-    // Default limits
-    double m_defaultAssetLimit;
-    double m_defaultStrategyLimit;
-    double m_defaultExchangeLimit;
-    double m_defaultExposureLimit;
+    double defaultAssetLimit_{0.0};
+    double defaultStrategyLimit_{0.0};
+    double defaultExchangeLimit_{0.0};
+    double defaultExposureLimit_{0.0};
+
+    std::unordered_map<std::string, double> assetLimits_;
+    std::unordered_map<std::string, double> strategyLimits_;
+    std::unordered_map<std::string, double> exchangeLimits_;
+    std::unordered_map<std::string, double> exposureLimits_;
     
     // Helper methods
     void loadLimitsFromConfig();
