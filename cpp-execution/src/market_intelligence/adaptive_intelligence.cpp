@@ -705,7 +705,8 @@ trading::MarketIntelligence AdaptiveMarketIntelligence::generateIntelligence(
     double spread = bestAsk - bestBid;
     double midPrice = (bestBid + bestAsk) / 2.0;
     double relative_spread = spread / midPrice;
-    
+    // volatility estimate
+    double volatility = estimateSimpleVolatility(relative_spread, profile->volatility_factor);
     // Calculate volume metrics
     OrderBookMetrics metrics = calculateOrderBookMetrics(bids, asks);
     
@@ -730,7 +731,7 @@ trading::MarketIntelligence AdaptiveMarketIntelligence::generateIntelligence(
     // Spread stability (how stable the spread has been)
     double spread_stability = calculateSpreadStability(profile);
     intel.set_spread_stability(spread_stability);  // Field 7
-    
+    intel.set_realized_volatility_1m(volatility);  // Field 15
     // Volume analysis
     double volume_ratio_to_avg = calculateVolumeRatio(metrics.total_volume, profile);
     intel.set_volume_ratio_to_avg(volume_ratio_to_avg);  // Field 21

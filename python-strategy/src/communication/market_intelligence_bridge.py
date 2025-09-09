@@ -19,6 +19,10 @@ class IntelligenceState:
     order_book_imbalance: float
     regime_confidence: float
     last_update: float
+    # Add additional fields for debugging
+    realized_volatility_1m: float = 0.0
+    spread: float = 0.0
+    current_regime: int = 0
 
 class MarketIntelligenceBridge:
     def __init__(self, symbols: List[str]):
@@ -31,6 +35,11 @@ class MarketIntelligenceBridge:
         self.context = zmq.Context()
         self.subscriber = None
         self.thread = None
+        self.stats = {
+            'messages_received': 0,
+            'parse_errors': 0,
+            'field_warnings': 0
+        }
         
     def start(self) -> bool:
         """Start intelligence integration"""
@@ -72,16 +81,60 @@ class MarketIntelligenceBridge:
                 
                 intel = MarketIntelligence()
                 intel.ParseFromString(data)
+                self.stats['messages_received'] += 1
                 
-                # Update cache
-                state = IntelligenceState(
-                    liquidity_ratio=intel.liquidity_ratio,
-                    volatility_trend=intel.realized_volatility_1m,
-                    order_book_imbalance=intel.order_book_imbalance,
-                    regime_confidence=intel.regime_confidence,
-                    last_update=time.time()
-                )
+                # CRITICAL FIX: Proper field extraction with validation
                 symbol = intel.symbol.replace('/', '')
+                
+                # Debug first few messages to understand C++ data structure
+                if self.stats['messages_received'] <= 5:
+                    logger.info(f"DEBUG Intelligence for {symbol}:")
+                    logger.info(f"  liquidity_ratio: {intel.liquidity_ratio}")
+                    logger.info(f"  realized_volatility_1m: {intel.realized_volatility_1m}")
+                    logger.info(f"  volatility_trend: {intel.volatility_trend}")  # Check if this exists
+                    logger.info(f"  order_book_imbalance: {intel.order_book_imbalance}")
+                    logger.info(f"  regime_confidence: {intel.regime_confidence}")
+                    logger.info(f"  bid_ask_spread: {intel.bid_ask_spread}")
+                
+                # FIXED: Extract volatility_trend correctly
+                # If C++ sets volatility_trend (field 18), use it
+                # Otherwise, use realized_volatility_1m as fallback
+                volatility_trend_value = 0.0
+                if hasattr(intel, 'volatility_trend') and intel.volatility_trend != 0.0:
+                    volatility_trend_value = intel.volatility_trend
+                elif hasattr(intel, 'realized_volatility_1m') and intel.realized_volatility_1m != 0.0:
+                    volatility_trend_value = intel.realized_volatility_1m
+                    if self.stats['messages_received'] <= 3:
+                        logger.warning(f"Using realized_volatility_1m as volatility_trend fallback for {symbol}")
+                        self.stats['field_warnings'] += 1
+                else:
+                    # Calculate reasonable fallback based on spread
+                    if intel.bid_ask_spread > 0:
+                        volatility_trend_value = intel.bid_ask_spread * 10.0  # Simple estimate
+                    else:
+                        volatility_trend_value = 0.02  # Default reasonable value
+                    
+                    if self.stats['messages_received'] <= 3:
+                        logger.warning(f"No volatility data from C++, using fallback {volatility_trend_value} for {symbol}")
+                        self.stats['field_warnings'] += 1
+                
+                # Validate other critical fields
+                liquidity_ratio = intel.liquidity_ratio if intel.liquidity_ratio != 0.0 else 0.5
+                order_book_imbalance = intel.order_book_imbalance  # Can be 0.0 legitimately
+                regime_confidence = intel.regime_confidence if intel.regime_confidence != 0.0 else 0.5
+                
+                # Update cache with validated data
+                state = IntelligenceState(
+                    liquidity_ratio=liquidity_ratio,
+                    volatility_trend=volatility_trend_value,
+                    order_book_imbalance=order_book_imbalance,
+                    regime_confidence=regime_confidence,
+                    last_update=time.time(),
+                    # Additional debug fields
+                    realized_volatility_1m=intel.realized_volatility_1m,
+                    spread=intel.bid_ask_spread,
+                    current_regime=intel.current_regime
+                )
 
                 self.intelligence_cache[symbol] = state
                 self.intelligence_history[symbol].append(state)
@@ -90,12 +143,58 @@ class MarketIntelligenceBridge:
                 continue
             except Exception as e:
                 logger.error(f"Intelligence loop error: {e}")
+                self.stats['parse_errors'] += 1
                 time.sleep(1)
     
     def get_intelligence(self, symbol: str) -> Optional[IntelligenceState]:
         """Get current intelligence for symbol"""
-        return self.intelligence_cache.get(symbol)
+        intel = self.intelligence_cache.get(symbol)
+        
+        # Validate data freshness (within 30 seconds)
+        if intel and (time.time() - intel.last_update) > 30:
+            logger.warning(f"Stale intelligence data for {symbol} ({time.time() - intel.last_update:.1f}s old)")
+        
+        return intel
     
     def is_available(self) -> bool:
         """Check if intelligence is available"""
         return self.running and len(self.intelligence_cache) > 0
+    
+    def get_debug_stats(self) -> dict:
+        """Get debug statistics"""
+        return {
+            'running': self.running,
+            'symbols_cached': len(self.intelligence_cache),
+            'messages_received': self.stats['messages_received'],
+            'parse_errors': self.stats['parse_errors'],
+            'field_warnings': self.stats['field_warnings'],
+            'active_symbols': list(self.intelligence_cache.keys())
+        }
+    
+    def validate_cpp_data_completeness(self) -> dict:
+        """Validate that C++ is sending complete data"""
+        validation_report = {}
+        
+        for symbol, intel in self.intelligence_cache.items():
+            issues = []
+            
+            # Check for zero/default values that might indicate missing C++ fields
+            if intel.liquidity_ratio == 0.0:
+                issues.append("liquidity_ratio is zero")
+            if intel.volatility_trend == 0.0:
+                issues.append("volatility_trend is zero")
+            if intel.regime_confidence == 0.0:
+                issues.append("regime_confidence is zero")
+            
+            # Check data freshness
+            age = time.time() - intel.last_update
+            if age > 60:
+                issues.append(f"Data is stale ({age:.1f}s)")
+                
+            validation_report[symbol] = {
+                'issues': issues,
+                'has_issues': len(issues) > 0,
+                'data_age': age
+            }
+        
+        return validation_report

@@ -427,10 +427,65 @@ class EnhancedTradingBot:
                     intel.liquidity_ratio > 0.9 or 
                     abs(intel.order_book_imbalance) > 0.4):
                     
+                    # self.logger.info(f"🚀 High confidence C++ signal for {symbol}: "
+                    #                 f"regime_conf={intel.regime_confidence:.2f}, "
+                    #                 f"liquidity={intel.liquidity_ratio:.2f}")
+                    # print all intelligence details for debugging
+
+                    # message MarketIntelligence {
+                    #     // Message metadata
+                    #     string symbol = 1;
+                    #     int64 timestamp = 2;
+                        
+                    #     // Order Book Metrics
+                    #     double bid_ask_spread = 3;
+                    #     double order_book_imbalance = 4;
+                    #     double depthImbalance = 5;         // Imbalance in deeper levels
+                    #     double liquidity_ratio = 6;
+                    #     double spread_stability = 7;        // How stable the spread has been
+                        
+                    #     // Flow Metrics
+                    #     double net_flow_5s = 8;
+                    #     double net_flow_30s = 9;
+                    #     double net_flow_5m = 10;            // 5 minute flow
+                    #     double aggressive_buy_ratio = 11;
+                    #     double aggressive_sell_ratio = 12;
+                    #     double passive_buy_ratio = 13;
+                    #     double passive_sell_ratio = 14;
+                        
+                    #     // Volatility Indicators
+                    #     double realized_volatility_1m = 15;
+                    #     double realized_volatility_5m = 16;
+                    #     double price_impact_estimate = 17;
+                    #     double volatility_trend = 18;       // Is volatility increasing/decreasing
+                        
+                    #     // Volume Analysis
+                    #     double volume_5s = 19;
+                    #     double volume_30s = 20;
+                    #     double volume_ratio_to_avg = 21;    // Current volume vs historical average
+                        
+                    #     // Regime Classification
+                    #     OrderBookRegime current_regime = 22;
+                    #     double regime_confidence = 23;      // Added for bridge.py compatibility
+                    #     double regime_stability = 24;       // How stable the regime has been
+                        
+                    #     // Predictive metrics
+                    #     double expected_volatility_5m = 25; // Expected volatility next 5 minutes
+                    #     double flow_momentum = 26;          // Acceleration of flow metrics
+
                     self.logger.info(f"🚀 High confidence C++ signal for {symbol}: "
-                                    f"regime_conf={intel.regime_confidence:.2f}, "
-                                    f"liquidity={intel.liquidity_ratio:.2f}")
-                    
+                                     f"regime_conf={intel.regime_confidence:.2f}, "
+                                     f"liquidity={intel.liquidity_ratio:.2f}, "
+                                     f"order_book_imbalance={intel.order_book_imbalance:.2f}, "
+                                    #  f"bid_ask_spread={intel.bid_ask_spread:.5f}, "
+                                    #  f"depthImbalance={intel.depthImbalance:.2f}, "
+                                     f"liquidity={intel.liquidity_ratio:.2f}, "
+                                     f"regime_conf={intel.regime_confidence:.2f}, "
+                                    #  f"regime_stability={intel.regime_stability:.2f}, "
+                                    #  f"expected_volatility_5m={intel.expected_volatility_5m:.2f}, "
+                                    #  f"flow_momentum={intel.flow_momentum:.2f}, "
+                                     f"volatility_trend={intel.volatility_trend:.2f}"
+                                        )
                     # Trigger immediate signal generation for this symbol
                     await self._process_symbol_signals(symbol)
                     
