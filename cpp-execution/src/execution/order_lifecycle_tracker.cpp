@@ -283,7 +283,7 @@ std::shared_ptr<models::Order> OrderLifecycleTracker::getOrderByOrderId(const st
      return matching_orders;
  }
  
- std::vector<std::shared_ptr<models::Order>> OrderLifecycleTracker::getOrdersBySymbol(const std::string& symbol) const {
+ std::vector<std::shared_ptr<models::Order>> OrderLifecycleTracker::getOrdersBySymbol(const core::Symbol& symbol) const {
      std::lock_guard<std::mutex> lock(mutex_);
      
      std::vector<std::shared_ptr<models::Order>> matching_orders;

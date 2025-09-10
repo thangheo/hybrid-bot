@@ -17,6 +17,7 @@
 #include "strategy/types/config_types.hpp"
 #include "strategy/signal/momentum_correlation.hpp"
 #include "strategy/signal/threshold_manager.hpp"
+#include "core/trading_signal.hpp"
 #include <vector>
 #include <memory>
 #include <map>
@@ -24,6 +25,7 @@
 #include <functional>
 #include <atomic>
 
+using namespace trading::core;
 namespace trading {
 namespace strategy {
 

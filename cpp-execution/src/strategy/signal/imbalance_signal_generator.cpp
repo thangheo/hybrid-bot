@@ -11,6 +11,7 @@
 #include "strategy/signal/imbalance_signal_generator.hpp"
 #include "common/event_bus.hpp"
 #include "common/trading_events.hpp"
+#include "core/trading_signal.hpp"
 #include "strategy/types/constants.hpp"
 #include <algorithm>
 #include <cmath>
@@ -21,6 +22,7 @@
 #include <random>
 #include <common/logger.hpp>
 
+// using namespace trading::core;
  namespace trading {
  namespace strategy {
  

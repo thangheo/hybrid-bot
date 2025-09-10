@@ -22,6 +22,7 @@
 #include "execution/models/order.hpp"
 #include "execution/trading_signal.hpp"
 #include "execution/execution_types.hpp"
+#include "core/market_types.hpp"
 #include "common/types.hpp"
 #include <nlohmann/json.hpp>
 
@@ -407,8 +408,8 @@ private:
         }
         else if (input == "2" || input == "market") {
             std::cout << "Creating market order...\n";
-            
-            auto order = models::Order::createMarketOrder("BTC/USDT", Direction::BUY, 0.001);
+
+            auto order = models::Order::createMarketOrder(core::Symbol::fromString("BTC/USDT"), Direction::BUY, 0.001);
             auto response = execution_service_->placeOrder(*order);
             
             std::cout << "Market order placed - Success: " << response.success 
@@ -416,8 +417,8 @@ private:
         }
         else if (input == "3" || input == "limit") {
             std::cout << "Creating limit order...\n";
-            
-            auto order = models::Order::createLimitOrder("BTC/USDT", Direction::BUY, 0.001, 49000.0);
+
+            auto order = models::Order::createLimitOrder(core::Symbol::fromString("BTC/USDT"), Direction::BUY, 0.001, 99900.0);
             auto response = execution_service_->placeOrder(*order);
             
             std::cout << "Limit order placed - Success: " << response.success 

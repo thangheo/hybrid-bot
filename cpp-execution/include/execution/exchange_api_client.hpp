@@ -37,15 +37,15 @@ public:
     // 
     // Order operations
     virtual std::future<models::ExecutionReport> placeOrder(const models::Order& order) = 0;
-    virtual std::future<models::ExecutionReport> cancelOrder(const std::string& orderId, const std::string& symbol) = 0;
-    virtual std::future<models::ExecutionReport> getOrderStatus(const std::string& orderId, const std::string& symbol) = 0;
+    virtual std::future<models::ExecutionReport> cancelOrder(const std::string& orderId, const core::Symbol& symbol) = 0;
+    virtual std::future<models::ExecutionReport> getOrderStatus(const std::string& orderId, const core::Symbol& symbol) = 0;
     // virtual std::future<models::ExecutionReport> getOrderStatus(const std::string& orderId) = 0;
     // Account operations
     virtual std::future<std::map<std::string, double>> getAccountBalances() = 0;
     
     // Market data operations
-    virtual std::future<double> getCurrentPrice(const std::string& symbol) = 0;
-    
+    virtual std::future<double> getCurrentPrice(const core::Symbol& symbol) = 0;
+
     // Connection management
     virtual bool isConnected() const = 0;
     virtual void connect() = 0;

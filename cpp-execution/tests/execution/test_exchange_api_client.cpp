@@ -51,7 +51,7 @@ public:
         });
     }
     
-    std::future<models::ExecutionReport> cancelOrder(const std::string& orderId, const std::string& symbol) override {
+    std::future<models::ExecutionReport> cancelOrder(const std::string& orderId, const core::Symbol& symbol) override {
         return std::async(std::launch::async, [this, orderId, symbol]() {
             if (!isConnected()) {
                 throw std::runtime_error("Not connected to exchange");
@@ -71,7 +71,7 @@ public:
         });
     }
     
-    std::future<models::ExecutionReport> getOrderStatus(const std::string& orderId, const std::string& symbol) override {
+    std::future<models::ExecutionReport> getOrderStatus(const std::string& orderId, const core::Symbol& symbol) override {
         return std::async(std::launch::async, [this, orderId, symbol]() {
             if (!isConnected()) {
                 throw std::runtime_error("Not connected to exchange");
@@ -118,7 +118,7 @@ public:
     }
     
     // Market data operations
-    std::future<double> getCurrentPrice(const std::string& symbol) override {
+    std::future<double> getCurrentPrice(const core::Symbol& symbol) override {
         return std::async(std::launch::async, [this, symbol]() {
             if (!isConnected()) {
                 throw std::runtime_error("Not connected to exchange");

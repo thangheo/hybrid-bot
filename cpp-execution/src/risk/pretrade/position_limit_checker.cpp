@@ -67,12 +67,12 @@ void PositionLimitChecker::loadLimitsFromConfig() {
 bool PositionLimitChecker::checkPositionLimit(const TradingSignal& signal, 
                                              std::vector<RiskViolation>& violations) {
     // Extract trading pair and asset information
-    std::string tradingPairStr = signal.getTradingPair();
+    core::Symbol tradingPairStr = signal.getTradingPair();
     TradingPair tradingPair(tradingPairStr);
-    std::string asset = getBaseAsset(tradingPairStr);
-    std::string strategyId = signal.getStrategyId();
-    core::ExchangeId exchangeId = signal.exchange;
-    
+    std::string asset = getBaseAsset(tradingPair.toString());
+    StrategyId strategyId = signal.getStrategyId();
+    core::ExchangeId exchangeId = signal.exchangeId;
+
     // Calculate new position after this trade
     double newPosition = calculateNewPosition(
         tradingPair, 
@@ -81,7 +81,7 @@ bool PositionLimitChecker::checkPositionLimit(const TradingSignal& signal,
     );
     
     // Get applicable limits
-    double assetLimit = getPositionLimit(asset, strategyId);
+    double assetLimit = getPositionLimit(asset, strategyId.toString());
     double strategyLimit = 0.0;
     double exchangeLimit = 0.0;
     
@@ -89,7 +89,7 @@ bool PositionLimitChecker::checkPositionLimit(const TradingSignal& signal,
         std::lock_guard<std::mutex> lock(m_limitsLock);
         
         // Get strategy limit
-        auto stratIt = m_strategyLimits.find(strategyId);
+        auto stratIt = m_strategyLimits.find(strategyId.toString());
         strategyLimit = (stratIt != m_strategyLimits.end()) ? 
                        stratIt->second : m_defaultLimit;
         
@@ -129,12 +129,12 @@ bool PositionLimitChecker::checkPositionLimit(const OrderRequest& orderRequest,
                                              std::vector<RiskViolation>& violations) {
     // Convert OrderRequest to equivalent TradingSignal for checking
     TradingSignal equivalentSignal;
-    equivalentSignal.tradingPair = orderRequest.tradingPair;
-    equivalentSignal.direction = (orderRequest.side == core::Direction::BUY) ? 
-                                core::Direction::BUY : core::Direction::SELL;
-    equivalentSignal.target_size = orderRequest.quantity;
-    equivalentSignal.strategy_id = orderRequest.strategyId;
-    equivalentSignal.exchange = orderRequest.exchangeId;
+    equivalentSignal.setTradingPair(orderRequest.tradingPair.toString());
+    equivalentSignal.setDirection((orderRequest.side == core::Direction::BUY) ? 
+                                core::Direction::BUY : core::Direction::SELL);
+    equivalentSignal.setTargetSize(orderRequest.quantity);
+    equivalentSignal.setStrategyId(orderRequest.strategyId);
+    equivalentSignal.setExchangeId(orderRequest.exchangeId);
     
     return checkPositionLimit(equivalentSignal, violations);
 }
@@ -142,7 +142,7 @@ bool PositionLimitChecker::checkPositionLimit(const OrderRequest& orderRequest,
 double PositionLimitChecker::calculateNewPosition(const TradingPair& tradingPair, 
                                                  core::Direction direction, 
                                                  double quantity) const {
-    std::string baseAsset = getBaseAsset(tradingPair.getSymbol());
+    std::string baseAsset = getBaseAsset(tradingPair.toString());
     
     // Get current position - this assumes PositionTracker has a method to get position by asset
     // We'll need to implement this or use a different approach

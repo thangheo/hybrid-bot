@@ -58,7 +58,7 @@ private:
         json["order_id"] = request.orderId;
         json["client_order_id"] = request.clientOrderId;
         json["exchangeId"] = request.exchangeId.toString();
-        json["tradingPair"] = request.tradingPair;
+        json["tradingPair"] = request.tradingPair.toString();
         json["side"] = request.side == OrderSide::BUY ? "buy" : "sell";
         json["type"] = request.type;
         json["quantity"] = request.quantity;
@@ -86,7 +86,7 @@ private:
         request.orderId = json["order_id"];
         request.clientOrderId = json["client_order_id"];
         request.exchangeId =  core::ExchangeId::fromString(json["exchangeId"]);
-        request.tradingPair = json["tradingPair"];
+        request.tradingPair = core::Symbol::fromString(json["tradingPair"]);
         request.side = json["side"] == "buy" ? OrderSide::BUY : OrderSide::SELL;
         request.type = json["type"];
         request.quantity = json["quantity"];

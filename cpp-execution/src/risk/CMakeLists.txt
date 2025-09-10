@@ -56,7 +56,7 @@ elseif(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
 endif()
 
 # Ensure C++20 features are properly enabled
-target_compile_features(risk PRIVATE cxx_std_20)
+# target_compile_features(risk PRIVATE cxx_std_20)
 
 # Add format library for std::format (if using GCC < 13)
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS "13.0")
