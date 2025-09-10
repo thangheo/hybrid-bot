@@ -51,7 +51,7 @@ private:
         }
     }
     
-    trading::MarketIntelligence GenerateSimulatedIntelligence(const std::string& symbol) {
+    trading::MarketIntelligence GenerateSimulatedIntelligence(const core::Symbol& symbol) {
         trading::MarketIntelligence intel;
         
         auto now = std::chrono::duration_cast<std::chrono::milliseconds>(

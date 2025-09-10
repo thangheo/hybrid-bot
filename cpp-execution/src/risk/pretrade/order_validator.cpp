@@ -124,7 +124,7 @@ bool OrderValidator::validateOrder(const OrderRequest& orderRequest,
     return true;
 }
 
-bool OrderValidator::isOnSymbolWhitelist(const std::string& tradingPair) const {
+bool OrderValidator::isOnSymbolWhitelist(const core::Symbol& tradingPair) const {
     // If whitelist is not enforced, always return true
     std::lock_guard<std::mutex> lock(m_whitelistMutex);
     if (!m_enforceWhitelist) {
@@ -139,7 +139,7 @@ bool OrderValidator::isOnSymbolWhitelist(const TradingPair& tradingPair) const {
     return isOnSymbolWhitelist(tradingPair.getSymbol());
 }
 
-bool OrderValidator::isPriceWithinRange(const std::string& tradingPair,
+bool OrderValidator::isPriceWithinRange(const core::Symbol& tradingPair,
                                        double price,
                                        std::vector<RiskViolation>& violations) {
     // Get current market price
@@ -165,7 +165,7 @@ bool OrderValidator::isPriceWithinRange(const std::string& tradingPair,
 }
 
 bool OrderValidator::isOrderSizeValid(const core::ExchangeId& exchangeId,
-                                     const std::string& tradingPair,
+                                     const core::Symbol& tradingPair,
                                      double quantity,
                                      std::vector<RiskViolation>& violations) {
     // Check for negative or zero quantity
@@ -252,7 +252,7 @@ bool OrderValidator::updateSymbolWhitelist(const std::vector<std::string>& newWh
 }
 
 bool OrderValidator::updateMinOrderSize(const core::ExchangeId& exchangeId,
-                                       const std::string& tradingPair,
+                                       const core::Symbol& tradingPair,
                                        double minSize) {
     if (minSize < 0) {
         LOG_ERROR("Invalid minimum order size: {}", minSize);
@@ -320,7 +320,7 @@ bool OrderValidator::validateTimeInForce(const std::string& timeInForce, std::ve
     return true;
 }
 
-double OrderValidator::getCurrentMarketPrice(const std::string& tradingPair) const {
+double OrderValidator::getCurrentMarketPrice(const core::Symbol& tradingPair) const {
     try {
         return m_dataInterface->getCurrentPrice(tradingPair);
     } catch (const std::exception& ex) {

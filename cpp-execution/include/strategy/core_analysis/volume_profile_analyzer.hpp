@@ -77,7 +77,7 @@
   */
  struct VolumeProfile {
      ExchangeId exchangeId;
-     std::string tradingPair;
+     core::Symbol tradingPair;
      core::Timestamp start_time;
      core::Timestamp end_time;
      std::vector<PriceRange> price_ranges;
@@ -123,14 +123,14 @@
      /**
       * Creates a volume profile analyzer for a specific exchange and trading pair
       */
-     VolumeProfileAnalyzer(const core::ExchangeId& exchangeId, const std::string& tradingPair, 
+     VolumeProfileAnalyzer(const core::ExchangeId& exchangeId, const core::Symbol& tradingPair, 
                            const ParameterSet& params = ParameterSet());
     VolumeProfileAnalyzer(const VolumeProfileConfig& config);
 
      /**
       * Creates a volume profile analyzer with parameters explicitly specified
       */
-     VolumeProfileAnalyzer(const core::ExchangeId& exchangeId, const std::string& tradingPair, 
+     VolumeProfileAnalyzer(const core::ExchangeId& exchangeId, const core::Symbol& tradingPair, 
                            int numPriceRanges, double rangeSizePercent);
      
      virtual ~VolumeProfileAnalyzer() = default;
@@ -301,7 +301,7 @@
  // Factory function to create VolumeProfileAnalyzer instances
  std::shared_ptr<VolumeProfileAnalyzer> createVolumeProfileAnalyzer(
      const core::ExchangeId& exchangeId, 
-     const std::string& tradingPair,
+     const core::Symbol& tradingPair,
      const ParameterSet& params = ParameterSet());
  
  } // namespace strategy

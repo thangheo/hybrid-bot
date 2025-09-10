@@ -150,7 +150,7 @@ protected:
     std::unique_ptr<TestBinanceWebSocketClient> client_;
     
     // Helper to create JSON test messages
-    std::string createOrderBookMessage(const std::string& symbol, bool isSnapshot = false) {
+    std::string createOrderBookMessage(const core::Symbol& symbol, bool isSnapshot = false) {
         json data;
         
         if (isSnapshot) {
@@ -199,7 +199,7 @@ protected:
         }
     }
     
-    std::string createTradeMessage(const std::string& symbol) {
+    std::string createTradeMessage(const core::Symbol& symbol) {
         json stream_data;
         
         // Trade data
@@ -222,7 +222,7 @@ protected:
         return wrapper.dump();
     }
     
-    std::string createTickerMessage(const std::string& symbol) {
+    std::string createTickerMessage(const core::Symbol& symbol) {
         json stream_data;
         
         // Ticker data

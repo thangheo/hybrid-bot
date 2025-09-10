@@ -73,7 +73,7 @@ bool PortfolioManager::initialize() {
             [this](const Position& position, const std::string& updateType) {
                 recalculatePortfolioMetrics();
                 notifyPortfolioEvent("position_update", 
-                                   "Position updated: " + position.getTradingPair().symbol +
+                                   "Position updated: " + position.getTradingPair().toString() +
                                    " (" + updateType + ")");
             }
         );

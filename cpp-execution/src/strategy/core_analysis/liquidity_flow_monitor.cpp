@@ -17,7 +17,7 @@
  
  LiquidityFlowMonitor::LiquidityFlowMonitor(
      const core::ExchangeId& exchangeId, 
-     const std::string& tradingPair, 
+     const core::Symbol& tradingPair, 
      const ParameterSet& params)
      : exchangeId_(exchangeId),
        trading_pair_(tradingPair),
@@ -46,7 +46,7 @@
 }
  LiquidityFlowMonitor::LiquidityFlowMonitor(
      const core::ExchangeId& exchangeId, 
-     const std::string& tradingPair, 
+     const core::Symbol& tradingPair, 
      double large_order_threshold, 
      int history_window_seconds)
      : exchangeId_(exchangeId),
@@ -793,7 +793,7 @@ double LiquidityFlowMonitor::calculateTypicalOrderSize() const {
 
 std::shared_ptr<LiquidityFlowMonitor> createLiquidityFlowMonitor(
     const core::ExchangeId& exchangeId, 
-    const std::string& tradingPair,
+    const core::Symbol& tradingPair,
     const ParameterSet& params) {
     
     return std::make_shared<LiquidityFlowMonitor>(exchangeId, tradingPair, params);

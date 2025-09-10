@@ -86,7 +86,7 @@ private:
 public:
     Statistics() : startTime_(std::chrono::steady_clock::now()) {}
     
-    void recordMessage(const std::string& symbol, size_t bytes, double latencyMs) {
+    void recordMessage(const core::Symbol& symbol, size_t bytes, double latencyMs) {
         totalMessages_.fetch_add(1);
         totalBytes_.fetch_add(bytes);
         
@@ -127,7 +127,7 @@ MessageQueue dataQueue;
 Statistics stats;
 
 // Fast callback - just enqueue data
-void onMarketData(const ExchangeId& exchange, const std::string& symbol, const std::vector<uint8_t>& data) {
+void onMarketData(const ExchangeId& exchange, const core::Symbol& symbol, const std::vector<uint8_t>& data) {
     dataQueue.push(MarketDataMessage(exchange, symbol, data));
 }
 

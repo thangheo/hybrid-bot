@@ -27,7 +27,7 @@ namespace data_ingestion {
  */
 struct OrderBookDelta {
     ExchangeId exchangeId;
-    std::string tradingPair;
+    core::Symbol tradingPair;
     core::Timestamp timestamp;
     uint64_t sequenceNumber;
     std::vector<PriceLevel> added_bids = {};
@@ -67,8 +67,9 @@ using OrderBookDeltaCallback = std::function<void(const OrderBookDelta&)>;
 // Order book class
 class OrderBook {
 public:
-    OrderBook(const ExchangeId& exchangeId, const std::string& tradingPair, OrderBookCallback callback = nullptr);
-    OrderBook(const ExchangeId& exchangeId, const Symbol& symbol, OrderBookCallback callback = nullptr);
+    // OrderBook(const ExchangeId& exchangeId, const core::Symbol& tradingPair, OrderBookCallback callback = nullptr);
+    OrderBook(const ExchangeId& exchangeId, const Symbol& symbol, OrderBookCallback callback=nullptr);
+
     ~OrderBook() = default;
     
     // Explicitly delete copy constructor and copy assignment

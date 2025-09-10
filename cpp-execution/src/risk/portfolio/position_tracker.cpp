@@ -211,17 +211,11 @@ void PositionTracker::processExecutionReport(const ExecutionReport& executionRep
         const std::string& tradingPairSymbol = executionReport.symbol();
         
         // Create TradingPair from symbol string
-        TradingPair tradingPair;
-        tradingPair.symbol = tradingPairSymbol;
-        // Parse base/quote if needed - for now use symbol as is
-        size_t slashPos = tradingPairSymbol.find('/');
-        if (slashPos != std::string::npos) {
-            tradingPair.base = tradingPairSymbol.substr(0, slashPos);
-            tradingPair.quote = tradingPairSymbol.substr(slashPos + 1);
-        } else {
-            tradingPair.base = tradingPairSymbol;
-            tradingPair.quote = "";
-        }
+        TradingPair tradingPair = TradingPair::fromString(tradingPairSymbol);
+        if (tradingPair.isEmpty()) {
+            std::cerr << "Invalid trading pair symbol: " << tradingPairSymbol << std::endl;
+            return;
+        }       
         
         // Create StrategyId - ExecutionReport doesn't have strategy info, use default
         StrategyId strategyId;
@@ -313,13 +307,14 @@ void PositionTracker::updateMarketData(const MarketData& marketData) {
         // Update price cache
         {
             std::lock_guard<std::mutex> lock(m_marketDataMutex);
-            m_priceCache[marketData.tradingPair] = marketData.price;
+            m_priceCache[marketData.tradingPair.toString()] = marketData.price;
         }
         
         // Update positions with new price
         std::lock_guard<std::mutex> lock(m_positionsMutex);
         for (auto& [key, position] : m_positions) {
-            if (position.getTradingPair().symbol == marketData.tradingPair) {
+            if (position.getTradingPair().toString() == marketData.tradingPair.toString() &&
+                position.getExchangeId() == marketData.exchangeId) {
                 position.setCurrentPrice(marketData.price);
                 notifyPositionUpdate(position, "price_update");
             }
@@ -500,14 +495,14 @@ std::string PositionTracker::createPositionKey(const ExchangeId& exchangeId,
                                              const TradingPair& tradingPair) const {
     // Convert ExchangeId to string - assuming it has conversion or is already string-like
     std::string exchangeStr = exchangeId.toString();
-    return exchangeStr + ":" + tradingPair.symbol;
+    return exchangeStr + ":" + tradingPair.toString();
 }
 
 double PositionTracker::getCurrentPrice(const TradingPair& tradingPair) const {
     // First check cache
     {
         std::lock_guard<std::mutex> lock(m_marketDataMutex);
-        auto it = m_priceCache.find(tradingPair.symbol);
+        auto it = m_priceCache.find(tradingPair.toString());
         if (it != m_priceCache.end()) {
             return it->second;
         }
@@ -516,11 +511,11 @@ double PositionTracker::getCurrentPrice(const TradingPair& tradingPair) const {
     // If not in cache, try to get from data interface
     if (m_dataInterface) {
         try {
-            auto marketData = m_dataInterface->getMarketData(tradingPair.symbol);
+            auto marketData = m_dataInterface->getMarketData(tradingPair.toString());
             if (marketData.has_value()) {
                 // Update cache
                 std::lock_guard<std::mutex> lock(m_marketDataMutex);
-                m_priceCache[tradingPair.symbol] = marketData->price;
+                m_priceCache[tradingPair.toString()] = marketData->price;
                 return marketData->price;
             }
         } catch (const std::exception& e) {

@@ -67,7 +67,7 @@ OrderBookCacheService::~OrderBookCacheService() {
 
 std::shared_ptr<const data_ingestion::OrderBook> 
 OrderBookCacheService::getOrderBook(const std::string& exchangeId, 
-                                   const std::string& symbol) const {
+                                   const core::Symbol& symbol) const {
     totalRequests_++;
     
     std::string key = createKey(exchangeId, symbol);
@@ -334,7 +334,7 @@ OrderBookCacheService::optimizeOrderBookMemory(
 }
 
 std::string OrderBookCacheService::createKey(const std::string& exchangeId, 
-                                           const std::string& symbol) const {
+                                           const core::Symbol& symbol) const {
     return exchangeId + ":" + symbol;
 }
 
@@ -373,7 +373,7 @@ std::string OrderBookCacheService::createOrderBookMessage(
     // Create a simple JSON-like message (you should use protobuf in production)
     std::string message = "{";
     message += "\"exchange\":\"" + snapshot.exchangeId.toString() + "\",";
-    message += "\"tradingPair\":\"" + snapshot.tradingPair + "\",";
+    message += "\"tradingPair\":\"" + snapshot.tradingPair.toString() + "\",";
     message += "\"timestamp\":" + std::to_string(core::timestampToMillis(snapshot.exchangeTimestamp)) + ",";
     message += "\"sequence\":" + std::to_string(snapshot.sequenceNumber) + ",";
     // message += "\"isSnapshot\":" + (snapshot.isSnapshot ? "true" : "false") + ",";

@@ -11,7 +11,7 @@ std::shared_ptr<BinanceWebSocketClient> BinanceClientFactory::createClient(
     const std::string& host = useTestnet ? TESTNET_HOST : MAINNET_HOST;
     
     // Convert MarketDataCallback to the expected signature
-    auto dataCallback = [callback](const core::ExchangeId& exchange, const std::string& symbol, const std::vector<uint8_t>& data) {
+    auto dataCallback = [callback](const core::ExchangeId& exchange, const core::Symbol& symbol, const std::vector<uint8_t>& data) {
         if (callback) {
             // Convert raw data back to MarketDataUpdate if needed
             // For now, we'll create a basic update - you may need to parse JSON here
@@ -38,7 +38,7 @@ std::unique_ptr<ConnectionPool> BinanceClientFactory::createConnectionPool(
     const std::string& host = useTestnet ? TESTNET_HOST : MAINNET_HOST;
     
     // Convert callback for connection factory
-    auto dataCallback = [callback](const core::ExchangeId& exchange, const std::string& symbol, const std::vector<uint8_t>& data) {
+    auto dataCallback = [callback](const core::ExchangeId& exchange, const core::Symbol& symbol, const std::vector<uint8_t>& data) {
         if (callback) {
             MarketDataUpdate update;
             update.exchangeId = exchange;

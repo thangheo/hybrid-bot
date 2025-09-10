@@ -128,7 +128,7 @@
             // std::string exchangeIdStr = key.substr(0, colonPos);
             std::string exchangeIdStr = key.substr(0, colonPos);
             core::ExchangeId exchangeId = core::ExchangeId::fromString(exchangeIdStr);
-             std::string tradingPair = key.substr(colonPos + 1);
+             core::Symbol tradingPair = key.substr(colonPos + 1);
              
              // Check if this allocation exists in current allocations
             auto exchangeIt = currentAllocations.find(exchangeIdStr);
@@ -204,7 +204,7 @@ std::vector<RebalancingOrder> RebalancingEngine::calculateRebalancingNeeds() con
             
             std::string exchangeIdStr = key.substr(0, colonPos);
             core::ExchangeId exchangeId = core::ExchangeId::fromString(exchangeIdStr);
-            std::string tradingPair = key.substr(colonPos + 1);
+            core::Symbol tradingPair = key.substr(colonPos + 1);
             
             // Calculate target notional value
             double targetNotionalValue = totalPortfolioValue * targetAlloc;

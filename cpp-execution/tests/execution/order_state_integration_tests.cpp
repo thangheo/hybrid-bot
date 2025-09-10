@@ -38,7 +38,7 @@
      }
      
      // Helper function to create a test order
-     Order createTestOrder(const std::string& client_id, const std::string& symbol, 
+     Order createTestOrder(const std::string& client_id, const core::Symbol& symbol, 
                            OrderSide side, double qty, double price) {
          Order order;
          order.setClientOrderId(client_id);

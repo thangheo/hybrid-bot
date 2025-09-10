@@ -31,97 +31,6 @@ namespace trading {
  namespace core {
 
 
-// Add proper namespace aliases where needed
-// Ensure all files use the same ExchangeId definition
-using ExchangeId = common::ExchangeId;
-// using StrategyId = core::StrategyId;
-
-// Raw market data from an exchange
-struct MarketDataUpdate {
-    ExchangeId exchangeId;
-    std::string tradingPair;
-    std::string updateType;  // "orderbook", "trade", "ticker"
-    core::Timestamp exchangeTimestamp;
-    core::Timestamp receivedTimestamp;
-    std::vector<uint8_t> data;  // Raw data from exchange
-    uint64_t sequenceNumber = 0;      // Optional sequence number
-    core::Timestamp timestamp;  // Update timestamp
-    std::string messageType;
-    MarketDataUpdate() = default;
-
-};
-
-/**
- * Structure to hold market data information
- */
-struct MarketData {
-    std::string tradingPair;              // Trading pair symbol (e.g., "BTC/USDT")
-    ExchangeId exchangeId;               // Exchange identifier
-    Timestamp timestamp;                  // Timestamp of the data
-    double price;                         // Current market price
-    double volume;                        // Trading volume
-    double bid;                           // Best bid price
-    double ask;                           // Best ask price
-    double lastTradePrice;                // Last trade price
-    double lastTradeQuantity;             // Last trade quantity
-    double open24h;                       // Opening price 24 hours ago
-    double high24h;                       // Highest price in last 24 hours
-    double low24h;                        // Lowest price in last 24 hours
-    double volumeQuote24h;                // 24-hour volume in quote currency
-    double priceChange24h;
-    double priceChangePercent24h;
-
-    std::map<std::string, double> extra;  // Extra fields for extensibility
-    
-    MarketData() 
-        : price(0.0), volume(0.0), bid(0.0), ask(0.0), 
-          lastTradePrice(0.0), lastTradeQuantity(0.0),
-          open24h(0.0), high24h(0.0), low24h(0.0), volumeQuote24h(0.0) {}
-};
-struct TradeData {
-    std::string symbol;
-    double price;
-    double quantity;
-    std::string side; // "buy" or "sell"
-    uint64_t timestamp;
-    ExchangeId exchangeId;
-    std::string tradeId;
-};
-
- /**
-  * Market state information
-  */
- struct MarketState {
-    ExchangeId exchangeId;               // Exchange identifier
-    std::string tradingPair;              // Trading pair
-    core::Timestamp timestamp;                   // Timestamp of this state
-    double trendStrength;                // Trend strength (0-1)
-    // double volume_ratio;                 // Volume ratio compared to average
-    double price;                          // Current price
-    double volatility;                     // Current volatility
-    double volume_24h;                     // 24-hour volume
-    double price_change_24h;               // 24-hour price change percentage
-    std::string market_regime;             // Market regime classification
-    
-    // Default constructor
-    MarketState()
-        : exchangeId(), tradingPair(""), timestamp(std::chrono::system_clock::now()),
-          price(0.0), volatility(0.0), volume_24h(0.0), price_change_24h(0.0),
-          market_regime("unknown") {}
-    
-    // Constructor with exchange and trading pair
-    MarketState(const ExchangeId& exchange, const std::string& pair)
-        : exchangeId(exchange), tradingPair(pair), timestamp(std::chrono::system_clock::now()),
-          price(0.0), volatility(0.0), volume_24h(0.0), price_change_24h(0.0),
-          market_regime("unknown") {}
-};
-
-
- /**
-  * @struct ExchangeData
-  * @brief Represents raw data received from an exchange
-  */
- 
  /**
   * Represents a trading symbol (trading pair)
   */
@@ -159,7 +68,8 @@ struct TradeData {
                  symbol_str.substr(split)
              );
          }
-         return Symbol(symbol_str, "");
+         // If string is too short, treat the whole string as base currency
+         return Symbol(symbol_str, "");  // Default quote currency
      }
      
      // Convert to string representation
@@ -185,6 +95,97 @@ struct TradeData {
      //empty
     bool isEmpty() const { return base.empty() || quote.empty(); }
  };
+ 
+// Add proper namespace aliases where needed
+// Ensure all files use the same ExchangeId definition
+using ExchangeId = common::ExchangeId;
+// using StrategyId = core::StrategyId;
+
+// Raw market data from an exchange
+struct MarketDataUpdate {
+    ExchangeId exchangeId;
+    Symbol tradingPair;
+    std::string updateType;  // "orderbook", "trade", "ticker"
+    core::Timestamp exchangeTimestamp;
+    core::Timestamp receivedTimestamp;
+    std::vector<uint8_t> data;  // Raw data from exchange
+    uint64_t sequenceNumber = 0;      // Optional sequence number
+    core::Timestamp timestamp;  // Update timestamp
+    std::string messageType;
+    MarketDataUpdate() = default;
+
+};
+
+/**
+ * Structure to hold market data information
+ */
+struct MarketData {
+    core::Symbol tradingPair;              // Trading pair symbol (e.g., "BTC/USDT")
+    ExchangeId exchangeId;               // Exchange identifier
+    Timestamp timestamp;                  // Timestamp of the data
+    double price;                         // Current market price
+    double volume;                        // Trading volume
+    double bid;                           // Best bid price
+    double ask;                           // Best ask price
+    double lastTradePrice;                // Last trade price
+    double lastTradeQuantity;             // Last trade quantity
+    double open24h;                       // Opening price 24 hours ago
+    double high24h;                       // Highest price in last 24 hours
+    double low24h;                        // Lowest price in last 24 hours
+    double volumeQuote24h;                // 24-hour volume in quote currency
+    double priceChange24h;
+    double priceChangePercent24h;
+
+    std::map<std::string, double> extra;  // Extra fields for extensibility
+    
+    MarketData() 
+        : price(0.0), volume(0.0), bid(0.0), ask(0.0), 
+          lastTradePrice(0.0), lastTradeQuantity(0.0),
+          open24h(0.0), high24h(0.0), low24h(0.0), volumeQuote24h(0.0) {}
+};
+struct TradeData {
+    std::string symbol;
+    double price;
+    double quantity;
+    std::string side; // "buy" or "sell"
+    uint64_t timestamp;
+    ExchangeId exchangeId;
+    std::string tradeId;
+};
+
+ /**
+  * Market state information
+  */
+ struct MarketState {
+    ExchangeId exchangeId;               // Exchange identifier
+    core::Symbol tradingPair;              // Trading pair
+    core::Timestamp timestamp;                   // Timestamp of this state
+    double trendStrength;                // Trend strength (0-1)
+    // double volume_ratio;                 // Volume ratio compared to average
+    double price;                          // Current price
+    double volatility;                     // Current volatility
+    double volume_24h;                     // 24-hour volume
+    double price_change_24h;               // 24-hour price change percentage
+    std::string market_regime;             // Market regime classification
+    
+    // Default constructor
+    MarketState()
+        : exchangeId(), tradingPair(), timestamp(std::chrono::system_clock::now()),
+          price(0.0), volatility(0.0), volume_24h(0.0), price_change_24h(0.0),
+          market_regime("unknown") {}
+    
+    // Constructor with exchange and trading pair
+    MarketState(const ExchangeId& exchange, const core::Symbol& pair)
+        : exchangeId(exchange), tradingPair(pair), timestamp(std::chrono::system_clock::now()),
+          price(0.0), volatility(0.0), volume_24h(0.0), price_change_24h(0.0),
+          market_regime("unknown") {}
+};
+
+
+ /**
+  * @struct ExchangeData
+  * @brief Represents raw data received from an exchange
+  */
  
  // Stream operator for Symbol
  inline std::ostream& operator<<(std::ostream& os, const Symbol& symbol) {
@@ -213,35 +214,6 @@ struct TradeData {
      std::string sourceType;        // "websocket" or "rest"
  };
  
- /**
-  * Represents a price level in an order book
-  */
-//  struct PriceLevel {
-//      double price;     // Price level
-//      double quantity;  // Quantity available at this price level
-     
-//      PriceLevel() : price(0.0), quantity(0.0) {}
-     
-//      PriceLevel(double p, double q) : price(p), quantity(q) {}
-     
-//      // Equality operator
-//      bool operator==(const PriceLevel& other) const {
-//          // Use epsilon comparison for floating point values
-//          const double epsilon = 1e-9;
-//          return std::abs(price - other.price) < epsilon && 
-//                 std::abs(quantity - other.quantity) < epsilon;
-//      }
-     
-//      // Inequality operator
-//      bool operator!=(const PriceLevel& other) const {
-//          return !(*this == other);
-//      }
-     
-//      // Less than operator (for containers)
-//      bool operator<(const PriceLevel& other) const {
-//          return price < other.price;
-//      }
-//  };
 
 /**
  * Represents a price level in an order book

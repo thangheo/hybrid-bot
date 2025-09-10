@@ -55,8 +55,8 @@
      }
      
      // Set the trading pair from a string
-     void setTradingPair(const std::string& tradingPair) {
-         symbol = core::Symbol::fromString(tradingPair);
+     void setTradingPair(const core::Symbol& tradingPair) {
+         symbol = tradingPair;
      }
  };
  

@@ -20,9 +20,9 @@ private:
     mutable std::shared_mutex cacheMutex_;
     
 public:
-    void updatePrice(const std::string& symbol, const MarketData& data);
-    std::optional<MarketData> getPrice(const std::string& symbol) const;
-    bool isStale(const std::string& symbol, std::chrono::milliseconds maxAge) const;
+    void updatePrice(const core::Symbol& symbol, const MarketData& data);
+    std::optional<MarketData> getPrice(const core::Symbol& symbol) const;
+    bool isStale(const core::Symbol& symbol, std::chrono::milliseconds maxAge) const;
 };
 } // namespace risk
 } // namespace trading

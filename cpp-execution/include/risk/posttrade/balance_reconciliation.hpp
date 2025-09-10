@@ -136,7 +136,7 @@ public:
      */
     ReconciliationResult reconcileTradingPair(
         const core::ExchangeId& exchangeId,
-        const std::string& tradingPair
+        const core::Symbol& tradingPair
     );
     
     /**
@@ -240,7 +240,7 @@ private:
      */
     PositionReconciliationEvent createReconciliationEvent(
         const core::ExchangeId& exchangeId,
-        const std::string& tradingPair,
+        const core::Symbol& tradingPair,
         double expectedQuantity,
         double actualQuantity,
         double discrepancy,

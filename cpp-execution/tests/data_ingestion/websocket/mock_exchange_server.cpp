@@ -330,7 +330,7 @@ void MockExchangeServer::publishData() {
     }
 }
 
-void MockExchangeServer::publishOrderBookUpdate(const std::string& symbol) {
+void MockExchangeServer::publishOrderBookUpdate(const core::Symbol& symbol) {
     try {
         if (!running_) return;
         
@@ -362,7 +362,7 @@ void MockExchangeServer::publishOrderBookUpdate(const std::string& symbol) {
     }
 }
 
-void MockExchangeServer::publishTrade(const std::string& symbol) {
+void MockExchangeServer::publishTrade(const core::Symbol& symbol) {
     try {
         if (!running_) return;
         
@@ -393,7 +393,7 @@ void MockExchangeServer::publishTrade(const std::string& symbol) {
     }
 }
 
-void MockExchangeServer::publishTickerUpdate(const std::string& symbol) {
+void MockExchangeServer::publishTickerUpdate(const core::Symbol& symbol) {
     try {
         if (!running_) return;
         
@@ -424,7 +424,7 @@ void MockExchangeServer::publishTickerUpdate(const std::string& symbol) {
     }
 }
 
-json MockExchangeServer::createOrderBookUpdate(const std::string& symbol) {
+json MockExchangeServer::createOrderBookUpdate(const core::Symbol& symbol) {
     auto& data = test_data_[symbol];
     
     json update;
@@ -462,7 +462,7 @@ json MockExchangeServer::createOrderBookUpdate(const std::string& symbol) {
     return update;
 }
 
-json MockExchangeServer::createTradeUpdate(const std::string& symbol) {
+json MockExchangeServer::createTradeUpdate(const core::Symbol& symbol) {
     auto& data = test_data_[symbol];
     
     json trade;
@@ -497,7 +497,7 @@ json MockExchangeServer::createTradeUpdate(const std::string& symbol) {
     return trade;
 }
 
-json MockExchangeServer::createTickerUpdate(const std::string& symbol) {
+json MockExchangeServer::createTickerUpdate(const core::Symbol& symbol) {
     auto& data = test_data_[symbol];
     
     json ticker;
@@ -537,7 +537,7 @@ void MockExchangeServer::initializeTestData() {
     addTradingPair("adausdt", 1.5);
 }
 
-void MockExchangeServer::addTradingPair(const std::string& symbol, double base_price) {
+void MockExchangeServer::addTradingPair(const core::Symbol& symbol, double base_price) {
     TradingPairData data;
     
     // Initialize with slightly different bid/ask for a small spread

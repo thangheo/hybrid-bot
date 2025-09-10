@@ -52,7 +52,7 @@ public:
      * @param exchangeId Optional exchange ID
      * @return MarketData structure wrapped in optional
      */
-    virtual std::optional<MarketData> getMarketData(const std::string& tradingPair,
+    virtual std::optional<MarketData> getMarketData(const core::Symbol& tradingPair,
                                                const std::optional<std::string>& exchangeId = std::nullopt) = 0;
     
     /**
@@ -62,7 +62,7 @@ public:
      * @param exchangeId Optional exchange ID
      * @return Current price
      */
-    virtual double getCurrentPrice(const std::string& tradingPair, const std::optional<std::string>& exchangeId = std::nullopt) = 0;
+    virtual double getCurrentPrice(const core::Symbol& tradingPair, const std::optional<std::string>& exchangeId = std::nullopt) = 0;
     
     /**
      * Get price for a trading pair (alias for getCurrentPrice for compatibility)
@@ -70,7 +70,7 @@ public:
      * @param tradingPair The trading pair
      * @return Current price
      */
-    virtual double getPrice(const std::string& tradingPair) {
+    virtual double getPrice(const core::Symbol& tradingPair) {
         return getCurrentPrice(tradingPair);
     }
     // fetchCurrentPositions
@@ -87,7 +87,7 @@ public:
      * @return Vector of timestamp-price pairs
      */
     virtual std::vector<std::pair<Timestamp, double>> getHistoricalPrices(
-        const std::string& tradingPair,
+        const core::Symbol& tradingPair,
         const std::string& interval,
         int count,
         const std::optional<std::string>& exchangeId = std::nullopt) = 0;
@@ -100,7 +100,7 @@ public:
      * @param exchangeId Optional exchange ID
      * @return Volatility value
      */
-    virtual double getVolatility(const std::string& tradingPair, const std::string& timeframe, const std::optional<std::string>& exchangeId = std::nullopt) = 0;
+    virtual double getVolatility(const core::Symbol& tradingPair, const std::string& timeframe, const std::optional<std::string>& exchangeId = std::nullopt) = 0;
     
     /**
      * Get order history for a trading pair
@@ -110,7 +110,7 @@ public:
      * @param limit Maximum number of orders to retrieve
      * @return Vector of order requests
      */
-    virtual std::vector<OrderRequest> getOrderHistory(const core::ExchangeId& exchangeId, const std::string& tradingPair, int limit) = 0;
+    virtual std::vector<OrderRequest> getOrderHistory(const core::ExchangeId& exchangeId, const core::Symbol& tradingPair, int limit) = 0;
     
     /**
      * Get exchange balances
@@ -134,7 +134,7 @@ public:
      * @param exchangeId Optional exchange ID
      * @return true if successful, false otherwise
      */
-    virtual bool subscribeMarketData(const std::string& tradingPair, const std::optional<std::string>& exchangeId = std::nullopt) = 0;
+    virtual bool subscribeMarketData(const core::Symbol& tradingPair, const std::optional<std::string>& exchangeId = std::nullopt) = 0;
     
     /**
      * Unsubscribe from market data updates
@@ -143,7 +143,7 @@ public:
      * @param exchangeId Optional exchange ID
      * @return true if successful, false otherwise
      */
-    virtual bool unsubscribeMarketData(const std::string& tradingPair, const std::optional<std::string>& exchangeId = std::nullopt) = 0;
+    virtual bool unsubscribeMarketData(const core::Symbol& tradingPair, const std::optional<std::string>& exchangeId = std::nullopt) = 0;
     
     /**
      * Get trading fees
@@ -173,7 +173,7 @@ public:
         return true;
     }
     
-    std::optional<MarketData> getMarketData(const std::string& tradingPair,
+    std::optional<MarketData> getMarketData(const core::Symbol& tradingPair,
                                       const std::optional<std::string>& exchangeId = std::nullopt) override {
         MarketData data;
         data.tradingPair = tradingPair;
@@ -183,7 +183,7 @@ public:
         return data;
     }
     
-    double getCurrentPrice(const std::string& tradingPair, const std::optional<std::string>& exchangeId = std::nullopt) override {
+    double getCurrentPrice(const core::Symbol& tradingPair, const std::optional<std::string>& exchangeId = std::nullopt) override {
         // Mock price data
         if (tradingPair.find("BTC") != std::string::npos) return 50000.0;
         if (tradingPair.find("ETH") != std::string::npos) return 3000.0;
@@ -191,7 +191,7 @@ public:
     }
     
     std::vector<std::pair<Timestamp, double>> getHistoricalPrices(
-        const std::string& tradingPair,
+        const core::Symbol& tradingPair,
         const std::string& interval,
         int count,
         const std::optional<std::string>& exchangeId = std::nullopt) override {
@@ -210,11 +210,11 @@ public:
     std::vector<Position> fetchCurrentPositions() override {
         return {}; // Empty for mock
     }
-    double getVolatility(const std::string& tradingPair, const std::string& timeframe, const std::optional<std::string>& exchangeId = std::nullopt) override {
+    double getVolatility(const core::Symbol& tradingPair, const std::string& timeframe, const std::optional<std::string>& exchangeId = std::nullopt) override {
         return 0.02; // 2% mock volatility
     }
     
-    std::vector<OrderRequest> getOrderHistory(const core::ExchangeId& exchangeId, const std::string& tradingPair, int limit) override {
+    std::vector<OrderRequest> getOrderHistory(const core::ExchangeId& exchangeId, const core::Symbol& tradingPair, int limit) override {
         return {}; // Empty for mock
     }
     
@@ -226,11 +226,11 @@ public:
         // Mock implementation - store callback if needed
     }
     
-    bool subscribeMarketData(const std::string& tradingPair, const std::optional<std::string>& exchangeId = std::nullopt) override {
+    bool subscribeMarketData(const core::Symbol& tradingPair, const std::optional<std::string>& exchangeId = std::nullopt) override {
         return true;
     }
     
-    bool unsubscribeMarketData(const std::string& tradingPair, const std::optional<std::string>& exchangeId = std::nullopt) override {
+    bool unsubscribeMarketData(const core::Symbol& tradingPair, const std::optional<std::string>& exchangeId = std::nullopt) override {
         return true;
     }
     

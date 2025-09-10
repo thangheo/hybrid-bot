@@ -66,7 +66,7 @@ struct TrailingDistance {
  * @brief Concept for objects that can provide price information
  */
 template<typename T>
-concept PriceProvider = requires(T t, const std::string& symbol) {
+concept PriceProvider = requires(T t, const core::Symbol& symbol) {
     { t.getLastPrice(symbol) } -> std::convertible_to<std::optional<double>>;
 };
 
@@ -137,7 +137,7 @@ struct StopLossInfo {
  */
 struct EnhancedStopLossEvent {
     core::ExchangeId exchangeId;
-    std::string tradingPair;
+    core::Symbol tradingPair;
     std::string strategyId;
     double positionSize{0.0};
     double entryPrice{0.0};
@@ -259,7 +259,7 @@ public:
      */
     [[nodiscard]] bool setStopLoss(
         const core::ExchangeId& exchangeId,
-        const std::string& tradingPair,
+        const core::Symbol& tradingPair,
         StopPrice stopPrice,
         bool isTrailing = false,
         std::optional<TrailingDistance> trailingDistance = std::nullopt
@@ -270,7 +270,7 @@ public:
      */
     [[nodiscard]] bool removeStopLoss(
         const core::ExchangeId& exchangeId, 
-        const std::string& tradingPair
+        const core::Symbol& tradingPair
     );
     
     /**
@@ -278,7 +278,7 @@ public:
      */ 
     [[nodiscard]] std::optional<StopLossData> getStopLoss(
         const core::ExchangeId& exchangeId, 
-        const std::string& tradingPair
+        const core::Symbol& tradingPair
     ) const;
 
     /**
@@ -291,7 +291,7 @@ public:
      */
     [[nodiscard]] std::optional<std::string> liquidatePosition(
         const core::ExchangeId& exchangeId, 
-        const std::string& tradingPair
+        const core::Symbol& tradingPair
     );
     
     /**
@@ -362,11 +362,11 @@ private:
     // Private helper methods
     [[nodiscard]] std::string createPositionKey(
         const core::ExchangeId& exchangeId, 
-        const std::string& tradingPair
+        const core::Symbol& tradingPair
     ) const;
     
     [[nodiscard]] std::optional<double> getCurrentPrice(
-        const std::string& tradingPair
+        const core::Symbol& tradingPair
     ) const;
     
     [[nodiscard]] bool isStopLossTriggered(
@@ -377,19 +377,19 @@ private:
     
     [[nodiscard]] EnhancedStopLossEvent createStopLossEvent(
         const core::ExchangeId& exchangeId,
-        const std::string& tradingPair,
+        const core::Symbol& tradingPair,
         const StopLossInfo& stopLoss,
         double positionSize,
         double entryPrice,
         double currentPrice
     ) const;
     
-    void updateTrailingStops(const std::string& symbol, double price);
+    void updateTrailingStops(const core::Symbol& symbol, double price);
     void notifyCallbacks(const EnhancedStopLossEvent& event);
     
     [[nodiscard]] bool shouldCreateDefaultStopLoss(
         const core::ExchangeId& exchangeId,
-        const std::string& tradingPair,
+        const core::Symbol& tradingPair,
         double positionSize
     ) const;
     

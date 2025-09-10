@@ -140,7 +140,7 @@ void StopLossManager::updateMarketData(const core::MarketData& marketData) {
 
 bool StopLossManager::setStopLoss(
     const core::ExchangeId& exchangeId,
-    const std::string& tradingPair,
+    const core::Symbol& tradingPair,
     StopPrice stopPrice,
     bool isTrailing,
     std::optional<TrailingDistance> trailingDistance) {
@@ -199,7 +199,7 @@ bool StopLossManager::setStopLoss(
 
 bool StopLossManager::removeStopLoss(
     const core::ExchangeId& exchangeId, 
-    const std::string& tradingPair) {
+    const core::Symbol& tradingPair) {
     
     const std::string positionKey = createPositionKey(exchangeId, tradingPair);
     
@@ -209,7 +209,7 @@ bool StopLossManager::removeStopLoss(
 // Update your method signature and implementation
 std::optional<StopLossData> StopLossManager::getStopLoss(
     const core::ExchangeId& exchangeId, 
-    const std::string& tradingPair) const {
+    const core::Symbol& tradingPair) const {
     
     const std::string positionKey = createPositionKey(exchangeId, tradingPair);
     
@@ -267,7 +267,7 @@ std::vector<EnhancedStopLossEvent> StopLossManager::checkStopLosses() {
         if (delimiterPos == std::string::npos) continue;
         
         core::ExchangeId exchangeId = core::ExchangeId::fromString(positionKey.substr(0, delimiterPos));
-        std::string tradingPair = positionKey.substr(delimiterPos + 1);
+        core::Symbol tradingPair = positionKey.substr(delimiterPos + 1);
         
         // Get current price
         auto currentPriceOpt = getCurrentPrice(tradingPair);
@@ -339,7 +339,7 @@ std::vector<EnhancedStopLossEvent> StopLossManager::checkStopLosses() {
 
 std::optional<std::string> StopLossManager::liquidatePosition(
     const core::ExchangeId& exchangeId, 
-    const std::string& tradingPair) {
+    const core::Symbol& tradingPair) {
     
     auto position = positionTracker_->getPosition(exchangeId, TradingPair(tradingPair));
     if (!position || std::abs(position->getQuantity()) < 1e-8) {
@@ -415,7 +415,7 @@ std::map<StopLossManager::PositionKey, StopLossData> StopLossManager::getAllStop
         if (delimiterPos == std::string::npos) continue;
         
         core::ExchangeId exchangeId = core::ExchangeId::fromString(positionKey.substr(0, delimiterPos));
-        std::string tradingPair = positionKey.substr(delimiterPos + 1);
+        core::Symbol tradingPair = positionKey.substr(delimiterPos + 1);
         
         // Create non-atomic copy of stop loss data
         StopLossData data;
@@ -445,7 +445,7 @@ std::map<StopLossManager::PositionKey, StopLossData> StopLossManager::getAllStop
 //         if (delimiterPos == std::string::npos) continue;
         
 //         core::ExchangeId exchangeId = core::ExchangeId::fromString(positionKey.substr(0, delimiterPos));
-//         std::string tradingPair = positionKey.substr(delimiterPos + 1);
+//         core::Symbol tradingPair = positionKey.substr(delimiterPos + 1);
         
 //         // Create copy of stop loss info
 //         StopLossInfo copy;
@@ -501,10 +501,10 @@ std::map<std::string, std::string> StopLossManager::getDiagnostics() const {
 // std::string StopLossManager::createPositionKey(
 std::string StopLossManager::createPositionKey(
     const core::ExchangeId& exchangeId, 
-    const std::string& tradingPair) const {
+    const core::Symbol& tradingPair) const {
     return exchangeId.toString() + ":" + tradingPair;
 }
-std::optional<double> StopLossManager::getCurrentPrice(const std::string& tradingPair) const {
+std::optional<double> StopLossManager::getCurrentPrice(const core::Symbol& tradingPair) const {
     std::shared_lock lock(marketDataMutex_);
     auto it = priceCache_.find(tradingPair);
     return it != priceCache_.end() ? std::optional(it->second) : std::nullopt;
@@ -528,7 +528,7 @@ bool StopLossManager::isStopLossTriggered(
 
 EnhancedStopLossEvent StopLossManager::createStopLossEvent(
     const core::ExchangeId& exchangeId,
-    const std::string& tradingPair,
+    const core::Symbol& tradingPair,
     const StopLossInfo& stopLoss,
     double positionSize,
     double entryPrice,
@@ -549,7 +549,7 @@ EnhancedStopLossEvent StopLossManager::createStopLossEvent(
     return event;
 }
 
-void StopLossManager::updateTrailingStops(const std::string& symbol, double price) {
+void StopLossManager::updateTrailingStops(const core::Symbol& symbol, double price) {
     std::shared_lock lock(stopLossMutex_);
     
     for (const auto& [positionKey, stopLoss] : stopLosses_) {
@@ -561,7 +561,7 @@ void StopLossManager::updateTrailingStops(const std::string& symbol, double pric
         auto delimiterPos = positionKey.find(':');
         if (delimiterPos == std::string::npos) continue;
         
-        std::string tradingPair = positionKey.substr(delimiterPos + 1);
+        core::Symbol tradingPair = positionKey.substr(delimiterPos + 1);
         if (tradingPair != symbol) continue;
         
         // Get position to determine direction
@@ -588,7 +588,7 @@ void StopLossManager::notifyCallbacks(const EnhancedStopLossEvent& event) {
 
 bool StopLossManager::shouldCreateDefaultStopLoss(
     const core::ExchangeId& exchangeId,
-    const std::string& tradingPair,
+    const core::Symbol& tradingPair,
     double positionSize) const {
     
     // Don't create for zero positions

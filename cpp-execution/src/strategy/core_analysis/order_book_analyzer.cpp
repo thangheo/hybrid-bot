@@ -20,7 +20,7 @@ namespace strategy {
 // OrderBookAnalyzer Implementation
 
 OrderBookAnalyzer::OrderBookAnalyzer(const core::ExchangeId& exchangeId, 
-                                   const std::string& tradingPair,
+                                   const core::Symbol& tradingPair,
                                    const ParameterSet& params)
     : exchangeId_(exchangeId)
     , tradingPair_(tradingPair)
@@ -35,7 +35,7 @@ OrderBookAnalyzer::OrderBookAnalyzer(const core::ExchangeId& exchangeId,
 }
 
 OrderBookAnalyzer::OrderBookAnalyzer(const core::ExchangeId& exchangeId, 
-                                   const std::string& tradingPair,
+                                   const core::Symbol& tradingPair,
                                    int depthLevels, 
                                    double priceGroupingFactor)
     : exchangeId_(exchangeId)
@@ -776,7 +776,7 @@ OrderBookAnalyzerManager::OrderBookAnalyzerManager(const OrderBookAnalyzerConfig
 }
 
 std::shared_ptr<OrderBookAnalyzer> OrderBookAnalyzerManager::getAnalyzerForSymbol(
-    const std::string& symbol, 
+    const core::Symbol& symbol, 
     const core::ExchangeId& exchangeId,
     const ParameterSet& params) {
     
@@ -797,7 +797,7 @@ std::shared_ptr<OrderBookAnalyzer> OrderBookAnalyzerManager::getAnalyzerForSymbo
 }
 
 std::shared_ptr<OrderBookAnalyzer> OrderBookAnalyzerManager::getAnalyzerForSymbol(
-    const std::string& symbol, 
+    const core::Symbol& symbol, 
     const core::ExchangeId& exchangeId) const {
     
     std::lock_guard<std::mutex> lock(mutex_);
@@ -808,7 +808,7 @@ std::shared_ptr<OrderBookAnalyzer> OrderBookAnalyzerManager::getAnalyzerForSymbo
     return (it != analyzers_.end()) ? it->second : nullptr;
 }
 
-void OrderBookAnalyzerManager::removeAnalyzer(const std::string& symbol, 
+void OrderBookAnalyzerManager::removeAnalyzer(const core::Symbol& symbol, 
                                              const core::ExchangeId& exchangeId) {
     std::lock_guard<std::mutex> lock(mutex_);
     const std::string key = createKey(symbol, exchangeId);
@@ -890,7 +890,7 @@ void OrderBookAnalyzerManager::updateParameters(const ParameterSet& params) {
     }
 }
 
-std::string OrderBookAnalyzerManager::createKey(const std::string& symbol, 
+std::string OrderBookAnalyzerManager::createKey(const core::Symbol& symbol, 
                                                const core::ExchangeId& exchangeId) const {
     return exchangeId.toString() + ":" + symbol;
 }
@@ -898,7 +898,7 @@ std::string OrderBookAnalyzerManager::createKey(const std::string& symbol,
 // Factory function
 std::shared_ptr<OrderBookAnalyzer> createOrderBookAnalyzer(
     const core::ExchangeId& exchangeId, 
-    const std::string& tradingPair,
+    const core::Symbol& tradingPair,
     const ParameterSet& params) {
     
     return std::make_shared<OrderBookAnalyzer>(exchangeId, tradingPair, params);

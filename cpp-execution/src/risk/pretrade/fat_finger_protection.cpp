@@ -198,14 +198,14 @@ bool FatFingerProtection::updateConfig(const Config& newConfig) {
     return true;
 }
 
-bool FatFingerProtection::requiresAdditionalVerification(const std::string& symbol,
+bool FatFingerProtection::requiresAdditionalVerification(const core::Symbol& symbol,
                                                        double price,
                                                        double quantity) const {
     const double notionalValue = price * std::abs(quantity);
     return notionalValue > config_.notionalValueThreshold;
 }
 
-double FatFingerProtection::getTypicalOrderSize(const std::string& symbol) const {
+double FatFingerProtection::getTypicalOrderSize(const core::Symbol& symbol) const {
     std::lock_guard<std::mutex> lock(historyMutex_);
     
     auto it = orderAnalyzers_.find(normalizeSymbol(symbol));
@@ -220,7 +220,7 @@ double FatFingerProtection::getTypicalOrderSize(const std::string& symbol) const
 }
 
 std::optional<OrderPatternAnalyzer::Statistics> 
-FatFingerProtection::getOrderStatistics(const std::string& symbol) const {
+FatFingerProtection::getOrderStatistics(const core::Symbol& symbol) const {
     std::lock_guard<std::mutex> lock(historyMutex_);
     
     auto it = orderAnalyzers_.find(normalizeSymbol(symbol));
@@ -231,13 +231,13 @@ FatFingerProtection::getOrderStatistics(const std::string& symbol) const {
     return std::nullopt;
 }
 
-std::string FatFingerProtection::normalizeSymbol(const std::string& symbol) const {
+std::string FatFingerProtection::normalizeSymbol(const core::Symbol& symbol) const {
     std::string result = symbol;
     std::transform(result.begin(), result.end(), result.begin(), ::toupper);
     return result;
 }
 
-bool FatFingerProtection::checkPriceDeviation(const std::string& symbol,
+bool FatFingerProtection::checkPriceDeviation(const core::Symbol& symbol,
                                              double price,
                                              std::vector<RiskViolation>& violations) {
     try {
@@ -269,7 +269,7 @@ bool FatFingerProtection::checkPriceDeviation(const std::string& symbol,
     }
 }
 
-bool FatFingerProtection::checkSizeAnomaly(const std::string& symbol,
+bool FatFingerProtection::checkSizeAnomaly(const core::Symbol& symbol,
                                           double quantity,
                                           std::vector<RiskViolation>& violations) {
     if (quantity <= 0.0) {
@@ -317,7 +317,7 @@ bool FatFingerProtection::checkSizeAnomaly(const std::string& symbol,
     return true;
 }
 
-bool FatFingerProtection::checkNotionalValue(const std::string& symbol,
+bool FatFingerProtection::checkNotionalValue(const core::Symbol& symbol,
                                             double price,
                                             double quantity,
                                             std::vector<RiskViolation>& violations) {
@@ -343,11 +343,11 @@ bool FatFingerProtection::checkNotionalValue(const std::string& symbol,
     return true;
 }
 
-double FatFingerProtection::getCurrentMarketPrice(const std::string& symbol) const {
+double FatFingerProtection::getCurrentMarketPrice(const core::Symbol& symbol) const {
     return dataInterface_->getCurrentPrice(symbol);
 }
 
-OrderPatternAnalyzer& FatFingerProtection::getOrCreateAnalyzer(const std::string& symbol) {
+OrderPatternAnalyzer& FatFingerProtection::getOrCreateAnalyzer(const core::Symbol& symbol) {
     const std::string normalizedSymbol = normalizeSymbol(symbol);
     
     std::lock_guard<std::mutex> lock(historyMutex_);

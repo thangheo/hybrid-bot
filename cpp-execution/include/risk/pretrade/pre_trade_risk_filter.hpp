@@ -112,7 +112,7 @@ private:
     bool passesBasicValidation(const OrderRequest& orderRequest, std::vector<RiskViolation>& violations);
     
     // Helper methods for signal property extraction
-    std::string getBaseAsset(const std::string& tradingPair) const;
+    std::string getBaseAsset(const core::Symbol& tradingPair) const;
 };
 
 } // namespace risk

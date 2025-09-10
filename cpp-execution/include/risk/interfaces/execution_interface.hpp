@@ -32,7 +32,7 @@ using ExecutionReport = execution::models::ExecutionReport;
 //     std::string clientOrderId;
 //     std::string exchangeOrderId;
 //     ExchangeId exchangeId;
-//     std::string tradingPair;
+//     core::Symbol tradingPair;
 //     OrderSide side;
 //     std::string type;
 //     std::string status;
@@ -105,7 +105,7 @@ public:
      * @param tradingPair Trading pair
      * @return Number of orders cancelled
      */
-    virtual int cancelAllOrders(const core::ExchangeId& exchangeId, const std::string& tradingPair) = 0;
+    virtual int cancelAllOrders(const core::ExchangeId& exchangeId, const core::Symbol& tradingPair) = 0;
     
     /**
      * Get order status

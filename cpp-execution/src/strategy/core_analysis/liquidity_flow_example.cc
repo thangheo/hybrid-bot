@@ -69,7 +69,7 @@
   */
  class OrderImbalanceStrategyExample {
  public:
-     OrderImbalanceStrategyExample(const core::ExchangeId& exchangeId, const std::string& tradingPair)
+     OrderImbalanceStrategyExample(const core::ExchangeId& exchangeId, const core::Symbol& tradingPair)
          : exchangeId_(exchangeId), 
            trading_pair_(tradingPair),
            running_(false) {

@@ -35,7 +35,7 @@ void Normalizer::processOrderBookUpdate(const OrderBookUpdate& update) {
 }
 
 std::string Normalizer::normalizePrice(const core::ExchangeId& exchangeId, 
-                                      const std::string& tradingPair,
+                                      const core::Symbol& tradingPair,
                                       const std::string& price) {
     // Simple implementation - in practice this would use exchange-specific rules
     try {
@@ -50,7 +50,7 @@ std::string Normalizer::normalizePrice(const core::ExchangeId& exchangeId,
 }
 
 std::string Normalizer::normalizeQuantity(const core::ExchangeId& exchangeId, 
-                                         const std::string& tradingPair,
+                                         const core::Symbol& tradingPair,
                                          const std::string& quantity) {
     // Simple implementation - in practice this would use exchange-specific rules
     try {

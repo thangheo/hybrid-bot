@@ -97,9 +97,9 @@ public:
         const core::Symbol& tradingPair,
         OrderSide side, 
         double quantity);
-        
+
     static std::shared_ptr<Order> createLimitOrder(
-        const core::Symbol& tradingPair, 
+        const core::Symbol& tradingPair,
         OrderSide side, 
         double quantity, 
         double price);
@@ -136,7 +136,7 @@ public:
     void setExchangeOrderId(const std::string& exchange_order_id);
     void setClientOrderId(const std::string& client_order_id);
     void setTradingPair(const core::Symbol& tradingPair);
-    // void setTradingPair(const std::string& tradingPair);
+    // void setTradingPair(const core::Symbol& tradingPair);
     void setSide(OrderSide side);
     void setType(OrderType type);
     void setQuantity(double quantity);

@@ -135,7 +135,7 @@ std::vector<std::string> BinanceApiClient::getSupportedSymbols() const {
 //placeOrder
 std::future<models::ExecutionReport> BinanceApiClient::placeOrder(const models::Order& order) {
     // Extract all the necessary data from the order before the async call
-    std::string tradingPair = order.getTradingPair().toString();
+    core::Symbol tradingPair = order.getTradingPair().toString();
     auto side = order.getSide();
     auto type = order.getType();
     double quantity = order.getQuantity();

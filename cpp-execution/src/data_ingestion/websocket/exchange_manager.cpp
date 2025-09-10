@@ -21,7 +21,7 @@ ExchangeManager::ExchangeManager(NormalizedOrderBookCallback callback,
     
     // Create WebSocket callback that properly forwards to normalizer
     websocketCallback_ = [this](const core::ExchangeId& exchange,
-                               const std::string& symbol,
+                               const core::Symbol& symbol,
                                const std::vector<uint8_t>& data) {
         this->onWebSocketData(exchange, symbol, data);
     };
@@ -88,7 +88,7 @@ bool ExchangeManager::initialize() {
 }
 
 void ExchangeManager::onWebSocketData(const core::ExchangeId& exchange,
-                                    const std::string& symbol, 
+                                    const core::Symbol& symbol, 
                                     const std::vector<uint8_t>& data) {
     try {
         // Convert WebSocket data to MarketDataUpdate format
@@ -220,7 +220,7 @@ bool ExchangeManager::isConnected() const {
     return isConnected_.load() && connectionPool_ && connectionPool_->isHealthy();
 }
 
-OrderBookUpdate ExchangeManager::getOrderBook(const std::string& tradingPair,
+OrderBookUpdate ExchangeManager::getOrderBook(const core::Symbol& tradingPair,
                                             int32_t depth) const {
     if (!normalizer_) {
         return OrderBookUpdate{}; // Return empty update if normalizer not available

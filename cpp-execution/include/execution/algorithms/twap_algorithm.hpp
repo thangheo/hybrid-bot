@@ -38,7 +38,7 @@ public:
     TwapAlgorithm();    
     // Initialize the algorithm with configuration
     bool initialize(
-        const core::Symbol& tradingPair,
+        const ,
         models::OrderSide side,
         const algorithms::TwapConfig& config);
     
@@ -86,7 +86,7 @@ public:
     // Get all child orders
     std::vector<models::OrderPtr> getChildOrders() const;
     // Get volume for a specific trading pair and time duration
-    double getVolume(const std::string& tradingPair, std::chrono::minutes duration) const;
+    double getVolume(const core::Symbol& tradingPair, std::chrono::minutes duration) const;
 private:
     // Extract TWAP configuration from order parameters
     algorithms::TwapConfig extractConfigFromOrder(const models::Order& parentOrder);

@@ -18,7 +18,7 @@ public:
     
     std::shared_ptr<OrderBook> createMockOrderBook(
         const core::ExchangeId& exchangeId, 
-        const std::string& symbol) {
+        const core::Symbol& symbol) {
         
         auto orderBook = std::make_shared<OrderBook>(exchangeId, symbol);
         

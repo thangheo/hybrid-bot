@@ -126,19 +126,19 @@ public:
     
     // Primary interface methods
     trading::MarketIntelligence GenerateAdaptiveMarketIntelligence(
-        const std::string& symbol,
+        const core::Symbol& symbol,
         std::shared_ptr<OrderBook> orderbook);
     
     // New improved interface methods
     trading::MarketIntelligence generateIntelligence(
-        const std::string& symbol,
+        const core::Symbol& symbol,
         const std::vector<trading::PriceLevel>& bids,
         const std::vector<trading::PriceLevel>& asks);
     
     // Utility methods
     bool hasEnoughData() const;
-    bool hasEnoughData(const std::string& symbol) const;
-    void printStatistics(const std::string& symbol) const;
+    bool hasEnoughData(const core::Symbol& symbol) const;
+    void printStatistics(const core::Symbol& symbol) const;
     // Utility methods
     // Debug and emergency methods (for backward compatibility)
     void DebugSampleCounts();
@@ -174,8 +174,8 @@ private:
     void InitializeDefaultProfiles();  // Legacy method name for compatibility
     
     // Profile management
-    CoinProfile* getOrCreateProfile(const std::string& symbol);
-    CoinProfile& GetOrCreateProfile(const std::string& symbol);  // Legacy method signature
+    CoinProfile* getOrCreateProfile(const core::Symbol& symbol);
+    CoinProfile& GetOrCreateProfile(const core::Symbol& symbol);  // Legacy method signature
     
     // Market analysis methods
     OrderBookMetrics calculateOrderBookMetrics(
@@ -197,7 +197,7 @@ private:
     void UpdateProfile(CoinProfile& profile, double volume, double spread, double depth);
     void AdaptThresholds(CoinProfile& profile);
     
-    double EstimateVolatility(const std::string& symbol, double spread,
+    double EstimateVolatility(const core::Symbol& symbol, double spread,
                              std::shared_ptr<trading::data_ingestion::OrderBook> orderbook);
     
     FlowMetrics AnalyzeFlowMetrics(double imbalance, double volatility);

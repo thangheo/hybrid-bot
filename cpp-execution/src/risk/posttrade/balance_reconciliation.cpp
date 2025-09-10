@@ -217,7 +217,7 @@ ReconciliationResult BalanceReconciliation::reconcileExchangePositions(
 
 ReconciliationResult BalanceReconciliation::reconcileTradingPair(
     const core::ExchangeId& exchangeId,
-    const std::string& tradingPair) {
+    const core::Symbol& tradingPair) {
     
     ReconciliationResult result;
     
@@ -372,7 +372,7 @@ ReconciliationResult BalanceReconciliation::forceFullReconciliation() {
 
 PositionReconciliationEvent BalanceReconciliation::createReconciliationEvent(
     const core::ExchangeId& exchangeId,
-    const std::string& tradingPair,
+    const core::Symbol& tradingPair,
     double expectedQuantity,
     double actualQuantity,
     double discrepancy,

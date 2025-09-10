@@ -19,7 +19,7 @@
  
  VolumeProfileAnalyzer::VolumeProfileAnalyzer(
      const core::ExchangeId& exchangeId, 
-     const std::string& tradingPair, 
+     const core::Symbol& tradingPair, 
      const ParameterSet& params)
      : exchangeId_(exchangeId),
        trading_pair_(tradingPair),
@@ -56,7 +56,7 @@
 }
  VolumeProfileAnalyzer::VolumeProfileAnalyzer(
      const core::ExchangeId& exchangeId, 
-     const std::string& tradingPair, 
+     const core::Symbol& tradingPair, 
      int numPriceRanges, 
      double rangeSizePercent)
      : exchangeId_(exchangeId),
@@ -629,7 +629,7 @@
  
  std::shared_ptr<VolumeProfileAnalyzer> createVolumeProfileAnalyzer(
      const core::ExchangeId& exchangeId, 
-     const std::string& tradingPair,
+     const core::Symbol& tradingPair,
      const ParameterSet& params) {
      
      return std::make_shared<VolumeProfileAnalyzer>(exchangeId, tradingPair, params);

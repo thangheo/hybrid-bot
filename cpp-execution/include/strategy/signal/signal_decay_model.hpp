@@ -80,7 +80,7 @@ struct MarketEvent {
     MarketEventData data;         // Event data
     uint64_t timestamp;           // Event timestamp
     ExchangeId exchangeId;      // Exchange identifier
-    std::string tradingPair;     // Trading pair
+    core::Symbol tradingPair;     // Trading pair
 };
 
 

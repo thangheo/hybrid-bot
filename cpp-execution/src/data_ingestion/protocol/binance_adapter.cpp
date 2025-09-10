@@ -93,16 +93,16 @@ OrderBookUpdate BinanceAdapter::normalize(const MarketDataUpdate& update) {
         if (jsonObj.contains("stream") && jsonObj.contains("data")) {
             std::string stream = jsonObj["stream"];
             jsonObj = jsonObj["data"];
-            normalized.tradingPair = extractSymbolFromStream(stream);
+            normalized.tradingPair.fromString(extractSymbolFromStream(stream));
         } else if (jsonObj.contains("s")) {
-            normalized.tradingPair = jsonObj["s"];
+            normalized.tradingPair.fromString(jsonObj["s"]);
         } else if (jsonObj.contains("lastUpdateId")) {
             // Snapshot without symbol - use first subscribed symbol as fallback
-            normalized.tradingPair = "UNKNOWN";
+            normalized.tradingPair.fromString("UNKNOWN");
         }
         
-        normalized.tradingPair = standardizeTradingPair(normalized.tradingPair);
-        normalized.symbol = core::Symbol::fromString(normalized.tradingPair);
+        normalized.tradingPair.fromString(standardizeTradingPair(normalized.tradingPair));
+        normalized.symbol = normalized.tradingPair;
         
         // Determine message type
         if (jsonObj.contains("lastUpdateId") && jsonObj.contains("bids") && jsonObj.contains("asks")) {
@@ -165,7 +165,7 @@ OrderBookUpdate BinanceAdapter::normalize(const MarketDataUpdate& update) {
             normalized.sequenceNumber = jsonObj["U"].get<uint64_t>();
         }
         
-        bool validSequence = validateSequenceNumber(normalized.sequenceNumber, normalized.tradingPair);
+        bool validSequence = validateSequenceNumber(normalized.sequenceNumber, normalized.tradingPair.toString());
         if (!validSequence) {
             normalized.has_anomaly = true;
             normalized.anomaly_type = "sequence_gap";
@@ -191,8 +191,8 @@ std::string BinanceAdapter::extractSymbolFromStream(const std::string& stream) {
     }
     return "";
 }
-std::string BinanceAdapter::standardizeTradingPair(const std::string& tradingPair) {
-    return extractTradingPair(tradingPair);
+std::string BinanceAdapter::standardizeTradingPair(const core::Symbol& tradingPair) {
+    return extractTradingPair(tradingPair.toString());
 }
 
 ExchangeId BinanceAdapter::getExchangeId() const {
@@ -211,8 +211,8 @@ OrderBookUpdate BinanceAdapter::convertDepthUpdate(const std::string& jsonData) 
     // Extract basic information safely
     if (jsonObj.contains("s") && jsonObj["s"].is_string()) {
         std::string binanceSymbol = jsonObj["s"].get<std::string>();
-        update.tradingPair = extractTradingPair(binanceSymbol);
-        update.symbol = core::Symbol::fromString(update.tradingPair);
+        update.tradingPair.fromString(extractTradingPair(binanceSymbol));
+        update.symbol = update.tradingPair;
     }
     
     update.exchangeId = common::ExchangeId::binance();
@@ -286,8 +286,8 @@ OrderBookUpdate BinanceAdapter::convertDepthSnapshot(const std::string& jsonData
     // Extract symbol if available
     if (jsonObj.contains("symbol") && jsonObj["symbol"].is_string()) {
         std::string binanceSymbol = jsonObj["symbol"].get<std::string>();
-        update.tradingPair = extractTradingPair(binanceSymbol);
-        update.symbol = core::Symbol::fromString(update.tradingPair);
+        update.tradingPair.fromString(extractTradingPair(binanceSymbol));
+        update.symbol = update.tradingPair;
     }
     
     // Extract sequence number
@@ -387,7 +387,7 @@ std::string BinanceAdapter::extractTradingPair(const std::string& binanceSymbol)
     return binanceSymbol;
 }
 
-bool BinanceAdapter::validateSequenceNumber(uint64_t sequenceNumber, const std::string& symbol) {
+bool BinanceAdapter::validateSequenceNumber(uint64_t sequenceNumber, const core::Symbol& symbol) {
     std::lock_guard<std::mutex> lock(sequenceTrackingMutex_);
     
     auto it = lastSequenceNumbers_.find(symbol);

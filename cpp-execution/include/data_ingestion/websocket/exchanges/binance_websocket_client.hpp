@@ -162,10 +162,10 @@ private:
     // Binance-specific message handlers
     void handleStreamMessage(const json& data);
     void handleResponse(const json& data);
-    void processOrderBookData(const std::string& symbol, const std::string& eventType, const json& data);
-    void processTrade(const std::string& symbol, const json& data);
-    void processTicker(const std::string& symbol, const json& data);
-    void processBookTicker(const std::string& symbol, const json& data);
+    void processOrderBookData(const core::Symbol& symbol, const std::string& eventType, const json& data);
+    void processTrade(const core::Symbol& symbol, const json& data);
+    void processTicker(const core::Symbol& symbol, const json& data);
+    void processBookTicker(const core::Symbol& symbol, const json& data);
     
     // Subscription helpers
     bool sendSubscriptionRequest(const std::vector<std::string>& streams, bool subscribe);
@@ -184,9 +184,9 @@ private:
     
     // Market data simulation methods (temporary until real WebSocket is ready)
     void simulateMarketData();
-    void generateOrderBookUpdate(const std::string& symbol, double basePrice, std::mt19937& gen);
-    void generateTradeUpdate(const std::string& symbol, double basePrice, std::mt19937& gen);
-    void generateTickerUpdate(const std::string& symbol, double basePrice, std::mt19937& gen);
+    void generateOrderBookUpdate(const core::Symbol& symbol, double basePrice, std::mt19937& gen);
+    void generateTradeUpdate(const core::Symbol& symbol, double basePrice, std::mt19937& gen);
+    void generateTickerUpdate(const core::Symbol& symbol, double basePrice, std::mt19937& gen);
 };
 
 } // namespace data_ingestion

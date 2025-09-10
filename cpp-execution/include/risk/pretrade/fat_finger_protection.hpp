@@ -127,13 +127,13 @@ public:
     const Config& getConfig() const { return config_; }
     
     // Utilities
-    bool requiresAdditionalVerification(const std::string& symbol,
+    bool requiresAdditionalVerification(const core::Symbol& symbol,
                                       double price, double quantity) const;
     
-    double getTypicalOrderSize(const std::string& symbol) const;
+    double getTypicalOrderSize(const core::Symbol& symbol) const;
     
     std::optional<OrderPatternAnalyzer::Statistics> 
-    getOrderStatistics(const std::string& symbol) const;
+    getOrderStatistics(const core::Symbol& symbol) const;
 
 private:
     std::shared_ptr<DataInterface> dataInterface_;
@@ -148,23 +148,23 @@ private:
     std::atomic<uint64_t> rejectedOrders_;
 
     // Helper methods
-    std::string normalizeSymbol(const std::string& symbol) const;
+    std::string normalizeSymbol(const core::Symbol& symbol) const;
     
-    bool checkPriceDeviation(const std::string& symbol,
+    bool checkPriceDeviation(const core::Symbol& symbol,
                            double price,
                            std::vector<RiskViolation>& violations);
     
-    bool checkSizeAnomaly(const std::string& symbol,
+    bool checkSizeAnomaly(const core::Symbol& symbol,
                          double quantity,
                          std::vector<RiskViolation>& violations);
     
-    bool checkNotionalValue(const std::string& symbol,
+    bool checkNotionalValue(const core::Symbol& symbol,
                            double price,
                            double quantity,
                            std::vector<RiskViolation>& violations);
     
-    double getCurrentMarketPrice(const std::string& symbol) const;
-    OrderPatternAnalyzer& getOrCreateAnalyzer(const std::string& symbol);
+    double getCurrentMarketPrice(const core::Symbol& symbol) const;
+    OrderPatternAnalyzer& getOrCreateAnalyzer(const core::Symbol& symbol);
 };
 
 } // namespace trading::risk

@@ -62,7 +62,7 @@ public:
      * @param tradingPair The trading pair to check (as string)
      * @return true if on whitelist or whitelist is disabled, false otherwise
      */
-    bool isOnSymbolWhitelist(const std::string& tradingPair) const;
+    bool isOnSymbolWhitelist(const core::Symbol& tradingPair) const;
     
     /**
      * Check if the given trading pair is on the symbol whitelist
@@ -78,7 +78,7 @@ public:
      * @param violations Vector to fill with any violations
      * @return true if within range, false otherwise
      */
-    bool isPriceWithinRange(const std::string& tradingPair, double price, std::vector<RiskViolation>& violations);
+    bool isPriceWithinRange(const core::Symbol& tradingPair, double price, std::vector<RiskViolation>& violations);
     
     /**
      * Check if an order size meets minimum requirements for the exchange
@@ -88,7 +88,7 @@ public:
      * @param violations Vector to fill with any violations
      * @return true if size is valid, false otherwise
      */
-    bool isOrderSizeValid(const core::ExchangeId& exchangeId, const std::string& tradingPair, double quantity, std::vector<RiskViolation>& violations);
+    bool isOrderSizeValid(const core::ExchangeId& exchangeId, const core::Symbol& tradingPair, double quantity, std::vector<RiskViolation>& violations);
     
     /**
      * Update the symbol whitelist
@@ -105,7 +105,7 @@ public:
      * @param minSize The minimum order size
      * @return true if update was successful, false otherwise
      */
-    bool updateMinOrderSize(const core::ExchangeId& exchangeId, const std::string& tradingPair, double minSize);
+    bool updateMinOrderSize(const core::ExchangeId& exchangeId, const core::Symbol& tradingPair, double minSize);
     
     /**
      * Update price validation settings
@@ -134,7 +134,7 @@ private:
     // Helper methods
     bool validateOrderType(OrderType orderType, std::vector<RiskViolation>& violations);
     bool validateTimeInForce(const std::string& timeInForce, std::vector<RiskViolation>& violations);
-    double getCurrentMarketPrice(const std::string& tradingPair) const;
+    double getCurrentMarketPrice(const core::Symbol& tradingPair) const;
 };
 
 } // namespace risk

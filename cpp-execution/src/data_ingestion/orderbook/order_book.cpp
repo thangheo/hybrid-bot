@@ -59,22 +59,15 @@ OrderBook::OrderBook(const ExchangeId& exchangeId, const Symbol& symbol, OrderBo
       sequence_number_(0),
       is_valid_(false) {
 }
-OrderBook::OrderBook(const ExchangeId& exchangeId, const std::string& tradingPair, OrderBookCallback callback)
-    : exchangeId_(exchangeId),
-      callback_(std::move(callback)),
-      sequence_number_(0),
-      is_valid_(false) {
-    
-    // Parse trading pair
-    size_t separator = tradingPair.find('/');
-    if (separator != std::string::npos) {
-        symbol_.base = tradingPair.substr(0, separator);
-        symbol_.quote = tradingPair.substr(separator + 1);
-    } else {
-        symbol_.base = tradingPair;
-        symbol_.quote = "";
-    }
-}
+// OrderBook::OrderBook(const ExchangeId& exchangeId, const Symbol& tradingPair, OrderBookCallback callback)
+//     : exchangeId_(exchangeId),
+//       symbol_(tradingPair),
+//       callback_(std::move(callback)),
+//       sequence_number_(0),
+//       is_valid_(false) {
+// }
+  
+
 
 bool OrderBook::applySnapshot(const std::vector<PriceLevel>& bids, 
                             const std::vector<PriceLevel>& asks,
@@ -94,7 +87,7 @@ bool OrderBook::applySnapshot(const std::vector<PriceLevel>& bids,
     // Initialize a delta for this snapshot
     OrderBookDelta delta{
         .exchangeId = exchangeId_,
-        .tradingPair = symbol_.toString(),
+        .tradingPair = symbol_,
         .timestamp = timestamp,
         .sequenceNumber = sequenceNumber
     };
@@ -205,7 +198,7 @@ bool OrderBook::applyUpdate(const std::vector<PriceLevel>& bids,
     // Initialize a delta for this update
     OrderBookDelta delta{
         .exchangeId = exchangeId_,
-        .tradingPair = symbol_.toString(),
+        .tradingPair = symbol_,
         .timestamp = timestamp,
         .sequenceNumber = sequenceNumber
     };
@@ -338,7 +331,7 @@ OrderBookDelta OrderBook::getOrderBookDelta(Timestamp previous_timestamp) const 
     // Initialize the delta result
     OrderBookDelta result{
         .exchangeId = exchangeId_,
-        .tradingPair = symbol_.toString(),
+        .tradingPair = symbol_,
         .timestamp = timestamp_,
         .sequenceNumber = sequence_number_
     };
@@ -412,7 +405,7 @@ OrderBookUpdate OrderBook::getSnapshot(int depth) const {
     
     OrderBookUpdate update;
     update.exchangeId = exchangeId_;
-    update.tradingPair = symbol_.toString();
+    update.tradingPair = symbol_;
     update.exchangeTimestamp = timestamp_;
     update.receivedTimestamp = last_update_time_;
     update.sequenceNumber = sequence_number_;

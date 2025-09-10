@@ -412,7 +412,7 @@ std::string ExecutionService::orderStateToString(models::OrderState state) {
  }
   
     std::vector<CancelResponse> ExecutionService::cancelAllOrdersForSymbol(
-    const std::string& tradingPair,
+    const core::Symbol& tradingPair,
     const core::ExchangeId& exchangeId) {
     
     std::vector<CancelResponse> responses;

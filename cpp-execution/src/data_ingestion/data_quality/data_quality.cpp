@@ -1,4 +1,4 @@
-// src/data_ingestion/data_quality/data_quality.cpp
+    // src/data_ingestion/data_quality/data_quality.cpp
 #include "data_ingestion/data_quality/data_quality.hpp"
 #include <iostream>
 #include <sstream>
@@ -141,16 +141,17 @@ bool PriceRangeFilter::filter(OrderBookUpdate& update) {
     return true;
 }
 
-double PriceRangeFilter::getReasonablePriceRange(const std::string& symbol) const {
+double PriceRangeFilter::getReasonablePriceRange(const core::Symbol& symbol) const {
     // First check if we have a specific limit for this symbol
-    auto it = max_prices_.find(symbol);
+    auto symbolStr = symbol.toString();
+    auto it = max_prices_.find(symbolStr);
     if (it != max_prices_.end()) {
         return it->second;
     }
     
     // Otherwise use default limits based on typical ranges
-    if (symbol.find("BTC") != std::string::npos) return 200000.0;
-    if (symbol.find("ETH") != std::string::npos) return 10000.0;
+    if (symbolStr.find("BTC") != std::string::npos) return 200000.0;
+    if (symbolStr.find("ETH") != std::string::npos) return 10000.0;
     
     // Default fallback - very high to avoid false positives
     return 2000000.0;
@@ -161,8 +162,8 @@ SequenceGapFilter::SequenceGapFilter(int max_gap) : max_gap_(max_gap) {
 }
 
 bool SequenceGapFilter::filter(OrderBookUpdate& update) {
-    std::string key = update.exchangeId.toString() + ":" + update.tradingPair;
-    
+    std::string key = update.exchangeId.toString() + ":" + update.tradingPair.toString();
+
     auto it = last_sequence_numbers_.find(key);
     if (it == last_sequence_numbers_.end()) {
         // First update for this symbol
