@@ -365,12 +365,14 @@ public:
         std::lock_guard<std::mutex> lock(mutex_);
         strategyEventCallback_ = callback;
     }
+    bool notifyEmergencyState(const std::string& reason) {
+        if (!initialized_) {
+            logWithTimestamp("ERROR", "Strategy interface not initialized");
+            return false;
+        }
+    }
 };
 
-// Factory function to create StrategyInterface
-StrategyInterface::StrategyInterface() {
-    // Base constructor, nothing to do here
-}
 
 // Global factory function to create the concrete implementation
 std::unique_ptr<StrategyInterface> createStrategyInterface() {

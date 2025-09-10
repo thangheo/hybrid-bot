@@ -226,13 +226,12 @@ FatFingerProtection::getOrderStatistics(const core::Symbol& symbol) const {
     auto it = orderAnalyzers_.find(normalizeSymbol(symbol));
     if (it != orderAnalyzers_.end()) {
         return it->second->getStatistics();
-    }
-    
+    }    
     return std::nullopt;
 }
 
 std::string FatFingerProtection::normalizeSymbol(const core::Symbol& symbol) const {
-    std::string result = symbol;
+    std::string result = symbol.toString();
     std::transform(result.begin(), result.end(), result.begin(), ::toupper);
     return result;
 }

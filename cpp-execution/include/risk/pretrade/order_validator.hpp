@@ -69,7 +69,7 @@ public:
      * @param tradingPair The trading pair to check (as TradingPair object)
      * @return true if on whitelist or whitelist is disabled, false otherwise
      */
-    bool isOnSymbolWhitelist(const TradingPair& tradingPair) const;
+    // bool isOnSymbolWhitelist(const TradingPair& tradingPair) const;
     
     /**
      * Check if an order price is within acceptable range compared to current market price

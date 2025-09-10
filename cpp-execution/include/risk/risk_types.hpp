@@ -10,7 +10,7 @@
 #include "core/market_types.hpp"
 #include "core/types.hpp"
 #include "core/direction.hpp"
-
+#include "strategy/types/performance_metrics.hpp"
 #include <string>
 #include <vector>
 #include <map>
@@ -67,7 +67,7 @@ using ExchangeId = trading::core::ExchangeId;
 // class ValidationResult;
 class ThresholdSet;
 // class RiskParameters;
-class PerformanceMetrics;
+// class PerformanceMetrics;
 
 using StrategyId = trading::core::StrategyId;
 

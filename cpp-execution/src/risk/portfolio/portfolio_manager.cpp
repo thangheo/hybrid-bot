@@ -14,6 +14,7 @@
 #include <numeric>
 #include <stdexcept>
 #include <sstream>
+#include <set>
 
 namespace trading {
 namespace risk {
@@ -109,10 +110,25 @@ void PortfolioManager::processExecutionReport(const trading::execution::models::
     // Portfolio metrics will be updated via callback
 }
 // reconcilePositions
-bool PortfolioManager::reconcilePositions() {
+bool PortfolioManager::reconcilePositions(ExchangeId exchangeId) {
     try {
-        // PostTradeMonitor::reconcilePositions
-        bool success = m_positionTracker->reconcilePositions();
+        // PostTradeMonitor::reconcilePositions - reconcile all exchanges
+        bool success = true;
+        auto positions = m_positionTracker->getAllPositions();
+        
+        // Get unique exchange IDs from positions
+        std::set<ExchangeId> uniqueExchangeIds;
+        
+        for (const auto& position : positions) {
+            uniqueExchangeIds.insert(position.getExchangeId());
+        }
+        
+        // Reconcile positions for each exchange
+        for (const auto& exchange : uniqueExchangeIds) {
+            bool exchangeSuccess = m_positionTracker->reconcilePositions(exchange);
+            success = success && exchangeSuccess;
+        }
+        
         if (success) {
             notifyPortfolioEvent("reconciliation", "Position reconciliation completed successfully");
         } else {
@@ -180,13 +196,14 @@ std::unordered_map<std::string, double> PortfolioManager::getPortfolioAllocation
     return m_portfolioAllocation;
 }
 
-std::vector<Position> PortfolioManager::getPositions(const std::optional<ExchangeId>& exchangeId) const {
+std::vector<Position> PortfolioManager::getAllPositions(const std::optional<ExchangeId>& exchangeId) const {
     if (exchangeId) {
         return m_positionTracker->getExchangePositions(*exchangeId);
     } else {
         return m_positionTracker->getAllPositions();
     }
 }
+
 
 std::optional<Position> PortfolioManager::getPosition(const TradingPair& tradingPair, 
                                                      const std::optional<ExchangeId>& exchangeId) const {

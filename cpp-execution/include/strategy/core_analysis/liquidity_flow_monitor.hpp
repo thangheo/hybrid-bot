@@ -186,7 +186,7 @@
       * Get the trading pair
       * @return Trading pair
       */
-     const std::string& getTradingPair() const { return trading_pair_; }
+     const core::Symbol& getTradingPair() const { return trading_pair_; }
      
      /**
       * Set the large order threshold
@@ -285,7 +285,7 @@
      
      // Exchange and trading pair identification
      core::ExchangeId exchangeId_;
-     std::string trading_pair_;
+     core::Symbol trading_pair_;
      
      // Configuration
      double large_order_threshold_;      // Multiple of typical size to consider "large"

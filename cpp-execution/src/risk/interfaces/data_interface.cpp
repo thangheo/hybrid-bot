@@ -163,7 +163,7 @@ public:
             
             // If no history available, log a warning
             if (history.empty()) {
-                LOG_WARN("No order history available for " + exchangeId.toString() + ":" + tradingPair);
+                LOG_WARN("No order history available for " + exchangeId.toString() + ":" + tradingPair.toString());
             }
             
             return history;
@@ -220,7 +220,7 @@ public:
             
             if (success) {
                 std::string exchange = exchangeId.value_or("default");
-                LOG_INFO("Subscribed to market data for " + exchange + ":" + tradingPair);
+                LOG_INFO("Subscribed to market data for " + exchange + ":" + tradingPair.toString());
             } else {
                 LOG_ERROR("Failed to subscribe to market data");
             }
@@ -244,7 +244,7 @@ public:
             
             if (success) {
                 std::string exchange = exchangeId.value_or("default");
-                LOG_INFO("Unsubscribed from market data for " + exchange + ":" + tradingPair);
+                LOG_INFO("Unsubscribed from market data for " + exchange + ":" + tradingPair.toString());
             }
             
             return success;

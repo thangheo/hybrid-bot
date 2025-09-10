@@ -474,14 +474,13 @@ void RiskConfig::loadOrderValidationConfig(const json& ov) {
             core::ExchangeId exchangeId = core::ExchangeId::fromString(exchangeIdStr);
             if (pairs.is_object()) {
                 for (const auto& [symbolStr, minSize] : pairs.items()) {
-                    TradingPair pair;
-                    pair.symbol = symbolStr;
+                    TradingPair pair(symbolStr);
                     // Parse base/quote from symbol if needed
-                    auto separatorPos = symbolStr.find("/");
-                    if (separatorPos != std::string::npos) {
-                        pair.base = symbolStr.substr(0, separatorPos);
-                        pair.quote = symbolStr.substr(separatorPos + 1);
-                    }
+                    // auto separatorPos = symbolStr.find("/");
+                    // if (separatorPos != std::string::npos) {
+                    //     pair.base = symbolStr.substr(0, separatorPos);
+                    //     pair.quote = symbolStr.substr(separatorPos + 1);
+                    // }
                     orderValidationConfig_.minOrderSizes[exchangeId][pair] = minSize.get<double>();
                 }
             }

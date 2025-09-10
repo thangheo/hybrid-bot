@@ -20,10 +20,10 @@ using TradingSignal = execution::TradingSignal;
 
 // Extension functions for easier access to signal properties
 inline core::ExchangeId getExchangeId(const TradingSignal& signal) noexcept {
-    return signal.exchange;
+    return signal.exchangeId;
 }
 
-inline std::string getSymbol(const TradingSignal& signal) noexcept {
+inline core::Symbol getSymbol(const TradingSignal& signal) noexcept {
     return signal.getTradingPair();
 }
 
@@ -31,30 +31,18 @@ inline double getQuantity(const TradingSignal& signal) noexcept {
     return signal.getTargetSize();
 }
 
-inline std::string getStrategyId(const TradingSignal& signal) noexcept {
+inline StrategyId getStrategyId(const TradingSignal& signal) noexcept {
     return signal.getStrategyId();
 }
 
 // Helper to extract base asset from trading pair
 inline std::string getBaseAsset(const TradingSignal& signal) noexcept {
-    const std::string& pair = signal.getTradingPair();
-    const auto delimiter = pair.find('/');
-    if (delimiter != std::string::npos) {
-        return pair.substr(0, delimiter);
-    }
-    // Fallback for pairs without '/' delimiter
-    return pair.length() >= 6 ? pair.substr(0, 3) : pair;
+    return signal.getTradingPair().base;
 }
 
 // Helper to extract quote asset from trading pair
 inline std::string getQuoteAsset(const TradingSignal& signal) noexcept {
-    const std::string& pair = signal.getTradingPair();
-    const auto delimiter = pair.find('/');
-    if (delimiter != std::string::npos) {
-        return pair.substr(delimiter + 1);
-    }
-    // Fallback for pairs without '/' delimiter
-    return pair.length() >= 6 ? pair.substr(3) : "";
+    return signal.getTradingPair().quote;
 }
 
 } // namespace trading::risk

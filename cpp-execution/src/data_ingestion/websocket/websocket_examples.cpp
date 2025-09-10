@@ -18,18 +18,18 @@
 
 using namespace trading::data_ingestion;
 using namespace trading::core;
-
+using namespace trading;
 // Global control
 std::atomic<bool> running{true};
 
 // Market data message structure for queue
 struct MarketDataMessage {
     ExchangeId exchange;
-    std::string symbol;
+    core::Symbol symbol;
     std::vector<uint8_t> data;
     std::chrono::steady_clock::time_point receivedTime;
-    
-    MarketDataMessage(const ExchangeId& ex, const std::string& sym, const std::vector<uint8_t>& d)
+
+    MarketDataMessage(const ExchangeId& ex, const core::Symbol& sym, const std::vector<uint8_t>& d)
         : exchange(ex), symbol(sym), data(d), receivedTime(std::chrono::steady_clock::now()) {}
 };
 
@@ -95,7 +95,7 @@ public:
         while (!totalLatency_.compare_exchange_weak(expected, expected + latencyMs));
         
         std::lock_guard<std::mutex> lock(symbolStats_);
-        messagesPerSymbol_[symbol]++;
+        messagesPerSymbol_[symbol.toString()]++;
     }
     
     void printStats() const {
@@ -134,8 +134,8 @@ void onMarketData(const ExchangeId& exchange, const core::Symbol& symbol, const 
 // Data processing thread
 void dataProcessingThread() {
     std::cout << "[DATA PROCESSOR] Thread started" << std::endl;
-    
-    MarketDataMessage msg(ExchangeId{}, "", std::vector<uint8_t>{});
+
+    MarketDataMessage msg(ExchangeId{}, core::Symbol{}, std::vector<uint8_t>{});
     while (running) {
         if (dataQueue.pop(msg)) {
             // Calculate processing latency

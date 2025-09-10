@@ -123,7 +123,7 @@ public:
 
     // Getters
     const core::ExchangeId& getExchangeId() const { return exchangeId_; }
-    const std::string& getTradingPair() const { return tradingPair_; }
+    const core::Symbol& getTradingPair() const { return tradingPair_; }
     const ParameterSet& getParameters() const { return params_; }
     core::Timestamp getLastUpdateTime() const { return lastUpdateTime_; }
 
@@ -175,7 +175,7 @@ protected:
 private:
     // Configuration
     core::ExchangeId exchangeId_;
-    std::string tradingPair_;
+    core::Symbol tradingPair_;
     int depthLevels_;
     double priceGroupingFactor_;
     int minSamplesForStability_;

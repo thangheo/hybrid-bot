@@ -200,7 +200,7 @@ RiskParameters PreTradeRiskFilter::getRiskParameters(const core::ExchangeId& exc
     params.strategyId = strategyId;
     
     // Get position limits
-    std::string baseAsset = getBaseAsset(tradingPair.toString());
+    std::string baseAsset = tradingPair.base;
     params.maxPositionSize = m_positionLimitChecker->getPositionLimit(baseAsset, strategyId);
     
     // Get exposure limits
@@ -451,20 +451,11 @@ bool PreTradeRiskFilter::passesBasicValidation(const OrderRequest& orderRequest,
     return true;
 }
 
-std::string PreTradeRiskFilter::getBaseAsset(const std::string& tradingPairStr) const {
-    // Extract base asset from trading pair (e.g., "BTC/USDT" -> "BTC")
-    const auto delimiter = tradingPairStr.find('/');
-    if (delimiter != std::string::npos) {
-        return tradingPairStr.substr(0, delimiter);
-    }
-    
-    // Handle pairs without delimiter (e.g., "BTCUSDT" -> "BTC")
-    if (tradingPairStr.length() >= 6) {
-        return tradingPairStr.substr(0, 3); // Assume first 3 characters are base
-    }
-
-    return tradingPairStr; // Fallback
-}
+// std::string PreTradeRiskFilter::getBaseAsset(const std::string& tradingPairStr) const {
+//     // Extract base asset from trading pair (e.g., "BTC/USDT" -> "BTC")
+//     auto symbol = core::Symbol::fromString(tradingPairStr);
+//     return symbol.base;
+// }
 
 } // namespace risk
 } // namespace trading

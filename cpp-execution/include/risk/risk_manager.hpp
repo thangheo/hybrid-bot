@@ -7,6 +7,7 @@
 
 #pragma once
 
+#include "strategy/types/performance_metrics.hpp"
 #include "risk_types.hpp"
 #include "risk_events.hpp"
 #include "risk_config.hpp"
@@ -27,10 +28,11 @@
 #include <vector>
 #include <unordered_map>
 
+
 namespace trading   {
 namespace risk {
 using namespace trading::execution::models;
-
+using namespace trading::strategy;
 /**
  * The Risk Manager is the central coordinating component for all risk subsystems.
  * It orchestrates risk checks, monitors trading activity, and enforces risk limits.

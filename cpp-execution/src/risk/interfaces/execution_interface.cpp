@@ -117,7 +117,7 @@ private:
         report.setClientOrderId(json["client_order_id"]);
         report.setExchangeOrderId(json["exchange_order_id"]);
         report.setExchangeId(core::ExchangeId::fromString(json["exchangeId"]));
-        report.setSymbol(json["tradingPair"]);
+        report.setSymbol(core::Symbol::fromString(json["tradingPair"]));
         
         report.setSide(json["side"] == "buy" ? OrderSide::BUY : OrderSide::SELL);
         report.setType(json["type"]);
@@ -370,6 +370,35 @@ public:
         return initialized_ && requestClient_ && requestClient_->isConnected() &&
                subscriptionClient_ && subscriptionClient_->isConnected();
     }
+    // // cancelAllOrders with reason
+    // int cancelAllOrders(const core::ExchangeId& exchangeId, const std::string& reason) override {
+    //     if (!initialized_) {
+    //         logWithTimestamp("ERROR", "Execution interface not initialized");
+    //         return 0;
+    //     }
+
+    //     try {
+    //         // Create message
+    //         nlohmann::json request = {
+    //             {"action", "cancel_all_orders"},
+    //             {"exchangeId", exchangeId.toString()},
+    //             {"reason", reason}
+    //         };
+
+    //         // Send request
+    //         if (!requestClient_->publish("orders", request.dump())) {
+    //             logWithTimestamp("ERROR", "Failed to send cancel all orders request");
+    //             return 0;
+    //         }
+
+    //         // In a real implementation, we would wait for the response with a timeout
+    //         // For now, we'll just return 0
+    //         return 0;
+    //     } catch (const std::exception& e) {
+    //         logWithTimestamp("ERROR", "Failed to cancel all orders: " + std::string(e.what()));
+    //         return 0;
+    //     }
+    // }
 
     int cancelAllOrders(const core::ExchangeId& exchangeId, const core::Symbol& tradingPair) override {
         if (!initialized_) {
@@ -382,7 +411,7 @@ public:
             nlohmann::json request = {
                 {"action", "cancel_all_orders"},
                 {"exchangeId", exchangeId.toString()},
-                {"tradingPair", tradingPair}
+                {"tradingPair", tradingPair.toString()}
             };
             
             // Send request

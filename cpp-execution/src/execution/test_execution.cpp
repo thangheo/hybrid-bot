@@ -133,9 +133,9 @@ public:
 
         // Debug: Test if the exchange supports our trading pairs
         std::cout << "Testing exchange support for BTC/USDT: " << 
-            (binanceInfo.supports_trading_pair("BTC/USDT") ? "YES" : "NO") << std::endl;
+            (binanceInfo.supports_trading_pair(core::Symbol("BTC/USDT")) ? "YES" : "NO") << std::endl;
 
-        std::vector<std::string> available = smart_order_router->getAvailableExchanges("BTC/USDT");
+        std::vector<std::string> available = smart_order_router->getAvailableExchanges(core::Symbol("BTC/USDT"));
         std::cout << "Available exchanges for BTC/USDT: " << available.size() << std::endl;
         for (const auto& ex : available) {
             std::cout << "  - " << ex << std::endl;
@@ -210,7 +210,7 @@ private:
             
             TradingSignal signal;
             signal.id = (generateSignalId());
-            signal.setTradingPair("ETHUSDT");
+            signal.setTradingPair(core::Symbol("ETHUSDT"));
             signal.setDirection(direction);
             signal.setStrength(0.8);
             signal.setTargetSize(0.0025); // ~$15 worth

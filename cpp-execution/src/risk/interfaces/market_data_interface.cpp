@@ -336,17 +336,17 @@ bool MarketDataInterface::subscribeMarketData(
     core::ExchangeId exchange = core::ExchangeId::fromString(exchangeId.value_or(DEFAULT_EXCHANGE));
     
     // Subscribe to orderbook and trade topics for this pair
-    std::string orderBookTopic = "market.orderbook." + exchange.toString() + "." + tradingPair;
-    std::string tradeTopic = "market.trade." + exchange.toString() + "." + tradingPair;
-    
+    std::string orderBookTopic = "market.orderbook." + exchange.toString() + "." + tradingPair.toString();
+    std::string tradeTopic = "market.trade." + exchange.toString() + "." + tradingPair.toString();
+
     bool success = true;
     success &= zmqClient_->subscribe(orderBookTopic);
     success &= zmqClient_->subscribe(tradeTopic);
     
     if (success) {
-        LOG_INFO("Subscribed to market data for " + exchange.toString() + ":" + tradingPair);
+        LOG_INFO("Subscribed to market data for " + exchange.toString() + ":" + tradingPair.toString());
     } else {
-        LOG_ERROR("Failed to subscribe to market data for " + exchange.toString() + ":" + tradingPair);
+        LOG_ERROR("Failed to subscribe to market data for " + exchange.toString() + ":" + tradingPair.toString());
     }
     
     return success;
@@ -366,9 +366,9 @@ bool MarketDataInterface::unsubscribeMarketData(
     core::ExchangeId exchange = core::ExchangeId::fromString(exchangeId.value_or(DEFAULT_EXCHANGE));
     
     // Unsubscribe from topics
-    std::string orderBookTopic = "market.orderbook." + exchange.toString() + "." + tradingPair;
-    std::string tradeTopic = "market.trade." + exchange.toString() + "." + tradingPair;
-    
+    std::string orderBookTopic = "market.orderbook." + exchange.toString() + "." + tradingPair.toString();
+    std::string tradeTopic = "market.trade." + exchange.toString() + "." + tradingPair.toString();
+
     bool success = true;
     success &= zmqClient_->unsubscribe(orderBookTopic);
     success &= zmqClient_->unsubscribe(tradeTopic);
@@ -399,8 +399,8 @@ std::map<std::string, double> MarketDataInterface::getTradingFees(
 std::string MarketDataInterface::createCacheKey(
     const core::ExchangeId& exchangeId, 
     const core::Symbol& tradingPair) const {
-    
-    return exchangeId.toString() + ":" + tradingPair;
+
+    return exchangeId.toString() + ":" + tradingPair.toString();
 }
 
 void MarketDataInterface::processOrderBookUpdate(

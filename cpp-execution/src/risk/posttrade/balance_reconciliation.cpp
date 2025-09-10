@@ -149,7 +149,7 @@ ReconciliationResult BalanceReconciliation::reconcileExchangePositions(
             }
             
             // Find corresponding actual position
-            auto actualIt = actualPositions.find(tradingPair.symbol);
+            auto actualIt = actualPositions.find(tradingPair.toString());
             double actualQuantity = (actualIt != actualPositions.end()) ? actualIt->second : 0.0;
             
             double discrepancy = expectedQuantity - actualQuantity;
@@ -157,7 +157,7 @@ ReconciliationResult BalanceReconciliation::reconcileExchangePositions(
             if (exceedsTolerance(discrepancy, expectedQuantity)) {
                 // Create reconciliation event for this discrepancy
                 auto event = createReconciliationEvent(
-                    exchangeId, tradingPair.symbol, expectedQuantity, actualQuantity, discrepancy,
+                    exchangeId, tradingPair.toString(), expectedQuantity, actualQuantity, discrepancy,
                     shouldAutoCorrect(calculateDiscrepancyPercent(expectedQuantity, actualQuantity))
                 );
                 
@@ -223,11 +223,9 @@ ReconciliationResult BalanceReconciliation::reconcileTradingPair(
     
     try {
         // Create TradingPair from string
-        TradingPair tp;
-        tp.symbol = tradingPair;
         
         // Get expected position for this specific trading pair
-        auto expectedPosition = m_positionTracker->getPosition(exchangeId, tp);
+        auto expectedPosition = m_positionTracker->getPosition(exchangeId, tradingPair);
         double expectedQuantity = expectedPosition ? expectedPosition->getQuantity() : 0.0;
         
         // Get actual position from exchange
@@ -237,7 +235,7 @@ ReconciliationResult BalanceReconciliation::reconcileTradingPair(
             return result;
         }
         
-        auto actualIt = actualPositions.find(tradingPair);
+        auto actualIt = actualPositions.find(tradingPair.toString());
         double actualQuantity = (actualIt != actualPositions.end()) ? actualIt->second : 0.0;
         
         double discrepancy = expectedQuantity - actualQuantity;
@@ -249,7 +247,7 @@ ReconciliationResult BalanceReconciliation::reconcileTradingPair(
             );
             
             if (event.autoCorrect) {
-                applyCorrection(exchangeId, tp, actualQuantity);
+                applyCorrection(exchangeId, tradingPair, actualQuantity);
             }
             
             result.discrepancies.push_back(event);
@@ -379,20 +377,16 @@ PositionReconciliationEvent BalanceReconciliation::createReconciliationEvent(
     bool autoCorrect) {
     
     // Create TradingPair structure
-    TradingPair tp;
-    tp.symbol = tradingPair;
-    tp.base = "";  // Could be parsed from symbol if needed
-    tp.quote = ""; // Could be parsed from symbol if needed
-    
+        
     PositionReconciliationEvent event(
         std::chrono::system_clock::now(),
         exchangeId,
-        tp,
+        tradingPair,
         expectedQuantity,
         actualQuantity,
         calculateDiscrepancyPercent(expectedQuantity, actualQuantity),
         autoCorrect,
-        "Position reconciliation discrepancy detected for " + tradingPair
+        "Position reconciliation discrepancy detected for " + tradingPair.toString()
     );
     
     return event;

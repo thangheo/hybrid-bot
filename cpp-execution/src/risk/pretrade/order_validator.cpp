@@ -46,7 +46,7 @@ bool OrderValidator::initialize() {
         for (const auto& entry : m_validationConfig.minOrderSizes) {
             const auto& exchangeId = entry.first;
             for (const auto& symbolSize : entry.second) {
-                m_minOrderSizes[exchangeId.toString()][symbolSize.first.getSymbol()] = symbolSize.second;
+                m_minOrderSizes[exchangeId.toString()][symbolSize.first.toString()] = symbolSize.second;
             }
         }
         
@@ -69,7 +69,7 @@ bool OrderValidator::validateOrder(const execution::TradingSignal& signal,
     if (!isOnSymbolWhitelist(getSymbol(signal))) {
         RiskViolation violation;
         violation.type = ViolationType::OTHER;  // Use enum instead of string
-        violation.description = "Trading pair is not on the whitelist: " + getSymbol(signal);
+        violation.description = "Trading pair is not on the whitelist: " + getSymbol(signal).toString();
         violation.limitValue = 0;
         violation.actualValue = 0;
         violations.push_back(violation);
@@ -93,7 +93,7 @@ bool OrderValidator::validateOrder(const OrderRequest& orderRequest,
     if (!isOnSymbolWhitelist(orderRequest.tradingPair)) {
         RiskViolation violation;
         violation.type = ViolationType::OTHER;  // Use enum instead of string
-        violation.description = "Trading pair is not on the whitelist: " + orderRequest.tradingPair;
+        violation.description = "Trading pair is not on the whitelist: " + orderRequest.tradingPair.toString();
         violation.limitValue = 0;
         violation.actualValue = 0;
         violations.push_back(violation);
@@ -132,12 +132,12 @@ bool OrderValidator::isOnSymbolWhitelist(const core::Symbol& tradingPair) const 
     }
     
     // Check if the symbol is in the whitelist
-    return m_symbolWhitelist.find(tradingPair) != m_symbolWhitelist.end();
+    return m_symbolWhitelist.find(tradingPair.toString()) != m_symbolWhitelist.end();
 }
 
-bool OrderValidator::isOnSymbolWhitelist(const TradingPair& tradingPair) const {
-    return isOnSymbolWhitelist(tradingPair.getSymbol());
-}
+// bool OrderValidator::isOnSymbolWhitelist(const TradingPair& tradingPair) const {
+//     return isOnSymbolWhitelist(tradingPair);
+// }
 
 bool OrderValidator::isPriceWithinRange(const core::Symbol& tradingPair,
                                        double price,
@@ -188,7 +188,7 @@ bool OrderValidator::isOrderSizeValid(const core::ExchangeId& exchangeId,
         auto exchangeIt = m_minOrderSizes.find(exchangeId.toString());
         if (exchangeIt != m_minOrderSizes.end()) {
             // Check if we have symbol-specific minimums for this exchange
-            auto symbolIt = exchangeIt->second.find(tradingPair);
+            auto symbolIt = exchangeIt->second.find(tradingPair.toString());
             if (symbolIt != exchangeIt->second.end()) {
                 minSize = symbolIt->second;
             } else {
@@ -262,11 +262,11 @@ bool OrderValidator::updateMinOrderSize(const core::ExchangeId& exchangeId,
     std::lock_guard<std::mutex> lock(m_minSizeMutex);
     
     // Update minimum order size
-    m_minOrderSizes[exchangeId.toString()][tradingPair] = minSize;
-    
+    m_minOrderSizes[exchangeId.toString()][tradingPair.toString()] = minSize;
+
     LOG_INFO("Updated minimum order size for {}/{}: {}", 
-             exchangeId.toString(), tradingPair, minSize);
-    
+             exchangeId.toString(), tradingPair.toString(), minSize);
+
     return true;
 }
 

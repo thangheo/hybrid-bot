@@ -25,7 +25,7 @@ int main() {
     });
     
     // Subscribe to market data for BTC/USDT on Binance
-    if (!dataInterface->subscribeMarketData("BTC/USDT", "binance")) {
+    if (!dataInterface->subscribeMarketData(core::Symbol("BTC/USDT"), "binance")) {
         std::cerr << "Failed to subscribe to market data" << std::endl;
         return 1;
     }
@@ -34,7 +34,7 @@ int main() {
     std::this_thread::sleep_for(std::chrono::seconds(60));
     
     // Unsubscribe
-    dataInterface->unsubscribeMarketData("BTC/USDT", "binance");
-    
+    dataInterface->unsubscribeMarketData(core::Symbol("BTC/USDT"), "binance");
+
     return 0;
 }

@@ -281,16 +281,16 @@ void AdaptiveMarketIntelligence::InitializeDefaultProfiles() {
 
 CoinProfile* AdaptiveMarketIntelligence::getOrCreateProfile(const core::Symbol& symbol) {
     std::lock_guard<std::mutex> lock(profiles_mutex_);
-    
-    auto it = profiles_.find(symbol);
+    auto symbolStr = symbol.toString();
+    auto it = profiles_.find(symbolStr);
     if (it != profiles_.end()) {
         return it->second.get();
     }
     
     // Create default profile for unknown symbol
-    std::string base_symbol = symbol.substr(0, symbol.find("USDT"));
-    profiles_[symbol] = std::make_unique<CoinProfile>(symbol, "unknown", 2.0);
-    return profiles_[symbol].get();
+    std::string base_symbol = symbolStr.substr(0, symbolStr.find("USDT"));
+    profiles_[symbolStr] = std::make_unique<CoinProfile>(symbolStr, "unknown", 2.0);
+    return profiles_[symbolStr].get();
 }
 
 CoinProfile& AdaptiveMarketIntelligence::GetOrCreateProfile(const core::Symbol& symbol) {
@@ -298,75 +298,6 @@ CoinProfile& AdaptiveMarketIntelligence::GetOrCreateProfile(const core::Symbol& 
     return *getOrCreateProfile(symbol);
 }
 
-// ============================================================================
-// NEW PRIMARY INTERFACE
-// ============================================================================
-
-// trading::MarketIntelligence AdaptiveMarketIntelligence::generateIntelligence(
-//     const core::Symbol& symbol,
-//     const std::vector<trading::PriceLevel>& bids,
-//     const std::vector<trading::PriceLevel>& asks) {
-    
-//     MarketIntelligence intel;
-//     intel.set_symbol(symbol);
-//     intel.set_timestamp(std::chrono::duration_cast<std::chrono::milliseconds>(
-//         std::chrono::system_clock::now().time_since_epoch()).count());
-    
-//     if (bids.empty() || asks.empty()) return intel;
-    
-//     // Get profile
-//     CoinProfile* profile = getOrCreateProfile(symbol);
-//     if (!profile) return intel;
-    
-//     // Calculate basic metrics
-//     double bestBid = bids[0].price();
-//     double bestAsk = asks[0].price();
-//     double spread = bestAsk - bestBid;
-//     double midPrice = (bestBid + bestAsk) / 2.0;
-//     double relative_spread = spread / midPrice;
-    
-//     // Calculate volume metrics
-//     OrderBookMetrics metrics = calculateOrderBookMetrics(bids, asks);
-    
-//     // Update historical statistics
-//     profile->updateStatistics(metrics.total_volume, relative_spread);
-    
-//     // Calculate percentile-based metrics
-//     double volume_percentile = profile->volume_stats.getVolumePercentile(metrics.total_volume);
-//     double spread_percentile = profile->spread_stats.getSpreadPercentile(relative_spread);
-    
-//     // Set basic intelligence fields
-//     intel.set_bid_ask_spread(relative_spread);
-//     intel.set_order_book_imbalance(metrics.imbalance);
-//     intel.set_liquidity_ratio(volume_percentile);
-    
-//     // Estimate flow metrics
-//     FlowMetrics flow = estimateFlowMetrics(metrics.imbalance, metrics.total_volume);
-//     intel.set_aggressive_buy_ratio(flow.aggressive_buy_ratio);
-//     intel.set_aggressive_sell_ratio(flow.aggressive_sell_ratio);
-//     intel.set_net_flow_5s(flow.net_flow_5s);
-//     intel.set_net_flow_30s(flow.net_flow_30s);
-    
-//     // Volatility estimation
-//     double volatility = estimateSimpleVolatility(relative_spread, profile->volatility_factor);
-//     intel.set_realized_volatility_1m(volatility);
-    
-//     // Regime classification using probabilities
-//     RegimeProbabilities probs = calculateRegimeProbabilities(
-//         volume_percentile, spread_percentile, metrics.imbalance, profile->volatility_factor);
-    
-//     auto [regime, confidence] = probs.getBestRegime();
-//     intel.set_current_regime(regime);
-//     intel.set_regime_confidence(confidence);
-    
-//     // Periodic saving
-//     update_counter_++;
-//     if (update_counter_ % save_frequency_ == 0) {
-//         profile->saveToFile();
-//     }
-    
-//     return intel;
-// }
 
 // ============================================================================
 // BACKWARD COMPATIBILITY INTERFACE
@@ -382,7 +313,7 @@ trading::MarketIntelligence AdaptiveMarketIntelligence::GenerateAdaptiveMarketIn
     
     if (bids_raw.empty() || asks_raw.empty()) {
         MarketIntelligence intel;
-        intel.set_symbol(symbol);
+        intel.set_symbol(symbol.toString());
         return intel;
     }
     
@@ -519,7 +450,7 @@ bool AdaptiveMarketIntelligence::hasEnoughData() const {
 bool AdaptiveMarketIntelligence::hasEnoughData(const core::Symbol& symbol) const {
     std::lock_guard<std::mutex> lock(profiles_mutex_);
     
-    auto it = profiles_.find(symbol);
+    auto it = profiles_.find(symbol.toString());
     if (it == profiles_.end()) return false;
     
     return it->second->hasEnoughData();
@@ -527,10 +458,10 @@ bool AdaptiveMarketIntelligence::hasEnoughData(const core::Symbol& symbol) const
 
 void AdaptiveMarketIntelligence::printStatistics(const core::Symbol& symbol) const {
     std::lock_guard<std::mutex> lock(profiles_mutex_);  // Now works with mutable mutex
-    
-    auto it = profiles_.find(symbol);
+
+    auto it = profiles_.find(symbol.toString());
     if (it == profiles_.end()) {
-        std::cout << "No profile found for " << symbol << std::endl;
+        std::cout << "No profile found for " << symbol.toString() << std::endl;
         return;
     }
     
@@ -689,7 +620,7 @@ trading::MarketIntelligence AdaptiveMarketIntelligence::generateIntelligence(
     const std::vector<trading::PriceLevel>& asks) {
     
     MarketIntelligence intel;
-    intel.set_symbol(symbol);
+    intel.set_symbol(symbol.toString());
     intel.set_timestamp(std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::system_clock::now().time_since_epoch()).count());
     

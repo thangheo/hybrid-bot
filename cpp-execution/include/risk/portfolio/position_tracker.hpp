@@ -80,7 +80,7 @@ public:
      */
     void updateMarketData(const MarketData& marketData);
     // reconcilePositions
-    bool reconcilePositions();
+    bool reconcilePositions(ExchangeId exchangeId);
     /**
      * Get all positions
      * @return Vector of all positions

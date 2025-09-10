@@ -24,13 +24,13 @@ void OrderTypeSelector::updateMarketCondition(
     const MarketCondition& condition) {
     
     std::lock_guard<std::mutex> lock(mutex_);
-    market_conditions_[tradingPair] = condition;
+    market_conditions_[tradingPair.toString()] = condition;
 }
 
 MarketCondition OrderTypeSelector::getMarketCondition(const core::Symbol& tradingPair) const {
     std::lock_guard<std::mutex> lock(mutex_);
     
-    auto it = market_conditions_.find(tradingPair);
+    auto it = market_conditions_.find(tradingPair.toString());
     if (it != market_conditions_.end()) {
         return it->second;
     }

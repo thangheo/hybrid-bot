@@ -214,33 +214,18 @@ double PositionLimitChecker::getPositionLimit(const std::string& assetId,
 
 std::string PositionLimitChecker::getBaseAsset(const core::Symbol& tradingPair) const {
     // Extract base asset from trading pair (e.g., "BTC/USDT" -> "BTC")
-    const auto delimiter = tradingPair.find('/');
-    if (delimiter != std::string::npos) {
-        return tradingPair.substr(0, delimiter);
+    if(tradingPair.base.empty()) {
+        return "UNKNOWN";
     }
-    
-    // Handle pairs without delimiter (e.g., "BTCUSDT" -> "BTC")
-    // This is a simple heuristic - for production, you might want more sophisticated parsing
-    if (tradingPair.length() >= 6) {
-        return tradingPair.substr(0, 3); // Assume first 3 characters are base
-    }
-    
-    return tradingPair; // Fallback
+    return tradingPair.base;
 }
 
 std::string PositionLimitChecker::getQuoteAsset(const core::Symbol& tradingPair) const {
     // Extract quote asset from trading pair (e.g., "BTC/USDT" -> "USDT")
-    const auto delimiter = tradingPair.find('/');
-    if (delimiter != std::string::npos) {
-        return tradingPair.substr(delimiter + 1);
+    if(tradingPair.quote.empty()) {
+        return "UNKNOWN";
     }
-    
-    // Handle pairs without delimiter (e.g., "BTCUSDT" -> "USDT")
-    if (tradingPair.length() >= 6) {
-        return tradingPair.substr(3); // Assume remaining characters are quote
-    }
-    
-    return ""; // Fallback
+    return tradingPair.quote;
 }
 
 } // namespace risk

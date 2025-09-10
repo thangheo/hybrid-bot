@@ -208,10 +208,10 @@ void PositionTracker::processExecutionReport(const ExecutionReport& executionRep
         
         // Convert ExecutionReport data to our internal types
         const core::ExchangeId& exchangeId = executionReport.exchangeId();
-        const std::string& tradingPairSymbol = executionReport.symbol();
+        const core::Symbol& tradingPairSymbol = executionReport.symbol();
         
         // Create TradingPair from symbol string
-        TradingPair tradingPair = TradingPair::fromString(tradingPairSymbol);
+        TradingPair tradingPair = TradingPair(tradingPairSymbol);
         if (tradingPair.isEmpty()) {
             std::cerr << "Invalid trading pair symbol: " << tradingPairSymbol << std::endl;
             return;
@@ -269,7 +269,7 @@ void PositionTracker::processExecutionReport(const ExecutionReport& executionRep
     }
 }
 // reconcilePositions
-bool PositionTracker::reconcilePositions() {
+bool PositionTracker::reconcilePositions(ExchangeId exchangeId) {
     try {
         // Fetch latest positions from external source (e.g. exchange API)
         auto externalPositions = m_dataInterface->fetchCurrentPositions();
