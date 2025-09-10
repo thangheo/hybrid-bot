@@ -50,7 +50,7 @@ using namespace core;
     
 //     // Methods
 //     bool supports_order_type(models::OrderType type) const;
-//     bool supports_trading_pair(const std::string& tradingPair) const;
+//     bool supports_trading_pair(const core::Symbol& tradingPair) const;
     
 //     // Helper methods to configure supported features
 //     void addSupportedPair(const std::string& pair) {
@@ -130,7 +130,7 @@ public:
     bool routeToExchange(models::OrderPtr& order, const core::ExchangeId& exchangeId) const;
     
     // Get available exchanges for a trading pair
-    std::vector<std::string> getAvailableExchanges(const std::string& tradingPair) const;
+    std::vector<std::string> getAvailableExchanges(const core::Symbol& tradingPair) const;
     
     // Set custom routing strategy
     void setRoutingStrategy(

@@ -82,27 +82,27 @@ public:
     bool initialize() override;
     
     std::optional<MarketData> getMarketData(
-        const std::string& tradingPair,
+        const core::Symbol& tradingPair,
         const std::optional<std::string>& exchangeId = std::nullopt) override;
     
     double getCurrentPrice(
-        const std::string& tradingPair, 
+        const core::Symbol& tradingPair, 
         const std::optional<std::string>& exchangeId = std::nullopt) override;
     
     std::vector<std::pair<Timestamp, double>> getHistoricalPrices(
-        const std::string& tradingPair,
+        const core::Symbol& tradingPair,
         const std::string& interval,
         int count,
         const std::optional<std::string>& exchangeId = std::nullopt) override;
     
     double getVolatility(
-        const std::string& tradingPair, 
+        const core::Symbol& tradingPair, 
         const std::string& timeframe, 
         const std::optional<std::string>& exchangeId = std::nullopt) override;
     
     std::vector<OrderRequest> getOrderHistory(
         const core::ExchangeId& exchangeId, 
-        const std::string& tradingPair, 
+        const core::Symbol& tradingPair, 
         int limit) override;
     
     std::map<std::string, double> getExchangeBalances(
@@ -112,11 +112,11 @@ public:
         const std::function<void(const MarketData&)>& callback) override;
     
     bool subscribeMarketData(
-        const std::string& tradingPair, 
+        const core::Symbol& tradingPair, 
         const std::optional<std::string>& exchangeId = std::nullopt) override;
     
     bool unsubscribeMarketData(
-        const std::string& tradingPair, 
+        const core::Symbol& tradingPair, 
         const std::optional<std::string>& exchangeId = std::nullopt) override;
     bool isConnected() const override;
     std::map<std::string, double> getTradingFees(
@@ -131,10 +131,10 @@ public:
 private:
     VolatilityCalculator volatilityCalculator_;
     // Helper methods
-    std::string createCacheKey(const core::ExchangeId& exchangeId, const std::string& tradingPair) const;
+    std::string createCacheKey(const core::ExchangeId& exchangeId, const core::Symbol& tradingPair) const;
     void processOrderBookUpdate(const std::string& topic, const std::string& message);
     void processTradeUpdate(const std::string& topic, const std::string& message);
-    void updateMarketDataCache(const core::ExchangeId& exchangeId, const std::string& tradingPair, 
+    void updateMarketDataCache(const core::ExchangeId& exchangeId, const core::Symbol& tradingPair, 
                               const data_ingestion::OrderBookUpdate& update);
     core::MarketData convertOrderBookToMarketData(const data_ingestion::OrderBookUpdate& orderBook) const;
     

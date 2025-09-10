@@ -32,10 +32,10 @@ namespace risk {
     
 //     MarketData() = default;
     
-//     MarketData(const std::string& symbol, const core::ExchangeId& exchangeId, double price)
+//     MarketData(const core::Symbol& symbol, const core::ExchangeId& exchangeId, double price)
 //         : symbol(symbol), exchangeId(exchangeId), price(price) {}
     
-//     MarketData(const std::string& symbol, const core::ExchangeId& exchangeId, 
+//     MarketData(const core::Symbol& symbol, const core::ExchangeId& exchangeId, 
 //                double price, double volume, double volatility)
 //         : symbol(symbol), exchangeId(exchangeId), price(price), volume(volume), volatility(volatility) {}
     

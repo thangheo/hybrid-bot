@@ -216,8 +216,8 @@ private:
     
     // Trading pair management
     std::map<std::string, TradingPairState> tradingPairStates_;
-    bool initializeTradingPair(const std::string& symbol, core::ExchangeId exchangeId);
-    void updateTradingPairState(const std::string& symbol, TradingPairState state);
+    bool initializeTradingPair(const core::Symbol& symbol, core::ExchangeId exchangeId);
+    void updateTradingPairState(const core::Symbol& symbol, TradingPairState state);
     
     // Performance tracking
     void updatePerformanceMetrics(const SignalExecutionResult& result);

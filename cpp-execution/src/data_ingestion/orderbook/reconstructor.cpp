@@ -463,7 +463,7 @@ void OrderBookReconstructor::registerLiquidityFlowMonitor(
         
         // Header information
         message["exchangeId"] = update.exchangeId.toString();
-        message["tradingPair"] = update.tradingPair;
+        message["tradingPair"] = update.tradingPair.toString();
         message["sequenceNumber"] = update.sequenceNumber;
         message["exchangeTimestamp"] = timestampToMillis(update.exchangeTimestamp);
         message["receivedTimestamp"] = timestampToMillis(update.receivedTimestamp);
@@ -492,7 +492,7 @@ void OrderBookReconstructor::registerLiquidityFlowMonitor(
         std::vector<unsigned char> binaryPayload(jsonStr.begin(), jsonStr.end());
         
         // Publish with proper topic
-        std::string topic = "orderbook." + update.exchangeId.toString() + "." + update.tradingPair;
+        std::string topic = "orderbook." + update.exchangeId.toString() + "." + update.tradingPair.toString();
         publisher_->publish(topic, binaryPayload);
         
     } catch (const std::exception& e) {

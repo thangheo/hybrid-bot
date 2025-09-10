@@ -371,7 +371,7 @@ public:
                subscriptionClient_ && subscriptionClient_->isConnected();
     }
 
-    int cancelAllOrders(const core::ExchangeId& exchangeId, const std::string& tradingPair) override {
+    int cancelAllOrders(const core::ExchangeId& exchangeId, const core::Symbol& tradingPair) override {
         if (!initialized_) {
             logWithTimestamp("ERROR", "Execution interface not initialized");
             return 0;

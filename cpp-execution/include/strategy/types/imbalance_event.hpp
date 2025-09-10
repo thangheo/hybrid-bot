@@ -68,8 +68,8 @@
      }
      
      // Set trading pair
-     void setTradingPair(const std::string& tradingPair) {
-         symbol = core::Symbol::fromString(tradingPair);
+     void setTradingPair(const core::Symbol& tradingPair) {
+         symbol = tradingPair;
      }
      core::ExchangeId getExchangeFromExchangeId(const std::string& exchange_id_str) const {
             // Assuming exchange_id_str is a string representation of the exchange ID

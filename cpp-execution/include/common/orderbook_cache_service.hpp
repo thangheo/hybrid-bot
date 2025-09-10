@@ -61,7 +61,7 @@ public:
 
     // Direct access methods (synchronous, low-latency)
     std::shared_ptr<const data_ingestion::OrderBook> 
-    getOrderBook(const std::string& exchangeId, const std::string& symbol) const;
+    getOrderBook(const std::string& exchangeId, const core::Symbol& symbol) const;
     
     // Bulk access for efficiency
     std::vector<std::shared_ptr<const data_ingestion::OrderBook>> 
@@ -118,7 +118,7 @@ private:
     std::atomic<bool> stopEviction_{false};
     
     // Helper methods
-    std::string createKey(const std::string& exchangeId, const std::string& symbol) const;
+    std::string createKey(const std::string& exchangeId, const core::Symbol& symbol) const;
     void publishUpdate(const data_ingestion::OrderBook& orderBook);
     void asyncPublishUpdate(std::shared_ptr<data_ingestion::OrderBook> orderBook);
     void publishWorker();

@@ -43,7 +43,7 @@ public:
                   int depth = 20);
     
     // Query methods
-    OrderBookUpdate getOrderBook(const std::string& tradingPair, int32_t depth = 20) const;
+    OrderBookUpdate getOrderBook(const core::Symbol& tradingPair, int32_t depth = 20) const;
     std::string getConnectionStats() const;
 
 private:
@@ -79,7 +79,7 @@ private:
     
     // Internal methods
     void onWebSocketData(const core::ExchangeId& exchange,
-                        const std::string& symbol,
+                        const core::Symbol& symbol,
                         const std::vector<uint8_t>& data);
     
     void monitorConnections();

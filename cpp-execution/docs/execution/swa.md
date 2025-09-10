@@ -240,7 +240,7 @@ struct Order {
     std::string orderId;
     std::string clientOrderId;
     std::string exchangeId;
-    std::string tradingPair;
+    core::Symbol tradingPair;
     OrderType type;           // Market, Limit, Stop, etc.
     OrderSide side;           // Buy or Sell
     double quantity;

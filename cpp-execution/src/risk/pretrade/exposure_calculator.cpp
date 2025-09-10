@@ -395,7 +395,7 @@ private:
         }
     }
 
-    double getPrice(const std::string& symbol) const {
+    double getPrice(const core::Symbol& symbol) const {
         std::shared_lock<std::shared_mutex> lock(marketDataMutex_);
         
         const auto it = priceCache_.find(symbol);
@@ -415,7 +415,7 @@ private:
         return 1.0; // Safe fallback
     }
 
-    double getVolatility(const std::string& symbol) const {
+    double getVolatility(const core::Symbol& symbol) const {
         std::shared_lock<std::shared_mutex> lock(marketDataMutex_);
         
         const auto it = volatilityCache_.find(symbol);

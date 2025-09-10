@@ -85,7 +85,7 @@ public:
     }
     
     // Get current mid price for a symbol
-    double getCurrentMidPrice(const std::string& symbol) const {
+    double getCurrentMidPrice(const core::Symbol& symbol) const {
         std::lock_guard<std::mutex> lock(const_cast<std::mutex&>(orderBooksMutex_));
         std::string key = "BINANCE:" + symbol; // Match your key format
         auto it = orderBooks_.find(key);
@@ -105,7 +105,7 @@ private:
             
             // Extract order book data
             std::string exchangeIdStr = json["exchangeId"];
-            std::string tradingPair = json["tradingPair"];
+            core::Symbol tradingPair = json["tradingPair"];
             uint64_t sequenceNumber = json["sequenceNumber"];
             bool isSnapshot = json["isSnapshot"];
                         

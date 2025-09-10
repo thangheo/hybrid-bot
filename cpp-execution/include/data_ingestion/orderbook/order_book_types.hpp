@@ -64,7 +64,7 @@ struct OrderBookKeyHash {
 // Normalized order book update
 struct OrderBookUpdate {
     ExchangeId exchangeId;  // Identifier for the exchange (e.g., "binance")
-    std::string tradingPair;
+    core::Symbol tradingPair;
     core::Timestamp exchangeTimestamp;
     core::Timestamp receivedTimestamp;
     // isSnapshot
@@ -82,7 +82,7 @@ struct OrderBookUpdate {
     std::unordered_map<std::string, std::string> additional_fields;
     // Constructor
     OrderBookUpdate() = default;
-    OrderBookUpdate(const ExchangeId& exchangeId, const std::string& tradingPair,
+    OrderBookUpdate(const ExchangeId& exchangeId, const core::Symbol& tradingPair,
                     Timestamp exchangeTimestamp, Timestamp receivedTimestamp,
                     uint64_t sequenceNumber, bool isSnapshot,
                     const std::vector<PriceLevel>& bids,

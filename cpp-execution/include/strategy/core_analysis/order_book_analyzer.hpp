@@ -60,14 +60,14 @@ public:
      * Creates an order book analyzer for a specific exchange and trading pair
      */
     OrderBookAnalyzer(const core::ExchangeId& exchangeId, 
-                     const std::string& tradingPair, 
+                     const core::Symbol& tradingPair, 
                      const ParameterSet& params = ParameterSet{});
 
     /**
      * Creates an order book analyzer with explicit configuration
      */
     OrderBookAnalyzer(const core::ExchangeId& exchangeId, 
-                     const std::string& tradingPair, 
+                     const core::Symbol& tradingPair, 
                      int depthLevels, 
                      double priceGroupingFactor);
 
@@ -233,7 +233,7 @@ public:
      * Get or create analyzer for a specific symbol and exchange
      */
     std::shared_ptr<OrderBookAnalyzer> getAnalyzerForSymbol(
-        const std::string& symbol, 
+        const core::Symbol& symbol, 
         const core::ExchangeId& exchangeId,
         const ParameterSet& params = ParameterSet{});
 
@@ -241,13 +241,13 @@ public:
      * Get existing analyzer (returns nullptr if not found)
      */
     std::shared_ptr<OrderBookAnalyzer> getAnalyzerForSymbol(
-        const std::string& symbol, 
+        const core::Symbol& symbol, 
         const core::ExchangeId& exchangeId) const;
 
     /**
      * Remove analyzer for specific symbol and exchange
      */
-    void removeAnalyzer(const std::string& symbol, const core::ExchangeId& exchangeId);
+    void removeAnalyzer(const core::Symbol& symbol, const core::ExchangeId& exchangeId);
 
     /**
      * Get all active analyzers
@@ -280,7 +280,7 @@ private:
     ParameterSet params_;
     mutable std::mutex mutex_;
 
-    std::string createKey(const std::string& symbol, const core::ExchangeId& exchangeId) const;
+    std::string createKey(const core::Symbol& symbol, const core::ExchangeId& exchangeId) const;
 };
 
 /**
@@ -288,7 +288,7 @@ private:
  */
 std::shared_ptr<OrderBookAnalyzer> createOrderBookAnalyzer(
     const core::ExchangeId& exchangeId, 
-    const std::string& tradingPair,
+    const core::Symbol& tradingPair,
     const ParameterSet& params = ParameterSet{});
 
 } // namespace strategy

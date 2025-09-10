@@ -609,7 +609,7 @@ void BinanceWebSocketClient::handleStreamMessage(const json& data) {
     }
 }
 
-void BinanceWebSocketClient::processOrderBookData(const std::string& symbol, 
+void BinanceWebSocketClient::processOrderBookData(const core::Symbol& symbol, 
                                                 const std::string& event_type, 
                                                 const json& data) {
     if (!dataCallback_) {
@@ -625,7 +625,7 @@ void BinanceWebSocketClient::processOrderBookData(const std::string& symbol,
     }
 }
 
-void BinanceWebSocketClient::processTrade(const std::string& symbol, const json& data) {
+void BinanceWebSocketClient::processTrade(const core::Symbol& symbol, const json& data) {
     if (!dataCallback_) {
         return;
     }
@@ -639,7 +639,7 @@ void BinanceWebSocketClient::processTrade(const std::string& symbol, const json&
     }
 }
 
-void BinanceWebSocketClient::processTicker(const std::string& symbol, const json& data) {
+void BinanceWebSocketClient::processTicker(const core::Symbol& symbol, const json& data) {
     if (!dataCallback_) {
         return;
     }
@@ -653,7 +653,7 @@ void BinanceWebSocketClient::processTicker(const std::string& symbol, const json
     }
 }
 
-void BinanceWebSocketClient::processBookTicker(const std::string& symbol, const json& data) {
+void BinanceWebSocketClient::processBookTicker(const core::Symbol& symbol, const json& data) {
     if (!dataCallback_) {
         return;
     }

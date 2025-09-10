@@ -41,7 +41,7 @@ void OrderBookNormalizer::initAdapters() {
 
 OrderBookUpdate OrderBookNormalizer::getOrderBook(
     const ExchangeId exchangeId,
-    const std::string& tradingPair,
+    const core::Symbol& tradingPair,
     int depth) const {
     
     // This method should probably be removed or delegated to OrderBookManager

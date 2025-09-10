@@ -279,7 +279,7 @@ void AdaptiveMarketIntelligence::InitializeDefaultProfiles() {
     initializeProfiles();
 }
 
-CoinProfile* AdaptiveMarketIntelligence::getOrCreateProfile(const std::string& symbol) {
+CoinProfile* AdaptiveMarketIntelligence::getOrCreateProfile(const core::Symbol& symbol) {
     std::lock_guard<std::mutex> lock(profiles_mutex_);
     
     auto it = profiles_.find(symbol);
@@ -293,7 +293,7 @@ CoinProfile* AdaptiveMarketIntelligence::getOrCreateProfile(const std::string& s
     return profiles_[symbol].get();
 }
 
-CoinProfile& AdaptiveMarketIntelligence::GetOrCreateProfile(const std::string& symbol) {
+CoinProfile& AdaptiveMarketIntelligence::GetOrCreateProfile(const core::Symbol& symbol) {
     // Legacy method signature - delegate to new implementation
     return *getOrCreateProfile(symbol);
 }
@@ -303,7 +303,7 @@ CoinProfile& AdaptiveMarketIntelligence::GetOrCreateProfile(const std::string& s
 // ============================================================================
 
 // trading::MarketIntelligence AdaptiveMarketIntelligence::generateIntelligence(
-//     const std::string& symbol,
+//     const core::Symbol& symbol,
 //     const std::vector<trading::PriceLevel>& bids,
 //     const std::vector<trading::PriceLevel>& asks) {
     
@@ -373,7 +373,7 @@ CoinProfile& AdaptiveMarketIntelligence::GetOrCreateProfile(const std::string& s
 // ============================================================================
 
 trading::MarketIntelligence AdaptiveMarketIntelligence::GenerateAdaptiveMarketIntelligence(
-    const std::string& symbol,
+    const core::Symbol& symbol,
     std::shared_ptr<OrderBook> orderbook) {
     
     // Get order book data
@@ -516,7 +516,7 @@ bool AdaptiveMarketIntelligence::hasEnoughData() const {
     return true;
 }
 
-bool AdaptiveMarketIntelligence::hasEnoughData(const std::string& symbol) const {
+bool AdaptiveMarketIntelligence::hasEnoughData(const core::Symbol& symbol) const {
     std::lock_guard<std::mutex> lock(profiles_mutex_);
     
     auto it = profiles_.find(symbol);
@@ -525,7 +525,7 @@ bool AdaptiveMarketIntelligence::hasEnoughData(const std::string& symbol) const 
     return it->second->hasEnoughData();
 }
 
-void AdaptiveMarketIntelligence::printStatistics(const std::string& symbol) const {
+void AdaptiveMarketIntelligence::printStatistics(const core::Symbol& symbol) const {
     std::lock_guard<std::mutex> lock(profiles_mutex_);  // Now works with mutable mutex
     
     auto it = profiles_.find(symbol);
@@ -640,7 +640,7 @@ void AdaptiveMarketIntelligence::AdaptThresholds(CoinProfile& profile) {
     // No-op in new implementation - thresholds are always adaptive
 }
 
-double AdaptiveMarketIntelligence::EstimateVolatility(const std::string& symbol, double spread,
+double AdaptiveMarketIntelligence::EstimateVolatility(const core::Symbol& symbol, double spread,
                      std::shared_ptr<trading::data_ingestion::OrderBook> orderbook) {
     auto profile = getOrCreateProfile(symbol);
     return estimateSimpleVolatility(spread, profile->volatility_factor);
@@ -684,7 +684,7 @@ std::vector<trading::PriceLevel> AdaptiveMarketIntelligence::ConvertPriceLevels(
     return result;
 }
 trading::MarketIntelligence AdaptiveMarketIntelligence::generateIntelligence(
-    const std::string& symbol,
+    const core::Symbol& symbol,
     const std::vector<trading::PriceLevel>& bids,
     const std::vector<trading::PriceLevel>& asks) {
     

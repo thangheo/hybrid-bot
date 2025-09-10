@@ -212,7 +212,7 @@ double PositionLimitChecker::getPositionLimit(const std::string& assetId,
     return m_defaultLimit;
 }
 
-std::string PositionLimitChecker::getBaseAsset(const std::string& tradingPair) const {
+std::string PositionLimitChecker::getBaseAsset(const core::Symbol& tradingPair) const {
     // Extract base asset from trading pair (e.g., "BTC/USDT" -> "BTC")
     const auto delimiter = tradingPair.find('/');
     if (delimiter != std::string::npos) {
@@ -228,7 +228,7 @@ std::string PositionLimitChecker::getBaseAsset(const std::string& tradingPair) c
     return tradingPair; // Fallback
 }
 
-std::string PositionLimitChecker::getQuoteAsset(const std::string& tradingPair) const {
+std::string PositionLimitChecker::getQuoteAsset(const core::Symbol& tradingPair) const {
     // Extract quote asset from trading pair (e.g., "BTC/USDT" -> "USDT")
     const auto delimiter = tradingPair.find('/');
     if (delimiter != std::string::npos) {

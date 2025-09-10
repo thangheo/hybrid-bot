@@ -100,8 +100,8 @@ private:
     void loadLimitsFromConfig();
     
     // Helper methods
-    std::string getBaseAsset(const std::string& tradingPair) const;
-    std::string getQuoteAsset(const std::string& tradingPair) const;
+    std::string getBaseAsset(const core::Symbol& tradingPair) const;
+    std::string getQuoteAsset(const core::Symbol& tradingPair) const;
 };
 
 } // namespace risk

@@ -22,13 +22,13 @@
      
      bool initialize() override { return true; }
      
-     double getPrice(const std::string& symbol) const override {
+     double getPrice(const core::Symbol& symbol) const override {
          if (symbol == "BTC/USDT") return 50000.0;
          if (symbol == "ETH/USDT") return 3000.0;
          return 1.0;  // Default
      }
      
-     double getVolatility(const std::string& symbol) const override {
+     double getVolatility(const core::Symbol& symbol) const override {
          if (symbol == "BTC/USDT") return 0.2;  // 20%
          if (symbol == "ETH/USDT") return 0.15;  // 15%
          return 0.1;  // Default

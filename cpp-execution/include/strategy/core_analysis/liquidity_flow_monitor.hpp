@@ -34,7 +34,7 @@
   */
  struct LiquidityMetrics {
      ExchangeId exchangeId;
-     std::string tradingPair;
+     core::Symbol tradingPair;
      core::Timestamp timestamp;
      
      // Bid-side metrics
@@ -74,7 +74,7 @@
      
      Type type;
      ExchangeId exchangeId;
-     std::string tradingPair;
+     core::Symbol tradingPair;
      core::Timestamp timestamp;
      core::Direction direction;          // core::Direction implied by this event
      double price_level;           // Price level where event occurred
@@ -82,7 +82,7 @@
      double significance;          // Significance score (0.0-1.0)
      std::map<std::string, double> metrics;
      
-     LiquidityEvent(Type t, const core::ExchangeId& exchange, const std::string& pair,
+     LiquidityEvent(Type t, const core::ExchangeId& exchange, const core::Symbol& pair,
                    core::Timestamp ts, core::Direction dir, double price, double qty, double sig)
          : type(t), exchangeId(exchange), tradingPair(pair),
            timestamp(ts), direction(dir), price_level(price),
@@ -126,14 +126,14 @@
      /**
       * Creates a liquidity flow monitor for a specific exchange and trading pair
       */
-     LiquidityFlowMonitor(const core::ExchangeId& exchangeId, const std::string& tradingPair, 
+     LiquidityFlowMonitor(const core::ExchangeId& exchangeId, const core::Symbol& tradingPair, 
                           const ParameterSet& params = ParameterSet());
      LiquidityFlowMonitor(const LiquidityFlowConfig& config);
 
      /**
       * Creates a liquidity flow monitor with parameters explicitly specified
       */
-     LiquidityFlowMonitor(const core::ExchangeId& exchangeId, const std::string& tradingPair, 
+     LiquidityFlowMonitor(const core::ExchangeId& exchangeId, const core::Symbol& tradingPair, 
                           double large_order_threshold, int history_window_seconds);
      
      virtual ~LiquidityFlowMonitor() = default;
@@ -308,7 +308,7 @@
  // Factory function to create LiquidityFlowMonitor instances
  std::shared_ptr<LiquidityFlowMonitor> createLiquidityFlowMonitor(
      const core::ExchangeId& exchangeId, 
-     const std::string& tradingPair,
+     const core::Symbol& tradingPair,
      const ParameterSet& params = ParameterSet());
  
  

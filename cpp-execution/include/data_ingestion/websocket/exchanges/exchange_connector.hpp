@@ -41,7 +41,7 @@ struct SubscriptionRequest {
 
 // struct MarketDataUpdate {
 //     ExchangeId exchangeId;
-//     std::string tradingPair;
+//     core::Symbol tradingPair;
 //     std::string updateType;
 //     int64_t exchangeTimestamp;
 //     int64_t receivedTimestamp;

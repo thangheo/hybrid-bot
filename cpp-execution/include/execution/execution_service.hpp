@@ -136,7 +136,7 @@ public:
      * @param exchangeId Optional exchange ID to filter by
      * @return Vector of CancelResponse for each order
      */
-    std::vector<CancelResponse> cancelAllOrdersForSymbol(const std::string& tradingPair,
+    std::vector<CancelResponse> cancelAllOrdersForSymbol(const core::Symbol& tradingPair,
                                                         const core::ExchangeId& exchangeId);
     
     /**

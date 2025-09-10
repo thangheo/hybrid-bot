@@ -158,7 +158,7 @@ class PriceRangeFilter : public DataQualityFilter {
         bool filter(OrderBookUpdate& update) override;
     private:
         std::unordered_map<std::string, double> max_prices_;
-        double getReasonablePriceRange(const std::string& symbol) const;
+        double getReasonablePriceRange(const core::Symbol& symbol) const;
     };
 } // namespace data_ingestion
 } // namespace trading

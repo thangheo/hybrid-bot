@@ -28,7 +28,7 @@ public:
     /**
      * @brief Standardize trading pair format (e.g., "BTCUSDT" -> "BTC/USDT")
      */
-    virtual std::string standardizeTradingPair(const std::string& tradingPair) = 0;
+    virtual std::string standardizeTradingPair(const core::Symbol& tradingPair) = 0;
     
     /**
      * @brief Get exchange identifier

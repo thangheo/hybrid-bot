@@ -94,7 +94,7 @@ bool SmartOrderRouter::routeToExchange(models::OrderPtr& order, const core::Exch
     return true;
 }
 
-std::vector<std::string> SmartOrderRouter::getAvailableExchanges(const std::string& tradingPair) const {
+std::vector<std::string> SmartOrderRouter::getAvailableExchanges(const core::Symbol& tradingPair) const {
     std::lock_guard<std::mutex> lock(mutex_);
     
     std::vector<std::string> available;

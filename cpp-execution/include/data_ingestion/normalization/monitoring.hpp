@@ -51,7 +51,7 @@ public:
         exposer->RegisterCollectable(registry);
     }
     
-    void recordUpdate(const core::ExchangeId& exchangeId, const std::string& symbol) {
+    void recordUpdate(const core::ExchangeId& exchangeId, const core::Symbol& symbol) {
         updateCounter->Increment();
         
         // Track unique books

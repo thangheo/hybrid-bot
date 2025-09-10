@@ -42,7 +42,7 @@ public:
     const std::string& clientOrderId() const { return clientOrderId_; }
     const std::string& exchangeOrderId() const { return exchangeOrderId_; }
     const core::ExchangeId& exchangeId() const { return exchangeId_; }
-    const std::string& symbol() const { return symbol_; }
+    const core::Symbol& symbol() const { return symbol_; }
     OrderSide side() const { return side_; }
     OrderType type() const { return type_; }
     OrderState status() const { return status_; }
@@ -63,7 +63,7 @@ public:
     void setClientOrderId(const std::string& clientOrderId) { clientOrderId_ = clientOrderId; }
     void setExchangeOrderId(const std::string& exchangeOrderId) { exchangeOrderId_ = exchangeOrderId; }
     void setExchangeId(const core::ExchangeId& exchangeId) { exchangeId_ = exchangeId; }
-    void setSymbol(const std::string& symbol) { symbol_ = symbol; }
+    void setSymbol(const core::Symbol& symbol) { symbol_ = symbol; }
     void setSide(OrderSide side) { side_ = side; }
     void setType(OrderType type) { type_ = type; }
     void setStatus(OrderState status) { status_ = status; updateTimestamp(); }

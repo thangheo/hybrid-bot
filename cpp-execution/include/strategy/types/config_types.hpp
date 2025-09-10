@@ -22,7 +22,7 @@
   */
  struct OrderBookAnalyzerConfig {
     core::ExchangeId exchangeId; 
-    std::string tradingPair;
+    core::Symbol tradingPair;
      int depth = 10;                        // Default depth to analyze
      int historySize = 1000;                // Size of history to maintain
      double priceWeightFactor = 0.5;        // Weight factor for price-weighted metrics
@@ -100,7 +100,7 @@
      int historySize = 1000;                // Size of history to maintain
      double flowImbalanceThreshold = 0.6;   // Threshold for flow imbalance detection
      core::ExchangeId exchangeId;             // Exchange ID
-    std::string tradingPair;             // Trading pair
+    core::Symbol tradingPair;             // Trading pair
         double largeOrderThreshold = 5.0;     // Threshold for large orders
         int historyWindowSeconds = 60;       // Window size for historical analysis
         double largeOrderVolume = 0.0;       // Volume of large orders
@@ -130,7 +130,7 @@
      int priceLevels = 20;                  // Number of price levels to track
     //  exchangeId
         core::ExchangeId exchangeId;               // Exchange ID
-        std::string tradingPair;               // Trading pair
+        core::Symbol tradingPair;               // Trading pair
         double rangeSizePercent = 0.01;        // Size of each price range as percentage of price
         // timeFrameMinutes
         int timeFrameMinutes = 60;            // Time frame in minutes

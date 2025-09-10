@@ -92,7 +92,7 @@ bool MarketDataInterface::initialize() {
     }
 }
 std::optional<MarketData> MarketDataInterface::getMarketData(
-   const std::string& tradingPair,
+   const core::Symbol& tradingPair,
    const std::optional<std::string>& exchangeId) {
    
    core::ExchangeId exchange = core::ExchangeId::fromString(exchangeId.value_or(DEFAULT_EXCHANGE));
@@ -139,7 +139,7 @@ std::optional<MarketData> MarketDataInterface::getMarketData(
 }
 
 double MarketDataInterface::getCurrentPrice(
-    const std::string& tradingPair,
+    const core::Symbol& tradingPair,
     const std::optional<std::string>& exchangeId) {
     
     auto marketDataOpt = getMarketData(tradingPair, exchangeId);
@@ -166,7 +166,7 @@ double MarketDataInterface::getCurrentPrice(
 }
 
 std::vector<std::pair<Timestamp, double>> MarketDataInterface::getHistoricalPrices(
-    const std::string& tradingPair,
+    const core::Symbol& tradingPair,
     const std::string& interval,
     int count,
     const std::optional<std::string>& exchangeId) {
@@ -268,7 +268,7 @@ double VolatilityCalculator::calculateSimpleVolatility(
 }
 // Calculate volatility using the specified method
 double MarketDataInterface::getVolatility(
-    const std::string& tradingPair, 
+    const core::Symbol& tradingPair, 
     const std::string& timeframe, 
     const std::optional<std::string>& exchangeId) {
     
@@ -289,7 +289,7 @@ double MarketDataInterface::getVolatility(
 
 std::vector<OrderRequest> MarketDataInterface::getOrderHistory(
     const core::ExchangeId& exchangeId, 
-    const std::string& tradingPair, 
+    const core::Symbol& tradingPair, 
     int limit) {
     
     // This would typically fetch from a database or order management system
@@ -325,7 +325,7 @@ void MarketDataInterface::registerMarketDataCallback(
 }
 
 bool MarketDataInterface::subscribeMarketData(
-    const std::string& tradingPair, 
+    const core::Symbol& tradingPair, 
     const std::optional<std::string>& exchangeId) {
     
     if (!initialized_ || !zmqClient_) {
@@ -356,7 +356,7 @@ bool MarketDataInterface::isConnected() const {
            zmqClient_ && zmqClient_->isConnected();
 }
 bool MarketDataInterface::unsubscribeMarketData(
-    const std::string& tradingPair, 
+    const core::Symbol& tradingPair, 
     const std::optional<std::string>& exchangeId) {
     
     if (!initialized_ || !zmqClient_) {
@@ -398,7 +398,7 @@ std::map<std::string, double> MarketDataInterface::getTradingFees(
 // Helper methods
 std::string MarketDataInterface::createCacheKey(
     const core::ExchangeId& exchangeId, 
-    const std::string& tradingPair) const {
+    const core::Symbol& tradingPair) const {
     
     return exchangeId.toString() + ":" + tradingPair;
 }
@@ -420,7 +420,7 @@ void MarketDataInterface::processOrderBookUpdate(
         
         if (parts.size() >= 4) {
             core::ExchangeId exchange = core::ExchangeId::fromString(parts[2]);
-            std::string tradingPair = parts[3];
+            core::Symbol tradingPair = parts[3];
             
             // Create MarketDataUpdate from the message
             core::MarketDataUpdate update;
@@ -449,7 +449,7 @@ void MarketDataInterface::processTradeUpdate(
 
 void MarketDataInterface::updateMarketDataCache(
     const core::ExchangeId& exchangeId, 
-    const std::string& tradingPair, 
+    const core::Symbol& tradingPair, 
     const data_ingestion::OrderBookUpdate& update) {
     
     // Convert OrderBookUpdate to MarketData

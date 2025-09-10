@@ -33,7 +33,7 @@ struct HawkesEvent {
     core::Direction direction;
     double strength;
     std::string exchangeId;
-    std::string tradingPair;
+    core::Symbol tradingPair;
     
     HawkesEvent() = default;
     
@@ -80,7 +80,7 @@ struct HawkesEvent {
     // core::Direction direction;
     // double strength;
     // std::string exchangeId;
-    // std::string tradingPair;
+    // core::Symbol tradingPair;
         return HawkesEvent(
             static_cast<core::Timestamp>(event.detectionTime),
             hawkesType,

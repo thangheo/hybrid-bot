@@ -20,14 +20,14 @@ OrderTypeSelection OrderTypeSelector::selectOrderType(
 }
 
 void OrderTypeSelector::updateMarketCondition(
-    const std::string& tradingPair,
+    const core::Symbol& tradingPair,
     const MarketCondition& condition) {
     
     std::lock_guard<std::mutex> lock(mutex_);
     market_conditions_[tradingPair] = condition;
 }
 
-MarketCondition OrderTypeSelector::getMarketCondition(const std::string& tradingPair) const {
+MarketCondition OrderTypeSelector::getMarketCondition(const core::Symbol& tradingPair) const {
     std::lock_guard<std::mutex> lock(mutex_);
     
     auto it = market_conditions_.find(tradingPair);

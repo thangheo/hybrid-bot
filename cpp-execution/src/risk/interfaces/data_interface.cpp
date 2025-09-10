@@ -79,7 +79,7 @@ public:
         }
     }
    
-    std::optional<MarketData> getMarketData(const std::string& tradingPair, 
+    std::optional<MarketData> getMarketData(const core::Symbol& tradingPair, 
                             const std::optional<std::string>& exchangeId) override {
         if (!initialized_) {
             LOG_ERROR("DataInterface not initialized");
@@ -99,7 +99,7 @@ public:
         return initialized_ && marketDataInterface_ && marketDataInterface_->isConnected();
     }
 
-    double getCurrentPrice(const std::string& tradingPair, 
+    double getCurrentPrice(const core::Symbol& tradingPair, 
                           const std::optional<std::string>& exchangeId) override {
         if (!initialized_) {
             LOG_ERROR("DataInterface not initialized");
@@ -115,7 +115,7 @@ public:
     }
     
     std::vector<std::pair<Timestamp, double>> getHistoricalPrices(
-        const std::string& tradingPair,
+        const core::Symbol& tradingPair,
         const std::string& interval,
         int count,
         const std::optional<std::string>& exchangeId) override {
@@ -133,7 +133,7 @@ public:
         }
     }
     
-    double getVolatility(const std::string& tradingPair, 
+    double getVolatility(const core::Symbol& tradingPair, 
                         const std::string& timeframe, 
                         const std::optional<std::string>& exchangeId) override {
         if (!initialized_) {
@@ -150,7 +150,7 @@ public:
     }
     
     std::vector<OrderRequest> getOrderHistory(const core::ExchangeId& exchangeId, 
-                                            const std::string& tradingPair, 
+                                            const core::Symbol& tradingPair, 
                                             int limit) override {
         if (!initialized_) {
             LOG_ERROR("DataInterface not initialized");
@@ -208,7 +208,7 @@ public:
         }
     }
     
-    bool subscribeMarketData(const std::string& tradingPair, 
+    bool subscribeMarketData(const core::Symbol& tradingPair, 
                            const std::optional<std::string>& exchangeId) override {
         if (!initialized_) {
             LOG_ERROR("DataInterface not initialized");
@@ -232,7 +232,7 @@ public:
         }
     }
     
-    bool unsubscribeMarketData(const std::string& tradingPair, 
+    bool unsubscribeMarketData(const core::Symbol& tradingPair, 
                               const std::optional<std::string>& exchangeId) override {
         if (!initialized_) {
             LOG_ERROR("DataInterface not initialized");

@@ -92,7 +92,7 @@ public:
                 return std::make_shared<BinanceWebSocketClient>(
                     "stream.binance.com", 
                     "9443",
-                    [this](const ExchangeId& exchange, const std::string& symbol, const std::vector<uint8_t>& data) {
+                    [this](const ExchangeId& exchange, const core::Symbol& symbol, const std::vector<uint8_t>& data) {
                         this->onWebSocketData(exchange, symbol, data);
                     }
                 );
@@ -183,7 +183,7 @@ public:
     
 private:
     // Add this at the very start of your onWebSocketData callback:
-    void onWebSocketData(const ExchangeId& exchange, const std::string& symbol, const std::vector<uint8_t>& data) {
+    void onWebSocketData(const ExchangeId& exchange, const core::Symbol& symbol, const std::vector<uint8_t>& data) {
         // Update statistics
         messagesReceived_.fetch_add(1);
         bytesReceived_.fetch_add(data.size());

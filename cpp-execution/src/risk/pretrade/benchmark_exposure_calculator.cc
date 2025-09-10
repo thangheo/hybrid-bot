@@ -113,7 +113,7 @@ public:
     bool initialize() override { return true; }
     
     std::optional<MarketData> getMarketData(
-        const std::string& tradingPair,
+        const core::Symbol& tradingPair,
         const std::optional<std::string>& /* exchangeId */ = std::nullopt
     ) override {
         MarketData data;

@@ -170,7 +170,7 @@ struct TradingSignal {
     void setDirection(core::Direction d) { this->direction = d; }
     void setStrength(double s) { this->strength = s; }
     void setStrategyId(const StrategyId& stId) { this->strategyId = stId; }
-    void setTradingPair(const std::string& tradingPair) { symbol = core::Symbol::fromString(tradingPair); }
+    void setTradingPair(const core::Symbol& tradingPair) { symbol = tradingPair; }
     // set target size
     void setTargetSize(double size) { this->targetSize = size; }
     void setTtl(const core::Duration& duration) { this->ttl = duration; }

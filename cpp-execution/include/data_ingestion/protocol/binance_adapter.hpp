@@ -44,7 +44,7 @@ public:
     // ExchangeAdapter interface implementation
     bool canHandle(const MarketDataUpdate& update) override;
     OrderBookUpdate normalize(const MarketDataUpdate& update) override;
-    std::string standardizeTradingPair(const std::string& tradingPair) override;
+    std::string standardizeTradingPair(const core::Symbol& tradingPair) override;
     ExchangeId getExchangeId() const override;
     std::string generateChecksum(const std::vector<PriceLevel>& bids,
                                            const std::vector<PriceLevel>& asks) const;
@@ -82,7 +82,7 @@ private:
     /**
      * Validate sequence number for gap detection
      */
-    bool validateSequenceNumber(uint64_t sequenceNumber, const std::string& symbol);
+    bool validateSequenceNumber(uint64_t sequenceNumber, const core::Symbol& symbol);
     
     // Internal state for sequence tracking (per symbol)
     mutable std::mutex sequenceTrackingMutex_;

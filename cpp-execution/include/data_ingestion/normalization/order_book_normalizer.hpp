@@ -30,7 +30,7 @@ public:
     
     // Get current state of an order book
     OrderBookUpdate getOrderBook(const ExchangeId exchangeId,
-                               const std::string& tradingPair,
+                               const core::Symbol& tradingPair,
                                int depth = 10) const;
     
 private:

@@ -202,7 +202,7 @@ core::ExchangeData NormalizationPipeline::convertMarketDataToExchangeData(
     
     core::ExchangeData exchangeData;
     exchangeData.exchangeId = update.exchangeId;
-    exchangeData.symbol = core::Symbol::fromString(update.tradingPair);
+    exchangeData.symbol = core::Symbol(update.tradingPair);
     exchangeData.receivedTime = std::chrono::duration_cast<std::chrono::milliseconds>(
         update.timestamp.time_since_epoch()).count();
     exchangeData.isSnapshot = false; // MarketDataUpdate is typically incremental
