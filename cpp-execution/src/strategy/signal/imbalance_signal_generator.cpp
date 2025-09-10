@@ -19,7 +19,7 @@
 #include <sstream>
 #include <iomanip>
 #include <random>
-#include "logger.hpp"
+#include <common/logger.hpp>
 
  namespace trading {
  namespace strategy {
@@ -256,9 +256,9 @@ TradingSignal ImbalanceSignalGenerator::createSignalFromImbalance(const Imbalanc
      signal.strength = calculateSignalStrength(imbalance);
      signal.quality = 0.0; // Will be calculated below
      signal.confidence = trading::core::confidenceLevelToValue(imbalance.confidence);
-     signal.generation_time = std::chrono::system_clock::now();
+     signal.generationTime = std::chrono::system_clock::now();
     //  signal.ttl = std::chrono::milliseconds(config_.signalTtlMs);
-     signal.source_type = imbalance.type;
+     signal.sourceType = imbalance.type;
      signal.symbol = imbalance.symbol;
      signal.exchangeId = imbalance.exchangeId;
     //  signal.expirationTime = imbalance.detectionTime + signal.ttl; // Set expiration time

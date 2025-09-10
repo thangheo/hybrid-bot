@@ -208,36 +208,36 @@ private:
             if (!running_) break;
             
             TradingSignal signal;
-            signal.signal_id = generateSignalId();
-            signal.tradingPair = "ETHUSDT";
-            signal.direction = direction;
-            signal.strength = 0.8;
-            signal.target_size = 0.0025; // ~$15 worth
-            signal.signal_ttl = std::chrono::milliseconds(10000);
-            signal.strategy_id = "test_strategy";
-            signal.strategy_version = "1.0";
-            
+            signal.id = (generateSignalId());
+            signal.setTradingPair("ETHUSDT");
+            signal.setDirection(direction);
+            signal.setStrength(0.8);
+            signal.setTargetSize(0.0025); // ~$15 worth
+            signal.setTtl(std::chrono::milliseconds(10000));
+            signal.setStrategyId(StrategyId("test_strategy"));
+            // signal.setStrategyVersion("1.0");
+
             // QUAN TRỌNG: Dùng market order để tránh giá cố định
-            // signal.signal_metrics["order_type"] = "MARKET";
+            // signal.signalMetrics["order_type"] = "MARKET";
                 // Add ETH price metrics
                 //if buy price =4280.0;, if sell price = 4350
             //get current bids ask
             
             if(direction == Direction::BUY){
-                signal.signal_metrics["bid_price"] = 4280.0;
-                signal.signal_metrics["ask_price"] = 4311.0;
+                signal.signalMetrics["bid_price"] = 4280.0;
+                signal.signalMetrics["ask_price"] = 4311.0;
 
             }
             else{
-                signal.signal_metrics["bid_price"] = 4320.0;
-                signal.signal_metrics["ask_price"] = 4331.0;
+                signal.signalMetrics["bid_price"] = 4320.0;
+                signal.signalMetrics["ask_price"] = 4331.0;
 
             }
-            signal.signal_metrics["spread"] = 1.0;
-            signal.signal_metrics["volatility"] = 0.02;
-            signal.signal_metrics["volume"] = 1000.0;
-            signal.signal_metrics["liquidity_score"] = 0.9;
-            signal.signal_metrics["market_impact_estimate"] = 0.001;
+            signal.signalMetrics["spread"] = 1.0;
+            signal.signalMetrics["volatility"] = 0.02;
+            signal.signalMetrics["volume"] = 1000.0;
+            signal.signalMetrics["liquidity_score"] = 0.9;
+            signal.signalMetrics["market_impact_estimate"] = 0.001;
 
             auto response = execution_service_->executeSignal(signal);
             
@@ -334,14 +334,14 @@ private:
         std::string trading_pair = binance_pairs[pair_dist(signal_generator_)];
         
         TradingSignal signal;
-        signal.signal_id = generateSignalId();
-        signal.tradingPair = trading_pair;  // Now uses correct format
-        signal.direction = side_dist(signal_generator_) == 0 ? Direction::BUY : Direction::SELL;
-        signal.strength = strength_dist(signal_generator_);
-        signal.target_size = size_dist(signal_generator_);
-        signal.signal_ttl = std::chrono::milliseconds(10000);
-        signal.strategy_id = "test_strategy";
-        signal.strategy_version = "1.0";
+        signal.id = generateSignalId();
+        signal.setTradingPair(trading_pair);  // Now uses correct format
+        signal.setDirection(side_dist(signal_generator_) == 0 ? Direction::BUY : Direction::SELL);
+        signal.setStrength(strength_dist(signal_generator_));
+        signal.setTargetSize(size_dist(signal_generator_));
+        signal.setTtl(std::chrono::milliseconds(10000));
+        signal.setStrategyId(StrategyId("test_strategy"));
+        // signal.setStrategyVersion("1.0");
         
         // Rest of your existing code...
         return signal;

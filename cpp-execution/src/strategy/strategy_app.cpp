@@ -193,11 +193,11 @@ public:
         //           signal.strength,
         //           signal.confidence,
         //           signal.quality,
-        //           std::chrono::duration_cast<std::chrono::milliseconds>(signal.generation_time.time_since_epoch()).count(),
+        //           std::chrono::duration_cast<std::chrono::milliseconds>(signal.generationTime.time_since_epoch()).count(),
         //           signal.ttl.count()/1000000,
         //           std::chrono::duration_cast<std::chrono::milliseconds>(signal.expirationTime.time_since_epoch()).count());
         // //source of signal event
-        // LOG_DEBUG("  Source Type: {}", static_cast<int>(signal.source_type));
+        // LOG_DEBUG("  Source Type: {}", static_cast<int>(signal.sourceType));
         //  enum class ImbalanceType {
         //     VOLUME_IMBALANCE,              // Significant difference between bid and ask volume
         //     PRICE_LEVEL_IMBALANCE,         // Imbalance across multiple price levels
@@ -404,11 +404,11 @@ private:
     //         }            
     //         //calculate hold duration based on signal decay and TTL            
     //         auto now = std::chrono::system_clock::now();
-    //         auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - signal.generation_time);
+    //         auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - signal.generationTime);
             
     //         // Debug timing info
     //         auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
-    //         auto generation_ms = std::chrono::duration_cast<std::chrono::milliseconds>(signal.generation_time.time_since_epoch()).count();
+    //         auto generation_ms = std::chrono::duration_cast<std::chrono::milliseconds>(signal.generationTime.time_since_epoch()).count();
     //         auto expiration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(signal.expirationTime.time_since_epoch()).count();
             
     //         // LOG_DEBUG("Signal {} timing: Now={}ms, Generated={}ms, TTL={}ms, Elapsed={}ms", 

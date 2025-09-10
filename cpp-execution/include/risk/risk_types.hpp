@@ -20,10 +20,11 @@
 #include <stdexcept>
 #include <cstdint>
 #include <execution/models/order.hpp>
-
+#include <core/market_types.hpp>
 using namespace trading::core;
 using namespace trading;
 using namespace trading::execution::models;
+using TradingPair = trading::core::Symbol;
 
 namespace trading {
 namespace risk {
@@ -75,45 +76,45 @@ struct RiskParameters {
 /**
  * Struct for trading pair (symbol)
  */
-struct TradingPair {
-    std::string base;
-    std::string quote;
-    std::string symbol;
+// struct TradingPair {
+//     std::string base;
+//     std::string quote;
+//     std::string symbol;
     
-    TradingPair() = default;
+//     TradingPair() = default;
     
-    TradingPair(const std::string& sym) : symbol(sym) {
-        // Try to split symbol into base/quote
-        size_t delimiterPos = sym.find('/');
-        if (delimiterPos != std::string::npos) {
-            base = sym.substr(0, delimiterPos);
-            quote = sym.substr(delimiterPos + 1);
-        }
-    }
+//     TradingPair(const std::string& sym) : symbol(sym) {
+//         // Try to split symbol into base/quote
+//         size_t delimiterPos = sym.find('/');
+//         if (delimiterPos != std::string::npos) {
+//             base = sym.substr(0, delimiterPos);
+//             quote = sym.substr(delimiterPos + 1);
+//         }
+//     }
     
-    TradingPair(const std::string& b, const std::string& q, const std::string& sym = "") 
-        : base(b), quote(q), symbol(sym.empty() ? b + "/" + q : sym) {}
+//     TradingPair(const std::string& b, const std::string& q, const std::string& sym = "") 
+//         : base(b), quote(q), symbol(sym.empty() ? b + "/" + q : sym) {}
     
-    std::string getSymbol() const {
-        return symbol.empty() ? (base + "/" + quote) : symbol;
-    }
+//     std::string getSymbol() const {
+//         return symbol.empty() ? (base + "/" + quote) : symbol;
+//     }
     
-    bool operator==(const TradingPair& other) const {
-        return getSymbol() == other.getSymbol();
-    }
+//     bool operator==(const TradingPair& other) const {
+//         return getSymbol() == other.getSymbol();
+//     }
     
-    bool operator<(const TradingPair& other) const {
-        return getSymbol() < other.getSymbol();
-    }
-    // from string
-    static TradingPair fromString(const std::string& str) {
-        return TradingPair(str);
-    }
-    // to string
-    std::string toString() const {
-        return getSymbol();
-    }
-};
+//     bool operator<(const TradingPair& other) const {
+//         return getSymbol() < other.getSymbol();
+//     }
+//     // from string
+//     static TradingPair fromString(const std::string& str) {
+//         return TradingPair(str);
+//     }
+//     // to string
+//     std::string toString() const {
+//         return getSymbol();
+//     }
+// };
 
 /**
  * Position class representing a trading position

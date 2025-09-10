@@ -3,10 +3,13 @@
 #include "models/order.hpp"
 #include <core/market_types.hpp>
 #include "core/direction.hpp"
+#include "core/trading_signal.hpp"
 #include <memory>
 #include <string>
 #include <functional>
 
+using namespace trading::core;
+using namespace trading;
 namespace trading {
 namespace execution {
 
@@ -15,13 +18,13 @@ using namespace core;
  * Parameters for order generation
  */
 struct OrderGenerationParams {
-    std::string tradingPair;
+    core::Symbol tradingPair;
     core::Direction side;
     models::OrderType type = models::OrderType::MARKET;
     double quantity = 0.0;
     double price = 0.0;
     models::TimeInForce time_in_force = models::TimeInForce::GTC;
-    std::string strategy_id;
+    StrategyId strategy_id;
     std::string signal_id;
     std::string client_order_id;
     // signal_strength 
@@ -46,7 +49,7 @@ public:
     models::OrderPtr createOrder(const OrderGenerationParams& params);
     
     // Create an order from a trading signal
-    models::OrderPtr createOrderFromSignal(const std::shared_ptr<class TradingSignal>& signal);
+    models::OrderPtr createOrderFromSignal(const std::shared_ptr<class core::TradingSignal>& signal);
     
     // Generate a unique client order ID
     std::string generateClientOrderId();

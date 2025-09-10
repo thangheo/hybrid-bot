@@ -55,7 +55,7 @@ models::OrderPtr OrderGenerator::createOrder(const OrderGenerationParams& params
     order->setTimeInForce(processed_params.time_in_force);
     
     // Set strategy information
-    order->setStrategyId(processed_params.strategy_id);
+    order->setStrategyId(processed_params.strategy_id.toString());
     order->setSignalId(processed_params.signal_id);
     
     // Enrich the order with additional properties
@@ -73,15 +73,15 @@ models::OrderPtr OrderGenerator::createOrderFromSignal(const std::shared_ptr<Tra
     OrderGenerationParams params;
     
     // Basic signal to order conversion
-    params.tradingPair = signal->tradingPair;
-    params.side = signal->direction;  // Already a models::OrderSide, no conversion needed
-    params.quantity = signal->target_size;
-    params.strategy_id = signal->strategy_id;
-    params.signal_id = signal->signal_id;
-    params.signal_strength = signal->strength;
-    params.target_size = signal->target_size;
-    params.signal_ttl = signal->signal_ttl;
-    
+    params.tradingPair = signal->getTradingPair();
+    params.side = signal->getDirection();  // Already a models::OrderSide, no conversion needed
+    params.quantity = signal->getTargetSize();
+    params.strategy_id = signal->getStrategyId();
+    params.signal_id = signal->getSignalId();
+    params.signal_strength = signal->getStrength();
+    params.target_size = signal->getTargetSize();
+    params.signal_ttl = signal->getTtl();
+
     // Default to market order, will be refined by OrderTypeSelector
     params.type = models::OrderType::MARKET;
     
@@ -124,7 +124,7 @@ void OrderGenerator::setParameterTransformer(
 
 void OrderGenerator::validateParams(const OrderGenerationParams& params) const {
     // Check for required fields
-    if (params.tradingPair.empty()) {
+    if (params.tradingPair.isEmpty()) {
         throw std::invalid_argument("Trading pair cannot be empty");
     }
     

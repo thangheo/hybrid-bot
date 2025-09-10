@@ -53,7 +53,7 @@ namespace algorithms {
 VwapAlgorithm::VwapAlgorithm() = default;
 
 bool VwapAlgorithm::initialize(
-    const std::string& tradingPair,
+    const core::Symbol& tradingPair,
     models::OrderSide side,
     const VwapConfig& config) {
     
@@ -473,8 +473,8 @@ double VwapAlgorithm::calculateOptimalOrderSize(const TimeBucket& bucket) {
     if (volume_callback_ && config_.dynamic_sizing) {
         // Get actual market volume for this bucket
         auto bucket_duration = std::chrono::duration_cast<std::chrono::minutes>(bucket.end_time - bucket.start_time);
-        double market_volume = volume_callback_(trading_pair_, bucket_duration);
-        
+        double market_volume = volume_callback_(trading_pair_.toString(), bucket_duration);
+
         if (market_volume > 0) {
             // Limit our participation based on max rate
             double max_order_size = market_volume * config_.max_participation_rate;

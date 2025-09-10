@@ -23,7 +23,7 @@ PovAlgorithm::~PovAlgorithm() {
 }
 
 bool PovAlgorithm::initialize(
-    const std::string& tradingPair,
+    const core::Symbol& tradingPair,
     models::OrderSide side,
     const PovConfig& config) {
     
@@ -340,7 +340,7 @@ void PovAlgorithm::executionLoop() {
 double PovAlgorithm::getMarketVolume() {
     // Call the market volume callback if registered
     if (market_volume_callback_) {
-        return market_volume_callback_(trading_pair_, config_.volume_lookback);
+        return market_volume_callback_(trading_pair_.toString(), config_.volume_lookback);
     }
     
     // Default to a small volume if no callback is registered

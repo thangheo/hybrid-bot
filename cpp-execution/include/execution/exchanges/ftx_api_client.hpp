@@ -21,10 +21,10 @@ public:
     std::unordered_map<std::string, std::string> getExchangeStatuses() const override;
 
     std::future<models::ExecutionReport> placeOrder(const models::Order& order) override;
-    std::future<models::ExecutionReport> cancelOrder(const std::string& orderId, const std::string& symbol) override;
-    std::future<models::ExecutionReport> getOrderStatus(const std::string& orderId, const std::string& symbol) override;
+    std::future<models::ExecutionReport> cancelOrder(const std::string& orderId, const core::Symbol& symbol) ;
+    std::future<models::ExecutionReport> getOrderStatus(const std::string& orderId, const core::Symbol& symbol) ;
     std::future<std::map<std::string, double>> getAccountBalances() override;
-    std::future<double> getCurrentPrice(const std::string& symbol) override;
+    std::future<double> getCurrentPrice(const core::Symbol& symbol);
     bool isConnected() const override;
     void connect() override;
     void disconnect() override;

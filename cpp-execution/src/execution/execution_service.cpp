@@ -632,14 +632,14 @@ TradingSignal ExecutionService::parseTradingSignalFromJson(const std::string& js
     nlohmann::json j = nlohmann::json::parse(json);
     
     TradingSignal signal;
-    signal.signal_id = j["signal_id"];
-    signal.tradingPair = j["symbol"]["base"].get<std::string>() + "/" + j["symbol"]["quote"].get<std::string>();
-    signal.strategy_id = j["strategy_id"];
-    signal.strategy_version = j.value("strategy_version", "");
-    signal.target_size = j["target_size"];
-    signal.strength = j["strength"];
-    signal.signal_ttl = std::chrono::milliseconds(j["signal_ttl_ms"]);
-    
+    signal.id = j["signal_id"];
+    signal.setTradingPair(j["symbol"]["base"].get<std::string>() + "/" + j["symbol"]["quote"].get<std::string>());
+    signal.setStrategyId(StrategyId(j["strategy_id"], j.value("strategy_version", "")));
+    // signal.setStrategyVersion(j.value("strategy_version", ""));
+    signal.setTargetSize(j["target_size"]);
+    signal.setStrength(j["strength"]);
+    signal.setTtl(std::chrono::milliseconds(j["signal_ttl_ms"]));
+
     // Convert direction
     std::string direction_str = j["direction"];
     if (direction_str == "BUY" || direction_str == "1") {
@@ -651,8 +651,8 @@ TradingSignal ExecutionService::parseTradingSignalFromJson(const std::string& js
     }
     
     // Convert signal metrics
-    if (j.contains("signal_metrics")) {
-        signal.signal_metrics = j["signal_metrics"];
+    if (j.contains("signalMetrics")) {
+        signal.signalMetrics = j["signalMetrics"];
     }
     
     return signal;
@@ -777,26 +777,26 @@ std::string ExecutionService::activeOrdersToJson(const std::vector<models::Order
 models::Order ExecutionService::createOrderFromSignal(const TradingSignal& signal) {
     try {
         // Validate input signal first
-        if (signal.tradingPair.empty()) {
+        if (signal.getTradingPair().isEmpty()) {
             throw std::invalid_argument("Signal trading pair is empty");
         }
-        if (signal.target_size <= 0.0) {
-            throw std::invalid_argument("Signal target size must be positive: " + std::to_string(signal.target_size));
+        if (signal.getTargetSize() <= 0.0) {
+            throw std::invalid_argument("Signal target size must be positive: " + std::to_string(signal.getTargetSize()));
         }
-        if (signal.strength < 0.0 || signal.strength > 1.0) {
-            throw std::invalid_argument("Signal strength must be between 0.0 and 1.0: " + std::to_string(signal.strength));
+        if (signal.getStrength() < 0.0 || signal.getStrength() > 1.0) {
+            throw std::invalid_argument("Signal strength must be between 0.0 and 1.0: " + std::to_string(signal.getStrength()));
         }
 
         // Create order generation parameters
         OrderGenerationParams params;
-        params.tradingPair = signal.tradingPair;
-        params.side = signal.direction;
-        params.quantity = signal.target_size;
-        params.strategy_id = signal.strategy_id;
-        params.signal_id = signal.signal_id;
-        params.signal_strength = signal.strength;
-        params.target_size = signal.target_size;
-        params.signal_ttl = signal.signal_ttl;
+        params.tradingPair = signal.getTradingPair();
+        params.side = signal.getDirection();
+        params.quantity = signal.getTargetSize();
+        params.strategy_id = signal.getStrategyId();
+        params.signal_id = signal.getSignalId();
+        params.signal_strength = signal.getStrength();
+        params.target_size = signal.getTargetSize();
+        params.signal_ttl = signal.getTtl();
         params.type = models::OrderType::MARKET;
         params.time_in_force = models::TimeInForce::GTC;
         params.price = 0.0;
@@ -813,7 +813,7 @@ models::Order ExecutionService::createOrderFromSignal(const TradingSignal& signa
         }
         
         // ADD DEBUG HERE:
-        std::cout << "DEBUG: About to select exchange for pair: " << signal.tradingPair << std::endl;
+        std::cout << "DEBUG: About to select exchange for pair: " << signal.getTradingPair() << std::endl;
 
         // Check if smart_order_router_ is valid
         if (!smart_order_router_) {
@@ -846,8 +846,8 @@ models::Order ExecutionService::createOrderFromSignal(const TradingSignal& signa
         // Create MarketCondition from signal metrics
         MarketCondition market_condition;
         auto getMetric = [&](const std::string& key, double defaultValue = 0.0) -> double {
-            auto it = signal.signal_metrics.find(key);
-            return (it != signal.signal_metrics.end()) ? it->second : defaultValue;
+            auto it = signal.signalMetrics.find(key);
+            return (it != signal.signalMetrics.end()) ? it->second : defaultValue;
         };
 
         market_condition.bid_price = getMetric("bid_price", 50000.0);

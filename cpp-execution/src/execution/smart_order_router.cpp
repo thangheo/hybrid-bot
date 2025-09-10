@@ -34,7 +34,7 @@ RoutingResult SmartOrderRouter::selectExchange(const models::OrderPtr& order) co
     // Get all available exchanges for this trading pair
     std::vector<ExchangeInfo> available_exchanges;
     for (const auto& [id, info] : exchanges_) {
-        if (info.supports_trading_pair(order->getTradingPair()) && 
+        if (info.supports_trading_pair(order->getTradingPair().toString()) && 
             info.supports_order_type(order->getType())) {
             available_exchanges.push_back(info);
         }
@@ -57,7 +57,7 @@ RoutingResult SmartOrderRouter::routeOrder(const models::OrderPtr& order) const 
     // Get all available exchanges for this trading pair
     std::vector<ExchangeInfo> available_exchanges;
     for (const auto& [id, info] : exchanges_) {
-        if (info.supports_trading_pair(order->getTradingPair()) && 
+        if (info.supports_trading_pair(order->getTradingPair().toString()) && 
             info.supports_order_type(order->getType())) {
             available_exchanges.push_back(info);
         }
@@ -84,7 +84,7 @@ bool SmartOrderRouter::routeToExchange(models::OrderPtr& order, const core::Exch
     }
     
     const auto& exchange = it->second;
-    if (!exchange.supports_trading_pair(order->getTradingPair()) || 
+    if (!exchange.supports_trading_pair(order->getTradingPair().toString()) || 
         !exchange.supports_order_type(order->getType())) {
         return false;
     }
