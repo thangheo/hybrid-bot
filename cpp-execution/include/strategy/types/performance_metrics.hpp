@@ -20,28 +20,30 @@
   * Performance metrics for strategy evaluation
   */
  struct PerformanceMetrics {
-     double pnl;             // Profit and loss
-     double sharpeRatio;    // Sharpe ratio
-      double sortino_ratio;   // Sortino ratio
-      double benchmark_return; // Benchmark return
-      double totalReturn;     // Total return
-     double maxDrawdown;    // Maximum drawdown
-     double winRate;        // Win rate (percentage)
-     double profitFactor;   // Profit factor (gross profit / gross loss)
-     int trade_count;        // Number of trades
-     double avg_trade_pnl;   // Average P&L per trade
-      double volatility;      // Volatility of returns
-      double downside_deviation; // Downside deviation
-      double value_at_risk;  // Value at risk
-      double expected_shortfall; // Expected shortfall
-      double alpha;         // Alpha (excess return over benchmark)
-      double beta;          // Beta (sensitivity to benchmark)
-      double information_ratio; // Information ratio (excess return / tracking error)
-     //timestamp
-     core::Timestamp timestamp; // Timestamp of the metrics
-     // Default constructor with zeroed metrics
-     PerformanceMetrics()
-         : pnl(0.0), sharpeRatio(0.0), maxDrawdown(0.0),
+    double pnl;             // Profit and loss
+    double sharpeRatio;    // Sharpe ratio
+    double sortino_ratio;   // Sortino ratio
+    double benchmark_return; // Benchmark return
+    double totalReturn;     // Total return
+    double maxDrawdown;    // Maximum drawdown
+    double winRate;        // Win rate (percentage)
+    double profitFactor;   // Profit factor (gross profit / gross loss)
+    int trade_count;        // Number of trades
+    double avg_trade_pnl;   // Average P&L per trade
+    double volatility;      // Volatility of returns
+    double downside_deviation; // Downside deviation
+    double value_at_risk;  // Value at risk
+    double expected_shortfall; // Expected shortfall
+    double alpha;         // Alpha (excess return over benchmark)
+    double beta;          // Beta (sensitivity to benchmark)
+    double information_ratio; // Information ratio (excess return / tracking error)
+    double turnover;       // Turnover rate
+    double currentDrawdown; // Current drawdown
+    // Timestamp
+    core::Timestamp timestamp; // Timestamp of the metrics
+    // Default constructor with zeroed metrics
+    PerformanceMetrics()
+        : pnl(0.0), sharpeRatio(0.0), maxDrawdown(0.0),
            winRate(0.0), profitFactor(0.0), trade_count(0), avg_trade_pnl(0.0) {}
  };
  
