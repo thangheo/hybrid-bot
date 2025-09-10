@@ -40,7 +40,7 @@ public:
     
     // Initialize the algorithm with configuration
     bool initialize(
-        const ,
+        const core::Symbol& tradingPair,
         models::OrderSide side,
         const IcebergConfig& config);
     

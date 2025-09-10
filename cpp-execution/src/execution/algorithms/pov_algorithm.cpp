@@ -23,7 +23,7 @@ PovAlgorithm::~PovAlgorithm() {
 }
 
 bool PovAlgorithm::initialize(
-    const ,
+    const core::Symbol& tradingPair,
     models::OrderSide side,
     const PovConfig& config) {
     

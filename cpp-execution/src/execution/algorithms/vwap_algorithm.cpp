@@ -53,7 +53,7 @@ namespace algorithms {
 VwapAlgorithm::VwapAlgorithm() = default;
 
 bool VwapAlgorithm::initialize(
-    const ,
+    const core::Symbol& tradingPair,
     models::OrderSide side,
     const VwapConfig& config) {
     

@@ -65,7 +65,7 @@ public:
     
     // Bulk access for efficiency
     std::vector<std::shared_ptr<const data_ingestion::OrderBook>> 
-    getOrderBooks(const std::vector<std::pair<std::string, std::string>>& symbols) const;
+    getOrderBooks(const std::vector<std::pair<std::string, core::Symbol>>& symbols) const;
     
     // Subscribe to updates (asynchronous, event-driven)
     void subscribeToUpdates(const std::string& topic, 

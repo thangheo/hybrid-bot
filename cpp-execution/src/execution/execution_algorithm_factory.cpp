@@ -32,7 +32,7 @@ class ExecutionAlgorithmFactory::TwapAlgorithmWrapper : public ExecutionAlgorith
 public:
     TwapAlgorithmWrapper(
         const std::string& id,
-        const ,
+        const core::Symbol& tradingPair,
         models::OrderSide side,
         const algorithms::TwapConfig& config)
         : id_(id), algo_() {
@@ -110,7 +110,7 @@ class ExecutionAlgorithmFactory::VwapAlgorithmWrapper : public ExecutionAlgorith
 public:
     VwapAlgorithmWrapper(
         const std::string& id,
-        const ,
+        const core::Symbol& tradingPair,
         models::OrderSide side,
         const algorithms::VwapConfig& config)
         : id_(id), algo_() {
@@ -188,7 +188,7 @@ class ExecutionAlgorithmFactory::IcebergAlgorithmWrapper : public ExecutionAlgor
 public:
     IcebergAlgorithmWrapper(
         const std::string& id,
-        const ,
+        const core::Symbol& tradingPair,
         models::OrderSide side,
         const algorithms::IcebergConfig& config)
         : id_(id), algo_() {
@@ -261,7 +261,7 @@ class ExecutionAlgorithmFactory::PovAlgorithmWrapper : public ExecutionAlgorithm
 public:
     PovAlgorithmWrapper(
         const std::string& id,
-        const ,
+        const core::Symbol& tradingPair,
         models::OrderSide side,
         const algorithms::PovConfig& config)
         : id_(id), algo_() {

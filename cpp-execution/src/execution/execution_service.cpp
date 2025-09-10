@@ -435,7 +435,7 @@ std::string ExecutionService::orderStateToString(models::OrderState state) {
     
     // Filter by trading pair and exchange if needed
     for (const auto& order : all_active_orders) {
-        if (order->getTradingPair().toString() == tradingPair) {
+        if (order->getTradingPair() == tradingPair) {
             if (exchangeId.toString().empty() || order->getExchangeId() == exchangeId) {
                 active_orders.push_back(order);
             }
@@ -449,7 +449,7 @@ std::string ExecutionService::orderStateToString(models::OrderState state) {
     
     // If no orders were found, add a response indicating that
     if (responses.empty()) {
-        std::string message = "No active orders found for " + tradingPair;
+        std::string message = "No active orders found for " + tradingPair.toString();
         if (!exchangeId.toString().empty()) {
             message += " on exchange " + exchangeId.toString();
         }

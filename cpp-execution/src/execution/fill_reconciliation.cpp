@@ -114,7 +114,7 @@
          FillDiscrepancy discrepancy;
          discrepancy.order_id = order_id;
          discrepancy.exchangeId = actual_fill.exchangeId;
-         discrepancy.tradingPair = "";  // We don't have this info in the Fill struct
+         discrepancy.tradingPair = core::Symbol();  // We don't have this info in the Fill struct
          discrepancy.actual_quantity = actual_fill.quantity;
          discrepancy.actual_price = actual_fill.price;
          discrepancy.expected_quantity = 0.0;  // Will be filled if we find a close match
@@ -182,7 +182,7 @@
                  FillDiscrepancy discrepancy;
                  discrepancy.order_id = order_id;
                  discrepancy.exchangeId = exp_record.fill.exchangeId;
-                 discrepancy.tradingPair = "";  // We don't have this info
+                 discrepancy.tradingPair = core::Symbol();  // We don't have this info
                  discrepancy.expected_quantity = exp_record.fill.quantity;
                  discrepancy.expected_price = exp_record.fill.price;
                  discrepancy.actual_quantity = 0.0;
@@ -220,7 +220,7 @@
              FillDiscrepancy discrepancy;
              discrepancy.order_id = order_id;
              discrepancy.exchangeId = act_record.fill.exchangeId;
-             discrepancy.tradingPair = "";  // We don't have this info
+             discrepancy.tradingPair = core::Symbol();  // We don't have this info
              discrepancy.expected_quantity = 0.0;
              discrepancy.expected_price = 0.0;
              discrepancy.actual_quantity = act_record.fill.quantity;

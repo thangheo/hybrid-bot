@@ -13,7 +13,7 @@ PriceJumpFilter::PriceJumpFilter(double threshold_percent)
 }
 
 bool PriceJumpFilter::detectAnomaly(OrderBookUpdate& update) {
-    std::string key = update.exchangeId.toString() + ":" + update.tradingPair;
+    std::string key = update.exchangeId.toString() + ":" + update.tradingPair.toString();
     
     // Calculate mid price
     double midPrice = calculateMidPrice(update);
@@ -132,7 +132,7 @@ VolumeFilter::VolumeFilter(double threshold_percent)
 }
 
 bool VolumeFilter::detectAnomaly(OrderBookUpdate& update) {
-    std::string key = update.exchangeId.toString() + ":" + update.tradingPair;
+    std::string key = update.exchangeId.toString() + ":" + update.tradingPair.toString();
     
     // Calculate total volume
     double total_volume = calculateTotalVolume(update);

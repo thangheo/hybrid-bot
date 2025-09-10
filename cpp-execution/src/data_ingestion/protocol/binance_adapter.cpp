@@ -164,8 +164,8 @@ OrderBookUpdate BinanceAdapter::normalize(const MarketDataUpdate& update) {
         } else if (jsonObj.contains("U") && jsonObj["U"].is_number()) {
             normalized.sequenceNumber = jsonObj["U"].get<uint64_t>();
         }
-        
-        bool validSequence = validateSequenceNumber(normalized.sequenceNumber, normalized.tradingPair.toString());
+
+        bool validSequence = validateSequenceNumber(normalized.sequenceNumber, normalized.tradingPair);
         if (!validSequence) {
             normalized.has_anomaly = true;
             normalized.anomaly_type = "sequence_gap";
@@ -389,11 +389,11 @@ std::string BinanceAdapter::extractTradingPair(const std::string& binanceSymbol)
 
 bool BinanceAdapter::validateSequenceNumber(uint64_t sequenceNumber, const core::Symbol& symbol) {
     std::lock_guard<std::mutex> lock(sequenceTrackingMutex_);
-    
-    auto it = lastSequenceNumbers_.find(symbol);
+
+    auto it = lastSequenceNumbers_.find(symbol.toString());
     if (it == lastSequenceNumbers_.end()) {
         // First sequence number for this symbol
-        lastSequenceNumbers_[symbol] = sequenceNumber;
+        lastSequenceNumbers_[symbol.toString()] = sequenceNumber;
         return true;
     }
     
@@ -409,12 +409,12 @@ bool BinanceAdapter::validateSequenceNumber(uint64_t sequenceNumber, const core:
     if (sequenceNumber > lastSequence + 1) {
         // There's a gap in sequence numbers - this might indicate missed messages
         // Update the stored sequence number but return false to indicate the gap
-        lastSequenceNumbers_[symbol] = sequenceNumber;
+        lastSequenceNumbers_[symbol.toString()] = sequenceNumber;
         return false;
     }
     
     // Everything looks good
-    lastSequenceNumbers_[symbol] = sequenceNumber;
+    lastSequenceNumbers_[symbol.toString()] = sequenceNumber;
     return true;
 }
 
