@@ -13,7 +13,7 @@ namespace algorithms {
 IcebergAlgorithm::IcebergAlgorithm() = default;
 
 bool IcebergAlgorithm::initialize(
-    const ,
+    const core::Symbol& tradingPair,
     models::OrderSide side,
     const IcebergConfig& config) {
     

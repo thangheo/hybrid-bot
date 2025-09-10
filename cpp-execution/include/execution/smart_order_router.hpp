@@ -16,51 +16,7 @@ using namespace core;
  * Exchange information used for routing decisions
  */
 // Update smart_order_router.hpp - add missing member variables to ExchangeInfo
-
-// struct ExchangeInfo {
-//     core::ExchangeId exchangeId;
-//     double trading_fee;
-//     double liquidity_score;
-//     double latency_ms;
-//     double success_rate;
-    
-//     // Add these missing member variables
-//     std::unordered_set<std::string> supported_pairs_;
-//     std::unordered_set<models::OrderType> supported_order_types_;
-    
-//     // Constructor
-//     ExchangeInfo() = default;
-    
-//     ExchangeInfo(const core::ExchangeId& id, double fee, double liquidity, 
-//                  double latency, double success)
-//         : exchangeId(id), trading_fee(fee), liquidity_score(liquidity),
-//           latency_ms(latency), success_rate(success) {
-        
-//         // Default supported pairs (empty means all supported)
-//         supported_pairs_.clear();
-        
-//         // Default supported order types
-//         supported_order_types_ = {
-//             models::OrderType::MARKET,
-//             models::OrderType::LIMIT,
-//             models::OrderType::STOP,
-//             models::OrderType::STOP_LIMIT
-//         };
-//     }
-    
-//     // Methods
-//     bool supports_order_type(models::OrderType type) const;
-//     bool supports_trading_pair(const core::Symbol& tradingPair) const;
-    
-//     // Helper methods to configure supported features
-//     void addSupportedPair(const std::string& pair) {
-//         supported_pairs_.insert(pair);
-//     }
-    
-//     void addSupportedOrderType(models::OrderType type) {
-//         supported_order_types_.insert(type);
-//     }
-// };
+ 
 // Trong smart_order_router.hpp - implement inline:
 struct ExchangeInfo {
     core::ExchangeId exchangeId;
@@ -78,7 +34,7 @@ struct ExchangeInfo {
                type == models::OrderType::STOP_LIMIT;
     }
     
-    bool supports_trading_pair(const std::string& trading_pair) const {
+    bool supports_trading_pair(const core::Symbol& trading_pair) const {
         return true;
         // Accept all major trading pairs
         // return trading_pair.find("USDT") != std::string::npos ||

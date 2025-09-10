@@ -147,8 +147,8 @@ double OrderBookCacheService::getCacheHitRatio() const {
 }
 std::vector<std::shared_ptr<const data_ingestion::OrderBook>> 
 OrderBookCacheService::getOrderBooks(
-    const std::vector<std::pair<std::string, std::string>>& symbols) const {
-    
+    const std::vector<std::pair<std::string, core::Symbol>>& symbols) const {
+
     std::vector<std::shared_ptr<const data_ingestion::OrderBook>> result;
     result.reserve(symbols.size());
     
@@ -184,7 +184,7 @@ void OrderBookCacheService::updateOrderBook(
     
     std::string key = createKey(
         orderBook->getExchangeId().toString(), 
-        orderBook->getSymbol().toString()
+        orderBook->getSymbol()
     );
     
     // Update cache
@@ -335,7 +335,7 @@ OrderBookCacheService::optimizeOrderBookMemory(
 
 std::string OrderBookCacheService::createKey(const std::string& exchangeId, 
                                            const core::Symbol& symbol) const {
-    return exchangeId + ":" + symbol;
+    return exchangeId + ":" + symbol.toString();
 }
 
 OrderBookCacheService::Metrics OrderBookCacheService::getMetrics() const {

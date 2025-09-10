@@ -18,7 +18,7 @@ namespace algorithms {
 TwapAlgorithm::TwapAlgorithm() = default;
 
 bool TwapAlgorithm::initialize(
-    const ,
+    const core::Symbol& tradingPair,
     models::OrderSide side,
     const TwapConfig& config) {
     

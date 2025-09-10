@@ -11,6 +11,7 @@
 using namespace trading;
 using namespace trading::common;
 using namespace trading::data_ingestion;
+using namespace trading::core;
 
 class MockOrderBookGenerator {
 public:
@@ -100,12 +101,12 @@ int main() {
         MockOrderBookGenerator generator;
         
         // Create some test trading pairs
-        std::vector<std::pair<core::ExchangeId, std::string>> testPairs = {
-            {core::ExchangeId::binance(), "BTCUSDT"},
-            {core::ExchangeId::binance(), "ETHUSDT"},
-            {core::ExchangeId::coinbase(), "BTCUSD"},
-            {core::ExchangeId::coinbase(), "ETHUSD"},
-            {core::ExchangeId::kraken(), "XBTUSD"}
+        std::vector<std::pair<core::ExchangeId, core::Symbol>> testPairs = {
+            {core::ExchangeId::binance(), core::Symbol("BTCUSDT")},
+            {core::ExchangeId::binance(), core::Symbol("ETHUSDT")},
+            {core::ExchangeId::coinbase(), core::Symbol("BTCUSD")},
+            {core::ExchangeId::coinbase(), core::Symbol("ETHUSD")},
+            {core::ExchangeId::kraken(), core::Symbol("XBTUSD")}
         };
         
         LOG_INFO("Creating mock order books for {} trading pairs", testPairs.size());
@@ -127,7 +128,7 @@ int main() {
         for (const auto& [exchange, symbol] : testPairs) {
             // Use the same key format as updateOrderBook uses
             std::string exchangeStr = exchange.toString();
-            auto cachedOrderBook = cacheService->getOrderBook(exchangeStr, symbol);
+            auto cachedOrderBook = cacheService->getOrderBook(exchangeStr, core::Symbol(symbol));
             if (cachedOrderBook) {
                 auto snapshot = cachedOrderBook->getSnapshot(5);
                 LOG_INFO("Retrieved {}-{}: {} bids, {} asks, mid price: {:.2f}", 
@@ -144,7 +145,7 @@ int main() {
         
         // Test bulk retrieval
         LOG_INFO("\n=== Testing Bulk Retrieval ===");
-        std::vector<std::pair<std::string, std::string>> bulkRequest;
+        std::vector<std::pair<std::string, core::Symbol>> bulkRequest;
         for (const auto& [exchange, symbol] : testPairs) {
             bulkRequest.emplace_back(exchange.toString(), symbol);
         }

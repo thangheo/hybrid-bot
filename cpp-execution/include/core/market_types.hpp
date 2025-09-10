@@ -41,7 +41,10 @@ namespace trading {
      Symbol() = default;
      
      Symbol(const std::string& b, const std::string& q) : base(b), quote(q) {}
-     
+     Symbol(const Symbol&) = default;
+     Symbol(const std::string& symbol_str) {
+         *this = Symbol::fromString(symbol_str);
+     }
      // Create from combined string (e.g., "BTC/USDT")
      static Symbol fromString(const std::string& symbol_str) {
          size_t delimiter_pos = symbol_str.find('/');
@@ -59,17 +62,34 @@ namespace trading {
                  symbol_str.substr(delimiter_pos + 1)
              );
          }
-         // For symbols without delimiter, try to split at a reasonable position
-         if (symbol_str.length() >= 6) { // BTCUSDT
-             // Heuristic: last 3-4 characters are usually the quote
-             size_t split = symbol_str.length() - (symbol_str.length() >= 7 ? 4 : 3);
-             return Symbol(
-                 symbol_str.substr(0, split),
-                 symbol_str.substr(split)
-             );
+         
+         // For symbols without delimiter, use smart parsing with known quote currencies
+         static const std::vector<std::string> quoteCurrencies = {
+             "USDT", "BUSD", "USDC", "TUSD", "FDUSD",  // Stablecoins
+             "BTC", "ETH", "BNB",                       // Major cryptos
+             "EUR", "GBP", "AUD", "TRY",               // Fiat currencies
+             "DOT", "ADA", "XRP", "SOL"                // Other major alts
+         };
+         
+         // Try to match against known quote currencies
+         for (const auto& quote : quoteCurrencies) {
+             if (symbol_str.length() > quote.length()) {
+                 std::string suffix = symbol_str.substr(symbol_str.length() - quote.length());
+                 if (suffix == quote) {
+                     std::string base = symbol_str.substr(0, symbol_str.length() - quote.length());
+                     return Symbol(base, quote);
+                 }
+             }
+         }
+         
+         // Fallback: assume last 4 characters are quote currency for longer symbols
+         if (symbol_str.length() >= 6) {
+             std::string base = symbol_str.substr(0, symbol_str.length() - 4);
+             std::string quote = symbol_str.substr(symbol_str.length() - 4);
+             return Symbol(base, quote);
          }
          // If string is too short, treat the whole string as base currency
-         return Symbol(symbol_str, "");  // Default quote currency
+         return Symbol(symbol_str, "USDT");  // Default quote currency
      }
      
      // Convert to string representation
@@ -94,6 +114,7 @@ namespace trading {
      }
      //empty
     bool isEmpty() const { return base.empty() || quote.empty(); }
+    bool empty() const { return base.empty() || quote.empty(); }
  };
  
 // Add proper namespace aliases where needed
