@@ -8,10 +8,8 @@
 
 #include "risk/posttrade/drawdown_monitor.hpp"
 #include "common/logger.hpp"
-
 #include <algorithm>
 #include <cmath>
-#include <format>
 #include <numeric>
 #include <ranges>
 #include <optional> 
@@ -57,8 +55,8 @@ bool DrawdownMonitor::initialize() {
         // Start maintenance thread if background processing is enabled
         if (config_.enableDetailedMetrics) {
             maintenanceActive_.store(true);
-            maintenanceThread_ = std::make_unique<std::jthread>([this](std::stop_token token) {
-                while (!token.stop_requested() && maintenanceActive_.load()) {
+            maintenanceThread_ = std::make_unique<std::thread>([this]() {
+                while (maintenanceActive_.load()) {
                     performMaintenance();
                     std::this_thread::sleep_for(config_.updateIntervalSeconds);
                 }
@@ -71,7 +69,7 @@ bool DrawdownMonitor::initialize() {
         
     } catch (const std::exception& e) {
         LOG_ERROR(std::format("DrawdownMonitor: Initialization failed: {}", e.what()));
-        return false;
+        LOG_ERROR(fmt::format("DrawdownMonitor: Initialization failed: {}", e.what()));
     }
 }
 
@@ -84,7 +82,6 @@ void DrawdownMonitor::shutdown() {
     maintenanceActive_.store(false);
     
     if (maintenanceThread_ && maintenanceThread_->joinable()) {
-        maintenanceThread_->request_stop();
         maintenanceThread_->join();
     }
     
@@ -405,8 +402,8 @@ bool DrawdownMonitor::resetStrategyHighWaterMark(const std::string& strategyId,
     it->second->drawdownInfo.breachCount.store(0);
     
     LOG_INFO(std::format("DrawdownMonitor: Reset high water mark for strategy {} to {}", 
+    LOG_INFO(fmt::format("DrawdownMonitor: Reset high water mark for strategy {} to {}", 
                             strategyId, newHwm));
-    return true;
 }
 
 bool DrawdownMonitor::resetPortfolioHighWaterMark(std::optional<double> value) {
@@ -422,7 +419,7 @@ bool DrawdownMonitor::resetPortfolioHighWaterMark(std::optional<double> value) {
     portfolioDrawdown_.breachCount.store(0);
     
     LOG_INFO(std::format("DrawdownMonitor: Reset portfolio high water mark to {}", newHwm));
-    return true;
+    LOG_INFO(fmt::format("DrawdownMonitor: Reset portfolio high water mark to {}", newHwm));
 }
 
 std::map<std::string, double> DrawdownMonitor::getPerformanceStatistics() const {
@@ -564,9 +561,9 @@ DrawdownEvent DrawdownMonitor::createDrawdownEvent(
     const auto now = core::now();
     const std::string severity = isCritical ? "critical" : "warning";
     const std::string description = std::format(
+    const std::string description = fmt::format(
         "Drawdown {} threshold breached for {}: {:.2f}%",
         severity, strategyId, drawdownPercent * 100.0);
-    
     return DrawdownEvent(
         now,
         drawdownPercent,
@@ -586,7 +583,7 @@ void DrawdownMonitor::notifyCallbacks(const DrawdownEvent& event) {
             callback(event);
         } catch (const std::exception& e) {
             LOG_ERROR(std::format("DrawdownMonitor: Callback error: {}", e.what()));
-        }
+            LOG_ERROR(fmt::format("DrawdownMonitor: Callback error: {}", e.what()));
     }
 }
 
@@ -597,7 +594,7 @@ void DrawdownMonitor::notifyEmergencyCallbacks(const std::string& strategyId, do
             callback(strategyId, drawdown);
         } catch (const std::exception& e) {
             LOG_ERROR(std::format("DrawdownMonitor: Emergency callback error: {}", e.what()));
-        }
+            LOG_ERROR(fmt::format("DrawdownMonitor: Emergency callback error: {}", e.what()));
     }
 }
 
@@ -608,7 +605,7 @@ void DrawdownMonitor::notifyMetricsCallbacks(const std::string& strategyId, cons
             callback(strategyId, info);
         } catch (const std::exception& e) {
             LOG_ERROR(std::format("DrawdownMonitor: Metrics callback error: {}", e.what()));
-        }
+            LOG_ERROR(fmt::format("DrawdownMonitor: Metrics callback error: {}", e.what()));
     }
 }
 
@@ -626,7 +623,7 @@ void DrawdownMonitor::performMaintenance() {
         
     } catch (const std::exception& e) {
         LOG_ERROR(std::format("DrawdownMonitor: Maintenance error: {}", e.what()));
-    }
+        LOG_ERROR(fmt::format("DrawdownMonitor: Maintenance error: {}", e.what()));
 }
 
 void DrawdownMonitor::pruneHistory() {
@@ -668,11 +665,25 @@ void DrawdownMonitor::validateStrategies() {
     for (auto it = strategyTrackers_.begin(); it != strategyTrackers_.end();) {
         if (it->second->getLastActivity() < cutoffTime) {
             LOG_INFO(std::format("DrawdownMonitor: Removing inactive strategy: {}", it->first));
-            it = strategyTrackers_.erase(it);
+            LOG_INFO(fmt::format("DrawdownMonitor: Removing inactive strategy: {}", it->first));
         } else {
             ++it;
         }
     }
+}
+// calculateSharpeRatio
+double DrawdownMonitor::calculateSharpeRatio() const {
+    // Placeholder implementation - replace with actual calculation
+    // This could involve tracking returns over time and calculating mean and stddev
+    return 0.0;
+}
+strategy::PerformanceMetrics DrawdownMonitor::getPerformanceMetrics() const {
+    strategy::PerformanceMetrics metrics;
+    metrics.maxDrawdown = maxDrawdown_;
+    metrics.currentDrawdown = currentDrawdown_;
+    metrics.pnl = totalPnl_;
+    metrics.sharpeRatio = calculateSharpeRatio();
+    return metrics;
 }
 
 void DrawdownMonitor::updatePerformanceMetrics() {

@@ -1,6 +1,6 @@
 /**
  * @file post_trade_monitor.hpp
- * @brief Modern C++20 Post Trade Monitor with comprehensive risk management
+ * @brief Modern C++17 Post Trade Monitor with comprehensive risk management
  * 
  * Orchestrates all post-trade monitoring components with thread-safe operations,
  * event-driven architecture, and advanced risk management capabilities.
@@ -28,20 +28,21 @@
 
 #include <atomic>
 #include <chrono>
-#include <concepts>
-#include <coroutine>
 #include <functional>
 #include <future>
 #include <memory>
 #include <mutex>
 #include <optional>
-#include <ranges>
 #include <shared_mutex>
 #include <string>
 #include <thread>
 #include <unordered_map>
 #include <vector>
 #include <deque>
+#include <variant>
+#include <map>
+#include <sstream>
+#include <algorithm>
 
 namespace trading::risk {
 
@@ -50,9 +51,9 @@ namespace trading::risk {
  */
 struct EnhancedRiskEvent {
     RiskEventType type;
-    core::Timestamp timestamp{core::now()};
+    core::Timestamp timestamp;
     std::string details;
-    std::string severity{"info"};
+    std::string severity;
     std::map<std::string, std::string> metadata;
     
     // Specific event data using std::variant for type safety
@@ -67,18 +68,16 @@ struct EnhancedRiskEvent {
     
     // Convenience constructors
     EnhancedRiskEvent(RiskEventType eventType, std::string eventDetails, std::string eventSeverity = "info")
-        : type(eventType), details(std::move(eventDetails)), severity(std::move(eventSeverity)) {}
+        : type(eventType), timestamp(core::now()), details(std::move(eventDetails)), severity(std::move(eventSeverity)) {}
     
     template<typename EventType>
-    requires (!std::is_same_v<std::decay_t<EventType>, const char*> && 
-              !std::is_array_v<std::decay_t<EventType>>)
     EnhancedRiskEvent(RiskEventType eventType, std::string eventDetails, EventType&& event, std::string eventSeverity = "info")
-        : type(eventType), details(std::move(eventDetails)), severity(std::move(eventSeverity)), 
+        : type(eventType), timestamp(core::now()), details(std::move(eventDetails)), severity(std::move(eventSeverity)), 
           specificEvent(std::forward<EventType>(event)) {}
     
     // Type-safe getters
     template<typename T>
-    [[nodiscard]] std::optional<T> getSpecificEvent() const {
+    std::optional<T> getSpecificEvent() const {
         if (auto* event = std::get_if<T>(&specificEvent)) {
             return *event;
         }
@@ -86,9 +85,9 @@ struct EnhancedRiskEvent {
     }
     
     // Severity helpers
-    [[nodiscard]] bool isCritical() const noexcept { return severity == "critical"; }
-    [[nodiscard]] bool isWarning() const noexcept { return severity == "warning"; }
-    [[nodiscard]] bool isInfo() const noexcept { return severity == "info"; }
+    bool isCritical() const noexcept { return severity == "critical"; }
+    bool isWarning() const noexcept { return severity == "warning"; }
+    bool isInfo() const noexcept { return severity == "info"; }
 };
 
 /**
@@ -160,7 +159,7 @@ struct SystemHealthStatus {
         return core::Timestamp(std::chrono::nanoseconds(lastEventTimestampNanos.load()));
     }
     
-    [[nodiscard]] bool isSystemHealthy() const noexcept {
+    bool isSystemHealthy() const noexcept {
         return stopLossManagerHealthy.load() &&
                drawdownMonitorHealthy.load() &&
                circuitBreakerHealthy.load() &&
@@ -168,7 +167,7 @@ struct SystemHealthStatus {
                mode.load() != RiskManagerMode::EMERGENCY;
     }
     
-    [[nodiscard]] double getHealthScore() const noexcept {
+    double getHealthScore() const noexcept {
         int healthyComponents = 0;
         int totalComponents = 4;
         
@@ -217,7 +216,7 @@ struct PostTradeMonitorConfig {
     bool enableRealTimeAlerts{true};
     std::chrono::seconds alertCooldownSeconds{300};
     
-    [[nodiscard]] bool isValid() const noexcept {
+    bool isValid() const noexcept {
         return healthCheckIntervalSeconds.count() > 0 &&
                metricsUpdateIntervalSeconds.count() > 0 &&
                reconciliationIntervalMinutes.count() > 0 &&
@@ -230,14 +229,13 @@ struct PostTradeMonitorConfig {
 /**
  * Event callback types for different scenarios
  */
-// Note: Use different name to avoid conflict with existing RiskEventCallback in risk_events.hpp
 using PostTradeRiskEventCallback = std::function<void(const EnhancedRiskEvent&)>;
 using ModeChangeCallback = std::function<void(RiskManagerMode, RiskManagerMode, std::string_view)>;
 using HealthStatusCallback = std::function<void(const SystemHealthStatus&)>;
 
 /**
  * @class PostTradeMonitor
- * @brief Modern C++20 post-trade monitoring system
+ * @brief Modern C++17 post-trade monitoring system
  * 
  * Orchestrates all post-trade risk management components:
  * - Stop loss management with automatic liquidation
@@ -257,8 +255,10 @@ public:
      * Destructor ensures proper cleanup
      */
     ~PostTradeMonitor();
-    // isHealthy
+    
+    // Health check
     bool isHealthy() const;
+    
     // Disable copy operations, enable move
     PostTradeMonitor(const PostTradeMonitor&) = delete;
     PostTradeMonitor& operator=(const PostTradeMonitor&) = delete;
@@ -268,7 +268,7 @@ public:
     /**
      * Initialize all monitoring components
      */
-    [[nodiscard]] bool initialize();
+    bool initialize();
     
     /**
      * Shutdown monitoring system gracefully
@@ -294,16 +294,20 @@ public:
     /**
      * Get current system health status
      */
-    [[nodiscard]] SystemHealthStatus getSystemHealth();
+    SystemHealthStatus getSystemHealth();
     
     /**
      * Get current risk manager mode
      */
-    [[nodiscard]] RiskManagerMode getMode() const noexcept {
+    RiskManagerMode getMode() const noexcept {
         return systemHealth_.mode.load();
     }
-    // getPerformanceMetrics
-    [[nodiscard]] strategy::PerformanceMetrics getPerformanceMetrics() const;
+    
+    /**
+     * Get performance metrics
+     */
+    strategy::PerformanceMetrics getPerformanceMetrics() const;
+    
     /**
      * Set risk manager mode with validation and notifications
      */
@@ -312,12 +316,12 @@ public:
     /**
      * Get current circuit breaker state
      */
-    [[nodiscard]] CircuitBreakerState getCircuitBreakerState() ;
+    CircuitBreakerState getCircuitBreakerState();
     
     /**
      * Check if trading is currently allowed
      */
-    [[nodiscard]] bool isTradingAllowed() noexcept {
+    bool isTradingAllowed() noexcept {
         return systemHealth_.tradingAllowed.load() && 
                getCircuitBreakerState() != CircuitBreakerState::TRIGGERED;
     }
@@ -325,22 +329,22 @@ public:
     /**
      * Force reconciliation of positions
      */
-    [[nodiscard]] std::future<ReconciliationResult> reconcilePositions(
+    std::future<ReconciliationResult> reconcilePositions(
         std::optional<core::ExchangeId> exchangeId = std::nullopt
     );
     
     /**
      * Update configuration for all components
      */
-    [[nodiscard]] bool updateConfiguration(const RiskConfig& config);
+    bool updateConfiguration(const RiskConfig& config);
     
     /**
      * Get component references for direct access
      */
-    [[nodiscard]] StopLossManager& getStopLossManager() { return *stopLossManager_; }
-    [[nodiscard]] DrawdownMonitor& getDrawdownMonitor() { return *drawdownMonitor_; }
-    [[nodiscard]] CircuitBreaker& getCircuitBreaker() { return *circuitBreaker_; }
-    [[nodiscard]] BalanceReconciliation& getBalanceReconciliation() { return *balanceReconciliation_; }
+    StopLossManager& getStopLossManager() { return *stopLossManager_; }
+    DrawdownMonitor& getDrawdownMonitor() { return *drawdownMonitor_; }
+    CircuitBreaker& getCircuitBreaker() { return *circuitBreaker_; }
+    BalanceReconciliation& getBalanceReconciliation() { return *balanceReconciliation_; }
     
     /**
      * Register event callbacks with type safety
@@ -352,12 +356,12 @@ public:
     /**
      * Get comprehensive monitoring statistics
      */
-    [[nodiscard]] std::map<std::string, double> getMonitoringStatistics() ;
+    std::map<std::string, double> getMonitoringStatistics();
     
     /**
      * Get recent risk events with filtering
      */
-    [[nodiscard]] std::vector<EnhancedRiskEvent> getRecentEvents(
+    std::vector<EnhancedRiskEvent> getRecentEvents(
         std::optional<RiskEventType> typeFilter = std::nullopt,
         std::optional<std::string> severityFilter = std::nullopt,
         std::chrono::minutes lookbackMinutes = std::chrono::minutes(60)
@@ -366,18 +370,18 @@ public:
     /**
      * Emergency stop all trading activities
      */
-    [[nodiscard]] bool emergencyStop(std::string_view reason);
+    bool emergencyStop(std::string_view reason);
     
     /**
      * Resume trading after emergency stop
      */
-    [[nodiscard]] bool resumeTrading(std::string_view reason = "Manual resume");
+    bool resumeTrading(std::string_view reason = "Manual resume");
     
     /**
      * Health check and diagnostics
      */
-    [[nodiscard]] bool performHealthCheck();
-    [[nodiscard]] std::map<std::string, std::string> getDiagnostics() ;
+    bool performHealthCheck();
+    std::map<std::string, std::string> getDiagnostics();
 
 private:
     // Configuration
@@ -411,8 +415,8 @@ private:
     
     // Background processing
     std::atomic<bool> shutdownRequested_{false};
-    std::unique_ptr<std::jthread> backgroundThread_;
-    std::unique_ptr<std::jthread> healthCheckThread_;
+    std::unique_ptr<std::thread> backgroundThread_;
+    std::unique_ptr<std::thread> healthCheckThread_;
     
     // Performance tracking
     std::atomic<uint64_t> totalExecutionReports_{0};
@@ -424,7 +428,7 @@ private:
     std::unordered_map<RiskManagerMode, core::Timestamp> modeTransitionTimes_;
     
     // Private methods for component management
-    [[nodiscard]] bool initializeComponents();
+    bool initializeComponents();
     void shutdownComponents();
     void connectComponentCallbacks();
     
@@ -445,54 +449,32 @@ private:
     void performMaintenanceTasks();
     
     // Mode management
-    [[nodiscard]] bool shouldTransitionMode(RiskManagerMode currentMode) const;
-    [[nodiscard]] RiskManagerMode calculateRequiredMode();
+    bool shouldTransitionMode(RiskManagerMode currentMode) const;
+    RiskManagerMode calculateRequiredMode();
     void recordModeTransition(RiskManagerMode mode);
     
     // Utility methods
     void addToEventHistory(EnhancedRiskEvent event);
     void pruneEventHistory();
     
-    [[nodiscard]] bool validateConfiguration(const RiskConfig& config) const;
-    void updateComponentHealth() ;
+    bool validateConfiguration(const RiskConfig& config) const;
+    void updateComponentHealth();
     
     // String conversion helpers
-    [[nodiscard]] std::string modeToString(RiskManagerMode mode) const;
-    [[nodiscard]] std::string circuitBreakerStateToString(CircuitBreakerState state) const;
-    
-    // Template helper for async operations
-    template<typename Func>
-    requires std::invocable<Func>
-    auto executeAsync(Func&& func) -> std::future<decltype(func())> {
-        return std::async(std::launch::async, std::forward<Func>(func));
-    }
+    std::string modeToString(RiskManagerMode mode) const;
+    std::string circuitBreakerStateToString(CircuitBreakerState state) const;
     
     void checkModeTimeouts();
     
-    template<typename Predicate>
-    [[nodiscard]] auto filterEvents(Predicate pred, std::chrono::minutes lookback) const {
-        std::shared_lock lock(eventMutex_);
-        auto cutoffTime = core::now() - lookback;
-        
-        return eventHistory_ | std::views::filter([cutoffTime, pred](const auto& event) {
-            return event.timestamp >= cutoffTime && pred(event);
-        });
-    }
-    
-    // Coroutine support for async operations
-    struct OperationAwaiter {
-        bool await_ready() const noexcept { return false; }
-        void await_suspend(std::coroutine_handle<> handle) const noexcept {
-            std::thread([handle]() { handle.resume(); }).detach();
-        }
-        void await_resume() const noexcept {}
-    };
+    // Filter events helper
+    std::vector<EnhancedRiskEvent> filterEventsByPredicate(
+        std::function<bool(const EnhancedRiskEvent&)> predicate, 
+        std::chrono::minutes lookback) const;
     
     // Helper for safe component operations (non-const version)
     template<typename Component, typename Func>
-    requires std::invocable<Func, Component&>
     auto safeComponentOperation(std::unique_ptr<Component>& component, Func&& func) 
-        -> std::optional<std::invoke_result_t<Func, Component&>> {
+        -> std::optional<decltype(func(*component))> {
         if (!component) return std::nullopt;
         
         try {
@@ -503,11 +485,10 @@ private:
         }
     }
 
-    // // Helper for safe component operations (const version)
-    // template<typename Component, typename Func>
-    // requires std::invocable<Func, Component&>
-    auto safeComponentOperation( std::unique_ptr<Component>& component, Func&& func) 
-        -> std::optional<std::invoke_result_t<Func, Component&>> {
+    // Helper for safe component operations (const version)
+    template<typename Component, typename Func>
+    auto safeComponentOperation(const std::unique_ptr<Component>& component, Func&& func) const
+        -> std::optional<decltype(func(*component))> {
         if (!component) return std::nullopt;
         
         try {
@@ -517,18 +498,11 @@ private:
             return std::nullopt;
         }
     }
-    template<typename Component, typename Func>
-    requires std::invocable<Func, const Component&>
-    auto safeComponentOperation(const std::unique_ptr<Component>& component, Func&& func) 
-        -> std::optional<std::invoke_result_t<Func, const Component&>> {
-        if (!component) return std::nullopt;
-        
-        try {
-            return std::forward<Func>(func)(*component);
-        } catch (...) {
-            // Log error and mark component as unhealthy
-            return std::nullopt;
-        }
+
+    // Template helper for async operations
+    template<typename Func>
+    auto executeAsync(Func&& func) -> std::future<decltype(func())> {
+        return std::async(std::launch::async, std::forward<Func>(func));
     }
 };
 

@@ -305,8 +305,11 @@ public:
     void activateStrategy(const std::string& strategyId);
     void deactivateStrategy(const std::string& strategyId);
     [[nodiscard]] std::vector<std::string> getActiveStrategies() const;
-    
+    [[nodiscard]] strategy::PerformanceMetrics getPerformanceMetrics() const;
 private:
+    double maxDrawdown_ = 0.0;
+    double currentDrawdown_ = 0.0;
+    double totalPnl_ = 0.0;
     // Configuration and state
     mutable std::shared_mutex configMutex_;
     EnhancedDrawdownConfig config_;
@@ -329,7 +332,7 @@ private:
     std::vector<MetricsUpdateCallback> metricsCallbacks_;
     
     // Background processing
-    std::unique_ptr<std::jthread> maintenanceThread_;
+    std::unique_ptr<std::thread> maintenanceThread_;
     std::atomic<bool> maintenanceActive_{false};
     
     // Performance tracking
@@ -363,7 +366,8 @@ private:
     void pruneHistory();
     void validateStrategies();
     void updatePerformanceMetrics();
-    
+    double calculateSharpeRatio() const;
+
     [[nodiscard]] bool canSendAlert(const std::string& strategyId) const;
     void recordAlert(const std::string& strategyId);
     
