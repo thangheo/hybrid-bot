@@ -44,7 +44,7 @@ struct AlgorithmParams {
  */
 struct DefaultAlgorithmParams : public AlgorithmParams {
     ExchangeId exchangeId;
-    std::string tradingPair;
+    core::Symbol tradingPair;
     models::OrderSide side;
     models::OrderType order_type;
     double quantity;

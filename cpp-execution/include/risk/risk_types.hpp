@@ -29,6 +29,38 @@ using TradingPair = trading::core::Symbol;
 namespace trading {
 namespace risk {
 
+/**
+ * Enum for different types of risk violations
+ */
+enum class ViolationType {
+    POSITION_LIMIT,
+    EXPOSURE_LIMIT,
+    ORDER_SIZE_LIMIT,
+    PRICE_DEVIATION,
+    DRAWDOWN_LIMIT,
+    RATE_LIMIT,
+    COLLATERAL_REQUIREMENT,
+    EXCHANGE_CONSTRAINT,
+    SYSTEM_ERROR,
+    TIMEOUT,
+    OTHER
+};
+
+/**
+ * Struct to represent a risk violation (RESTORED ORIGINAL FORMAT)
+ */
+struct RiskViolation {
+    ViolationType type;           // Keep original enum field name
+    std::string description;
+    double limitValue;
+    double actualValue;
+    
+    RiskViolation() : type(ViolationType::OTHER), limitValue(0.0), actualValue(0.0) {}
+    
+    RiskViolation(ViolationType vType, const std::string& desc, double limit, double actual)
+        : type(vType), description(desc), limitValue(limit), actualValue(actual) {}
+};
+
 using OrderType = trading::execution::models::OrderType;
 using ExchangeId = trading::core::ExchangeId;
 // Forward declarations
@@ -73,48 +105,6 @@ struct RiskParameters {
     RiskParameters() = default;
 };
 
-/**
- * Struct for trading pair (symbol)
- */
-// struct TradingPair {
-//     std::string base;
-//     std::string quote;
-//     std::string symbol;
-    
-//     TradingPair() = default;
-    
-//     TradingPair(const std::string& sym) : symbol(sym) {
-//         // Try to split symbol into base/quote
-//         size_t delimiterPos = sym.find('/');
-//         if (delimiterPos != std::string::npos) {
-//             base = sym.substr(0, delimiterPos);
-//             quote = sym.substr(delimiterPos + 1);
-//         }
-//     }
-    
-//     TradingPair(const std::string& b, const std::string& q, const std::string& sym = "") 
-//         : base(b), quote(q), symbol(sym.empty() ? b + "/" + q : sym) {}
-    
-//     std::string getSymbol() const {
-//         return symbol.empty() ? (base + "/" + quote) : symbol;
-//     }
-    
-//     bool operator==(const TradingPair& other) const {
-//         return getSymbol() == other.getSymbol();
-//     }
-    
-//     bool operator<(const TradingPair& other) const {
-//         return getSymbol() < other.getSymbol();
-//     }
-//     // from string
-//     static TradingPair fromString(const std::string& str) {
-//         return TradingPair(str);
-//     }
-//     // to string
-//     std::string toString() const {
-//         return getSymbol();
-//     }
-// };
 
 /**
  * Position class representing a trading position
@@ -158,23 +148,6 @@ private:
     
     // Helper method
     void updateUnrealizedPnl();
-};
-
-/**
- * Enum for different types of risk violations
- */
-enum class ViolationType {
-    POSITION_LIMIT,
-    EXPOSURE_LIMIT,
-    ORDER_SIZE_LIMIT,
-    PRICE_DEVIATION,
-    DRAWDOWN_LIMIT,
-    RATE_LIMIT,
-    COLLATERAL_REQUIREMENT,
-    EXCHANGE_CONSTRAINT,
-    SYSTEM_ERROR,
-    TIMEOUT,
-    OTHER
 };
 
 /**
@@ -241,20 +214,6 @@ inline OrderType orderTypeFromString(const std::string& str) {
     return OrderType::MARKET; // Default fallback
 }
 
-/**
- * Struct to represent a risk violation (RESTORED ORIGINAL FORMAT)
- */
-struct RiskViolation {
-    ViolationType type;           // Keep original enum field name
-    std::string description;
-    double limitValue;
-    double actualValue;
-    
-    RiskViolation() : type(ViolationType::OTHER), limitValue(0.0), actualValue(0.0) {}
-    
-    RiskViolation(ViolationType vType, const std::string& desc, double limit, double actual)
-        : type(vType), description(desc), limitValue(limit), actualValue(actual) {}
-};
 
 /**
  * Order request structure (FIXED TYPES)
@@ -263,7 +222,7 @@ struct OrderRequest {
     std::string orderId;
     std::string clientOrderId;
     core::ExchangeId exchangeId;
-    std::string tradingPair;        // Keep as string for now
+    TradingPair tradingPair;        // Keep as string for now
     OrderSide side;
     OrderType type;                 // Changed from string to OrderType enum
     double quantity;

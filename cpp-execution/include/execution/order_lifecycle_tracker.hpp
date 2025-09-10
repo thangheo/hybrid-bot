@@ -141,7 +141,7 @@ public:
      * @param symbol The trading pair
      * @return Vector of orders for the trading pair
      */
-    std::vector<std::shared_ptr<models::Order>> getOrdersBySymbol(const std::string& symbol) const;
+    std::vector<std::shared_ptr<models::Order>> getOrdersBySymbol(const core::Symbol& symbol) const;
     
     /**
      * @brief Register a callback for order state changes

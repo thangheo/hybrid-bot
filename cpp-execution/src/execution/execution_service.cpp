@@ -6,12 +6,15 @@
  */
  #include "execution/execution_service.hpp"
  #include "execution/execution_types.hpp"
+ #include "core/market_types.hpp"
  #include <chrono>
  #include <sstream>
  #include <nlohmann/json.hpp>
  #include <thread>
  #include <mutex>
  #include <iostream>
+
+ using namespace trading::core;
  namespace trading {
  namespace execution {
  
@@ -432,7 +435,7 @@ std::string ExecutionService::orderStateToString(models::OrderState state) {
     
     // Filter by trading pair and exchange if needed
     for (const auto& order : all_active_orders) {
-        if (order->getTradingPair() == tradingPair) {
+        if (order->getTradingPair().toString() == tradingPair) {
             if (exchangeId.toString().empty() || order->getExchangeId() == exchangeId) {
                 active_orders.push_back(order);
             }
@@ -665,7 +668,7 @@ models::Order ExecutionService::parseOrderFromJson(const std::string& json) {
     
     // Set basic fields
     if (j.contains("symbol")) {
-        std::string trading_pair = j["symbol"]["base"].get<std::string>() + "/" + j["symbol"]["quote"].get<std::string>();
+        core::Symbol trading_pair(j["symbol"]["base"].get<std::string>(), j["symbol"]["quote"].get<std::string>());
         order.setTradingPair(trading_pair);
     }
     
@@ -740,7 +743,7 @@ std::string ExecutionService::orderStatusResponseToJson(const OrderStatusRespons
         nlohmann::json order_json;
         order_json["order_id"] = order.getOrderId();
         order_json["client_order_id"] = order.getClientOrderId();
-        order_json["trading_pair"] = order.getTradingPair();
+        order_json["trading_pair"] = order.getTradingPair().toString();
         order_json["side"] = (order.getSide() == core::Direction::BUY) ? "BUY" : "SELL";
         order_json["quantity"] = order.getQuantity();
         order_json["price"] = order.getPrice();
@@ -761,7 +764,7 @@ std::string ExecutionService::activeOrdersToJson(const std::vector<models::Order
         nlohmann::json order_json;
         order_json["order_id"] = order.getOrderId();
         order_json["client_order_id"] = order.getClientOrderId();
-        order_json["trading_pair"] = order.getTradingPair();
+        order_json["trading_pair"] = order.getTradingPair().toString();
         order_json["side"] = (order.getSide() == core::Direction::BUY) ? "BUY" : "SELL";
         order_json["quantity"] = order.getQuantity();
         order_json["price"] = order.getPrice();
@@ -880,7 +883,7 @@ models::Order ExecutionService::createOrderFromSignal(const TradingSignal& signa
 }
   bool ExecutionService::validateOrder(const models::Order& order) {
      // Basic validation checks
-     if (order.getTradingPair().empty()) {
+     if (order.getTradingPair().isEmpty()) {
          return false;
      }
      

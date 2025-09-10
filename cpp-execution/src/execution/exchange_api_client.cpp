@@ -140,7 +140,7 @@ std::map<std::string, std::string> createOrderParams(const models::Order& order)
     std::map<std::string, std::string> params;
     
     // Common parameters
-    params["symbol"] = order.getTradingPair();
+    params["symbol"] = order.getTradingPair().toString();
     params["side"] = formatOrderSide(order.getSide(), "LOWER");
     params["type"] = formatOrderType(order.getType(), "LOWER");
     
@@ -179,7 +179,7 @@ models::ExecutionReport parseOrderResponse(const std::string& json, const models
     // and extract order details to create an models::ExecutionReport.
     models::ExecutionReport report(originalOrder.getOrderId());
     report.setClientOrderId(originalOrder.getClientOrderId());
-    report.setSymbol(originalOrder.getTradingPair());
+    report.setSymbol(originalOrder.getTradingPair().toString());
     report.setSide(originalOrder.getSide());
     report.setType(originalOrder.getType());
     report.setQuantity(originalOrder.getQuantity());

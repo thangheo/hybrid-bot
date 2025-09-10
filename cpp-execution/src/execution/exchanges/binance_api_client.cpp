@@ -197,7 +197,7 @@ std::future<models::ExecutionReport> BinanceApiClient::placeOrder(const models::
         return parseOrderResponse(response);
     });
 }
-std::future<models::ExecutionReport> BinanceApiClient::cancelOrder(const std::string& orderId, const std::string& symbol) {
+std::future<models::ExecutionReport> BinanceApiClient::cancelOrder(const std::string& orderId, const core::Symbol& symbol) {
     // Capture the parameters by value since they're already simple types
     return std::async(std::launch::async, [this, orderId, symbol]() {
         if (!isConnected()) {
@@ -209,7 +209,7 @@ std::future<models::ExecutionReport> BinanceApiClient::cancelOrder(const std::st
         
         // Prepare parameters
         std::map<std::string, std::string> params;
-        params["symbol"] = symbol;
+        params["symbol"] = symbol.toString();
         
         // Check if orderId is a client order ID or exchange order ID
         if (orderId.find("CLIENT:") == 0) {
@@ -235,7 +235,7 @@ std::future<models::ExecutionReport> BinanceApiClient::cancelOrder(const std::st
     });
 }
 
-std::future<models::ExecutionReport> BinanceApiClient::getOrderStatus(const std::string& orderId, const std::string& symbol) {
+std::future<models::ExecutionReport> BinanceApiClient::getOrderStatus(const std::string& orderId, const core::Symbol& symbol) {
     // Capture the parameters by value since they're already simple types
     return std::async(std::launch::async, [this, orderId, symbol]() {
         if (!isConnected()) {
@@ -247,7 +247,7 @@ std::future<models::ExecutionReport> BinanceApiClient::getOrderStatus(const std:
         
         // Prepare parameters
         std::map<std::string, std::string> params;
-        params["symbol"] = symbol;
+        params["symbol"] = symbol.toString();
         
         // Check if orderId is a client order ID or exchange order ID
         if (orderId.find("CLIENT:") == 0) {
@@ -315,7 +315,7 @@ std::future<std::map<std::string, double>> BinanceApiClient::getAccountBalances(
     });
 }
 
-std::future<double> BinanceApiClient::getCurrentPrice(const std::string& symbol) {
+std::future<double> BinanceApiClient::getCurrentPrice(const core::Symbol& symbol) {
     return std::async(std::launch::async, [this, symbol]() {
         if (!isConnected()) {
             connect();
@@ -326,7 +326,7 @@ std::future<double> BinanceApiClient::getCurrentPrice(const std::string& symbol)
         
         // Prepare parameters
         std::map<std::string, std::string> params;
-        params["symbol"] = symbol;
+        params["symbol"] = symbol.toString();
         
         // Send request
         std::string response = makeApiRequest("/api/v3/ticker/price", "GET", params, false);

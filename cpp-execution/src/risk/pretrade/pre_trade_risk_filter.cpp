@@ -152,11 +152,11 @@ ValidationResult PreTradeRiskFilter::validateOrder(const OrderRequest& orderRequ
 bool PreTradeRiskFilter::updateRiskParameters(const RiskParameters& params) {
     try {
         LOG_INFO("Updating risk parameters for {}/{}/{}",
-                params.exchangeId.toString(), params.tradingPair.getSymbol(), params.strategyId);
-        
+                params.exchangeId.toString(), params.tradingPair.toString(), params.strategyId);
+
         // Update position limits if provided
         if (params.maxPositionSize > 0) {
-            std::string baseAsset = getBaseAsset(params.tradingPair.getSymbol());
+            std::string baseAsset = getBaseAsset(params.tradingPair.toString());
             if (!m_positionLimitChecker->updatePositionLimit(
                     baseAsset, params.strategyId, params.maxPositionSize)) {
                 LOG_ERROR("Failed to update position limit");
@@ -169,7 +169,7 @@ bool PreTradeRiskFilter::updateRiskParameters(const RiskParameters& params) {
             ExposureLimitConfig exposureLimits = m_exposureCalculator->getExposureLimits();
             
             // Update relevant limits based on what's provided
-            std::string baseAsset = getBaseAsset(params.tradingPair.getSymbol());
+            std::string baseAsset = getBaseAsset(params.tradingPair.toString());
             exposureLimits.maxAssetExposure = params.maxExposure;
             
             m_exposureCalculator->updateExposureLimits(exposureLimits);
@@ -178,7 +178,7 @@ bool PreTradeRiskFilter::updateRiskParameters(const RiskParameters& params) {
         // Update order size limits if provided
         if (params.minOrderSize > 0) {
             if (!m_orderValidator->updateMinOrderSize(
-                    params.exchangeId, params.tradingPair.getSymbol(), params.minOrderSize)) {
+                    params.exchangeId, params.tradingPair.toString(), params.minOrderSize)) {
                 LOG_ERROR("Failed to update minimum order size");
                 return false;
             }
@@ -200,7 +200,7 @@ RiskParameters PreTradeRiskFilter::getRiskParameters(const core::ExchangeId& exc
     params.strategyId = strategyId;
     
     // Get position limits
-    std::string baseAsset = getBaseAsset(tradingPair.getSymbol());
+    std::string baseAsset = getBaseAsset(tradingPair.toString());
     params.maxPositionSize = m_positionLimitChecker->getPositionLimit(baseAsset, strategyId);
     
     // Get exposure limits
@@ -296,11 +296,11 @@ ValidationResult PreTradeRiskFilter::performAllChecks(const OrderRequest& orderR
     if (exposureResult != ExposureValidationResult::APPROVED) {
         // For OrderRequest, we need to create a temporary signal for violation details
         TradingSignal tempSignal;
-        tempSignal.signal_id = orderRequest.clientOrderId;
-        tempSignal.tradingPair = orderRequest.tradingPair;
+        tempSignal.id = orderRequest.clientOrderId;
+        tempSignal.setTradingPair(orderRequest.tradingPair.toString());
         tempSignal.direction = orderRequest.side;
-        tempSignal.target_size = orderRequest.quantity;
-        tempSignal.exchange = orderRequest.exchangeId;
+        tempSignal.targetSize = orderRequest.quantity;
+        tempSignal.exchangeId = orderRequest.exchangeId;
         
         auto exposureViolations = m_exposureCalculator->getViolationDetails(tempSignal);
         result.violations.insert(result.violations.end(), 
@@ -344,8 +344,8 @@ bool PreTradeRiskFilter::passesBasicValidation(const TradingSignal& signal,
         violations.push_back(violation);
         return false;
     }
-    
-    if (signal.getTradingPair().empty()) {
+
+    if (signal.getTradingPair().isEmpty()) {
         RiskViolation violation(
             ViolationType::OTHER,
             "Trading pair is missing",
@@ -398,8 +398,8 @@ bool PreTradeRiskFilter::passesBasicValidation(const OrderRequest& orderRequest,
         violations.push_back(violation);
         return false;
     }
-    
-    if (orderRequest.tradingPair.empty()) {
+
+    if (orderRequest.tradingPair.isEmpty()) {
         RiskViolation violation(
             ViolationType::OTHER,
             "Trading pair is missing",
@@ -451,19 +451,19 @@ bool PreTradeRiskFilter::passesBasicValidation(const OrderRequest& orderRequest,
     return true;
 }
 
-std::string PreTradeRiskFilter::getBaseAsset(const std::string& tradingPair) const {
+std::string PreTradeRiskFilter::getBaseAsset(const std::string& tradingPairStr) const {
     // Extract base asset from trading pair (e.g., "BTC/USDT" -> "BTC")
-    const auto delimiter = tradingPair.find('/');
+    const auto delimiter = tradingPairStr.find('/');
     if (delimiter != std::string::npos) {
-        return tradingPair.substr(0, delimiter);
+        return tradingPairStr.substr(0, delimiter);
     }
     
     // Handle pairs without delimiter (e.g., "BTCUSDT" -> "BTC")
-    if (tradingPair.length() >= 6) {
-        return tradingPair.substr(0, 3); // Assume first 3 characters are base
+    if (tradingPairStr.length() >= 6) {
+        return tradingPairStr.substr(0, 3); // Assume first 3 characters are base
     }
-    
-    return tradingPair; // Fallback
+
+    return tradingPairStr; // Fallback
 }
 
 } // namespace risk

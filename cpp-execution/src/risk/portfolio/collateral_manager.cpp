@@ -66,7 +66,7 @@ bool CollateralManager::checkCollateralRequirements(const OrderRequest& orderReq
     try {
         // Extract order details
         ExchangeId exchangeId{orderRequest.exchangeId};
-        std::string tradingPairStr = orderRequest.tradingPair;
+        std::string tradingPairStr = orderRequest.tradingPair.toString();
         OrderSide side = orderRequest.side;
         double quantity = orderRequest.quantity;
         double price = orderRequest.price;
@@ -89,9 +89,7 @@ bool CollateralManager::checkCollateralRequirements(const OrderRequest& orderReq
         
         // Create TradingPair struct
         TradingPair tradingPair;
-        tradingPair.base = baseAsset;
-        tradingPair.quote = quoteAsset;
-        tradingPair.symbol = tradingPairStr;
+        tradingPair.fromString(tradingPairStr);
         
         // For buy orders, we need quote asset as collateral
         // For sell orders, we need base asset as collateral
@@ -429,7 +427,7 @@ double CollateralManager::calculateMarginRequirement(const ExchangeId& exchangeI
         // Get market data for price
         double currentPrice = 0.0;
         if (m_dataInterface) {
-            auto marketData = m_dataInterface->getMarketData(tradingPair.symbol);
+            auto marketData = m_dataInterface->getMarketData(tradingPair.toString());
             // Check if the market data is valid by checking the price
             if (marketData && marketData->price > 0) {
                 currentPrice = marketData->price;
@@ -442,7 +440,7 @@ double CollateralManager::calculateMarginRequirement(const ExchangeId& exchangeI
                 currentPrice = currentPosition->getCurrentPrice();
             }
             if (currentPrice <= 0) {
-                std::cerr << "Unable to determine price for " << tradingPair.symbol << std::endl;
+                std::cerr << "Unable to determine price for " << tradingPair.toString() << std::endl;
                 return 0.0;
             }
         }
@@ -454,7 +452,7 @@ double CollateralManager::calculateMarginRequirement(const ExchangeId& exchangeI
         double marginRate = 1.0; // Default is 100% (no leverage)
         auto it = m_collateralConfig.exchangeMarginRates.find(exchangeId);
         if (it != m_collateralConfig.exchangeMarginRates.end()) {
-            auto pairIt = it->second.find(tradingPair.symbol);
+            auto pairIt = it->second.find(tradingPair.toString());
             if (pairIt != it->second.end()) {
                 marginRate = pairIt->second;
             } else {
