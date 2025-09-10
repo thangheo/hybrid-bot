@@ -400,13 +400,13 @@ struct OrderValidationConfig {
     
     // Helper method to add exchange-specific min order size
     void setMinOrderSize(const core::ExchangeId& exchange, const core::Symbol& symbol, double minSize) {
-        TradingPair pair = TradingPair::fromString(symbol);
+        TradingPair pair = TradingPair(symbol);
         minOrderSizes[exchange][pair] = minSize;
     }
     
     // Helper method to get min order size for a specific exchange and symbol
     double getMinOrderSize(const core::ExchangeId& exchange, const core::Symbol& symbol) const {
-        TradingPair pair = TradingPair::fromString(symbol);
+        TradingPair pair = TradingPair(symbol);
         auto exchangeIt = minOrderSizes.find(exchange);
         if (exchangeIt != minOrderSizes.end()) {
             auto symbolIt = exchangeIt->second.find(pair);

@@ -552,7 +552,7 @@ void BinanceWebSocketClient::onWebSocketMessage(const std::string& message) {
         // Fallback for unknown format
         if (dataCallback_) {
             std::vector<uint8_t> dataBytes(message.begin(), message.end());
-            dataCallback_(core::ExchangeId::binance(), "RAW_MESSAGE", dataBytes);
+            dataCallback_(core::ExchangeId::binance(), "", dataBytes);
         }
         
     } catch (const std::exception& e) {
@@ -619,7 +619,7 @@ void BinanceWebSocketClient::processOrderBookData(const core::Symbol& symbol,
     try {
         std::string json_str = data.dump();
         std::vector<uint8_t> dataBytes(json_str.begin(), json_str.end());
-        dataCallback_(core::ExchangeId::binance(), symbol, dataBytes);
+        dataCallback_(core::ExchangeId::binance(), symbol.toString(), dataBytes);
     } catch (const std::exception& e) {
         LOG_ERROR("Error processing order book data: " + std::string(e.what()));
     }
@@ -633,7 +633,7 @@ void BinanceWebSocketClient::processTrade(const core::Symbol& symbol, const json
     try {
         std::string json_str = data.dump();
         std::vector<uint8_t> dataBytes(json_str.begin(), json_str.end());
-        dataCallback_(core::ExchangeId::binance(), symbol, dataBytes);
+        dataCallback_(core::ExchangeId::binance(), symbol.toString(), dataBytes);
     } catch (const std::exception& e) {
         LOG_ERROR("Error processing trade data: " + std::string(e.what()));
     }
@@ -647,7 +647,7 @@ void BinanceWebSocketClient::processTicker(const core::Symbol& symbol, const jso
     try {
         std::string json_str = data.dump();
         std::vector<uint8_t> dataBytes(json_str.begin(), json_str.end());
-        dataCallback_(core::ExchangeId::binance(), symbol, dataBytes);
+        dataCallback_(core::ExchangeId::binance(), symbol.toString(), dataBytes);
     } catch (const std::exception& e) {
         LOG_ERROR("Error processing ticker data: " + std::string(e.what()));
     }
@@ -661,7 +661,7 @@ void BinanceWebSocketClient::processBookTicker(const core::Symbol& symbol, const
     try {
         std::string json_str = data.dump();
         std::vector<uint8_t> dataBytes(json_str.begin(), json_str.end());
-        dataCallback_(core::ExchangeId::binance(), symbol, dataBytes);
+        dataCallback_(core::ExchangeId::binance(), symbol.toString(), dataBytes);
     } catch (const std::exception& e) {
         LOG_ERROR("Error processing book ticker data: " + std::string(e.what()));
     }

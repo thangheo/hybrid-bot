@@ -88,7 +88,7 @@
          SUSPENDED   // Temporarily suspended
      };
      
-     std::string symbol;                                // Trading pair symbol
+     core::Symbol symbol;                                // Trading pair symbol
      core::ExchangeId exchangeId;                       // Exchange identifier
      State state;                                       // Current state
      std::chrono::system_clock::time_point lastUpdateTime; // Last update time

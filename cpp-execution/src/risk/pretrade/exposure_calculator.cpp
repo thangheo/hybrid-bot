@@ -16,34 +16,24 @@ namespace {
     // Based on your TradingSignal structure from execution namespace
     std::string getSymbolFromSignal(const TradingSignal& signal) {
         // Assuming TradingSignal has tradingPair field
-        return signal.tradingPair;
+        return signal.getTradingPair().quote;
     }
     
     std::string getBaseAssetFromSignal(const TradingSignal& signal) {
         // Extract base asset from trading pair (e.g., "BTC/USDT" -> "BTC")
-        const std::string& pair = signal.tradingPair;
-        size_t pos = pair.find('/');
-        if (pos != std::string::npos) {
-            return pair.substr(0, pos);
-        }
-        // Alternative delimiter
-        pos = pair.find('-');
-        if (pos != std::string::npos) {
-            return pair.substr(0, pos);
-        }
-        return pair; // Fallback
+        return signal.getTradingPair().base;
     }
     
-    std::string getStrategyIdFromSignal(const TradingSignal& signal) {
-        return signal.strategy_id;
+    StrategyId getStrategyIdFromSignal(const TradingSignal& signal) {
+        return signal.strategyId;
     }
     
     core::ExchangeId getExchangeIdFromSignal(const TradingSignal& signal) {
-        return signal.exchange;
+        return signal.exchangeId;
     }
     
     double getQuantityFromSignal(const TradingSignal& signal) {
-        return signal.target_size;
+        return signal.targetSize;
     }
 }
 
@@ -115,10 +105,12 @@ public:
     ExposureValidationResult validateExposure(const OrderRequest& orderRequest) const {
         // Create a TradingSignal from OrderRequest for validation
         TradingSignal signal;
-        signal.tradingPair = orderRequest.tradingPair;
-        signal.exchange = orderRequest.exchangeId;
-        signal.target_size = orderRequest.quantity;
-        signal.strategy_id = orderRequest.strategyId;
+        signal.setTradingPair(orderRequest.tradingPair);
+        signal.id = static_cast<core::SignalId>(orderRequest.signalId);
+        // signal.setSourceEventId(0); // Unknown
+        signal.exchangeId = orderRequest.exchangeId;
+        signal.targetSize = orderRequest.quantity;
+        signal.strategyId = orderRequest.strategyId;
         signal.direction = (orderRequest.side == OrderSide::BUY) ? 
                           core::Direction::BUY : core::Direction::SELL;
 
@@ -222,16 +214,16 @@ public:
 
     void updateMarketData(const core::MarketData& marketData) {
         std::unique_lock<std::shared_mutex> lock(marketDataMutex_);
-        
-        priceCache_[marketData.tradingPair] = marketData.price;
-        
+
+        priceCache_[marketData.tradingPair.toString()] = marketData.price;
+
         // Calculate volatility from 24h price change
         const double volatility = std::clamp(
             std::abs(marketData.priceChangePercent24h) / 100.0,
             0.01, 2.0
         );
-        volatilityCache_[marketData.tradingPair] = volatility;
-        
+        volatilityCache_[marketData.tradingPair.toString()] = volatility;
+
         // Update cache timestamp
         cacheTimestamp_ = std::chrono::steady_clock::now();
     }
@@ -255,7 +247,7 @@ public:
 
 private:
     struct ExposureContext {
-        std::string symbol;
+        core::Symbol symbol;
         std::string baseAsset;
         std::string strategyId;
         core::ExchangeId exchangeId;
@@ -284,7 +276,7 @@ private:
         
         context.symbol = getSymbolFromSignal(signal);
         context.baseAsset = getBaseAssetFromSignal(signal);
-        context.strategyId = getStrategyIdFromSignal(signal);
+        context.strategyId = getStrategyIdFromSignal(signal).toString();
         context.exchangeId = getExchangeIdFromSignal(signal);
         context.quantity = getQuantityFromSignal(signal);
         
@@ -378,8 +370,8 @@ private:
     double calculatePositionExposure(const Position& position) const {
         try {
             const double quantity = std::abs(position.getQuantity());
-            const std::string symbol = position.getTradingPair().symbol; // Assuming Position has getTradingPair() method
-            
+            const std::string symbol = position.getTradingPair().base; // Assuming Position has getTradingPair() method
+
             const double price = getPrice(symbol);
             const double volatility = getVolatility(symbol);
             const double notional = quantity * price;
@@ -398,7 +390,7 @@ private:
     double getPrice(const core::Symbol& symbol) const {
         std::shared_lock<std::shared_mutex> lock(marketDataMutex_);
         
-        const auto it = priceCache_.find(symbol);
+        const auto it = priceCache_.find(symbol.toString());
         if (it != priceCache_.end()) {
             return it->second;
         }
@@ -406,7 +398,7 @@ private:
         // Fallback to data interface
         try {
             if (dataInterface_) {
-                return dataInterface_->getCurrentPrice(symbol);
+                return dataInterface_->getCurrentPrice(symbol.toString());
             }
         } catch (const std::exception& ex) {
             LOG_WARN("Failed to get price from data interface: {}", ex.what());
@@ -417,8 +409,8 @@ private:
 
     double getVolatility(const core::Symbol& symbol) const {
         std::shared_lock<std::shared_mutex> lock(marketDataMutex_);
-        
-        const auto it = volatilityCache_.find(symbol);
+
+        const auto it = volatilityCache_.find(symbol.toString());
         if (it != volatilityCache_.end()) {
             return it->second;
         }
@@ -437,16 +429,8 @@ private:
 
     // Helper methods to extract data from Position
     std::string extractBaseAsset(const Position& position) const {
-        const std::string& pair = position.getTradingPair().symbol; // Assuming Position has getTradingPair() method
-        size_t pos = pair.find('/');
-        if (pos != std::string::npos) {
-            return pair.substr(0, pos);
-        }
-        pos = pair.find('-');
-        if (pos != std::string::npos) {
-            return pair.substr(0, pos);
-        }
-        return pair;
+        return position.getTradingPair().base; 
+       
     }
     
     std::string extractStrategyId(const Position& position) const {

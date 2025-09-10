@@ -106,7 +106,7 @@ public:
      * @return Number of orders cancelled
      */
     virtual int cancelAllOrders(const core::ExchangeId& exchangeId, const core::Symbol& tradingPair) = 0;
-    
+    // virtual int cancelAllOrders(const core::ExchangeId& exchangeId, const std::string& reason) override ;
     /**
      * Get order status
      * 

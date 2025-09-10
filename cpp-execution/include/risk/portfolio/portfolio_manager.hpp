@@ -53,7 +53,7 @@ public:
      */
     void processExecutionReport(const trading::execution::models::ExecutionReport& executionReport);
     // reconcilePositions
-    bool reconcilePositions();
+    bool reconcilePositions(ExchangeId exchangeId);
     /**
      * Update market data
      * @param marketData New market data
@@ -101,7 +101,7 @@ public:
      * @param exchangeId Optional exchange ID to filter positions
      * @return Vector of positions
      */
-    std::vector<Position> getPositions(const std::optional<ExchangeId>& exchangeId = std::nullopt) const;
+    std::vector<Position> getAllPositions(const std::optional<ExchangeId>& exchangeId = std::nullopt) const;
     
     /**
      * Get position by trading pair
@@ -111,7 +111,8 @@ public:
      */
     std::optional<Position> getPosition(const TradingPair& tradingPair, 
                                        const std::optional<ExchangeId>& exchangeId = std::nullopt) const;
-    
+    // getAllPositions
+    // std::vector<Position> getAllPositions() const;
     /**
      * Update portfolio configuration
      * @param config New configuration

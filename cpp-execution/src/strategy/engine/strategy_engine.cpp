@@ -725,7 +725,7 @@ std::optional<ImbalanceEvent> StrategyEngine::findSourceEvent(
  }
  
 bool StrategyEngine::initializeTradingPair(const core::Symbol& symbol, ExchangeId exchangeId) {
-    std::string pairId = exchangeId.toString() + ":" + symbol;    
+    std::string pairId = exchangeId.toString() + ":" + symbol.toString();    
      
      std::lock_guard<std::recursive_mutex> lock(mutex_);
      // Check if already initialized
@@ -746,14 +746,14 @@ bool StrategyEngine::initializeTradingPair(const core::Symbol& symbol, ExchangeI
      tradingPairStates_[pairId] = state;
      
      LOG_INFO("Initialized trading pair: {} on exchange: {}", 
-                    symbol, exchangeId.toString());
+                    symbol.toString(), exchangeId.toString());
      return true;
  }
  
  void StrategyEngine::updateTradingPairState(const core::Symbol& symbol, TradingPairState state) {
      std::lock_guard<std::recursive_mutex> lock(mutex_);
      for (auto& [pairId, pairState] : tradingPairStates_) {
-         if (pairState.symbol == symbol) {
+         if (pairState.symbol == symbol.toString()) {
              pairState = state;
          }
      }

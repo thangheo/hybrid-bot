@@ -302,7 +302,8 @@ public:
     [[nodiscard]] RiskManagerMode getMode() const noexcept {
         return systemHealth_.mode.load();
     }
-    
+    // getPerformanceMetrics
+    [[nodiscard]] strategy::PerformanceMetrics getPerformanceMetrics() const;
     /**
      * Set risk manager mode with validation and notifications
      */
@@ -505,31 +506,30 @@ private:
     // // Helper for safe component operations (const version)
     // template<typename Component, typename Func>
     // requires std::invocable<Func, Component&>
-    // auto safeComponentOperation( std::unique_ptr<Component>& component, Func&& func) 
-    //     -> std::optional<std::invoke_result_t<Func, Component&>> {
-    //     if (!component) return std::nullopt;
+    auto safeComponentOperation( std::unique_ptr<Component>& component, Func&& func) 
+        -> std::optional<std::invoke_result_t<Func, Component&>> {
+        if (!component) return std::nullopt;
         
-    //     try {
-    //         return std::forward<Func>(func)(*component);
-    //     } catch (...) {
-    //         // Log error and mark component as unhealthy
-    //         return std::nullopt;
-    //     }
-    // }
-    // Helper for safe component operations (const version)
-    // template<typename Component, typename Func>
-    // requires std::invocable<Func, const Component&>
-    // auto safeComponentOperation(const std::unique_ptr<Component>& component, Func&& func) 
-    //     -> std::optional<std::invoke_result_t<Func, const Component&>> {
-    //     if (!component) return std::nullopt;
+        try {
+            return std::forward<Func>(func)(*component);
+        } catch (...) {
+            // Log error and mark component as unhealthy
+            return std::nullopt;
+        }
+    }
+    template<typename Component, typename Func>
+    requires std::invocable<Func, const Component&>
+    auto safeComponentOperation(const std::unique_ptr<Component>& component, Func&& func) 
+        -> std::optional<std::invoke_result_t<Func, const Component&>> {
+        if (!component) return std::nullopt;
         
-    //     try {
-    //         return std::forward<Func>(func)(*component);
-    //     } catch (...) {
-    //         // Log error and mark component as unhealthy
-    //         return std::nullopt;
-    //     }
-    // }
+        try {
+            return std::forward<Func>(func)(*component);
+        } catch (...) {
+            // Log error and mark component as unhealthy
+            return std::nullopt;
+        }
+    }
 };
 
 } // namespace trading::risk

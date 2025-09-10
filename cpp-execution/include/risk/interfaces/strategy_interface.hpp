@@ -89,6 +89,9 @@ public:
      * @param callback The function to call when strategy events occur
      */
     virtual void registerStrategyEventCallback(const std::function<void(const StrategyId&, const std::string&)>& callback) = 0;
+
+    // notifyEmergencyState
+    virtual bool notifyEmergencyState(const std::string& reason) = 0;
 };
 
 /**

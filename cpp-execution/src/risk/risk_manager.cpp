@@ -10,7 +10,7 @@
 #include <iostream>
 #include <sstream>
 #include <chrono>
-
+#include <set>
 namespace trading {
 namespace risk {
 
@@ -104,7 +104,7 @@ ValidationResult RiskManager::validateSignal(const TradingSignal& signal) {
     // First check if the system is in a valid state for trading
     if (m_mode != RiskManagerMode::NORMAL && m_mode != RiskManagerMode::HEIGHTENED_RISK) {
         ValidationResult result;
-        result.signalId = signal.signal_id;
+        result.signalId = signal.id;
         result.approved = false;
         
         RiskViolation violation;
@@ -123,7 +123,7 @@ ValidationResult RiskManager::validateSignal(const TradingSignal& signal) {
     
     // If pre-trade filter is not available, reject the signal
     ValidationResult result;
-    result.signalId = signal.signal_id;
+    result.signalId = signal.id;
     result.approved = false;
     
     RiskViolation violation;
@@ -243,7 +243,13 @@ void RiskManager::registerRiskEventCallback(const RiskEventCallback& callback) {
 
 bool RiskManager::reconcilePositions(const std::optional<ExchangeId>& exchangeId) {
     if (m_portfolioManager) {
-        return m_portfolioManager->reconcilePositions(exchangeId);
+        if (exchangeId.has_value()) {
+            return m_portfolioManager->reconcilePositions(exchangeId.value());
+        } else {
+            // Handle case where no specific exchange is provided
+            // You may need to reconcile all exchanges or use a default
+            return m_portfolioManager->reconcilePositions(exchangeId.value());
+        }
     }
     return false;
 }
@@ -256,7 +262,6 @@ PerformanceMetrics RiskManager::getPerformanceMetrics() const {
     // Return empty metrics if post-trade monitor is not available
     return PerformanceMetrics();
 }
-
 bool RiskManager::emergencyAction(const std::string& reason) {
     try {
         std::cout << "EXECUTING EMERGENCY ACTIONS: " << reason << std::endl;
@@ -271,9 +276,54 @@ bool RiskManager::emergencyAction(const std::string& reason) {
         
         notifyRiskEvent(event);
         
-        // 1. Cancel all open orders
-        if (m_executionInterface) {
-            m_executionInterface->cancelAllOrders("Emergency action");
+        // 1. Cancel all open orders across all exchanges and trading pairs
+        if (m_executionInterface && m_portfolioManager) {
+            // Get all active positions/trading pairs from portfolio manager
+            auto activePositions = m_portfolioManager->getAllPositions();
+            
+            // Create a set to track unique exchange/symbol combinations
+            std::set<std::pair<core::ExchangeId, core::Symbol>> tradingPairs;
+            
+            // Extract unique exchange/symbol pairs from positions
+            for (const auto& position : activePositions) {
+                core::ExchangeId exchangeId = position.getExchangeId();
+                core::Symbol symbol = core::Symbol(position.getTradingPair());
+                tradingPairs.insert(std::make_pair(exchangeId, symbol));
+            }
+            
+            // If no positions found, use default exchanges and common pairs
+            if (tradingPairs.empty()) {
+                // Add default trading pairs for major exchanges
+                std::vector<std::string> defaultPairs = {"BTC/USDT", "ETH/USDT", "BNB/USDT"};
+                std::vector<core::ExchangeId> defaultExchanges = {
+                    core::ExchangeId::binance(),
+                    core::ExchangeId::coinbase(),
+                    core::ExchangeId::kraken()
+                };
+                
+                for (const auto& exchangeId : defaultExchanges) {
+                    for (const auto& pairStr : defaultPairs) {
+                        core::Symbol symbol = core::Symbol::fromString(pairStr);
+                        tradingPairs.insert(std::make_pair(exchangeId, symbol));
+                    }
+                }
+            }
+            
+            // Cancel orders for each exchange/symbol combination
+            int totalCancelled = 0;
+            for (const auto& [exchangeId, symbol] : tradingPairs) {
+                try {
+                    int cancelled = m_executionInterface->cancelAllOrders(exchangeId, symbol);
+                    totalCancelled += cancelled;
+                    std::cout << "Cancelled " << cancelled << " orders for " 
+                              << symbol.toString() << " on " << exchangeId.toString() << std::endl;
+                } catch (const std::exception& e) {
+                    std::cerr << "Failed to cancel orders for " << symbol.toString() 
+                              << " on " << exchangeId.toString() << ": " << e.what() << std::endl;
+                }
+            }
+            
+            std::cout << "Total orders cancelled: " << totalCancelled << std::endl;
         }
         
         // 2. Disable new order submission

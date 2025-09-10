@@ -93,7 +93,7 @@
            end_time(std::chrono::system_clock::now()) {}
      
      // Constructor with exchange and pair
-     VolumeProfile(const core::ExchangeId& exchange, const std::string& pair)
+     VolumeProfile(const core::ExchangeId& exchange, const core::Symbol& pair)
          : exchangeId(exchange), tradingPair(pair),
            start_time(std::chrono::system_clock::now()),
            end_time(std::chrono::system_clock::now()) {}
@@ -202,7 +202,7 @@
       * Get the trading pair
       * @return Trading pair
       */
-     const std::string& getTradingPair() const { return trading_pair_; }
+     const core::Symbol& getTradingPair() const { return trading_pair_; }
      //updateParameters(parameters)
         /**
         * Update parameters for the analyzer
@@ -277,7 +277,7 @@
      
      // Exchange and trading pair identification
      core::ExchangeId exchangeId_;
-     std::string trading_pair_;
+     core::Symbol trading_pair_;
      
      // Configuration
      int num_price_ranges_;             // Number of price ranges to track

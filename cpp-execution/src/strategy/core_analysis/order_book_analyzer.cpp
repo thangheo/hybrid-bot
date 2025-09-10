@@ -12,7 +12,7 @@
 #include <numeric>
 #include <cmath>
 #include <thread>
-#include <logger.hpp>
+#include <common/logger.hpp>
 
 namespace trading {
 namespace strategy {
@@ -51,7 +51,7 @@ OrderBookAnalyzer::OrderBookAnalyzer(const core::ExchangeId& exchangeId,
 
 OrderBookAnalyzer::OrderBookAnalyzer(const OrderBookAnalyzerConfig& config)
     : exchangeId_(core::ExchangeId::binance()) // Default exchange, should be configurable
-    , tradingPair_("") // Should be part of config
+    , tradingPair_(core::Symbol::fromString("BTC/USD")) // Should be part of config
     , depthLevels_(config.depth)
     , priceGroupingFactor_(config.priceGroupingFactor)
     , minSamplesForStability_(config.minSamplesForStability)
@@ -70,7 +70,7 @@ OrderBookAnalyzer::OrderBookAnalyzer(const OrderBookAnalyzerConfig& config)
     
     // Initialize current metrics
     currentMetrics_.exchangeId = exchangeId_;
-    currentMetrics_.symbol = core::Symbol::fromString(tradingPair_);
+    currentMetrics_.symbol = tradingPair_;
 }
 
 void OrderBookAnalyzer::processOrderBook(const data_ingestion::OrderBook& snapshot) {
@@ -229,7 +229,7 @@ void OrderBookAnalyzer::reset() {
     // Reset current metrics
     currentMetrics_ = OrderBookMetrics{};
     currentMetrics_.exchangeId = exchangeId_;
-    currentMetrics_.symbol = core::Symbol::fromString(tradingPair_);
+    currentMetrics_.symbol = core::Symbol(tradingPair_);
     
     lastUpdateTime_ = std::chrono::system_clock::now();
 }
@@ -892,7 +892,7 @@ void OrderBookAnalyzerManager::updateParameters(const ParameterSet& params) {
 
 std::string OrderBookAnalyzerManager::createKey(const core::Symbol& symbol, 
                                                const core::ExchangeId& exchangeId) const {
-    return exchangeId.toString() + ":" + symbol;
+    return exchangeId.toString() + ":" + symbol.toString();
 }
 
 // Factory function

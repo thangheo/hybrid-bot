@@ -51,7 +51,7 @@ bool StopLossManager::initialize() {
             
             if (config_.enableDefaultStopLoss && shouldCreateDefaultStopLoss(
                 position.getExchangeId(), 
-                position.getTradingPair().symbol,
+                position.getTradingPair().toString(),
                 position.getQuantity())) {
                 
                 auto stopPrice = calculateDefaultStopPrice(
@@ -61,7 +61,7 @@ bool StopLossManager::initialize() {
                 
                 setStopLoss(
                     position.getExchangeId(),
-                    position.getTradingPair().symbol,
+                    position.getTradingPair().toString(),
                     StopPrice(stopPrice),
                     config_.useTrailingStopByDefault,
                     config_.useTrailingStopByDefault ? 
@@ -131,7 +131,7 @@ void StopLossManager::updateMarketData(const core::MarketData& marketData) {
     // Update price cache
     {
         std::unique_lock lock(marketDataMutex_);
-        priceCache_[marketData.tradingPair] = marketData.lastTradePrice;
+        priceCache_[marketData.tradingPair.toString()] = marketData.lastTradePrice;
     }
     
     // Update trailing stops
@@ -427,8 +427,8 @@ std::map<StopLossManager::PositionKey, StopLossData> StopLossManager::getAllStop
         data.lowestPrice = stopLoss->lowestPrice.load();
         data.adjustmentCount = stopLoss->adjustmentCount.load();
         data.lastUpdated = stopLoss->getLastUpdated();
-        
-        result[{exchangeId, tradingPair}] = data;
+
+        result[{exchangeId, tradingPair.toString()}] = data;
     }
     
     return result;
@@ -502,11 +502,11 @@ std::map<std::string, std::string> StopLossManager::getDiagnostics() const {
 std::string StopLossManager::createPositionKey(
     const core::ExchangeId& exchangeId, 
     const core::Symbol& tradingPair) const {
-    return exchangeId.toString() + ":" + tradingPair;
+    return exchangeId.toString() + ":" + tradingPair.toString();
 }
 std::optional<double> StopLossManager::getCurrentPrice(const core::Symbol& tradingPair) const {
     std::shared_lock lock(marketDataMutex_);
-    auto it = priceCache_.find(tradingPair);
+    auto it = priceCache_.find(tradingPair.toString());
     return it != priceCache_.end() ? std::optional(it->second) : std::nullopt;
 }
 

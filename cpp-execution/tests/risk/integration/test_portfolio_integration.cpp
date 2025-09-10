@@ -124,7 +124,7 @@ TEST_F(PortfolioIntegrationTest, EndToEndPositionTracking) {
     EXPECT_TRUE(m_portfolioManager->initialize());
     
     // Initially portfolio should be empty
-    EXPECT_EQ(m_portfolioManager->getPositions().size(), 0);
+    EXPECT_EQ(m_portfolioManager->getAllPositions().size(), 0);
     EXPECT_DOUBLE_EQ(m_portfolioManager->getPortfolioValue(), 0.0);
     
     // Process a buy execution report
@@ -132,7 +132,7 @@ TEST_F(PortfolioIntegrationTest, EndToEndPositionTracking) {
     m_portfolioManager->processExecutionReport(buyReport);
     
     // Verify position was created
-    auto positions = m_portfolioManager->getPositions();
+    auto positions = m_portfolioManager->getAllPositions();
     EXPECT_EQ(positions.size(), 1);
     EXPECT_EQ(positions[0].getExchangeId(), "binance");
     EXPECT_EQ(positions[0].getTradingPair(), "BTC/USD");
@@ -143,7 +143,7 @@ TEST_F(PortfolioIntegrationTest, EndToEndPositionTracking) {
     m_portfolioManager->processExecutionReport(ethBuyReport);
     
     // Verify portfolio value is updated
-    positions = m_portfolioManager->getPositions();
+    positions = m_portfolioManager->getAllPositions();
     EXPECT_EQ(positions.size(), 2);
     EXPECT_DOUBLE_EQ(m_portfolioManager->getPortfolioValue(), 70000.0); // (1 * 50000) + (10 * 2000)
     

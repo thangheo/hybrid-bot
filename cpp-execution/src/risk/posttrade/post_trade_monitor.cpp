@@ -155,7 +155,7 @@ void PostTradeMonitor::processExecutionReport(const execution::models::Execution
             RiskEventType::EMERGENCY_ACTION,
             std::format("Execution blocked by circuit breaker: {}:{}", 
                        executionReport.exchangeId().toString(), 
-                       executionReport.symbol()),
+                       executionReport.symbol().toString()),
             "critical"
         );
         
@@ -280,7 +280,12 @@ CircuitBreakerState PostTradeMonitor::getCircuitBreakerState() {
         return component.getState();
     }).value_or(CircuitBreakerState::OFF);
 }
-
+// getPerformanceMetrics
+strategy::PerformanceMetrics PostTradeMonitor::getPerformanceMetrics() const {
+    return safeComponentOperation(drawdownMonitor_, [](const auto& component) {
+        return component.getPerformanceMetrics();
+    }).value_or(strategy::PerformanceMetrics{});
+}
 std::future<ReconciliationResult> PostTradeMonitor::reconcilePositions(
     std::optional<core::ExchangeId> exchangeId) {
     
@@ -612,7 +617,7 @@ void PostTradeMonitor::handleStopLossEvent(const EnhancedStopLossEvent& event) {
     EnhancedRiskEvent riskEvent(
         RiskEventType::STOP_LOSS_TRIGGERED,
         std::format("Stop loss triggered for {}:{} at price {}", 
-                   event.exchangeId.toString(), event.tradingPair, event.triggerPrice),
+                   event.exchangeId.toString(), event.tradingPair.toString(), event.triggerPrice),
         event.isCriticalLoss() ? "critical" : "warning"
     );
     
@@ -673,7 +678,7 @@ void PostTradeMonitor::handleReconciliationEvent(const PositionReconciliationEve
     EnhancedRiskEvent riskEvent(
         RiskEventType::POSITION_RECONCILIATION_MISMATCH,
         std::format("Position reconciliation: {}:{} discrepancy of {:.4f}{}",
-                   event.exchangeId.toString(), event.tradingPair.symbol,
+                   event.exchangeId.toString(), event.tradingPair.toString(),
                    event.discrepancyPercentage,
                    event.autoCorrect ? " (auto-corrected)" : ""),
         std::abs(event.discrepancyPercentage) > 5.0 ? "critical" : "warning"

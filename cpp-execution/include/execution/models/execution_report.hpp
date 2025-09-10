@@ -114,7 +114,7 @@ private:
     std::string clientOrderId_;          // Client-specified ID
     std::string exchangeOrderId_;        // Exchange-assigned ID
     core::ExchangeId exchangeId_;             // Exchange where order is placed
-    std::string symbol_;                 // Trading pair
+    core::Symbol symbol_;                 // Trading pair
     OrderSide side_ = OrderSide::BUY;    // Buy or sell
     OrderType type_ = OrderType::MARKET; // Order type
     OrderState status_ = OrderState::CREATED; // Current order status

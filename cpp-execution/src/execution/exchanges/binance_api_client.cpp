@@ -164,7 +164,7 @@ std::future<models::ExecutionReport> BinanceApiClient::placeOrder(const models::
         
         // Prepare parameters
         std::map<std::string, std::string> params;
-        params["symbol"] = tradingPair;
+        params["symbol"] = tradingPair.toString();
         params["side"] = translateOrderSide(side);
         params["type"] = translateOrderType(type);
         params["quantity"] = std::to_string(quantity);
