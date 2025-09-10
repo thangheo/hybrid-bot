@@ -8,6 +8,7 @@
 
 #include "risk_types.hpp"
 #include "risk_events.hpp"
+#include "risk_config.hpp"
 #include <string>
 #include <vector>
 #include <memory>
@@ -27,11 +28,15 @@ public:
      * Constructor
      */
     StrategyInterface();
-    
+    /**
+     * Constructor
+     */
+    StrategyInterface(const RiskConfig& config);
     /**
      * Destructor
      */
     virtual ~StrategyInterface() = default;
+    
     // isConnected
     virtual bool isConnected() const = 0;
     /**
@@ -99,7 +104,7 @@ public:
  * 
  * @return Unique pointer to StrategyInterface implementation
  */
-std::unique_ptr<StrategyInterface> createStrategyInterface();
+std::unique_ptr<StrategyInterface> createStrategyInterface(const RiskConfig& config);
 
 } // namespace risk
 } // namespace trading

@@ -13,7 +13,7 @@ file(GLOB_RECURSE RISK_SOURCES
     "service/*.cpp"
     "utils/*.cpp"
 )
-
+find_package(fmt REQUIRED)
 # Define library
 add_library(risk ${RISK_SOURCES})
 
@@ -34,6 +34,7 @@ target_link_libraries(risk
         strategy
         data_ingestion
         nlohmann_json::nlohmann_json
+        fmt::fmt
 )
 
 # Add compiler-specific flags

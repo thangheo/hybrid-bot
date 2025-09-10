@@ -14,11 +14,14 @@
 #include <variant>
 #include <chrono>
 #include <optional>
+#include <map>
+#include <atomic>
 
 namespace trading {
 namespace risk {
 
-    using namespace core;
+using namespace core;
+
 /**
  * Enum for different types of risk events
  */
@@ -36,96 +39,64 @@ enum class RiskEventType {
 };
 
 /**
- * Base structure for all risk events
+ * BASE RiskEvent structure - MUST BE DEFINED FIRST
  */
 struct RiskEvent {
+    // Core event information
     RiskEventType type;
-    Timestamp timestamp;
+    core::Timestamp timestamp;
     std::string description;
-    std::string severity;       // Severity level (e.g., "warning", "critical")
-    std::string data;           // JSON data with event details
-    std::string eventId;        // Unique identifier for the event
-    std::string eventSource;    // Source of the event (e.g., "system", "user")
-    //message
-    std::string message;        // Message associated with the event
-    RiskEvent(RiskEventType eventType, Timestamp eventTime, std::string desc, 
-              std::string sev = "info", std::string eventData = "{}")
-        : type(eventType), timestamp(eventTime), description(std::move(desc)), 
-          severity(std::move(sev)), data(std::move(eventData)) {}
-          
-    virtual ~RiskEvent() = default;
-};
-// RiskEventSeverity
-enum class RiskEventSeverity {
-    LOW,
-    MEDIUM,
-    HIGH,
-    CRITICAL
-};
-/**
- * Event for when a risk limit is breached
- */
-struct LimitBreachEvent : public RiskEvent {
-    ExchangeId exchangeId;
-    TradingPair tradingPair;
-    StrategyId strategyId;
-    ViolationType violationType;
-    double limitValue;
-    double actualValue;
+    std::string severity;
+    std::string eventId;        // Unique identifier
+    std::string eventSource;    // Source (e.g., "system", "user")
+    std::string message;        // Additional message
     
-    LimitBreachEvent(
-        Timestamp eventTime,
-        ExchangeId exchange,
-        TradingPair pair,
-        StrategyId strategy,
-        ViolationType type,
-        double limit,
-        double actual,
-        std::string desc
-    ) : RiskEvent(RiskEventType::LIMIT_BREACH, eventTime, std::move(desc), "warning"),
-        exchangeId(std::move(exchange)),
-        tradingPair(std::move(pair)),
-        strategyId(std::move(strategy)),
-        violationType(type),
-        limitValue(limit),
-        actualValue(actual) {}
-};
- 
-/**
- * Enhanced CircuitBreakerEvent structure
- * Add this to your risk_events.hpp file or create a separate header
- */
+    // Enhanced features
+    std::map<std::string, std::string> metadata;  // Additional context
 
-struct CircuitBreakerEvent : public RiskEvent {
-    CircuitBreakerState oldState = CircuitBreakerState::OFF;
-    CircuitBreakerState newState = CircuitBreakerState::OFF;
-    std::chrono::system_clock::time_point triggerTime;
-    std::optional<std::chrono::system_clock::time_point> resumeTime;
-    std::string reason;
-    std::string triggerMetric;
-    double metricValue = 0.0;
-    double metricThreshold = 0.0;
-    int triggerCount = 0;
+    // Constructors
+    RiskEvent(RiskEventType eventType, core::Timestamp eventTime, std::string desc,
+              std::string sev = "info", std::string eventData = "{}")
+        : type(eventType), timestamp(eventTime), description(std::move(desc)),
+          severity(std::move(sev)), eventId(generateEventId()), eventSource("system"),
+          message("") {}
     
-    CircuitBreakerEvent() : RiskEvent(RiskEventType::CIRCUIT_BREAKER_TRIGGERED, 
-                                     std::chrono::system_clock::now(), 
-                                     "Circuit breaker state change", 
-                                     "info") {
-        triggerTime = std::chrono::system_clock::now();
+    RiskEvent(RiskEventType eventType, std::string desc, std::string sev = "info")
+        : type(eventType), timestamp(core::now()), description(std::move(desc)),
+          severity(std::move(sev)), eventId(generateEventId()), eventSource("system"),
+          message("") {}
+    
+    virtual ~RiskEvent() = default;
+    
+    // Severity helpers
+    bool isCritical() const noexcept { return severity == "critical"; }
+    bool isWarning() const noexcept { return severity == "warning"; }
+    bool isInfo() const noexcept { return severity == "info"; }
+    bool isError() const noexcept { return severity == "error"; }
+    
+    // Metadata helpers
+    void addMetadata(const std::string& key, const std::string& value) {
+        metadata[key] = value;
     }
     
-    CircuitBreakerEvent(CircuitBreakerState oldSt, CircuitBreakerState newSt, 
-                       const std::string& reasonStr, const std::string& metric = "",
-                       double value = 0.0, double threshold = 0.0)
-        : RiskEvent(RiskEventType::CIRCUIT_BREAKER_TRIGGERED,
-                   std::chrono::system_clock::now(),
-                   "Circuit breaker: " + reasonStr,
-                   (newSt == CircuitBreakerState::TRIGGERED) ? "critical" : "warning"),
-          oldState(oldSt), newState(newSt), reason(reasonStr),
-          triggerMetric(metric), metricValue(value), metricThreshold(threshold) {
-        triggerTime = std::chrono::system_clock::now();
+    std::string getMetadata(const std::string& key) const {
+        auto it = metadata.find(key);
+        return (it != metadata.end()) ? it->second : "";
+    }
+
+private:
+    static std::string generateEventId() {
+        static std::atomic<uint64_t> counter{0};
+        auto now = std::chrono::system_clock::now();
+        auto timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
+            now.time_since_epoch()).count();
+        return "risk_" + std::to_string(timestamp) + "_" + std::to_string(counter++);
     }
 };
+
+/**
+ * NOW DEFINE SPECIFIC EVENTS THAT INHERIT FROM RiskEvent
+ */
 
 /**
  * Event for when a stop loss is triggered
@@ -160,6 +131,69 @@ struct StopLossEvent : public RiskEvent {
         currentPrice(current),
         lossPercentage(lossPercent),
         liquidationInitiated(liquidation) {}
+};
+
+/**
+ * Enhanced CircuitBreakerEvent structure
+ */
+struct CircuitBreakerEvent : public RiskEvent {
+    CircuitBreakerState oldState = CircuitBreakerState::OFF;
+    CircuitBreakerState newState = CircuitBreakerState::OFF;
+    std::chrono::system_clock::time_point triggerTime;
+    std::optional<std::chrono::system_clock::time_point> resumeTime;
+    std::string reason;
+    std::string triggerMetric;
+    double metricValue = 0.0;
+    double metricThreshold = 0.0;
+    int triggerCount = 0;
+    
+    CircuitBreakerEvent() : RiskEvent(RiskEventType::CIRCUIT_BREAKER_TRIGGERED, 
+                                     std::chrono::system_clock::now(), 
+                                     "Circuit breaker state change", 
+                                     "info") {
+        triggerTime = std::chrono::system_clock::now();
+    }
+    
+    CircuitBreakerEvent(CircuitBreakerState oldSt, CircuitBreakerState newSt, 
+                       const std::string& reasonStr, const std::string& metric = "",
+                       double value = 0.0, double threshold = 0.0)
+        : RiskEvent(RiskEventType::CIRCUIT_BREAKER_TRIGGERED,
+                   std::chrono::system_clock::now(),
+                   "Circuit breaker: " + reasonStr,
+                   (newSt == CircuitBreakerState::TRIGGERED) ? "critical" : "warning"),
+          oldState(oldSt), newState(newSt), reason(reasonStr),
+          triggerMetric(metric), metricValue(value), metricThreshold(threshold) {
+        triggerTime = std::chrono::system_clock::now();
+    }
+};
+
+/**
+ * Event for when a risk limit is breached
+ */
+struct LimitBreachEvent : public RiskEvent {
+    ExchangeId exchangeId;
+    TradingPair tradingPair;
+    StrategyId strategyId;
+    ViolationType violationType;
+    double limitValue;
+    double actualValue;
+    
+    LimitBreachEvent(
+        Timestamp eventTime,
+        ExchangeId exchange,
+        TradingPair pair,
+        StrategyId strategy,
+        ViolationType type,
+        double limit,
+        double actual,
+        std::string desc
+    ) : RiskEvent(RiskEventType::LIMIT_BREACH, eventTime, std::move(desc), "warning"),
+        exchangeId(std::move(exchange)),
+        tradingPair(std::move(pair)),
+        strategyId(std::move(strategy)),
+        violationType(type),
+        limitValue(limit),
+        actualValue(actual) {}
 };
 
 /**
@@ -317,21 +351,6 @@ struct EmergencyActionEvent : public RiskEvent {
 };
 
 /**
- * Type alias for risk event variant
- */
-using RiskEventVariant = std::variant<
-    LimitBreachEvent,
-    CircuitBreakerEvent,
-    StopLossEvent,
-    DrawdownEvent,
-    PositionReconciliationEvent,
-    BalanceReconciliationEvent,
-    RiskModeEvent,
-    ParameterUpdateEvent,
-    EmergencyActionEvent
->;
-
-/**
  * Type alias for risk event callback function
  */
 using RiskEventCallback = std::function<void(const RiskEvent&)>;
@@ -350,6 +369,7 @@ inline std::string riskEventTypeToString(RiskEventType type) {
         case RiskEventType::RISK_MODE_CHANGE: return "risk_mode_change";
         case RiskEventType::PARAMETER_UPDATE: return "parameter_update";
         case RiskEventType::EMERGENCY_ACTION: return "emergency_action";
+        case RiskEventType::SYSTEM_ERROR: return "system_error";
         default: return "unknown";
     }
 }
@@ -360,7 +380,6 @@ inline std::string riskEventTypeToString(RiskEventType type) {
 inline std::string getSeverityString(const RiskEvent& event) {
     return event.severity;
 }
-
 
 } // namespace risk
 } // namespace trading

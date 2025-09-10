@@ -10,18 +10,21 @@
 
 #include "../../generated/cpp/proto/trading_messages.pb.h"
 #include "communication/zmq_server.hpp"
-
+#include "core/types.hpp"
+#include "core/market_types.hpp"
+using namespace trading::core;
+using namespace trading;
 // Market Intelligence Generator for simulation/testing
 class MarketIntelligenceGenerator {
 private:
     TradingCommunicationServer* server_;
-    std::vector<std::string> symbols_;
+    std::vector<Symbol> symbols_;
     std::atomic<bool> running_;
     std::thread generation_thread_;
 
 public:
     MarketIntelligenceGenerator(TradingCommunicationServer* server, 
-                               const std::vector<std::string>& symbols)
+                               const std::vector<Symbol>& symbols)
         : server_(server), symbols_(symbols), running_(false) {}
     
     void Start() {
@@ -58,7 +61,7 @@ private:
             std::chrono::system_clock::now().time_since_epoch()
         ).count();
         
-        intel.set_symbol(symbol);
+        intel.set_symbol(symbol.toString());
         intel.set_timestamp(now);
         
         // Simulate realistic market data
@@ -238,7 +241,7 @@ int main() {
         server.Start();
         
         // Initialize market intelligence generator for testing
-        std::vector<std::string> symbols = {"AAPL", "GOOGL", "MSFT", "NVDA", "TSLA"};
+        std::vector<Symbol> symbols = {Symbol("AAPL"), Symbol("GOOGL"), Symbol("MSFT"), Symbol("NVDA"), Symbol("TSLA")};
         MarketIntelligenceGenerator intel_generator(&server, symbols);
         intel_generator.Start();
         
