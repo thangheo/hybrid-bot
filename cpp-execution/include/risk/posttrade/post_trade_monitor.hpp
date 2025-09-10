@@ -43,52 +43,55 @@
 #include <map>
 #include <sstream>
 #include <algorithm>
+#include "risk/risk_events.hpp"
 
 namespace trading::risk {
 
 /**
  * Enhanced risk event with additional context and metadata
  */
-struct EnhancedRiskEvent {
-    RiskEventType type;
-    core::Timestamp timestamp;
-    std::string details;
-    std::string severity;
-    std::map<std::string, std::string> metadata;
+
+// struct RiskEvent {
+//     RiskEventType type;
+//     core::Timestamp timestamp;
+//     std::string details;
+//     std::string severity;
+//     std::map<std::string, std::string> metadata;
     
-    // Specific event data using std::variant for type safety
-    std::variant<
-        std::monostate,
-        CircuitBreakerEvent,
-        EnhancedStopLossEvent,
-        DrawdownEvent,
-        PositionReconciliationEvent,
-        BalanceReconciliationEvent
-    > specificEvent;
+//     // Specific event data using std::variant for type safety
+//     std::variant<
+//         std::monostate,
+//         CircuitBreakerEvent,
+//         EnhancedStopLossEvent,
+//         DrawdownEvent,
+//         PositionReconciliationEvent,
+//         BalanceReconciliationEvent,
+//         std::string // <-- add this if you want to allow strings
+//     > specificEvent;
     
-    // Convenience constructors
-    EnhancedRiskEvent(RiskEventType eventType, std::string eventDetails, std::string eventSeverity = "info")
-        : type(eventType), timestamp(core::now()), details(std::move(eventDetails)), severity(std::move(eventSeverity)) {}
+//     // Convenience constructors
+//     RiskEvent(RiskEventType eventType, std::string eventDetails, std::string eventSeverity = "info")
+//         : type(eventType), timestamp(core::now()), details(std::move(eventDetails)), severity(std::move(eventSeverity)) {}
     
-    template<typename EventType>
-    EnhancedRiskEvent(RiskEventType eventType, std::string eventDetails, EventType&& event, std::string eventSeverity = "info")
-        : type(eventType), timestamp(core::now()), details(std::move(eventDetails)), severity(std::move(eventSeverity)), 
-          specificEvent(std::forward<EventType>(event)) {}
+//     template<typename EventType>
+//     RiskEvent(RiskEventType eventType, std::string eventDetails, EventType&& event, std::string eventSeverity = "info")
+//         : type(eventType), timestamp(core::now()), details(std::move(eventDetails)), severity(std::move(eventSeverity)), 
+//           specificEvent(std::forward<EventType>(event)) {}
     
-    // Type-safe getters
-    template<typename T>
-    std::optional<T> getSpecificEvent() const {
-        if (auto* event = std::get_if<T>(&specificEvent)) {
-            return *event;
-        }
-        return std::nullopt;
-    }
+//     // Type-safe getters
+//     template<typename T>
+//     std::optional<T> getSpecificEvent() const {
+//         if (auto* event = std::get_if<T>(&specificEvent)) {
+//             return *event;
+//         }
+//         return std::nullopt;
+//     }
     
-    // Severity helpers
-    bool isCritical() const noexcept { return severity == "critical"; }
-    bool isWarning() const noexcept { return severity == "warning"; }
-    bool isInfo() const noexcept { return severity == "info"; }
-};
+//     // Severity helpers
+//     bool isCritical() const noexcept { return severity == "critical"; }
+//     bool isWarning() const noexcept { return severity == "warning"; }
+//     bool isInfo() const noexcept { return severity == "info"; }
+// };
 
 /**
  * System health status with detailed component information
@@ -229,7 +232,7 @@ struct PostTradeMonitorConfig {
 /**
  * Event callback types for different scenarios
  */
-using PostTradeRiskEventCallback = std::function<void(const EnhancedRiskEvent&)>;
+using PostTradeRiskEventCallback = std::function<void(const RiskEvent&)>;
 using ModeChangeCallback = std::function<void(RiskManagerMode, RiskManagerMode, std::string_view)>;
 using HealthStatusCallback = std::function<void(const SystemHealthStatus&)>;
 
@@ -361,7 +364,7 @@ public:
     /**
      * Get recent risk events with filtering
      */
-    std::vector<EnhancedRiskEvent> getRecentEvents(
+    std::vector<RiskEvent> getRecentEvents(
         std::optional<RiskEventType> typeFilter = std::nullopt,
         std::optional<std::string> severityFilter = std::nullopt,
         std::chrono::minutes lookbackMinutes = std::chrono::minutes(60)
@@ -405,7 +408,7 @@ private:
     
     // Event management
     mutable std::shared_mutex eventMutex_;
-    std::deque<EnhancedRiskEvent> eventHistory_;
+    std::deque<RiskEvent> eventHistory_;
     
     // Callbacks
     mutable std::shared_mutex callbackMutex_;
@@ -438,7 +441,7 @@ private:
     void handleDrawdownEvent(const DrawdownEvent& event);
     void handleReconciliationEvent(const PositionReconciliationEvent& event);
     
-    void notifyRiskEvent(const EnhancedRiskEvent& event);
+    void notifyRiskEvent(const RiskEvent& event);
     void notifyModeChange(RiskManagerMode oldMode, RiskManagerMode newMode, std::string_view reason);
     void notifyHealthStatus(const SystemHealthStatus& status);
     
@@ -454,7 +457,7 @@ private:
     void recordModeTransition(RiskManagerMode mode);
     
     // Utility methods
-    void addToEventHistory(EnhancedRiskEvent event);
+    void addToEventHistory(RiskEvent event);
     void pruneEventHistory();
     
     bool validateConfiguration(const RiskConfig& config) const;
@@ -467,8 +470,8 @@ private:
     void checkModeTimeouts();
     
     // Filter events helper
-    std::vector<EnhancedRiskEvent> filterEventsByPredicate(
-        std::function<bool(const EnhancedRiskEvent&)> predicate, 
+    std::vector<RiskEvent> filterEventsByPredicate(
+        std::function<bool(const RiskEvent&)> predicate, 
         std::chrono::minutes lookback) const;
     
     // Helper for safe component operations (non-const version)

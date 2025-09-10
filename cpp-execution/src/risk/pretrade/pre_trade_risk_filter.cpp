@@ -28,6 +28,19 @@ bool PreTradeRiskFilter::isHealthy() const {
               m_fatFingerProtection && m_fatFingerProtection->isHealthy();
 }
 
+// PreTradeRiskFilter::PreTradeRiskFilter(const RiskConfig& config, const PortfolioManager& portfolioManager)
+//     : m_config(config)
+//     , m_activeMode(RiskManagerMode::NORMAL)
+//     , m_positionTracker(std::make_shared<PositionTracker>(portfolioManager))
+// {
+//     // Components will be initialized in initialize()
+// }
+
+PreTradeRiskFilter::~PreTradeRiskFilter() {
+    // Destructor implementation
+}
+
+
 bool PreTradeRiskFilter::initialize() {
     try {
         LOG_INFO("Initializing pre-trade risk filter...");

@@ -16,7 +16,7 @@
 #include "risk/pretrade/fat_finger_protection.hpp"
 #include "execution/trading_signal.hpp"
 #include "core/market_types.hpp"
-
+#include "risk/portfolio/portfolio_manager.hpp"
 #include <memory>
 #include <vector>
 #include <string>
@@ -38,7 +38,11 @@ public:
      * @param config Risk configuration for this filter
      */
     explicit PreTradeRiskFilter(const RiskConfig& config);
-    
+    // explicit PreTradeRiskFilter(const RiskConfig& config, const PortfolioManager& portfolioManager);
+    /**
+     * Destructor
+     */
+    ~PreTradeRiskFilter();
     /**
      * Initialize the filter and its components
      * @return true if initialization was successful, false otherwise

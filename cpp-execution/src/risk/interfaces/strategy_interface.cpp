@@ -72,12 +72,21 @@ private:
     // Convert RiskEvent to JSON
     nlohmann::json riskEventToJson(const RiskEvent& event) {
         nlohmann::json json;
-        json["type"] = event.type;
+        json["type"] = static_cast<int>(event.type);  // Convert enum to int
+        json["type_string"] = riskEventTypeToString(event.type);  // Human-readable type
         json["severity"] = event.severity;
         json["message"] = event.message;
-        json["data"] = nlohmann::json::parse(event.data);
+        json["description"] = event.description;  // Use description instead of data
+        json["event_id"] = event.eventId;
+        json["event_source"] = event.eventSource;
         json["timestamp"] = std::chrono::duration_cast<std::chrono::milliseconds>(
             event.timestamp.time_since_epoch()).count();
+        
+        // Include metadata if present
+        if (!event.metadata.empty()) {
+            json["metadata"] = event.metadata;
+        }
+        
         return json;
     }
 
@@ -113,7 +122,16 @@ public:
         publishEndpoint_ = "tcp://localhost:5560";
         strategyEventsTopic_ = "strategy_events";
     }
-    
+    StrategyInterfaceImpl(const RiskConfig& config) : StrategyInterface(config) {
+        // Load configuration from RiskConfig
+        requestEndpoint_ = "tcp://localhost:5555";
+        publishEndpoint_ = "tcp://localhost:5560";
+        strategyEventsTopic_ = "strategy_events";
+
+        // requestEndpoint_ = config.strategyRequestEndpoint;
+        // publishEndpoint_ = config.strategyPublishEndpoint;
+        // strategyEventsTopic_ = config.strategyEventsTopic;
+        }
     ~StrategyInterfaceImpl() override {
         // Clean shutdown of ZeroMQ clients
         if (subscriptionClient_) {
@@ -372,11 +390,9 @@ public:
         }
     }
 };
-
-
-// Global factory function to create the concrete implementation
-std::unique_ptr<StrategyInterface> createStrategyInterface() {
-    return std::make_unique<StrategyInterfaceImpl>();
+ 
+std::unique_ptr<StrategyInterface> createStrategyInterface(const RiskConfig& config) {
+    return std::make_unique<StrategyInterfaceImpl>(config);
 }
 
 } // namespace risk

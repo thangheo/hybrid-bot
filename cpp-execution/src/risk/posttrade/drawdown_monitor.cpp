@@ -12,7 +12,9 @@
 #include <cmath>
 #include <numeric>
 #include <ranges>
-#include <optional> 
+#include <optional>
+#include <format> 
+#include <fmt/core.h>
 namespace trading::risk {
 
 DrawdownMonitor::DrawdownMonitor(const RiskConfig& config) {
@@ -68,8 +70,8 @@ bool DrawdownMonitor::initialize() {
         return true;
         
     } catch (const std::exception& e) {
-        LOG_ERROR(std::format("DrawdownMonitor: Initialization failed: {}", e.what()));
-        LOG_ERROR(fmt::format("DrawdownMonitor: Initialization failed: {}", e.what()));
+        LOG_ERROR("DrawdownMonitor: Initialization failed: {}", e.what());
+        return false;
     }
 }
 
@@ -401,9 +403,9 @@ bool DrawdownMonitor::resetStrategyHighWaterMark(const std::string& strategyId,
     it->second->drawdownInfo.criticalThresholdBreached.store(false);
     it->second->drawdownInfo.breachCount.store(0);
     
-    LOG_INFO(std::format("DrawdownMonitor: Reset high water mark for strategy {} to {}", 
-    LOG_INFO(fmt::format("DrawdownMonitor: Reset high water mark for strategy {} to {}", 
-                            strategyId, newHwm));
+    // LOG_INFO(f"DrawdownMonitor: Reset high water mark for strategy {} to {}", 
+    //                         strategyId.to_string(), newHwm);
+    return true;
 }
 
 bool DrawdownMonitor::resetPortfolioHighWaterMark(std::optional<double> value) {
@@ -418,8 +420,7 @@ bool DrawdownMonitor::resetPortfolioHighWaterMark(std::optional<double> value) {
     portfolioDrawdown_.criticalThresholdBreached.store(false);
     portfolioDrawdown_.breachCount.store(0);
     
-    LOG_INFO(std::format("DrawdownMonitor: Reset portfolio high water mark to {}", newHwm));
-    LOG_INFO(fmt::format("DrawdownMonitor: Reset portfolio high water mark to {}", newHwm));
+    // LOG_INFO(fmt::format("DrawdownMonitor: Reset portfolio high water mark to {}", newHwm));
 }
 
 std::map<std::string, double> DrawdownMonitor::getPerformanceStatistics() const {
@@ -560,7 +561,6 @@ DrawdownEvent DrawdownMonitor::createDrawdownEvent(
     
     const auto now = core::now();
     const std::string severity = isCritical ? "critical" : "warning";
-    const std::string description = std::format(
     const std::string description = fmt::format(
         "Drawdown {} threshold breached for {}: {:.2f}%",
         severity, strategyId, drawdownPercent * 100.0);
@@ -582,8 +582,8 @@ void DrawdownMonitor::notifyCallbacks(const DrawdownEvent& event) {
         try {
             callback(event);
         } catch (const std::exception& e) {
-            LOG_ERROR(std::format("DrawdownMonitor: Callback error: {}", e.what()));
             LOG_ERROR(fmt::format("DrawdownMonitor: Callback error: {}", e.what()));
+        }
     }
 }
 
@@ -593,8 +593,8 @@ void DrawdownMonitor::notifyEmergencyCallbacks(const std::string& strategyId, do
         try {
             callback(strategyId, drawdown);
         } catch (const std::exception& e) {
-            LOG_ERROR(std::format("DrawdownMonitor: Emergency callback error: {}", e.what()));
             LOG_ERROR(fmt::format("DrawdownMonitor: Emergency callback error: {}", e.what()));
+        }
     }
 }
 
@@ -604,10 +604,11 @@ void DrawdownMonitor::notifyMetricsCallbacks(const std::string& strategyId, cons
         try {
             callback(strategyId, info);
         } catch (const std::exception& e) {
-            LOG_ERROR(std::format("DrawdownMonitor: Metrics callback error: {}", e.what()));
             LOG_ERROR(fmt::format("DrawdownMonitor: Metrics callback error: {}", e.what()));
+        }
     }
 }
+
 
 void DrawdownMonitor::performMaintenance() {
     if (!isInitialized_.load() || isShuttingDown_.load()) {
@@ -622,10 +623,9 @@ void DrawdownMonitor::performMaintenance() {
         lastMaintenanceNanos_.store(core::now().time_since_epoch().count());
         
     } catch (const std::exception& e) {
-        LOG_ERROR(std::format("DrawdownMonitor: Maintenance error: {}", e.what()));
         LOG_ERROR(fmt::format("DrawdownMonitor: Maintenance error: {}", e.what()));
+    }
 }
-
 void DrawdownMonitor::pruneHistory() {
     if (!config_.enableHistoricalTracking) {
         return;
@@ -664,7 +664,6 @@ void DrawdownMonitor::validateStrategies() {
     std::unique_lock lock(strategyMutex_);
     for (auto it = strategyTrackers_.begin(); it != strategyTrackers_.end();) {
         if (it->second->getLastActivity() < cutoffTime) {
-            LOG_INFO(std::format("DrawdownMonitor: Removing inactive strategy: {}", it->first));
             LOG_INFO(fmt::format("DrawdownMonitor: Removing inactive strategy: {}", it->first));
         } else {
             ++it;

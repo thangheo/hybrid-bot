@@ -45,7 +45,7 @@ bool RiskManager::initialize() {
         }
         
         // Initialize pre-trade filter
-        m_preTradeFilter = std::make_unique<PreTradeRiskFilter>(m_config, m_portfolioManager.get());
+        m_preTradeFilter = std::make_unique<PreTradeRiskFilter>(m_config);
         if (!m_preTradeFilter->initialize()) {
             std::cerr << "Failed to initialize pre-trade risk filter" << std::endl;
             return false;
@@ -59,7 +59,8 @@ bool RiskManager::initialize() {
         }
         
         // Initialize external interfaces
-        m_strategyInterface = std::make_unique<StrategyInterface>(m_config);
+        // m_strategyInterface = std::make_unique<StrategyInterface>(m_config);       
+        std::unique_ptr<StrategyInterface> createStrategyInterface(const RiskConfig& config);
         m_executionInterface = std::make_unique<ExecutionInterface>(m_config);
         m_dataInterface = std::make_unique<DataInterface>(m_config);
         
@@ -88,11 +89,9 @@ bool RiskManager::initialize() {
             return false;
         }
         
-        // Set up event handlers
         m_postTradeMonitor->registerRiskEventCallback([this](const RiskEvent& event) {
             notifyRiskEvent(event);
         });
-        
         return true;
     } catch (const std::exception& e) {
         std::cerr << "Exception during RiskManager initialization: " << e.what() << std::endl;
@@ -341,6 +340,12 @@ bool RiskManager::emergencyAction(const std::string& reason) {
     }
 }
 
+// void RiskManager::notifyRiskEvent(const RiskEvent& event) {
+//     std::lock_guard<std::mutex> lock(m_callbackMutex);
+//     for (const auto& callback : m_eventCallbacks) {
+//         callback(event);
+//     }
+// }
 void RiskManager::notifyRiskEvent(const RiskEvent& event) {
     std::lock_guard<std::mutex> lock(m_callbackMutex);
     for (const auto& callback : m_eventCallbacks) {

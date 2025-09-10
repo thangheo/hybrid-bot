@@ -29,18 +29,9 @@ std::vector<std::pair<Timestamp, double>> PriceHistory::getRecentPrices(int coun
  
 
 // MarketDataInterface implementation
-// MarketDataInterface::MarketDataInterface() : DataInterface() {
-//     LOG_INFO("MarketDataInterface constructor");
-// }
-
-// MarketDataInterface::~MarketDataInterface() {
-//     if (running_) {
-//         running_ = false;
-//         if (zmqClient_) {
-//             zmqClient_->stop();
-//         }
-//     }
-// }
+MarketDataInterface::MarketDataInterface() : DataInterface() {
+    LOG_INFO("MarketDataInterface constructor");
+}
 
 bool MarketDataInterface::initialize() {
     if (initialized_.load()) {

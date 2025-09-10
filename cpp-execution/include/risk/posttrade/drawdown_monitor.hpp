@@ -354,9 +354,11 @@ private:
         double currentValue,
         const core::Timestamp& hwmTime,
         bool isCritical) const;
-    
-    void updateHighWaterMark(DrawdownInfo& drawdownInfo, double currentValue, 
-                           const core::Timestamp& timestamp);
+        // Template for thread-safe operations
+       
+
+    // void updateHighWaterMark(DrawdownInfo& drawdownInfo, double currentValue, 
+    //                        const core::Timestamp& timestamp);
     
     void notifyCallbacks(const DrawdownEvent& event);
     void notifyEmergencyCallbacks(const std::string& strategyId, double drawdown);
@@ -376,7 +378,6 @@ private:
     
     // Template for thread-safe operations
     template<typename Func>
-    requires std::invocable<Func>
     auto safeExecute(Func&& func) const noexcept -> decltype(func()) {
         try {
             return std::forward<Func>(func)();

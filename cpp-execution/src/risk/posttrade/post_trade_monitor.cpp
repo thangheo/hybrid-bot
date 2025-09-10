@@ -147,11 +147,11 @@ void PostTradeMonitor::processExecutionReport(const execution::models::Execution
     
     // Check if trading is allowed
     if (!isTradingAllowed()) {
-        EnhancedRiskEvent event(
+        RiskEvent event(
             RiskEventType::EMERGENCY_ACTION,
             formatString("Execution blocked by circuit breaker: {}:{}", 
-                       executionReport.exchangeId(), 
-                       executionReport.symbol()),
+                       executionReport.exchangeId().toString(), 
+                       executionReport.symbol().toString()),
             "critical"
         );
         
@@ -263,7 +263,7 @@ void PostTradeMonitor::setMode(RiskManagerMode mode, std::string_view reason) {
         notifyModeChange(oldMode, mode, reason);
         
         // Create risk event
-        EnhancedRiskEvent event(
+        RiskEvent event(
             RiskEventType::RISK_MODE_CHANGE,
             formatString("Risk manager mode changed: {} -> {} ({})",
                        modeToString(oldMode), modeToString(mode), reason),
@@ -408,12 +408,12 @@ std::map<std::string, double> PostTradeMonitor::getMonitoringStatistics() {
     return stats;
 }
 
-std::vector<EnhancedRiskEvent> PostTradeMonitor::getRecentEvents(
+std::vector<RiskEvent> PostTradeMonitor::getRecentEvents(
     std::optional<RiskEventType> typeFilter,
     std::optional<std::string> severityFilter,
     std::chrono::minutes lookbackMinutes) const {
     
-    return filterEventsByPredicate([&](const EnhancedRiskEvent& event) {
+    return filterEventsByPredicate([&](const RiskEvent& event) {
         bool typeMatch = !typeFilter || event.type == *typeFilter;
         bool severityMatch = !severityFilter || event.severity == *severityFilter;
         return typeMatch && severityMatch;
@@ -432,7 +432,7 @@ bool PostTradeMonitor::emergencyStop(std::string_view reason) {
     });
     
     // Create emergency event
-    EnhancedRiskEvent event(
+    RiskEvent event(
         RiskEventType::EMERGENCY_ACTION,
         formatString("Emergency stop triggered: {}", reason),
         "critical"
@@ -452,7 +452,7 @@ bool PostTradeMonitor::resumeTrading(std::string_view reason) {
         setMode(RiskManagerMode::NORMAL, reason);
         systemHealth_.tradingAllowed.store(true);
         
-        EnhancedRiskEvent event(
+        RiskEvent event(
             RiskEventType::RISK_MODE_CHANGE,
             formatString("Trading resumed: {}", reason),
             "info"
@@ -620,7 +620,7 @@ void PostTradeMonitor::connectComponentCallbacks() {
 }
 
 void PostTradeMonitor::handleStopLossEvent(const EnhancedStopLossEvent& event) {
-    EnhancedRiskEvent riskEvent(
+    RiskEvent riskEvent(
         RiskEventType::STOP_LOSS_TRIGGERED,
         formatString("Stop loss triggered for {}:{} at price {}", 
                    event.exchangeId.toString(), event.tradingPair.toString(), event.triggerPrice),
@@ -640,7 +640,7 @@ void PostTradeMonitor::handleCircuitBreakerEvent(CircuitBreakerState oldState,
                                                 std::string_view reason) {
     CircuitBreakerEvent cbEvent(oldState, newState, std::string(reason));
     
-    EnhancedRiskEvent riskEvent(
+    RiskEvent riskEvent(
         RiskEventType::CIRCUIT_BREAKER_TRIGGERED,
         formatString("Circuit breaker state changed: {} -> {} ({})",
                    circuitBreakerStateToString(oldState),
@@ -660,7 +660,7 @@ void PostTradeMonitor::handleCircuitBreakerEvent(CircuitBreakerState oldState,
 }
 
 void PostTradeMonitor::handleDrawdownEvent(const DrawdownEvent& event) {
-    EnhancedRiskEvent riskEvent(
+    RiskEvent riskEvent(
         RiskEventType::DRAWDOWN_ALERT,
         formatString("Drawdown alert: {} drawdown of {:.2f}%",
                    event.strategyId.id.empty() ? "Portfolio" : ("Strategy " + event.strategyId.id),
@@ -681,7 +681,7 @@ void PostTradeMonitor::handleDrawdownEvent(const DrawdownEvent& event) {
 }
 
 void PostTradeMonitor::handleReconciliationEvent(const PositionReconciliationEvent& event) {
-    EnhancedRiskEvent riskEvent(
+    RiskEvent riskEvent(
         RiskEventType::POSITION_RECONCILIATION_MISMATCH,
         formatString("Position reconciliation: {}:{} discrepancy of {:.4f}{}",
                    event.exchangeId.toString(), event.tradingPair.toString(),
@@ -698,7 +698,7 @@ void PostTradeMonitor::handleReconciliationEvent(const PositionReconciliationEve
     }
 }
 
-void PostTradeMonitor::notifyRiskEvent(const EnhancedRiskEvent& event) {
+void PostTradeMonitor::notifyRiskEvent(const RiskEvent& event) {
     // Update system health statistics
     systemHealth_.totalRiskEvents.fetch_add(1);
     if (event.isCritical()) {
@@ -707,7 +707,7 @@ void PostTradeMonitor::notifyRiskEvent(const EnhancedRiskEvent& event) {
     systemHealth_.setLastEventTime(event.timestamp);
     
     // Add to event history
-    addToEventHistory(const_cast<EnhancedRiskEvent&>(event));
+    addToEventHistory(const_cast<RiskEvent&>(event));
     
     // Notify callbacks
     std::shared_lock<std::shared_mutex> lock(callbackMutex_);
@@ -827,7 +827,7 @@ void PostTradeMonitor::recordModeTransition(RiskManagerMode mode) {
     modeTransitionTimes_[mode] = core::now();
 }
 
-void PostTradeMonitor::addToEventHistory(EnhancedRiskEvent event) {
+void PostTradeMonitor::addToEventHistory(RiskEvent event) {
     std::unique_lock<std::shared_mutex> lock(eventMutex_);
     
     eventHistory_.push_back(std::move(event));
@@ -844,7 +844,7 @@ void PostTradeMonitor::pruneEventHistory() {
     auto cutoffTime = core::now() - monitorConfig_.eventRetentionHours;
     
     auto newEnd = std::remove_if(eventHistory_.begin(), eventHistory_.end(),
-        [cutoffTime](const EnhancedRiskEvent& event) {
+        [cutoffTime](const RiskEvent& event) {
             return event.timestamp < cutoffTime;
         });
     
@@ -916,14 +916,14 @@ void PostTradeMonitor::checkModeTimeouts() {
     }
 }
 
-std::vector<EnhancedRiskEvent> PostTradeMonitor::filterEventsByPredicate(
-    std::function<bool(const EnhancedRiskEvent&)> predicate, 
+std::vector<RiskEvent> PostTradeMonitor::filterEventsByPredicate(
+    std::function<bool(const RiskEvent&)> predicate, 
     std::chrono::minutes lookback) const {
     
     std::shared_lock<std::shared_mutex> lock(eventMutex_);
     auto cutoffTime = core::now() - lookback;
     
-    std::vector<EnhancedRiskEvent> result;
+    std::vector<RiskEvent> result;
     for (const auto& event : eventHistory_) {
         if (event.timestamp >= cutoffTime && predicate(event)) {
             result.push_back(event);
