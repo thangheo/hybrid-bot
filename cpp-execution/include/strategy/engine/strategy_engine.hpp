@@ -32,7 +32,7 @@
 #include <thread>
 #include <functional>
 #include <chrono>
-
+#include "core/types.hpp"
 namespace trading {
 namespace strategy {
 
@@ -49,7 +49,7 @@ public:
      * @brief Constructor
      * @param strategyId Unique identifier for this strategy instance
      */
-    explicit StrategyEngine(const std::string& strategyId);
+    explicit StrategyEngine(const StrategyId& strategyId);
 
     /**
      * @brief Register a logistic regression signal generator
@@ -151,7 +151,7 @@ public:
 
 private:
     // Strategy identification
-    std::string strategyId_;
+    StrategyId strategyId_;
     std::string strategyVersion_;
     size_t eventSubscriptionId_;
     size_t imbalanceSubscriptionId_;

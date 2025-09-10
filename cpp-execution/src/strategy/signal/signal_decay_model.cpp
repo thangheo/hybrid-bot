@@ -129,12 +129,12 @@ bool SignalDecayModel::validateConfiguration() const {
  double SignalDecayModel::calculateRemainingStrength(const TradingSignal& signal, uint64_t current_time) {
     try{
     // Get timestamp values in milliseconds for proper comparison
-        auto signal_time_ms = std::chrono::time_point_cast<std::chrono::milliseconds>(signal.generation_time)
+        auto signal_time_ms = std::chrono::time_point_cast<std::chrono::milliseconds>(signal.generationTime)
                                 .time_since_epoch().count();
         // auto expiration_time_ms = signal_time_ms + 
         //                         std::chrono::duration_cast<std::chrono::milliseconds>(signal.ttl).count();
         // std::cout << "signal_time_ms: " << signal_time_ms << ", current_time: " << current_time << std::endl;
-        uint64_t dynamic_ttl = getSignalTTL(signal.source_type);
+        uint64_t dynamic_ttl = getSignalTTL(signal.sourceType);
         auto expiration_time_ms = signal_time_ms + dynamic_ttl;
         
         // Check if signal has already expired based on TTL
@@ -169,7 +169,7 @@ bool SignalDecayModel::validateConfiguration() const {
 
 bool SignalDecayModel::isSignalValid(const TradingSignal& signal, uint64_t current_time) {
     // Get timestamp values in milliseconds for proper comparison
-    auto signal_time_ms = std::chrono::time_point_cast<std::chrono::milliseconds>(signal.generation_time)
+    auto signal_time_ms = std::chrono::time_point_cast<std::chrono::milliseconds>(signal.generationTime)
                                .time_since_epoch().count();
      auto expiration_time_ms = signal_time_ms + 
                                std::chrono::duration_cast<std::chrono::milliseconds>(signal.ttl).count();
@@ -236,7 +236,7 @@ bool SignalDecayModel::isSignalValid(const TradingSignal& signal, uint64_t curre
      // Process historical signals
      for (const auto& outcome : signal_history) {
          const auto& signal = outcome.signal;
-         ImbalanceType type = signal.source_type;
+         ImbalanceType type = signal.sourceType;
          
          // Skip signals that didn't reach their target
          if (!outcome.reached_target) {
@@ -244,7 +244,7 @@ bool SignalDecayModel::isSignalValid(const TradingSignal& signal, uint64_t curre
          }
          
          // Calculate how long it took to reach the target
-         auto signal_time_ms = std::chrono::time_point_cast<std::chrono::milliseconds>(signal.generation_time)
+         auto signal_time_ms = std::chrono::time_point_cast<std::chrono::milliseconds>(signal.generationTime)
                                    .time_since_epoch().count();
          uint64_t time_to_target_ms = outcome.outcome_time - signal_time_ms;
          
@@ -342,7 +342,7 @@ bool SignalDecayModel::isSignalValid(const TradingSignal& signal, uint64_t curre
 
  double SignalDecayModel::exponentialDecay(const TradingSignal& signal, uint64_t current_time) {
      // Convert timestamps to milliseconds for calculation
-     auto signal_time_ms = std::chrono::time_point_cast<std::chrono::milliseconds>(signal.generation_time)
+     auto signal_time_ms = std::chrono::time_point_cast<std::chrono::milliseconds>(signal.generationTime)
                                .time_since_epoch().count();
      uint64_t elapsed_ms = current_time - signal_time_ms;
      
@@ -358,7 +358,7 @@ bool SignalDecayModel::isSignalValid(const TradingSignal& signal, uint64_t curre
  
  double SignalDecayModel::linearDecay(const TradingSignal& signal, uint64_t current_time) {
      // Convert timestamps to milliseconds for calculation
-     auto signal_time_ms = std::chrono::time_point_cast<std::chrono::milliseconds>(signal.generation_time)
+     auto signal_time_ms = std::chrono::time_point_cast<std::chrono::milliseconds>(signal.generationTime)
                                .time_since_epoch().count();
      uint64_t elapsed_ms = current_time - signal_time_ms;
      
@@ -377,7 +377,7 @@ bool SignalDecayModel::isSignalValid(const TradingSignal& signal, uint64_t curre
  
  double SignalDecayModel::stepDecay(const TradingSignal& signal, uint64_t current_time) {
      // Convert timestamps to milliseconds for calculation
-     auto signal_time_ms = std::chrono::time_point_cast<std::chrono::milliseconds>(signal.generation_time)
+     auto signal_time_ms = std::chrono::time_point_cast<std::chrono::milliseconds>(signal.generationTime)
                                .time_since_epoch().count();
      uint64_t elapsed_ms = current_time - signal_time_ms;
      
@@ -409,7 +409,7 @@ bool SignalDecayModel::isSignalValid(const TradingSignal& signal, uint64_t curre
      double remaining_strength = exponentialDecay(signal, current_time);
      
      // Convert signal generation time to milliseconds for comparison
-     auto signal_time_ms = std::chrono::time_point_cast<std::chrono::milliseconds>(signal.generation_time)
+     auto signal_time_ms = std::chrono::time_point_cast<std::chrono::milliseconds>(signal.generationTime)
                                .time_since_epoch().count();
      
      // Check if market events should modify decay
@@ -443,8 +443,8 @@ bool SignalDecayModel::isSignalValid(const TradingSignal& signal, uint64_t curre
                  
              case MarketEventType::TREND_CHANGE:
                  // Trend changes can invalidate certain signal types
-                 if (signal.source_type == ImbalanceType::TREND_CONTINUATION ||
-                     signal.source_type == ImbalanceType::TREND_REVERSAL) {
+                 if (signal.sourceType == ImbalanceType::TREND_CONTINUATION ||
+                     signal.sourceType == ImbalanceType::TREND_REVERSAL) {
                      remaining_strength *= 0.3;
                  }
                  break;
@@ -460,7 +460,7 @@ bool SignalDecayModel::isSignalValid(const TradingSignal& signal, uint64_t curre
  
  bool SignalDecayModel::isInvalidatedByMarketEvents(const TradingSignal& signal) {
      // Convert signal generation time to milliseconds for comparison
-     auto signal_time_ms = std::chrono::time_point_cast<std::chrono::milliseconds>(signal.generation_time)
+     auto signal_time_ms = std::chrono::time_point_cast<std::chrono::milliseconds>(signal.generationTime)
                                .time_since_epoch().count();
      
      // Check recent market events for invalidating conditions
@@ -506,7 +506,7 @@ bool SignalDecayModel::isSignalValid(const TradingSignal& signal, uint64_t curre
                  
              case MarketEventType::TREND_CHANGE:
                  // Trend changes invalidate trend-based signals
-                 if (signal.source_type == ImbalanceType::TREND_CONTINUATION) {
+                 if (signal.sourceType == ImbalanceType::TREND_CONTINUATION) {
                      return true;
                  }
                  break;
@@ -521,7 +521,7 @@ bool SignalDecayModel::isSignalValid(const TradingSignal& signal, uint64_t curre
  }
  
 //  double SignalDecayModel::getTypeSpecificDecayRate(const TradingSignal& signal) {
-//      auto it = type_specific_decay_rates_.find(signal.source_type);
+//      auto it = type_specific_decay_rates_.find(signal.sourceType);
 //      if (it != type_specific_decay_rates_.end()) {
 //          return it->second;
 //      }
@@ -530,7 +530,7 @@ bool SignalDecayModel::isSignalValid(const TradingSignal& signal, uint64_t curre
 //      return params_.base_decay_rate;
 //  }
  double SignalDecayModel::getTypeSpecificDecayRate(const TradingSignal& signal) {
-    auto it = type_specific_decay_rates_.find(signal.source_type);
+    auto it = type_specific_decay_rates_.find(signal.sourceType);
     double base_rate = (it != type_specific_decay_rates_.end()) 
                        ? it->second 
                        : params_.base_decay_rate;

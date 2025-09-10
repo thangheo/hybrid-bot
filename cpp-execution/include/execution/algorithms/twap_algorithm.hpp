@@ -38,7 +38,7 @@ public:
     TwapAlgorithm();    
     // Initialize the algorithm with configuration
     bool initialize(
-        const std::string& tradingPair,
+        const core::Symbol& tradingPair,
         models::OrderSide side,
         const algorithms::TwapConfig& config);
     
@@ -103,7 +103,7 @@ private:
     };
     
     // Internal implementation
-    std::string trading_pair_;
+    core::Symbol trading_pair_;
     models::OrderSide side_;
     algorithms::TwapConfig config_;
     State state_ = State::INITIALIZED;

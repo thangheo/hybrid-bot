@@ -33,7 +33,6 @@
   */
  using Timestamp = std::chrono::system_clock::time_point;
  using Duration = std::chrono::system_clock::duration;
- 
  /**
   * Common identifier types.
   */
@@ -80,6 +79,7 @@ struct StrategyId {
     bool isEmpty() const {
         return id.empty();
     }
+  
 };
 
 } // namespace core

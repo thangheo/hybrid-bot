@@ -209,7 +209,7 @@ std::unordered_map<std::string, std::string> FtxApiClient::getExchangeStatuses()
 }
 std::future<models::ExecutionReport> FtxApiClient::placeOrder(const models::Order& order) {
     // Extract necessary data from the order to avoid capturing the entire object
-    std::string tradingPair = order.getTradingPair();
+    core::Symbol tradingPair = order.getTradingPair();
     models::OrderSide side = order.getSide();
     models::OrderType type = order.getType();
     double quantity = order.getQuantity();
@@ -238,7 +238,7 @@ std::future<models::ExecutionReport> FtxApiClient::placeOrder(const models::Orde
         
         // Prepare parameters
         std::map<std::string, std::string> params;
-        params["market"] = tradingPair;
+        params["market"] = tradingPair.toString();
         params["side"] = translateOrderSide(side);
         params["type"] = translateOrderType(type);
         params["size"] = std::to_string(quantity);
@@ -278,9 +278,9 @@ std::future<models::ExecutionReport> FtxApiClient::placeOrder(const models::Orde
     });
 }
 
-std::future<models::ExecutionReport> FtxApiClient::cancelOrder(const std::string& orderId, const std::string& symbol) {
+std::future<models::ExecutionReport> FtxApiClient::cancelOrder(const std::string& orderId, const core::Symbol& symbol) {
     // Already using value types, so no need to extract anything
-    return std::async(std::launch::async, [this, orderId]() {
+    return std::async(std::launch::async, [this, orderId, symbol]() {
         if (!isConnected()) {
             connect();
         }
@@ -314,11 +314,11 @@ std::future<models::ExecutionReport> FtxApiClient::cancelOrder(const std::string
         }
         
         // Get order status after cancellation
-        return getOrderStatus(orderId, "").get();
+        return getOrderStatus(orderId, symbol).get();
     });
 }
 
-std::future<models::ExecutionReport> FtxApiClient::getOrderStatus(const std::string& orderId, const std::string& symbol) {
+std::future<models::ExecutionReport> FtxApiClient::getOrderStatus(const std::string& orderId, const core::Symbol& symbol) {
     // Already using value types, so no need to extract anything
     return std::async(std::launch::async, [this, orderId]() {
         if (!isConnected()) {
@@ -384,7 +384,7 @@ std::future<std::map<std::string, double>> FtxApiClient::getAccountBalances() {
     });
 }
 
-std::future<double> FtxApiClient::getCurrentPrice(const std::string& symbol) {
+std::future<double> FtxApiClient::getCurrentPrice(const core::Symbol& symbol) {
     return std::async(std::launch::async, [this, symbol]() {
         if (!isConnected()) {
             connect();
@@ -395,8 +395,8 @@ std::future<double> FtxApiClient::getCurrentPrice(const std::string& symbol) {
         
         // Send request
         std::map<std::string, std::string> params;
-        std::string response = makeApiRequest("/api/markets/" + symbol, "GET", params, false);
-        
+        std::string response = makeApiRequest("/api/markets/" + symbol.toString(), "GET", params, false);
+
         // Parse response
         Json::Value root;
         Json::Reader reader;

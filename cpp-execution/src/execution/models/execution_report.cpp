@@ -26,7 +26,7 @@ std::shared_ptr<ExecutionReport> ExecutionReport::createFromOrder(const std::sha
     report->setClientOrderId(order->getClientOrderId());
     report->setExchangeOrderId(order->getExchangeOrderId());
     report->setExchangeId(order->getExchangeId());
-    report->setSymbol(order->getTradingPair());
+    report->setSymbol(order->getTradingPair().toString());
     report->setSide(order->getSide());
     report->setType(order->getType());
     report->setStatus(order->getState());
@@ -68,7 +68,7 @@ std::shared_ptr<ExecutionReport> ExecutionReport::createRejectionReport(
     
     report->setClientOrderId(order->getClientOrderId());
     report->setExchangeId(order->getExchangeId());
-    report->setSymbol(order->getTradingPair());
+    report->setSymbol(order->getTradingPair().toString());
     report->setSide(order->getSide());
     report->setType(order->getType());
     report->setStatus(OrderState::REJECTED);

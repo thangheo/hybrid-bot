@@ -226,9 +226,9 @@ TradingSignal ImbalanceSignalGenerator::generateBaseSignal(const ImbalanceEvent&
     signal.direction = determineSignalDirection(imbalance);
     signal.strength = normalizeSignalStrength(imbalance.strength);
     signal.confidence = 0.5; // Base confidence
-    signal.generation_time = core::Timestamp(std::chrono::system_clock::now());
+    signal.generationTime = core::Timestamp(std::chrono::system_clock::now());
     signal.ttl = std::chrono::milliseconds(0); // To be set later
-    signal.source_type = imbalance.type;
+    signal.sourceType = imbalance.type;
     signal.symbol = imbalance.symbol;
     signal.exchangeId = imbalance.exchangeId;
     
@@ -242,7 +242,7 @@ TradingSignal ImbalanceSignalGenerator::generateBaseSignal(const ImbalanceEvent&
     }
     
     // Initial metrics
-    signal.signal_metrics = createSignalMetrics(imbalance);
+    signal.signalMetrics = createSignalMetrics(imbalance);
     
     bool hawkesEnhanced = false;
     double clusteringProbability = 0.0;
@@ -264,12 +264,12 @@ TradingSignal ImbalanceSignalGenerator::generateBaseSignal(const ImbalanceEvent&
     signal.ttl = calculateSignalTtl(signal.strength, persistence);
     
     // Set expiration time
-    signal.expirationTime = signal.generation_time + core::Duration(signal.ttl.count());
+    signal.expirationTime = signal.generationTime + core::Duration(signal.ttl.count());
     
     // Update metrics with Hawkes info
     if (hawkesEnhanced) {
-        signal.signal_metrics["clustering_probability"] = clusteringProbability;
-        signal.signal_metrics["predicted_persistence"] = persistence;
+        signal.signalMetrics["clustering_probability"] = clusteringProbability;
+        signal.signalMetrics["predicted_persistence"] = persistence;
     }
     
     // Validate before proceeding
@@ -301,11 +301,11 @@ TradingSignal ImbalanceSignalGenerator::enhanceSignalWithHawkes(const TradingSig
         
         // Update TTL based on new persistence
         enhancedSignal.ttl = calculateSignalTtl(enhancedSignal.strength, persistence);
-        enhancedSignal.expirationTime = enhancedSignal.generation_time + core::Duration(enhancedSignal.ttl.count());
+        enhancedSignal.expirationTime = enhancedSignal.generationTime + core::Duration(enhancedSignal.ttl.count());
         
         // Update metrics
-        enhancedSignal.signal_metrics["clustering_probability"] = clusteringProbability;
-        enhancedSignal.signal_metrics["predicted_persistence"] = persistence;
+        enhancedSignal.signalMetrics["clustering_probability"] = clusteringProbability;
+        enhancedSignal.signalMetrics["predicted_persistence"] = persistence;
     }
     return enhancedSignal;
 }
@@ -417,7 +417,7 @@ bool ImbalanceSignalGenerator::isDuplicateSignal(const TradingSignal& signal) {
     // Clean up old signals
     recentSignals_.erase(
         std::remove_if(recentSignals_.begin(), recentSignals_.end(),
-                        [windowStart](const TradingSignal& s) { return s.generation_time < windowStart; }),
+                        [windowStart](const TradingSignal& s) { return s.generationTime < windowStart; }),
         recentSignals_.end());
     
     // Check for duplicates
@@ -451,7 +451,7 @@ void ImbalanceSignalGenerator::cleanupRecentSignals(){
     
     recentSignals_.erase(
         std::remove_if(recentSignals_.begin(), recentSignals_.end(),
-                        [windowStart](const TradingSignal& s) { return s.generation_time < windowStart; }),
+                        [windowStart](const TradingSignal& s) { return s.generationTime < windowStart; }),
         recentSignals_.end());
 }
 
@@ -533,7 +533,7 @@ void ImbalanceSignalGenerator::updateStats(const TradingSignal& signal, bool haw
     //      CUSTOM                         // Custom imbalance type defined by strategy
     //  };
     // Update type stats
-    updateTypeStats(imbalanceTypeToString(signal.source_type));
+    updateTypeStats(imbalanceTypeToString(signal.sourceType));
 
     // Update averages
     updateAverages();

@@ -41,7 +41,7 @@ public:
     
     // Initialize the algorithm with configuration
     bool initialize(
-        const std::string& tradingPair,
+        const core::Symbol& tradingPair,
         models::OrderSide side,
         const VwapConfig& config);
     
@@ -109,7 +109,7 @@ private:
     };
     
     // Internal implementation
-    std::string trading_pair_;
+    core::Symbol trading_pair_;
     models::OrderSide side_;
     VwapConfig config_;
     State state_ = State::INITIALIZED;

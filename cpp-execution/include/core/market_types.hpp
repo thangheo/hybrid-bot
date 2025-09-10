@@ -182,6 +182,8 @@ struct TradeData {
          if (base != other.base) return base < other.base;
          return quote < other.quote;
      }
+     //empty
+    bool isEmpty() const { return base.empty() || quote.empty(); }
  };
  
  // Stream operator for Symbol

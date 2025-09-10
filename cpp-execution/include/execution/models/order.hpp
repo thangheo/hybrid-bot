@@ -94,12 +94,12 @@ public:
     
     // Factory methods for common order types
     static std::shared_ptr<Order> createMarketOrder(
-        const std::string& tradingPair, 
+        const core::Symbol& tradingPair,
         OrderSide side, 
         double quantity);
         
     static std::shared_ptr<Order> createLimitOrder(
-        const std::string& tradingPair, 
+        const core::Symbol& tradingPair, 
         OrderSide side, 
         double quantity, 
         double price);
@@ -109,8 +109,8 @@ public:
     const std::string& getClientOrderId() const;
     const core::ExchangeId& getExchangeId() const;
     const std::string& getExchangeOrderId() const;
-    const std::string& getTradingPair() const;
-    const std::string& getSymbol() const;
+    const core::Symbol& getTradingPair() const;
+    // const std::string& getSymbol() const;
     OrderSide getSide() const;
     OrderType getType() const;
     double getQuantity() const;
@@ -135,7 +135,8 @@ public:
     void setExchangeId(const core::ExchangeId& exchangeId);
     void setExchangeOrderId(const std::string& exchange_order_id);
     void setClientOrderId(const std::string& client_order_id);
-    void setTradingPair(const std::string& tradingPair);
+    void setTradingPair(const core::Symbol& tradingPair);
+    // void setTradingPair(const std::string& tradingPair);
     void setSide(OrderSide side);
     void setType(OrderType type);
     void setQuantity(double quantity);
@@ -169,7 +170,7 @@ private:
     std::string exchange_order_id_;
     
     // Order details
-    std::string trading_pair_;
+    core::Symbol trading_pair_;
     OrderSide side_ = OrderSide::BUY;
     OrderType type_ = OrderType::MARKET;
     double quantity_ = 0.0;

@@ -17,7 +17,7 @@
  #include <sstream>
  #include <iomanip>
 #include <iostream>
-#include <logger.hpp>
+#include <common/logger.hpp>
 
  namespace trading {
  namespace strategy {
@@ -26,14 +26,14 @@
  using namespace std::chrono_literals;
  
  // Constructor
- StrategyEngine::StrategyEngine(const std::string& strategyId)
+ StrategyEngine::StrategyEngine(const StrategyId& strategyId)
      : strategyId_(strategyId), 
        strategyVersion_("1.0.0"),
        state_(StrategyState::CREATED),
        lastUpdateTime_(std::chrono::system_clock::now()) {
      
      // Initialize with empty components - will be properly set up in initialize()
-     LOG_INFO("Strategy Engine created: {}", strategyId_);
+     LOG_INFO("Strategy Engine created: {}", strategyId_.toString());
  }
  
  // Destructor
@@ -351,7 +351,7 @@ void StrategyEngine::processQueuedSignals() {
      std::lock_guard<std::recursive_mutex> lock(mutex_);
      
      json status;
-     status["strategyId"] = strategyId_;
+     status["strategyId"] = strategyId_.toString();
      status["strategyVersion"] = strategyVersion_;
      status["state"] = static_cast<int>(state_.load());
      status["activeSignalsCount"] = activeSignals_.size();
@@ -509,10 +509,10 @@ TradingSignal StrategyEngine::enhanceSignalWithEventContext(
         // Set expiration time (assuming TTL is in milliseconds)
         if (enhancedSignal.expirationTime.time_since_epoch().count() == 0) {
             enhancedSignal.expirationTime = current_time + std::chrono::milliseconds(ttl_value);
-            enhancedSignal.generation_time = current_time;
+            enhancedSignal.generationTime = current_time;
         }
         // LOG_DEBUG("Signal generation time: {}", 
-        //           std::chrono::duration_cast<std::chrono::milliseconds>(enhancedSignal.generation_time.time_since_epoch()).count());
+        //           std::chrono::duration_cast<std::chrono::milliseconds>(enhancedSignal.generationTime.time_since_epoch()).count());
         // LOG_DEBUG("Signal expiration time: {}", 
         //           std::chrono::duration_cast<std::chrono::milliseconds>(enhancedSignal.expirationTime.time_since_epoch()).count());
     }
