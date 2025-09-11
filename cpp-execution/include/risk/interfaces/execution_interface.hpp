@@ -10,6 +10,7 @@
 #include "risk_types.hpp"
 #include "execution/models/execution_report.hpp"
 #include <risk/risk_types.hpp>
+#include "risk/risk_config.hpp"
 #include <string>
 #include <vector>
 #include <memory>
@@ -152,7 +153,8 @@ public:
  * 
  * @return Unique pointer to ExecutionInterface implementation
  */
-std::unique_ptr<ExecutionInterface> createExecutionInterface();
+//create with config
+std::unique_ptr<ExecutionInterface> createExecutionInterface(const RiskConfig& config);
 
 } // namespace risk
 } // namespace trading

@@ -62,7 +62,36 @@ PostTradeMonitor::PostTradeMonitor(const RiskConfig& config) : config_(config) {
     systemHealth_.mode.store(RiskManagerMode::NORMAL);
     systemHealth_.tradingAllowed.store(true);
 }
-
+PostTradeMonitor::PostTradeMonitor(const RiskConfig& config, PortfolioManager* portfolioManager) 
+    : config_(config), portfolioManager_(portfolioManager) {
+    
+    // Create interfaces using factory functions
+    auto dataInterface = createDataInterface();
+    auto executionInterface = createExecutionInterface();
+    
+    // Convert unique_ptr to shared_ptr for sharing among components
+    dataInterface_ = std::shared_ptr<DataInterface>(dataInterface.release());
+    executionInterface_ = std::shared_ptr<ExecutionInterface>(executionInterface.release());
+    
+    // Initialize shared dependencies with actual interfaces
+    positionTracker_ = std::make_shared<PositionTracker>(config, dataInterface_);
+    
+    // Initialize components with correct constructor arguments
+    stopLossManager_ = std::make_unique<StopLossManager>(config, positionTracker_, dataInterface_, executionInterface_);
+    drawdownMonitor_ = std::make_unique<DrawdownMonitor>(config);  
+    
+    // Extract post-trade monitor configuration
+    monitorConfig_.healthCheckIntervalSeconds = std::chrono::seconds(5);
+    monitorConfig_.metricsUpdateIntervalSeconds = std::chrono::seconds(10);
+    monitorConfig_.reconciliationIntervalMinutes = config.getBalanceReconciliationConfig().reconciliationFrequency;
+    monitorConfig_.autoModeTransitions = true;
+    monitorConfig_.enableBackgroundMonitoring = true;
+    monitorConfig_.enableRealTimeAlerts = true;
+    
+    // Initialize system health
+    systemHealth_.mode.store(RiskManagerMode::NORMAL);
+    systemHealth_.tradingAllowed.store(true);
+}
 PostTradeMonitor::~PostTradeMonitor() {
     shutdown();
 }

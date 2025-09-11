@@ -11,12 +11,12 @@
 
 #pragma once
 
-#include "../risk_types.hpp"
-#include "../risk_events.hpp"
-#include "../risk_config.hpp"
-#include "../portfolio/position_tracker.hpp"
-#include "../interfaces/data_interface.hpp"
-#include "../interfaces/execution_interface.hpp"
+#include "risk/risk_types.hpp"
+#include "risk/risk_events.hpp"
+#include "risk/risk_config.hpp"
+#include "risk/portfolio/position_tracker.hpp"
+#include "risk/interfaces/data_interface.hpp"
+#include "interfaces/execution_interface.hpp"
 #include "stop_loss_manager.hpp"
 #include "drawdown_monitor.hpp"
 #include "circuit_breaker.hpp"
@@ -25,6 +25,7 @@
 #include "strategy/types/performance_metrics.hpp"
 #include "core/market_types.hpp"
 #include "core/time.hpp"
+#include "risk/portfolio/portfolio_manager.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -50,49 +51,7 @@ namespace trading::risk {
 /**
  * Enhanced risk event with additional context and metadata
  */
-
-// struct RiskEvent {
-//     RiskEventType type;
-//     core::Timestamp timestamp;
-//     std::string details;
-//     std::string severity;
-//     std::map<std::string, std::string> metadata;
-    
-//     // Specific event data using std::variant for type safety
-//     std::variant<
-//         std::monostate,
-//         CircuitBreakerEvent,
-//         EnhancedStopLossEvent,
-//         DrawdownEvent,
-//         PositionReconciliationEvent,
-//         BalanceReconciliationEvent,
-//         std::string // <-- add this if you want to allow strings
-//     > specificEvent;
-    
-//     // Convenience constructors
-//     RiskEvent(RiskEventType eventType, std::string eventDetails, std::string eventSeverity = "info")
-//         : type(eventType), timestamp(core::now()), details(std::move(eventDetails)), severity(std::move(eventSeverity)) {}
-    
-//     template<typename EventType>
-//     RiskEvent(RiskEventType eventType, std::string eventDetails, EventType&& event, std::string eventSeverity = "info")
-//         : type(eventType), timestamp(core::now()), details(std::move(eventDetails)), severity(std::move(eventSeverity)), 
-//           specificEvent(std::forward<EventType>(event)) {}
-    
-//     // Type-safe getters
-//     template<typename T>
-//     std::optional<T> getSpecificEvent() const {
-//         if (auto* event = std::get_if<T>(&specificEvent)) {
-//             return *event;
-//         }
-//         return std::nullopt;
-//     }
-    
-//     // Severity helpers
-//     bool isCritical() const noexcept { return severity == "critical"; }
-//     bool isWarning() const noexcept { return severity == "warning"; }
-//     bool isInfo() const noexcept { return severity == "info"; }
-// };
-
+ 
 /**
  * System health status with detailed component information
  */
@@ -253,7 +212,8 @@ public:
      * Constructor with dependency injection
      */
     explicit PostTradeMonitor(const RiskConfig& config);
-    
+    // Update the constructor declaration
+    PostTradeMonitor(const RiskConfig& config, PortfolioManager* portfolioManager = nullptr);
     /**
      * Destructor ensures proper cleanup
      */
@@ -387,6 +347,8 @@ public:
     std::map<std::string, std::string> getDiagnostics();
 
 private:
+    // Optional portfolio manager for integrated risk management
+    PortfolioManager* portfolioManager_{nullptr};
     // Configuration
     mutable std::shared_mutex configMutex_;
     RiskConfig config_;

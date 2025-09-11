@@ -124,7 +124,9 @@ class EnhancedPositionTracker:
             'entry_price': position_data.get('entry_price'),
             'entry_time': position_data.get('entry_time')
         }
-    
+    # remove symbol from position if value < 10$
+
+
     async def sync_from_exchange(self, balance: dict):
         """Sync from exchange"""
         try:
@@ -139,6 +141,20 @@ class EnhancedPositionTracker:
                     quantity = float(balance_data)
                 
                 if asset != 'USDT' and quantity > 0:
+                    # Check current price to determine value
+                    price = 1.0
+                    if self.pool:
+                        async with self.pool.acquire() as conn:
+                            result = await conn.fetchrow("""
+                                SELECT price FROM market_data
+                                WHERE symbol = $1
+                                ORDER BY timestamp DESC LIMIT 1
+                            """, f"{asset}/USDT")
+                            if result:
+                                price = float(result['price'])
+                    position_value = quantity * price
+                    if position_value < 10:
+                        quantity = 0  # Treat as no position if value < $10
                     existing_position = self.has_position(f"{asset}/USDT")
                     
                     await self.update_position(

@@ -181,7 +181,21 @@ public:
         publishEndpoint_ = "tcp://localhost:5559";
         executionReportsTopic_ = "execution_reports";
     }
-    
+    // with config
+    ExecutionInterfaceImpl(const RiskConfig& config) : ExecutionInterfaceImpl() {
+        // Use config to override defaults if needed
+        // For example:
+        if (!config.executionRequestEndpoint.empty()) {
+            requestEndpoint_ = config.executionRequestEndpoint;
+        }
+        if (!config.executionPublishEndpoint.empty()) {
+            publishEndpoint_ = config.executionPublishEndpoint;
+        }
+        if (!config.executionReportsTopic.empty()) {
+            executionReportsTopic_ = config.executionReportsTopic;
+        }
+    }
+
     ~ExecutionInterfaceImpl() override {
         // Clean shutdown of ZeroMQ clients
         if (subscriptionClient_) {
@@ -557,8 +571,8 @@ ExecutionInterface::ExecutionInterface() {
 }
 
 // Global factory function to create the concrete implementation
-std::unique_ptr<ExecutionInterface> createExecutionInterface() {
-    return std::make_unique<ExecutionInterfaceImpl>();
+std::unique_ptr<ExecutionInterface> createExecutionInterface(const RiskConfig& config) {
+    return std::make_unique<ExecutionInterfaceImpl>(config);
 }
 
 } // namespace risk
