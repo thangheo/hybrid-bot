@@ -1,137 +1,679 @@
+/**
+ * @file full_system_integration_demo.cpp
+ * @brief Complete trading system integration demonstration
+ * 
+ * This demo integrates all major components:
+ * - Data Ingestion Service (order book data)
+ * - Strategy Engine (signal generation)
+ * - Risk Manager (validation and monitoring)
+ * - Execution Engine (order placement)
+ * - Monitoring (performance tracking)
+ */
+
 #include <iostream>
+#include <memory>
 #include <thread>
+#include <chrono>
+#include <atomic>
 #include <vector>
+#include <fstream>
 #include <signal.h>
 
-// #include "common/config.hpp"
+// Common includes
+#include "common/event_bus.hpp"
+#include "common/trading_events.hpp"
 #include "common/logger.hpp"
-#include "common/types.hpp"
-#include "data_ingestion/config.hpp"
-// #include "data_ingestion/websocket_client.hpp"
-// #include "data_ingestion/order_book.hpp"
-// #include "strategy/analyzer.hpp"
-// #include "strategy/imbalance_detector.hpp"
-// #include "strategy/signal_generator.hpp"
-// #include "execution/signal_processor.hpp"
-// #include "execution/order_service.hpp"
-// #include "risk/pre_trade_filter.hpp"
+#include "common/zeromq_client.hpp"
+#include "common/exchange_types.hpp"
+// Data ingestion
+#include "data_ingestion/data_ingestion_service.hpp"
 
-// Global flag for graceful shutdown
-volatile bool running = true;
+// Strategy engine
+#include "strategy/engine/strategy_engine.hpp"
+#include "strategy/config/strategy_config_loader.hpp"
 
-void signal_handler(int signal) {
-    std::cout << "Received signal " << signal << ", shutting down..." << std::endl;
-    running = false;
+// Risk management
+#include "risk/risk_manager.hpp"
+#include "risk/risk_config.hpp"
+#include "risk/risk_types.hpp"
+
+// Execution engine
+#include "execution/execution_service.hpp"
+#include "execution/trading_signal.hpp"
+
+// Core types
+#include "core/market_types.hpp"
+#include "core/direction.hpp"
+
+using namespace trading;
+using namespace std::chrono_literals;
+using namespace trading::common;
+using namespace trading::core;
+using namespace trading::data_ingestion;
+using namespace trading::strategy;
+using namespace trading::risk;
+using namespace trading::execution;
+
+class FullSystemDemo {
+public:
+    FullSystemDemo() : running_(false), systemHealthy_(true) {
+        setupConfigurations();
+        setupStatistics();
+    }
+    
+    ~FullSystemDemo() {
+        shutdown();
+    }
+    
+    bool initialize() {
+        std::cout << "=== INITIALIZING FULL TRADING SYSTEM ===" << std::endl;
+        
+        // 1. Initialize event bus first
+        std::cout << "Starting event bus..." << std::endl;
+        common::EventBus::getInstance().start();
+        
+        // 2. Initialize data ingestion service
+        std::cout << "Initializing data ingestion service..." << std::endl;
+        dataIngestionService_ = std::make_unique<data_ingestion::DataIngestionService>(
+            "config/full_system_config.json");
+        
+        if (!dataIngestionService_->initialize()) {
+            std::cerr << "Failed to initialize data ingestion service" << std::endl;
+            return false;
+        }
+        
+        // 3. Initialize risk manager
+        std::cout << "Initializing risk manager..." << std::endl;
+        riskManager_ = std::make_unique<risk::RiskManager>(riskConfig_);
+        
+        if (!riskManager_->initialize()) {
+            std::cerr << "Failed to initialize risk manager" << std::endl;
+            return false;
+        }
+        
+        // 4. Initialize strategy engine
+        std::cout << "Initializing strategy engine..." << std::endl;
+        strategyEngine_ = std::make_unique<strategy::StrategyEngine>("integrated_strategy");
+        
+        if (!strategyEngine_->initialize(strategyConfig_)) {
+            std::cerr << "Failed to initialize strategy engine" << std::endl;
+            return false;
+        }
+        
+        // 5. Initialize execution engine
+        std::cout << "Initializing execution engine..." << std::endl;
+        setupExecutionEngine();
+        
+        // 6. Setup component connections
+        setupComponentConnections();
+        
+        std::cout << "System initialization complete!" << std::endl;
+        return true;
+    }
+    
+    bool start() {
+        if (!running_) {
+            std::cout << "\n=== STARTING FULL TRADING SYSTEM ===" << std::endl;
+            
+            running_ = true;
+            systemHealthy_ = true;
+            
+            // Start services in order
+            std::vector<std::string> symbols = {
+                "BTC/USDT", "ETH/USDT", "BNB/USDT", "ADA/USDT"
+            };
+            
+            // 1. Start data ingestion
+            std::cout << "Starting data ingestion with symbols: ";
+            for (const auto& symbol : symbols) {
+                std::cout << symbol << " ";
+            }
+            std::cout << std::endl;
+            
+            if (!dataIngestionService_->start(symbols)) {
+                std::cerr << "Failed to start data ingestion service" << std::endl;
+                return false;
+            }
+            
+            // 2. Start strategy engine
+            if (!strategyEngine_->start()) {
+                std::cerr << "Failed to start strategy engine" << std::endl;
+                return false;
+            }
+            
+            // 3. Start monitoring threads
+            startMonitoring();
+            
+            std::cout << "🚀 FULL TRADING SYSTEM IS NOW LIVE!" << std::endl;
+            std::cout << "Monitoring system health and processing..." << std::endl;
+            
+            return true;
+        }
+        return false;
+    }
+    
+    void runDemo(int durationMinutes = 5) {
+        std::cout << "\n=== RUNNING INTEGRATED DEMO FOR " << durationMinutes << " MINUTES ===" << std::endl;
+        
+        auto startTime = std::chrono::steady_clock::now();
+        auto endTime = startTime + std::chrono::minutes(durationMinutes);
+        
+        // Demo phases
+        demonstrateDataFlow();
+        std::this_thread::sleep_for(30s);
+        
+        demonstrateSignalGeneration();
+        std::this_thread::sleep_for(30s);
+        
+        demonstrateRiskValidation();
+        std::this_thread::sleep_for(30s);
+        
+        demonstrateExecution();
+        std::this_thread::sleep_for(30s);
+        
+        // Continue running and monitoring
+        while (running_ && std::chrono::steady_clock::now() < endTime) {
+            std::this_thread::sleep_for(1s);
+            
+            // Periodic health checks
+            if (!checkSystemHealth()) {
+                std::cout << "⚠️  System health issues detected!" << std::endl;
+                systemHealthy_ = false;
+            }
+        }
+        
+        printFinalReport();
+    }
+    
+    void shutdown() {
+        if (running_) {
+            std::cout << "\n=== SHUTTING DOWN TRADING SYSTEM ===" << std::endl;
+            
+            running_ = false;
+            
+            // Stop services in reverse order
+            if (strategyEngine_) {
+                strategyEngine_->stop();
+            }
+            
+            if (dataIngestionService_) {
+                dataIngestionService_->stop();
+            }
+            
+            // Stop monitoring threads
+            stopMonitoring();
+            
+            // Stop event bus last
+            common::EventBus::getInstance().stop();
+            
+            std::cout << "System shutdown complete" << std::endl;
+        }
+    }
+
+private:
+    // Core components
+    std::unique_ptr<data_ingestion::DataIngestionService> dataIngestionService_;
+    std::unique_ptr<strategy::StrategyEngine> strategyEngine_;
+    std::unique_ptr<risk::RiskManager> riskManager_;
+    std::unique_ptr<execution::ExecutionService> executionService_;
+    
+    // Configurations
+    risk::RiskConfig riskConfig_;
+    strategy::StrategyConfig strategyConfig_;
+    
+    // System state
+    std::atomic<bool> running_;
+    std::atomic<bool> systemHealthy_;
+    
+    // Monitoring threads
+    std::vector<std::thread> monitoringThreads_;
+    
+    // Statistics
+    std::atomic<size_t> orderBookUpdatesReceived_{0};
+    std::atomic<size_t> signalsGenerated_{0};
+    std::atomic<size_t> signalsValidated_{0};
+    std::atomic<size_t> signalsApproved_{0};
+    std::atomic<size_t> signalsRejected_{0};
+    std::atomic<size_t> ordersExecuted_{0};
+    std::atomic<size_t> riskEventsTriggered_{0};
+    
+    void setupConfigurations() {
+        // Create configuration files
+        createDataIngestionConfig();
+        createStrategyConfig();
+        createRiskConfig();
+    }
+    
+    void createDataIngestionConfig() {
+        const char* configContent = R"({
+    "exchanges": {
+        "BINANCE": {
+            "id": "BINANCE",
+            "name": "Binance",
+            "ws_url": "wss://stream.binance.com:9443/ws",
+            "rest_url": "https://api.binance.com",
+            "symbols": ["BTC/USDT", "ETH/USDT", "BNB/USDT", "ADA/USDT"],
+            "connection_timeout_ms": 5000,
+            "max_reconnect_attempts": 3
+        }
+    },
+    "order_book": {
+        "depth": 20,
+        "snapshot_interval_ms": 30000
+    },
+    "publisher": {
+        "zmq_endpoint": "tcp://*:5555",
+        "max_queue_size": 1000,
+        "publish_interval_ms": 100
+    }
+})";
+        
+        std::ofstream configFile("config/full_system_config.json");
+        configFile << configContent;
+        configFile.close();
+    }
+    
+    void createStrategyConfig() {
+        strategyConfig_.strategy_id = StrategyId("integrated_strategy", "1.0");
+        strategyConfig_.tradingPairs = {
+                {"BTC/USDT", common::ExchangeId::fromString("BINANCE")},
+                {"ETH/USDT", common::ExchangeId::fromString("BINANCE")},
+                {"BNB/USDT", common::ExchangeId::fromString("BINANCE")},
+                {"ADA/USDT", common::ExchangeId::fromString("BINANCE")}
+                // {"ETH/USDT", strategy::ParameterSet()},
+                // {"BNB/USDT", strategy::ParameterSet()},
+                // {"ADA/USDT", strategy::ParameterSet()}
+            // {"BTC/USDT", strategy::ParameterSet()},
+            // {"ETH/USDT", strategy::ParameterSet()},
+            // {"BNB/USDT", strategy::ParameterSet()},
+            // {"ADA/USDT", strategy::ParameterSet()}
+        };
+        
+        // Default parameters for all pairs
+        // for (auto& [pair, params] : strategyConfig_.tradingPairs) {
+        //     params.parameters["imbalance_threshold"] = 0.15;
+        //     params.parameters["signal_strength_threshold"] = 0.5;
+        //     params.parameters["confidence_threshold"] = 0.6;
+        //     params.parameters["max_position_size"] = 1000.0;
+        // }
+    }
+    
+    void createRiskConfig() {
+        // Setup risk configuration (similar to risk demo)
+        auto& positionConfig = const_cast<PositionLimitConfig&>(riskConfig_.getPositionLimitConfig());
+        positionConfig.assetLimits["BTC"] = 2.0;
+        positionConfig.assetLimits["ETH"] = 20.0;
+        positionConfig.assetLimits["BNB"] = 100.0;
+        positionConfig.assetLimits["ADA"] = 10000.0;
+        positionConfig.defaultLimit = 5000.0;
+        positionConfig.enforceStrictly = true;
+        
+        auto& exposureConfig = const_cast<ExposureLimitConfig&>(riskConfig_.getExposureLimitConfig());
+        exposureConfig.maxTotalExposure = 100000.0;
+        exposureConfig.maxAssetExposure = 50000.0;
+        exposureConfig.maxStrategyExposure = 75000.0;
+        exposureConfig.maxExchangeExposure = 80000.0;
+    }
+    
+    void setupStatistics() {
+        // Reset all counters
+        orderBookUpdatesReceived_ = 0;
+        signalsGenerated_ = 0;
+        signalsValidated_ = 0;
+        signalsApproved_ = 0;
+        signalsRejected_ = 0;
+        ordersExecuted_ = 0;
+        riskEventsTriggered_ = 0;
+    }
+    
+    void setupExecutionEngine() {
+        // This would normally be more complex, but for demo purposes
+        // we'll create a simple mock execution engine
+        std::cout << "Execution engine setup (mock implementation for demo)" << std::endl;
+    }
+    
+    void setupComponentConnections() {
+        std::cout << "Setting up component connections..." << std::endl;
+        
+        // 1. Connect data ingestion to strategy engine
+        dataIngestionService_->setOrderBookCallback([this](const auto& update) {
+            orderBookUpdatesReceived_++;
+            
+            // Convert to OrderBook and send to strategy
+            auto orderBook = std::make_shared<data_ingestion::OrderBook>(
+                update.exchangeId, update.tradingPair);
+            
+            // Apply the update to create a valid order book
+            orderBook->applySnapshot(update.bids, update.asks, 
+                                   update.sequenceNumber, update.exchangeTimestamp);
+            
+            // Send to strategy engine
+            if (strategyEngine_ && strategyEngine_->processOrderBook(*orderBook)) {
+                // Order book processed successfully
+            }
+        });
+        
+        // 2. Connect strategy engine to risk manager
+        strategyEngine_->registerSignalCallback([this](const strategy::TradingSignal& signal) {
+            signalsGenerated_++;
+            
+            // Convert strategy signal to execution signal for risk validation
+            execution::TradingSignal execSignal;
+            execSignal.id = signal.id;
+            execSignal.symbol = signal.symbol.toString();
+            execSignal.direction = signal.direction;
+            execSignal.strength = signal.strength;
+            execSignal.targetSize = signal.targetSize;
+            execSignal.strategyId = signal.strategyId;
+            
+            // Validate with risk manager
+            if (riskManager_) {
+                auto validationResult = riskManager_->validateSignal(execSignal);
+                signalsValidated_++;
+                
+                if (validationResult.approved) {
+                    signalsApproved_++;
+                    std::cout << "✅ Signal " << signal.id << " approved for execution" << std::endl;
+                    
+                    // Here we would normally send to execution engine
+                    simulateExecution(execSignal);
+                } else {
+                    signalsRejected_++;
+                    std::cout << "❌ Signal " << signal.id << " rejected by risk management" << std::endl;
+                }
+            }
+        });
+        
+        // 3. Connect risk manager events
+        riskManager_->registerRiskEventCallback([this](const risk::RiskEvent& event) {
+            riskEventsTriggered_++;
+            std::cout << "🚨 Risk Event: " << event.description 
+                      << " (Severity: " << event.severity << ")" << std::endl;
+        });
+    }
+    
+    void startMonitoring() {
+        std::cout << "Starting monitoring threads..." << std::endl;
+        
+        // System health monitor
+        monitoringThreads_.emplace_back([this]() {
+            while (running_) {
+                std::this_thread::sleep_for(10s);
+                
+                if (running_) {
+                    bool healthy = checkSystemHealth();
+                    if (!healthy && systemHealthy_) {
+                        systemHealthy_ = false;
+                        std::cout << "⚠️  System health degraded!" << std::endl;
+                    } else if (healthy && !systemHealthy_) {
+                        systemHealthy_ = true;
+                        std::cout << "✅ System health restored!" << std::endl;
+                    }
+                }
+            }
+        });
+        
+        // Statistics reporter
+        monitoringThreads_.emplace_back([this]() {
+            while (running_) {
+                std::this_thread::sleep_for(30s);
+                if (running_) {
+                    printPeriodicStats();
+                }
+            }
+        });
+    }
+    
+    void stopMonitoring() {
+        for (auto& thread : monitoringThreads_) {
+            if (thread.joinable()) {
+                thread.join();
+            }
+        }
+        monitoringThreads_.clear();
+    }
+    
+    bool checkSystemHealth() {
+        bool healthy = true;
+        
+        // Check data ingestion health
+        if (!dataIngestionService_ || !dataIngestionService_->isHealthy()) {
+            healthy = false;
+        }
+        
+        // Check strategy engine health
+        if (!strategyEngine_) {
+            healthy = false;
+        }
+        
+        // Check risk manager health
+        if (!riskManager_ || !riskManager_->checkSystemHealth()) {
+            healthy = false;
+        }
+        
+        return healthy;
+    }
+    
+    void simulateExecution(const execution::TradingSignal& signal) {
+        ordersExecuted_++;
+        
+        // Simulate execution delay
+        std::thread([this, signal]() {
+            std::this_thread::sleep_for(100ms);
+            
+            // Create mock execution report
+            execution::models::ExecutionReport report;
+            report.setOrderId("ORDER_" + signal.id);
+            report.setSymbol(signal.symbol);
+            report.setSide(signal.direction == core::Direction::BUY ? 
+                          execution::models::OrderSide::BUY : 
+                          execution::models::OrderSide::SELL);
+            report.setQuantity(signal.targetSize);
+            report.setFilledQuantity(signal.targetSize);
+            report.setStatus(execution::models::OrderState::FILLED);
+            
+            // Send back to risk manager for position tracking
+            if (riskManager_) {
+                riskManager_->processExecutionReport(report);
+            }
+
+            std::cout << "📈 Executed: " << signal.symbol.toString()
+                      << " " << (signal.direction == core::Direction::BUY ? "BUY" : "SELL")
+                      << " " << signal.targetSize << std::endl;
+        }).detach();
+    }
+    
+    void demonstrateDataFlow() {
+        std::cout << "\n--- Demonstrating Data Flow ---" << std::endl;
+        std::cout << "Monitoring order book updates..." << std::endl;
+        
+        // Wait for some order book updates
+        size_t initialUpdates = orderBookUpdatesReceived_.load();
+        auto startTime = std::chrono::steady_clock::now();
+        
+        while (std::chrono::steady_clock::now() - startTime < 10s) {
+            std::this_thread::sleep_for(1s);
+            size_t currentUpdates = orderBookUpdatesReceived_.load();
+            if (currentUpdates > initialUpdates + 10) {
+                break;
+            }
+        }
+        
+        std::cout << "Order book updates flowing: " 
+                  << (orderBookUpdatesReceived_.load() - initialUpdates) << " received" << std::endl;
+    }
+    
+    void demonstrateSignalGeneration() {
+        std::cout << "\n--- Demonstrating Signal Generation ---" << std::endl;
+        std::cout << "Waiting for strategy signals..." << std::endl;
+        
+        size_t initialSignals = signalsGenerated_.load();
+        auto startTime = std::chrono::steady_clock::now();
+        
+        while (std::chrono::steady_clock::now() - startTime < 30s) {
+            std::this_thread::sleep_for(1s);
+            size_t currentSignals = signalsGenerated_.load();
+            if (currentSignals > initialSignals) {
+                std::cout << "Signal generated! Total: " << currentSignals << std::endl;
+                break;
+            }
+        }
+        
+        if (signalsGenerated_.load() == initialSignals) {
+            std::cout << "No signals generated yet (normal for demo)" << std::endl;
+        }
+    }
+    
+    void demonstrateRiskValidation() {
+        std::cout << "\n--- Demonstrating Risk Validation ---" << std::endl;
+        
+        // Create some test signals to validate
+        std::vector<execution::TradingSignal> testSignals = {
+            createTestSignal("TEST_001", "BTC/USDT", core::Direction::BUY, 0.1),
+            createTestSignal("TEST_002", "ETH/USDT", core::Direction::SELL, 2.0),
+            createTestSignal("TEST_003", "BTC/USDT", core::Direction::BUY, 10.0)  // Large size
+        };
+        
+        for (const auto& signal : testSignals) {
+            auto result = riskManager_->validateSignal(signal);
+            signalsValidated_++;
+            
+            if (result.approved) {
+                signalsApproved_++;
+                std::cout << "✅ Test signal " << signal.id << " approved" << std::endl;
+            } else {
+                signalsRejected_++;
+                std::cout << "❌ Test signal " << signal.id << " rejected: ";
+                for (const auto& violation : result.violations) {
+                    std::cout << violation.description << " ";
+                }
+                std::cout << std::endl;
+            }
+        }
+    }
+    
+    void demonstrateExecution() {
+        std::cout << "\n--- Demonstrating Execution Flow ---" << std::endl;
+        
+        // Create and process a valid signal
+        auto testSignal = createTestSignal("EXEC_001", "BTC/USDT", core::Direction::BUY, 0.1);
+        auto result = riskManager_->validateSignal(testSignal);
+        
+        if (result.approved) {
+            std::cout << "Executing approved signal..." << std::endl;
+            simulateExecution(testSignal);
+        } else {
+            std::cout << "Signal not approved for execution" << std::endl;
+        }
+    }
+    
+    execution::TradingSignal createTestSignal(const std::string& id, const std::string& pair,
+                                             core::Direction direction, double size) {
+        execution::TradingSignal signal;
+        signal.id = id;
+        signal.tradingPair = pair;
+        signal.direction = direction;
+        signal.strength = 0.7;
+        signal.targetSize = size;
+        signal.strategyId = "test_strategy";
+        signal.strategyVersion = "1.0";
+        return signal;
+    }
+    
+    void printPeriodicStats() {
+        std::cout << "\n=== SYSTEM STATISTICS ===" << std::endl;
+        std::cout << "Order Book Updates: " << orderBookUpdatesReceived_.load() << std::endl;
+        std::cout << "Signals Generated: " << signalsGenerated_.load() << std::endl;
+        std::cout << "Signals Validated: " << signalsValidated_.load() << std::endl;
+        std::cout << "Signals Approved: " << signalsApproved_.load() << std::endl;
+        std::cout << "Signals Rejected: " << signalsRejected_.load() << std::endl;
+        std::cout << "Orders Executed: " << ordersExecuted_.load() << std::endl;
+        std::cout << "Risk Events: " << riskEventsTriggered_.load() << std::endl;
+        std::cout << "System Health: " << (systemHealthy_.load() ? "HEALTHY" : "DEGRADED") << std::endl;
+        std::cout << "=========================" << std::endl;
+    }
+    
+    void printFinalReport() {
+        std::cout << "\n=== FINAL INTEGRATION DEMO REPORT ===" << std::endl;
+        std::cout << "Total Order Book Updates: " << orderBookUpdatesReceived_.load() << std::endl;
+        std::cout << "Total Signals Generated: " << signalsGenerated_.load() << std::endl;
+        std::cout << "Total Signals Validated: " << signalsValidated_.load() << std::endl;
+        std::cout << "Total Signals Approved: " << signalsApproved_.load() << std::endl;
+        std::cout << "Total Signals Rejected: " << signalsRejected_.load() << std::endl;
+        std::cout << "Total Orders Executed: " << ordersExecuted_.load() << std::endl;
+        std::cout << "Total Risk Events: " << riskEventsTriggered_.load() << std::endl;
+        
+        if (signalsValidated_.load() > 0) {
+            double approvalRate = (double)signalsApproved_.load() / signalsValidated_.load() * 100.0;
+            std::cout << "Signal Approval Rate: " << std::fixed << std::setprecision(2) 
+                      << approvalRate << "%" << std::endl;
+        }
+        
+        std::cout << "Final System Health: " << (systemHealthy_.load() ? "HEALTHY" : "DEGRADED") << std::endl;
+        std::cout << "\n🎉 INTEGRATION DEMO COMPLETED SUCCESSFULLY!" << std::endl;
+        std::cout << "=====================================\n" << std::endl;
+    }
+};
+
+// Global demo instance for signal handling
+std::unique_ptr<FullSystemDemo> demoInstance;
+
+void signalHandler(int signal) {
+    std::cout << "\nShutdown signal received..." << std::endl;
+    if (demoInstance) {
+        demoInstance->shutdown();
+    }
+    exit(0);
 }
 
 int main(int argc, char* argv[]) {
-    // Register signal handler
-    signal(SIGINT, signal_handler);
-    signal(SIGTERM, signal_handler);
+    // Setup signal handlers
+    signal(SIGINT, signalHandler);
+    signal(SIGTERM, signalHandler);
     
-    // try {
-    //     // Initialize logging
-    //     common::Logging::init();
+    try {
+        std::cout << "🚀 STARTING FULL TRADING SYSTEM INTEGRATION DEMO 🚀" << std::endl;
+        std::cout << "=====================================================" << std::endl;
         
-    //     // Load configuration
-    //     auto config = common::Config::load("config/system_config.json");
-    //     auto exchanges_config = common::Config::load("config/exchanges.json");
-    //     auto strategy_config = common::Config::load("config/strategy_params.json");
-    //     auto risk_config = common::Config::load("config/risk_limits.json");
+        // Create demo instance
+        demoInstance = std::make_unique<FullSystemDemo>();
         
-    //     LOG_INFO("System starting up...");
+        // Initialize system
+        if (!demoInstance->initialize()) {
+            std::cerr << "Failed to initialize trading system" << std::endl;
+            return 1;
+        }
         
-    //     // Initialize components
-    //     data_ingestion::OrderBook orderBook;
-    //     strategy::Analyzer analyzer(strategy_config);
-    //     strategy::ImbalanceDetector detector(strategy_config);
-    //     strategy::SignalGenerator signalGen(strategy_config);
-    //     risk::PreTradeFilter riskFilter(risk_config);
-    //     execution::SignalProcessor signalProcessor;
-    //     execution::OrderService orderService(exchanges_config);
+        // Start system
+        if (!demoInstance->start()) {
+            std::cerr << "Failed to start trading system" << std::endl;
+            return 1;
+        }
         
-    //     // Start WebSocket clients for each exchange
-    //     std::vector<std::unique_ptr<data_ingestion::WebsocketClient>> clients;
-    //     for (const auto& exchange : exchanges_config.getExchanges()) {
-    //         auto client = std::make_unique<data_ingestion::WebsocketClient>(
-    //             exchange.name,
-    //             exchange.websocket_url
-    //         );
-    //         client->connect();
-    //         clients.push_back(std::move(client));
-    //     }
+        // Determine demo duration
+        int durationMinutes = 5;  // Default 5 minutes
+        if (argc > 1) {
+            durationMinutes = std::stoi(argv[1]);
+        }
         
-    //     LOG_INFO("All components initialized, entering main loop");
+        std::cout << "\nSystem is now running!" << std::endl;
+        std::cout << "Demo will run for " << durationMinutes << " minutes" << std::endl;
+        std::cout << "Press Ctrl+C to stop early" << std::endl;
         
-    //     // Main loop
-    //     while (running) {
-    //         // Process updates from clients to order book
-    //         orderBook.processUpdates();
-            
-    //         // Analyze order book for imbalances
-    //         auto metrics = analyzer.analyze(orderBook);
-            
-    //         // Detect significant imbalances
-    //         auto imbalances = detector.detect(metrics);
-            
-    //         // Generate trading signals
-    //         if (!imbalances.empty()) {
-    //             auto signals = signalGen.generateSignals(imbalances);
-                
-    //             // Process signals through risk filter
-    //             for (const auto& signal : signals) {
-    //                 if (riskFilter.validateSignal(signal)) {
-    //                     // Process valid signals
-    //                     auto order = signalProcessor.processSignal(signal);
-    //                     orderService.placeOrder(order);
-    //                 }
-    //             }
-    //         }
-            
-    //         // Small sleep to prevent CPU hogging
-    //         std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    //     }
+        // Run demo
+        demoInstance->runDemo(durationMinutes);
         
-    //     // Cleanup
-    //     LOG_INFO("Shutting down gracefully...");
-    //     for (auto& client : clients) {
-    //         client->disconnect();
-    //     }
+        // Cleanup
+        demoInstance->shutdown();
+        demoInstance.reset();
         
-    // } catch (const std::exception& e) {
-    //     std::cerr << "Error: " << e.what() << std::endl;
-    //     return 1;
-    // }
+    } catch (const std::exception& e) {
+        std::cerr << "Demo failed with exception: " << e.what() << std::endl;
+        if (demoInstance) {
+            demoInstance->shutdown();
+        }
+        return 1;
+    }
     
     return 0;
 }
-
-// // Production
-// int main() {
-//     // Core components as separate objects
-//     MarketDataIngestion data_feed;           // Real market data
-//     RiskManager risk_engine;                 // Position/risk limits  
-//     ExecutionEngine execution_engine;        // Actual order placement
-//     MonitoringService monitor;               // Health/performance tracking
-    
-//     // Communication layer
-//     TradingCommunicationServer comm_server;  // ZMQ only
-    
-//     // Wire components together
-//     comm_server.SetDataFeed(&data_feed);
-//     comm_server.SetRiskEngine(&risk_engine);
-//     comm_server.SetExecutionEngine(&execution_engine);
-//     comm_server.SetMonitor(&monitor);
-    
-//     // Start all components
-//     data_feed.Start();
-//     risk_engine.Start(); 
-//     execution_engine.Start();
-//     monitor.Start();
-//     comm_server.Start();
-    
-//     // Main loop
-//     while (!shutdown_requested) {
-//         // Health checks, coordination logic
-//     }
-// }

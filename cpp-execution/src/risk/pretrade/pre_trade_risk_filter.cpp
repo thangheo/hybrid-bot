@@ -169,7 +169,8 @@ bool PreTradeRiskFilter::updateRiskParameters(const RiskParameters& params) {
 
         // Update position limits if provided
         if (params.maxPositionSize > 0) {
-            std::string baseAsset = getBaseAsset(params.tradingPair.toString());
+            // std::string baseAsset = getBaseAsset(params.tradingPair.toString());
+            std::string baseAsset = params.tradingPair.base;
             if (!m_positionLimitChecker->updatePositionLimit(
                     baseAsset, params.strategyId, params.maxPositionSize)) {
                 LOG_ERROR("Failed to update position limit");
@@ -182,7 +183,7 @@ bool PreTradeRiskFilter::updateRiskParameters(const RiskParameters& params) {
             ExposureLimitConfig exposureLimits = m_exposureCalculator->getExposureLimits();
             
             // Update relevant limits based on what's provided
-            std::string baseAsset = getBaseAsset(params.tradingPair.toString());
+            std::string baseAsset = params.tradingPair.base;
             exposureLimits.maxAssetExposure = params.maxExposure;
             
             m_exposureCalculator->updateExposureLimits(exposureLimits);
@@ -464,11 +465,10 @@ bool PreTradeRiskFilter::passesBasicValidation(const OrderRequest& orderRequest,
     return true;
 }
 
-// std::string PreTradeRiskFilter::getBaseAsset(const std::string& tradingPairStr) const {
-//     // Extract base asset from trading pair (e.g., "BTC/USDT" -> "BTC")
-//     auto symbol = core::Symbol::fromString(tradingPairStr);
-//     return symbol.base;
-// }
+std::string PreTradeRiskFilter::getBaseAsset(const core::Symbol& tradingPair) const {
+    auto symbol = tradingPair;
+    return symbol.base;
+}
 
 } // namespace risk
 } // namespace trading
