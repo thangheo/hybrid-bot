@@ -7,6 +7,7 @@
  */
 
 #include "risk/pretrade/pre_trade_risk_filter.hpp"
+#include "risk/interfaces/market_data_interface.hpp"
 #include "common/logger.hpp"
 
 #include <chrono>
@@ -53,7 +54,9 @@ bool PreTradeRiskFilter::initialize() {
         // Create shared dependencies
         m_positionTracker = std::make_shared<PositionTracker>(m_config, nullptr);
         // m_dataInterface = std::make_shared<DataInterface>();
-        m_dataInterface = std::shared_ptr<DataInterface>(dataInterface.release());
+        m_dataInterface = std::make_unique<MarketDataInterface>(m_config);
+
+        // m_dataInterface = std::shared_ptr<DataInterface>(dataInterface.release());
 
         // Initialize position tracker and data interface
         if (!m_positionTracker->initialize()) {

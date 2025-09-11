@@ -10,14 +10,16 @@ add_subdirectory(monitoring)
 add_subdirectory(communication)
 # add_subdirectory(market_intelligence)
 # Main executable
-# add_executable(tactical ./communication/full_bridge.cpp)
-# target_link_libraries(tactical
-#     PRIVATE
-#         common
-#         data_ingestion
-#         # strategy
-#         execution
-#         risk
-#         monitoring
-#         # market_intelligence
-# )
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../bin)
+
+add_executable(semi_hft main.cpp)
+target_link_libraries(semi_hft
+    PRIVATE
+        common
+        data_ingestion
+        strategy
+        execution
+        risk
+        monitoring
+        # market_intelligence
+)

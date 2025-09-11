@@ -17,7 +17,31 @@
  using namespace trading::core;
  namespace trading {
  namespace execution {
- 
+
+ ExecutionService::ExecutionService(
+    std::shared_ptr<common::ExchangeGateway> exchangeGateway,
+    std::shared_ptr<OrderGenerator> order_generator,
+    std::shared_ptr<SmartOrderRouter> smart_order_router,
+    std::shared_ptr<OrderTypeSelector> order_type_selector,
+    std::shared_ptr<ExecutionAlgorithmFactory> execution_algorithm_factory,
+    std::shared_ptr<OrderLifecycleTracker> order_lifecycle_tracker,
+    std::shared_ptr<FillReconciliation> fill_reconciliation)
+    : exchangeGateway_(std::move(exchangeGateway))    // NEW: Store gateway
+    , order_generator_(std::move(order_generator))
+    , smart_order_router_(std::move(smart_order_router))
+    , order_type_selector_(std::move(order_type_selector))
+    , execution_algorithm_factory_(std::move(execution_algorithm_factory))
+    , order_lifecycle_tracker_(std::move(order_lifecycle_tracker))
+    , fill_reconciliation_(std::move(fill_reconciliation))
+    , api_client_manager_(nullptr)                   // NEW: No direct API manager
+{
+    if (!exchangeGateway_) {
+        throw std::invalid_argument("ExchangeGateway cannot be null");
+    }
+    // Get the underlying API client manager from the gateway for compatibility
+    api_client_manager_ = exchangeGateway_->getApiClientManager();
+}
+//old one-> should not use
  ExecutionService::ExecutionService(
      std::shared_ptr<OrderGenerator> order_generator,
      std::shared_ptr<SmartOrderRouter> smart_order_router,
@@ -93,38 +117,70 @@
      
      is_running_ = false;
  }
- 
- ExecutionResponse ExecutionService::executeSignal(const TradingSignal& signal) {
-     // Validate service state
-     if (!is_running_) {
-         return ExecutionResponse{
-             "", "", false, "Execution service not running", std::chrono::system_clock::now(),
-                ""
-         };
-     }
-     
-     // Create order from signal
-     models::Order order = createOrderFromSignal(signal);
-     
-     // Validate order
-     if (!validateOrder(order)) {
-         return ExecutionResponse{
-             order.getClientOrderId(), "", false, 
-             "Invalid order parameters",
-             std::chrono::system_clock::now(),
-                ""
-         };
-     }
-     
-     // Execute order with appropriate algorithm
-     return executeOrderWithAlgorithm(order);
- }
+ std::shared_ptr<ExchangeApiClient> ExecutionService::getExchangeClient(const core::ExchangeId& exchangeId) {
+    if (exchangeGateway_) {
+        // Use gateway's underlying API client manager
+        return exchangeGateway_->getApiClientManager()->getClient(exchangeId);
+    } else {
+        // Use direct API client manager (legacy mode)
+        return api_client_manager_->getClient(exchangeId);
+    }
+}
+
+// EXAMPLE: Modified executeSignal method (only the API call part changes!)
+ExecutionResponse ExecutionService::executeSignal(const TradingSignal& signal) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    
+    try {
+        // 1. Generate order from signal (UNCHANGED)
+        auto order = createOrderFromSignal(signal);
+        
+        // 2. Validate order (UNCHANGED)
+        if (!validateOrder(order)) {
+            return ExecutionResponse{order.getOrderId(), "", false, "Order validation failed", std::chrono::system_clock::now(), ""};
+        }
+        
+        // 3. Place order - THIS IS THE ONLY CHANGE!
+        execution::models::ExecutionReport executionReport;
+        
+        if (exchangeGateway_) {
+            // NEW: Use ExchangeGateway (with caching and rate limiting)
+            auto executionFuture = exchangeGateway_->placeOrder(order);
+            executionReport = executionFuture.get();
+        } else {
+            // EXISTING: Use direct API client (legacy mode)
+            auto exchangeId = order.getExchangeId();
+            auto client = api_client_manager_->getClient(exchangeId);
+            auto executionFuture = client->placeOrder(order);
+            executionReport = executionFuture.get();
+        }
+        
+        // 4. Update order lifecycle (UNCHANGED)
+        order_lifecycle_tracker_->updateOrderState(order.getClientOrderId(), executionReport.status(), 
+                                    executionReport.exchangeOrderId(), executionReport.rejectReason());
+        
+        // 5. Return response (UNCHANGED)
+        return ExecutionResponse{
+            order.getClientOrderId(),
+            executionReport.exchangeOrderId(),
+            true, 
+            "Order placed successfully", 
+            std::chrono::system_clock::now(),
+            orderStateToString(executionReport.status())
+        };
+        
+    } catch (const std::exception& e) {
+        return ExecutionResponse{"", "", false, e.what(), std::chrono::system_clock::now(), ""};
+    }
+}
  
  std::future<ExecutionResponse> ExecutionService::executeSignalAsync(const TradingSignal& signal) {
      return std::async(std::launch::async, [this, signal]() {
          return this->executeSignal(signal);
      });
  }
+
+
  ExecutionResponse ExecutionService::placeOrder(const models::Order& order) {
     // Validate service state
     if (!is_running_) {
@@ -205,12 +261,25 @@
     }
     
     // Submit the order to the exchange
-    auto future_result = api_client->placeOrder(*exchange_order);
+    // auto future_result = api_client->placeOrder(*exchange_order);
+    execution::models::ExecutionReport executionReport;
+        
+    if (exchangeGateway_) {
+        // NEW: Use ExchangeGateway (with caching and rate limiting)
+        auto executionFuture = exchangeGateway_->placeOrder(order);
+        executionReport = executionFuture.get();
+    } else {
+        // EXISTING: Use direct API client (legacy mode)
+        auto exchangeId = order.getExchangeId();
+        auto client = api_client_manager_->getClient(exchangeId);
+        auto executionFuture = client->placeOrder(order);
+        executionReport = executionFuture.get();
+    }
     
     // Wait for the result
     models::ExecutionReport result;
     try {
-        result = future_result.get();  // Wait for the async operation to complete
+        result = executionReport;  // Wait for the async operation to complete
         
         // Update order state based on exchange response
         if (result.status() != models::OrderState::REJECTED) {
@@ -263,6 +332,10 @@
         };
     }
 }
+// getExchangeGateway
+std::shared_ptr<common::ExchangeGateway> ExecutionService::getExchangeGateway() {
+    return exchangeGateway_;
+}
 
 CancelResponse ExecutionService::cancelOrder(const std::string& client_order_id) {
     // Validate service state
@@ -314,12 +387,23 @@ CancelResponse ExecutionService::cancelOrder(const std::string& client_order_id)
     );
     
     // Send cancel request to exchange
-    auto future_result = api_client->cancelOrder(order->getExchangeOrderId(), order->getTradingPair());
-    
+    // auto future_result = api_client->cancelOrder(order->getExchangeOrderId(), order->getTradingPair());
+    execution::models::ExecutionReport executionReport;
+        
+    if (exchangeGateway_) {
+        // NEW: Use ExchangeGateway
+        auto cancelFuture = exchangeGateway_->cancelOrder(client_order_id, order->getTradingPair(), order->getExchangeId());
+        executionReport = cancelFuture.get();
+    } else {
+        // EXISTING: Use direct API client
+        auto client = api_client_manager_->getClient(order->getExchangeId());
+        auto cancelFuture = client->cancelOrder(client_order_id, order->getTradingPair());
+        executionReport = cancelFuture.get();
+    }
     try {
         // Wait for the result
-        models::ExecutionReport result = future_result.get();
-        
+        models::ExecutionReport result = executionReport;
+
         // Update order state based on exchange response
         if (result.status() == models::OrderState::CANCELED) {
             order_lifecycle_tracker_->updateOrderState(
@@ -603,6 +687,21 @@ std::string ExecutionService::cancelOrderJson(const std::string& request_json) {
         return cancelResponseToJson(error_response);
     }
 }
+
+// std::string ExecutionService::cancelAllOrdersForExchangeId(const ExchangeId& exchangeId) {
+//     try {
+//         nlohmann::json j = nlohmann::json::parse(request_json);
+//         std::string client_order_id = j["client_order_id"];
+//         CancelResponse response = cancelOrder(client_order_id);
+//         return cancelResponseToJson(response);
+//     } catch (const std::exception& e) {
+//         CancelResponse error_response{
+//             "", "", false, std::string("JSON parsing error: ") + e.what(),
+//             std::chrono::system_clock::now()
+//         };
+//         return cancelResponseToJson(error_response);
+//     }
+// }
 
 std::string ExecutionService::getOrderStatusJson(const std::string& request_json) {
     try {

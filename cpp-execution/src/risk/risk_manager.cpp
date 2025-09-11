@@ -19,6 +19,17 @@ RiskManager::RiskManager(const RiskConfig& config)
     , m_mode(RiskManagerMode::NORMAL)
 {
 }
+// Trong RiskManager constructor hiện tại
+RiskManager::RiskManager(std::shared_ptr<trading::execution::ExecutionService> execService) {
+    // Pass ExecutionService to ExecutionInterface
+    m_executionInterface = createExecutionInterface(m_config, execService);
+    
+    // Pass ExecutionInterface to CollateralManager
+    m_collateralManager = std::make_unique<CollateralManager>(
+        m_config.collateralConfig,
+        m_executionInterface
+    );
+}
 
 RiskManager::~RiskManager() {
     // Ensure clean shutdown
@@ -60,7 +71,7 @@ bool RiskManager::initialize() {
         
         // Initialize external interfaces
         m_strategyInterface = createStrategyInterface(m_config);
-        m_executionInterface = createExecutionInterface(m_config);
+        // m_executionInterface = createExecutionInterface(m_config);
         m_dataInterface = std::make_unique<MarketDataInterface>(m_config);
         
         if (!m_strategyInterface->initialize() || 

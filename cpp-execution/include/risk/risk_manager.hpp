@@ -17,7 +17,7 @@
 #include "service/risk_service.hpp"
 #include "interfaces/strategy_interface.hpp"
 #include "interfaces/execution_interface.hpp"
-// #include "interfaces/data_interface.hpp"
+#include "execution/execution_service.hpp"
 #include "execution/models/execution_report.hpp"
 #include "interfaces/strategy_interface.hpp"
 #include "service/risk_validation_service.hpp"
@@ -49,7 +49,7 @@ public:
      * @param config The risk system configuration
      */
     explicit RiskManager(const RiskConfig& config);
-    
+    RiskManager(std::shared_ptr<trading::execution::ExecutionService> execService);
     /**
      * Destructor
      */
@@ -137,6 +137,12 @@ public:
     bool emergencyAction(const std::string& reason);
    
 private:
+// config_
+    RiskConfig m_config;
+    // just declare fucking idiots
+    std::shared_ptr<trading::execution::ExecutionService> m_executionService;
+    std::shared_ptr<ExecutionInterface> m_executionInterface;
+    std::unique_ptr<CollateralManager> m_collateralManager;
     // Core subsystems
     std::unique_ptr<PreTradeRiskFilter> m_preTradeFilter;
     std::unique_ptr<PostTradeMonitor> m_postTradeMonitor;
