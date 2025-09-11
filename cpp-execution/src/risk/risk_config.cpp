@@ -241,7 +241,7 @@ const bool RiskConfig::getBoolValue(std::string key) {
         throw; // Rethrow to indicate failure
     }
 }
-const bool RiskConfig::hasKey(std::string key) {
+bool RiskConfig::hasKey(std::string key) {
     try {
         if (key == "positionLimit.enforceStrictly" ||
             key == "exposureLimit.includeUnrealizedPnl" ||
@@ -269,7 +269,7 @@ const bool RiskConfig::hasKey(std::string key) {
     }
 }
 // getIntValue
-const int RiskConfig::getIntValue(std::string key) {
+int RiskConfig::getIntValue(std::string key) {
     try {
         if (key == "circuitBreaker.coolingPeriodSeconds") {
             return circuitBreakerConfig_.coolingPeriodSeconds;

@@ -17,10 +17,11 @@
 #include "service/risk_service.hpp"
 #include "interfaces/strategy_interface.hpp"
 #include "interfaces/execution_interface.hpp"
-#include "interfaces/data_interface.hpp"
+// #include "interfaces/data_interface.hpp"
 #include "execution/models/execution_report.hpp"
 #include "interfaces/strategy_interface.hpp"
 #include "service/risk_validation_service.hpp"
+#include "risk/interfaces/market_data_interface.hpp"
 #include <atomic>
 #include <memory>
 #include <mutex>

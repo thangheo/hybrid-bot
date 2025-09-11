@@ -14,23 +14,10 @@
 #include <mutex>
 #include <iostream>
 #include <iomanip>
-
+#include "common/logger.hpp"
 namespace trading {
 namespace risk {
 
-// Helper to log with timestamp (temporary until we integrate with logging system)
-void logWithTimestamp(const std::string& level, const std::string& message) {
-    auto now = std::chrono::system_clock::now();
-    auto now_time_t = std::chrono::system_clock::to_time_t(now);
-    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-        now.time_since_epoch()) % 1000;
-        
-    std::stringstream ss;
-    ss << "[" << std::put_time(std::localtime(&now_time_t), "%Y-%m-%d %H:%M:%S")
-       << '.' << std::setfill('0') << std::setw(3) << ms.count() << "] ";
-    ss << "[" << level << "] " << message;
-    std::cout << ss.str() << std::endl;
-}
 
 // Implementation of the StrategyInterface that uses ZeroMQ for communication
 class StrategyInterfaceImpl : public StrategyInterface {
@@ -104,14 +91,14 @@ private:
                     strategyEventCallback_(strategyId, eventData);
                 }
             } catch (const std::exception& e) {
-                logWithTimestamp("ERROR", "Error processing strategy event: " + std::string(e.what()));
+                LOG_ERROR( "Error processing strategy event: " + std::string(e.what()));
             }
         }
     }
 
     // Handle error messages
     void handleErrorMessage(const std::string& context, const std::string& error) {
-        logWithTimestamp("ERROR", "ZeroMQ error in " + context + ": " + error);
+        LOG_ERROR( "ZeroMQ error in " + context + ": " + error);
     }
 
 public:
@@ -180,26 +167,26 @@ public:
             
             // Start the clients
             if (!requestClient_->start()) {
-                logWithTimestamp("ERROR", "Failed to start request client");
+                LOG_ERROR( "Failed to start request client");
                 return false;
             }
             
             if (!subscriptionClient_->start()) {
-                logWithTimestamp("ERROR", "Failed to start subscription client");
+                LOG_ERROR( "Failed to start subscription client");
                 return false;
             }
             
             // Subscribe to the strategy events topic
             if (!subscriptionClient_->subscribe(strategyEventsTopic_)) {
-                logWithTimestamp("ERROR", "Failed to subscribe to strategy events topic");
+                LOG_ERROR( "Failed to subscribe to strategy events topic");
                 return false;
             }
             
             initialized_ = true;
-            logWithTimestamp("INFO", "Strategy interface initialized successfully");
+            LOG_INFO("Strategy interface initialized successfully");
             return true;
         } catch (const std::exception& e) {
-            logWithTimestamp("ERROR", "Failed to initialize strategy interface: " + std::string(e.what()));
+            LOG_ERROR( "Failed to initialize strategy interface: " + std::string(e.what()));
             return false;
         }
     }
@@ -211,7 +198,7 @@ public:
     }
     bool sendRiskFeedback(const StrategyId& strategyId, const std::string& feedback) override {
         if (!initialized_) {
-            logWithTimestamp("ERROR", "Strategy interface not initialized");
+            LOG_ERROR( "Strategy interface not initialized");
             return false;
         }
         
@@ -225,7 +212,7 @@ public:
             
             // Send request
             if (!requestClient_->publish("strategy_risk", request.dump())) {
-                logWithTimestamp("ERROR", "Failed to send risk feedback request");
+                LOG_ERROR( "Failed to send risk feedback request");
                 return false;
             }
             
@@ -233,14 +220,14 @@ public:
             // For now, we'll just return true
             return true;
         } catch (const std::exception& e) {
-            logWithTimestamp("ERROR", "Failed to send risk feedback: " + std::string(e.what()));
+            LOG_ERROR( "Failed to send risk feedback: " + std::string(e.what()));
             return false;
         }
     }
     
     std::string getStrategyParameters(const StrategyId& strategyId) override {
         if (!initialized_) {
-            logWithTimestamp("ERROR", "Strategy interface not initialized");
+            LOG_ERROR( "Strategy interface not initialized");
             return "{}";
         }
         
@@ -253,7 +240,7 @@ public:
             
             // Send request
             if (!requestClient_->publish("strategy_request", request.dump())) {
-                logWithTimestamp("ERROR", "Failed to send get parameters request");
+                LOG_ERROR( "Failed to send get parameters request");
                 return "{}";
             }
             
@@ -261,14 +248,14 @@ public:
             // For now, we'll just return an empty JSON object
             return "{}";
         } catch (const std::exception& e) {
-            logWithTimestamp("ERROR", "Failed to get strategy parameters: " + std::string(e.what()));
+            LOG_ERROR( "Failed to get strategy parameters: " + std::string(e.what()));
             return "{}";
         }
     }
     
     bool updateStrategyParameters(const StrategyId& strategyId, const std::string& parameters) override {
         if (!initialized_) {
-            logWithTimestamp("ERROR", "Strategy interface not initialized");
+            LOG_ERROR( "Strategy interface not initialized");
             return false;
         }
         
@@ -282,7 +269,7 @@ public:
             
             // Send request
             if (!requestClient_->publish("strategy_request", request.dump())) {
-                logWithTimestamp("ERROR", "Failed to send update parameters request");
+                LOG_ERROR( "Failed to send update parameters request");
                 return false;
             }
             
@@ -290,14 +277,14 @@ public:
             // For now, we'll just return true
             return true;
         } catch (const std::exception& e) {
-            logWithTimestamp("ERROR", "Failed to update strategy parameters: " + std::string(e.what()));
+            LOG_ERROR( "Failed to update strategy parameters: " + std::string(e.what()));
             return false;
         }
     }
     
     bool notifyRiskEvent(const StrategyId& strategyId, const RiskEvent& event) override {
         if (!initialized_) {
-            logWithTimestamp("ERROR", "Strategy interface not initialized");
+            LOG_ERROR( "Strategy interface not initialized");
             return false;
         }
         
@@ -311,7 +298,7 @@ public:
             
             // Send request
             if (!requestClient_->publish("strategy_risk", request.dump())) {
-                logWithTimestamp("ERROR", "Failed to send risk event notification");
+                LOG_ERROR( "Failed to send risk event notification");
                 return false;
             }
             
@@ -319,14 +306,14 @@ public:
             // For now, we'll just return true
             return true;
         } catch (const std::exception& e) {
-            logWithTimestamp("ERROR", "Failed to notify risk event: " + std::string(e.what()));
+            LOG_ERROR( "Failed to notify risk event: " + std::string(e.what()));
             return false;
         }
     }
     
     std::vector<StrategyId> getActiveStrategies() override {
         if (!initialized_) {
-            logWithTimestamp("ERROR", "Strategy interface not initialized");
+            LOG_ERROR( "Strategy interface not initialized");
             return {};
         }
         
@@ -338,7 +325,7 @@ public:
             
             // Send request
             if (!requestClient_->publish("strategy_request", request.dump())) {
-                logWithTimestamp("ERROR", "Failed to send get active strategies request");
+                LOG_ERROR( "Failed to send get active strategies request");
                 return {};
             }
             
@@ -346,14 +333,14 @@ public:
             // For now, we'll just return an empty vector
             return {};
         } catch (const std::exception& e) {
-            logWithTimestamp("ERROR", "Failed to get active strategies: " + std::string(e.what()));
+            LOG_ERROR( "Failed to get active strategies: " + std::string(e.what()));
             return {};
         }
     }
     
     bool isStrategyActive(const StrategyId& strategyId) override {
         if (!initialized_) {
-            logWithTimestamp("ERROR", "Strategy interface not initialized");
+            LOG_ERROR( "Strategy interface not initialized");
             return false;
         }
         
@@ -366,7 +353,7 @@ public:
             
             // Send request
             if (!requestClient_->publish("strategy_request", request.dump())) {
-                logWithTimestamp("ERROR", "Failed to send strategy active check request");
+                LOG_ERROR( "Failed to send strategy active check request");
                 return false;
             }
             
@@ -374,7 +361,7 @@ public:
             // For now, we'll just return false
             return false;
         } catch (const std::exception& e) {
-            logWithTimestamp("ERROR", "Failed to check if strategy is active: " + std::string(e.what()));
+            LOG_ERROR( "Failed to check if strategy is active: " + std::string(e.what()));
             return false;
         }
     }
@@ -385,7 +372,7 @@ public:
     }
     bool notifyEmergencyState(const std::string& reason) {
         if (!initialized_) {
-            logWithTimestamp("ERROR", "Strategy interface not initialized");
+            LOG_ERROR( "Strategy interface not initialized");
             return false;
         }
     }

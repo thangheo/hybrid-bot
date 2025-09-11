@@ -32,6 +32,16 @@ std::vector<std::pair<Timestamp, double>> PriceHistory::getRecentPrices(int coun
 MarketDataInterface::MarketDataInterface() : DataInterface() {
     LOG_INFO("MarketDataInterface constructor");
 }
+MarketDataInterface::MarketDataInterface(const RiskConfig& config) : MarketDataInterface() {
+    zmqSubscriberEndpoint_ = config.zmqSubscriberEndpoint;
+    zmqPublisherEndpoint_ = config.zmqPublisherEndpoint;
+    cacheValidityDuration_ = std::chrono::milliseconds(config.marketDataCacheDurationMs);
+    auto DEFAULT_EXCHANGE = config.defaultExchange;
+    LOG_INFO("MarketDataInterface configured with subscriber: " + zmqSubscriberEndpoint_ + 
+             ", publisher: " + zmqPublisherEndpoint_ + 
+             ", cache duration: " + std::to_string(cacheValidityDuration_.count()) + "ms" +
+             ", default exchange: " + DEFAULT_EXCHANGE);
+}
 
 bool MarketDataInterface::initialize() {
     if (initialized_.load()) {
@@ -523,9 +533,6 @@ core::MarketData MarketDataInterface::convertOrderBookToMarketData(
 }
 
 // Factory function implementation
-std::unique_ptr<DataInterface> createDataInterface() {
-    return std::make_unique<MarketDataInterface>();
-}
 
 // Implementation
 void MarketDataInterface::updateBalance(const core::ExchangeId& exchangeId, 

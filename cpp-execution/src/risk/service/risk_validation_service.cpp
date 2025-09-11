@@ -106,7 +106,7 @@
  
  ValidationResult RiskValidationService::createTimeoutResult(const TradingSignal& signal) {
      ValidationResult result;
-     result.signalId = signal.signal_id;
+     result.signalId = signal.id;
      result.approved = false;
      
      RiskViolation violation;
@@ -130,7 +130,7 @@
          violation.type = ViolationType::SYSTEM_ERROR;
          violation.description = "Risk manager unavailable";
          
-         result.signalId = signal.signal_id;
+         result.signalId = signal.id;
          result.approved = false;
          result.violations.push_back(violation);
          result.timestamp = std::chrono::system_clock::now().time_since_epoch().count();
@@ -149,7 +149,7 @@
          } catch (const std::exception& e) {
              // Create error result
              ValidationResult errorResult;
-             errorResult.signalId = signal.signal_id;
+             errorResult.signalId = signal.id;
              errorResult.approved = false;
              
              RiskViolation violation;

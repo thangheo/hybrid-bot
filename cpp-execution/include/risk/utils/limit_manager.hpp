@@ -113,10 +113,10 @@ public:
     double getDefaultExchangeLimit() const { return defaultExchangeLimit_; }
     double getDefaultExposureLimit() const { return defaultExposureLimit_; }
 
-    const std::unordered_map<std::string, double>& getAssetLimits() const { return assetLimits_; }
-    const std::unordered_map<std::string, double>& getStrategyLimits() const { return strategyLimits_; }
-    const std::unordered_map<std::string, double>& getExchangeLimits() const { return exchangeLimits_; }
-    const std::unordered_map<std::string, double>& getExposureLimits() const { return exposureLimits_; }
+    const std::unordered_map<std::string, double>& getAssetLimits() const ;// { return assetLimits_; }
+    const std::unordered_map<std::string, double>& getStrategyLimits() const ;//{ return strategyLimits_; }
+    const std::unordered_map<std::string, double>& getExchangeLimits() const ;//{ return exchangeLimits_; }
+    const std::unordered_map<std::string, double>& getExposureLimits() const ;//{ return exposureLimits_; }
 
 
 private:

@@ -3,7 +3,7 @@
 #include <sstream>
 #include <iomanip>
 #include <chrono>
-
+#include "common/logger.hpp"
 namespace trading {
 namespace common {
 
@@ -21,14 +21,14 @@ std::string getTimestamp() {
 }
 
 // Helper to log with timestamp
-void logWithTimestamp(const std::string& level, const std::string& message) {
-    std::cout << "[" << getTimestamp() << "] [" << level << "] " << message << std::endl;
-}
+// void LOG_INFO(const std::string& level, const std::string& message) {
+//     std::cout << "[" << getTimestamp() << "] [" << level << "] " << message << std::endl;
+// }
 
 ZeroMQClient::ZeroMQClient(const ZeroMQConfig& config)
     : context_(1), config_(config), running_(false) {
     
-    logWithTimestamp("INFO", "Initializing ZeroMQ client");
+    LOG_INFO("INFO", "Initializing ZeroMQ client");
 }
 
 ZeroMQClient::ZeroMQClient(const std::string& subscriberEndpoint, const std::string& publisherEndpoint)
@@ -37,7 +37,7 @@ ZeroMQClient::ZeroMQClient(const std::string& subscriberEndpoint, const std::str
     config_.subscriberEndpoint = subscriberEndpoint;
     config_.publisherEndpoint = publisherEndpoint;
     
-    logWithTimestamp("INFO", "Initializing ZeroMQ client with legacy constructor");
+    LOG_INFO("INFO", "Initializing ZeroMQ client with legacy constructor");
 }
 
 ZeroMQClient::~ZeroMQClient() {
@@ -47,12 +47,12 @@ ZeroMQClient::~ZeroMQClient() {
     subscriber_.reset();
     publisher_.reset();
     
-    logWithTimestamp("INFO", "ZeroMQ client destroyed");
+    LOG_INFO("INFO", "ZeroMQ client destroyed");
 }
 
 bool ZeroMQClient::start() {
     if (running_) {
-        logWithTimestamp("WARNING", "ZeroMQ client already running");
+        LOG_INFO("WARNING", "ZeroMQ client already running");
         return true;
     }
     
@@ -64,14 +64,14 @@ bool ZeroMQClient::start() {
             publisher_->set(zmq::sockopt::linger, static_cast<int>(config_.linger ? config_.lingerTimeoutMs : 0));
             publisher_->connect(config_.publisherEndpoint);
             publisherStatus_ = ConnectionStatus::CONNECTING;
-            logWithTimestamp("INFO", "Publisher connecting to " + config_.publisherEndpoint);
+            LOG_INFO("INFO", "Publisher connecting to " + config_.publisherEndpoint);
         } catch (const zmq::error_t& e) {
             logError("Publisher initialization", e.what());
             publisherStatus_ = ConnectionStatus::FAILED;
             return false;
         }
     } else {
-        logWithTimestamp("INFO", "No publisher endpoint provided - subscriber only mode");
+        LOG_INFO("INFO", "No publisher endpoint provided - subscriber only mode");
         publisherStatus_ = ConnectionStatus::DISCONNECTED; // Not an error, just not used
     }
     
@@ -96,14 +96,14 @@ bool ZeroMQClient::start() {
                 }
             }
             
-            logWithTimestamp("INFO", "Subscriber connecting to " + config_.subscriberEndpoint);
+            LOG_INFO("INFO", "Subscriber connecting to " + config_.subscriberEndpoint);
         } catch (const zmq::error_t& e) {
             logError("Subscriber initialization", e.what());
             subscriberStatus_ = ConnectionStatus::FAILED;
             return false;
         }
     } else {
-        logWithTimestamp("INFO", "No subscriber endpoint provided - publisher only mode");
+        LOG_INFO("INFO", "No subscriber endpoint provided - publisher only mode");
         subscriberStatus_ = ConnectionStatus::DISCONNECTED; // Not an error, just not used
     }
     
@@ -114,7 +114,7 @@ bool ZeroMQClient::start() {
         receiveThread_ = std::thread(&ZeroMQClient::receiveWorker, this);
     }
     
-    logWithTimestamp("INFO", "ZeroMQ client started");
+    LOG_INFO("INFO", "ZeroMQ client started");
     return true;
 }
 bool ZeroMQClient::isConnected(){
@@ -148,7 +148,7 @@ void ZeroMQClient::stop() {
     subscriberStatus_ = ConnectionStatus::DISCONNECTED;
     publisherStatus_ = ConnectionStatus::DISCONNECTED;
     
-    logWithTimestamp("INFO", "ZeroMQ client stopped");
+    LOG_INFO("INFO", "ZeroMQ client stopped");
 }
 
 bool ZeroMQClient::subscribe(const std::string& topic) {
@@ -165,7 +165,7 @@ bool ZeroMQClient::subscribe(const std::string& topic) {
             topics_.insert(topic);
         }
         
-        logWithTimestamp("INFO", "Subscribed to topic: " + topic);
+        LOG_INFO("INFO", "Subscribed to topic: " + topic);
         return true;
     } catch (const zmq::error_t& e) {
         logError("Subscribe", "Failed to subscribe to topic " + topic + ": " + e.what());
@@ -187,7 +187,7 @@ bool ZeroMQClient::unsubscribe(const std::string& topic) {
             topics_.erase(topic);
         }
         
-        logWithTimestamp("INFO", "Unsubscribed from topic: " + topic);
+        LOG_INFO("INFO", "Unsubscribed from topic: " + topic);
         return true;
     } catch (const zmq::error_t& e) {
         logError("Unsubscribe", "Failed to unsubscribe from topic " + topic + ": " + e.what());
@@ -299,13 +299,13 @@ bool ZeroMQClient::reconnectSubscriber() {
                 stats_.reconnectAttempts++;
             }
             
-            logWithTimestamp("INFO", "Subscriber reconnected after " + 
+            LOG_INFO("INFO", "Subscriber reconnected after " + 
                              std::to_string(attempts + 1) + " attempts");
             return true;
         } catch (const zmq::error_t& e) {
             attempts++;
             
-            logWithTimestamp("WARNING", "Reconnection attempt " + 
+            LOG_INFO("WARNING", "Reconnection attempt " + 
                             std::to_string(attempts) + "/" + 
                             std::to_string(config_.maxReconnectAttempts) + 
                             " failed: " + e.what());
@@ -316,7 +316,7 @@ bool ZeroMQClient::reconnectSubscriber() {
     }
     
     subscriberStatus_ = ConnectionStatus::FAILED;
-    logWithTimestamp("ERROR", "Failed to reconnect subscriber after " + 
+    LOG_INFO("ERROR", "Failed to reconnect subscriber after " + 
                      std::to_string(attempts) + " attempts");
     return false;
 }
@@ -346,13 +346,13 @@ bool ZeroMQClient::reconnectPublisher() {
                 stats_.reconnectAttempts++;
             }
             
-            logWithTimestamp("INFO", "Publisher reconnected after " + 
+            LOG_INFO("INFO", "Publisher reconnected after " + 
                              std::to_string(attempts + 1) + " attempts");
             return true;
         } catch (const zmq::error_t& e) {
             attempts++;
             
-            logWithTimestamp("WARNING", "Reconnection attempt " + 
+            LOG_INFO("WARNING", "Reconnection attempt " + 
                             std::to_string(attempts) + "/" + 
                             std::to_string(config_.maxReconnectAttempts) + 
                             " failed: " + e.what());
@@ -363,13 +363,13 @@ bool ZeroMQClient::reconnectPublisher() {
     }
     
     publisherStatus_ = ConnectionStatus::FAILED;
-    logWithTimestamp("ERROR", "Failed to reconnect publisher after " + 
+    LOG_INFO("ERROR", "Failed to reconnect publisher after " + 
                      std::to_string(attempts) + " attempts");
     return false;
 }
 
 void ZeroMQClient::receiveWorker() {
-    logWithTimestamp("INFO", "Receive worker thread started");
+    LOG_INFO("INFO", "Receive worker thread started");
     
     while (running_) {
         try {
@@ -406,7 +406,7 @@ void ZeroMQClient::receiveWorker() {
                 
                 // Check if there's more (the message)
                 if (!subscriber_->get(zmq::sockopt::rcvmore)) {
-                    logWithTimestamp("WARNING", "Received topic without message");
+                    LOG_INFO("WARNING", "Received topic without message");
                     continue;
                 }
                 
@@ -425,7 +425,7 @@ void ZeroMQClient::receiveWorker() {
                 // Update connection status if needed
                 if (subscriberStatus_ == ConnectionStatus::CONNECTING) {
                     subscriberStatus_ = ConnectionStatus::CONNECTED;
-                    logWithTimestamp("INFO", "Subscriber connected successfully");
+                    LOG_INFO("INFO", "Subscriber connected successfully");
                 }
                 
                 // Invoke handler if set
@@ -463,19 +463,19 @@ void ZeroMQClient::receiveWorker() {
         }
     }
     
-    logWithTimestamp("INFO", "Receive worker thread stopped");
+    LOG_INFO("INFO", "Receive worker thread stopped");
 }
 
 void ZeroMQClient::logError(const std::string& context, const std::string& message) {
     std::string fullMessage = context + ": " + message;
-    logWithTimestamp("ERROR", fullMessage);
+    LOG_INFO("ERROR", fullMessage);
     
     if (errorHandler_) {
         try {
             errorHandler_(context, message);
         } catch (...) {
             // Prevent errors in error handler from crashing
-            logWithTimestamp("ERROR", "Exception in error handler");
+            LOG_INFO("ERROR", "Exception in error handler");
         }
     }
 }

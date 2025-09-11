@@ -61,8 +61,9 @@ bool RiskManager::initialize() {
         // Initialize external interfaces
         // m_strategyInterface = std::make_unique<StrategyInterface>(m_config);       
         std::unique_ptr<StrategyInterface> createStrategyInterface(const RiskConfig& config);
-        m_executionInterface = std::make_unique<ExecutionInterface>(m_config);
-        m_dataInterface = std::make_unique<DataInterface>(m_config);
+        // m_executionInterface = std::make_unique<ExecutionInterface>(m_config);
+        std::unique_ptr<ExecutionInterface> createExecutionInterface(const RiskConfig& config);
+        m_dataInterface = std::make_unique<MarketDataInterface>(m_config);
         
         if (!m_strategyInterface->initialize() || 
             !m_executionInterface->initialize() || 

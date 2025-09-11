@@ -4,6 +4,7 @@
 #include "common/zeromq_client.hpp"
 #include "data_ingestion/orderbook/order_book.hpp"
 #include "data_ingestion/normalization/order_book_normalizer.hpp"
+#include "risk/risk_config.hpp"
 #include <core/market_types.hpp>
 #include <memory>
 #include <unordered_map>
@@ -66,13 +67,15 @@ struct PriceHistory {
 /**
  * Concrete implementation of DataInterface
  */
+
 class MarketDataInterface : public DataInterface {
 public:
     /**
      * Constructor
      */
     MarketDataInterface();
-    
+    // with config
+    explicit MarketDataInterface(const RiskConfig& config) ;
     /**
      * Destructor
      */
