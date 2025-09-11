@@ -22,12 +22,7 @@
      , m_validationTimeoutMs(500) // Default 500ms timeout
  {
  }
-// RiskValidationService::RiskValidationService(const RiskConfig& config, std::shared_ptr<RiskManager> riskManager)
-//     : m_riskManager(riskManager)
-//     , m_config(config)
-//     , m_validationTimeoutMs(500) // Default 500ms timeout
-// {
-// }
+ 
 
  bool RiskValidationService::initialize() {
      // Load validation configuration

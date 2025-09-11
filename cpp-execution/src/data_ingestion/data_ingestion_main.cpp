@@ -80,7 +80,7 @@ int main() {
             if (count < 10) { // Debug first 10 updates
                 std::cout << "\n=== ORDER BOOK UPDATE #" << count << " ===" << std::endl;
                 std::cout << "Exchange: " << update.exchangeId.toString() << std::endl;
-                std::cout << "Symbol: " << update.symbol.toString() << std::endl;
+                std::cout << "Symbol: " << update.tradingPair.toString() << std::endl;
                 std::cout << "Sequence: " << update.sequenceNumber << std::endl;
                 std::cout << "Is Snapshot: " << (update.isSnapshot ? "YES" : "NO") << std::endl;
                 std::cout << "Bids: " << update.bids.size() << ", Asks: " << update.asks.size() << std::endl;

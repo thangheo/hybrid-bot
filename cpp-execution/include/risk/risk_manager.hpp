@@ -38,7 +38,8 @@ using namespace trading::strategy;
  * It orchestrates risk checks, monitors trading activity, and enforces risk limits.
  */
 
-class RiskManager {
+// class RiskManager {
+class RiskManager : public std::enable_shared_from_this<RiskManager> {
 public:
     /**
      * Constructor

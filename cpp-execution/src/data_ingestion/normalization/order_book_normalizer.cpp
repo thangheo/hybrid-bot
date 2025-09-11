@@ -88,7 +88,7 @@ void OrderBookNormalizer::processMarketData(const MarketDataUpdate& update) {
         core::Symbol standardized_pair;
         // standardized_pair.fromString(adapter->standardizeTradingPair(update.tradingPair));
         normalized.tradingPair = update.tradingPair;
-        normalized.symbol = update.tradingPair;
+        normalized.tradingPair = update.tradingPair;
         // normalized.tradingPair = standardized_pair;
         // normalized.symbol = standardized_pair;
         // DON'T create order books here - just forward the normalized data

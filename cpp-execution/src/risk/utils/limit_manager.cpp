@@ -44,11 +44,11 @@
      }
  }
  
- double LimitManager::getAssetLimit(const std::string& assetId) const {
-     // Get asset-specific limit or default
-     RiskLimit limit = getLimit("ASSET", assetId);
-     return limit.limitId.empty() ? defaultAssetLimit_ : limit.value;
- }
+//  double LimitManager::getAssetLimit(const std::string& assetId) const {
+//      // Get asset-specific limit or default
+//      RiskLimit limit = getLimit("ASSET", assetId);
+//      return limit.limitId.empty() ? defaultAssetLimit_ : limit.value;
+//  }
  
  double LimitManager::getStrategyLimit(const StrategyId& strategyId) const {
      // Get strategy-specific limit or default

@@ -106,7 +106,7 @@
          std::chrono::high_resolution_clock::now().time_since_epoch()).count();
      event.volume = bidVolume + askVolume;
      event.exchangeId = update.exchangeId;
-     event.symbol = update.symbol;
+     event.symbol = update.tradingPair;
      
      return event;
  }

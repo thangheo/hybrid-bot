@@ -299,8 +299,8 @@ uint64_t ABTestingFramework::computeConsistentHash(const data_ingestion::OrderBo
     for (const auto& field : hashFields) {
         if (field == "exchange") {
             hash = combineHashes(hash, hashString(snapshot.exchangeId.toString()));
-        } else if (field == "symbol") {
-            hash = combineHashes(hash, hashString(snapshot.symbol.toString()));
+        } else if (field == "tradingPair") {
+            hash = combineHashes(hash, hashString(snapshot.tradingPair.toString()));
         } else if (field == "timeWindow") {
             // Use daily time buckets for consistency
             uint64_t timeBucket = core::timestampToMillis(snapshot.exchangeTimestamp) / (24 * 60 * 60 * 1000);

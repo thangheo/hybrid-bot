@@ -89,26 +89,8 @@ OrderBookUpdate BinanceAdapter::normalize(const MarketDataUpdate& update) {
         std::string jsonData(update.data.begin(), update.data.end());
         json jsonObj = json::parse(jsonData);
         
-        // Handle stream wrapper format
-        // if (jsonObj.contains("stream") && jsonObj.contains("data")) {
-        //     std::string stream = jsonObj["stream"];
-        //     jsonObj = jsonObj["data"];
-        //     // std::cout << "Stream: " << stream << std::endl;
-        //     // auto symbolStr = extractSymbolFromStream(stream);
-        //     // std::cout << "Extracted symbol from stream: " << symbolStr << std::endl;
-        //     // normalized.tradingPair.fromString(symbolStr);
-        //     // std::cout << "Extracted trading pair: " << normalized.tradingPair.toString() << std::endl;
-        //     // normalized.tradingPair.fromString();
-        // } else if (jsonObj.contains("s")) {
-        //     normalized.tradingPair.fromString(jsonObj["s"]);
-        // } else if (jsonObj.contains("lastUpdateId")) {
-        //     // Snapshot without symbol - use first subscribed symbol as fallback
-        //     normalized.tradingPair.fromString("UNKNOWN");
-        // }
-        
-        // normalized.tradingPair.fromString(standardizeTradingPair(normalized.tradingPair));
-        normalized.symbol = update.tradingPair; //normalized.tradingPair;
-        normalized.tradingPair = update.tradingPair; //normalized.tradingPair; bullshit
+        normalized.tradingPair = update.tradingPair; //normalized.tradingPair;
+        // normalized.tradingPair = update.tradingPair; //normalized.tradingPair; bullshit
         // Determine message type
         if (jsonObj.contains("lastUpdateId") && jsonObj.contains("bids") && jsonObj.contains("asks")) {
             normalized.isSnapshot = true;
@@ -217,7 +199,7 @@ OrderBookUpdate BinanceAdapter::convertDepthUpdate(const std::string& jsonData) 
     if (jsonObj.contains("s") && jsonObj["s"].is_string()) {
         std::string binanceSymbol = jsonObj["s"].get<std::string>();
         update.tradingPair.fromString(extractTradingPair(binanceSymbol));
-        update.symbol = update.tradingPair;
+        update.tradingPair = update.tradingPair;
     }
     
     update.exchangeId = common::ExchangeId::binance();
@@ -292,7 +274,7 @@ OrderBookUpdate BinanceAdapter::convertDepthSnapshot(const std::string& jsonData
     if (jsonObj.contains("symbol") && jsonObj["symbol"].is_string()) {
         std::string binanceSymbol = jsonObj["symbol"].get<std::string>();
         update.tradingPair.fromString(extractTradingPair(binanceSymbol));
-        update.symbol = update.tradingPair;
+        update.tradingPair = update.tradingPair;
     }
     
     // Extract sequence number

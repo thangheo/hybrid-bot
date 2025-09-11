@@ -403,8 +403,7 @@ OrderBookUpdate OrderBook::getSnapshot(int depth) const {
     
     OrderBookUpdate update;
     update.exchangeId = exchangeId_;
-    update.tradingPair = symbol_;
-    update.symbol = symbol_;          // Set symbol field for consistency
+    update.tradingPair = symbol_;          // Set symbol field for consistency
     update.exchangeTimestamp = timestamp_;
     update.receivedTimestamp = last_update_time_;
     update.sequenceNumber = sequence_number_;

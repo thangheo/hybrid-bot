@@ -353,7 +353,7 @@ private:
     bool shouldPublishSnapshot(const OrderBookUpdate& update) {
         // Simple heuristic: every 100 updates
         static std::unordered_map<std::string, int> updateCounts_;
-        std::string key = update.exchangeId.toString() + ":" + update.symbol.toString();
+        std::string key = update.exchangeId.toString() + ":" + update.tradingPair.toString();
         
         auto& count = updateCounts_[key];
         if (++count >= 100) {

@@ -246,7 +246,7 @@ void DataIngestionService::onNormalizedOrderBook(const OrderBookUpdate& update) 
             if (update.isSnapshot) {
                 reconstructor_->processSnapshot(
                     update.exchangeId,
-                    update.symbol,
+                    update.tradingPair,
                     update.bids,
                     update.asks,
                     update.sequenceNumber,
@@ -255,7 +255,7 @@ void DataIngestionService::onNormalizedOrderBook(const OrderBookUpdate& update) 
             } else {
                 reconstructor_->processUpdate(
                     update.exchangeId,
-                    update.symbol,
+                    update.tradingPair,
                     update.bids,
                     update.asks,
                     update.sequenceNumber,
