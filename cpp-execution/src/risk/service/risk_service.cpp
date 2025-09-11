@@ -210,8 +210,8 @@
              
              // Populate signal from JSON
              signal.setId(signalJson["id"]);
-             signal.setExchangeId(signalJson["exchangeId"]);
-             signal.setTradingPair(signalJson["tradingPair"]);
+             signal.setExchangeId(ExchangeId::fromString(signalJson["exchangeId"]));
+             signal.setTradingPair(TradingPair::fromString(signalJson["tradingPair"]));
              signal.setDirection(signalJson["direction"] == "buy" ? Direction::BUY : Direction::SELL);
              signal.setStrength(signalJson["strength"]);
             //  signal.setTargetSize(signalJson["target_size"]);
@@ -278,8 +278,8 @@
              json paramsJson = json::parse(payload);
              
              RiskParameters params;
-             params.exchangeId = paramsJson["exchangeId"];
-             params.tradingPair = paramsJson["tradingPair"];
+             params.exchangeId = ExchangeId::fromString(paramsJson["exchangeId"]);
+             params.tradingPair = TradingPair::fromString(paramsJson["tradingPair"]);
              params.maxPositionSize = paramsJson["max_position_size"];
              params.maxOrderSize = paramsJson["max_order_size"];
              params.maxDrawdown = paramsJson["maxDrawdown"];

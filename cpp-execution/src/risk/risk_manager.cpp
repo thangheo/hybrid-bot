@@ -75,8 +75,8 @@ bool RiskManager::initialize() {
         m_riskService = std::make_unique<RiskService>(m_config);
         
         // Create validation service without shared_from_this (use raw pointer)
-        auto validationService = std::make_shared<RiskValidationService>(m_config, this);
-        
+        // auto validationService = std::make_shared<RiskValidationService>(m_config, this);
+        auto validationService = std::make_shared<RiskValidationService>(m_config, shared_from_this());
         if (!validationService->initialize()) {
             std::cerr << "Failed to initialize validation service" << std::endl;
             return false;

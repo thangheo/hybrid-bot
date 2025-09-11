@@ -77,7 +77,7 @@ struct OrderBookUpdate {
     std::string anomaly_type;  // Type of detected anomaly
     std::string anomaly_details;  // Details of the detected anomaly
     bool has_anomaly{false};  // Flag to indicate if an anomaly was detected
-    core::Symbol symbol;  // Symbol object for better type safety
+    // core::Symbol symbol;  // Symbol object for better type safety
     // additional_fields for future extensibility
     std::unordered_map<std::string, std::string> additional_fields;
     // Constructor

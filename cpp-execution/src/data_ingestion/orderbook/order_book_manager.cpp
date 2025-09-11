@@ -138,7 +138,7 @@ bool OrderBookManager::processUpdate(const OrderBookUpdate& update) {
     
     // If order book doesn't exist and auto-creation is enabled
     if (!orderBook && config_.autoCreateOrderBooks) {
-        if (createOrderBook(update.exchangeId, update.symbol)) {
+        if (createOrderBook(update.exchangeId, update.tradingPair)) {
             // Try again to get the newly created order book
             std::shared_lock<std::shared_mutex> readLock(orderBooksMutex_);
             auto it = orderBooks_.find(key);
@@ -426,7 +426,7 @@ OrderBookKey OrderBookManager::createKey(const ExchangeId& exchangeId, const cor
 }
 
 OrderBookKey OrderBookManager::createKey(const OrderBookUpdate& update) const {
-    return OrderBookKey{update.exchangeId, update.symbol};
+    return OrderBookKey{update.exchangeId, update.tradingPair};
 }
 
 void OrderBookManager::updateStatistics(double latencyMs) const {
@@ -472,8 +472,8 @@ void OrderBookManager::notifyManagerEvent(const OrderBookKey& key, const std::st
 
 bool OrderBookManager::validateUpdate(const OrderBookUpdate& update) const {
     // Basic validation checks
-    if (update.symbol.toString().empty()) {
-        logError("Invalid update: empty symbol");
+    if (update.tradingPair.toString().empty()) {
+        logError("Invalid update: empty trading pair");
         return false;
     }
     
@@ -488,14 +488,14 @@ bool OrderBookManager::validateUpdate(const OrderBookUpdate& update) const {
     // Validate price levels
     for (const auto& bid : update.bids) {
         if (bid.price <= 0.0 || bid.quantity < 0.0) {
-            logError("Invalid bid price level in update for " + update.symbol.toString());
+            logError("Invalid bid price level in update for " + update.tradingPair.toString());
             return false;
         }
     }
     
     for (const auto& ask : update.asks) {
         if (ask.price <= 0.0 || ask.quantity < 0.0) {
-            logError("Invalid ask price level in update for " + update.symbol.toString());
+            logError("Invalid ask price level in update for " + update.tradingPair.toString());
             return false;
         }
     }

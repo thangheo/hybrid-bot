@@ -190,7 +190,6 @@ void OrderBookReconstructor::updateOrderBookFromJson(
             OrderBookUpdate update;
             update.exchangeId = exchangeId;
             update.tradingPair = symbol;  // Set tradingPair field
-            update.symbol = symbol;       // Set symbol field for consistency
             update.bids = bidUpdates;
             update.asks = askUpdates;
             update.sequenceNumber = sequenceNum;
@@ -268,7 +267,6 @@ bool OrderBookReconstructor::processSnapshot(
     OrderBookUpdate update;
     update.exchangeId = exchange;
     update.tradingPair = symbol;  // Set tradingPair field
-    update.symbol = symbol;       // Set symbol field for consistency
     update.bids = bids;
     update.asks = asks;
     update.sequenceNumber = sequenceNumber;
@@ -307,7 +305,6 @@ bool OrderBookReconstructor::processUpdate(
     OrderBookUpdate update;
     update.exchangeId = exchange;
     update.tradingPair = symbol;  // Set tradingPair field
-    update.symbol = symbol;       // Set symbol field for consistency
     update.bids = bids;
     update.asks = asks;
     update.sequenceNumber = sequenceNumber;

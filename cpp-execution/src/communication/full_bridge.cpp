@@ -155,7 +155,7 @@ private:
             if (count < 5) {
                 std::cout << "\n=== ORDER BOOK UPDATE #" << count << " ===" << std::endl;
                 std::cout << "Exchange: " << update.exchangeId.toString() << std::endl;
-                std::cout << "Symbol: " << update.symbol.toString() << std::endl;
+                std::cout << "Symbol: " << update.tradingPair.toString() << std::endl;
                 std::cout << "Sequence: " << update.sequenceNumber << std::endl;
                 std::cout << "Bids: " << update.bids.size() << ", Asks: " << update.asks.size() << std::endl;
                 
@@ -179,7 +179,7 @@ private:
     void generateMarketIntelligence(const OrderBookUpdate& update) {
         try {
             // Get the order book from data service
-            auto orderBook = dataService_->getOrderBook(update.exchangeId, update.symbol);
+            auto orderBook = dataService_->getOrderBook(update.exchangeId, update.tradingPair);
             if (!orderBook) {
                 return;
             }
@@ -198,19 +198,19 @@ private:
             }
             
             // Generate adaptive market intelligence
-            std::string symbol = update.symbol.toString();
-            trading::MarketIntelligence intel = adaptiveIntel_->GenerateAdaptiveMarketIntelligence(symbol, orderBook);
-            
+            std::string tradingPair = update.tradingPair.toString();
+            trading::MarketIntelligence intel = adaptiveIntel_->GenerateAdaptiveMarketIntelligence(tradingPair, orderBook);
+
             if (intel.symbol().empty()) {
                 return; // No valid intelligence generated
             }
-            
-            // Debug output for first few intelligence generations per symbol
+
+            // Debug output for first few intelligence generations per trading pair
             static std::unordered_map<std::string, int> intelDebugCounts;
-            intelDebugCounts[symbol]++;
+            intelDebugCounts[tradingPair]++;
             
-            if (intelDebugCounts[symbol] <= 3) {
-                std::cout << "\n=== ADAPTIVE INTELLIGENCE for " << symbol << " ===" << std::endl;
+            if (intelDebugCounts[tradingPair] <= 3) {
+                std::cout << "\n=== ADAPTIVE INTELLIGENCE for " << tradingPair << " ===" << std::endl;
                 std::cout << "  Spread: " << intel.bid_ask_spread() << std::endl;
                 std::cout << "  Liquidity: " << intel.liquidity_ratio() << std::endl;
                 std::cout << "  Imbalance: " << intel.order_book_imbalance() << std::endl;
@@ -222,7 +222,7 @@ private:
             // Store latest intelligence
             {
                 std::lock_guard<std::mutex> lock(intelligenceMutex_);
-                latestIntelligence_[symbol] = intel;
+                latestIntelligence_[tradingPair] = intel;
             }
             
             // Publish to ZMQ
