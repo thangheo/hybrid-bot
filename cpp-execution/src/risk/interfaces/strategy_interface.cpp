@@ -18,6 +18,14 @@
 namespace trading {
 namespace risk {
 
+// Base StrategyInterface constructor implementations
+StrategyInterface::StrategyInterface() {
+    // Default constructor
+}
+
+StrategyInterface::StrategyInterface(const RiskConfig& config) {
+    // Constructor with config
+}
 
 // Implementation of the StrategyInterface that uses ZeroMQ for communication
 class StrategyInterfaceImpl : public StrategyInterface {

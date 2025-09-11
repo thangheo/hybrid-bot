@@ -6,9 +6,9 @@
  */
 #pragma once
 
-#include "risk_types.hpp"
-#include "risk_events.hpp"
-#include "risk_config.hpp"
+#include "risk/risk_types.hpp"
+#include "risk/risk_events.hpp"
+#include "risk/risk_config.hpp"
 #include <string>
 #include <vector>
 #include <memory>

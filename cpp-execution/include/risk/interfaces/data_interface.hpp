@@ -7,7 +7,7 @@
 
 #pragma once
 
-#include "risk_types.hpp"
+#include "risk/risk_types.hpp"
 #include <string>
 #include <vector>
 #include <map>

@@ -94,6 +94,8 @@ public:
      */
     RiskManagerMode getMode() const;
 
+    // Helper methods for signal property extraction
+    std::string getBaseAsset(const core::Symbol& tradingPair) const;
 private:
     // Sub-components
     std::unique_ptr<PositionLimitChecker> m_positionLimitChecker;
@@ -115,8 +117,6 @@ private:
     bool passesBasicValidation(const TradingSignal& signal, std::vector<RiskViolation>& violations);
     bool passesBasicValidation(const OrderRequest& orderRequest, std::vector<RiskViolation>& violations);
     
-    // Helper methods for signal property extraction
-    std::string getBaseAsset(const core::Symbol& tradingPair) const;
 };
 
 } // namespace risk

@@ -42,6 +42,8 @@ using namespace trading::strategy;
 // class RiskManager {
 class RiskManager : public std::enable_shared_from_this<RiskManager> {
 public:
+    bool checkSystemHealth();
+    void loadConfiguration();
     /**
      * Constructor
      * @param config The risk system configuration
@@ -133,7 +135,7 @@ public:
      * @return true if action was successful, false otherwise
      */
     bool emergencyAction(const std::string& reason);
-
+   
 private:
     // Core subsystems
     std::unique_ptr<PreTradeRiskFilter> m_preTradeFilter;
@@ -157,8 +159,7 @@ private:
     
     // Private helper methods
     void notifyRiskEvent(const RiskEvent& event);
-    bool checkSystemHealth();
-    void loadConfiguration();
+    // void loadConfiguration();
 };
 
 } // namespace risk

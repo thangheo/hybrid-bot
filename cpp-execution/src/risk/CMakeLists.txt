@@ -55,9 +55,19 @@ elseif(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
         /wd4189  # local variable initialized but not referenced
     )
 endif()
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../../bin)
 
-# Ensure C++20 features are properly enabled
-# target_compile_features(risk PRIVATE cxx_std_20)
+# create executable for risk demo
+add_executable(risk_demo risk_demo.cpp)
+target_link_libraries(risk_demo PRIVATE 
+        risk
+        fmt::fmt
+        data_ingestion
+        strategy
+        execution
+        common
+        nlohmann_json::nlohmann_json
+        )
 
 # Add format library for std::format (if using GCC < 13)
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS "13.0")

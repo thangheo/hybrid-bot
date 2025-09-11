@@ -252,8 +252,8 @@
      std::map<std::string, core::ExchangeId> tradingPairs;
      
      // Constructor
-     StrategyConfig() : strategy_id(""), version("1.0.0") {}
-     
+     StrategyConfig() : strategy_id(core::StrategyId("integrated_strategy", "1.0.0")), version("1.0.0") {}
+
      StrategyConfig(const core::StrategyId& id, const std::string& ver = "1.0.0")
          : strategy_id(id), version(ver) {}
  };
