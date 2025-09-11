@@ -573,7 +573,7 @@ ExecutionInterface::ExecutionInterface() {
 // Global factory function to create the concrete implementation
 std::unique_ptr<ExecutionInterface> createExecutionInterface(const RiskConfig& config) {
     return std::make_unique<ExecutionInterfaceImpl>(config);
-}
+} 
 
 } // namespace risk
 } // namespace trading

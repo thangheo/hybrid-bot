@@ -37,7 +37,7 @@ bool PortfolioManager::initialize() {
         std::shared_ptr<DataInterface> sharedDataInterface(dataInterface.release());
         
         // Create execution interface using factory function
-        auto executionInterface = createExecutionInterface();
+        auto executionInterface = createExecutionInterface(m_config);
         if (!executionInterface->initialize()) {
             std::cerr << "Failed to initialize ExecutionInterface" << std::endl;
             return false;

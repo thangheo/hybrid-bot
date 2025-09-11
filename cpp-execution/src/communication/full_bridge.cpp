@@ -389,22 +389,22 @@ int main() {
         
         // Define symbols to monitor
         std::vector<std::string> symbols = {
-            "BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "ADAUSDT",
-            "AVAXUSDT", "DOTUSDT", "LINKUSDT", "UNIUSDT", "ATOMUSDT"
-            , "ALGOUSDT"  
-            , "AAVEUSDT"   
-            , "ARBUSDT"   
-            , "OPUSDT"    
-            , "INJUSDT"    
-            , "SUIUSDT"   
-            , "TRBUSDT"  
-            , "BANDUSDT"  
-            , "CHZUSDT"    
-            , "ENJUSDT"  
-            , "YFIUSDT"    
-            , "1INCHUSDT" 
-            , "DOGEUSDT"  
-            , "WIFUSDT"   
+            "BTC/USDT", "ETH/USDT", "SOL/USDT", "XRP/USDT", "ADA/USDT",
+            "AVAX/USDT", "DOT/USDT", "LINK/USDT", "UNI/USDT", "ATOM/USDT"
+            , "ALGO/USDT"  
+            , "AAVE/USDT"   
+            , "ARB/USDT"   
+            , "OP/USDT"    
+            , "INJ/USDT"    
+            , "SUI/USDT"   
+            , "TRB/USDT"  
+            , "BAND/USDT"  
+            , "CHZ/USDT"    
+            , "ENJ/USDT"  
+            , "YFI/USDT"    
+            , "1INCH/USDT" 
+            , "DOGE/USDT"  
+            , "WIFI/USDT"   
    };   
         if (!server.start(symbols)) {
             std::cerr << "Failed to start server" << std::endl;

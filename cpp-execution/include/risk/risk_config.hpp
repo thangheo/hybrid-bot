@@ -503,6 +503,11 @@ public:
     // Public member for direct access (as shown in original code)
     CollateralConfig collateralConfig;
     PortfolioConfig portfolioConfig;
+    // zmq endpoints
+    std::string executionRequestEndpoint = "tcp://localhost:5555";
+    std::string executionPublishEndpoint = "tcp://localhost:5556";
+    std::string executionReportsTopic = "execution_reports";
+    
 
 private:
     // m_positionLimitConfig
