@@ -3,6 +3,7 @@
 
 #include "data_ingestion/exchange_manager.hpp"
 #include "data_ingestion/orderbook/reconstructor.hpp"
+#include "data_ingestion/orderbook/order_book_manager.hpp"
 #include "data_ingestion/publisher/zeromq_publisher.hpp"
 #include "data_ingestion/config/config.hpp"
 #include "data_ingestion/normalization/order_book_normalizer.hpp"
@@ -71,12 +72,12 @@ private:
     
     // Order book management
     OrderBookReconstructor* reconstructor_;
-    // std::unique_ptr<OrderBookManager> orderBookManager_;
-    
+
     // Data processing
     std::unique_ptr<OrderBookNormalizer> normalizer_;
     std::unique_ptr<ExchangeManager> exchangeManager_;
-    
+    // Order book manager
+    std::shared_ptr<OrderBookManager> orderBookManager_;
     // Service state
     std::atomic<bool> running_{false};
     std::atomic<bool> initialized_{false};

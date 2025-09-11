@@ -33,12 +33,27 @@ bool DataIngestionService::initialize() {
         eventBus_->start();
         setupEventHandling();
         
-        // 3. Setup publisher
+        // 3. Setup publisher + order book manager
         if (!setupPublisher()) {
             std::cerr << "Failed to setup publisher" << std::endl;
             return false;
         }
         
+        // 3. Setup order book manager
+        OrderBookManagerConfig managerConfig;  // Use default config
+        orderBookManager_ = std::make_shared<OrderBookManager>(managerConfig);
+        
+        // Set up callback for order book changes
+        orderBookManager_->setManagerCallback([this](const OrderBookKey& key, const std::string& eventType) {
+            // Convert OrderBookKey event to OrderBook and call our handler
+            if (eventType == "updated" || eventType == "changed") {
+                auto orderBook = orderBookManager_->getOrderBook(key.exchangeId, key.symbol);
+                if (orderBook) {
+                    this->onOrderBookChanged(*orderBook);
+                }
+            }
+        });
+\
         // 4. Setup order book components
         if (!setupOrderBookComponents()) {
             std::cerr << "Failed to setup order book components" << std::endl;
@@ -54,7 +69,7 @@ bool DataIngestionService::initialize() {
         initialized_.store(true);
         std::cout << "DataIngestionService initialized successfully" << std::endl;
         return true;
-        
+       
     } catch (const std::exception& e) {
         std::cerr << "Initialization failed: " << e.what() << std::endl;
         cleanup();
@@ -190,7 +205,7 @@ bool DataIngestionService::setupOrderBookComponents() {
     try {
         // Initialize reconstructor
         reconstructor_ = &OrderBookReconstructor::getInstance();
-        if (!reconstructor_->initialize(publisher_)) {
+        if (!reconstructor_->initialize(publisher_, orderBookManager_)) {
             std::cerr << "Failed to initialize order book reconstructor" << std::endl;
             return false;
         }
@@ -227,7 +242,8 @@ void DataIngestionService::setupEventHandling() {
 void DataIngestionService::onNormalizedOrderBook(const OrderBookUpdate& update) {
     try {
         messagesProcessed_.fetch_add(1);
-       
+        //print symbol
+        std::cout << "[DEBUG] Received OrderBookUpdate for symbol: " << update.symbol.toString() << std::endl;
         if (reconstructor_) {
             if (update.isSnapshot) {
                 reconstructor_->processSnapshot(

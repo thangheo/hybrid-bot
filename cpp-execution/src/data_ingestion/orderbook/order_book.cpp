@@ -15,7 +15,8 @@
 #include <cmath>
 #include <boost/crc.hpp> // for crc_32_type
 #include <boost/functional/hash.hpp>
-
+#include "common/logger.hpp"
+#include <fmt/format.h>
 namespace trading {
 namespace data_ingestion {
 
@@ -58,15 +59,7 @@ OrderBook::OrderBook(const ExchangeId& exchangeId, const Symbol& symbol, OrderBo
       callback_(std::move(callback)),
       sequence_number_(0),
       is_valid_(false) {
-}
-// OrderBook::OrderBook(const ExchangeId& exchangeId, const Symbol& tradingPair, OrderBookCallback callback)
-//     : exchangeId_(exchangeId),
-//       symbol_(tradingPair),
-//       callback_(std::move(callback)),
-//       sequence_number_(0),
-//       is_valid_(false) {
-// }
-  
+}  
 
 
 bool OrderBook::applySnapshot(const std::vector<PriceLevel>& bids, 
@@ -74,12 +67,17 @@ bool OrderBook::applySnapshot(const std::vector<PriceLevel>& bids,
                             uint64_t sequenceNumber,
                             Timestamp timestamp) {
     std::lock_guard<std::mutex> lock(mutex_);
-
+ 
     // Skip older snapshots
     if (sequenceNumber <= sequence_number_) {
         return false;
     }
     
+    std::cout << "[DEBUG] Applying snapshot for " << exchangeId_.toString() << " " 
+              << symbol_.toString() << " Seq: " << sequenceNumber 
+              << " Bids: " << bids.size() << " Asks: " << asks.size() 
+              << " Time: " << std::chrono::duration_cast<std::chrono::milliseconds>(timestamp.time_since_epoch()).count()
+              << " sequence_number_: " << sequence_number_ << std::endl;
     
     // Store the current state for delta calculation
     captureOrderBookState();
