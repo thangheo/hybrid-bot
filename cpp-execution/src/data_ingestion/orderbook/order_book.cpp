@@ -73,11 +73,11 @@ bool OrderBook::applySnapshot(const std::vector<PriceLevel>& bids,
         return false;
     }
     
-    std::cout << "[DEBUG] Applying snapshot for " << exchangeId_.toString() << " " 
-              << symbol_.toString() << " Seq: " << sequenceNumber 
-              << " Bids: " << bids.size() << " Asks: " << asks.size() 
-              << " Time: " << std::chrono::duration_cast<std::chrono::milliseconds>(timestamp.time_since_epoch()).count()
-              << " sequence_number_: " << sequence_number_ << std::endl;
+    // std::cout << "[DEBUG] Applying snapshot for " << exchangeId_.toString() << " " 
+    //           << symbol_.toString() << " Seq: " << sequenceNumber 
+    //           << " Bids: " << bids.size() << " Asks: " << asks.size() 
+    //           << " Time: " << std::chrono::duration_cast<std::chrono::milliseconds>(timestamp.time_since_epoch()).count()
+    //           << " sequence_number_: " << sequence_number_ << std::endl;
     
     // Store the current state for delta calculation
     captureOrderBookState();
@@ -404,6 +404,7 @@ OrderBookUpdate OrderBook::getSnapshot(int depth) const {
     OrderBookUpdate update;
     update.exchangeId = exchangeId_;
     update.tradingPair = symbol_;
+    update.symbol = symbol_;          // Set symbol field for consistency
     update.exchangeTimestamp = timestamp_;
     update.receivedTimestamp = last_update_time_;
     update.sequenceNumber = sequence_number_;

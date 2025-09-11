@@ -62,7 +62,7 @@ inline std::string toLowercase(const std::string& str) {
 
 void OrderBookNormalizer::processMarketData(const MarketDataUpdate& update) {
     // Find adapter and normalize (keep existing code)
-    auto it = exchange_adapters_.find(update.exchangeId.toString());
+    auto it = exchange_adapters_.find(update.exchangeId.toString());    
     if (it == exchange_adapters_.end()) {
         std::cerr << "No adapter found for exchange: " << update.exchangeId.toString() << std::endl;
         return;
@@ -75,14 +75,22 @@ void OrderBookNormalizer::processMarketData(const MarketDataUpdate& update) {
     }
     
     try {
+       
         // Normalize the update
         OrderBookUpdate normalized = adapter->normalize(update);
-        
+        if (normalized.tradingPair.toString().empty() || normalized.tradingPair.toString() == "UNKNOWN") {
+            std::cerr << "Warning: Normalized trading pair is empty or UNKNOWN for exchange: "
+                      << update.exchangeId.toString() << std::endl;
+        }
+       
+
         // Standardize trading pair
         core::Symbol standardized_pair;
-        standardized_pair.fromString(adapter->standardizeTradingPair(update.tradingPair));
-        normalized.tradingPair = standardized_pair;
-        normalized.symbol = standardized_pair;
+        // standardized_pair.fromString(adapter->standardizeTradingPair(update.tradingPair));
+        normalized.tradingPair = update.tradingPair;
+        normalized.symbol = update.tradingPair;
+        // normalized.tradingPair = standardized_pair;
+        // normalized.symbol = standardized_pair;
         // DON'T create order books here - just forward the normalized data
         
         if (callback_) {

@@ -189,7 +189,8 @@ void OrderBookReconstructor::updateOrderBookFromJson(
             // Create OrderBookUpdate structure
             OrderBookUpdate update;
             update.exchangeId = exchangeId;
-            update.symbol = symbol;
+            update.tradingPair = symbol;  // Set tradingPair field
+            update.symbol = symbol;       // Set symbol field for consistency
             update.bids = bidUpdates;
             update.asks = askUpdates;
             update.sequenceNumber = sequenceNum;
@@ -266,7 +267,8 @@ bool OrderBookReconstructor::processSnapshot(
     // Create OrderBookUpdate structure
     OrderBookUpdate update;
     update.exchangeId = exchange;
-    update.symbol = symbol;
+    update.tradingPair = symbol;  // Set tradingPair field
+    update.symbol = symbol;       // Set symbol field for consistency
     update.bids = bids;
     update.asks = asks;
     update.sequenceNumber = sequenceNumber;
@@ -304,17 +306,19 @@ bool OrderBookReconstructor::processUpdate(
     // Create OrderBookUpdate structure
     OrderBookUpdate update;
     update.exchangeId = exchange;
-    update.symbol = symbol;
+    update.tradingPair = symbol;  // Set tradingPair field
+    update.symbol = symbol;       // Set symbol field for consistency
     update.bids = bids;
     update.asks = asks;
     update.sequenceNumber = sequenceNumber;
     update.exchangeTimestamp = timestamp;
     update.receivedTimestamp = std::chrono::system_clock::now();
     update.isSnapshot = false;
-    
+    std::cout << "Processing incremental update for " << symbol.toString() 
+             << " with " << bids.size() << " bid changes and " << asks.size() << " ask changes" << std::endl;
     // Delegate to order book manager
     bool success = orderBookManager_->processUpdate(update);
-    
+    std::cout << "Update success: " << (success ? "YES" : "NO") << std::endl;
     if (success) {
         // Get the updated order book from manager and publish
         auto orderBook = orderBookManager_->getOrderBook(exchange, symbol);

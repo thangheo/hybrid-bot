@@ -126,7 +126,7 @@ bool OrderBookManager::processUpdate(const OrderBookUpdate& update) {
     
     auto key = createKey(update);
     std::shared_ptr<OrderBook> orderBook;
-    
+    // std::cout << "Processing update for key: " << key.toString() << std::endl;
     // Fast path: try to get existing order book with read lock
     {
         std::shared_lock<std::shared_mutex> readLock(orderBooksMutex_);
@@ -176,7 +176,10 @@ bool OrderBookManager::processUpdate(const OrderBookUpdate& update) {
         
         if (!success && config_.validateSequenceNumbers) {
             ++sequenceErrors_;
-            logError("Sequence gap within tolerance for " + key.toString());
+            logError("Sequence validation failed for " + key.toString());
+        } else if (!success) {
+            // Non-sequence related failure
+            logError("Update processing failed for " + key.toString());
         }
         
     } catch (const std::exception& e) {
