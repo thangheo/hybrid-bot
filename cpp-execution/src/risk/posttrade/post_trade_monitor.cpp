@@ -37,7 +37,7 @@ std::string formatString(const std::string& format, Args&&... args) {
 PostTradeMonitor::PostTradeMonitor(const RiskConfig& config) : config_(config) {
     // Create interfaces using factory functions
     auto dataInterface = createDataInterface();
-    auto executionInterface = createExecutionInterface();
+    auto executionInterface = createExecutionInterface(config);
     
     // Convert unique_ptr to shared_ptr for sharing among components
     dataInterface_ = std::shared_ptr<DataInterface>(dataInterface.release());

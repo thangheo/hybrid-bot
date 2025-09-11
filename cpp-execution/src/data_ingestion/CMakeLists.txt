@@ -1,4 +1,10 @@
 # src/data_ingestion/CMakeLists.txt
+# Require C++20
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+# find fmt
+find_package(fmt REQUIRED)
 
 # Collect all source files
 file(GLOB_RECURSE DATA_INGESTION_SOURCES
@@ -48,6 +54,7 @@ target_link_libraries(data_ingestion
     PRIVATE
         ${Protobuf_LIBRARIES}
         ${gRPC_LIBRARIES}
+        fmt::fmt
 )
 # Add websocket directory for specific build rules if needed
 add_subdirectory(websocket)

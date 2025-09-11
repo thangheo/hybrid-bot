@@ -4,8 +4,10 @@
  * 
  * @details 
  * Part of the Data Ingestion & Processing Layer for the Crypto Trading System.
+ * Refactored to use OrderBookManager for proper separation of concerns.
  * 
  * Created on: April 30, 2025
+ * Refactored on: September 11, 2025
  */
 
 #include "data_ingestion/orderbook/reconstructor.hpp"
@@ -15,102 +17,94 @@
 #include <iomanip>
 #include <cmath>
 
-using namespace trading::core;
- namespace trading{
- namespace data_ingestion {
+namespace trading {
+namespace data_ingestion {
 
- // Singleton instance
- OrderBookReconstructor& OrderBookReconstructor::getInstance() {
-     static OrderBookReconstructor instance;
-     return instance;
- }
- 
- OrderBookReconstructor::OrderBookReconstructor()
-     : initialized_(false) {
- }
- 
- OrderBookReconstructor::~OrderBookReconstructor() {
-     shutdown();
- }
- 
- bool OrderBookReconstructor::initialize(std::shared_ptr<trading::data_ingestion::ZeroMQPublisher> publisher) {
-     std::lock_guard<std::mutex> lock(mutex_);
-     
-     if (initialized_) {
-         return true; // Already initialized
-     }
-     
-     publisher_ = publisher;
-     if (!publisher_) {
-         std::cerr << "Error: Null publisher provided to OrderBookReconstructor" << std::endl;
-         return false;
-     }
-     
-     initialized_ = true;
-     return true;
- }
- 
- void OrderBookReconstructor::shutdown() {
-     std::lock_guard<std::mutex> lock(mutex_);
-     
-     if (!initialized_) {
-         return;
-     }
-     
-     // Clear all order books
-     order_books_.clear();
-     
-     // Release publisher
-     publisher_.reset();
-     
-     initialized_ = false;
- }
- void OrderBookReconstructor::UpdateOrderBookFromJson(ExchangeId exchange_id, const nlohmann::json& data, const Symbol& symbol) {
+// Singleton instance
+OrderBookReconstructor& OrderBookReconstructor::getInstance() {
+    static OrderBookReconstructor instance;
+    return instance;
+}
+
+OrderBookReconstructor::OrderBookReconstructor()
+    : initialized_(false) {
+}
+
+OrderBookReconstructor::~OrderBookReconstructor() {
+    shutdown();
+}
+
+bool OrderBookReconstructor::initialize(
+    std::shared_ptr<trading::data_ingestion::ZeroMQPublisher> publisher,
+    std::shared_ptr<OrderBookManager> manager
+) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    
+    if (initialized_) {
+        return true; // Already initialized
+    }
+    
+    if (!publisher) {
+        std::cerr << "Error: Null publisher provided to OrderBookReconstructor" << std::endl;
+        return false;
+    }
+    
+    if (!manager) {
+        std::cerr << "Error: Null order book manager provided to OrderBookReconstructor" << std::endl;
+        return false;
+    }
+    
+    publisher_ = publisher;
+    orderBookManager_ = manager;
+    initialized_ = true;
+    
+    std::cout << "OrderBookReconstructor initialized successfully" << std::endl;
+    return true;
+}
+
+void OrderBookReconstructor::shutdown() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    
+    if (!initialized_) {
+        return;
+    }
+    
+    // Release resources
+    publisher_.reset();
+    orderBookManager_.reset();
+    
+    initialized_ = false;
+    std::cout << "OrderBookReconstructor shutdown completed" << std::endl;
+}
+
+void OrderBookReconstructor::updateOrderBookFromJson(
+    ExchangeId exchangeId, 
+    const nlohmann::json& data, 
+    const core::Symbol& symbol
+) {
     try {
-        static std::atomic<int> debug_updates{0};
-        bool is_debug = debug_updates.fetch_add(1) < 3;
+        static std::atomic<int> debugUpdates{0};
+        bool isDebug = debugUpdates.fetch_add(1) < 3;
         
-        // Get or CREATE order book
-        std::shared_ptr<OrderBook> orderbook;
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            OrderBookKey key{exchange_id, symbol};
-            auto it = order_books_.find(key);
-            
-            if (it == order_books_.end()) {
-                // Create new order book if it doesn't exist
-                orderbook = std::make_shared<OrderBook>(exchange_id, symbol);
-                order_books_[key] = orderbook;
-                
-                if (is_debug) {
-                    std::cout << "Created new order book for " << symbol.toString() 
-                             << " on exchange " << exchange_id.toString() << std::endl;
-                }
-            } else {
-                orderbook = it->second;
-            }
-        }
-        
-        if (!orderbook) {
-            std::cerr << "Error: Failed to create/get OrderBook for " << symbol.toString() 
-                     << " on exchange " << exchange_id.toString() << std::endl;
+        if (!initialized_ || !orderBookManager_) {
+            std::cerr << "Error: OrderBookReconstructor not initialized" << std::endl;
             return;
         }
         
-        if (is_debug) {
+        if (isDebug) {
             std::cout << "\n=== DEBUG: Processing depthUpdate ===" << std::endl;
             std::cout << "Symbol: " << symbol.toString() << std::endl;
-            std::cout << "Exchange: " << exchange_id.toString() << std::endl;
+            std::cout << "Exchange: " << exchangeId.toString() << std::endl;
             std::cout << "Full message: " << data.dump().substr(0, 500) << std::endl;
         }
         
         // Collect ALL bid and ask updates in vectors
-        std::vector<trading::data_ingestion::PriceLevel> bid_updates;
-        std::vector<trading::data_ingestion::PriceLevel> ask_updates;
+        std::vector<PriceLevel> bidUpdates;
+        std::vector<PriceLevel> askUpdates;
         
         // Process ALL bids into vector
         if (data.contains("b") && data["b"].is_array()) {
-            if (is_debug) {
+            if (isDebug) {
                 std::cout << "Found bids array with " << data["b"].size() << " entries" << std::endl;
             }
             
@@ -123,15 +117,15 @@ using namespace trading::core;
                         double price = std::stod(priceStr);
                         double quantity = std::stod(qtyStr);
                         
-                        if (is_debug) {
+                        if (isDebug) {
                             std::cout << "Processing bid: " << priceStr << " @ " << qtyStr 
                                     << " (parsed: " << price << " @ " << quantity << ")" << std::endl;
                         }
                         
                         if (price > 0) {
-                            bid_updates.emplace_back(price, quantity);
+                            bidUpdates.emplace_back(price, quantity);
                             
-                            if (is_debug) {
+                            if (isDebug) {
                                 if (quantity == 0.0) {
                                     std::cout << "  Will remove bid at " << price << std::endl;
                                 } else {
@@ -140,7 +134,7 @@ using namespace trading::core;
                             }
                         }
                     } catch (const std::exception& e) {
-                        if (is_debug) std::cout << "  Error parsing bid: " << e.what() << std::endl;
+                        if (isDebug) std::cout << "  Error parsing bid: " << e.what() << std::endl;
                     }
                 }
             }
@@ -148,7 +142,7 @@ using namespace trading::core;
         
         // Process ALL asks into vector
         if (data.contains("a") && data["a"].is_array()) {
-            if (is_debug) {
+            if (isDebug) {
                 std::cout << "Found asks array with " << data["a"].size() << " entries" << std::endl;
             }
             
@@ -161,15 +155,15 @@ using namespace trading::core;
                         double price = std::stod(priceStr);
                         double quantity = std::stod(qtyStr);
                         
-                        if (is_debug) {
+                        if (isDebug) {
                             std::cout << "Processing ask: " << priceStr << " @ " << qtyStr 
                                     << " (parsed: " << price << " @ " << quantity << ")" << std::endl;
                         }
                         
                         if (price > 0) {
-                            ask_updates.emplace_back(price, quantity);
+                            askUpdates.emplace_back(price, quantity);
                             
-                            if (is_debug) {
+                            if (isDebug) {
                                 if (quantity == 0.0) {
                                     std::cout << "  Will remove ask at " << price << std::endl;
                                 } else {
@@ -178,66 +172,75 @@ using namespace trading::core;
                             }
                         }
                     } catch (const std::exception& e) {
-                        if (is_debug) std::cout << "  Error parsing ask: " << e.what() << std::endl;
+                        if (isDebug) std::cout << "  Error parsing ask: " << e.what() << std::endl;
                     }
                 }
             }
         }
         
-        // Apply ALL updates at once using proper OrderBook method
-        if (!bid_updates.empty() || !ask_updates.empty()) {
+        // Create OrderBookUpdate and delegate to manager
+        if (!bidUpdates.empty() || !askUpdates.empty()) {
             // Get sequence number from message if available
-            uint64_t sequence_num = 0;
+            uint64_t sequenceNum = 0;
             if (data.contains("u")) {
-                sequence_num = data["u"].get<uint64_t>();
+                sequenceNum = data["u"].get<uint64_t>();
             }
             
-            // Apply the update
-            bool success = orderbook->applyUpdate(
-                bid_updates, 
-                ask_updates, 
-                sequence_num, 
-                std::chrono::system_clock::now()
-            );
+            // Create OrderBookUpdate structure
+            OrderBookUpdate update;
+            update.exchangeId = exchangeId;
+            update.symbol = symbol;
+            update.bids = bidUpdates;
+            update.asks = askUpdates;
+            update.sequenceNumber = sequenceNum;
+            update.exchangeTimestamp = std::chrono::system_clock::now();
+            update.receivedTimestamp = std::chrono::system_clock::now();
+            update.isSnapshot = false; // This is an update, not a snapshot
             
-            if (is_debug) {
-                std::cout << "Applied update with " << bid_updates.size() 
-                        << " bid changes and " << ask_updates.size() << " ask changes" << std::endl;
+            // Delegate to order book manager
+            bool success = orderBookManager_->processUpdate(update);
+            
+            if (isDebug) {
+                std::cout << "Applied update with " << bidUpdates.size() 
+                        << " bid changes and " << askUpdates.size() << " ask changes" << std::endl;
                 std::cout << "Update success: " << (success ? "YES" : "NO") << std::endl;
             }
             
             if (success) {
-                // Verify order book state after update
-                auto bids = orderbook->getBids(5);
-                auto asks = orderbook->getAsks(5);
-                
-                if (is_debug) {
-                    std::cout << "OrderBook state after update:" << std::endl;
-                    std::cout << "  Bids count: " << bids.size() << std::endl;
-                    std::cout << "  Asks count: " << asks.size() << std::endl;
+                // Get the updated order book from manager and publish
+                auto orderBook = orderBookManager_->getOrderBook(exchangeId, symbol);
+                if (orderBook) {
+                    // Verify order book state after update
+                    auto bids = orderBook->getBids(5);
+                    auto asks = orderBook->getAsks(5);
                     
-                    if (!bids.empty()) {
-                        std::cout << "  Best bid: " << bids[0].price << " @ " << bids[0].quantity << std::endl;
+                    if (isDebug) {
+                        std::cout << "OrderBook state after update:" << std::endl;
+                        std::cout << "  Bids count: " << bids.size() << std::endl;
+                        std::cout << "  Asks count: " << asks.size() << std::endl;
+                        
+                        if (!bids.empty()) {
+                            std::cout << "  Best bid: " << bids[0].price << " @ " << bids[0].quantity << std::endl;
+                        }
+                        if (!asks.empty()) {
+                            std::cout << "  Best ask: " << asks[0].price << " @ " << asks[0].quantity << std::endl;
+                        }
                     }
-                    if (!asks.empty()) {
-                        std::cout << "  Best ask: " << asks[0].price << " @ " << asks[0].quantity << std::endl;
-                    }
+                    
+                    // Publish the updated order book
+                    publishOrderBook(orderBook);
                 }
-                
-                // Publish the updated order book
-                publishOrderBook(orderbook);
-                
             } else {
-                if (is_debug) std::cout << "OrderBook update failed - possibly due to sequence gap" << std::endl;
+                if (isDebug) std::cout << "OrderBook update failed - possibly due to sequence gap" << std::endl;
                 
                 // On failure, request a snapshot to resync
-                requestSnapshot(exchange_id, symbol);
+                requestSnapshot(exchangeId, symbol);
             }
         } else {
-            if (is_debug) std::cout << "No price level updates to apply" << std::endl;
+            if (isDebug) std::cout << "No price level updates to apply" << std::endl;
         }
         
-        if (is_debug) {
+        if (isDebug) {
             std::cout << "==================================" << std::endl;
         }
         
@@ -246,217 +249,184 @@ using namespace trading::core;
                  << ": " << e.what() << std::endl;
     }
 }
- bool OrderBookReconstructor::processSnapshot(
-     ExchangeId exchange, 
-     const Symbol& symbol,
-     const std::vector<PriceLevel>& bids,
-     const std::vector<PriceLevel>& asks,
-     uint64_t sequenceNumber,
-     Timestamp timestamp) {
-     
-     if (!initialized_) {
-         std::cerr << "Error: OrderBookReconstructor not initialized" << std::endl;
-         return false;
-     }
-     
-     // Get or create order book
-     std::shared_ptr<OrderBook> order_book;
-     {
-         std::lock_guard<std::mutex> lock(mutex_);
-         
-         OrderBookKey key{exchange, symbol};
-         auto it = order_books_.find(key);
-         if (it == order_books_.end()) {
-             // Create new order book
-            std::cout << "[DEBUG] Creating NEW OrderBook for " << symbol.toString() << std::endl;             
-             order_book = std::make_shared<OrderBook>(exchange, symbol);
-             order_books_[key] = order_book;
-         } else {
-             order_book = it->second;
-         }
-     }
-     
-     // Apply snapshot to order book
-     if (!order_book->applySnapshot(bids, asks, sequenceNumber, timestamp)) {
-         std::cerr << "Error: Failed to apply snapshot to order book" << std::endl;
-         return false;
-     }
-     
-     // Publish updated order book
-     publishOrderBook(order_book);
-     
-     return true;
- }
- // In reconstructor.cpp
 
-bool OrderBookReconstructor::processUpdate(
-    ExchangeId exchange,
-    const Symbol& symbol,
+bool OrderBookReconstructor::processSnapshot(
+    ExchangeId exchange, 
+    const core::Symbol& symbol,
     const std::vector<PriceLevel>& bids,
     const std::vector<PriceLevel>& asks,
     uint64_t sequenceNumber,
-    Timestamp timestamp) {
-    
-    if (!initialized_) {
+    core::Timestamp timestamp
+) {
+    if (!initialized_ || !orderBookManager_) {
         std::cerr << "Error: OrderBookReconstructor not initialized" << std::endl;
         return false;
     }
     
-    // Find order book
-    std::shared_ptr<OrderBook> order_book;
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        
-        OrderBookKey key{exchange, symbol};
-        auto it = order_books_.find(key);
-        
-        if (it == order_books_.end()) {
-            // Order book not found, cannot apply update
-            std::cerr << "Error: Order book not found for update" << std::endl;
-            return false;
+    // Create OrderBookUpdate structure
+    OrderBookUpdate update;
+    update.exchangeId = exchange;
+    update.symbol = symbol;
+    update.bids = bids;
+    update.asks = asks;
+    update.sequenceNumber = sequenceNumber;
+    update.exchangeTimestamp = timestamp;
+    update.receivedTimestamp = std::chrono::system_clock::now();
+    update.isSnapshot = true;
+    
+    // Delegate to order book manager (will auto-create if needed)
+    bool success = orderBookManager_->processUpdate(update);
+    
+    if (success) {
+        // Get the order book from manager and publish
+        auto orderBook = orderBookManager_->getOrderBook(exchange, symbol);
+        if (orderBook) {
+            publishOrderBook(orderBook);
         }
-        
-        order_book = it->second;
     }
     
-    // Apply update to order book
-    if (!order_book->applyUpdate(bids, asks, sequenceNumber, timestamp)) {
-        std::cerr << "Error: Failed to apply update to order book" << std::endl;
-        
-        // If there's a sequence gap, request a snapshot
-        if (order_book->getSequenceNumber() + 1 < sequenceNumber) {
-            requestSnapshot(exchange, symbol);
-        }
-        
+    return success;
+}
+
+bool OrderBookReconstructor::processUpdate(
+    ExchangeId exchange,
+    const core::Symbol& symbol,
+    const std::vector<PriceLevel>& bids,
+    const std::vector<PriceLevel>& asks,
+    uint64_t sequenceNumber,
+    core::Timestamp timestamp
+) {
+    if (!initialized_ || !orderBookManager_) {
+        std::cerr << "Error: OrderBookReconstructor not initialized" << std::endl;
         return false;
     }
     
-    // Publish updated order book
-    publishOrderBook(order_book);
+    // Create OrderBookUpdate structure
+    OrderBookUpdate update;
+    update.exchangeId = exchange;
+    update.symbol = symbol;
+    update.bids = bids;
+    update.asks = asks;
+    update.sequenceNumber = sequenceNumber;
+    update.exchangeTimestamp = timestamp;
+    update.receivedTimestamp = std::chrono::system_clock::now();
+    update.isSnapshot = false;
     
-    return true;
+    // Delegate to order book manager
+    bool success = orderBookManager_->processUpdate(update);
+    
+    if (success) {
+        // Get the updated order book from manager and publish
+        auto orderBook = orderBookManager_->getOrderBook(exchange, symbol);
+        if (orderBook) {
+            publishOrderBook(orderBook);
+        }
+    } else {
+        // If there's a sequence gap, request a snapshot
+        auto orderBook = orderBookManager_->getOrderBook(exchange, symbol);
+        if (orderBook && orderBook->getSequenceNumber() + 1 < sequenceNumber) {
+            requestSnapshot(exchange, symbol);
+        }
+    }
+    
+    return success;
 }
 
 void OrderBookReconstructor::registerLiquidityFlowMonitor(
-    std::shared_ptr<strategy::LiquidityFlowMonitor> monitor) {
-    
-    std::lock_guard<std::mutex> lock(mutex_);
-    
-    // Register the monitor with all order books
-    for (auto& [key, order_book] : order_books_) {
-        order_book->setDeltaCallback([monitor](const OrderBookDelta& delta) {
-            monitor->processOrderBookDelta(delta);
-        });
-    }
+    std::shared_ptr<strategy::LiquidityFlowMonitor> monitor
+) {
+    // This would need to be implemented in the OrderBookManager
+    // For now, we'll just log that the request was received
+    std::cout << "Liquidity flow monitor registration requested (not yet implemented)" << std::endl;
 }
- std::shared_ptr<OrderBook> OrderBookReconstructor::getOrderBook(
-     ExchangeId exchange, const Symbol& symbol) const {
-     
-     std::lock_guard<std::mutex> lock(mutex_);
-     
-     OrderBookKey key{exchange, symbol};
-     auto it = order_books_.find(key);
-     
-     if (it == order_books_.end()) {
-         return nullptr;
-     }
-     
-     return it->second;
- }
- 
- std::vector<std::shared_ptr<OrderBook>> OrderBookReconstructor::getAllOrderBooks() const {
-     std::lock_guard<std::mutex> lock(mutex_);
-     
-     std::vector<std::shared_ptr<OrderBook>> result;
-     result.reserve(order_books_.size());
-     
-     for (const auto& [key, order_book] : order_books_) {
-         result.push_back(order_book);
-     }
-     
-     return result;
- }
- 
- std::vector<std::shared_ptr<OrderBook>> OrderBookReconstructor::getOrderBooks(
-     ExchangeId exchange) const {
-     
-     std::lock_guard<std::mutex> lock(mutex_);
-     
-     std::vector<std::shared_ptr<OrderBook>> result;
-     
-     for (const auto& [key, order_book] : order_books_) {
-         if (key.exchangeId == exchange) {
-             result.push_back(order_book);
-         }
-     }
-     
-     return result;
- }
- 
- bool OrderBookReconstructor::hasOrderBook(ExchangeId exchange, const Symbol& symbol) const {
-     std::lock_guard<std::mutex> lock(mutex_);
-     
-     OrderBookKey key{exchange, symbol};
-     return order_books_.find(key) != order_books_.end();
- }
- 
- void OrderBookReconstructor::removeOrderBook(ExchangeId exchange, const Symbol& symbol) {
-     std::lock_guard<std::mutex> lock(mutex_);
-     
-     OrderBookKey key{exchange, symbol};
-     order_books_.erase(key);
- }
- 
- void OrderBookReconstructor::clearOrderBooks() {
-     std::lock_guard<std::mutex> lock(mutex_);
-     order_books_.clear();
- }
- 
- bool OrderBookReconstructor::validateOrderBook(ExchangeId exchange, const Symbol& symbol) {
-     auto order_book = getOrderBook(exchange, symbol);
-     if (!order_book) {
-         return false;
-     }
-     
-     return order_book->isValid();
- }
- bool OrderBookReconstructor::requestSnapshot(ExchangeId exchange, const Symbol& symbol) {
+
+std::shared_ptr<OrderBook> OrderBookReconstructor::getOrderBook(
+    ExchangeId exchange, 
+    const core::Symbol& symbol
+) const {
+    if (!orderBookManager_) {
+        return nullptr;
+    }
+    
+    return orderBookManager_->getOrderBook(exchange, symbol);
+}
+
+std::vector<core::Symbol> OrderBookReconstructor::getOrderBooksForExchange(ExchangeId exchange) const {
+    if (!orderBookManager_) {
+        return {};
+    }
+    
+    return orderBookManager_->getOrderBooksForExchange(exchange);
+}
+
+bool OrderBookReconstructor::hasOrderBook(ExchangeId exchange, const core::Symbol& symbol) const {
+    if (!orderBookManager_) {
+        return false;
+    }
+    
+    return orderBookManager_->hasOrderBook(exchange, symbol);
+}
+
+void OrderBookReconstructor::removeOrderBook(ExchangeId exchange, const core::Symbol& symbol) {
+    if (!orderBookManager_) {
+        return;
+    }
+    
+    orderBookManager_->removeOrderBook(exchange, symbol);
+}
+
+void OrderBookReconstructor::clearOrderBooks() {
+    if (!orderBookManager_) {
+        return;
+    }
+    
+    orderBookManager_->cleanup();
+}
+
+bool OrderBookReconstructor::validateOrderBook(ExchangeId exchange, const core::Symbol& symbol) {
+    auto orderBook = getOrderBook(exchange, symbol);
+    if (!orderBook) {
+        return false;
+    }
+    
+    return orderBook->isValid();
+}
+
+bool OrderBookReconstructor::requestSnapshot(ExchangeId exchange, const core::Symbol& symbol) {
     // In a real implementation, this would send a request to the exchange API
     // For now, we'll just log the request
     std::cout << "Requesting snapshot for "
-              << exchange.toString() << ":" // Using string directly without casting
+              << exchange.toString() << ":"
               << symbol.base << "/" << symbol.quote << std::endl;
     
     // Return true to indicate request was sent
     return true;
 }
- 
-// void OrderBookReconstructor::publishOrderBook(const std::shared_ptr<OrderBook>& order_book) {
-//      if (!publisher_ || !order_book) {
-//          return;
-//      }
-     
-//     OrderBookUpdate update = order_book->getSnapshot();
-//     std::string payload = update.exchangeId.toString() + ":" + update.tradingPair + ":" +
-//         std::to_string(update.sequenceNumber) + ":" +
-//         std::to_string(timestampToMillis(update.exchangeTimestamp)) + ":" +
-//         std::to_string(timestampToMillis(update.receivedTimestamp));
-//     std::vector<unsigned char> binary_payload(payload.begin(), payload.end());
-//     // Serialize the order book data
-//     // This is a placeholder for actual serialization logic
 
-//     // Publish message
-//     publisher_->publish("orderbook", binary_payload);
+OrderBookManagerStats OrderBookReconstructor::getStatistics() const {
+    if (!orderBookManager_) {
+        return OrderBookManagerStats{};
+    }
+    
+    return orderBookManager_->getStatistics();
+}
 
-//  }
- void OrderBookReconstructor::publishOrderBook(const std::shared_ptr<OrderBook>& order_book) {
-    if (!publisher_ || !order_book) {
+size_t OrderBookReconstructor::getOrderBookCount() const {
+    if (!orderBookManager_) {
+        return 0;
+    }
+    
+    return orderBookManager_->getOrderBookCount();
+}
+
+void OrderBookReconstructor::publishOrderBook(const std::shared_ptr<OrderBook>& orderBook) {
+    if (!publisher_ || !orderBook) {
         return;
     }
     
     try {
         // Get the full order book snapshot
-        OrderBookUpdate update = order_book->getSnapshot();
+        OrderBookUpdate update = orderBook->getSnapshot();
         
         // Create a proper message with order book data
         nlohmann::json message;
@@ -500,5 +470,15 @@ void OrderBookReconstructor::registerLiquidityFlowMonitor(
     }
 }
 
- } // namespace data_ingestion
+core::Timestamp OrderBookReconstructor::timestampFromMillis(uint64_t millis) const {
+    return core::Timestamp{std::chrono::milliseconds{millis}};
+}
+
+uint64_t OrderBookReconstructor::timestampToMillis(const core::Timestamp& timestamp) const {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(
+        timestamp.time_since_epoch()
+    ).count();
+}
+
+} // namespace data_ingestion
 } // namespace trading

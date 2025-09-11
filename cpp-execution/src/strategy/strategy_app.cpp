@@ -185,17 +185,17 @@ public:
             double midPrice = orderBookReceiver_ ? orderBookReceiver_->getCurrentMidPrice(signal.symbol.toString()) : 0.0;
 
         std::lock_guard<std::mutex> lock(processedMutex_);
-        // LOG_DEBUG("Received new signal: ID={}, Symbol={}, Price={}, Direction={}, Strength={:.3f}, Confidence={:.2f}, Quality={:.2f}, GeneratedAt={}, TTL={}ms, Expiration={}",
-        //           signal.id,
-        //           signal.symbol.toString(),
-        //           midPrice,
-        //           (signal.direction == core::Direction::BUY ? "BUY" : (signal.direction == core::Direction::SELL ? "SELL" : "NEUTRAL")),
-        //           signal.strength,
-        //           signal.confidence,
-        //           signal.quality,
-        //           std::chrono::duration_cast<std::chrono::milliseconds>(signal.generationTime.time_since_epoch()).count(),
-        //           signal.ttl.count()/1000000,
-        //           std::chrono::duration_cast<std::chrono::milliseconds>(signal.expirationTime.time_since_epoch()).count());
+        LOG_DEBUG("Received new signal: ID={}, Symbol={}, Price={}, Direction={}, Strength={:.3f}, Confidence={:.2f}, Quality={:.2f}, GeneratedAt={}, TTL={}ms, Expiration={}",
+                  signal.id,
+                  signal.symbol.toString(),
+                  midPrice,
+                  (signal.direction == core::Direction::BUY ? "BUY" : (signal.direction == core::Direction::SELL ? "SELL" : "NEUTRAL")),
+                  signal.strength,
+                  signal.confidence,
+                  signal.quality,
+                  std::chrono::duration_cast<std::chrono::milliseconds>(signal.generationTime.time_since_epoch()).count(),
+                  signal.ttl.count()/1000000,
+                  std::chrono::duration_cast<std::chrono::milliseconds>(signal.expirationTime.time_since_epoch()).count());
         // //source of signal event
         // LOG_DEBUG("  Source Type: {}", static_cast<int>(signal.sourceType));
         //  enum class ImbalanceType {
