@@ -68,7 +68,7 @@ build_cpp() {
         print_status "$BLUE" "Changed to build directory: $(pwd)"
         
         # Run make and capture output
-        if make > "$current_dir/$BUILD_LOG_FILE" 2>&1; then
+        if make > "$BUILD_LOG_FILE" 2>&1; then
             print_status "$GREEN" "C++ build completed successfully"
             # Return to original directory
             cd "$current_dir"
@@ -146,7 +146,7 @@ start_python() {
     
     # Start Python process with nohup and config parameter
     cd "$(dirname "$PYTHON_SCRIPT_PATH")" || exit 1
-    nohup python3 "$(basename "$PYTHON_SCRIPT_PATH")" --config "../$config_path" > "../$PYTHON_LOG_FILE" 2>&1 &
+    nohup python3 "$(basename "$PYTHON_SCRIPT_PATH")" --config "../$config_path" > "$PYTHON_LOG_FILE" 2>&1 &
     local python_pid=$!
     
     # Save PID (adjust path since we changed directory)
