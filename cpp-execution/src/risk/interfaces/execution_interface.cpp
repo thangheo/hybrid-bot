@@ -13,23 +13,24 @@
 #include <mutex>
 #include <iostream>
 #include <iomanip>
+#include "common/logger.hpp"
 
 namespace trading {
 namespace risk {
 
 // Helper to log with timestamp (temporary until we integrate with logging system)
-void logWithTimestamp(const std::string& level, const std::string& message) {
-    auto now = std::chrono::system_clock::now();
-    auto now_time_t = std::chrono::system_clock::to_time_t(now);
-    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-        now.time_since_epoch()) % 1000;
+// void LOG_INFO(const std::string& level, const std::string& message) {
+//     auto now = std::chrono::system_clock::now();
+//     auto now_time_t = std::chrono::system_clock::to_time_t(now);
+//     auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+//         now.time_since_epoch()) % 1000;
         
-    std::stringstream ss;
-    ss << "[" << std::put_time(std::localtime(&now_time_t), "%Y-%m-%d %H:%M:%S")
-       << '.' << std::setfill('0') << std::setw(3) << ms.count() << "] ";
-    ss << "[" << level << "] " << message;
-    std::cout << ss.str() << std::endl;
-}
+//     std::stringstream ss;
+//     ss << "[" << std::put_time(std::localtime(&now_time_t), "%Y-%m-%d %H:%M:%S")
+//        << '.' << std::setfill('0') << std::setw(3) << ms.count() << "] ";
+//     ss << "[" << level << "] " << message;
+//     std::cout << ss.str() << std::endl;
+// }
 
 class ExecutionInterfaceImpl : public ExecutionInterface {
 
@@ -163,14 +164,14 @@ private:
                     executionReportCallback_(report);
                 }
             } catch (const std::exception& e) {
-                logWithTimestamp("ERROR", "Error processing execution report: " + std::string(e.what()));
+                LOG_INFO("ERROR", "Error processing execution report: " + std::string(e.what()));
             }
         }
     }
 
     // Handle error messages
     void handleErrorMessage(const std::string& context, const std::string& error) {
-        logWithTimestamp("ERROR", "ZeroMQ error in " + context + ": " + error);
+        LOG_INFO("ERROR", "ZeroMQ error in " + context + ": " + error);
     }
 
 public:
@@ -207,7 +208,7 @@ public:
     }
     std::map<std::string, double> getAccountBalances(const core::ExchangeId& exchangeId) override {
         if (!initialized_) {
-            logWithTimestamp("ERROR", "Execution interface not initialized");
+            LOG_INFO("ERROR", "Execution interface not initialized");
             return {};
         }
         
@@ -221,7 +222,7 @@ public:
             
             // Send request
             if (!requestClient_->publish("account", request.dump())) {
-                logWithTimestamp("ERROR", "Failed to send get account balances request");
+                LOG_INFO("ERROR", "Failed to send get account balances request");
                 return {};
             }
             
@@ -229,7 +230,7 @@ public:
             // For now, we'll just return an empty map
             return {};
         } catch (const std::exception& e) {
-            logWithTimestamp("ERROR", "Failed to get account balances: " + std::string(e.what()));
+            LOG_INFO("ERROR", "Failed to get account balances: " + std::string(e.what()));
             return {};
         }
     }
@@ -271,33 +272,33 @@ public:
             
             // Start the clients
             if (!requestClient_->start()) {
-                logWithTimestamp("ERROR", "Failed to start request client");
+                LOG_INFO("ERROR", "Failed to start request client");
                 return false;
             }
             
             if (!subscriptionClient_->start()) {
-                logWithTimestamp("ERROR", "Failed to start subscription client");
+                LOG_INFO("ERROR", "Failed to start subscription client");
                 return false;
             }
             
             // Subscribe to the execution reports topic
             if (!subscriptionClient_->subscribe(executionReportsTopic_)) {
-                logWithTimestamp("ERROR", "Failed to subscribe to execution reports topic");
+                LOG_INFO("ERROR", "Failed to subscribe to execution reports topic");
                 return false;
             }
             
             initialized_ = true;
-            logWithTimestamp("INFO", "Execution interface initialized successfully");
+            LOG_INFO("INFO", "Execution interface initialized successfully");
             return true;
         } catch (const std::exception& e) {
-            logWithTimestamp("ERROR", "Failed to initialize execution interface: " + std::string(e.what()));
+            LOG_INFO("ERROR", "Failed to initialize execution interface: " + std::string(e.what()));
             return false;
         }
     }
     
     std::string submitOrder(const OrderRequest& orderRequest) override {
         if (!initialized_) {
-            logWithTimestamp("ERROR", "Execution interface not initialized");
+            LOG_INFO("ERROR", "Execution interface not initialized");
             return "";
         }
         
@@ -310,7 +311,7 @@ public:
             
             // Send request
             if (!requestClient_->publish("orders", request.dump())) {
-                logWithTimestamp("ERROR", "Failed to send submit order request");
+                LOG_INFO("ERROR", "Failed to send submit order request");
                 return "";
             }
             
@@ -318,14 +319,14 @@ public:
             // For now, we'll just return the client order ID
             return orderRequest.clientOrderId;
         } catch (const std::exception& e) {
-            logWithTimestamp("ERROR", "Failed to submit order: " + std::string(e.what()));
+            LOG_INFO("ERROR", "Failed to submit order: " + std::string(e.what()));
             return "";
         }
     }
     
     bool cancelOrder(const std::string& orderId) override {
         if (!initialized_) {
-            logWithTimestamp("ERROR", "Execution interface not initialized");
+            LOG_INFO("ERROR", "Execution interface not initialized");
             return false;
         }
         
@@ -338,7 +339,7 @@ public:
             
             // Send request
             if (!requestClient_->publish("orders", request.dump())) {
-                logWithTimestamp("ERROR", "Failed to send cancel order request");
+                LOG_INFO("ERROR", "Failed to send cancel order request");
                 return false;
             }
             
@@ -346,14 +347,14 @@ public:
             // For now, we'll just return true
             return true;
         } catch (const std::exception& e) {
-            logWithTimestamp("ERROR", "Failed to cancel order: " + std::string(e.what()));
+            LOG_INFO("ERROR", "Failed to cancel order: " + std::string(e.what()));
             return false;
         }
     }
     
     int cancelAllOrders(const core::ExchangeId& exchangeId) override {
         if (!initialized_) {
-            logWithTimestamp("ERROR", "Execution interface not initialized");
+            LOG_INFO("ERROR", "Execution interface not initialized");
             return 0;
         }
         
@@ -366,7 +367,7 @@ public:
             
             // Send request
             if (!requestClient_->publish("orders", request.dump())) {
-                logWithTimestamp("ERROR", "Failed to send cancel all orders request");
+                LOG_INFO("ERROR", "Failed to send cancel all orders request");
                 return 0;
             }
             
@@ -374,7 +375,7 @@ public:
             // For now, we'll just return 0
             return 0;
         } catch (const std::exception& e) {
-            logWithTimestamp("ERROR", "Failed to cancel all orders: " + std::string(e.what()));
+            LOG_INFO("ERROR", "Failed to cancel all orders: " + std::string(e.what()));
             return 0;
         }
     }
@@ -387,7 +388,7 @@ public:
     // // cancelAllOrders with reason
     // int cancelAllOrders(const core::ExchangeId& exchangeId, const std::string& reason) override {
     //     if (!initialized_) {
-    //         logWithTimestamp("ERROR", "Execution interface not initialized");
+    //         LOG_INFO("ERROR", "Execution interface not initialized");
     //         return 0;
     //     }
 
@@ -401,7 +402,7 @@ public:
 
     //         // Send request
     //         if (!requestClient_->publish("orders", request.dump())) {
-    //             logWithTimestamp("ERROR", "Failed to send cancel all orders request");
+    //             LOG_INFO("ERROR", "Failed to send cancel all orders request");
     //             return 0;
     //         }
 
@@ -409,14 +410,14 @@ public:
     //         // For now, we'll just return 0
     //         return 0;
     //     } catch (const std::exception& e) {
-    //         logWithTimestamp("ERROR", "Failed to cancel all orders: " + std::string(e.what()));
+    //         LOG_INFO("ERROR", "Failed to cancel all orders: " + std::string(e.what()));
     //         return 0;
     //     }
     // }
 
     int cancelAllOrders(const core::ExchangeId& exchangeId, const core::Symbol& tradingPair) override {
         if (!initialized_) {
-            logWithTimestamp("ERROR", "Execution interface not initialized");
+            LOG_INFO("ERROR", "Execution interface not initialized");
             return 0;
         }
         
@@ -430,7 +431,7 @@ public:
             
             // Send request
             if (!requestClient_->publish("orders", request.dump())) {
-                logWithTimestamp("ERROR", "Failed to send cancel all orders request");
+                LOG_INFO("ERROR", "Failed to send cancel all orders request");
                 return 0;
             }
             
@@ -438,14 +439,14 @@ public:
             // For now, we'll just return 0
             return 0;
         } catch (const std::exception& e) {
-            logWithTimestamp("ERROR", "Failed to cancel all orders: " + std::string(e.what()));
+            LOG_INFO("ERROR", "Failed to cancel all orders: " + std::string(e.what()));
             return 0;
         }
     }
     
     std::string getOrderStatus(const std::string& orderId) override {
         if (!initialized_) {
-            logWithTimestamp("ERROR", "Execution interface not initialized");
+            LOG_INFO("ERROR", "Execution interface not initialized");
             return "{}";
         }
         
@@ -458,7 +459,7 @@ public:
             
             // Send request
             if (!requestClient_->publish("orders", request.dump())) {
-                logWithTimestamp("ERROR", "Failed to send get order status request");
+                LOG_INFO("ERROR", "Failed to send get order status request");
                 return "{}";
             }
             
@@ -466,7 +467,7 @@ public:
             // For now, we'll just return an empty JSON object
             return "{}";
         } catch (const std::exception& e) {
-            logWithTimestamp("ERROR", "Failed to get order status: " + std::string(e.what()));
+            LOG_INFO("ERROR", "Failed to get order status: " + std::string(e.what()));
             return "{}";
         }
     }
@@ -478,7 +479,7 @@ public:
     
     std::vector<OrderRequest> getOpenOrders(const std::optional<std::string>& exchangeId) override {
         if (!initialized_) {
-            logWithTimestamp("ERROR", "Execution interface not initialized");
+            LOG_INFO("ERROR", "Execution interface not initialized");
             return {};
         }
         
@@ -495,7 +496,7 @@ public:
             
             // Send request
             if (!requestClient_->publish("orders", request.dump())) {
-                logWithTimestamp("ERROR", "Failed to send get open orders request");
+                LOG_INFO("ERROR", "Failed to send get open orders request");
                 return {};
             }
             
@@ -503,14 +504,14 @@ public:
             // For now, we'll just return an empty vector
             return {};
         } catch (const std::exception& e) {
-            logWithTimestamp("ERROR", "Failed to get open orders: " + std::string(e.what()));
+            LOG_INFO("ERROR", "Failed to get open orders: " + std::string(e.what()));
             return {};
         }
     }
     
     bool isExchangeAvailable(const core::ExchangeId& exchangeId) override {
         if (!initialized_) {
-            logWithTimestamp("ERROR", "Execution interface not initialized");
+            LOG_INFO("ERROR", "Execution interface not initialized");
             return false;
         }
         
@@ -523,7 +524,7 @@ public:
             
             // Send request
             if (!requestClient_->publish("exchange_status", request.dump())) {
-                logWithTimestamp("ERROR", "Failed to send exchange availability request");
+                LOG_INFO("ERROR", "Failed to send exchange availability request");
                 return false;
             }
             
@@ -531,14 +532,14 @@ public:
             // For now, we'll just return false
             return false;
         } catch (const std::exception& e) {
-            logWithTimestamp("ERROR", "Failed to check if exchange is available: " + std::string(e.what()));
+            LOG_INFO("ERROR", "Failed to check if exchange is available: " + std::string(e.what()));
             return false;
         }
     }
     
     std::string getExchangeStatus(const core::ExchangeId& exchangeId) override {
         if (!initialized_) {
-            logWithTimestamp("ERROR", "Execution interface not initialized");
+            LOG_INFO("ERROR", "Execution interface not initialized");
             return "{}";
         }
         
@@ -551,7 +552,7 @@ public:
             
             // Send request
             if (!requestClient_->publish("exchange_status", request.dump())) {
-                logWithTimestamp("ERROR", "Failed to send get exchange status request");
+                LOG_INFO("ERROR", "Failed to send get exchange status request");
                 return "{}";
             }
             
@@ -559,7 +560,7 @@ public:
             // For now, we'll just return an empty JSON object
             return "{}";
         } catch (const std::exception& e) {
-            logWithTimestamp("ERROR", "Failed to get exchange status: " + std::string(e.what()));
+            LOG_INFO("ERROR", "Failed to get exchange status: " + std::string(e.what()));
             return "{}";
         }
     }

@@ -482,10 +482,10 @@ public:
     const RiskLoggingConfig& getLoggingConfig() const;
     const bool getBoolValue(std::string key) ;
     // const double getDoubleValue(std::string key) ;
-    const bool hasKey(std::string key) ;
+    bool hasKey(std::string key) ;
     // const std::string getStringValue(std::string key) ;
     // getIntValue
-    const int getIntValue(std::string key) ;
+    int getIntValue(std::string key) ;
 
     // Setters
     void setPositionLimitConfig(const PositionLimitConfig& config);
@@ -507,7 +507,18 @@ public:
     std::string executionRequestEndpoint = "tcp://localhost:5555";
     std::string executionPublishEndpoint = "tcp://localhost:5556";
     std::string executionReportsTopic = "execution_reports";
-    
+    // marketDataRequestEndpoint
+    std::string marketDataRequestEndpoint = "tcp://localhost:5560";
+    std::string marketDataPublishEndpoint = "tcp://localhost:5561";
+    std::string marketDataTopic = "market_data";
+    std::string zmqSubscriberEndpoint = "tcp://localhost:5556";
+
+    // zmqPublisherEndpoint
+    std::string zmqPublisherEndpoint = "tcp://localhost:5557";
+    // cache validity duration in milliseconds
+    int marketDataCacheDurationMs = 10;
+    std::string defaultExchange = "binance";
+    //
 
 private:
     // m_positionLimitConfig
