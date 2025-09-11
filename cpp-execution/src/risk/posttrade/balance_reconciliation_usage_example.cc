@@ -36,7 +36,7 @@ public:
         // 2. Create necessary interfaces (these would be your actual implementations)
         auto positionTracker = std::make_shared<PositionTracker>(*riskConfig, createDataInterface());
         auto dataInterface = createDataInterface();
-        auto executionInterface = createExecutionInterface();
+        auto executionInterface = createExecutionInterface(*riskConfig);
         
         // 3. Create the balance reconciliation system
         auto balanceReconciliation = std::make_unique<BalanceReconciliation>(
