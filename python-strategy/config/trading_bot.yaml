@@ -269,8 +269,8 @@ strategy:
 # 🛡️ RISK MANAGEMENT
 risk_management:
   # Adjusted for crypto volatility
-  max_portfolio_risk: 0.05        # 5% (tăng từ 2%)
-  max_position_risk: 0.02         # 2% (tăng từ 1%)
+  max_portfolio_risk: 0.1        # 5% (tăng từ 2%)
+  max_position_risk: 0.04         # 2% (tăng từ 1%)
   max_drawdown_limit: 0.25        # 25% (tăng từ 15%)
   
   # Crypto-appropriate regime multipliers
