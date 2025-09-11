@@ -1,0 +1,73 @@
+.
+├── algorithms
+│   ├── iceberg_algorithm.cpp
+│   ├── pov_algorithm.cpp
+│   ├── timer.cpp
+│   ├── twap_algorithm.cpp
+│   └── vwap_algorithm.cpp
+├── api_client_manager.cpp
+├── authentication_service.cpp
+├── CMakeLists.txt
+├── dir.sh
+├── examples
+│   └── smart_oder_example.cc
+├── exchange_api_client.cpp
+├── exchanges
+│   ├── binance_api_client.cpp
+│   └── ftx_api_client.cpp
+├── execution_algorithm_factory.cpp
+├── execution_engine.cpp
+├── execution_service.cpp
+├── fill_reconciliation.cpp
+├── grpc
+│   └── execution_service_impl.cpp
+├── implement_plan.md
+├── models
+│   ├── execution_report.cpp
+│   └── order.cpp
+├── order_generator.cpp
+├── order_lifecycle_tracker.cpp
+├── order_type_selector.cpp
+├── rate_limit_controller.cpp
+├── request_prioritizer.cpp
+├── smart_order_router.cpp
+├── test_execution.cpp
+└── tree.txt
+
+6 directories, 29 files
+.
+├── algorithms
+│   ├── iceberg_algorithm.hpp
+│   ├── pov_algorithm.hpp
+│   ├── pov_config.hpp
+│   ├── timer.hpp
+│   ├── twap_algorithm.hpp
+│   ├── twap_config.hpp
+│   └── vwap_algorithm.hpp
+├── api_client_manager.hpp
+├── authentication_service.hpp
+├── exchange_api_client.hpp
+├── exchanges
+│   ├── binance_api_client.hpp
+│   └── ftx_api_client.hpp
+├── execution_algorithm_factory.hpp
+├── execution_forward_decl.hpp
+├── execution_service.hpp
+├── execution_types.hpp
+├── fill_reconciliation.hpp
+├── grpc
+│   └── execution_service_impl.hpp
+├── implement_order.md
+├── models
+│   ├── execution_report.hpp
+│   └── order.hpp
+├── order_generator.hpp
+├── order_lifecycle_tracker.hpp
+├── order_type_selector.hpp
+├── rate_limit_controller.hpp
+├── request_prioritizer.hpp
+├── smart_order_router.hpp
+├── trading_signal.hpp
+└── tree.txt
+
+5 directories, 29 files

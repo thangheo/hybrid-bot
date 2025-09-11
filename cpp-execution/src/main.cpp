@@ -44,6 +44,7 @@
 // Core types
 #include "core/market_types.hpp"
 #include "core/direction.hpp"
+#include "core/types.hpp"
 
 using namespace trading;
 using namespace std::chrono_literals;
@@ -75,7 +76,7 @@ public:
         // 2. Initialize data ingestion service
         std::cout << "Initializing data ingestion service..." << std::endl;
         dataIngestionService_ = std::make_unique<data_ingestion::DataIngestionService>(
-            "config/full_system_config.json");
+            "config/data_ingestion.json");
         
         if (!dataIngestionService_->initialize()) {
             std::cerr << "Failed to initialize data ingestion service" << std::endl;
@@ -93,7 +94,7 @@ public:
         
         // 4. Initialize strategy engine
         std::cout << "Initializing strategy engine..." << std::endl;
-        strategyEngine_ = std::make_unique<strategy::StrategyEngine>("integrated_strategy");
+        strategyEngine_ = std::make_unique<strategy::StrategyEngine>(StrategyId("integrated_strategy_test_v1"));
         
         if (!strategyEngine_->initialize(strategyConfig_)) {
             std::cerr << "Failed to initialize strategy engine" << std::endl;
@@ -268,36 +269,22 @@ private:
     }
 })";
         
-        std::ofstream configFile("config/full_system_config.json");
+        std::ofstream configFile("system_config.json");
         configFile << configContent;
         configFile.close();
     }
     
     void createStrategyConfig() {
-        strategyConfig_.strategy_id = StrategyId("integrated_strategy", "1.0");
-        strategyConfig_.tradingPairs = {
-                {"BTC/USDT", common::ExchangeId::fromString("BINANCE")},
-                {"ETH/USDT", common::ExchangeId::fromString("BINANCE")},
-                {"BNB/USDT", common::ExchangeId::fromString("BINANCE")},
-                {"ADA/USDT", common::ExchangeId::fromString("BINANCE")}
-                // {"ETH/USDT", strategy::ParameterSet()},
-                // {"BNB/USDT", strategy::ParameterSet()},
-                // {"ADA/USDT", strategy::ParameterSet()}
-            // {"BTC/USDT", strategy::ParameterSet()},
-            // {"ETH/USDT", strategy::ParameterSet()},
-            // {"BNB/USDT", strategy::ParameterSet()},
-            // {"ADA/USDT", strategy::ParameterSet()}
-        };
-        
-        // Default parameters for all pairs
-        // for (auto& [pair, params] : strategyConfig_.tradingPairs) {
-        //     params.parameters["imbalance_threshold"] = 0.15;
-        //     params.parameters["signal_strength_threshold"] = 0.5;
-        //     params.parameters["confidence_threshold"] = 0.6;
-        //     params.parameters["max_position_size"] = 1000.0;
-        // }
+      
+        std::string configPath = "config/strategy_config.json";
+        strategyConfig_ = loadStrategyConfigFromFile(configPath);
+            //  std::map<std::string, core::ExchangeId> tradingPairs;
+        for (const auto& [name, pair] : strategyConfig_.tradingPairs) {
+            std::cout << "Configured trading pair: " << name 
+                      << " on exchange " << pair.toString() << std::endl;            
+        }
     }
-    
+
     void createRiskConfig() {
         // Setup risk configuration (similar to risk demo)
         auto& positionConfig = const_cast<PositionLimitConfig&>(riskConfig_.getPositionLimitConfig());
@@ -571,12 +558,12 @@ private:
                                              core::Direction direction, double size) {
         execution::TradingSignal signal;
         signal.id = id;
-        signal.tradingPair = pair;
+        signal.symbol = pair;
         signal.direction = direction;
         signal.strength = 0.7;
         signal.targetSize = size;
-        signal.strategyId = "test_strategy";
-        signal.strategyVersion = "1.0";
+        signal.strategyId = core::StrategyId::fromString("test v1.1");
+        // signal.strategyVersion = "1.0";
         return signal;
     }
     

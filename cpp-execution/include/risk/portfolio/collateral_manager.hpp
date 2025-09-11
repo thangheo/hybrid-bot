@@ -165,6 +165,7 @@ public:
 private:
     std::shared_ptr<PositionTracker> m_positionTracker;
     std::shared_ptr<ExecutionInterface> m_executionInterface;
+    std::shared_ptr<execution::ExecutionService> m_executionService; // ✅ Direct access
     std::shared_ptr<DataInterface> m_dataInterface;
     RiskConfig m_config;
     CollateralConfig m_collateralConfig;
