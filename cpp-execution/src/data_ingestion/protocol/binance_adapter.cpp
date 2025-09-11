@@ -90,20 +90,25 @@ OrderBookUpdate BinanceAdapter::normalize(const MarketDataUpdate& update) {
         json jsonObj = json::parse(jsonData);
         
         // Handle stream wrapper format
-        if (jsonObj.contains("stream") && jsonObj.contains("data")) {
-            std::string stream = jsonObj["stream"];
-            jsonObj = jsonObj["data"];
-            normalized.tradingPair.fromString(extractSymbolFromStream(stream));
-        } else if (jsonObj.contains("s")) {
-            normalized.tradingPair.fromString(jsonObj["s"]);
-        } else if (jsonObj.contains("lastUpdateId")) {
-            // Snapshot without symbol - use first subscribed symbol as fallback
-            normalized.tradingPair.fromString("UNKNOWN");
-        }
+        // if (jsonObj.contains("stream") && jsonObj.contains("data")) {
+        //     std::string stream = jsonObj["stream"];
+        //     jsonObj = jsonObj["data"];
+        //     // std::cout << "Stream: " << stream << std::endl;
+        //     // auto symbolStr = extractSymbolFromStream(stream);
+        //     // std::cout << "Extracted symbol from stream: " << symbolStr << std::endl;
+        //     // normalized.tradingPair.fromString(symbolStr);
+        //     // std::cout << "Extracted trading pair: " << normalized.tradingPair.toString() << std::endl;
+        //     // normalized.tradingPair.fromString();
+        // } else if (jsonObj.contains("s")) {
+        //     normalized.tradingPair.fromString(jsonObj["s"]);
+        // } else if (jsonObj.contains("lastUpdateId")) {
+        //     // Snapshot without symbol - use first subscribed symbol as fallback
+        //     normalized.tradingPair.fromString("UNKNOWN");
+        // }
         
-        normalized.tradingPair.fromString(standardizeTradingPair(normalized.tradingPair));
-        normalized.symbol = normalized.tradingPair;
-        
+        // normalized.tradingPair.fromString(standardizeTradingPair(normalized.tradingPair));
+        normalized.symbol = update.tradingPair; //normalized.tradingPair;
+        normalized.tradingPair = update.tradingPair; //normalized.tradingPair; bullshit
         // Determine message type
         if (jsonObj.contains("lastUpdateId") && jsonObj.contains("bids") && jsonObj.contains("asks")) {
             normalized.isSnapshot = true;

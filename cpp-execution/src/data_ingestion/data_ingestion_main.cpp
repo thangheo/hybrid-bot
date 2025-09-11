@@ -27,7 +27,7 @@ void createTestConfig() {
             "name": "Binance",
             "ws_url": "wss://stream.binance.com:9443/ws",
             "rest_url": "https://api.binance.com",
-            "symbols": ["BTCUSDT", "ETHUSDT", "BNBUSDT", "LTCUSDT", "XRPUSDT", "BCHUSDT", "ADAUSDT", "DOTUSDT", "LINKUSDT", "XLMUSDT", "DOGEUSDT", "SOLUSDT", "MATICUSDT", "AVAXUSDT", "SHIBUSDT", "TRXUSDT", "UNIUSDT", "ATOMUSDT", "ALGOUSDT", "VETUSDT", "FILUSDT"],
+            "symbols": ["BTC/USDT", "ETH/USDT", "BNB/USDT", "LTC/USDT", "XRP/USDT", "BCH/USDT", "ADA/USDT", "DOT/USDT", "LINK/USDT", "XLM/USDT", "DOGE/USDT", "SOL/USDT", "MATIC/USDT", "AVAX/USDT", "SHIB/USDT", "TRX/USDT", "UNI/USDT", "ATOM/USDT", "ALGO/USDT", "VET/USDT", "FIL/USDT"],
             "connection_timeout_ms": 5000,
             "max_reconnect_attempts": 3
         }
@@ -187,7 +187,7 @@ int main() {
       "symbol": "FIL/USDT", 
       "exchange": "BINANCE"
     }*/
-        std::vector<std::string> symbols = {"BTCUSDT", "ETHUSDT", "BNBUSDT", "LTCUSDT", "XRPUSDT", "BCHUSDT", "ADAUSDT", "DOTUSDT", "LINKUSDT", "XLMUSDT", "DOGEUSDT", "SOLUSDT", "MATICUSDT", "AVAXUSDT", "SHIBUSDT", "TRXUSDT", "UNIUSDT", "ATOMUSDT", "ALGOUSDT", "VETUSDT", "FILUSDT"};
+        std::vector<std::string> symbols = {"BTC/USDT", "ETH/USDT", "BNB/USDT", "LTC/USDT", "XRP/USDT", "BCH/USDT", "ADA/USDT", "DOT/USDT", "LINK/USDT", "XLM/USDT", "DOGE/USDT", "SOL/USDT", "MATIC/USDT", "AVAX/USDT", "SHIB/USDT", "TRX/USDT", "UNI/USDT", "ATOM/USDT", "ALGO/USDT", "VET/USDT", "FIL/USDT"};
         std::cout << "Starting service with symbols: ";
         for (const auto& symbol : symbols) {
             std::cout << symbol << " ";

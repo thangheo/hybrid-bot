@@ -98,8 +98,6 @@ void ExchangeManager::onWebSocketData(const core::ExchangeId& exchange,
         update.receivedTimestamp = std::chrono::system_clock::now();
         update.data = data;
         update.updateType = "orderbook";
-        // std::cout << "[DEBUG] WebSocket data received - Exchange: " << exchange.toString() 
-        //         << ", Symbol: '" << symbol << "', Data size: " << data.size() << std::endl;
         // Forward to the normalizer
         if (normalizer_) {
             normalizer_->processMarketData(update);

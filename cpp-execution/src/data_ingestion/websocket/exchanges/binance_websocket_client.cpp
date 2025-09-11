@@ -484,41 +484,7 @@ bool BinanceWebSocketClient::sendWebSocketMessage(const std::string& message) {
 void BinanceWebSocketClient::onWebSocketOpen() {
     LOG_INFO("WebSocket connection opened - ready for subscriptions");
 }
-
-// void BinanceWebSocketClient::onWebSocketMessage(const std::string& message) {
-//     try {
-//         std::cout << "[DEBUG] Raw message from Binance: " << message.substr(0, 200) << "..." << std::endl;
-//         messageCount_.fetch_add(1);
-//         lastMessageTime_ = std::chrono::system_clock::now();
-        
-//         // Call message callback if set
-//         if (messageCallback_) {
-//             messageCallback_(message, lastMessageTime_);
-//         }
-        
-//         json data = json::parse(message);
-        
-//         if (data.contains("id") && (data.contains("result") || data.contains("error"))) {
-//             handleResponse(data);
-//             return;
-//         }
-        
-//         if (data.contains("stream") && data.contains("data")) {
-//             // std::string stream = data.value("stream", "");
-//             // std::cout << "[DEBUG] Stream message - stream: '" << stream << "'" << std::endl;
-//             handleStreamMessage(data);
-//             return;
-//         }
-        
-//         if (dataCallback_) {
-//             std::vector<uint8_t> dataBytes(message.begin(), message.end());
-//             dataCallback_(core::ExchangeId::binance(), "RAW_MESSAGE", dataBytes);
-//         }
-        
-//     } catch (const std::exception& e) {
-//         LOG_ERROR("Error processing WebSocket message: " + std::string(e.what()));
-//     }
-// }
+ 
 void BinanceWebSocketClient::onWebSocketMessage(const std::string& message) {
     try {
         messageCount_.fetch_add(1);
@@ -593,7 +559,6 @@ void BinanceWebSocketClient::handleStreamMessage(const json& data) {
             
             std::string symbol = extractSymbolFromStream(stream);
             std::string event_type = extractEventTypeFromStream(stream);
-            
             if (event_type.find("depth") != std::string::npos) {
                 processOrderBookData(symbol, event_type, stream_data);
             } else if (event_type == "trade") {

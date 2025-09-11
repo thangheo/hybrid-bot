@@ -70,7 +70,7 @@ struct OrderBookManagerConfig {
     size_t maxOrderBooks = 1000;                // Maximum number of order books
     std::chrono::minutes inactiveTimeout{60};   // Time before order book considered inactive
     bool enableStatistics = true;               // Enable performance statistics
-    bool validateSequenceNumbers = true;        // Validate sequence numbers on updates
+    bool validateSequenceNumbers = false;       // Validate sequence numbers on updates (disabled for crypto)
     bool enableDeltaTracking = true;            // Enable delta tracking for order books
     int defaultDepth = 20;                      // Default depth for snapshots
     bool logErrors = true;                      // Log errors to system logger

@@ -242,8 +242,6 @@ void DataIngestionService::setupEventHandling() {
 void DataIngestionService::onNormalizedOrderBook(const OrderBookUpdate& update) {
     try {
         messagesProcessed_.fetch_add(1);
-        //print symbol
-        std::cout << "[DEBUG] Received OrderBookUpdate for symbol: " << update.symbol.toString() << std::endl;
         if (reconstructor_) {
             if (update.isSnapshot) {
                 reconstructor_->processSnapshot(
