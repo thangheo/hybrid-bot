@@ -199,7 +199,7 @@ bool RiskConfig::loadJsonConfiguration(const std::string& jsonStr) {
     }
 }
 
-const bool RiskConfig::getBoolValue(std::string key) {
+bool RiskConfig::getBoolValue(std::string key) {
     try {
         if (key == "positionLimit.enforceStrictly") {
             return positionLimitConfig_.enforceStrictly;

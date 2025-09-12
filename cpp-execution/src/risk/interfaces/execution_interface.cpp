@@ -328,12 +328,31 @@ std::unique_ptr<ExecutionInterface> createExecutionInterface(const RiskConfig& c
         // Create ExecutionService dependencies
         auto orderGenerator = std::make_shared<trading::execution::OrderGenerator>();
         auto smartRouter = std::make_shared<trading::execution::SmartOrderRouter>();
+        // order_generator
+        auto order_type_selector = std::make_shared<trading::execution::OrderTypeSelector>();
+        auto execution_algorithm_factory = std::make_shared<trading::execution::ExecutionAlgorithmFactory>();
+        auto order_lifecycle_tracker = std::make_shared<trading::execution::OrderLifecycleTracker>();
+        auto fill_reconciliation = std::make_shared<trading::execution::FillReconciliation>();  
         // Add other required dependencies based on ExecutionService constructor
-        
+    //     ExecutionService(
+    //     std::shared_ptr<common::ExchangeGateway> exchangeGateway,   // NEW: Gateway first
+    //     std::shared_ptr<OrderGenerator> order_generator,
+    //     std::shared_ptr<SmartOrderRouter> smart_order_router,
+    //     std::shared_ptr<OrderTypeSelector> order_type_selector,
+    //     std::shared_ptr<ExecutionAlgorithmFactory> execution_algorithm_factory,
+    //     std::shared_ptr<OrderLifecycleTracker> order_lifecycle_tracker,
+    //     std::shared_ptr<FillReconciliation> fill_reconciliation
+    // );
+        // create constructors for other dependencies as needed
         // Create ExecutionService with proper constructor
         auto executionService = std::make_shared<trading::execution::ExecutionService>(
+            gateway,
             orderGenerator,
-            smartRouter
+            smartRouter,
+            order_type_selector,
+            execution_algorithm_factory,
+            order_lifecycle_tracker,
+            fill_reconciliation
             // Add other parameters as needed
         );
         
