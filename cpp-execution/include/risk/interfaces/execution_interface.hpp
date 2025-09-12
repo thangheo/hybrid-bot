@@ -11,7 +11,7 @@
 
 #pragma once
 
-#include "risk_types.hpp"
+#include "risk/risk_types.hpp"
 #include "core/market_types.hpp"
 #include "execution/models/order.hpp"
 #include "execution/models/execution_report.hpp"

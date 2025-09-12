@@ -34,7 +34,7 @@ RiskManager::RiskManager(std::shared_ptr<trading::execution::ExecutionService> e
     m_collateralManager = std::make_unique<CollateralManager>(
         m_config,
         positionTracker,
-        m_executionInterface.get(), 
+        m_executionInterface, 
         dataInterface
     );
 }
