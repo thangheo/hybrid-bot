@@ -65,7 +65,7 @@ bool RiskManager::initialize() {
         
         // Initialize the existing DataInterface
         if (!m_dataInterface->initialize()) {
-            LOG_ERROR("RiskManager", "Failed to initialize DataInterface");
+            LOG_ERROR(std::format("{} {}", "RiskManager", "Failed to initialize DataInterface"));
             return false;
         }
         
@@ -74,11 +74,11 @@ bool RiskManager::initialize() {
         
         // ✅ Check if DataInterface is connected after initialization
         if (!m_dataInterface->isConnected()) {
-            LOG_WARN("RiskManager", "DataInterface initialized but not connected - this may cause issues");
+            LOG_WARN(std::format("{} {}", "RiskManager", "DataInterface initialized but not connected - this may cause issues"));
             // Try to establish connection if DataInterface has connect method
             // Note: Some DataInterface implementations auto-connect during initialize()
         }
-        LOG_INFO("RiskManager", "DataInterface initialization complete");
+        LOG_INFO(std::format("{} {}", "RiskManager", "DataInterface initialization complete"));
 
         // Initialize portfolio manager first
         m_portfolioManager = std::make_unique<PortfolioManager>(m_config);
@@ -86,24 +86,22 @@ bool RiskManager::initialize() {
             LOG_ERROR("RiskManager", "Failed to initialize PortfolioManager");
             return false;
         }
-        
+        LOG_INFO(std::format("{} {}", "RiskManager", "Initialized PortfolioManager successfully"));
         // Initialize pre-trade filter
         m_preTradeFilter = std::make_unique<PreTradeRiskFilter>(m_config);
         if (!m_preTradeFilter->initialize()) {
-            LOG_ERROR("RiskManager", "Failed to initialize PreTradeRiskFilter");
+            LOG_ERROR(std::format("{} {}", "RiskManager", "Failed to initialize PreTradeRiskFilter"));
             return false;
         }
-        
+        LOG_INFO(std::format("{} {}", "RiskManager", "Initialized PreTradeRiskFilter successfully"));
         // Initialize post-trade monitor
         m_postTradeMonitor = std::make_unique<PostTradeMonitor>(m_config, m_portfolioManager.get());
         if (!m_postTradeMonitor->initialize()) {
-            LOG_ERROR("RiskManager", "Failed to initialize PostTradeMonitor");
+            LOG_ERROR(std::format("{} {}", "RiskManager", "Failed to initialize PostTradeMonitor"));
             return false;
         }
-        
-        
-        LOG_INFO("RiskManager", "Initialized DataInterface successfully");
-        
+        LOG_INFO(std::format("{} {}", "RiskManager", "Initialized PostTradeMonitor successfully"));
+
         // ✅ Fix smart pointer conversion - use proper shared_ptr sharing
         std::shared_ptr<DataInterface> sharedDataInterface;
         
@@ -122,37 +120,37 @@ bool RiskManager::initialize() {
                     // This is safe as long as unique_ptr outlives all shared_ptr uses
                 }
             );
-            
-            LOG_INFO("RiskManager", "Created shared DataInterface wrapper for PositionTracker");
+
+            LOG_INFO("{} {}", "RiskManager", "Created shared DataInterface wrapper for PositionTracker");
         } else {
-            LOG_ERROR("RiskManager", "m_dataInterface is null, cannot create shared wrapper");
+            LOG_ERROR("{} {}", "RiskManager", "m_dataInterface is null, cannot create shared wrapper");
             return false;
         }
         
         std::shared_ptr<PositionTracker> positionTracker = std::make_shared<PositionTracker>(m_config, sharedDataInterface);
         
         // ✅ Add debug logging before PositionTracker initialization
-        LOG_INFO("RiskManager", "About to initialize PositionTracker...");
-        LOG_INFO("RiskManager", "DataInterface state before PositionTracker init:");
-        
+        LOG_INFO(std::format("{} {}", "RiskManager", "About to initialize PositionTracker..."));
+        LOG_INFO(std::format("{} {}", "RiskManager", "DataInterface state before PositionTracker init:"));
+
         std::string dataInterfaceStatus = m_dataInterface ? "VALID" : "NULL";
-        LOG_INFO("RiskManager", "  - DataInterface ptr: " + dataInterfaceStatus);
-        
+        LOG_INFO(std::format("{} {}", "RiskManager", "  - DataInterface ptr: {}", dataInterfaceStatus));
+
         std::string dataInterfaceConnected = (m_dataInterface && m_dataInterface->isConnected()) ? "YES" : "NO";
-        LOG_INFO("RiskManager", "  - DataInterface connected: " + dataInterfaceConnected);
-        
+        LOG_INFO(std::format("{} {}", "RiskManager", "  - DataInterface connected: {}", dataInterfaceConnected));
+
         std::string sharedWrapperStatus = sharedDataInterface ? "VALID" : "NULL";
-        LOG_INFO("RiskManager", "  - Shared wrapper ptr: " + sharedWrapperStatus);
-        
+        LOG_INFO(std::format("{} {}", "RiskManager", "  - Shared wrapper ptr: {}", sharedWrapperStatus));
+
         std::string sharedWrapperConnected = (sharedDataInterface && sharedDataInterface->isConnected()) ? "YES" : "NO";
-        LOG_INFO("RiskManager", "  - Shared wrapper connected: " + sharedWrapperConnected);
-        
+        LOG_INFO(std::format("{} {}", "RiskManager", "  - Shared wrapper connected: {}", sharedWrapperConnected));
+
         if (!positionTracker->initialize()) {
-            LOG_ERROR("RiskManager", "Failed to initialize PositionTracker");
+            LOG_ERROR(std::format("{} {}", "RiskManager", "Failed to initialize PositionTracker"));
             return false;
         }
-        LOG_INFO("RiskManager", "Initialized PositionTracker successfully");
-        
+        LOG_INFO(std::format("{} {}", "RiskManager", "Initialized PositionTracker successfully"));
+
         // ✅ Pass shared wrapper to CollateralManager
         m_collateralManager = std::make_unique<CollateralManager>(
             m_config,
@@ -162,11 +160,14 @@ bool RiskManager::initialize() {
         );
         
         if(!m_collateralManager) {
-            LOG_ERROR("RiskManager", "Failed to create CollateralManager");
+            LOG_ERROR(std::format("{} {}", "RiskManager", "Failed to create CollateralManager"));
             return false;
         }
-        LOG_INFO("RiskManager", "Created CollateralManager successfully");
-        
+        LOG_INFO(std::format("{} {}", "RiskManager", "Created CollateralManager successfully"));
+        if (!m_collateralManager->initialize()) {
+            LOG_ERROR(std::format("{} {}", "RiskManager", "Failed to initialize CollateralManager"));
+            return false;
+        }
         // Initialize strategy interface
         m_strategyInterface = createStrategyInterface(m_config);
         

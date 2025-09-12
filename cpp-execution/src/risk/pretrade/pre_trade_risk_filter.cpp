@@ -54,12 +54,6 @@ PreTradeRiskFilter::~PreTradeRiskFilter() {
 bool PreTradeRiskFilter::initialize() {
     try {
         LOG_INFO("Initializing pre-trade risk filter...");
-        // ❌ Remove: Don't create separate DataInterface - use shared one from RiskManager
-        // auto dataInterface = createDataInterface(); 
-        // if (!dataInterface) {
-        //     LOG_ERROR("Failed to create data interface");
-        //     return false;
-        // }
 
         // Create shared dependencies with null DataInterface for now
         // TODO: Accept DataInterface from RiskManager constructor

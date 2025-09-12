@@ -385,6 +385,12 @@ private:
 
     void createRiskConfig() {
         // Setup risk configuration (similar to risk demo)
+        // load config from file
+        std::string configPath = "config/risk_config.json";
+        riskConfig_.loadFromFile(configPath);
+        if (!riskConfig_.validate()) {
+            std::cerr << "Invalid risk configuration!" << std::endl;
+        }
         auto& positionConfig = const_cast<PositionLimitConfig&>(riskConfig_.getPositionLimitConfig());
         positionConfig.assetLimits["BTC"] = 2.0;
         positionConfig.assetLimits["ETH"] = 20.0;
