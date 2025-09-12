@@ -181,7 +181,7 @@ public:
         std::cout << "Initializing risk manager..." << std::endl;
         // riskManager_ = std::make_unique<risk::RiskManager>(executionService_, riskConfig_);
         // ✅ NEW - Use the factory method
-        auto riskManager_ = RiskManager::create(executionService_, riskConfig_);
+        riskManager_ = RiskManager::create(executionService_, riskConfig_);
         if (!riskManager_) {
             LOG_ERROR("Application", "Failed to initialize risk manager");
             return false;
@@ -317,7 +317,7 @@ private:
     // Core components
     std::unique_ptr<data_ingestion::DataIngestionService> dataIngestionService_;
     std::unique_ptr<strategy::StrategyEngine> strategyEngine_;
-    std::unique_ptr<risk::RiskManager> riskManager_;
+    std::shared_ptr<risk::RiskManager> riskManager_;
     std::shared_ptr<execution::ExecutionService> executionService_;
     // gateway
     std::shared_ptr<common::ExchangeGateway> exchangeGateway_;
