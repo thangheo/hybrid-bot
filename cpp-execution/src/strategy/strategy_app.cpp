@@ -185,36 +185,7 @@ public:
             double midPrice = orderBookReceiver_ ? orderBookReceiver_->getCurrentMidPrice(signal.symbol.toString()) : 0.0;
 
         std::lock_guard<std::mutex> lock(processedMutex_);
-        // LOG_DEBUG("Received new signal: ID={}, Symbol={}, Price={}, Direction={}, Strength={:.3f}, Confidence={:.2f}, Quality={:.2f}, GeneratedAt={}, TTL={}ms, Expiration={}",
-        //           signal.id,
-        //           signal.symbol.toString(),
-        //           midPrice,
-        //           (signal.direction == core::Direction::BUY ? "BUY" : (signal.direction == core::Direction::SELL ? "SELL" : "NEUTRAL")),
-        //           signal.strength,
-        //           signal.confidence,
-        //           signal.quality,
-        //           std::chrono::duration_cast<std::chrono::milliseconds>(signal.generationTime.time_since_epoch()).count(),
-        //           signal.ttl.count()/1000000,
-        //           std::chrono::duration_cast<std::chrono::milliseconds>(signal.expirationTime.time_since_epoch()).count());
-        // //source of signal event
-        // LOG_DEBUG("  Source Type: {}", static_cast<int>(signal.sourceType));
-        //  enum class ImbalanceType {
-        //     VOLUME_IMBALANCE,              // Significant difference between bid and ask volume
-        //     PRICE_LEVEL_IMBALANCE,         // Imbalance across multiple price levels
-        //     LIQUIDITY_REMOVAL,             // Sudden removal of liquidity from one side
-        //     ORDER_FLOW_IMBALANCE,          // Directional bias in order submissions
-        //     LARGE_ORDER_APPEARANCE,        // Large orders appearing in the book
-        //     LARGE_ORDER_DISAPPEARANCE,     // Large orders being removed from the book
-        //     PRICE_LEVEL_CONCENTRATION,     // Concentration of volume at specific price levels
-        //     BID_ASK_SPREAD_CHANGE,         // Significant change in the bid-ask spread
-        //     MARKET_DEPTH_CHANGE,           // Significant change in market depth
-        //     LIQUIDITY_FLOW_IMBALANCE,      // Imbalance in liquidity flow
-        //     ABNORMAL_SPREAD,               // Abnormal spread between bid and ask prices
-        //     LIQUIDITY_IMBALANCE,           // General liquidity imbalance
-        //     TREND_CONTINUATION,            // Continuation of a price trend
-        //     TREND_REVERSAL,                // Reversal of a price trend
-        //     CUSTOM                         // Custom imbalance type defined by strategy
-        // };
+      
 
 
         //filter duplicate signals

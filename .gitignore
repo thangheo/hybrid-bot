@@ -19,3 +19,4 @@ cpp-execution/third_parties/
 cpp-execution/bin/
 pids/*
 backtest/
+.testapi
