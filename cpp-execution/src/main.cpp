@@ -629,7 +629,7 @@ private:
         std::cout << "\n--- Demonstrating Execution Flow ---" << std::endl;
         
         // Create and process a valid signal
-        auto testSignal = createTestSignal("EXEC_001", "BTC/USDT", core::Direction::BUY, 0.1);
+        auto testSignal = createTestSignal("EXEC_001", "BTC/USDT", core::Direction::BUY, 0.0000060);
         auto result = riskManager_->validateSignal(testSignal);
         
         if (result.approved) {
