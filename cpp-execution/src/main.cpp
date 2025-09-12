@@ -96,7 +96,13 @@ public:
         api_client_manager->addClient(core::ExchangeId::binance(),
             std::make_shared<BinanceApiClient>(credentials, 
             std::make_shared<RateLimitController>(core::ExchangeId::binance())));
-
+                std::cout << "=== DEBUG API CLIENT MANAGER ===" << std::endl;
+        std::cout << "ApiClientManager created, checking status..." << std::endl;
+        if (!api_client_manager->initialize()) {
+            std::cerr << "Failed to initialize ApiClientManager" << std::endl;
+            systemHealthy_ = false;
+            return;
+        }
         // Create other components
         auto order_generator = std::make_shared<OrderGenerator>();
         auto smart_order_router = std::make_shared<SmartOrderRouter>();
