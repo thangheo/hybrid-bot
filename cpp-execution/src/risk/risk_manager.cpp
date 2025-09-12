@@ -22,7 +22,7 @@ RiskManager::RiskManager(const RiskConfig& config)
 // Trong RiskManager constructor hiện tại
 RiskManager::RiskManager(std::shared_ptr<trading::execution::ExecutionService> execService) {
     // Pass ExecutionService to ExecutionInterface
-    m_executionInterface = createExecutionInterface(m_config, execService);
+    m_executionInterface = createExecutionInterface(m_config);
     
     // Pass ExecutionInterface to CollateralManager
     m_collateralManager = std::make_unique<CollateralManager>(

@@ -62,6 +62,11 @@ struct CachedPrice {
  */
 class ExchangeGateway {
 public:
+    
+    // for future use
+    // std::shared_ptr<TradingInterface> getTradingInterface();        // For Execution
+    // std::shared_ptr<MonitoringInterface> getMonitoringInterface();  // For Risk/Portfolio
+    // std::shared_ptr<DataInterface> getDataInterface(); 
     /**
      * Constructor
      * @param apiClientManager Your existing ApiClientManager

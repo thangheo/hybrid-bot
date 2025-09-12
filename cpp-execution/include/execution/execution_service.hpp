@@ -124,6 +124,16 @@ public:
     std::string getActiveOrdersByExchangeIdJson(const std::string& request_json);
 // getExchangeGateway
     std::shared_ptr<common::ExchangeGateway> getExchangeGateway();
+    // hasSetGateway
+    bool hasSetGateway() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return exchangeGateway_ != nullptr;
+    }
+    // setExchangeGateway
+    void setExchangeGateway(std::shared_ptr<common::ExchangeGateway> gateway) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        exchangeGateway_ = gateway;
+    }
 private:
     // Helper methods for JSON parsing (unchanged)
     TradingSignal parseTradingSignalFromJson(const std::string& json);

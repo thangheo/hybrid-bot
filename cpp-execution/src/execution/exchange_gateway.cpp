@@ -33,7 +33,11 @@ std::future<std::unordered_map<std::string, double>> ExchangeGateway::getAccount
         
         // Get account balances directly through the existing API
         auto future = client->getAccountBalances();
-        return future.get();
+        auto balances = future.get();
+        
+        // Convert std::map to std::unordered_map
+        std::unordered_map<std::string, double> unorderedBalances(balances.begin(), balances.end());
+        return unorderedBalances;
     });
 }
 
