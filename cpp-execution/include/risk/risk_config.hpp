@@ -480,7 +480,7 @@ public:
     const CollateralConfig& getCollateralConfig() const;
     const PortfolioConfig& getPortfolioConfig() const;
     const RiskLoggingConfig& getLoggingConfig() const;
-    const bool getBoolValue(std::string key) ;
+    bool getBoolValue(std::string key) ;
     // const double getDoubleValue(std::string key) ;
     bool hasKey(std::string key) ;
     // const std::string getStringValue(std::string key) ;

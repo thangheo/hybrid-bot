@@ -23,11 +23,19 @@ RiskManager::RiskManager(const RiskConfig& config)
 RiskManager::RiskManager(std::shared_ptr<trading::execution::ExecutionService> execService) {
     // Pass ExecutionService to ExecutionInterface
     m_executionInterface = createExecutionInterface(m_config);
-    
-    // Pass ExecutionInterface to CollateralManager
+    //   CollateralManager(const RiskConfig& config, 
+    //                 std::shared_ptr<PositionTracker> positionTracker,
+    //                 std::shared_ptr<ExecutionInterface> executionInterface,
+    //                 std::shared_ptr<DataInterface> dataInterface);
+    //create necessary dependencies for CollateralManager
+    //     PositionTracker(const RiskConfig& config, std::shared_ptr<DataInterface> dataInterface);
+    std::shared_ptr<DataInterface> dataInterface = std::make_shared<MarketDataInterface>(m_config);
+    std::shared_ptr<PositionTracker> positionTracker = std::make_shared<PositionTracker>(m_config, dataInterface);
     m_collateralManager = std::make_unique<CollateralManager>(
-        m_config.collateralConfig,
-        m_executionInterface
+        m_config,
+        positionTracker,
+        m_executionInterface.get(), 
+        dataInterface
     );
 }
 
