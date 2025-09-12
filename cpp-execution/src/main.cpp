@@ -479,17 +479,17 @@ private:
             execSignal.targetSize = signal.targetSize;
             execSignal.strategyId = signal.strategyId;
             //get mid price from order book
-            double midPrice = 0.0;
-            if (dataIngestionService_) {
-                auto orderbook = dataIngestionService_->getOrderBook(execSignal.exchangeId, execSignal.symbol);
-                if (orderbook) {
-                    midPrice = orderbook->getMidPrice();
-                }
-                else {
-                    LOG_INFO("FullSystemDemo", "Abort signal.No order book available for " + execSignal.symbol.toString());
-                    return; // No order book available, abort signal
-                }
-            }
+            // double midPrice = 0.0;
+            // if (dataIngestionService_) {
+            //     auto orderbook = dataIngestionService_->getOrderBook(execSignal.exchangeId, execSignal.symbol);
+            //     if (orderbook) {
+            //         midPrice = orderbook->getMidPrice();
+            //     }
+            //     else {
+            //         LOG_INFO(std::format("FullSystemDemo", "Abort signal.No order book available for " + execSignal.symbol.toString()));
+            //         return; // No order book available, abort signal
+            //     }
+            // }
             execSignal.confidence = signal.confidence;
             execSignal.quality = signal.quality;
             execSignal.expirationTime = signal.expirationTime;
@@ -502,18 +502,16 @@ private:
             if (execSignal.direction == core::Direction::NEUTRAL) return; // Ignore neutral signals
             if (execSignal.confidence < 0.5) return; // Ignore low confidence signals
             if (execSignal.quality < 0.5) return; // Ignore low quality signals
-            double percentage_change_threshold = 0.0018; // 0.25%
-                    if(midPrice > 0.0) {
-                        bool allTargetsTooClose = true;
-                        for (const auto& target : execSignal.targets) {
-                            double priceDiffPercent = std::abs(target.price - midPrice) / midPrice;
-                            if (priceDiffPercent >= percentage_change_threshold) {
-                                allTargetsTooClose = false;
-                                break;
-                            }
-                        }
-                        if (allTargetsTooClose) return; // Ignore signals with all targets too close
-                    }
+            double percentage_change_threshold = 0.002; // 0.25%
+            int targetPass = 0;
+            //     bool allTargetsTooClose = true;
+            for (const auto& target : execSignal.targets) {
+                //check for percentage of long and short targets
+                if (target.percentage > percentage_change_threshold) {
+                    targetPass++;
+                }                
+            }
+            if (targetPass == 0) return; // Ignore signals with all targets too close
             // Validate with risk manager
             if (riskManager_) {
                 auto validationResult = riskManager_->validateSignal(execSignal);
