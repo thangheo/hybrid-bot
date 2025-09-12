@@ -160,7 +160,8 @@ public:
    
 private:
     std::shared_ptr<trading::execution::ExecutionService> m_execService;
-    
+    std::shared_ptr<trading::execution::ExecutionService> m_executionService;
+
     /**
      * Private constructor - forces use of create() method
      * @param execService The execution service  
@@ -177,7 +178,6 @@ private:
     }
 // config_
     // just declare fucking idiots
-    std::shared_ptr<trading::execution::ExecutionService> m_executionService;
     std::unique_ptr<CollateralManager> m_collateralManager;
     // Core subsystems
     std::unique_ptr<PreTradeRiskFilter> m_preTradeFilter;

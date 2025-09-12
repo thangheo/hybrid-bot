@@ -303,32 +303,56 @@ public:
                 systemHealthy_ = false;
             }
         }
-    }
+    } 
     void shutdown() {
         if (running_) {
             std::cout << "\n=== SHUTTING DOWN TRADING SYSTEM ===" << std::endl;
             
             running_ = false;
             
-            // Stop services in reverse order
+            // ✅ Stop data ingestion FIRST and wait for cleanup
+            if (dataIngestionService_) {
+                std::cout << "Stopping data ingestion service..." << std::endl;
+                dataIngestionService_->stop();
+                
+                // Give WebSocket connections time to close gracefully
+                std::this_thread::sleep_for(std::chrono::milliseconds(1000)); // Increase to 1 second
+            }
+            
+            // Stop other services
             if (strategyEngine_) {
+                std::cout << "Stopping strategy engine..." << std::endl;
                 strategyEngine_->stop();
             }
             
-            if (dataIngestionService_) {
-                dataIngestionService_->stop();
-            }
-            
             // Stop monitoring threads
+            std::cout << "Stopping monitoring threads..." << std::endl;
             stopMonitoring();
             
+            // ✅ Clear data ingestion service pointer after shutdown
+            std::cout << "Clearing data ingestion service..." << std::endl;
+            dataIngestionService_.reset();
+            
             // Stop event bus last
+            std::cout << "Stopping event bus..." << std::endl;
             common::EventBus::getInstance().stop();
             
             std::cout << "System shutdown complete" << std::endl;
         }
     }
-
+        // Update the signal handler to be more graceful:
+    // void signalHandler(int signal) {
+    //     std::cout << "\nShutdown signal received... Graceful shutdown initiated" << std::endl;
+    //     if (demoInstance) {
+    //         demoInstance->shutdown();
+            
+    //         // Give time for proper cleanup
+    //         std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+    //     }
+        
+    //     std::cout << "Exiting..." << std::endl;
+    //     exit(0);
+    // }
 private:
     // Core components
     std::unique_ptr<data_ingestion::DataIngestionService> dataIngestionService_;
