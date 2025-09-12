@@ -35,7 +35,7 @@ bool PortfolioManager::initialize() {
         
         // Convert unique_ptr to shared_ptr for sharing among components
         std::shared_ptr<DataInterface> sharedDataInterface(dataInterface.release());
-        
+       
         // Create execution interface using factory function
         auto executionInterface = createExecutionInterface(m_config);
         if (!executionInterface->initialize()) {

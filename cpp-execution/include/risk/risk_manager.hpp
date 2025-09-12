@@ -138,10 +138,8 @@ public:
    
 private:
 // config_
-    RiskConfig m_config;
     // just declare fucking idiots
     std::shared_ptr<trading::execution::ExecutionService> m_executionService;
-    std::shared_ptr<ExecutionInterface> m_executionInterface;
     std::unique_ptr<CollateralManager> m_collateralManager;
     // Core subsystems
     std::unique_ptr<PreTradeRiskFilter> m_preTradeFilter;
@@ -151,8 +149,9 @@ private:
     
     // Interfaces to external systems
     std::unique_ptr<StrategyInterface> m_strategyInterface;
-    std::unique_ptr<ExecutionInterface> m_executionInterface;
     std::unique_ptr<DataInterface> m_dataInterface;
+    // m_executionInterface
+    std::unique_ptr<ExecutionInterface> m_executionInterface;
     
     // Configuration and state
     RiskConfig m_config;

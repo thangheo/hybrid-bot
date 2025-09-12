@@ -39,25 +39,25 @@ class RiskConfig;
 /**
  * Structure representing an order request from Risk Management
  */
-struct OrderRequest {
-    std::string orderId;                          // Internal order ID
-    std::string clientOrderId;                    // Client-specified order ID
-    core::ExchangeId exchangeId;                  // Target exchange
-    core::Symbol tradingPair;                     // Trading pair
-    execution::models::OrderSide side;                    // Buy or sell
-    std::string type;                             // Order type as string
-    double quantity;                              // Order quantity
-    double price;                                 // Order price (for limit orders)
-    std::string timeInForce;                      // Time in force
-    std::string strategyId;                       // Strategy identifier
-    std::string signalId;                         // Signal identifier
-    core::Timestamp timestamp;                    // Order creation timestamp
-    std::map<std::string, std::string> params;   // Additional parameters
+// struct OrderRequest {
+//     std::string orderId;                          // Internal order ID
+//     std::string clientOrderId;                    // Client-specified order ID
+//     core::ExchangeId exchangeId;                  // Target exchange
+//     core::Symbol tradingPair;                     // Trading pair
+//     execution::models::OrderSide side;                    // Buy or sell
+//     std::string type;                             // Order type as string
+//     double quantity;                              // Order quantity
+//     double price;                                 // Order price (for limit orders)
+//     std::string timeInForce;                      // Time in force
+//     std::string strategyId;                       // Strategy identifier
+//     std::string signalId;                         // Signal identifier
+//     core::Timestamp timestamp;                    // Order creation timestamp
+//     std::map<std::string, std::string> params;   // Additional parameters
     
-    OrderRequest() 
-        : quantity(0.0), price(0.0), 
-          timestamp(std::chrono::system_clock::now()) {}
-};
+//     OrderRequest() 
+//         : quantity(0.0), price(0.0), 
+//           timestamp(std::chrono::system_clock::now()) {}
+// };
 
 /**
  * Type alias for ExecutionReport from execution module
@@ -209,8 +209,7 @@ protected:
  * @return Unique pointer to ExecutionInterface implementation
  */
 std::unique_ptr<ExecutionInterface> createExecutionInterface(
-    const RiskConfig& config,
-    std::shared_ptr<trading::execution::ExecutionService> executionService);
+    const RiskConfig& config);
 
 } // namespace risk
 } // namespace trading
