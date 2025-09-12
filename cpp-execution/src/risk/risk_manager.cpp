@@ -14,104 +14,27 @@
 namespace trading {
 namespace risk {
 
-RiskManager::RiskManager(const RiskConfig& config)
+RiskManager::RiskManager(std::shared_ptr<trading::execution::ExecutionService> execService, const RiskConfig& config)
     : m_config(config)
     , m_mode(RiskManagerMode::NORMAL)
 {
-    LOG_INFO("RiskManager", "Initializing RiskManager with provided configuration");
-    // print a wall of text
-    std::cout << "[DEBUG] RiskManager constructor (RiskConfig) called" << std::endl;
-    std::cout << "[DEBUG] RiskManager constructor (RiskConfig) called" << std::endl;
-    std::cout << "[DEBUG] RiskManager constructor (RiskConfig) called" << std::endl;
-    std::cout << "[DEBUG] RiskManager constructor (RiskConfig) called" << std::endl;
-    std::cout << "[DEBUG] RiskManager constructor (RiskConfig) called" << std::endl;
-    std::cout << "[DEBUG] RiskManager constructor (RiskConfig) called" << std::endl;
-    std::cout << "[DEBUG] RiskManager constructor (RiskConfig) called" << std::endl;
-    std::cout << "[DEBUG] RiskManager constructor (RiskConfig) called" << std::endl;
-    std::cout << "[DEBUG] RiskManager constructor (RiskConfig) called" << std::endl;
-    std::cout << "[DEBUG] RiskManager constructor (RiskConfig) called" << std::endl;
-    std::cout << "[DEBUG] RiskManager constructor (RiskConfig) called" << std::endl;
-    std::cout << "[DEBUG] RiskManager constructor (RiskConfig) called" << std::endl;
-    std::cout << "[DEBUG] RiskManager constructor (RiskConfig) called" << std::endl;
-    std::cout.flush();
-
-    // Initialize components to nullptr
+    // Initialize components
     m_strategyInterface = createStrategyInterface(m_config);
     LOG_INFO("RiskManager", "Created StrategyInterface");
-    m_executionInterface = createExecutionInterface(m_config);
-    m_dataInterface = createDataInterface();
-    // m_preTradeFilter = createPreTradeFilter(m_config);
-    m_portfolioManager = nullptr; // Will be initialized in initialize()
-    // m_postTradeMonitor = std::make_unique<PostTradeMonitor>(m_config);
-    LOG_INFO("RiskManager", "Created PostTradeMonitor");
-    // m_postTradeMonitor = std::make_unique<PostTradeMonitor>(m_config, m_portfolioManager.get());
-    // m_postTradeMonitor = std::make_unique<PostTradeMonitor>(m_config);
-    // m_postTradeMonitor = createPostTradeMonitor(m_config);
-    // Initialize portfolio manager first (needed by PostTradeMonitor)
-    // m_portfolioManager = std::make_unique<PortfolioManager>(m_config);
-    m_riskService = std::make_unique<RiskService>(m_config);
-   
-    std::shared_ptr<DataInterface> dataInterface = createDataInterface();
-
-    std::shared_ptr<PositionTracker> positionTracker = std::make_shared<PositionTracker>(m_config, dataInterface);
-    LOG_INFO("RiskManager", "Created PositionTracker");
-    if (!positionTracker->initialize()) {
-        LOG_ERROR("RiskManager", "Failed to initialize PositionTracker");
-        throw std::runtime_error("Failed to initialize PositionTracker");
-    }
-    LOG_INFO("RiskManager", "Initialized PositionTracker successfully");
-    m_collateralManager = std::make_unique<CollateralManager>(
-        m_config,
-        positionTracker,
-        m_executionInterface, 
-        dataInterface
-    );
-}
-
-// // Trong RiskManager constructor hiện tại
-RiskManager::RiskManager(std::shared_ptr<trading::execution::ExecutionService> execService) {
-    // Pass ExecutionService to ExecutionInterface
-    m_executionInterface = createExecutionInterface(m_config);
-    LOG_INFO("RiskManager", "Created ExecutionInterface");
-    if (!m_executionInterface->initialize()) {
-        LOG_ERROR("RiskManager", "Failed to initialize ExecutionInterface");
-        throw std::runtime_error("Failed to initialize ExecutionInterface");
-    }
-    LOG_INFO("RiskManager", "Initialized ExecutionInterface successfully");
-    //     PositionTracker(const RiskConfig& config, std::shared_ptr<DataInterface> dataInterface);
-    std::shared_ptr<DataInterface> dataInterface = createDataInterface();
-    LOG_INFO("RiskManager", "Created MarketDataInterface");
-    if (!dataInterface->initialize()) {
-        LOG_ERROR("RiskManager", "Failed to initialize DataInterface");
-        throw std::runtime_error("Failed to initialize DataInterface");
-    }
-    LOG_INFO("RiskManager", "Initialized DataInterface successfully");
     
-    std::shared_ptr<PositionTracker> positionTracker = std::make_shared<PositionTracker>(m_config, dataInterface);
-    LOG_INFO("RiskManager", "Created PositionTracker");
-    if (!positionTracker->initialize()) {
-        LOG_ERROR("RiskManager", "Failed to initialize PositionTracker");
-        throw std::runtime_error("Failed to initialize PositionTracker");
+    m_executionInterface = createExecutionInterface_withExecutionService(execService);
+    if (!m_executionInterface) {
+        LOG_ERROR("RiskManager", "Failed to create ExecutionInterface with provided ExecutionService");
+        throw std::runtime_error("Failed to create ExecutionInterface with provided ExecutionService");
     }
-    LOG_INFO("RiskManager", "Initialized PositionTracker successfully");
-    m_collateralManager = std::make_unique<CollateralManager>(
-        m_config,
-        positionTracker,
-        m_executionInterface, 
-        dataInterface
-    );
-}
-
-RiskManager::~RiskManager() {
-    // Ensure clean shutdown
-    try {
-        // Stop any running services
-        if (m_riskService) {
-            m_riskService->stop();
-        }
-    } catch (const std::exception& e) {
-        std::cerr << "Exception during RiskManager destruction: " << e.what() << std::endl;
-    }
+    LOG_INFO("RiskManager", "Created ExecutionInterface with provided ExecutionService");
+    
+    // ✅ Create DataInterface ONCE and store as member
+    m_dataInterface = createDataInterface();
+    LOG_INFO("RiskManager", "Created DataInterface as member variable");
+    
+    m_portfolioManager = nullptr;
+    // Don't create additional DataInterface instances here
 }
 
 bool RiskManager::initialize() {
@@ -119,7 +42,7 @@ bool RiskManager::initialize() {
         // Load configuration
         loadConfiguration();
         
-        // Initialize portfolio manager first (needed by other components)
+        // Initialize portfolio manager first
         m_portfolioManager = std::make_unique<PortfolioManager>(m_config);
         if (!m_portfolioManager->initialize()) {
             std::cerr << "Failed to initialize portfolio manager" << std::endl;
@@ -140,14 +63,50 @@ bool RiskManager::initialize() {
             return false;
         }
         
-        // Initialize external interfaces
-        m_strategyInterface = createStrategyInterface(m_config);
-        // m_executionInterface = createExecutionInterface(m_config);
-        m_dataInterface = std::make_unique<MarketDataInterface>(m_config);
+        // ✅ Use existing m_dataInterface instead of creating new ones
+        if (!m_dataInterface) {
+            LOG_ERROR("RiskManager", "DataInterface not initialized in constructor");
+            return false;
+        }
         
-        if (!m_strategyInterface->initialize() || 
-            !m_executionInterface->initialize() || 
-            !m_dataInterface->initialize()) {
+        // Initialize the existing DataInterface
+        if (!m_dataInterface->initialize()) {
+            LOG_ERROR("RiskManager", "Failed to initialize DataInterface");
+            return false;
+        }
+        LOG_INFO("RiskManager", "Initialized DataInterface successfully");
+        
+        // ✅ Reuse m_dataInterface for PositionTracker (convert to shared_ptr)
+        std::shared_ptr<DataInterface> sharedDataInterface(m_dataInterface.get(), [](DataInterface*){
+            // Empty deleter - don't delete, let unique_ptr handle it
+        });
+        
+        std::shared_ptr<PositionTracker> positionTracker = std::make_shared<PositionTracker>(m_config, sharedDataInterface);
+        
+        if (!positionTracker->initialize()) {
+            LOG_ERROR("RiskManager", "Failed to initialize PositionTracker");
+            return false;
+        }
+        LOG_INFO("RiskManager", "Initialized PositionTracker successfully");
+        
+        // ✅ Pass shared wrapper to CollateralManager
+        m_collateralManager = std::make_unique<CollateralManager>(
+            m_config,
+            positionTracker,
+            m_executionInterface,
+            sharedDataInterface  // ✅ Reuse same DataInterface
+        );
+        
+        if(!m_collateralManager) {
+            LOG_ERROR("RiskManager", "Failed to create CollateralManager");
+            return false;
+        }
+        LOG_INFO("RiskManager", "Created CollateralManager successfully");
+        
+        // Initialize strategy interface
+        m_strategyInterface = createStrategyInterface(m_config);
+        
+        if (!m_strategyInterface->initialize() || !m_executionInterface->initialize()) {
             std::cerr << "Failed to initialize external interfaces" << std::endl;
             return false;
         }
@@ -155,8 +114,6 @@ bool RiskManager::initialize() {
         // Initialize risk service
         m_riskService = std::make_unique<RiskService>(m_config);
         
-        // Create validation service without shared_from_this (use raw pointer)
-        // auto validationService = std::make_shared<RiskValidationService>(m_config, this);
         auto validationService = std::make_shared<RiskValidationService>(m_config, shared_from_this());
         if (!validationService->initialize()) {
             std::cerr << "Failed to initialize validation service" << std::endl;
@@ -173,6 +130,7 @@ bool RiskManager::initialize() {
         m_postTradeMonitor->registerRiskEventCallback([this](const RiskEvent& event) {
             notifyRiskEvent(event);
         });
+        
         return true;
     } catch (const std::exception& e) {
         std::cerr << "Exception during RiskManager initialization: " << e.what() << std::endl;
@@ -593,3 +551,23 @@ void RiskManager::loadConfiguration() {
 
 } // namespace risk
 } // namespace trading
+RiskManager::~RiskManager() {
+    // Cleanup code here if needed
+    try {
+        // Stop any running services
+        if (m_riskService) {
+            m_riskService->stop();
+        }
+        
+        // Clear callbacks
+        std::lock_guard<std::mutex> lock(m_callbackMutex);
+        m_eventCallbacks.clear();
+        
+        // Other cleanup can be done here
+        // unique_ptr members will be automatically cleaned up
+    } catch (const std::exception& e) {
+        // Don't throw from destructor
+        std::cerr << "Exception in RiskManager destructor: " << e.what() << std::endl;
+    }
+}
+

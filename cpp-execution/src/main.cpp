@@ -74,15 +74,24 @@ public:
         
         // Set up credentials and clients (your existing code)
         //get from environment .env file
+        const char* apiKey = std::getenv("BINANCE_API_KEY");
+        const char* apiSecret = std::getenv("BINANCE_API_SECRET");
+        
+        if(!apiKey || !apiSecret) {
+            std::cerr << "Error: Missing Binance API credentials in environment variables." << std::endl;
+            systemHealthy_ = false;
+            return;
+        }
+        
         auto credentials = ExchangeCredentials{
-            std::getenv("BINANCE_API_KEY"),
-            std::getenv("BINANCE_API_SECRET"),
+            apiKey,
+            apiSecret,
             "", 
             true
         };
         //debug api
-        std::cout << "API KEY: " << std::getenv("BINANCE_API_KEY") << std::endl;
-        std::cout << "API SECRET: " << std::getenv("BINANCE_API_SECRET") << std::endl;
+        // std::cout << "API KEY: " << std::getenv("BINANCE_API_KEY") << std::endl;
+        // std::cout << "API SECRET: " << std::getenv("BINANCE_API_SECRET") << std::endl;
         authService->setCredentials(core::ExchangeId::binance(), credentials);
         api_client_manager->addClient(core::ExchangeId::binance(),
             std::make_shared<BinanceApiClient>(credentials, 
@@ -120,21 +129,20 @@ public:
         }
         exchangeGateway_ = std::make_shared<common::ExchangeGateway>(api_client_manager);
         if (!exchangeGateway_->isHealthy()) {
-            std::cerr << "Exchange Gateway is not healthy!" << std::endl;
+            std::cout << "Exchange Gateway is not healthy!" << std::endl;
+            std::cout << "start using fallback ExecutionService" << std::endl;
+            executionService_ = std::make_shared<ExecutionService>(
+            order_generator,
+            smart_order_router,
+            order_type_selector,
+            execution_algorithm_factory,
+            order_lifecycle_tracker,
+            fill_reconciliation,
+            api_client_manager
+            );
         } else {
             std::cout << "Exchange Gateway initialized and healthy." << std::endl;
-        }
-        // ExecutionService(
-        //         std::shared_ptr<common::ExchangeGateway> exchangeGateway,   // NEW: Gateway first
-        //         std::shared_ptr<OrderGenerator> order_generator,
-        //         std::shared_ptr<SmartOrderRouter> smart_order_router,
-        //         std::shared_ptr<OrderTypeSelector> order_type_selector,
-        //         std::shared_ptr<ExecutionAlgorithmFactory> execution_algorithm_factory,
-        //         std::shared_ptr<OrderLifecycleTracker> order_lifecycle_tracker,
-        //         std::shared_ptr<FillReconciliation> fill_reconciliation
-        //     );
-        // Finally, create the execution service with the exchange gateway
-        executionService_ = std::make_shared<ExecutionService>(
+            executionService_ = std::make_shared<ExecutionService>(
             exchangeGateway_,
             order_generator,
             smart_order_router,
@@ -142,7 +150,9 @@ public:
             execution_algorithm_factory,
             order_lifecycle_tracker,
             fill_reconciliation
-        );
+            );
+        }       
+       
     }
     bool initialize() {
         initializeExecutionService();
@@ -169,8 +179,10 @@ public:
         
         // 3. Initialize risk manager
         std::cout << "Initializing risk manager..." << std::endl;
-        riskManager_ = std::make_unique<risk::RiskManager>(executionService_);
-
+        riskManager_ = std::make_unique<risk::RiskManager>(executionService_, riskConfig_);
+        // sleep for 5s
+        std::this_thread::sleep_for(std::chrono::seconds(5));
+        std::cout << "RiskManager initialized with config" << std::endl;
         if (!riskManager_->initialize()) {
             std::cerr << "Failed to initialize risk manager" << std::endl;
             return false;
