@@ -29,11 +29,12 @@ using ImbalanceType = trading::strategy::ImbalanceType;
   * Represents a price target for a trading signal
   */
  struct PriceTarget {
-     double price;                  // Target price level
-     double probability;            // Probability of reaching this target
-     core::Duration expected_time;  // Expected time to reach target
-     double size;                // Size associated with this target
-     PriceTarget() : price(0.0), probability(0.0), expected_time(core::Duration::zero()) {}
+    double percentage;            // Percentage target
+    double price;                  // Target price level
+    double probability;            // Probability of reaching this target
+    core::Duration expected_time;  // Expected time to reach target
+    double size;                   // Size associated with this target
+    PriceTarget() : price(0.0), probability(0.0), expected_time(core::Duration::zero()) {}
      
      PriceTarget(double p, double prob, const core::Duration& time) 
          : price(p), probability(prob), expected_time(time) {}

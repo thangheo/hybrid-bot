@@ -408,7 +408,7 @@ bool ImbalanceSignalGenerator::passesSignalFilters(const ImbalanceEvent& imbalan
      
      // Get volatility if available
      double volatility = 0.001; // Default 0.1% volatility
-     auto volatilityIt = imbalance.supportingMetrics.find("volatilityPerUnitTime");
+     auto volatilityIt = imbalance.supportingMetrics.find("volatility");
      if (volatilityIt != imbalance.supportingMetrics.end()) {
          volatility = volatilityIt->second;
      }
@@ -476,6 +476,7 @@ bool ImbalanceSignalGenerator::passesSignalFilters(const ImbalanceEvent& imbalan
     PriceTarget shortTarget;
     shortTarget.price = midPrice * (1.0 + (finalImpactPercent * 0.25)); // 25% of full impact
     shortTarget.probability = 0.7;
+    shortTarget.percentage = (shortTarget.price - midPrice) / midPrice ; // Percentage change from midPrice
     // Short target: 25% of signal TTL
     // shortTarget.expected_time = std::chrono::milliseconds(static_cast<int64_t>(signal_ttl * 0.25));
     shortTarget.expected_time = calculateSignalTTL(imbalance, std::abs(shortTarget.price - midPrice));
@@ -484,6 +485,7 @@ bool ImbalanceSignalGenerator::passesSignalFilters(const ImbalanceEvent& imbalan
     PriceTarget mediumTarget;
     mediumTarget.price = midPrice * (1.0 + (finalImpactPercent * 0.60)); // 60% of full impact
     mediumTarget.probability = 0.5;
+    mediumTarget.percentage = (mediumTarget.price - midPrice) / midPrice ; // Percentage change from midPrice
     // mediumTarget.expected_time = std::chrono::milliseconds(static_cast<int64_t>(signal_ttl * 0.50));
     mediumTarget.expected_time = calculateSignalTTL(imbalance, std::abs(mediumTarget.price - midPrice));
     targets.push_back(mediumTarget);
@@ -491,6 +493,8 @@ bool ImbalanceSignalGenerator::passesSignalFilters(const ImbalanceEvent& imbalan
     PriceTarget longTarget;
     longTarget.price = midPrice * (1.0 + finalImpactPercent); // Full impact
     longTarget.probability = 0.3;
+    longTarget.percentage = (longTarget.price - midPrice) / midPrice ; // Percentage change from midPrice
+    // Long target: 75% of signal TTL
     // longTarget.expected_time = std::chrono::milliseconds(static_cast<int64_t>(signal_ttl * 0.75));
     longTarget.expected_time = calculateSignalTTL(imbalance, std::abs(longTarget.price - midPrice));
 
