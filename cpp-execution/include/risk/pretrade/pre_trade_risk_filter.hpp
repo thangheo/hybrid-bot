@@ -38,6 +38,14 @@ public:
      * @param config Risk configuration for this filter
      */
     explicit PreTradeRiskFilter(const RiskConfig& config);
+    
+    /**
+     * Constructor with shared DataInterface
+     * @param config Risk configuration for this filter
+     * @param dataInterface Shared data interface for market data access
+     */
+    explicit PreTradeRiskFilter(const RiskConfig& config, 
+                               std::shared_ptr<DataInterface> dataInterface);
     // explicit PreTradeRiskFilter(const RiskConfig& config, const PortfolioManager& portfolioManager);
     /**
      * Destructor

@@ -144,13 +144,15 @@ bool PositionTracker::isHealthy() const {
 bool PositionTracker::initialize() {
     try {
         if (!m_dataInterface) {
-            LOG_ERROR("PositionTracker", "DataInterface is null");
-            return false;
+            LOG_WARN("PositionTracker", "DataInterface is null - running in standalone mode");
+            // Don't fail if DataInterface is null - allow standalone operation
+            return true;
         }
         // check if data interface is healthy or connected
         if (!m_dataInterface->isConnected()) {
-            LOG_ERROR("PositionTracker", "DataInterface is not connected");
-            return false;
+            LOG_WARN("PositionTracker", "DataInterface is not connected - limited functionality");
+            // Don't fail on connection issues - may connect later
+            return true;
         }
         //already initialized in main.cpp
         // if (!m_dataInterface->initialize()) {
