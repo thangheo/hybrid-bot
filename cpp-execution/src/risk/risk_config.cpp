@@ -15,6 +15,7 @@
 #include <stdexcept>
 #include <sstream>
 #include <chrono>
+#include <cmath>
 
 // Use a fully qualified namespace to avoid ambiguity
 // using json = nlohmann::json;
@@ -712,16 +713,88 @@ bool RiskConfig::validate() const {
         }
         
         // Validate position limits
-        if (positionLimitConfig_.defaultLimit <= 0) {
+        std::cerr << "DEBUG: Validating position limits..." << std::endl;
+        std::cerr.flush();
+        
+        std::cerr << "DEBUG: defaultLimit value = " << positionLimitConfig_.defaultLimit << std::endl;
+        std::cerr.flush();
+        
+        // Test if this comparison causes the SIGILL
+        std::cerr << "DEBUG: About to test defaultLimit <= 0..." << std::endl;
+        std::cerr.flush();
+        
+        double defaultLimit = positionLimitConfig_.defaultLimit;
+        std::cerr << "DEBUG: Copied defaultLimit = " << defaultLimit << std::endl;
+        std::cerr.flush();
+        
+        bool isLessOrEqual = (defaultLimit <= 0.0);
+        std::cerr << "DEBUG: Comparison result = " << isLessOrEqual << std::endl;
+        std::cerr.flush();
+        
+        std::cerr << "DEBUG: About to test if condition..." << std::endl;
+        std::cerr.flush();
+        
+        if (isLessOrEqual) {
+            std::cerr << "DEBUG: Inside if block" << std::endl;
+            std::cerr.flush();
             std::cerr << "Invalid default position limit: must be positive\n";
             return false;
         }
         
+        std::cerr << "DEBUG: Position limit validation passed" << std::endl;
+        std::cerr.flush();
+        
         // Validate exposure limits
-        if (exposureLimitConfig_.maxTotalExposure <= 0 ||
-            exposureLimitConfig_.maxAssetExposure <= 0 ||
-            exposureLimitConfig_.maxStrategyExposure <= 0 ||
-            exposureLimitConfig_.maxExchangeExposure <= 0) {
+        std::cerr << "DEBUG: About to validate exposure limits..." << std::endl;
+        std::cerr.flush();
+        
+        std::cerr << "DEBUG: maxTotalExposure = " << exposureLimitConfig_.maxTotalExposure << std::endl;
+        std::cerr.flush();
+        
+        bool totalExposureValid = (exposureLimitConfig_.maxTotalExposure > 0);
+        std::cerr << "DEBUG: totalExposureValid = " << totalExposureValid << std::endl;
+        std::cerr.flush();
+        
+        std::cerr << "DEBUG: Testing maxAssetExposure..." << std::endl;
+        std::cerr.flush();
+        bool assetExposureValid = (exposureLimitConfig_.maxAssetExposure > 0);
+        std::cerr << "DEBUG: assetExposureValid = " << assetExposureValid << std::endl;
+        std::cerr.flush();
+        
+        std::cerr << "DEBUG: Testing maxStrategyExposure..." << std::endl;
+        std::cerr.flush();
+        bool strategyExposureValid = (exposureLimitConfig_.maxStrategyExposure > 0);
+        std::cerr << "DEBUG: strategyExposureValid = " << strategyExposureValid << std::endl;
+        std::cerr.flush();
+        
+        std::cerr << "DEBUG: Testing maxExchangeExposure..." << std::endl;
+        std::cerr.flush();
+        bool exchangeExposureValid = (exposureLimitConfig_.maxExchangeExposure > 0);
+        std::cerr << "DEBUG: exchangeExposureValid = " << exchangeExposureValid << std::endl;
+        std::cerr.flush();
+        
+        std::cerr << "DEBUG: All individual tests complete, testing compound condition..." << std::endl;
+        std::cerr.flush();
+        
+        std::cerr << "DEBUG: Testing !totalExposureValid..." << std::endl;
+        std::cerr.flush();
+        bool not_total = !totalExposureValid;
+        std::cerr << "DEBUG: !totalExposureValid = " << not_total << std::endl;
+        std::cerr.flush();
+        
+        std::cerr << "DEBUG: Testing !assetExposureValid..." << std::endl;
+        std::cerr.flush();
+        bool not_asset = !assetExposureValid;
+        std::cerr << "DEBUG: !assetExposureValid = " << not_asset << std::endl;
+        std::cerr.flush();
+        
+        std::cerr << "DEBUG: Testing logical OR of first two..." << std::endl;
+        std::cerr.flush();
+        bool first_or = not_total || not_asset;
+        std::cerr << "DEBUG: first_or = " << first_or << std::endl;
+        std::cerr.flush();
+        
+        if (!totalExposureValid || !assetExposureValid || !strategyExposureValid || !exchangeExposureValid) {
             std::cerr << "Invalid exposure limits: all limits must be positive\n";
             return false;
         }
@@ -747,11 +820,13 @@ bool RiskConfig::validate() const {
             }
                 
         // Add other validation logic as needed...
+        
+        // If we reach here, all validation passed
+        return true;
     } catch (const std::exception& e) {
         std::cerr << "Exception during configuration validation: " << e.what() << "\n";
         return false;
     }
-       
 }
 
 // Getter implementations (unchanged from original)

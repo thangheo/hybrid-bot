@@ -9,7 +9,7 @@
 #include "risk/posttrade/post_trade_monitor.hpp"
 #include <algorithm>
 #include <sstream>
-
+#include "common/logger.hpp"
 namespace trading::risk {
 
 // Helper function to replace std::format (C++20) with string stream (C++17)
@@ -133,6 +133,7 @@ bool PostTradeMonitor::initialize() {
     }
     
     if (!validateConfiguration(config_)) {
+        LOG_ERROR(std::format("{} {}", "PostTradeMonitor", "Invalid configuration"));
         return false;
     }
     
