@@ -65,8 +65,92 @@ public:
     ~FullSystemDemo() {
         shutdown();
     }
-    
+    void initializeExecutionService() {
+        // Create the authentication service first
+        auto authService = std::make_shared<AuthenticationService>();
+        
+        // Create API client manager with auth service
+        auto api_client_manager = std::make_shared<ApiClientManager>(authService);
+        
+        // Set up credentials and clients (your existing code)
+        //get from environment .env file
+        auto credentials = ExchangeCredentials{
+            std::getenv("BINANCE_API_KEY"),
+            std::getenv("BINANCE_API_SECRET"),
+            "", 
+            true
+        };
+        //debug api
+        std::cout << "API KEY: " << std::getenv("BINANCE_API_KEY") << std::endl;
+        std::cout << "API SECRET: " << std::getenv("BINANCE_API_SECRET") << std::endl;
+        authService->setCredentials(core::ExchangeId::binance(), credentials);
+        api_client_manager->addClient(core::ExchangeId::binance(),
+            std::make_shared<BinanceApiClient>(credentials, 
+            std::make_shared<RateLimitController>(core::ExchangeId::binance())));
+
+        // Create other components
+        auto order_generator = std::make_shared<OrderGenerator>();
+        auto smart_order_router = std::make_shared<SmartOrderRouter>();
+        auto order_type_selector = std::make_shared<OrderTypeSelector>();
+        auto execution_algorithm_factory = std::make_shared<ExecutionAlgorithmFactory>();
+        auto order_lifecycle_tracker = std::make_shared<OrderLifecycleTracker>();
+        auto fill_reconciliation = std::make_shared<FillReconciliation>();
+
+        // **CRITICAL: Initialize the smart order router with exchange information**
+        std::vector<ExchangeInfo> exchanges;
+        ExchangeInfo binanceInfo;
+        binanceInfo.exchangeId = core::ExchangeId::binance();
+        binanceInfo.trading_fee = 0.001;
+        binanceInfo.liquidity_score = 0.9;
+        binanceInfo.latency_ms = 50;
+        binanceInfo.success_rate = 0.99;
+        exchanges.push_back(binanceInfo);
+        
+        // After initializing the router, add this debug check:
+        smart_order_router->initialize(exchanges);
+
+        // Debug: Test if the exchange supports our trading pairs
+        std::cout << "Testing exchange support for BTC/USDT: " << 
+            (binanceInfo.supports_trading_pair(core::Symbol("BTC/USDT")) ? "YES" : "NO") << std::endl;
+
+        std::vector<std::string> available = smart_order_router->getAvailableExchanges(core::Symbol("BTC/USDT"));
+        std::cout << "Available exchanges for BTC/USDT: " << available.size() << std::endl;
+        for (const auto& ex : available) {
+            std::cout << "  - " << ex << std::endl;
+        }
+        exchangeGateway_ = std::make_shared<common::ExchangeGateway>(api_client_manager);
+        if (!exchangeGateway_->isHealthy()) {
+            std::cerr << "Exchange Gateway is not healthy!" << std::endl;
+        } else {
+            std::cout << "Exchange Gateway initialized and healthy." << std::endl;
+        }
+        // ExecutionService(
+        //         std::shared_ptr<common::ExchangeGateway> exchangeGateway,   // NEW: Gateway first
+        //         std::shared_ptr<OrderGenerator> order_generator,
+        //         std::shared_ptr<SmartOrderRouter> smart_order_router,
+        //         std::shared_ptr<OrderTypeSelector> order_type_selector,
+        //         std::shared_ptr<ExecutionAlgorithmFactory> execution_algorithm_factory,
+        //         std::shared_ptr<OrderLifecycleTracker> order_lifecycle_tracker,
+        //         std::shared_ptr<FillReconciliation> fill_reconciliation
+        //     );
+        // Finally, create the execution service with the exchange gateway
+        executionService_ = std::make_shared<ExecutionService>(
+            exchangeGateway_,
+            order_generator,
+            smart_order_router,
+            order_type_selector,
+            execution_algorithm_factory,
+            order_lifecycle_tracker,
+            fill_reconciliation
+        );
+    }
     bool initialize() {
+        initializeExecutionService();
+        // Debug: Verify execution service and router
+        if (!executionService_) {
+            std::cerr << "Execution Service failed to initialize!" << std::endl;
+            return false;
+        }
         std::cout << "=== INITIALIZING FULL TRADING SYSTEM ===" << std::endl;
         
         // 1. Initialize event bus first
@@ -85,8 +169,8 @@ public:
         
         // 3. Initialize risk manager
         std::cout << "Initializing risk manager..." << std::endl;
-        riskManager_ = std::make_unique<risk::RiskManager>(riskConfig_);
-        
+        riskManager_ = std::make_unique<risk::RiskManager>(executionService_);
+
         if (!riskManager_->initialize()) {
             std::cerr << "Failed to initialize risk manager" << std::endl;
             return false;
@@ -216,8 +300,10 @@ private:
     std::unique_ptr<data_ingestion::DataIngestionService> dataIngestionService_;
     std::unique_ptr<strategy::StrategyEngine> strategyEngine_;
     std::unique_ptr<risk::RiskManager> riskManager_;
-    std::unique_ptr<execution::ExecutionService> executionService_;
-    
+    std::shared_ptr<execution::ExecutionService> executionService_;
+    // gateway
+    std::shared_ptr<common::ExchangeGateway> exchangeGateway_;
+
     // Configurations
     risk::RiskConfig riskConfig_;
     strategy::StrategyConfig strategyConfig_;

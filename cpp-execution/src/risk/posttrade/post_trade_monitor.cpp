@@ -962,4 +962,23 @@ std::vector<RiskEvent> PostTradeMonitor::filterEventsByPredicate(
     return result;
 }
 
+// createPostTradeMonitor
+// std::shared_ptr<PostTradeMonitor> createPostTradeMonitor(
+//     const RiskConfig& config,
+//     const PostTradeMonitorConfig& monitorConfig,
+//     std::shared_ptr<strategy::PositionTracker> positionTracker,
+//     std::shared_ptr<core::DataInterface> dataInterface,
+//     std::shared_ptr<core::ExecutionInterface> executionInterface) {
+    
+//     auto monitor = std::make_shared<PostTradeMonitor>(
+//         config, monitorConfig, positionTracker, dataInterface, executionInterface
+//     );
+    
+//     if (!monitor->initialize()) {
+//         return nullptr;
+//     }
+    
+//     return monitor;
+// }
+
 } // namespace trading::risk

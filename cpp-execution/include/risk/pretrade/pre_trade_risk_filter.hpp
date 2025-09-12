@@ -96,6 +96,8 @@ public:
 
     // Helper methods for signal property extraction
     std::string getBaseAsset(const core::Symbol& tradingPair) const;
+    // createPreTradeFilter factory function
+
 private:
     // Sub-components
     std::unique_ptr<PositionLimitChecker> m_positionLimitChecker;
@@ -119,5 +121,7 @@ private:
     
 };
 
+    static std::unique_ptr<PreTradeRiskFilter> createPreTradeFilter(const RiskConfig& config);
+    
 } // namespace risk
 } // namespace trading

@@ -15,6 +15,17 @@
 namespace trading {
 namespace risk {
 
+// // static std::unique_ptr<PreTradeRiskFilter> createPreTradeFilter(const RiskConfig& config);
+// std::unique_ptr<PreTradeRiskFilter> createPreTradeFilter(const RiskConfig& config) {
+//     auto filter = std::make_unique<PreTradeRiskFilter>(config);
+//     if (!filter->initialize()) {
+//         LOG_ERROR("Failed to initialize PreTradeRiskFilter");
+//         return nullptr;
+//     }
+//     return filter;
+// }
+
+
 PreTradeRiskFilter::PreTradeRiskFilter(const RiskConfig& config)
     : m_config(config)
     , m_activeMode(RiskManagerMode::NORMAL)
@@ -40,8 +51,6 @@ bool PreTradeRiskFilter::isHealthy() const {
 PreTradeRiskFilter::~PreTradeRiskFilter() {
     // Destructor implementation
 }
-
-
 bool PreTradeRiskFilter::initialize() {
     try {
         LOG_INFO("Initializing pre-trade risk filter...");

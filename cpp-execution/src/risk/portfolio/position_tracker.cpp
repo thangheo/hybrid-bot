@@ -11,7 +11,7 @@
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
-
+#include <common/logger.hpp>
 namespace trading {
 namespace risk {
 
@@ -144,12 +144,12 @@ bool PositionTracker::isHealthy() const {
 bool PositionTracker::initialize() {
     try {
         if (!m_dataInterface) {
-            std::cerr << "DataInterface is null" << std::endl;
+            LOG_ERROR("PositionTracker", "DataInterface is null");
             return false;
         }
         
         if (!m_dataInterface->initialize()) {
-            std::cerr << "Failed to initialize DataInterface" << std::endl;
+            LOG_ERROR("PositionTracker", "Failed to initialize DataInterface");
             return false;
         }
         
@@ -162,7 +162,8 @@ bool PositionTracker::initialize() {
         
         return true;
     } catch (const std::exception& e) {
-        std::cerr << "Error initializing PositionTracker: " << e.what() << std::endl;
+        // std::cerr << "Error initializing PositionTracker: " << e.what() << std::endl;
+        LOG_ERROR(std::format("PositionTracker", "Error initializing: {}", e.what()));
         return false;
     }
 }
