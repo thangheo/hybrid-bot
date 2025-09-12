@@ -180,9 +180,9 @@ public:
         // 3. Initialize risk manager
         std::cout << "Initializing risk manager..." << std::endl;
         riskManager_ = std::make_unique<risk::RiskManager>(executionService_, riskConfig_);
+        std::cout << "RiskManager constructor called executionService_ with config. Start initializing..." << std::endl;
         // sleep for 5s
         std::this_thread::sleep_for(std::chrono::seconds(5));
-        std::cout << "RiskManager initialized with config" << std::endl;
         if (!riskManager_->initialize()) {
             std::cerr << "Failed to initialize risk manager" << std::endl;
             return false;
