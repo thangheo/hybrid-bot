@@ -51,9 +51,18 @@ public:
     bool start() {
         std::cout << "=== RISK MANAGER COMPREHENSIVE DEMO ===" << std::endl;
         std::cout << "Testing all risk management components..." << std::endl;
-        
-        // Initialize risk manager
-        riskManager_ = std::make_unique<RiskManager>(config_);
+        //init data interface
+        auto executionService_ = std::make_shared<ExecutionService>(
+            std::shared_ptr<OrderGenerator>(),
+            std::shared_ptr<SmartOrderRouter>(),
+            std::shared_ptr<OrderTypeSelector>(),
+            std::shared_ptr<ExecutionAlgorithmFactory>(),
+            std::shared_ptr<OrderLifecycleTracker>(),
+            std::shared_ptr<FillReconciliation>(),
+            std::shared_ptr<ApiClientManager>()
+        );
+
+        riskManager_ = std::make_unique<RiskManager>(executionService_, config_); //avoid compiler error
         if (!riskManager_->initialize()) {
             std::cerr << "Failed to initialize risk manager" << std::endl;
             return false;

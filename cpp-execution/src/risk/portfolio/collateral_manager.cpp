@@ -38,7 +38,7 @@ bool CollateralManager::initialize() {
     try {
         // Fetch initial balances
         if (!fetchExchangeBalances()) {
-            std::cerr << "Warning: Initial balance fetch failed" << std::endl;
+            // std::cerr << "Warning: Initial balance fetch failed" << std::endl;
             // Continue anyway as this might recover later
         }
         

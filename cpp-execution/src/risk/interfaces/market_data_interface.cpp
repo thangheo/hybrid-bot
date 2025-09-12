@@ -30,7 +30,7 @@ std::vector<std::pair<Timestamp, double>> PriceHistory::getRecentPrices(int coun
 
 // MarketDataInterface implementation
 MarketDataInterface::MarketDataInterface() : DataInterface() {
-    LOG_INFO("MarketDataInterface constructor");
+    // LOG_INFO("MarketDataInterface constructor");
 }
 MarketDataInterface::MarketDataInterface(const RiskConfig& config) : MarketDataInterface() {
     zmqSubscriberEndpoint_ = config.zmqSubscriberEndpoint;

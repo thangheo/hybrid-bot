@@ -210,6 +210,8 @@ protected:
  */
 std::unique_ptr<ExecutionInterface> createExecutionInterface(
     const RiskConfig& config);
+std::unique_ptr<ExecutionInterface> createExecutionInterface_withExecutionService(
+    std::shared_ptr<trading::execution::ExecutionService> executionService);
 
 } // namespace risk
 } // namespace trading

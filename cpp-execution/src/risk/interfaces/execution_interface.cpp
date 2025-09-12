@@ -359,6 +359,16 @@ std::unique_ptr<ExecutionInterface> createExecutionInterface(const RiskConfig& c
         return nullptr;
     }
 }
+std::unique_ptr<ExecutionInterface> createExecutionInterface_withExecutionService(
+    std::shared_ptr<trading::execution::ExecutionService> executionService) {
+    
+    try {
+        return std::make_unique<ExecutionInterfaceImpl>(executionService);
+    } catch (const std::exception& e) {
+        LOG_INFO("ERROR", "Failed to create ExecutionInterface with ExecutionService: " + std::string(e.what()));
+        return nullptr;
+    }
+}
 
 } // namespace risk  
 } // namespace trading

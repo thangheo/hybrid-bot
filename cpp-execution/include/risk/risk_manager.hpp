@@ -48,8 +48,9 @@ public:
      * Constructor
      * @param config The risk system configuration
      */
-    explicit RiskManager(const RiskConfig& config);
-    RiskManager(std::shared_ptr<trading::execution::ExecutionService> execService);
+    // explicit RiskManager(const RiskConfig& config);
+    // RiskManager(std::shared_ptr<trading::execution::ExecutionService> execService);
+    explicit RiskManager(std::shared_ptr<trading::execution::ExecutionService> execService, const RiskConfig& config);
     /**
      * Destructor
      */

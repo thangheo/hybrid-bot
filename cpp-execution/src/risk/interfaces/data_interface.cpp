@@ -201,7 +201,7 @@ public:
         if (initialized_ && marketDataInterface_) {
             try {
                 marketDataInterface_->registerMarketDataCallback(callback);
-                LOG_INFO("Market data callback registered");
+                // LOG_INFO("Market data callback registered");
             } catch (const std::exception& e) {
                 LOG_ERROR("Failed to register callback: " + std::string(e.what()));
             }
