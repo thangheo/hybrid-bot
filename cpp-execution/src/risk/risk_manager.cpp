@@ -41,28 +41,21 @@ bool RiskManager::initialize() {
     try {
         // Load configuration
         loadConfiguration();
-        
-        // Initialize portfolio manager first
-        m_portfolioManager = std::make_unique<PortfolioManager>(m_config);
-        if (!m_portfolioManager->initialize()) {
-            std::cerr << "Failed to initialize portfolio manager" << std::endl;
-            return false;
+        //print config all keys and values
+        std::cout << "RiskManager Configuration:" << std::endl;
+        std::cout << "CollateralConfig:" << std::endl;
+        std::cout << "  targetFreeCollateralRatio: " << m_config.collateralConfig.targetFreeCollateralRatio << std::endl;
+        std::cout << "  enableEmergencyFunding: " << m_config.collateralConfig.enableEmergencyFunding << std::endl;
+        std::cout << "  fundingSources: ";
+        for (const auto& source : m_config.collateralConfig.fundingSources) {
+            std::cout << source << " ";
         }
-        
-        // Initialize pre-trade filter
-        m_preTradeFilter = std::make_unique<PreTradeRiskFilter>(m_config);
-        if (!m_preTradeFilter->initialize()) {
-            std::cerr << "Failed to initialize pre-trade risk filter" << std::endl;
-            return false;
-        }
-        
-        // Initialize post-trade monitor
-        m_postTradeMonitor = std::make_unique<PostTradeMonitor>(m_config, m_portfolioManager.get());
-        if (!m_postTradeMonitor->initialize()) {
-            std::cerr << "Failed to initialize post-trade monitor" << std::endl;
-            return false;
-        }
-        
+        std::cout << std::endl;
+        std::cout << "  maxFundingAmount: " << m_config.collateralConfig.maxFundingAmount << std::endl;
+        std::cout << "  minimumFreeCollateralRatio: " << m_config.collateralConfig.minimumFreeCollateralRatio << std::endl;
+        std::cout << "  emergencyFundingThreshold: " << m_config.collateralConfig.emergencyFundingThreshold << std::endl;
+        std::cout << "  autoInitiateEmergencyFunding: " << m_config.collateralConfig.autoInitiateEmergencyFunding << std::endl;
+        // std::cout << "  managed
         // ✅ Use existing m_dataInterface instead of creating new ones
         if (!m_dataInterface) {
             LOG_ERROR("RiskManager", "DataInterface not initialized in constructor");
@@ -74,6 +67,29 @@ bool RiskManager::initialize() {
             LOG_ERROR("RiskManager", "Failed to initialize DataInterface");
             return false;
         }
+
+        // Initialize portfolio manager first
+        m_portfolioManager = std::make_unique<PortfolioManager>(m_config);
+        if (!m_portfolioManager->initialize()) {
+            LOG_ERROR("RiskManager", "Failed to initialize PortfolioManager");
+            return false;
+        }
+        
+        // Initialize pre-trade filter
+        m_preTradeFilter = std::make_unique<PreTradeRiskFilter>(m_config);
+        if (!m_preTradeFilter->initialize()) {
+            LOG_ERROR("RiskManager", "Failed to initialize PreTradeRiskFilter");
+            return false;
+        }
+        
+        // Initialize post-trade monitor
+        m_postTradeMonitor = std::make_unique<PostTradeMonitor>(m_config, m_portfolioManager.get());
+        if (!m_postTradeMonitor->initialize()) {
+            LOG_ERROR("RiskManager", "Failed to initialize PostTradeMonitor");
+            return false;
+        }
+        
+        
         LOG_INFO("RiskManager", "Initialized DataInterface successfully");
         
         // ✅ Reuse m_dataInterface for PositionTracker (convert to shared_ptr)

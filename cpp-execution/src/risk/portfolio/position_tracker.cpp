@@ -147,11 +147,16 @@ bool PositionTracker::initialize() {
             LOG_ERROR("PositionTracker", "DataInterface is null");
             return false;
         }
-        
-        if (!m_dataInterface->initialize()) {
-            LOG_ERROR("PositionTracker", "Failed to initialize DataInterface");
+        // check if data interface is healthy or connected
+        if (!m_dataInterface->isConnected()) {
+            LOG_ERROR("PositionTracker", "DataInterface is not connected");
             return false;
         }
+        //already initialized in main.cpp
+        // if (!m_dataInterface->initialize()) {
+        //     LOG_ERROR("PositionTracker", "Failed to initialize DataInterface");
+        //     return false;
+        // }
         
         // Register for market data updates if supported
         m_dataInterface->registerMarketDataCallback(
@@ -159,6 +164,7 @@ bool PositionTracker::initialize() {
                 this->updateMarketData(marketData);
             }
         );
+        
         
         return true;
     } catch (const std::exception& e) {
@@ -310,7 +316,8 @@ void PositionTracker::updateMarketData(const MarketData& marketData) {
             std::lock_guard<std::mutex> lock(m_marketDataMutex);
             m_priceCache[marketData.tradingPair.toString()] = marketData.price;
         }
-        
+        LOG_DEBUG(std::format("PositionTracker", "Updated market data: {} @ {}", 
+                        marketData.tradingPair.toString(), marketData.price));
         // Update positions with new price
         std::lock_guard<std::mutex> lock(m_positionsMutex);
         for (auto& [key, position] : m_positions) {
