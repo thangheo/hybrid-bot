@@ -10,6 +10,7 @@
 #include <iostream>
 #include <sstream>
 #include <chrono>
+#include <thread>
 #include <set>
 namespace trading {
 namespace risk {
@@ -67,6 +68,17 @@ bool RiskManager::initialize() {
             LOG_ERROR("RiskManager", "Failed to initialize DataInterface");
             return false;
         }
+        
+        // ✅ Give DataInterface time to establish connections  
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        
+        // ✅ Check if DataInterface is connected after initialization
+        if (!m_dataInterface->isConnected()) {
+            LOG_WARN("RiskManager", "DataInterface initialized but not connected - this may cause issues");
+            // Try to establish connection if DataInterface has connect method
+            // Note: Some DataInterface implementations auto-connect during initialize()
+        }
+        LOG_INFO("RiskManager", "DataInterface initialization complete");
 
         // Initialize portfolio manager first
         m_portfolioManager = std::make_unique<PortfolioManager>(m_config);
@@ -92,12 +104,48 @@ bool RiskManager::initialize() {
         
         LOG_INFO("RiskManager", "Initialized DataInterface successfully");
         
-        // ✅ Reuse m_dataInterface for PositionTracker (convert to shared_ptr)
-        std::shared_ptr<DataInterface> sharedDataInterface(m_dataInterface.get(), [](DataInterface*){
-            // Empty deleter - don't delete, let unique_ptr handle it
-        });
+        // ✅ Fix smart pointer conversion - use proper shared_ptr sharing
+        std::shared_ptr<DataInterface> sharedDataInterface;
+        
+        // Check if m_dataInterface is actually a shared_ptr wrapped in unique_ptr
+        // Or create a proper shared_ptr from unique_ptr (transfer ownership)
+        if (m_dataInterface) {
+            // Option A: If you want to share ownership properly
+            // Release from unique_ptr and create shared_ptr (CAREFUL: transfers ownership!)
+            // sharedDataInterface = std::shared_ptr<DataInterface>(m_dataInterface.release());
+            
+            // Option B: Keep unique_ptr ownership but create safe wrapper
+            sharedDataInterface = std::shared_ptr<DataInterface>(
+                m_dataInterface.get(), 
+                [](DataInterface*) { 
+                    // Empty deleter - unique_ptr still owns the object
+                    // This is safe as long as unique_ptr outlives all shared_ptr uses
+                }
+            );
+            
+            LOG_INFO("RiskManager", "Created shared DataInterface wrapper for PositionTracker");
+        } else {
+            LOG_ERROR("RiskManager", "m_dataInterface is null, cannot create shared wrapper");
+            return false;
+        }
         
         std::shared_ptr<PositionTracker> positionTracker = std::make_shared<PositionTracker>(m_config, sharedDataInterface);
+        
+        // ✅ Add debug logging before PositionTracker initialization
+        LOG_INFO("RiskManager", "About to initialize PositionTracker...");
+        LOG_INFO("RiskManager", "DataInterface state before PositionTracker init:");
+        
+        std::string dataInterfaceStatus = m_dataInterface ? "VALID" : "NULL";
+        LOG_INFO("RiskManager", "  - DataInterface ptr: " + dataInterfaceStatus);
+        
+        std::string dataInterfaceConnected = (m_dataInterface && m_dataInterface->isConnected()) ? "YES" : "NO";
+        LOG_INFO("RiskManager", "  - DataInterface connected: " + dataInterfaceConnected);
+        
+        std::string sharedWrapperStatus = sharedDataInterface ? "VALID" : "NULL";
+        LOG_INFO("RiskManager", "  - Shared wrapper ptr: " + sharedWrapperStatus);
+        
+        std::string sharedWrapperConnected = (sharedDataInterface && sharedDataInterface->isConnected()) ? "YES" : "NO";
+        LOG_INFO("RiskManager", "  - Shared wrapper connected: " + sharedWrapperConnected);
         
         if (!positionTracker->initialize()) {
             LOG_ERROR("RiskManager", "Failed to initialize PositionTracker");

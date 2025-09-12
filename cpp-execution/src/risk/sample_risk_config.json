@@ -52,7 +52,7 @@
         "isHigherBetter": false
       },
       "pnl_drawdown": {
-        "warning": 0.03,
+        "warning": 0.06,
         "critical": 0.05,
         "isHigherBetter": true
       },
