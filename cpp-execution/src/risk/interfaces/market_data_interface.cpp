@@ -693,6 +693,14 @@ MarketDataInterface::~MarketDataInterface() {
     priceHistories_.clear();
     orderHistoryCache_.clear();
 }
-
+// createDataInterface
+std::shared_ptr<DataInterface> MarketDataInterface::createDataInterface(const RiskConfig& config) {
+    auto instance = std::make_shared<MarketDataInterface>(config);
+    if (!instance->initialize()) {
+        LOG_ERROR("Failed to initialize MarketDataInterface");
+        return nullptr;
+    }
+    return instance;
+}
 } // namespace risk
 } // namespace trading

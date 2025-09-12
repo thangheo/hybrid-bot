@@ -131,6 +131,10 @@ public:
     
     double getBalance(const core::ExchangeId& exchangeId, 
                      const std::string& asset) const;
+    // createDataInterface(m_config) header
+    static std::shared_ptr<DataInterface> createDataInterface(const RiskConfig& config);
+
+
 private:
     VolatilityCalculator volatilityCalculator_;
     // Helper methods
