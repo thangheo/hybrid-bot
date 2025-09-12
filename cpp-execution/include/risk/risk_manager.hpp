@@ -45,12 +45,33 @@ public:
     bool checkSystemHealth();
     void loadConfiguration();
     /**
+     * Static factory method - USE THIS instead of constructor
+     * @param execService The execution service
+     * @param config The risk system configuration
+     * @return Fully initialized RiskManager shared_ptr
+     */
+    static std::shared_ptr<RiskManager> create(
+        std::shared_ptr<trading::execution::ExecutionService> execService, 
+        const RiskConfig& config) {
+        
+        // Create using make_shared - this enables shared_from_this()
+        auto manager = std::shared_ptr<RiskManager>(new RiskManager(execService, config));
+        
+        // Now safe to call methods that use shared_from_this()
+        if (!manager->initialize()) {
+            LOG_ERROR("RiskManager", "Failed to initialize RiskManager");
+            return nullptr;
+        }
+        
+        return manager;
+    }
+    /**
      * Constructor
      * @param config The risk system configuration
      */
     // explicit RiskManager(const RiskConfig& config);
     // RiskManager(std::shared_ptr<trading::execution::ExecutionService> execService);
-    explicit RiskManager(std::shared_ptr<trading::execution::ExecutionService> execService, const RiskConfig& config);
+    // explicit RiskManager(std::shared_ptr<trading::execution::ExecutionService> execService, const RiskConfig& config);
     /**
      * Destructor
      */
@@ -138,6 +159,22 @@ public:
     bool emergencyAction(const std::string& reason);
    
 private:
+    std::shared_ptr<trading::execution::ExecutionService> m_execService;
+    
+    /**
+     * Private constructor - forces use of create() method
+     * @param execService The execution service  
+     * @param config The risk system configuration
+     */
+    explicit RiskManager(std::shared_ptr<trading::execution::ExecutionService> execService, 
+                        const RiskConfig& config)
+        : m_config(config)
+        , m_mode(RiskManagerMode::NORMAL)
+        , m_execService(execService)  // Store for later use
+    {
+        // DON'T call any methods that use shared_from_this() here!
+        LOG_INFO("RiskManager", "RiskManager constructor completed");
+    }
 // config_
     // just declare fucking idiots
     std::shared_ptr<trading::execution::ExecutionService> m_executionService;

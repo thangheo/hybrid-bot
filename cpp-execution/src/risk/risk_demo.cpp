@@ -62,7 +62,12 @@ public:
             std::shared_ptr<ApiClientManager>()
         );
 
-        riskManager_ = std::make_unique<RiskManager>(executionService_, config_); //avoid compiler error
+        // riskManager_ = std::make_unique<RiskManager>(executionService_, config_); //avoid compiler error
+        riskManager_ = RiskManager::create(executionService_, config_);
+        if (!riskManager_) {
+            std::cerr << "Failed to create risk manager" << std::endl;
+            return false;
+        }
         if (!riskManager_->initialize()) {
             std::cerr << "Failed to initialize risk manager" << std::endl;
             return false;
@@ -94,7 +99,7 @@ public:
     }
 
 private:
-    std::unique_ptr<RiskManager> riskManager_;
+    std::shared_ptr<RiskManager> riskManager_;
     RiskConfig config_;
     std::atomic<bool> running_;
     std::mt19937 gen_;
