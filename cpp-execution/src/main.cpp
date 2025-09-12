@@ -292,8 +292,18 @@ public:
         }
         
         printFinalReport();
+    } 
+    // Or run without time limit:
+    void runIndefinitely() {
+        while (running_ && systemHealthy_) {
+            std::this_thread::sleep_for(1s);
+            
+            if (!checkSystemHealth()) {
+                std::cout << "⚠️ System health issues detected!" << std::endl;
+                systemHealthy_ = false;
+            }
+        }
     }
-    
     void shutdown() {
         if (running_) {
             std::cout << "\n=== SHUTTING DOWN TRADING SYSTEM ===" << std::endl;
@@ -404,18 +414,18 @@ private:
             std::cerr << "Invalid risk configuration!" << std::endl;
         }
         auto& positionConfig = const_cast<PositionLimitConfig&>(riskConfig_.getPositionLimitConfig());
-        positionConfig.assetLimits["BTC"] = 2.0;
-        positionConfig.assetLimits["ETH"] = 20.0;
-        positionConfig.assetLimits["BNB"] = 100.0;
-        positionConfig.assetLimits["ADA"] = 10000.0;
-        positionConfig.defaultLimit = 5000.0;
+        positionConfig.assetLimits["BTC"] = 0.00001;
+        positionConfig.assetLimits["ETH"] = 0.01;
+        positionConfig.assetLimits["BNB"] = 0.1;
+        positionConfig.assetLimits["ADA"] = 1.0;
+        positionConfig.defaultLimit = 0.1;
         positionConfig.enforceStrictly = true;
         
         auto& exposureConfig = const_cast<ExposureLimitConfig&>(riskConfig_.getExposureLimitConfig());
-        exposureConfig.maxTotalExposure = 100000.0;
-        exposureConfig.maxAssetExposure = 50000.0;
-        exposureConfig.maxStrategyExposure = 75000.0;
-        exposureConfig.maxExchangeExposure = 80000.0;
+        exposureConfig.maxTotalExposure = 100.0;
+        exposureConfig.maxAssetExposure = 50.0;
+        exposureConfig.maxStrategyExposure = 750.0;
+        exposureConfig.maxExchangeExposure = 800.0;
     }
     
     void setupStatistics() {
@@ -431,7 +441,7 @@ private:
     
     void setupExecutionEngine() {
         // This would normally be more complex, but for demo purposes
-        // we'll create a simple mock execution engine
+        // already initialized in initializeExecutionService()
         std::cout << "Execution engine setup (mock implementation for demo)" << std::endl;
     }
     
@@ -463,12 +473,47 @@ private:
             // Convert strategy signal to execution signal for risk validation
             execution::TradingSignal execSignal;
             execSignal.id = signal.id;
-            execSignal.symbol = signal.symbol.toString();
+            execSignal.symbol = signal.symbol;
             execSignal.direction = signal.direction;
             execSignal.strength = signal.strength;
             execSignal.targetSize = signal.targetSize;
             execSignal.strategyId = signal.strategyId;
+            //get mid price from order book
+            double midPrice = 0.0;
+            if (dataIngestionService_) {
+                auto orderbook = dataIngestionService_->getOrderBook(execSignal.exchangeId, execSignal.symbol);
+                if (orderbook) {
+                    midPrice = orderbook->getMidPrice();
+                }
+                else {
+                    LOG_INFO("FullSystemDemo", "Abort signal.No order book available for " + execSignal.symbol.toString());
+                    return; // No order book available, abort signal
+                }
+            }
+            execSignal.confidence = signal.confidence;
+            execSignal.quality = signal.quality;
+            execSignal.expirationTime = signal.expirationTime;
+            execSignal.targets = signal.targets;
+            execSignal.exchangeId = signal.exchangeId;
             
+            // Basic filtering
+
+            if (execSignal.strength < 0.5) return; // Weak signals are ignored
+            if (execSignal.direction == core::Direction::NEUTRAL) return; // Ignore neutral signals
+            if (execSignal.confidence < 0.5) return; // Ignore low confidence signals
+            if (execSignal.quality < 0.5) return; // Ignore low quality signals
+            double percentage_change_threshold = 0.0018; // 0.25%
+                    if(midPrice > 0.0) {
+                        bool allTargetsTooClose = true;
+                        for (const auto& target : execSignal.targets) {
+                            double priceDiffPercent = std::abs(target.price - midPrice) / midPrice;
+                            if (priceDiffPercent >= percentage_change_threshold) {
+                                allTargetsTooClose = false;
+                                break;
+                            }
+                        }
+                        if (allTargetsTooClose) return; // Ignore signals with all targets too close
+                    }
             // Validate with risk manager
             if (riskManager_) {
                 auto validationResult = riskManager_->validateSignal(execSignal);
@@ -476,13 +521,13 @@ private:
                 
                 if (validationResult.approved) {
                     signalsApproved_++;
-                    std::cout << "✅ Signal " << signal.id << " approved for execution" << std::endl;
-                    
+                    std::cout << "✅ Signal " << execSignal.id << " approved for execution" << std::endl;
+
                     // Here we would normally send to execution engine
-                    simulateExecution(execSignal);
+                    realExecution(execSignal);
                 } else {
                     signalsRejected_++;
-                    std::cout << "❌ Signal " << signal.id << " rejected by risk management" << std::endl;
+                    std::cout << "❌ Signal " << execSignal.id << " rejected by risk management" << std::endl;
                 }
             }
         });
@@ -557,15 +602,21 @@ private:
         return healthy;
     }
     
-    void simulateExecution(const execution::TradingSignal& signal) {
+    void realExecution(const execution::TradingSignal& signal) {
         ordersExecuted_++;
         
         // Simulate execution delay
         std::thread([this, signal]() {
             std::this_thread::sleep_for(100ms);
-            
+            ExecutionResponse response = executionService_->executeSignal(signal);
+            if (!response.success) {
+                std::cout << "❌ Execution failed for signal " << signal.id 
+                          << ": " << response.error_message << std::endl;
+                return;
+            }
             // Create mock execution report
             execution::models::ExecutionReport report;
+
             report.setOrderId("ORDER_" + signal.id);
             report.setSymbol(signal.symbol);
             report.setSide(signal.direction == core::Direction::BUY ? 
@@ -664,7 +715,7 @@ private:
         
         if (result.approved) {
             std::cout << "Executing approved signal..." << std::endl;
-            simulateExecution(testSignal);
+            realExecution(testSignal);
         } else {
             std::cout << "Signal not approved for execution" << std::endl;
         }
@@ -764,8 +815,13 @@ int main(int argc, char* argv[]) {
         std::cout << "Press Ctrl+C to stop early" << std::endl;
         
         // Run demo
-        demoInstance->runDemo(durationMinutes);
-        
+        demoInstance->runIndefinitely();
+        // demoInstance->runDemo(durationMinutes);
+                // Replace the commented runDemo() line with:
+        // std::cout << "System running... Press Ctrl+C to stop" << std::endl;
+        // std::unique_lock<std::mutex> lock(shutdown_mutex);
+        // shutdown_cv.wait(lock, [] { return shutdown_requested; });
+
         // Cleanup
         demoInstance->shutdown();
         demoInstance.reset();
