@@ -151,7 +151,7 @@ private:
     std::unique_ptr<StrategyInterface> m_strategyInterface;
     std::unique_ptr<DataInterface> m_dataInterface;
     // m_executionInterface
-    std::unique_ptr<ExecutionInterface> m_executionInterface;
+    std::shared_ptr<ExecutionInterface> m_executionInterface;
     
     // Configuration and state
     RiskConfig m_config;
