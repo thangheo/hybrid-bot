@@ -764,6 +764,7 @@ private:
                 double midPrice = (update.bids[0].price + update.asks[0].price) / 2.0;
                 onMarketPriceUpdate(update.tradingPair, midPrice);  // ADD THIS LINE
             }
+            onOrderBookUpdate(update);
             // Convert to OrderBook and send to strategy
             auto orderBook = std::make_shared<data_ingestion::OrderBook>(
                 update.exchangeId, update.tradingPair);
@@ -776,7 +777,6 @@ private:
             if (strategyEngine_ && strategyEngine_->processOrderBook(*orderBook)) {
                 // Order book processed successfully
             }
-            onOrderBookUpdate(update);
         });
             
             // 2. Connect strategy engine to risk manager
