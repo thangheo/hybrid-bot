@@ -77,38 +77,30 @@ data_ingestion:
     # self.db_url = db_config.get('url', 'postgresql://trading:Pass_1234@localhost:5432/trading_db')
     pool_size: 5
 
-  symbols:
-    # TIER 1: Major Caps (High liquidity, ETF correlation)
+    symbols:
     - "BTCUSDT"    # Bitcoin - Direct ETF correlation
     - "ETHUSDT"    # Ethereum - Major DeFi
-    # TIER 2: Large Caps (Strong institutional interest)
-    - "SOLUSDT"    # Solana - High performance blockchain
+    - "BNBUSDT"    # Binance Coin - Exchange token
+    - "LTCUSDT"    # Litecoin - Digital silver
     - "XRPUSDT"    # Ripple - Payment network
+    - "BCHUSDT"    # Bitcoin Cash - Bitcoin fork
     - "ADAUSDT"    # Cardano - Academic blockchain
-    - "AVAXUSDT"   # Avalanche - DeFi ecosystem
     - "DOTUSDT"    # Polkadot - Interoperability
     - "LINKUSDT"   # Chainlink - Oracle network
+    - "XLMUSDT"    # Stellar - Cross-border payments
+    - "DOGEUSDT"   # Dogecoin - Payment/meme
+    - "SOLUSDT"    # Solana - High performance blockchain
+    - "MATICUSDT"  # Polygon - Ethereum scaling
+    - "AVAXUSDT"   # Avalanche - DeFi ecosystem
+    - "SHIBUSDT"   # Shiba Inu - Meme token
+    - "TRXUSDT"    # Tron - Content entertainment
     - "UNIUSDT"    # Uniswap - DEX protocol
-    # TIER 3: Mid Caps (Growing ecosystems)
     - "ATOMUSDT"   # Cosmos - Internet of blockchains
     - "ALGOUSDT"   # Algorand - Pure proof of stake
-    - "AAVEUSDT"   # Aave - DeFi lending
-    # TIER 4: Layer 2 & Scaling (High growth potential)
-    - "ARBUSDT"    # Arbitrum - Ethereum L2
-    - "OPUSDT"     # Optimism - Ethereum L2  
-    - "INJUSDT"    # Injective - DeFi derivatives
-    - "SUIUSDT"    # Sui - High performance blockchain
-    # TIER 5: Specialized/Oracle/Infrastructure
-    - "TRBUSDT"    # Tellor - Oracle network
-    - "BANDUSDT"   # Band Protocol - Oracle
-    - "CHZUSDT"    # Chiliz - Sports/entertainment
-    - "ENJUSDT"    # Enjin - Gaming/NFT
-    # TIER 6: DeFi Protocols (High volatility, regime-sensitive)
-    - "YFIUSDT"    # Yearn Finance - Yield farming
-    - "1INCHUSDT"  # 1inch - DEX aggregator
-    # TIER 7: Emerging/Trending (High beta to market regimes)
-    - "DOGEUSDT"   # Dogecoin - Payment/meme
-    - "WIFUSDT"    # Dogwifhat - Solana meme
+    - "VETUSDT"    # VeChain - Supply chain
+    - "FILUSDT"    # Filecoin - Decentralized storage
+    - "ENJUSDT"    # Enjin - Gaming/NFT platform
+
     
   
   # UPDATED: Optimal timeframes for Markov
