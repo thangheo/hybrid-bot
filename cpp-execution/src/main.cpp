@@ -31,6 +31,10 @@
 // Strategy engine
 #include "strategy/engine/strategy_engine.hpp"
 #include "strategy/config/strategy_config_loader.hpp"
+//ptca
+#include "learning/ptca_integration_manager.hpp"
+#include "learning/pavlovian_credit_assignment.hpp"
+#include "risk/interfaces/market_data_interface.hpp"
 
 // Risk management
 #include "risk/risk_manager.hpp"
@@ -109,7 +113,9 @@ public:
             std::cerr << "Failed to initialize strategy engine" << std::endl;
             return false;
         }
-        
+        //5. Initialize PTCA manager
+        ptcaManager_->start();        
+        lastPriceUpdate_ = std::chrono::steady_clock::now();
         // 6. Setup component connections
         setupComponentConnections();
         
@@ -204,6 +210,11 @@ public:
     } 
     
 private:
+    // PTCA: Add PTCA-related members
+    std::unique_ptr<trading::learning::PTCAIntegrationManager> ptcaManager_;
+    std::chrono::time_point<std::chrono::steady_clock> lastPriceUpdate_;
+    std::unique_ptr<DataInterface> m_dataInterface;
+
     // Core components
     std::unique_ptr<data_ingestion::DataIngestionService> dataIngestionService_;
     std::unique_ptr<strategy::StrategyEngine> strategyEngine_;
@@ -236,7 +247,10 @@ private:
         // Create configuration files
         createDataIngestionConfig();
         createStrategyConfig();
-        createRiskConfig();
+        createRiskConfig();                
+        // ✅ Create DataInterface ONCE and store as member
+        m_dataInterface = createDataInterface();
+        createPTCAConfig();
     }
     
     void createDataIngestionConfig() {
@@ -280,7 +294,116 @@ private:
                       << " on exchange " << pair.toString() << std::endl;            
         }
     }
+     // PTCA: Market price update handler
+    void onMarketPriceUpdate(const core::Symbol& symbol, double price) {
+        // Throttle price updates to avoid overwhelming PTCA
+        auto now = std::chrono::steady_clock::now();
+        if (now - lastPriceUpdate_ >= std::chrono::seconds(5)) {
+            ptcaManager_->updateMarketPrice(symbol, price);
+            lastPriceUpdate_ = now;
+        }
+        
+        // Your existing price update logic...
+    }
+        // Add this to your FullSystemDemo class:
+    void setupPTCAConnections() {
+        // 1. Market data callback (existing)
+        if (m_dataInterface) {
+            m_dataInterface->registerMarketDataCallback(
+                [this](const MarketData& marketData) {
+                    onMarketPriceUpdate(marketData.tradingPair.toString(), marketData.price);
+                }
+            );
+        }
+        
+        // 2. Execution callback - use executionService_ directly
+        if (executionService_) {
+            executionService_->registerExecutionCallback([this](const ExecutionResponse& response) {
+                onExecutionResponse(response);
+            });
+        }
+    }
+    
+    void onExecutionResponse(const execution::ExecutionResponse& response) {
+        std::cout << "📈 Execution: " << response.client_order_id
+                << " Status: " << response.order_status  << std::endl;
 
+        ordersExecuted_++;
+        
+        // Register with PTCA if needed
+        if (ptcaManager_) {
+            // Convert ExecutionResponse to ExecutionReport format if needed
+            // ptcaManager_->registerExecution(response.order_id, response);
+        }
+    }
+
+    void evaluatePTCADecision(const core::Symbol& symbol) {
+        // Get current signals for the symbol
+        std::vector<strategy::TradingSignal> currentSignals = getCurrentSignalsForSymbol(symbol);
+        
+        if (!currentSignals.empty()) {
+            auto decision = ptcaManager_->generateTradingDecision(symbol, currentSignals);
+            
+            std::cout << "PTCA Decision for " << symbol.toString() << ":" << std::endl;
+            std::cout << "  Direction: " << core::directionToString(decision.recommendedDirection) << std::endl;
+            std::cout << "  Confidence: " << decision.confidence << std::endl;
+            std::cout << "  Expected Outcome: " << decision.expectedOutcome << std::endl;
+            std::cout << "  Reasoning: " << decision.reasoning << std::endl;
+            
+            // You could use this decision to:
+            // 1. Override or modify existing signals
+            // 2. Generate new signals
+            // 3. Adjust position sizing
+            // 4. Trigger rebalancing
+        }
+    }
+        
+    // Helper method to get current signals for a symbol (you'll need to implement this)
+    std::vector<strategy::TradingSignal> getCurrentSignalsForSymbol(const core::Symbol& symbol) {
+        // This should return current active signals for the given symbol
+        // You'll need to implement this based on your signal storage
+        std::vector<strategy::TradingSignal> signals;
+        // Your implementation here...
+        return signals;
+    }
+    // PTCA: Add periodic PTCA statistics reporting
+    void reportPTCAStats() {
+        auto stats = ptcaManager_->getStats();
+        
+        std::cout << "=== PTCA Learning Statistics ===" << std::endl;
+        std::cout << "Total signals tracked: " << stats.totalSignalsTracked << std::endl;
+        std::cout << "Signals with outcomes: " << stats.signalsWithOutcomes << std::endl;
+        std::cout << "Executed signals: " << stats.executedSignals << std::endl;
+        std::cout << "Average signal P&L: " << (stats.averageSignalPnL * 100) << "%" << std::endl;
+        std::cout << "Learning accuracy: " << (stats.learningAccuracy * 100) << "%" << std::endl;
+        std::cout << "Currently tracked: " << stats.currentlyTrackedSignals << std::endl;
+        std::cout << "PTCA events learned: " << stats.ptcaStats.totalEvents << std::endl;
+        std::cout << "PTCA timesteps: " << stats.ptcaStats.totalTimesteps << std::endl;
+        std::cout << "=================================" << std::endl;
+    }
+    //create ptca config
+    void createPTCAConfig() {
+        trading::learning::PTCAIntegrationConfig ptcaConfig;        
+        // Configure PTCA for your trading environment
+        ptcaConfig.outcomeEvaluationDelay = std::chrono::minutes(2);  // Evaluate outcomes after 2 minutes
+        ptcaConfig.signalTrackingWindow = std::chrono::minutes(15);   // Track signals for 15 minutes
+        ptcaConfig.minimumPnLThreshold = 0.0005;                     // 0.05% minimum P&L to learn from
+        ptcaConfig.priceMovementThreshold = 0.003;                   // 0.3% price movement significance
+        ptcaConfig.pnlSuccessThreshold = 0.008;                      // 0.8% P&L success threshold
+        ptcaConfig.strongOutcomeThreshold = 0.02;                    // 2% strong outcome threshold
+        
+        // Set up model persistence
+        ptcaConfig.modelSaveDirectory = "models/ptca/";
+        ptcaConfig.modelSaveInterval = std::chrono::minutes(20);
+        ptcaConfig.enableContinuousLearning = true;
+        ptcaConfig.enableDetailedLogging = true;
+        
+        // Performance limits
+        ptcaConfig.maxSignalsToTrack = 500;  // Limit memory usage
+        
+        ptcaManager_ = std::make_unique<trading::learning::PTCAIntegrationManager>(ptcaConfig);
+
+    }
     void createRiskConfig() {
         // Setup risk configuration (similar to risk demo)
         // load config from file
@@ -416,14 +539,6 @@ private:
         // 1. Connect data ingestion to strategy engine
         dataIngestionService_->setOrderBookCallback([this](const auto& update) {
             
-            // std::cout << "Received Order Book Update for "
-            //           << update.tradingPair.toString()
-            //           << " from " << update.exchangeId.toString()
-            //           << " | Bids: " << update.bids.size()
-            //           << " | Asks: " << update.asks.size()
-            //           << " | Seq#: " << update.sequenceNumber
-            //           << " | Snapshot: " << (update.isSnapshot ? "YES" : "NO")
-            //           << std::endl;
             // Convert to OrderBook and send to strategy
             auto orderBook = std::make_shared<data_ingestion::OrderBook>(
                 update.exchangeId, update.tradingPair);
@@ -437,15 +552,15 @@ private:
                 // Order book processed successfully
             }
         });
-        
-        // 2. Connect strategy engine to risk manager
-        strategyEngine_->registerSignalCallback([this](const strategy::TradingSignal& signal) {
-            signalsGenerated_++;
             
-            // Convert strategy signal to execution signal for risk validation
-            execution::TradingSignal execSignal;
-            execSignal.id = signal.id;
-            execSignal.symbol = signal.symbol;
+            // 2. Connect strategy engine to risk manager
+            strategyEngine_->registerSignalCallback([this](const strategy::TradingSignal& signal) {
+                signalsGenerated_++;
+                
+                // Convert strategy signal to execution signal for risk validation
+                execution::TradingSignal execSignal;
+                execSignal.id = signal.id;
+                execSignal.symbol = signal.symbol;
             execSignal.direction = signal.direction;
             execSignal.strength = signal.strength;
             execSignal.targetSize = signal.targetSize;
@@ -471,17 +586,7 @@ private:
                 if (execSignal.confidence < 0.6) return;  // 20% threshold
                 if (execSignal.quality < 0.3) return;     // 20% threshold
             }
-            //print targets
-            // std::cout << "Generated Signal: " << execSignal.id 
-            //           << " Symbol: " << execSignal.symbol.toString()
-            //           << " Direction: " << (execSignal.direction == core::Direction::BUY ? "BUY" : 
-            //                               execSignal.direction == core::Direction::SELL ? "SELL" : "NEUTRAL")
-            //           << " Strength: " << execSignal.strength
-            //           << " Confidence: " << execSignal.confidence
-            //           << " Quality: " << execSignal.quality
-            //           << " Target Size: " << execSignal.targetSize
-            //           << " Expiration: " << execSignal.expirationTime
-            //           << std::endl;
+            
             double percentage_change_threshold = 0.002; // 0.2%
             int targetPass = 0;
             //     bool allTargetsTooClose = true;
@@ -532,6 +637,7 @@ private:
             std::cout << "🚨 Risk Event: " << event.description 
                       << " (Severity: " << event.severity << ")" << std::endl;
         });
+        setupPTCAConnections();
     }
     
         // In FullSystemDemo::checkSystemHealth(), temporarily disable emergency actions:

@@ -8,6 +8,7 @@ add_subdirectory(execution)
 add_subdirectory(risk)
 add_subdirectory(monitoring)
 add_subdirectory(communication)
+add_subdirectory(learning)
 # add_subdirectory(market_intelligence)
 # Main executable
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../bin)
@@ -21,5 +22,6 @@ target_link_libraries(semi_hft
         execution
         risk
         monitoring
+        ptca_learning
         # market_intelligence
 )

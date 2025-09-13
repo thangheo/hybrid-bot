@@ -130,7 +130,8 @@
 // EXAMPLE: Modified executeSignal method (only the API call part changes!)
 ExecutionResponse ExecutionService::executeSignal(const TradingSignal& signal) {
     std::lock_guard<std::mutex> lock(mutex_);
-    
+    ExecutionResponse response;
+
     try {
         // 1. Generate order from signal (UNCHANGED)
         auto order = createOrderFromSignal(signal);
@@ -158,7 +159,14 @@ ExecutionResponse ExecutionService::executeSignal(const TradingSignal& signal) {
         // 4. Update order lifecycle (UNCHANGED)
         order_lifecycle_tracker_->updateOrderState(order.getClientOrderId(), executionReport.status(), 
                                     executionReport.exchangeOrderId(), executionReport.rejectReason());
-        
+        if (execution_callback_) {
+            try {
+                execution_callback_(response);
+            } catch (const std::exception& e) {
+                // Log error but don't fail the execution
+                std::cerr << "Error in execution callback: " << e.what() << std::endl;
+            }
+        }
         // 5. Return response (UNCHANGED)
         return ExecutionResponse{
             order.getClientOrderId(),
@@ -201,11 +209,19 @@ ExecutionResponse ExecutionService::executeSignal(const TradingSignal& signal) {
             ""
         };
     }
-    
+    ExecutionResponse response;
     auto order_ptr = std::make_shared<models::Order>(order);
     RoutingResult routing_result = smart_order_router_->routeOrder(order_ptr);
     ExchangeId exchangeId = routing_result.exchangeId;
-
+    
+    // ✅ NEW: Trigger callback
+    if (execution_callback_) {
+        try {
+            execution_callback_(response);
+        } catch (const std::exception& e) {
+            std::cerr << "Error in execution callback: " << e.what() << std::endl;
+        }
+    }
     if (!exchangeId.isValid()) {
         return ExecutionResponse{
             order.getClientOrderId(), "", false, 
