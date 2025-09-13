@@ -134,7 +134,14 @@ public:
         std::lock_guard<std::mutex> lock(mutex_);
         exchangeGateway_ = gateway;
     }
+    //registerExecutionCallback
+    void registerExecutionCallback(const std::function<void(const ExecutionResponse&)>& callback) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        execution_callback_ = callback;
+    }
 private:
+    // NEW: Callback for execution reports
+    std::function<void(const ExecutionResponse&)> execution_callback_;
     // Helper methods for JSON parsing (unchanged)
     TradingSignal parseTradingSignalFromJson(const std::string& json);
     models::Order parseOrderFromJson(const std::string& json);
@@ -143,7 +150,6 @@ private:
     std::string orderStatusResponseToJson(const OrderStatusResponse& response);
     std::string activeOrdersToJson(const std::vector<models::Order>& orders);
 
-private:
     // NEW: ExchangeGateway member (optional)
     std::shared_ptr<common::ExchangeGateway> exchangeGateway_;   // NEW
     
