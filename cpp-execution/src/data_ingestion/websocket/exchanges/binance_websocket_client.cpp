@@ -39,7 +39,7 @@ BinanceWebSocketClient::BinanceWebSocketClient(const std::string& host,
     
     LOG_INFO("Created BinanceWebSocketClient for " + endpoint_);
 }
-// In BinanceWebSocketClient destructor, replace the complex cleanup with:
+// In BinanceWebSocketClient destructor, add this safety check:
 BinanceWebSocketClient::~BinanceWebSocketClient() {
     try {
         LOG_INFO("Starting BinanceWebSocketClient destruction");
@@ -47,20 +47,31 @@ BinanceWebSocketClient::~BinanceWebSocketClient() {
         keep_running_ = false;
         connected_.store(false);
         
-        // Simple cleanup - don't create new threads in destructor
+        // ✅ SAFE: Don't reset if already null
         if (wsStream_) {
-            wsStream_.reset();  // Just reset immediately
+            try {
+                // Close first if open
+                if (wsStream_->is_open()) {
+                    boost::system::error_code ec;
+                    wsStream_->close(websocket::close_code::going_away, ec);
+                }
+            } catch (...) {
+                // Ignore close errors
+            }
+            
+            // Set to null without calling reset()
+            wsStream_.release();  // Use release() instead of reset()
         }
         
-        // Simple thread cleanup
+        // Detach thread
         if (io_thread_.joinable()) {
-            io_thread_.detach();  // Just detach, don't wait
+            io_thread_.detach();
         }
         
         LOG_INFO("BinanceWebSocketClient destruction completed");
         
     } catch (...) {
-        // Ignore all errors in destructor
+        // Ignore all errors
     }
 }
 // BinanceWebSocketClient::~BinanceWebSocketClient() {
