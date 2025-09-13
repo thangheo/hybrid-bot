@@ -5,14 +5,14 @@
 
 # Configuration
 CPP_BUILD_DIR="cpp-execution/build"
-CPP_EXEC_PATH="cpp-execution/bin/tactical"
+CPP_EXEC_PATH="cpp-execution/bin/semi_hft"
 PYTHON_SCRIPT_PATH="python-strategy/main.py"
 LOG_DIR="logs"
-CPP_LOG_FILE="$LOG_DIR/cpp_bridge.log"
+CPP_LOG_FILE="$LOG_DIR/semi_hft.log"
 PYTHON_LOG_FILE="/tmp/python_strategy.log" 
 BUILD_LOG_FILE="/tmp/cpp_build.log"
 PID_DIR="pids"
-CPP_PID_FILE="$PID_DIR/cpp_bridge.pid"
+CPP_PID_FILE="$PID_DIR/semi_hft.pid"
 PYTHON_PID_FILE="$PID_DIR/python_strategy.pid"
 
 # Colors for output
