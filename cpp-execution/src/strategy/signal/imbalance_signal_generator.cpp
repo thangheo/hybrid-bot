@@ -394,61 +394,38 @@ bool ImbalanceSignalGenerator::passesSignalFilters(const ImbalanceEvent& imbalan
      return std::max(0.0, std::min(1.0, baseStrength));
  }
  
+std::vector<PriceTarget> ImbalanceSignalGenerator::generatePriceTargets(const ImbalanceEvent& imbalance) const {
+    std::vector<PriceTarget> targets;
+    
+    // Get mid price from supporting metrics
+    auto midPriceIt = imbalance.supportingMetrics.find("midPrice");
+    if (midPriceIt == imbalance.supportingMetrics.end()) {
+        return targets; // Can't generate targets without price
+    }
+    
+    double midPrice = midPriceIt->second;
+    
+    // Get volatility if available
+    double volatility = 0.001; // Default 0.1% volatility
+    auto volatilityIt = imbalance.supportingMetrics.find("volatility");
+    if (volatilityIt != imbalance.supportingMetrics.end()) {
+        volatility = volatilityIt->second;
+    }
 
- // Generate price targets based on imbalance event
- std::vector<PriceTarget> ImbalanceSignalGenerator::generatePriceTargets(const ImbalanceEvent& imbalance) const {
-     std::vector<PriceTarget> targets;
-     // Get mid price from supporting metrics
-     auto midPriceIt = imbalance.supportingMetrics.find("midPrice");
-     if (midPriceIt == imbalance.supportingMetrics.end()) {
-         return targets; // Can't generate targets without price
-     }
-     
-     double midPrice = midPriceIt->second;
-     
-     // Get volatility if available
-     double volatility = 0.001; // Default 0.1% volatility
-     auto volatilityIt = imbalance.supportingMetrics.find("volatility");
-     if (volatilityIt != imbalance.supportingMetrics.end()) {
-         volatility = volatilityIt->second;
-     }
-     auto rawVolatility = volatility; // Store raw volatility for logging
-    // CRITICAL DEBUG INFO
+    // Calculate base impact (same as your logic)
     double conservativeVolatility = std::min(volatility, 0.03); // Cap at 3%
-
-    // Base impact should be a small fraction of volatility for short-term predictions
-    double baseImpactPercent = conservativeVolatility * 0.2; // 20% of volatility as base impact
-
-    // Conservative strength scaling (your strength = 1.0 is too aggressive)
-    double normalizedStrength = std::min(imbalance.strength, 0.8); // Cap strength at 80%
-    double strengthMultiplier = 0.7 + (normalizedStrength * 0.5); // 0.7x to 1.2x range
-
+    double baseImpactPercent = conservativeVolatility * 0.2; // 20% of volatility
+    double normalizedStrength = std::min(imbalance.strength, 0.8); // Cap at 80%
+    double strengthMultiplier = 0.7 + (normalizedStrength * 0.5); // 0.7x to 1.2x
     double finalImpactPercent = baseImpactPercent * strengthMultiplier;
 
-    // Type-specific adjustments (keep these conservative)
-    //  enum class ImbalanceType {
-    //     VOLUME_IMBALANCE,              // Significant difference between bid and ask volume
-    //     PRICE_LEVEL_IMBALANCE,         // Imbalance across multiple price levels
-    //     LIQUIDITY_REMOVAL,             // Sudden removal of liquidity from one side
-    //     ORDER_FLOW_IMBALANCE,          // Directional bias in order submissions
-    //     LARGE_ORDER_APPEARANCE,        // Large orders appearing in the book
-    //     LARGE_ORDER_DISAPPEARANCE,     // Large orders being removed from the book
-    //     PRICE_LEVEL_CONCENTRATION,     // Concentration of volume at specific price levels
-    //     BID_ASK_SPREAD_CHANGE,         // Significant change in the bid-ask spread
-    //     MARKET_DEPTH_CHANGE,           // Significant change in market depth
-    //     LIQUIDITY_FLOW_IMBALANCE,      // Imbalance in liquidity flow
-    //     ABNORMAL_SPREAD,               // Abnormal spread between bid and ask prices
-    //     LIQUIDITY_IMBALANCE,           // General liquidity imbalance
-    //     TREND_CONTINUATION,            // Continuation of a price trend
-    //     TREND_REVERSAL,                // Reversal of a price trend
-    //     CUSTOM                         // Custom imbalance type defined by strategy
-    // };
+    // Type-specific adjustments (same as your logic)
     switch (imbalance.type) {
-        case ImbalanceType::VOLUME_IMBALANCE:       // Type 0
-            finalImpactPercent *= 1.1; // Slightly boost
+        case ImbalanceType::VOLUME_IMBALANCE:
+            finalImpactPercent *= 1.1;
             break;
-        case ImbalanceType::PRICE_LEVEL_IMBALANCE:  // Type 1  
-            finalImpactPercent *= 0.9; 
+        case ImbalanceType::PRICE_LEVEL_IMBALANCE:
+            finalImpactPercent *= 0.9;
             break;
         case ImbalanceType::LIQUIDITY_REMOVAL:
             finalImpactPercent *= 1.2;
@@ -460,48 +437,151 @@ bool ImbalanceSignalGenerator::passesSignalFilters(const ImbalanceEvent& imbalan
             finalImpactPercent *= 0.8;
             break;
     }
-    // In high volatility periods, be more aggressive
-    if (conservativeVolatility > 0.025) {  // > 2.5%
-        finalImpactPercent *= 1.2;  // 20% more aggressive
+
+    // High volatility adjustment
+    if (conservativeVolatility > 0.025) {
+        finalImpactPercent *= 1.2;
     }
-    // HARD CAP: Never exceed 2% price impact for 30-second targets
-    finalImpactPercent = std::clamp(finalImpactPercent, 0.0005, 0.02); // 0.05% to 2.0% max
+
+    // Hard cap
+    finalImpactPercent = std::clamp(finalImpactPercent, 0.0005, 0.02);
 
     // Apply direction
     if (imbalance.direction == core::Direction::SELL) {
         finalImpactPercent = -finalImpactPercent;
     }
-    auto signal_ttl = config_.signalTtlMs;
-    // Generate realistic targets with the conservative impact
-    PriceTarget shortTarget;
-    shortTarget.price = midPrice * (1.0 + (finalImpactPercent * 0.25)); // 25% of full impact
-    shortTarget.probability = 0.7;
-    shortTarget.percentage = (shortTarget.price - midPrice) / midPrice ; // Percentage change from midPrice
-    // Short target: 25% of signal TTL
-    // shortTarget.expected_time = std::chrono::milliseconds(static_cast<int64_t>(signal_ttl * 0.25));
-    shortTarget.expected_time = calculateSignalTTL(imbalance, std::abs(shortTarget.price - midPrice));
-    targets.push_back(shortTarget);
 
-    PriceTarget mediumTarget;
-    mediumTarget.price = midPrice * (1.0 + (finalImpactPercent * 0.60)); // 60% of full impact
-    mediumTarget.probability = 0.5;
-    mediumTarget.percentage = (mediumTarget.price - midPrice) / midPrice ; // Percentage change from midPrice
-    // mediumTarget.expected_time = std::chrono::milliseconds(static_cast<int64_t>(signal_ttl * 0.50));
-    mediumTarget.expected_time = calculateSignalTTL(imbalance, std::abs(mediumTarget.price - midPrice));
-    targets.push_back(mediumTarget);
+    // ✅ IMPROVED: Define target percentages directly
+    std::vector<double> targetMultipliers = {0.25, 0.60, 1.00};
+    std::vector<double> targetProbabilities = {0.7, 0.5, 0.3};
 
-    PriceTarget longTarget;
-    longTarget.price = midPrice * (1.0 + finalImpactPercent); // Full impact
-    longTarget.probability = 0.3;
-    longTarget.percentage = (longTarget.price - midPrice) / midPrice ; // Percentage change from midPrice
-    // Long target: 75% of signal TTL
-    // longTarget.expected_time = std::chrono::milliseconds(static_cast<int64_t>(signal_ttl * 0.75));
-    longTarget.expected_time = calculateSignalTTL(imbalance, std::abs(longTarget.price - midPrice));
+    for (size_t i = 0; i < targetMultipliers.size(); ++i) {
+        PriceTarget target;
+        
+        // ✅ DIRECT: Calculate percentage first
+        target.percentage = finalImpactPercent * targetMultipliers[i];
+        
+        // ✅ THEN: Calculate price from percentage
+        target.price = midPrice * (1.0 + target.percentage);
+        
+        target.probability = targetProbabilities[i];
+        
+        // ✅ CONSISTENT: Use percentage for TTL calculation
+        target.expected_time = calculateSignalTTL(imbalance, std::abs(target.percentage * midPrice));
+        
+        targets.push_back(target);
+    }
 
-    targets.push_back(longTarget);
- 
     return targets;
 }
+ // Generate price targets based on imbalance event
+//  std::vector<PriceTarget> ImbalanceSignalGenerator::generatePriceTargets(const ImbalanceEvent& imbalance) const {
+//      std::vector<PriceTarget> targets;
+//      // Get mid price from supporting metrics
+//      auto midPriceIt = imbalance.supportingMetrics.find("midPrice");
+//      if (midPriceIt == imbalance.supportingMetrics.end()) {
+//          return targets; // Can't generate targets without price
+//      }
+     
+//      double midPrice = midPriceIt->second;
+     
+//      // Get volatility if available
+//      double volatility = 0.001; // Default 0.1% volatility
+//      auto volatilityIt = imbalance.supportingMetrics.find("volatility");
+//      if (volatilityIt != imbalance.supportingMetrics.end()) {
+//          volatility = volatilityIt->second;
+//      }
+//      auto rawVolatility = volatility; // Store raw volatility for logging
+//     // CRITICAL DEBUG INFO
+//     double conservativeVolatility = std::min(volatility, 0.03); // Cap at 3%
+
+//     // Base impact should be a small fraction of volatility for short-term predictions
+//     double baseImpactPercent = conservativeVolatility * 0.2; // 20% of volatility as base impact
+
+//     // Conservative strength scaling (your strength = 1.0 is too aggressive)
+//     double normalizedStrength = std::min(imbalance.strength, 0.8); // Cap strength at 80%
+//     double strengthMultiplier = 0.7 + (normalizedStrength * 0.5); // 0.7x to 1.2x range
+
+//     double finalImpactPercent = baseImpactPercent * strengthMultiplier;
+
+//     // Type-specific adjustments (keep these conservative)
+//     //  enum class ImbalanceType {
+//     //     VOLUME_IMBALANCE,              // Significant difference between bid and ask volume
+//     //     PRICE_LEVEL_IMBALANCE,         // Imbalance across multiple price levels
+//     //     LIQUIDITY_REMOVAL,             // Sudden removal of liquidity from one side
+//     //     ORDER_FLOW_IMBALANCE,          // Directional bias in order submissions
+//     //     LARGE_ORDER_APPEARANCE,        // Large orders appearing in the book
+//     //     LARGE_ORDER_DISAPPEARANCE,     // Large orders being removed from the book
+//     //     PRICE_LEVEL_CONCENTRATION,     // Concentration of volume at specific price levels
+//     //     BID_ASK_SPREAD_CHANGE,         // Significant change in the bid-ask spread
+//     //     MARKET_DEPTH_CHANGE,           // Significant change in market depth
+//     //     LIQUIDITY_FLOW_IMBALANCE,      // Imbalance in liquidity flow
+//     //     ABNORMAL_SPREAD,               // Abnormal spread between bid and ask prices
+//     //     LIQUIDITY_IMBALANCE,           // General liquidity imbalance
+//     //     TREND_CONTINUATION,            // Continuation of a price trend
+//     //     TREND_REVERSAL,                // Reversal of a price trend
+//     //     CUSTOM                         // Custom imbalance type defined by strategy
+//     // };
+//     switch (imbalance.type) {
+//         case ImbalanceType::VOLUME_IMBALANCE:       // Type 0
+//             finalImpactPercent *= 1.1; // Slightly boost
+//             break;
+//         case ImbalanceType::PRICE_LEVEL_IMBALANCE:  // Type 1  
+//             finalImpactPercent *= 0.9; 
+//             break;
+//         case ImbalanceType::LIQUIDITY_REMOVAL:
+//             finalImpactPercent *= 1.2;
+//             break;
+//         case ImbalanceType::ABNORMAL_SPREAD:
+//             finalImpactPercent *= 0.7;
+//             break;
+//         default:
+//             finalImpactPercent *= 0.8;
+//             break;
+//     }
+//     // In high volatility periods, be more aggressive
+//     if (conservativeVolatility > 0.025) {  // > 2.5%
+//         finalImpactPercent *= 1.2;  // 20% more aggressive
+//     }
+//     // HARD CAP: Never exceed 2% price impact for 30-second targets
+//     finalImpactPercent = std::clamp(finalImpactPercent, 0.0005, 0.02); // 0.05% to 2.0% max
+
+//     // Apply direction
+//     if (imbalance.direction == core::Direction::SELL) {
+//         finalImpactPercent = -finalImpactPercent;
+//     }
+//     auto signal_ttl = config_.signalTtlMs;
+
+//     // Generate realistic targets with the conservative impact
+//     PriceTarget shortTarget;
+//     shortTarget.price = midPrice * (1.0 + (finalImpactPercent * 0.25)); // 25% of full impact
+//     shortTarget.probability = 0.7;
+//     shortTarget.percentage = (shortTarget.price - midPrice) / midPrice ; // Percentage change from midPrice
+//     // Short target: 25% of signal TTL
+//     // shortTarget.expected_time = std::chrono::milliseconds(static_cast<int64_t>(signal_ttl * 0.25));
+//     shortTarget.expected_time = calculateSignalTTL(imbalance, std::abs(shortTarget.price - midPrice));
+//     targets.push_back(shortTarget);
+
+//     PriceTarget mediumTarget;
+//     mediumTarget.price = midPrice * (1.0 + (finalImpactPercent * 0.60)); // 60% of full impact
+//     mediumTarget.probability = 0.5;
+//     mediumTarget.percentage = (mediumTarget.price - midPrice) / midPrice ; // Percentage change from midPrice
+//     // mediumTarget.expected_time = std::chrono::milliseconds(static_cast<int64_t>(signal_ttl * 0.50));
+//     mediumTarget.expected_time = calculateSignalTTL(imbalance, std::abs(mediumTarget.price - midPrice));
+//     targets.push_back(mediumTarget);
+
+//     PriceTarget longTarget;
+//     longTarget.price = midPrice * (1.0 + finalImpactPercent); // Full impact
+//     longTarget.probability = 0.3;
+//     longTarget.percentage = (longTarget.price - midPrice) / midPrice ; // Percentage change from midPrice
+//     // Long target: 75% of signal TTL
+//     // longTarget.expected_time = std::chrono::milliseconds(static_cast<int64_t>(signal_ttl * 0.75));
+//     longTarget.expected_time = calculateSignalTTL(imbalance, std::abs(longTarget.price - midPrice));
+
+//     targets.push_back(longTarget);
+ 
+//     return targets;
+// }
 
 // Generate a unique signal ID
 core::SignalId ImbalanceSignalGenerator::generateSignalId() const {

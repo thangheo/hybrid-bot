@@ -65,103 +65,10 @@ public:
     ~FullSystemDemo() {
         shutdown();
     }
-    void initializeExecutionService() {
-        // Create the authentication service first
-        auto authService = std::make_shared<AuthenticationService>();
-        
-        // Create API client manager with auth service
-        auto api_client_manager = std::make_shared<ApiClientManager>(authService);
-        
-        // Set up credentials and clients (your existing code)
-        //get from environment .env file
-        const char* apiKey = std::getenv("BINANCE_API_KEY");
-        const char* apiSecret = std::getenv("BINANCE_API_SECRET");
-        
-        if(!apiKey || !apiSecret) {
-            std::cerr << "Error: Missing Binance API credentials in environment variables." << std::endl;
-            systemHealthy_ = false;
-            return;
-        }
-        
-        auto credentials = ExchangeCredentials{
-            apiKey,
-            apiSecret,
-            "", 
-            true
-        };
-        //debug api
-        // std::cout << "API KEY: " << std::getenv("BINANCE_API_KEY") << std::endl;
-        // std::cout << "API SECRET: " << std::getenv("BINANCE_API_SECRET") << std::endl;
-        authService->setCredentials(core::ExchangeId::binance(), credentials);
-        api_client_manager->addClient(core::ExchangeId::binance(),
-            std::make_shared<BinanceApiClient>(credentials, 
-            std::make_shared<RateLimitController>(core::ExchangeId::binance())));
-                std::cout << "=== DEBUG API CLIENT MANAGER ===" << std::endl;
-        std::cout << "ApiClientManager created, checking status..." << std::endl;
-        if (!api_client_manager->initialize()) {
-            std::cerr << "Failed to initialize ApiClientManager" << std::endl;
-            systemHealthy_ = false;
-            return;
-        }
-        // Create other components
-        auto order_generator = std::make_shared<OrderGenerator>();
-        auto smart_order_router = std::make_shared<SmartOrderRouter>();
-        auto order_type_selector = std::make_shared<OrderTypeSelector>();
-        auto execution_algorithm_factory = std::make_shared<ExecutionAlgorithmFactory>();
-        auto order_lifecycle_tracker = std::make_shared<OrderLifecycleTracker>();
-        auto fill_reconciliation = std::make_shared<FillReconciliation>();
-
-        // **CRITICAL: Initialize the smart order router with exchange information**
-        std::vector<ExchangeInfo> exchanges;
-        ExchangeInfo binanceInfo;
-        binanceInfo.exchangeId = core::ExchangeId::binance();
-        binanceInfo.trading_fee = 0.001;
-        binanceInfo.liquidity_score = 0.9;
-        binanceInfo.latency_ms = 50;
-        binanceInfo.success_rate = 0.99;
-        exchanges.push_back(binanceInfo);
-        
-        // After initializing the router, add this debug check:
-        smart_order_router->initialize(exchanges);
-
-        // Debug: Test if the exchange supports our trading pairs
-        std::cout << "Testing exchange support for BTC/USDT: " << 
-            (binanceInfo.supports_trading_pair(core::Symbol("BTC/USDT")) ? "YES" : "NO") << std::endl;
-
-        std::vector<std::string> available = smart_order_router->getAvailableExchanges(core::Symbol("BTC/USDT"));
-        std::cout << "Available exchanges for BTC/USDT: " << available.size() << std::endl;
-        for (const auto& ex : available) {
-            std::cout << "  - " << ex << std::endl;
-        }
-        exchangeGateway_ = std::make_shared<common::ExchangeGateway>(api_client_manager);
-        if (!exchangeGateway_->isHealthy()) {
-            std::cout << "Exchange Gateway is not healthy!" << std::endl;
-            std::cout << "start using fallback ExecutionService" << std::endl;
-            executionService_ = std::make_shared<ExecutionService>(
-            order_generator,
-            smart_order_router,
-            order_type_selector,
-            execution_algorithm_factory,
-            order_lifecycle_tracker,
-            fill_reconciliation,
-            api_client_manager
-            );
-        } else {
-            std::cout << "Exchange Gateway initialized and healthy." << std::endl;
-            executionService_ = std::make_shared<ExecutionService>(
-            exchangeGateway_,
-            order_generator,
-            smart_order_router,
-            order_type_selector,
-            execution_algorithm_factory,
-            order_lifecycle_tracker,
-            fill_reconciliation
-            );
-        }       
-       
-    }
+    
     bool initialize() {
-        initializeExecutionService();
+        // First, initialize the execution service
+        setupExecutionEngine();
         // Debug: Verify execution service and router
         if (!executionService_) {
             std::cerr << "Execution Service failed to initialize!" << std::endl;
@@ -170,11 +77,9 @@ public:
         std::cout << "=== INITIALIZING FULL TRADING SYSTEM ===" << std::endl;
         
         // 1. Initialize event bus first
-        std::cout << "Starting event bus..." << std::endl;
         common::EventBus::getInstance().start();
         
         // 2. Initialize data ingestion service
-        std::cout << "Initializing data ingestion service..." << std::endl;
         dataIngestionService_ = std::make_unique<data_ingestion::DataIngestionService>(
             "config/data_ingestion.json");
         
@@ -183,16 +88,12 @@ public:
             return false;
         }
         
-        // 3. Initialize risk manager
-        std::cout << "Initializing risk manager..." << std::endl;
-        // riskManager_ = std::make_unique<risk::RiskManager>(executionService_, riskConfig_);
         // ✅ NEW - Use the factory method
         riskManager_ = RiskManager::create(executionService_, riskConfig_);
         if (!riskManager_) {
             LOG_ERROR("Application", "Failed to initialize risk manager");
             return false;
         }
-        std::cout << "RiskManager constructor called executionService_ with config. Start initializing..." << std::endl;
         // sleep for 5s
         std::this_thread::sleep_for(std::chrono::seconds(1));
         if (!riskManager_->initialize()) {
@@ -209,10 +110,6 @@ public:
             return false;
         }
         
-        // 5. Initialize execution engine
-        std::cout << "Initializing execution engine..." << std::endl;
-        setupExecutionEngine();
-        
         // 6. Setup component connections
         setupComponentConnections();
         
@@ -228,10 +125,14 @@ public:
             systemHealthy_ = true;
             
             // Start services in order
-            std::vector<std::string> symbols = {
-                "BTC/USDT", "ETH/USDT", "BNB/USDT", "ADA/USDT"
-            };
-            
+            // std::vector<std::string> symbols = {
+            //     "BTC/USDT", "ETH/USDT", "BNB/USDT", "ADA/USDT"
+            // };
+            //load symbols from strategy config
+            std::vector<std::string> symbols;
+            for (const auto& [name, pair] : strategyConfig_.tradingPairs) {
+                symbols.push_back(name);
+            }
             // 1. Start data ingestion
             std::cout << "Starting data ingestion with symbols: ";
             for (const auto& symbol : symbols) {
@@ -339,6 +240,8 @@ private:
     }
     
     void createDataIngestionConfig() {
+        // what is the point of this function?
+        //no this file was never used
         const char* configContent = R"({
     "exchanges": {
         "BINANCE": {
@@ -346,7 +249,7 @@ private:
             "name": "Binance",
             "ws_url": "wss://stream.binance.com:9443/ws",
             "rest_url": "https://api.binance.com",
-            "symbols": ["BTC/USDT", "ETH/USDT", "BNB/USDT", "ADA/USDT"],
+            "symbols": ["ENJ/USDT", "ETH/USDT", "BNB/USDT", "ADA/USDT"],
             "connection_timeout_ms": 5000,
             "max_reconnect_attempts": 3
         }
@@ -413,18 +316,114 @@ private:
     }
     
     void setupExecutionEngine() {
-        // This would normally be more complex, but for demo purposes
-        // already initialized in initializeExecutionService()
-        std::cout << "Execution engine setup (mock implementation for demo)" << std::endl;
-    }
-    
-    void setupComponentConnections() {
-        std::cout << "Setting up component connections..." << std::endl;
+        std::cout << "=== SETTING UP EXECUTION ENGINE ===" << std::endl;
+        // Create the authentication service first
+        auto authService = std::make_shared<AuthenticationService>();
         
+        // Create API client manager with auth service
+        auto api_client_manager = std::make_shared<ApiClientManager>(authService);
+        
+        // Set up credentials and clients (your existing code)
+        //get from environment .env file
+        const char* apiKey = std::getenv("BINANCE_API_KEY");
+        const char* apiSecret = std::getenv("BINANCE_API_SECRET");
+        
+        if(!apiKey || !apiSecret) {
+            std::cerr << "Error: Missing Binance API credentials in environment variables." << std::endl;
+            systemHealthy_ = false;
+            return;
+        }
+        
+        auto credentials = ExchangeCredentials{
+            apiKey,
+            apiSecret,
+            "", 
+            true
+        };
+        //debug api
+        // std::cout << "API KEY: " << std::getenv("BINANCE_API_KEY") << std::endl;
+        // std::cout << "API SECRET: " << std::getenv("BINANCE_API_SECRET") << std::endl;
+        authService->setCredentials(core::ExchangeId::binance(), credentials);
+        api_client_manager->addClient(core::ExchangeId::binance(),
+            std::make_shared<BinanceApiClient>(credentials, 
+            std::make_shared<RateLimitController>(core::ExchangeId::binance())));
+                std::cout << "=== DEBUG API CLIENT MANAGER ===" << std::endl;
+        std::cout << "ApiClientManager created, checking status..." << std::endl;
+        if (!api_client_manager->initialize()) {
+            std::cerr << "Failed to initialize ApiClientManager" << std::endl;
+            systemHealthy_ = false;
+            return;
+        }
+        // Create other components
+        auto order_generator = std::make_shared<OrderGenerator>();
+        auto smart_order_router = std::make_shared<SmartOrderRouter>();
+        auto order_type_selector = std::make_shared<OrderTypeSelector>();
+        auto execution_algorithm_factory = std::make_shared<ExecutionAlgorithmFactory>();
+        auto order_lifecycle_tracker = std::make_shared<OrderLifecycleTracker>();
+        auto fill_reconciliation = std::make_shared<FillReconciliation>();
+
+        // **CRITICAL: Initialize the smart order router with exchange information**
+        std::vector<ExchangeInfo> exchanges;
+        ExchangeInfo binanceInfo;
+        binanceInfo.exchangeId = core::ExchangeId::binance();
+        binanceInfo.trading_fee = 0.001;
+        binanceInfo.liquidity_score = 0.9;
+        binanceInfo.latency_ms = 50;
+        binanceInfo.success_rate = 0.99;
+        exchanges.push_back(binanceInfo);
+        
+        // After initializing the router, add this debug check:
+        smart_order_router->initialize(exchanges);
+
+        // Debug: Test if the exchange supports our trading pairs
+        std::cout << "Testing exchange support for BTC/USDT: " << 
+            (binanceInfo.supports_trading_pair(core::Symbol("BTC/USDT")) ? "YES" : "NO") << std::endl;
+
+        std::vector<std::string> available = smart_order_router->getAvailableExchanges(core::Symbol("BTC/USDT"));
+        std::cout << "Available exchanges for BTC/USDT: " << available.size() << std::endl;
+        for (const auto& ex : available) {
+            std::cout << "  - " << ex << std::endl;
+        }
+        exchangeGateway_ = std::make_shared<common::ExchangeGateway>(api_client_manager);
+        if (!exchangeGateway_->isHealthy()) {
+            std::cout << "Exchange Gateway is not healthy!" << std::endl;
+            std::cout << "start using fallback ExecutionService" << std::endl;
+            executionService_ = std::make_shared<ExecutionService>(
+            order_generator,
+            smart_order_router,
+            order_type_selector,
+            execution_algorithm_factory,
+            order_lifecycle_tracker,
+            fill_reconciliation,
+            api_client_manager
+            );
+        } else {
+            std::cout << "Exchange Gateway initialized and healthy." << std::endl;
+            executionService_ = std::make_shared<ExecutionService>(
+            exchangeGateway_,
+            order_generator,
+            smart_order_router,
+            order_type_selector,
+            execution_algorithm_factory,
+            order_lifecycle_tracker,
+            fill_reconciliation
+            );
+        }       
+       
+    }
+    void setupComponentConnections() {
+        LOG_INFO("FullSystemDemo", "Setting up component connections...");
         // 1. Connect data ingestion to strategy engine
         dataIngestionService_->setOrderBookCallback([this](const auto& update) {
-            orderBookUpdatesReceived_++;
             
+            // std::cout << "Received Order Book Update for "
+            //           << update.tradingPair.toString()
+            //           << " from " << update.exchangeId.toString()
+            //           << " | Bids: " << update.bids.size()
+            //           << " | Asks: " << update.asks.size()
+            //           << " | Seq#: " << update.sequenceNumber
+            //           << " | Snapshot: " << (update.isSnapshot ? "YES" : "NO")
+            //           << std::endl;
             // Convert to OrderBook and send to strategy
             auto orderBook = std::make_shared<data_ingestion::OrderBook>(
                 update.exchangeId, update.tradingPair);
@@ -461,35 +460,35 @@ private:
             
             // Basic filtering
             //print signal details
-            // std::cout << "Generated Signal: " << execSignal.id 
-            //           << " Symbol: " << execSignal.symbol.toString()
-            //           << " Direction: " << (execSignal.direction == core::Direction::BUY ? "BUY" : 
-            //                               execSignal.direction == core::Direction::SELL ? "SELL" : "NEUTRAL")
-            //           << " Strength: " << execSignal.strength
-            //           << " Confidence: " << execSignal.confidence
-            //           << " Quality: " << execSignal.quality
-            //           << " Target Size: " << execSignal.targetSize
-            //           << " Expiration: " << execSignal.expirationTime
-            //           << std::endl;
+            
             //create a asymmetric filter for buy and sell signals
             if (execSignal.direction == core::Direction::BUY) {
-                if (execSignal.strength < 0.5) return; // Weak signals are ignored
-                if (execSignal.confidence < 0.5) return; // Ignore low confidence signals
-                if (execSignal.quality < 0.5) return; // Ignore low quality signals
+                if (execSignal.strength < 0.5) return;     // 30% threshold
+                if (execSignal.confidence < 0.6) return;  // 30% threshold  
+                if (execSignal.quality < 0.44) return;     // 30% threshold
             } else if (execSignal.direction == core::Direction::SELL) {
-                if (execSignal.strength < 0.3) return; // More lenient for sell signals
-                if (execSignal.confidence < 0.3) return; // Ignore very low confidence signals
-                if (execSignal.quality < 0.3) return; // Ignore very low quality signals
-            }
-            else {
-                return; // Ignore neutral signals
+                if (execSignal.strength < 0.3) return;    // 20% threshold
+                if (execSignal.confidence < 0.6) return;  // 20% threshold
+                if (execSignal.quality < 0.3) return;     // 20% threshold
             }
             //print targets
-            
-            double percentage_change_threshold = 0.002; // 0.25%
+            std::cout << "Generated Signal: " << execSignal.id 
+                      << " Symbol: " << execSignal.symbol.toString()
+                      << " Direction: " << (execSignal.direction == core::Direction::BUY ? "BUY" : 
+                                          execSignal.direction == core::Direction::SELL ? "SELL" : "NEUTRAL")
+                      << " Strength: " << execSignal.strength
+                      << " Confidence: " << execSignal.confidence
+                      << " Quality: " << execSignal.quality
+                      << " Target Size: " << execSignal.targetSize
+                      << " Expiration: " << execSignal.expirationTime
+                      << std::endl;
+            double percentage_change_threshold = 0.002; // 0.2%
             int targetPass = 0;
             //     bool allTargetsTooClose = true;
             for (const auto& target : execSignal.targets) {
+                std::cout << "  - Target Price: " << target.price 
+                          << " | Percentage Change: " << target.percentage * 100 << "%"
+                          << std::endl;
                 //check for percentage of long and short targets
                 if (target.percentage > percentage_change_threshold) {
                     targetPass++;
@@ -535,14 +534,6 @@ private:
         });
     }
     
-    void stopMonitoring() {
-        for (auto& thread : monitoringThreads_) {
-            if (thread.joinable()) {
-                thread.join();
-            }
-        }
-        // monitoringThreads_.clear();
-    }
         // In FullSystemDemo::checkSystemHealth(), temporarily disable emergency actions:
     bool checkSystemHealth() {
         try {
@@ -611,22 +602,7 @@ private:
         }).detach();
     }
     
-     
-    
-    execution::TradingSignal createTestSignal(const std::string& id, const std::string& pair,
-                                             core::Direction direction, double size) {
-        execution::TradingSignal signal;
-        signal.id = id;
-        signal.symbol = pair;
-        signal.direction = direction;
-        signal.strength = 0.7;
-        signal.targetSize = size;
-        signal.strategyId = core::StrategyId::fromString("test v1.1");
-        // signal.strategyVersion = "1.0";
-        return signal;
-    }
-      
-
+          
 };
 
 // Global demo instance for signal handling
@@ -671,7 +647,6 @@ int main(int argc, char* argv[]) {
         }
         
         std::cout << "\nSystem is now running!" << std::endl;
-        std::cout << "Demo will run for " << durationMinutes << " minutes" << std::endl;
         std::cout << "Press Ctrl+C to stop early" << std::endl;
         
         // Run demo
