@@ -27,6 +27,10 @@
 #include "common/exchange_types.hpp"
 // Data ingestion
 #include "data_ingestion/data_ingestion_service.hpp"
+//zmq server for market intellgence
+#include "communication/zmq_server.hpp"
+#include "market_intelligence/adaptive_intelligence.hpp"
+#include "../../generated/cpp/proto/trading_messages.pb.h"
 
 // Strategy engine
 #include "strategy/engine/strategy_engine.hpp"
@@ -64,12 +68,79 @@ public:
     FullSystemDemo() : running_(false), systemHealthy_(true) {
         setupConfigurations();
         setupStatistics();
+                // Initialize adaptive intelligence
+        adaptiveIntel_ = std::make_unique<trading::intelligence::AdaptiveMarketIntelligence>();
+                
+        // Initialize ZMQ communication
+        zmqServer_ = std::make_unique<TradingCommunicationServer>();
+        setupCallbacks();
     }
     
     ~FullSystemDemo() {
         shutdown();
     }
-    
+
+    trading::ExecutionAcknowledgment handleTradingIntent(const trading::TradingIntent& intent) {
+        std::cout << "\n=== PROCESSING TRADING INTENT ===" << std::endl;
+        std::cout << "Intent ID: " << intent.intent_id() << std::endl;
+        std::cout << "Symbol: " << intent.symbol() << std::endl;
+        std::cout << "Side: " << (intent.side() == trading::SIDE_BUY ? "BUY" : "SELL") << std::endl;
+        std::cout << "Quantity: " << intent.target_quantity() << std::endl;
+        std::cout << "Signal Strength: " << intent.signal_strength() << std::endl;
+        std::cout << "Confidence: " << intent.confidence() << std::endl;
+        
+        // Get current market intelligence for this symbol
+        trading::MarketIntelligence currentIntel;
+        bool hasIntel = false;
+        {
+            std::lock_guard<std::mutex> lock(intelligenceMutex_);
+            auto it = latestIntelligence_.find(intent.symbol());
+            if (it != latestIntelligence_.end()) {
+                currentIntel = it->second;
+                hasIntel = true;
+                std::cout << "Current Market Intelligence:" << std::endl;
+                std::cout << "  Spread: " << currentIntel.bid_ask_spread() << std::endl;
+                std::cout << "  Imbalance: " << currentIntel.order_book_imbalance() << std::endl;
+                std::cout << "  Liquidity: " << currentIntel.liquidity_ratio() << std::endl;
+                std::cout << "  Regime: " << currentIntel.current_regime() << std::endl;
+            }
+        }
+        
+        // Create acknowledgment
+        trading::ExecutionAcknowledgment ack;
+        ack.set_intent_id(intent.intent_id());
+        ack.set_accepted(true);
+        ack.set_execution_id("exec_" + intent.intent_id() + "_" + std::to_string(std::time(nullptr)));
+        
+        if (hasIntel) {
+            ack.set_reason("Intent accepted - Market intelligence integrated (" + 
+                          std::to_string(currentIntel.liquidity_ratio()) + " liquidity, " +
+                          std::to_string(currentIntel.bid_ask_spread()) + " spread)");
+        } else {
+            ack.set_reason("Intent accepted - No market intelligence available yet");
+        }
+        
+        // Estimate completion time
+        int64_t baseTime = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count();
+        int completionDelay = calculateCompletionDelay(intent, currentIntel, hasIntel);
+        ack.set_estimated_completion_time(baseTime + completionDelay);
+        
+        std::cout << "Acknowledged intent with " << completionDelay << "ms estimated completion" << std::endl;
+        std::cout << "=================================" << std::endl;
+        
+        return ack;
+    }
+
+     void setupCallbacks() {
+       
+        
+        // Set up ZMQ execution callback
+        zmqServer_->SetExecutionCallback([this](const trading::TradingIntent& intent) {
+            return this->handleTradingIntent(intent);
+        });
+    }
+
     bool initialize() {
         // First, initialize the execution service
         setupExecutionEngine();
@@ -129,7 +200,7 @@ public:
             
             running_ = true;
             systemHealthy_ = true;
-            
+            zmqServer_->Start();
             // Start services in order
             // std::vector<std::string> symbols = {
             //     "BTC/USDT", "ETH/USDT", "BNB/USDT", "ADA/USDT"
@@ -204,7 +275,11 @@ public:
                 std::cout << "Stopping strategy engine..." << std::endl;
                 strategyEngine_->stop();
             }
-            
+            // Stop services in reverse order
+            if (zmqServer_) {
+                zmqServer_->Stop();
+            }
+             
             // ✅ Clear data ingestion service pointer after shutdown
             std::cout << "Clearing data ingestion service..." << std::endl;
             dataIngestionService_.reset();
@@ -260,11 +335,113 @@ public:
         std::cout << "PTCA timesteps: " << stats.ptcaStats.totalTimesteps << std::endl;
         std::cout << "=================================" << std::endl;
     }
+     void onOrderBookUpdate(const OrderBookUpdate& update) {
+        try {
+            messagesProcessed_.fetch_add(1);
+            
+            // Debug output for first few messages
+            static std::atomic<int> debugCount{0};
+            int count = debugCount.fetch_add(1);
+            
+            if (count < 5) {
+                std::cout << "\n=== ORDER BOOK UPDATE #" << count << " ===" << std::endl;
+                std::cout << "Exchange: " << update.exchangeId.toString() << std::endl;
+                std::cout << "Symbol: " << update.tradingPair.toString() << std::endl;
+                std::cout << "Sequence: " << update.sequenceNumber << std::endl;
+                std::cout << "Bids: " << update.bids.size() << ", Asks: " << update.asks.size() << std::endl;
+                
+                if (!update.bids.empty() && !update.asks.empty()) {
+                    std::cout << "Best Bid: " << update.bids[0].price << " @ " << update.bids[0].quantity << std::endl;
+                    std::cout << "Best Ask: " << update.asks[0].price << " @ " << update.asks[0].quantity << std::endl;
+                    double spread = update.asks[0].price - update.bids[0].price;
+                    std::cout << "Spread: " << spread << std::endl;
+                }
+                std::cout << "=================================" << std::endl;
+            }
+            
+            // Generate market intelligence
+            generateMarketIntelligence(update);
+            
+        } catch (const std::exception& e) {
+            std::cerr << "Error processing order book update: " << e.what() << std::endl;
+        }
+    }
+
+    void generateMarketIntelligence(const OrderBookUpdate& update) {
+        try {
+            // Get the order book from data service
+            auto orderBook = dataIngestionService_->getOrderBook(update.exchangeId, update.tradingPair);
+            if (!orderBook) {
+                return; // No order book available
+            }
+            
+            // Validate order book has data
+            auto bids = orderBook->getBids(5);
+            auto asks = orderBook->getAsks(5);
+            
+            if (bids.empty() || asks.empty()) {
+                return;
+            }
+            
+            // Verify prices are valid
+            if (bids[0].price <= 0 || asks[0].price <= 0 || asks[0].price <= bids[0].price) {
+                return;
+            }
+            
+            // Generate adaptive market intelligence
+            std::string tradingPair = update.tradingPair.toString();
+            trading::MarketIntelligence intel = adaptiveIntel_->GenerateAdaptiveMarketIntelligence(tradingPair, orderBook);
+
+            if (intel.symbol().empty()) {
+                return; // No valid intelligence generated
+            }
+
+            // Debug output for first few intelligence generations per trading pair
+            static std::unordered_map<std::string, int> intelDebugCounts;
+            intelDebugCounts[tradingPair]++;
+            
+            // if (intelDebugCounts[tradingPair] <= 3) {
+            //     std::cout << "\n=== ADAPTIVE INTELLIGENCE for " << tradingPair << " ===" << std::endl;
+            //     std::cout << "  Spread: " << intel.bid_ask_spread() << std::endl;
+            //     std::cout << "  Liquidity: " << intel.liquidity_ratio() << std::endl;
+            //     std::cout << "  Imbalance: " << intel.order_book_imbalance() << std::endl;
+            //     std::cout << "  Regime: " << intel.current_regime() << std::endl;
+            //     std::cout << "  Confidence: " << intel.regime_confidence() << std::endl;
+            //     std::cout << "=============================================" << std::endl;
+            // }
+            
+            // Store latest intelligence
+            {
+                std::lock_guard<std::mutex> lock(intelligenceMutex_);
+                latestIntelligence_[tradingPair] = intel;
+            }
+            
+            // Publish to ZMQ
+            if (zmqServer_) {
+                zmqServer_->PublishMarketIntelligence(intel);
+                intelligenceGenerated_.fetch_add(1);
+            }
+            
+        } catch (const std::exception& e) {
+            std::cerr << "Error generating market intelligence: " << e.what() << std::endl;
+        }
+    }
 private:
+    //market intel
+    std::atomic<uint64_t> messagesProcessed_{0};
+    std::atomic<uint64_t> intelligenceGenerated_{0};
+    // std::chrono::steady_clock::time_point startTime_;
+
     // PTCA: Add PTCA-related members
     std::unique_ptr<trading::learning::PTCAIntegrationManager> ptcaManager_;
     std::chrono::time_point<std::chrono::steady_clock> lastPriceUpdate_;
     // std::unique_ptr<DataInterface> m_dataInterface;
+    std::unique_ptr<TradingCommunicationServer> zmqServer_;
+    std::unique_ptr<trading::intelligence::AdaptiveMarketIntelligence> adaptiveIntel_;
+    std::mutex intelligenceMutex_;
+
+    // Market intelligence tracking
+    std::unordered_map<std::string, trading::MarketIntelligence> latestIntelligence_;
 
     // Core components
     std::unique_ptr<data_ingestion::DataIngestionService> dataIngestionService_;
@@ -294,6 +471,44 @@ private:
     std::atomic<size_t> ordersExecuted_{0};
     std::atomic<size_t> riskEventsTriggered_{0};
     
+    int calculateCompletionDelay(const trading::TradingIntent& intent, 
+                                const trading::MarketIntelligence& intel,
+                                bool hasIntel) {
+        int baseDelay = 15000; // 15 seconds base
+        
+        // Adjust for execution style
+        switch (intent.execution_style()) {
+            case trading::EXEC_AGGRESSIVE:
+                baseDelay = 5000;
+                break;
+            case trading::EXEC_STEALTH:
+                baseDelay = std::min(60000, intent.max_execution_time_ms());
+                break;
+            case trading::EXEC_PASSIVE:
+                baseDelay = 30000;
+                break;
+            default:
+                baseDelay = 15000;
+                break;
+        }
+        
+        // Adjust for market conditions if we have intelligence
+        if (hasIntel) {
+            if (intel.current_regime() == trading::OB_THIN) {
+                baseDelay *= 2.0; // Slower in thin markets
+            } else if (intel.current_regime() == trading::OB_LIQUID) {
+                baseDelay *= 0.8; // Faster in liquid markets
+            }
+            
+            // Adjust for spread
+            if (intel.bid_ask_spread() > 0.005) {
+                baseDelay *= 1.2; // Slower for wide spreads
+            }
+        }
+        
+        return static_cast<int>(baseDelay);
+    }
+
     void setupConfigurations() {
         // Create configuration files
         createDataIngestionConfig();
@@ -561,6 +776,7 @@ private:
             if (strategyEngine_ && strategyEngine_->processOrderBook(*orderBook)) {
                 // Order book processed successfully
             }
+            onOrderBookUpdate(update);
         });
             
             // 2. Connect strategy engine to risk manager
