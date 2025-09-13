@@ -264,7 +264,7 @@ private:
     // PTCA: Add PTCA-related members
     std::unique_ptr<trading::learning::PTCAIntegrationManager> ptcaManager_;
     std::chrono::time_point<std::chrono::steady_clock> lastPriceUpdate_;
-    std::unique_ptr<DataInterface> m_dataInterface;
+    // std::unique_ptr<DataInterface> m_dataInterface;
 
     // Core components
     std::unique_ptr<data_ingestion::DataIngestionService> dataIngestionService_;
@@ -300,7 +300,7 @@ private:
         createStrategyConfig();
         createRiskConfig();                
         // ✅ Create DataInterface ONCE and store as member
-        m_dataInterface = createDataInterface();
+        // m_dataInterface = createDataInterface();
         createPTCAConfig();
     }
     
@@ -359,13 +359,13 @@ private:
         // Add this to your FullSystemDemo class:
     void setupPTCAConnections() {
         // 1. Market data callback (existing)
-        if (m_dataInterface) {
-            m_dataInterface->registerMarketDataCallback(
-                [this](const MarketData& marketData) {
-                    onMarketPriceUpdate(marketData.tradingPair.toString(), marketData.price);
-                }
-            );
-        }
+        // if (m_dataInterface) {
+        //     m_dataInterface->registerMarketDataCallback(
+        //         [this](const MarketData& marketData) {
+        //             onMarketPriceUpdate(marketData.tradingPair.toString(), marketData.price);
+        //         }
+        //     );
+        // }
         
         // 2. Execution callback - use executionService_ directly
         if (executionService_) {
