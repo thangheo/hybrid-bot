@@ -28,9 +28,10 @@ class MarketIntelligenceBridge:
     def __init__(self, symbols: List[str]):
         self.symbols = symbols
         self.intelligence_cache: Dict[str, IntelligenceState] = {}
-        self.intelligence_history: Dict[str, Deque] = {
-            symbol: deque(maxlen=100) for symbol in symbols
-        }
+        # self.intelligence_history: Dict[str, Deque] = {
+        #     symbol: deque(maxlen=100) for symbol in symbols
+        # }
+        self.intelligence_history: Dict[str, Deque] = {}
         self.running = False
         self.context = zmq.Context()
         self.subscriber = None
@@ -84,8 +85,11 @@ class MarketIntelligenceBridge:
                 self.stats['messages_received'] += 1
                 
                 # CRITICAL FIX: Proper field extraction with validation
-                symbol = intel.symbol.replace('/', '')
-                
+                symbol = intel.symbol.replace('/', '')                
+                # ✅ ADD: Create deque for new symbols
+                if symbol not in self.intelligence_history:
+                    self.intelligence_history[symbol] = deque(maxlen=100)
+                    logger.info(f"Added new symbol to history: {symbol}")
                 # Debug first few messages to understand C++ data structure
                 if self.stats['messages_received'] <= 5:
                     logger.info(f"DEBUG Intelligence for {symbol}:")
