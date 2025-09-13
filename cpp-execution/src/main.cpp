@@ -544,7 +544,11 @@ private:
         LOG_INFO("FullSystemDemo", "Setting up component connections...");
         // 1. Connect data ingestion to strategy engine
         dataIngestionService_->setOrderBookCallback([this](const auto& update) {
-            
+            // ✅ ADD: Extract price and trigger PTCA update
+            if (!update.bids.empty() && !update.asks.empty()) {
+                double midPrice = (update.bids[0].price + update.asks[0].price) / 2.0;
+                onMarketPriceUpdate(update.tradingPair, midPrice);  // ADD THIS LINE
+            }
             // Convert to OrderBook and send to strategy
             auto orderBook = std::make_shared<data_ingestion::OrderBook>(
                 update.exchangeId, update.tradingPair);

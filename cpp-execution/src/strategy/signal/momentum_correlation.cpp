@@ -72,10 +72,11 @@ void MomentumCorrelation::updateCorrelationModel(
         calculateCorrelations();
         calculateFeatureImportance();
         updateMarketRegime();
-    } else {
-        LOG_INFO("Not enough data points yet. Have: {}, Need: {}", 
-                 data_points_.size(), params_.min_data_points);
     }
+    //  else {
+    //     LOG_INFO("Not enough data points yet. Have: {}, Need: {}", 
+    //              data_points_.size(), params_.min_data_points);
+    // }
 } 
 
 // void MomentumCorrelation::calculateCorrelations() {

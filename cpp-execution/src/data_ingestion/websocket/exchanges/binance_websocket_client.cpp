@@ -39,7 +39,7 @@ BinanceWebSocketClient::BinanceWebSocketClient(const std::string& host,
     
     LOG_INFO("Created BinanceWebSocketClient for " + endpoint_);
 }
-
+// In BinanceWebSocketClient destructor, replace the complex cleanup with:
 BinanceWebSocketClient::~BinanceWebSocketClient() {
     try {
         LOG_INFO("Starting BinanceWebSocketClient destruction");
@@ -47,60 +47,83 @@ BinanceWebSocketClient::~BinanceWebSocketClient() {
         keep_running_ = false;
         connected_.store(false);
         
+        // Simple cleanup - don't create new threads in destructor
         if (wsStream_) {
-            try {
-                std::thread closeThread([this]() {
-                    try {
-                        if (wsStream_->is_open()) {
-                            wsStream_->close(websocket::close_code::normal);
-                        }
-                    } catch (...) {
-                        // Ignore errors during emergency close
-                    }
-                });
-                
-                if (closeThread.joinable()) {
-                    auto future = std::async(std::launch::async, [&closeThread]() {
-                        closeThread.join();
-                    });
-                    
-                    if (future.wait_for(std::chrono::seconds(2)) == std::future_status::timeout) {
-                        closeThread.detach();
-                    }
-                }
-            } catch (...) {
-                // Ignore close errors during destruction
-            }
+            wsStream_.reset();  // Just reset immediately
         }
         
+        // Simple thread cleanup
         if (io_thread_.joinable()) {
-            LOG_INFO("Waiting for IO thread to finish...");
-            
-            auto future = std::async(std::launch::async, [this]() {
-                io_thread_.join();
-            });
-            
-            if (future.wait_for(std::chrono::seconds(3)) == std::future_status::timeout) {
-                LOG_ERROR("IO thread did not finish within timeout - detaching");
-                io_thread_.detach();
-            } else {
-                LOG_INFO("IO thread finished successfully");
-            }
+            io_thread_.detach();  // Just detach, don't wait
         }
         
-        if (wsStream_) {
-            LOG_INFO("Cleaning up WebSocket stream");
-            wsStream_.reset();
-        }
+        LOG_INFO("BinanceWebSocketClient destruction completed");
         
-        LOG_INFO("BinanceWebSocketClient destruction completed successfully");
-        
-    } catch (const std::exception& e) {
-        LOG_ERROR("Error in BinanceWebSocketClient destructor: " + std::string(e.what()));
     } catch (...) {
-        LOG_ERROR("Unknown error in BinanceWebSocketClient destructor");
+        // Ignore all errors in destructor
     }
 }
+// BinanceWebSocketClient::~BinanceWebSocketClient() {
+//     try {
+//         LOG_INFO("Starting BinanceWebSocketClient destruction");
+        
+//         keep_running_ = false;
+//         connected_.store(false);
+        
+//         if (wsStream_) {
+//             try {
+//                 std::thread closeThread([this]() {
+//                     try {
+//                         if (wsStream_->is_open()) {
+//                             wsStream_->close(websocket::close_code::normal);
+//                         }
+//                     } catch (...) {
+//                         // Ignore errors during emergency close
+//                     }
+//                 });
+                
+//                 if (closeThread.joinable()) {
+//                     auto future = std::async(std::launch::async, [&closeThread]() {
+//                         closeThread.join();
+//                     });
+                    
+//                     if (future.wait_for(std::chrono::seconds(2)) == std::future_status::timeout) {
+//                         closeThread.detach();
+//                     }
+//                 }
+//             } catch (...) {
+//                 // Ignore close errors during destruction
+//             }
+//         }
+        
+//         if (io_thread_.joinable()) {
+//             LOG_INFO("Waiting for IO thread to finish...");
+            
+//             auto future = std::async(std::launch::async, [this]() {
+//                 io_thread_.join();
+//             });
+            
+//             if (future.wait_for(std::chrono::seconds(3)) == std::future_status::timeout) {
+//                 LOG_ERROR("IO thread did not finish within timeout - detaching");
+//                 io_thread_.detach();
+//             } else {
+//                 LOG_INFO("IO thread finished successfully");
+//             }
+//         }
+        
+//         if (wsStream_) {
+//             LOG_INFO("Cleaning up WebSocket stream");
+//             wsStream_.reset();
+//         }
+        
+//         LOG_INFO("BinanceWebSocketClient destruction completed successfully");
+        
+//     } catch (const std::exception& e) {
+//         LOG_ERROR("Error in BinanceWebSocketClient destructor: " + std::string(e.what()));
+//     } catch (...) {
+//         LOG_ERROR("Unknown error in BinanceWebSocketClient destructor");
+//     }
+// }
 
 bool BinanceWebSocketClient::connect() {
     if (connected_.load()) {
