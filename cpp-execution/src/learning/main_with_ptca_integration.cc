@@ -90,7 +90,7 @@ private:
         double ptcaRecommendation = ptcaManager_->getSignalRecommendation(signal);
         
         // PTCA: Apply PTCA as a filter - you can adjust these thresholds
-        if (ptcaRecommendation < -0.4) {
+        if (ptcaRecommendation < -0.3) {
             // PTCA strongly recommends against this signal type
             std::cout << "PTCA Filter: Rejecting signal " << signal.id 
                      << " (recommendation: " << ptcaRecommendation << ")" << std::endl;
