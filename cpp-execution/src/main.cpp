@@ -486,9 +486,9 @@ private:
             int targetPass = 0;
             //     bool allTargetsTooClose = true;
             for (const auto& target : execSignal.targets) {
-                std::cout << "  - Target Price: " << target.price 
-                          << " | Percentage Change: " << target.percentage * 100 << "%"
-                          << std::endl;
+                // std::cout << "  - Target Price: " << target.price 
+                //           << " | Percentage Change: " << target.percentage * 100 << "%"
+                //           << std::endl;
                 //check for percentage of long and short targets
                 if (target.percentage > percentage_change_threshold) {
                     targetPass++;
