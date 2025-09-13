@@ -503,17 +503,7 @@ private:
             execSignal.targetSize = signal.targetSize;
             execSignal.strategyId = signal.strategyId;
             //get mid price from order book
-            // double midPrice = 0.0;
-            // if (dataIngestionService_) {
-            //     auto orderbook = dataIngestionService_->getOrderBook(execSignal.exchangeId, execSignal.symbol);
-            //     if (orderbook) {
-            //         midPrice = orderbook->getMidPrice();
-            //     }
-            //     else {
-            //         LOG_INFO(std::format("FullSystemDemo", "Abort signal.No order book available for " + execSignal.symbol.toString()));
-            //         return; // No order book available, abort signal
-            //     }
-            // }
+          
             execSignal.confidence = signal.confidence;
             execSignal.quality = signal.quality;
             execSignal.expirationTime = signal.expirationTime;
@@ -521,11 +511,32 @@ private:
             execSignal.exchangeId = signal.exchangeId;
             
             // Basic filtering
-
-            if (execSignal.strength < 0.5) return; // Weak signals are ignored
-            if (execSignal.direction == core::Direction::NEUTRAL) return; // Ignore neutral signals
-            if (execSignal.confidence < 0.5) return; // Ignore low confidence signals
-            if (execSignal.quality < 0.5) return; // Ignore low quality signals
+            //print signal details
+            // std::cout << "Generated Signal: " << execSignal.id 
+            //           << " Symbol: " << execSignal.symbol.toString()
+            //           << " Direction: " << (execSignal.direction == core::Direction::BUY ? "BUY" : 
+            //                               execSignal.direction == core::Direction::SELL ? "SELL" : "NEUTRAL")
+            //           << " Strength: " << execSignal.strength
+            //           << " Confidence: " << execSignal.confidence
+            //           << " Quality: " << execSignal.quality
+            //           << " Target Size: " << execSignal.targetSize
+            //           << " Expiration: " << execSignal.expirationTime
+            //           << std::endl;
+            //create a asymmetric filter for buy and sell signals
+            if (execSignal.direction == core::Direction::BUY) {
+                if (execSignal.strength < 0.5) return; // Weak signals are ignored
+                if (execSignal.confidence < 0.5) return; // Ignore low confidence signals
+                if (execSignal.quality < 0.5) return; // Ignore low quality signals
+            } else if (execSignal.direction == core::Direction::SELL) {
+                if (execSignal.strength < 0.3) return; // More lenient for sell signals
+                if (execSignal.confidence < 0.3) return; // Ignore very low confidence signals
+                if (execSignal.quality < 0.3) return; // Ignore very low quality signals
+            }
+            else {
+                return; // Ignore neutral signals
+            }
+            //print targets
+            
             double percentage_change_threshold = 0.002; // 0.25%
             int targetPass = 0;
             //     bool allTargetsTooClose = true;
@@ -622,9 +633,9 @@ private:
                 systemHealthy_ = false;
                 
                 // ❌ DISABLE: Don't call emergency action to avoid recursion
-                // if (riskManager_) {
-                //     riskManager_->emergencyAction("System health check failed");
-                // }
+                if (riskManager_) {
+                    riskManager_->emergencyAction("System health check failed");
+                }
                 
                 return false;
             }
