@@ -181,7 +181,15 @@ public:
             std::cout << "\n=== SHUTTING DOWN TRADING SYSTEM ===" << std::endl;
             
             running_ = false;
-            
+            if (ptcaManager_) {
+                std::cout << "Saving final PTCA model..." << std::endl;
+                ptcaManager_->saveModel("final_model.json");
+                
+                reportPTCAStats();
+                
+                ptcaManager_->stop();
+                ptcaManager_.reset();
+            }
             // ✅ Stop data ingestion FIRST and wait for cleanup
             if (dataIngestionService_) {
                 std::cout << "Stopping data ingestion service..." << std::endl;
@@ -208,7 +216,50 @@ public:
             std::cout << "System shutdown complete" << std::endl;
         }
     } 
-    
+    void evaluatePTCADecision(const core::Symbol& symbol) {
+        // Get current signals for the symbol
+        std::vector<strategy::TradingSignal> currentSignals = getCurrentSignalsForSymbol(symbol);
+        
+        if (!currentSignals.empty()) {
+            auto decision = ptcaManager_->generateTradingDecision(symbol, currentSignals);
+            
+            std::cout << "PTCA Decision for " << symbol.toString() << ":" << std::endl;
+            std::cout << "  Direction: " << core::directionToString(decision.recommendedDirection) << std::endl;
+            std::cout << "  Confidence: " << decision.confidence << std::endl;
+            std::cout << "  Expected Outcome: " << decision.expectedOutcome << std::endl;
+            std::cout << "  Reasoning: " << decision.reasoning << std::endl;
+            
+            // You could use this decision to:
+            // 1. Override or modify existing signals
+            // 2. Generate new signals
+            // 3. Adjust position sizing
+            // 4. Trigger rebalancing
+        }
+    }
+        
+    // Helper method to get current signals for a symbol (you'll need to implement this)
+    std::vector<strategy::TradingSignal> getCurrentSignalsForSymbol(const core::Symbol& symbol) {
+        // This should return current active signals for the given symbol
+        // You'll need to implement this based on your signal storage
+        std::vector<strategy::TradingSignal> signals;
+        // Your implementation here...
+        return signals;
+    }
+    // PTCA: Add periodic PTCA statistics reporting
+    void reportPTCAStats() {
+        auto stats = ptcaManager_->getStats();
+        
+        std::cout << "=== PTCA Learning Statistics ===" << std::endl;
+        std::cout << "Total signals tracked: " << stats.totalSignalsTracked << std::endl;
+        std::cout << "Signals with outcomes: " << stats.signalsWithOutcomes << std::endl;
+        std::cout << "Executed signals: " << stats.executedSignals << std::endl;
+        std::cout << "Average signal P&L: " << (stats.averageSignalPnL * 100) << "%" << std::endl;
+        std::cout << "Learning accuracy: " << (stats.learningAccuracy * 100) << "%" << std::endl;
+        std::cout << "Currently tracked: " << stats.currentlyTrackedSignals << std::endl;
+        std::cout << "PTCA events learned: " << stats.ptcaStats.totalEvents << std::endl;
+        std::cout << "PTCA timesteps: " << stats.ptcaStats.totalTimesteps << std::endl;
+        std::cout << "=================================" << std::endl;
+    }
 private:
     // PTCA: Add PTCA-related members
     std::unique_ptr<trading::learning::PTCAIntegrationManager> ptcaManager_;
@@ -337,50 +388,7 @@ private:
         }
     }
 
-    void evaluatePTCADecision(const core::Symbol& symbol) {
-        // Get current signals for the symbol
-        std::vector<strategy::TradingSignal> currentSignals = getCurrentSignalsForSymbol(symbol);
-        
-        if (!currentSignals.empty()) {
-            auto decision = ptcaManager_->generateTradingDecision(symbol, currentSignals);
-            
-            std::cout << "PTCA Decision for " << symbol.toString() << ":" << std::endl;
-            std::cout << "  Direction: " << core::directionToString(decision.recommendedDirection) << std::endl;
-            std::cout << "  Confidence: " << decision.confidence << std::endl;
-            std::cout << "  Expected Outcome: " << decision.expectedOutcome << std::endl;
-            std::cout << "  Reasoning: " << decision.reasoning << std::endl;
-            
-            // You could use this decision to:
-            // 1. Override or modify existing signals
-            // 2. Generate new signals
-            // 3. Adjust position sizing
-            // 4. Trigger rebalancing
-        }
-    }
-        
-    // Helper method to get current signals for a symbol (you'll need to implement this)
-    std::vector<strategy::TradingSignal> getCurrentSignalsForSymbol(const core::Symbol& symbol) {
-        // This should return current active signals for the given symbol
-        // You'll need to implement this based on your signal storage
-        std::vector<strategy::TradingSignal> signals;
-        // Your implementation here...
-        return signals;
-    }
-    // PTCA: Add periodic PTCA statistics reporting
-    void reportPTCAStats() {
-        auto stats = ptcaManager_->getStats();
-        
-        std::cout << "=== PTCA Learning Statistics ===" << std::endl;
-        std::cout << "Total signals tracked: " << stats.totalSignalsTracked << std::endl;
-        std::cout << "Signals with outcomes: " << stats.signalsWithOutcomes << std::endl;
-        std::cout << "Executed signals: " << stats.executedSignals << std::endl;
-        std::cout << "Average signal P&L: " << (stats.averageSignalPnL * 100) << "%" << std::endl;
-        std::cout << "Learning accuracy: " << (stats.learningAccuracy * 100) << "%" << std::endl;
-        std::cout << "Currently tracked: " << stats.currentlyTrackedSignals << std::endl;
-        std::cout << "PTCA events learned: " << stats.ptcaStats.totalEvents << std::endl;
-        std::cout << "PTCA timesteps: " << stats.ptcaStats.totalTimesteps << std::endl;
-        std::cout << "=================================" << std::endl;
-    }
+    
     //create ptca config
     void createPTCAConfig() {
         trading::learning::PTCAIntegrationConfig ptcaConfig;        
@@ -754,7 +762,15 @@ int main(int argc, char* argv[]) {
             std::cerr << "Failed to initialize trading system" << std::endl;
             return 1;
         }
-        
+        // PTCA: Set up periodic statistics reporting
+        std::thread statsThread([demoInstance = demoInstance.get()]() {
+            while (true) {
+                std::this_thread::sleep_for(std::chrono::minutes(10));
+                if (demoInstance) {
+                    demoInstance->reportPTCAStats();
+                }
+            }
+        });
         // Start system
         if (!demoInstance->start()) {
             std::cerr << "Failed to start trading system" << std::endl;
@@ -782,6 +798,9 @@ int main(int argc, char* argv[]) {
         demoInstance->shutdown();
         demoInstance.reset();
         
+        if (statsThread.joinable()) {
+            statsThread.detach(); // Let it finish naturally
+        }
     } catch (const std::exception& e) {
         std::cerr << "Demo failed with exception: " << e.what() << std::endl;
         if (demoInstance) {
