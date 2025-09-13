@@ -472,16 +472,16 @@ private:
                 if (execSignal.quality < 0.3) return;     // 20% threshold
             }
             //print targets
-            std::cout << "Generated Signal: " << execSignal.id 
-                      << " Symbol: " << execSignal.symbol.toString()
-                      << " Direction: " << (execSignal.direction == core::Direction::BUY ? "BUY" : 
-                                          execSignal.direction == core::Direction::SELL ? "SELL" : "NEUTRAL")
-                      << " Strength: " << execSignal.strength
-                      << " Confidence: " << execSignal.confidence
-                      << " Quality: " << execSignal.quality
-                      << " Target Size: " << execSignal.targetSize
-                      << " Expiration: " << execSignal.expirationTime
-                      << std::endl;
+            // std::cout << "Generated Signal: " << execSignal.id 
+            //           << " Symbol: " << execSignal.symbol.toString()
+            //           << " Direction: " << (execSignal.direction == core::Direction::BUY ? "BUY" : 
+            //                               execSignal.direction == core::Direction::SELL ? "SELL" : "NEUTRAL")
+            //           << " Strength: " << execSignal.strength
+            //           << " Confidence: " << execSignal.confidence
+            //           << " Quality: " << execSignal.quality
+            //           << " Target Size: " << execSignal.targetSize
+            //           << " Expiration: " << execSignal.expirationTime
+            //           << std::endl;
             double percentage_change_threshold = 0.002; // 0.2%
             int targetPass = 0;
             //     bool allTargetsTooClose = true;
