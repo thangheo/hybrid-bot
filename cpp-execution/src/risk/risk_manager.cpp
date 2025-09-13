@@ -321,7 +321,7 @@ void RiskManager::setMode(RiskManagerMode mode) {
                     std::chrono::system_clock::now(),
                     std::string("Error updating market data: "),
                     "");  
-                    
+        m_mode.store(mode);
         std::stringstream ss;
         ss << "Risk manager mode changed from " << static_cast<int>(oldMode) 
            << " to " << static_cast<int>(mode);
@@ -332,7 +332,10 @@ void RiskManager::setMode(RiskManagerMode mode) {
         // Take specific actions based on new mode
         if (mode == RiskManagerMode::EMERGENCY) {
             // Execute emergency procedures
-            emergencyAction("Entered emergency mode");
+            //this cause circular calls in infinite loop
+            //emergencyAction ->setMode->emergencyAction->setMode...
+            // emergencyAction("Entered emergency mode");
+            LOG_WARN("Risk manager set to EMERGENCY mode");
         }
     }
 }
