@@ -1,91 +1,97 @@
 {
   "strategy_id": "order_imbalance_btc_usdt",
   "version": "1.2.0",
+  
   "tradingPairs": [
-    {
-      "symbol": "BTC/USDT",
-      "exchange": "BINANCE"
-    },
-    {
-      "symbol": "ETH/USDT", 
-      "exchange": "BINANCE"
-    },
-    {
-      "symbol": "BNB/USDT", 
-      "exchange": "BINANCE"
-    },
-    {
-      "symbol": "LTC/USDT", 
-      "exchange": "BINANCE"
-    },
-    {
-      "symbol": "XRP/USDT", 
-      "exchange": "BINANCE"
-    },
-    {
-      "symbol": "BCH/USDT", 
-      "exchange": "BINANCE"
-    },
-    {
-      "symbol": "ADA/USDT", 
-      "exchange": "BINANCE"
-    },
-    {
-      "symbol": "DOT/USDT", 
-      "exchange": "BINANCE"
-    },
-    {
-      "symbol": "LINK/USDT", 
-      "exchange": "BINANCE"
-    },
-    {
-      "symbol": "XLM/USDT", 
-      "exchange": "BINANCE"
-    },
-    {
-      "symbol": "DOGE/USDT", 
-      "exchange": "BINANCE"
-    },
-    {
-      "symbol": "SOL/USDT", 
-      "exchange": "BINANCE"
-    },
-    {
-      "symbol": "MATIC/USDT", 
-      "exchange": "BINANCE"
-    },
-    {
-      "symbol": "AVAX/USDT", 
-      "exchange": "BINANCE"
-    },
-    {
-      "symbol": "SHIB/USDT", 
-      "exchange": "BINANCE"
-    },
-    {
-      "symbol": "TRX/USDT", 
-      "exchange": "BINANCE"
-    },
-    {
-      "symbol": "UNI/USDT", 
-      "exchange": "BINANCE"
-    },
-    {
-      "symbol": "ATOM/USDT", 
-      "exchange": "BINANCE"
-    },
-    {
-      "symbol": "ALGO/USDT", 
-      "exchange": "BINANCE"
-    },
-    {
-      "symbol": "VET/USDT", 
-      "exchange": "BINANCE"
-    },
-    {
-      "symbol": 	"FIL/USDT", 
-      "exchange": 	"BINANCE"
-    }
+
+  {
+    "symbol": "BTC/USDT",
+    "exchange": "BINANCE"
+  },
+  {
+    "symbol": "ETH/USDT", 
+    "exchange": "BINANCE"
+  },
+  {
+    "symbol": "BNB/USDT", 
+    "exchange": "BINANCE"
+  },
+  {
+    "symbol": "LTC/USDT", 
+    "exchange": "BINANCE"
+  },
+  {
+    "symbol": "XRP/USDT", 
+    "exchange": "BINANCE"
+  },
+  {
+    "symbol": "BCH/USDT", 
+    "exchange": "BINANCE"
+  },
+  {
+    "symbol": "ADA/USDT", 
+    "exchange": "BINANCE"
+  },
+  {
+    "symbol": "DOT/USDT", 
+    "exchange": "BINANCE"
+  },
+  {
+    "symbol": "LINK/USDT", 
+    "exchange": "BINANCE"
+  },
+  {
+    "symbol": "XLM/USDT", 
+    "exchange": "BINANCE"
+  },
+  {
+    "symbol": "DOGE/USDT", 
+    "exchange": "BINANCE"
+  },
+  {
+    "symbol": "SOL/USDT", 
+    "exchange": "BINANCE"
+  },
+  {
+    "symbol": "MATIC/USDT", 
+    "exchange": "BINANCE"
+  },
+  {
+    "symbol": "AVAX/USDT", 
+    "exchange": "BINANCE"
+  },
+  {
+    "symbol": "SHIB/USDT", 
+    "exchange": "BINANCE"
+  },
+  {
+    "symbol": "TRX/USDT", 
+    "exchange": "BINANCE"
+  },
+  {
+    "symbol": "UNI/USDT", 
+    "exchange": "BINANCE"
+  },
+  {
+    "symbol": "ATOM/USDT", 
+    "exchange": "BINANCE"
+  },
+  {
+    "symbol": "ALGO/USDT", 
+    "exchange": "BINANCE"
+  },
+  {
+    "symbol": "VET/USDT", 
+    "exchange": "BINANCE"
+  },
+  {
+    "symbol": 	"FIL/USDT", 
+    "exchange": 	"BINANCE"
+  },
+  {
+    "symbol": "ENJ/USDT", 
+    "exchange": "BINANCE"
+  }
 
   ],
   "parameters": {
@@ -131,17 +137,17 @@
     },
     "imbalanceDetector": {
       "parameters": {
-        "strategy_id": "order_imbalance_test",
+        "strategy_id": "order_imbalance_btc_usdt",
         "version": "1.2.0",
-        "volumeImbalanceThreshold": 0.55,
+        "volumeImbalanceThreshold": 0.35,
         "priceLevelImbalanceThreshold": 0.25,
         "liquidityRemovalThreshold": 0.5,
         "detectionWindowMs": 5000,
         "maxHistorySize": 500,
         "global_sensitivity": 0.75,
         "thresholds": {
-          "volumeImbalance ": 0.55,
-          "priceLevelImbalance": 0.25,
+          "volume_imbalance": 0.35,
+          "price_level_imbalance": 0.25,
           "liquidityPressure": 0.4,
           "order_flow": 0.3
         }
@@ -185,6 +191,7 @@
         "timeWindowMs": 60000,
         "priceLevels": 50,
         "exchangeId": "BINANCE",
+        "tradingPair": "BTC/USDT",
         "rangeSizePercent": 2.0,
         "timeFrameMinutes": 15,
         "numPriceRanges": 20,
@@ -212,7 +219,7 @@
       "parameters": {
         "minSignalStrength": 0.6,
         "confidenceThreshold": 0.7,
-        "signalTtlMs": 1500 
+        "signalTtlMs": 30000
       }
     },
     "momentumCorrelator": {
