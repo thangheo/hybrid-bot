@@ -249,10 +249,7 @@ public:
                 std::cerr << "Failed to start strategy engine" << std::endl;
                 return false;
             }
-            
-            // 3. Start monitoring threads
-            startMonitoring();
-            
+             
             std::cout << "🚀 FULL TRADING SYSTEM IS NOW LIVE!" << std::endl;
             std::cout << "Monitoring system health and processing..." << std::endl;
             
@@ -260,39 +257,7 @@ public:
         }
         return false;
     }
-    
-    void runDemo(int durationMinutes = 5) {
-        std::cout << "\n=== RUNNING INTEGRATED DEMO FOR " << durationMinutes << " MINUTES ===" << std::endl;
-        
-        auto startTime = std::chrono::steady_clock::now();
-        auto endTime = startTime + std::chrono::minutes(durationMinutes);
-        
-        // Demo phases
-        demonstrateDataFlow();
-        std::this_thread::sleep_for(30s);
-        
-        demonstrateSignalGeneration();
-        std::this_thread::sleep_for(30s);
-        
-        demonstrateRiskValidation();
-        std::this_thread::sleep_for(30s);
-        
-        demonstrateExecution();
-        std::this_thread::sleep_for(30s);
-        
-        // Continue running and monitoring
-        while (running_ && std::chrono::steady_clock::now() < endTime) {
-            std::this_thread::sleep_for(1s);
-            
-            // Periodic health checks
-            if (!checkSystemHealth()) {
-                std::cout << "⚠️  System health issues detected!" << std::endl;
-                systemHealthy_ = false;
-            }
-        }
-        
-        printFinalReport();
-    } 
+     
     // Or run without time limit:
     void runIndefinitely() {
         while (running_ && systemHealthy_) {
@@ -325,10 +290,6 @@ public:
                 strategyEngine_->stop();
             }
             
-            // Stop monitoring threads
-            std::cout << "Stopping monitoring threads..." << std::endl;
-            stopMonitoring();
-            
             // ✅ Clear data ingestion service pointer after shutdown
             std::cout << "Clearing data ingestion service..." << std::endl;
             dataIngestionService_.reset();
@@ -339,20 +300,8 @@ public:
             
             std::cout << "System shutdown complete" << std::endl;
         }
-    }
-        // Update the signal handler to be more graceful:
-    // void signalHandler(int signal) {
-    //     std::cout << "\nShutdown signal received... Graceful shutdown initiated" << std::endl;
-    //     if (demoInstance) {
-    //         demoInstance->shutdown();
-            
-    //         // Give time for proper cleanup
-    //         std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-    //     }
-        
-    //     std::cout << "Exiting..." << std::endl;
-    //     exit(0);
-    // }
+    } 
+    
 private:
     // Core components
     std::unique_ptr<data_ingestion::DataIngestionService> dataIngestionService_;
@@ -547,6 +496,19 @@ private:
                 }                
             }
             if (targetPass == 0) return; // Ignore signals with all targets too close
+            else{
+                std::cout << "Generated Signal: " << execSignal.id 
+                          << " Symbol: " << execSignal.symbol.toString()
+                          << " Direction: " << (execSignal.direction == core::Direction::BUY ? "BUY" : 
+                                              execSignal.direction == core::Direction::SELL ? "SELL" : "NEUTRAL")
+                          << " Strength: " << execSignal.strength
+                          << " Confidence: " << execSignal.confidence
+                          << " Quality: " << execSignal.quality
+                          << " Target Size: " << execSignal.targetSize
+                          << " Expiration: " << execSignal.expirationTime
+                          << " Valid Targets: " << targetPass
+                          << std::endl;
+            }
             // Validate with risk manager
             if (riskManager_) {
                 auto validationResult = riskManager_->validateSignal(execSignal);
@@ -573,45 +535,13 @@ private:
         });
     }
     
-    void startMonitoring() {
-        std::cout << "Starting monitoring threads..." << std::endl;
-        
-        // System health monitor
-        monitoringThreads_.emplace_back([this]() {
-            while (running_) {
-                std::this_thread::sleep_for(10s);
-                
-                if (running_) {
-                    bool healthy = checkSystemHealth();
-                    if (!healthy && systemHealthy_) {
-                        systemHealthy_ = false;
-                        std::cout << "⚠️  System health degraded!" << std::endl;
-                    } else if (healthy && !systemHealthy_) {
-                        systemHealthy_ = true;
-                        std::cout << "✅ System health restored!" << std::endl;
-                    }
-                }
-            }
-        });
-        
-        // Statistics reporter
-        monitoringThreads_.emplace_back([this]() {
-            while (running_) {
-                std::this_thread::sleep_for(30s);
-                if (running_) {
-                    printPeriodicStats();
-                }
-            }
-        });
-    }
-    
     void stopMonitoring() {
         for (auto& thread : monitoringThreads_) {
             if (thread.joinable()) {
                 thread.join();
             }
         }
-        monitoringThreads_.clear();
+        // monitoringThreads_.clear();
     }
         // In FullSystemDemo::checkSystemHealth(), temporarily disable emergency actions:
     bool checkSystemHealth() {
@@ -681,89 +611,7 @@ private:
         }).detach();
     }
     
-    void demonstrateDataFlow() {
-        std::cout << "\n--- Demonstrating Data Flow ---" << std::endl;
-        std::cout << "Monitoring order book updates..." << std::endl;
-        
-        // Wait for some order book updates
-        size_t initialUpdates = orderBookUpdatesReceived_.load();
-        auto startTime = std::chrono::steady_clock::now();
-        
-        while (std::chrono::steady_clock::now() - startTime < 10s) {
-            std::this_thread::sleep_for(1s);
-            size_t currentUpdates = orderBookUpdatesReceived_.load();
-            if (currentUpdates > initialUpdates + 10) {
-                break;
-            }
-        }
-        
-        std::cout << "Order book updates flowing: " 
-                  << (orderBookUpdatesReceived_.load() - initialUpdates) << " received" << std::endl;
-    }
-    
-    void demonstrateSignalGeneration() {
-        std::cout << "\n--- Demonstrating Signal Generation ---" << std::endl;
-        std::cout << "Waiting for strategy signals..." << std::endl;
-        
-        size_t initialSignals = signalsGenerated_.load();
-        auto startTime = std::chrono::steady_clock::now();
-        
-        while (std::chrono::steady_clock::now() - startTime < 30s) {
-            std::this_thread::sleep_for(1s);
-            size_t currentSignals = signalsGenerated_.load();
-            if (currentSignals > initialSignals) {
-                std::cout << "Signal generated! Total: " << currentSignals << std::endl;
-                break;
-            }
-        }
-        
-        if (signalsGenerated_.load() == initialSignals) {
-            std::cout << "No signals generated yet (normal for demo)" << std::endl;
-        }
-    }
-    
-    void demonstrateRiskValidation() {
-        std::cout << "\n--- Demonstrating Risk Validation ---" << std::endl;
-        
-        // Create some test signals to validate
-        std::vector<execution::TradingSignal> testSignals = {
-            createTestSignal("TEST_001", "BTC/USDT", core::Direction::BUY, 0.1),
-            createTestSignal("TEST_002", "ETH/USDT", core::Direction::SELL, 2.0),
-            createTestSignal("TEST_003", "BTC/USDT", core::Direction::BUY, 10.0)  // Large size
-        };
-        
-        for (const auto& signal : testSignals) {
-            auto result = riskManager_->validateSignal(signal);
-            signalsValidated_++;
-            
-            if (result.approved) {
-                signalsApproved_++;
-                std::cout << "✅ Test signal " << signal.id << " approved" << std::endl;
-            } else {
-                signalsRejected_++;
-                std::cout << "❌ Test signal " << signal.id << " rejected: ";
-                for (const auto& violation : result.violations) {
-                    std::cout << violation.description << " ";
-                }
-                std::cout << std::endl;
-            }
-        }
-    }
-    
-    void demonstrateExecution() {
-        std::cout << "\n--- Demonstrating Execution Flow ---" << std::endl;
-        
-        // Create and process a valid signal
-        auto testSignal = createTestSignal("EXEC_001", "BTC/USDT", core::Direction::BUY, 0.0000060);
-        auto result = riskManager_->validateSignal(testSignal);
-        
-        if (result.approved) {
-            std::cout << "Executing approved signal..." << std::endl;
-            realExecution(testSignal);
-        } else {
-            std::cout << "Signal not approved for execution" << std::endl;
-        }
-    }
+     
     
     execution::TradingSignal createTestSignal(const std::string& id, const std::string& pair,
                                              core::Direction direction, double size) {
@@ -777,46 +625,14 @@ private:
         // signal.strategyVersion = "1.0";
         return signal;
     }
-    
-    void printPeriodicStats() {
-        std::cout << "\n=== SYSTEM STATISTICS ===" << std::endl;
-        std::cout << "Order Book Updates: " << orderBookUpdatesReceived_.load() << std::endl;
-        std::cout << "Signals Generated: " << signalsGenerated_.load() << std::endl;
-        std::cout << "Signals Validated: " << signalsValidated_.load() << std::endl;
-        std::cout << "Signals Approved: " << signalsApproved_.load() << std::endl;
-        std::cout << "Signals Rejected: " << signalsRejected_.load() << std::endl;
-        std::cout << "Orders Executed: " << ordersExecuted_.load() << std::endl;
-        std::cout << "Risk Events: " << riskEventsTriggered_.load() << std::endl;
-        std::cout << "System Health: " << (systemHealthy_.load() ? "HEALTHY" : "DEGRADED") << std::endl;
-        std::cout << "=========================" << std::endl;
-    }
-    
-    void printFinalReport() {
-        std::cout << "\n=== FINAL INTEGRATION DEMO REPORT ===" << std::endl;
-        std::cout << "Total Order Book Updates: " << orderBookUpdatesReceived_.load() << std::endl;
-        std::cout << "Total Signals Generated: " << signalsGenerated_.load() << std::endl;
-        std::cout << "Total Signals Validated: " << signalsValidated_.load() << std::endl;
-        std::cout << "Total Signals Approved: " << signalsApproved_.load() << std::endl;
-        std::cout << "Total Signals Rejected: " << signalsRejected_.load() << std::endl;
-        std::cout << "Total Orders Executed: " << ordersExecuted_.load() << std::endl;
-        std::cout << "Total Risk Events: " << riskEventsTriggered_.load() << std::endl;
-        
-        if (signalsValidated_.load() > 0) {
-            double approvalRate = (double)signalsApproved_.load() / signalsValidated_.load() * 100.0;
-            std::cout << "Signal Approval Rate: " << std::fixed << std::setprecision(2) 
-                      << approvalRate << "%" << std::endl;
-        }
-        
-        std::cout << "Final System Health: " << (systemHealthy_.load() ? "HEALTHY" : "DEGRADED") << std::endl;
-        std::cout << "\n🎉 INTEGRATION DEMO COMPLETED SUCCESSFULLY!" << std::endl;
-        std::cout << "=====================================\n" << std::endl;
-    }
+      
+
 };
 
 // Global demo instance for signal handling
 std::unique_ptr<FullSystemDemo> demoInstance;
 
-void signalHandler(int signal) {
+void signalHandler(int sig) {
     std::cout << "\nShutdown signal received..." << std::endl;
     if (demoInstance) {
         demoInstance->shutdown();
