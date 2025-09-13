@@ -463,9 +463,7 @@ private:
             "", 
             true
         };
-        //debug api
-        // std::cout << "API KEY: " << std::getenv("BINANCE_API_KEY") << std::endl;
-        // std::cout << "API SECRET: " << std::getenv("BINANCE_API_SECRET") << std::endl;
+        
         authService->setCredentials(core::ExchangeId::binance(), credentials);
         api_client_manager->addClient(core::ExchangeId::binance(),
             std::make_shared<BinanceApiClient>(credentials, 
@@ -554,13 +552,30 @@ private:
         });
             
             // 2. Connect strategy engine to risk manager
-            strategyEngine_->registerSignalCallback([this](const strategy::TradingSignal& signal) {
-                signalsGenerated_++;
-                
-                // Convert strategy signal to execution signal for risk validation
-                execution::TradingSignal execSignal;
-                execSignal.id = signal.id;
-                execSignal.symbol = signal.symbol;
+        strategyEngine_->registerSignalCallback([this](const strategy::TradingSignal& signal) {
+            signalsGenerated_++;
+            ptcaManager_->registerSignal(signal);
+            
+            double ptcaRecommendation = ptcaManager_->getSignalRecommendation(signal);
+             // PTCA: Optionally, adjust signal strength based on PTCA confidence
+            double adjustedStrength = signal.strength;
+            if (ptcaRecommendation > 0.2) {
+                // Boost signals that PTCA likes
+                adjustedStrength = std::min(1.0, signal.strength * (1.0 + ptcaRecommendation * 0.3));
+                std::cout << "PTCA Boost: Signal " << signal.id 
+                        << " strength boosted from " << signal.strength 
+                        << " to " << adjustedStrength << std::endl;
+            } else if (ptcaRecommendation < -0.1) {
+                // Reduce strength for signals PTCA is uncertain about
+                adjustedStrength = signal.strength * (1.0 + ptcaRecommendation * 0.2);
+                std::cout << "PTCA Caution: Signal " << signal.id 
+                        << " strength reduced from " << signal.strength 
+                        << " to " << adjustedStrength << std::endl;
+            }
+            // Convert strategy signal to execution signal for risk validation
+            execution::TradingSignal execSignal;
+            execSignal.id = signal.id;
+            execSignal.symbol = signal.symbol;
             execSignal.direction = signal.direction;
             execSignal.strength = signal.strength;
             execSignal.targetSize = signal.targetSize;
@@ -580,11 +595,11 @@ private:
             if (execSignal.direction == core::Direction::BUY) {
                 if (execSignal.strength < 0.5) return;     // 30% threshold
                 if (execSignal.confidence < 0.6) return;  // 30% threshold  
-                if (execSignal.quality < 0.44) return;     // 30% threshold
+                // if (execSignal.quality < 0.44) return;     // 30% threshold
             } else if (execSignal.direction == core::Direction::SELL) {
                 if (execSignal.strength < 0.3) return;    // 20% threshold
                 if (execSignal.confidence < 0.6) return;  // 20% threshold
-                if (execSignal.quality < 0.3) return;     // 20% threshold
+                // if (execSignal.quality < 0.3) return;     // 20% threshold
             }
             
             double percentage_change_threshold = 0.002; // 0.2%
