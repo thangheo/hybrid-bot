@@ -247,11 +247,49 @@ public:
         static auto lastCallbackCheck = std::chrono::steady_clock::now();
         static uint64_t lastCallbackCount = 0;
         
+        // ✅ CRITICAL: Add rapid order book monitoring for trading safety
+        static auto lastRapidCallbackCheck = std::chrono::steady_clock::now();
+        static uint64_t lastRapidCallbackCount = 0;
+        static bool emergencyTradingHalt = false;
+        
         while (running_ && systemHealthy_) {
             std::this_thread::sleep_for(1s);
+            auto now = std::chrono::steady_clock::now();
+            
+            // ✅ RAPID CHECK: Detect order book data gaps within 15 seconds (CRITICAL FOR TRADING)
+            if (now - lastRapidCallbackCheck >= std::chrono::seconds(5)) {
+                uint64_t currentCallbackCount = messagesProcessed_.load();
+                
+                // If no new callbacks in 15 seconds, this is a trading emergency
+                if (currentCallbackCount == lastRapidCallbackCount && 
+                    now - lastRapidCallbackCheck >= std::chrono::seconds(15)) {
+                    
+                    if (!emergencyTradingHalt) {
+                        std::cout << "🚨 EMERGENCY: ORDER BOOK DATA STOPPED - HALTING ALL TRADING!" << std::endl;
+                        std::cout << "🚨 Last callback count: " << currentCallbackCount << " (no change in 15+ seconds)" << std::endl;
+                        emergencyTradingHalt = true;
+                        
+                        // Emergency halt trading signals
+                        if (riskManager_) {
+                            riskManager_->emergencyAction("Order book data gap detected - trading halted");
+                        }
+                        
+                        // Immediately restart data ingestion
+                        restartDataIngestionEmergency();
+                    }
+                } else if (currentCallbackCount > lastRapidCallbackCount) {
+                    // Data is flowing again
+                    if (emergencyTradingHalt) {
+                        std::cout << "✅ ORDER BOOK DATA RESUMED - Trading can continue" << std::endl;
+                        emergencyTradingHalt = false;
+                    }
+                    lastRapidCallbackCount = currentCallbackCount;
+                }
+                
+                lastRapidCallbackCheck = now;
+            }
             
             // ✅ Check intelligence system every 30 seconds
-            auto now = std::chrono::steady_clock::now();
             if (now - lastIntelCheck >= std::chrono::seconds(30)) {
                 uint64_t currentIntelCount = intelligenceGenerated_.load();
                 uint64_t currentCallbackCount = messagesProcessed_.load();
@@ -310,7 +348,7 @@ public:
                           << " generated, queue size: " << intelligenceQueue_.size() 
                           << ", processor running: " << (intelligenceRunning_ ? "✅" : "❌") << std::endl;
                 std::cout << "📊 Order book callbacks: " << currentCallbackCount 
-                          << " processed" << std::endl;
+                          << " processed" << (emergencyTradingHalt ? " 🚨 TRADING HALTED" : "") << std::endl;
             }
             
             if (!checkSystemHealth()) {
@@ -618,6 +656,36 @@ public:
         std::cout << "✅ Intelligence processor restarted" << std::endl;
     }
     
+    // ✅ CRITICAL: Emergency restart for data ingestion when trading is at risk
+    void restartDataIngestionEmergency() {
+        std::cout << "🚨 EMERGENCY RESTART of data ingestion - Trading safety priority!" << std::endl;
+        
+        if (!dataIngestionService_) {
+            std::cout << "❌ No data ingestion service to restart!" << std::endl;
+            return;
+        }
+        
+        // Get current symbols before restart
+        std::vector<Symbol> symbols;
+        for (const auto& [name, pair] : strategyConfig_.tradingPairs) {
+            symbols.push_back(Symbol::fromString(name));
+        }
+        
+        std::cout << "🔄 Stopping data ingestion..." << std::endl;
+        dataIngestionService_->stop();
+        
+        // Minimal wait time for emergency restart
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        
+        std::cout << "🔄 Starting data ingestion with " << symbols.size() << " symbols..." << std::endl;
+        if (!dataIngestionService_->start(symbols)) {
+            std::cout << "❌ CRITICAL: Emergency restart failed!" << std::endl;
+            systemHealthy_ = false;
+        } else {
+            std::cout << "✅ Emergency restart successful - monitoring for data flow..." << std::endl;
+        }
+    }
+    
     void queueIntelligenceGeneration(const OrderBookUpdate& update, 
                                    std::shared_ptr<OrderBook> orderBook) {
         static std::atomic<int> queueCount{0};
@@ -868,10 +936,10 @@ private:
             std::cerr << "Invalid risk configuration!" << std::endl;
         }
         auto& positionConfig = const_cast<PositionLimitConfig&>(riskConfig_.getPositionLimitConfig());
-        positionConfig.assetLimits["BTC"] = 0.00001;
-        positionConfig.assetLimits["ETH"] = 0.01;
+        positionConfig.assetLimits["BTC"] = 0.0001;
+        positionConfig.assetLimits["ETH"] = 0.1;
         positionConfig.assetLimits["BNB"] = 0.1;
-        positionConfig.assetLimits["ADA"] = 1.0;
+        positionConfig.assetLimits["ADA"] = 10.0;
         positionConfig.defaultLimit = 0.1;
         positionConfig.enforceStrictly = true;
         
