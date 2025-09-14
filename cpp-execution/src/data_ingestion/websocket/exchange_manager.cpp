@@ -150,6 +150,9 @@ bool ExchangeManager::subscribe(const std::vector<Symbol>& tradingPairs,
         connectionPool_->releaseConnection(connection);
         
         if (success) {
+            // ✅ Tell the connection pool about active subscriptions for auto-resubscription
+            connectionPool_->setActiveSubscriptions(symbols);
+            
             // Store the subscription request for reconnection scenarios
             SubscriptionRequest request{};
             request.exchangeId = core::ExchangeId::binance();

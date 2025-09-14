@@ -135,6 +135,27 @@ ClientInterfacePtr ConnectionPool::createConnection() {
         
         if (conn && conn->connect()) {
             LOG_DEBUG("Created new connection for pool '" + poolId_ + "'");
+            
+            // ✅ Auto-subscribe to active subscriptions if any exist
+            {
+                std::lock_guard<std::mutex> lock(subscriptionMutex_);
+                if (!activeSubscriptions_.empty()) {
+                    LOG_INFO("Auto-subscribing new connection to " + std::to_string(activeSubscriptions_.size()) + " symbols");
+                    
+                    // Give connection time to stabilize
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+                    
+                    bool subSuccess = conn->subscribe(activeSubscriptions_);
+                    if (subSuccess) {
+                        LOG_INFO("✅ Successfully auto-subscribed new connection to all symbols");
+                    } else {
+                        LOG_ERROR("❌ Failed to auto-subscribe new connection to symbols");
+                    }
+                } else {
+                    LOG_DEBUG("No active subscriptions to restore");
+                }
+            }
+            
             return conn;
         } else {
             connectionFailures_++;
@@ -147,6 +168,22 @@ ClientInterfacePtr ConnectionPool::createConnection() {
     
     return nullptr;
 }    
+
+// ✅ Subscription management methods
+void ConnectionPool::setActiveSubscriptions(const std::vector<core::Symbol>& symbols) {
+    std::lock_guard<std::mutex> lock(subscriptionMutex_);
+    activeSubscriptions_ = symbols;
+    
+    LOG_INFO("Connection pool '" + poolId_ + "' tracking " + std::to_string(symbols.size()) + " active subscriptions");
+    for (const auto& symbol : symbols) {
+        LOG_DEBUG("  Tracking subscription: " + symbol.toString());
+    }
+}
+
+std::vector<core::Symbol> ConnectionPool::getActiveSubscriptions() const {
+    std::lock_guard<std::mutex> lock(subscriptionMutex_);
+    return activeSubscriptions_;
+}
 
 ConnectionPool::~ConnectionPool() {
     shutdown();
