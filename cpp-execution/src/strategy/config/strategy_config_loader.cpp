@@ -82,6 +82,7 @@ StrategyConfig loadStrategyConfigFromFile(const std::string& filePath) {
             for (const auto& pair : configJson["tradingPairs"]) {
                 std::string symbol = pair["symbol"];
                 ExchangeId exchangeId = ExchangeId::fromString(pair["exchange"]);
+                
                 if (!exchangeId.isValid()) {
                     LOG_ERROR("Invalid exchange ID in trading pair: {}", pair.dump());
                     throw std::runtime_error("Invalid exchange ID in trading pair: " + pair.dump());
@@ -90,6 +91,15 @@ StrategyConfig loadStrategyConfigFromFile(const std::string& filePath) {
                     LOG_ERROR("Empty symbol in trading pair: {}", pair.dump());
                     throw std::runtime_error("Empty symbol in trading pair: " + pair.dump());
                 }
+                
+                // ✅ Handle optional fields (category, description) - just log them for now
+                if (pair.contains("category")) {
+                    LOG_INFO("Trading pair {} has category: {}", symbol, pair["category"].get<std::string>());
+                }
+                if (pair.contains("description")) {
+                    LOG_DEBUG("Trading pair {} description: {}", symbol, pair["description"].get<std::string>());
+                }
+                
                 config.tradingPairs[symbol] = exchangeId;
             }
         }

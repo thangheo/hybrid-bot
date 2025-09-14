@@ -40,7 +40,7 @@ public:
     
     // Service lifecycle
     bool initialize();
-    bool start(const std::vector<std::string>& symbols);
+    bool start(const std::vector<Symbol>& symbols);
     void stop();
     bool isRunning() const { return running_.load(); }
     
@@ -57,9 +57,9 @@ public:
     std::string getStatusReport() const;
     SimpleStats getStatistics() const ;
 
-    std::vector<std::string> getActiveOrderBooks() const;
+    std::vector<Symbol> getActiveOrderBooks() const;
 private:
-    std::vector<std::string> subscribedSymbols_;
+    std::vector<Symbol> subscribedSymbols_;
     // Core components (proper order for RAII)
     std::string configPath_;
     Configuration* config_;

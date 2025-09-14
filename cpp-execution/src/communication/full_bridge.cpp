@@ -69,7 +69,7 @@ public:
         }
     }
 
-    bool start(const std::vector<std::string>& symbols) {
+    bool start(const std::vector<Symbol>& symbols) {
         std::cout << "Starting Simplified Trading Server..." << std::endl;
         // adaptiveIntel_->ApplyEmergencyThresholds();
         // 1. Initialize data ingestion service
@@ -388,7 +388,7 @@ int main() {
         SimplifiedTradingServer server;
         
         // Define symbols to monitor
-        std::vector<std::string> symbols = {
+        std::vector<std::string> pairs = {
             "BTC/USDT", "ETH/USDT", "SOL/USDT", "XRP/USDT", "ADA/USDT",
             "AVAX/USDT", "DOT/USDT", "LINK/USDT", "UNI/USDT", "ATOM/USDT"
             , "ALGO/USDT"  
@@ -406,6 +406,14 @@ int main() {
             , "DOGE/USDT"  
             , "WIFI/USDT"   
    };   
+        for (const auto& sym : pairs) {
+                    std::cout << "  " << sym << std::endl;
+                }
+        std::vector<Symbol> symbols;
+        for (const auto& s : pairs) {
+            symbols.push_back(Symbol::fromString(s));
+        }
+
         if (!server.start(symbols)) {
             std::cerr << "Failed to start server" << std::endl;
             return 1;

@@ -38,7 +38,7 @@ public:
     bool isConnected() const;
     
     // SIMPLIFIED: Direct subscription without event bus
-    bool subscribe(const std::vector<std::string>& tradingPairs,
+    bool subscribe(const std::vector<Symbol>& tradingPairs,
                   const std::vector<DataType>& dataTypes,
                   int depth = 20);
     
@@ -68,7 +68,7 @@ private:
     // Subscription tracking
     struct SubscriptionRequest {
         core::ExchangeId exchangeId;
-        std::vector<std::string> tradingPairs;
+        std::vector<Symbol> tradingPairs;
         std::vector<DataType> dataTypes;
         int depth;
     };
@@ -85,7 +85,7 @@ private:
     void monitorConnections();
     
     std::vector<std::string> createStreamNames(
-        const std::vector<std::string>& tradingPairs,
+        const std::vector<Symbol>& tradingPairs,
         const std::vector<DataType>& dataTypes,
         int depth);
     

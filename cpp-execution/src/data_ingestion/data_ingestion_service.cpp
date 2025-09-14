@@ -77,7 +77,7 @@ bool DataIngestionService::initialize() {
     }
 }
 
-bool DataIngestionService::start(const std::vector<std::string>& symbols) {
+bool DataIngestionService::start(const std::vector<Symbol>& symbols) {
     subscribedSymbols_ = symbols;  // Store for later use
     if (!initialized_.load()) {
         std::cerr << "Service not initialized" << std::endl;
@@ -92,22 +92,21 @@ bool DataIngestionService::start(const std::vector<std::string>& symbols) {
             std::cerr << "Failed to start publisher" << std::endl;
             return false;
         }
-        
-        // 2. Create order books in reconstructor
-        for (const auto& symbol : symbols) {
+         for (const auto& symbol : symbols) {
             std::vector<PriceLevel> empty_bids;
             std::vector<PriceLevel> empty_asks;
             
             reconstructor_->processSnapshot(
                 ExchangeId::binance(), 
-                core::Symbol::fromString(symbol),
+                symbol,
                 empty_bids,
                 empty_asks,
                 0,
                 std::chrono::system_clock::now()
             );
         }
-        
+
+        // 2. Start exchange connections first (order books will be created when real data arrives)
         // 3. Start exchange connections
         if (!exchangeManager_->initialize()) {
             std::cerr << "Failed to initialize exchange manager" << std::endl;
@@ -124,7 +123,7 @@ bool DataIngestionService::start(const std::vector<std::string>& symbols) {
         
         std::cout << "=== STARTING SUBSCRIPTION PROCESS ===" << std::endl;
         for (const auto& symbol : symbols) {
-            std::cout << "Will subscribe to symbol: " << symbol << std::endl;
+            // std::cout << "Will subscribe to symbol: " << symbol << std::endl;
         }
         std::cout << "=====================================" << std::endl;
         
@@ -314,7 +313,7 @@ SimpleStats DataIngestionService::getStatistics() const {
     return stats;
 }
 
-std::vector<std::string> DataIngestionService::getActiveOrderBooks() const {
+std::vector<Symbol> DataIngestionService::getActiveOrderBooks() const {
     return subscribedSymbols_;
 }
 
