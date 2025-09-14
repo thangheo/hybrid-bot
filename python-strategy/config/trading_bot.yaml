@@ -111,11 +111,8 @@ data_ingestion:
 
     # Real World Assets (RWA) - Major Growth Trend
     - "ONDOUSDT"   # Ondo Finance - Tokenized treasuries leader
-    - "CFGUSDT"    # Centrifuge - RWA pioneer since 2017
     - "HBARUSDT"   # Hedera - Hashgraph for enterprise RWA
-    - "XDCUSDT"    # XDC Network - Trade finance focus
     - "PAXGUSDT"   # Pax Gold - Tokenized gold
-    - "GFIUSDT"    # Goldfinch - Decentralized credit
 
     # Gaming & Metaverse
     - "MANAUSDT"   # Decentraland - Metaverse pioneer
