@@ -77,7 +77,7 @@ data_ingestion:
     # self.db_url = db_config.get('url', 'postgresql://trading:Pass_1234@localhost:5432/trading_db')
     pool_size: 5
 
-    symbols:
+  symbols:
     # Major Blue Chips - High Liquidity & Institutional Support
     - "BTCUSDT"    # Bitcoin - Digital gold, ETF backing
     - "ETHUSDT"    # Ethereum - Smart contracts, Layer 2 ecosystem  
