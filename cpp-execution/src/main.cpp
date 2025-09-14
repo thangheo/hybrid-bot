@@ -561,15 +561,21 @@ private:
         }
     }
      // PTCA: Market price update handler
-    void onMarketPriceUpdate(const core::Symbol& symbol, double price) {
-        // Throttle price updates to avoid overwhelming PTCA
-        auto now = std::chrono::steady_clock::now();
-        if (now - lastPriceUpdate_ >= std::chrono::seconds(5)) {
-            ptcaManager_->updateMarketPrice(symbol, price);
-            lastPriceUpdate_ = now;
-        }
+    // void onMarketPriceUpdate(const core::Symbol& symbol, double price) {
+    //     std::cout << "Price update: " << symbol.toString() << " = " << price << std::endl;
         
-        // Your existing price update logic...
+    //     auto now = std::chrono::steady_clock::now();
+    //     if (now - lastPriceUpdate_ >= std::chrono::seconds(1)) {
+    //         ptcaManager_->updateMarketPrice(symbol, price);
+    //         lastPriceUpdate_ = now;
+    //         std::cout << "PTCA price updated" << std::endl;
+    //     } else {
+    //         std::cout << "PTCA price update throttled" << std::endl;
+    //     }
+    // }
+    void onMarketPriceUpdate(const core::Symbol& symbol, double price) {
+        ptcaManager_->updateMarketPrice(symbol, price);
+        std::cout << "PTCA price updated: " << symbol.toString() << " = " << price << std::endl;
     }
         // Add this to your FullSystemDemo class:
     void setupPTCAConnections() {
@@ -783,7 +789,7 @@ private:
         strategyEngine_->registerSignalCallback([this](const strategy::TradingSignal& signal) {
             signalsGenerated_++;
             ptcaManager_->registerSignal(signal);
-            
+            std::cout << "PTCA tracking signals: " << ptcaManager_->getStats().currentlyTrackedSignals << std::endl;
             double ptcaRecommendation = ptcaManager_->getSignalRecommendation(signal);
              // PTCA: Optionally, adjust signal strength based on PTCA confidence
             double adjustedStrength = signal.strength;

@@ -12,6 +12,8 @@
 #include <algorithm>
 #include <iomanip>
 #include <sstream>
+#include <iostream>
+#include <system_error>
 
 namespace trading {
 namespace learning {
@@ -81,15 +83,24 @@ void PTCAIntegrationManager::stop() {
 void PTCAIntegrationManager::registerSignal(const strategy::TradingSignal& signal) {
     std::lock_guard<std::recursive_mutex> lock(signalMutex_);
     
-    // Limit memory usage by removing oldest signals if needed
-    if (activeSignals_.size() >= config_.maxSignalsToTrack) {
-        // Remove the oldest signal
-        auto oldestIt = std::min_element(activeSignals_.begin(), activeSignals_.end(),
-            [](const auto& a, const auto& b) {
-                return a.second.signalTime < b.second.signalTime;
-            });
-        if (oldestIt != activeSignals_.end()) {
-            activeSignals_.erase(oldestIt);
+    // More aggressive memory management to prevent system errors
+    const size_t maxSignals = std::min(config_.maxSignalsToTrack, static_cast<size_t>(1000));
+    
+    if (activeSignals_.size() >= maxSignals) {
+        // Remove multiple old signals at once for efficiency
+        size_t signalsToRemove = std::max(static_cast<size_t>(1), maxSignals / 4);
+        
+        // Sort by signal time and remove oldest
+        std::vector<std::pair<std::string, core::Timestamp>> signalsByTime;
+        for (const auto& [id, tracker] : activeSignals_) {
+            signalsByTime.emplace_back(id, tracker.signalTime);
+        }
+        
+        std::sort(signalsByTime.begin(), signalsByTime.end(),
+            [](const auto& a, const auto& b) { return a.second < b.second; });
+        
+        for (size_t i = 0; i < signalsToRemove && i < signalsByTime.size(); ++i) {
+            activeSignals_.erase(signalsByTime[i].first);
         }
     }
     
@@ -100,9 +111,39 @@ void PTCAIntegrationManager::registerSignal(const strategy::TradingSignal& signa
     totalSignalsTracked_++;
     
     if (config_.enableDetailedLogging) {
-        // Log signal registration
+        // Log signal registration with memory usage info
+        if (totalSignalsTracked_ % 1000 == 0) {
+            std::cout << "PTCA: Tracked " << totalSignalsTracked_ 
+                      << " signals, active: " << activeSignals_.size() << std::endl;
+        }
     }
 }
+
+// void PTCAIntegrationManager::registerSignal(const strategy::TradingSignal& signal) {
+//     std::lock_guard<std::recursive_mutex> lock(signalMutex_);
+    
+//     // Limit memory usage by removing oldest signals if needed
+//     if (activeSignals_.size() >= config_.maxSignalsToTrack) {
+//         // Remove the oldest signal
+//         auto oldestIt = std::min_element(activeSignals_.begin(), activeSignals_.end(),
+//             [](const auto& a, const auto& b) {
+//                 return a.second.signalTime < b.second.signalTime;
+//             });
+//         if (oldestIt != activeSignals_.end()) {
+//             activeSignals_.erase(oldestIt);
+//         }
+//     }
+    
+//     // Create tracker for this signal
+//     SignalOutcomeTracker tracker(signal);
+//     activeSignals_[signal.id] = tracker;
+    
+//     totalSignalsTracked_++;
+    
+//     if (config_.enableDetailedLogging) {
+//         // Log signal registration
+//     }
+// }
 
 void PTCAIntegrationManager::registerExecution(const std::string& signalId,
                                               const ExecutionReport& executionReport) {
@@ -231,18 +272,73 @@ void PTCAIntegrationManager::processingLoop() {
             // Sleep for processing interval
             std::this_thread::sleep_for(config_.priceUpdateInterval);
             
-        } catch (const std::exception& e) {
-            // Log error but continue processing
+        } catch (const std::system_error& e) {
+            // Handle system errors (like invalid argument, resource temporarily unavailable)
             if (config_.enableDetailedLogging) {
-                // Log processing error
+                // Log specific system error with error code
+                std::cerr << "PTCA Processing System Error: " << e.what() 
+                          << " (code: " << e.code() << ")" << std::endl;
             }
+            
+            // If it's a threading/mutex issue, try to recover
+            if (e.code() == std::errc::invalid_argument || 
+                e.code() == std::errc::resource_deadlock_would_occur) {
+                // Brief sleep before retry
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            } else {
+                // For other system errors, longer pause
+                std::this_thread::sleep_for(std::chrono::seconds(1));
+            }
+            
+        } catch (const std::bad_alloc& e) {
+            // Handle memory allocation failures
+            if (config_.enableDetailedLogging) {
+                std::cerr << "PTCA Processing Memory Error: " << e.what() << std::endl;
+            }
+            
+            // Try to free up memory by cleaning old signals aggressively
+            try {
+                std::lock_guard<std::recursive_mutex> lock(signalMutex_);
+                if (activeSignals_.size() > config_.maxSignalsToTrack / 2) {
+                    auto halfSize = activeSignals_.size() / 2;
+                    auto it = activeSignals_.begin();
+                    std::advance(it, halfSize);
+                    activeSignals_.erase(activeSignals_.begin(), it);
+                }
+            } catch (...) {
+                // If we can't even lock, the system is in bad shape
+                std::this_thread::sleep_for(std::chrono::seconds(5));
+            }
+            
+        } catch (const std::exception& e) {
+            // Log any other errors but continue processing
+            if (config_.enableDetailedLogging) {
+                std::cerr << "PTCA Processing General Error: " << e.what() << std::endl;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
         }
     }
 }
-
+// void PTCAIntegrationManager::processingLoop() {
+//     while (running_) {
+//         try {
+//             evaluateSignalOutcomes();
+//             cleanupOldSignals();
+//             checkModelSave();
+            
+//             // Sleep for processing interval
+//             std::this_thread::sleep_for(config_.priceUpdateInterval);
+            
+//         } catch (const std::exception& e) {
+//             // Log error but continue processing
+//             if (config_.enableDetailedLogging) {
+//                 // Log processing error
+//             }
+//         }
+//     }
+// }
 void PTCAIntegrationManager::evaluateSignalOutcomes() {
     std::lock_guard<std::recursive_mutex> lock(signalMutex_);
-    
     auto now = core::now();
     std::vector<std::string> signalsToProcess;
     
@@ -250,7 +346,6 @@ void PTCAIntegrationManager::evaluateSignalOutcomes() {
     for (const auto& [signalId, tracker] : activeSignals_) {
         if (!tracker.outcomeReported) {
             auto signalAge = now - tracker.signalTime;
-            
             // Evaluate if enough time has passed
             if (signalAge >= config_.outcomeEvaluationDelay) {
                 signalsToProcess.push_back(signalId);
@@ -265,41 +360,42 @@ void PTCAIntegrationManager::evaluateSignalOutcomes() {
         
         SignalOutcomeTracker& tracker = it->second;
         
-        if (tracker.wasExecuted) {
-            // Calculate final P&L
-            double finalPnL = calculateSignalPnL(tracker);
-            
-            if (std::abs(finalPnL) >= config_.minimumPnLThreshold) {
-                // Create learning event and outcome
-                LearningEvent learningEvent = createLearningEvent(tracker.originalSignal);
-                OutcomeMeasure outcome = createOutcome(tracker);
-                
-                // Add to PTCA for learning
-                std::vector<LearningEvent> events = {learningEvent};
-                ptca_->addTimestep(events, outcome);
-                
-                tracker.outcomeReported = true;
-                signalsWithOutcomes_++;
-                totalPnL_ += finalPnL;
-                
-                if (config_.enableDetailedLogging) {
-                    // Log outcome evaluation
-                }
-            }
-        } else {
-            // Signal was not executed, treat as neutral outcome
+        // MODIFIED: Always calculate theoretical P&L regardless of execution
+        double theoreticalPnL = calculateSignalPnL(tracker);
+        
+        if (std::abs(theoreticalPnL) >= config_.minimumPnLThreshold) {
+            // Create learning event and outcome
             LearningEvent learningEvent = createLearningEvent(tracker.originalSignal);
-            OutcomeMeasure neutralOutcome;
-            neutralOutcome.timestamp = now;
-            neutralOutcome.value = 0.0;
-            neutralOutcome.outcomeType = "not_executed";
-            neutralOutcome.symbol = tracker.originalSignal.symbol;
             
+            // Create outcome based on theoretical P&L
+            OutcomeMeasure outcome;
+            outcome.timestamp = now;
+            outcome.value = theoreticalPnL;
+            outcome.outcomeType = tracker.wasExecuted ? "executed_pnl" : "theoretical_pnl";
+            outcome.symbol = tracker.originalSignal.symbol;
+            
+            // Add to PTCA for learning
             std::vector<LearningEvent> events = {learningEvent};
-            ptca_->addTimestep(events, neutralOutcome);
+            ptca_->addTimestep(events, outcome);
             
             tracker.outcomeReported = true;
             signalsWithOutcomes_++;
+            totalPnL_ += theoreticalPnL;
+            
+            if (config_.enableDetailedLogging) {
+                std::cout << "PTCA Learning: Signal " << signalId 
+                         << " (" << outcome.outcomeType << ") P&L: " 
+                         << (theoreticalPnL * 100) << "%" << std::endl;
+            }
+        } else {
+            // P&L too small to learn from
+            tracker.outcomeReported = true;
+            signalsWithOutcomes_++;
+            
+            if (config_.enableDetailedLogging) {
+                std::cout << "PTCA Ignored: Signal " << signalId 
+                         << " P&L too small: " << (theoreticalPnL * 100) << "%" << std::endl;
+            }
         }
     }
 }
