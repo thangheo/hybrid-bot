@@ -383,18 +383,70 @@ public:
                 return;
             }
             
-            // Generate adaptive market intelligence
+            // ✅ FIX: Generate intelligence on EVERY significant update, not just once
             std::string tradingPair = update.tradingPair.toString();
+            
+            // Check if this is a significant enough update to generate new intelligence
+            static std::unordered_map<std::string, std::chrono::steady_clock::time_point> lastIntelTime;
+            static std::unordered_map<std::string, double> lastBestBid;
+            static std::unordered_map<std::string, double> lastBestAsk;
+            
+            auto now = std::chrono::steady_clock::now();
+            bool shouldGenerate = false;
+            
+            // Generate intelligence if:
+            // 1. First time for this symbol, OR
+            // 2. 30 seconds have passed since last generation, OR  
+            // 3. Significant price movement (>0.1%)
+            if (lastIntelTime.find(tradingPair) == lastIntelTime.end()) {
+                shouldGenerate = true; // First time
+            } else {
+                auto timeSinceLastIntel = now - lastIntelTime[tradingPair];
+                if (timeSinceLastIntel >= std::chrono::seconds(30)) {
+                    shouldGenerate = true; // Time-based refresh
+                } else {
+                    // Check for significant price movement
+                    double currentBid = bids[0].price;
+                    double currentAsk = asks[0].price;
+                    double lastBid = lastBestBid[tradingPair];
+                    double lastAsk = lastBestAsk[tradingPair];
+                    
+                    if (lastBid > 0 && lastAsk > 0) {
+                        double bidChange = std::abs(currentBid - lastBid) / lastBid;
+                        double askChange = std::abs(currentAsk - lastAsk) / lastAsk;
+                        
+                        if (bidChange > 0.001 || askChange > 0.001) { // 0.1% movement
+                            shouldGenerate = true;
+                        }
+                    }
+                }
+            }
+            
+            if (!shouldGenerate) {
+                return; // Skip this update
+            }
+            
+            // Generate fresh adaptive market intelligence
             trading::MarketIntelligence intel = adaptiveIntel_->GenerateAdaptiveMarketIntelligence(tradingPair, orderBook);
 
             if (intel.symbol().empty()) {
                 return; // No valid intelligence generated
             }
 
-            // Debug output for first few intelligence generations per trading pair
+            // Update tracking variables
+            lastIntelTime[tradingPair] = now;
+            lastBestBid[tradingPair] = bids[0].price;
+            lastBestAsk[tradingPair] = asks[0].price;
+            
+            // Debug output for intelligence generations
             static std::unordered_map<std::string, int> intelDebugCounts;
             intelDebugCounts[tradingPair]++;
             
+            if (intelDebugCounts[tradingPair] <= 3 || intelDebugCounts[tradingPair] % 50 == 0) {
+                std::cout << "Generated intelligence #" << intelDebugCounts[tradingPair] 
+                          << " for " << tradingPair << " (spread: " << intel.bid_ask_spread() 
+                          << ", imbalance: " << intel.order_book_imbalance() << ")" << std::endl;
+            }
             
             // Store latest intelligence
             {
