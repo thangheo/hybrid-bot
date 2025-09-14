@@ -20,3 +20,5 @@ cpp-execution/bin/
 pids/*
 backtest/
 .testapi
+data/*
+models/*
