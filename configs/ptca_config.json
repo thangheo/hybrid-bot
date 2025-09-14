@@ -1,0 +1,90 @@
+{
+  "ptca_config": {
+    "core_parameters": {
+      "lookback_window": 100,
+      "temporal_decay_factor": 0.98,
+      "weak_threshold": 0.003,
+      "strong_threshold": 0.02,
+      "base_learning_rate": 0.05,
+      "extinction_lambda": 0.001,
+      "competitive_inhibition": 0.01,
+      "adaptive_learning_factor": 0.05
+    },
+    "integration_config": {
+      "outcome_evaluation_delay_minutes": 2,
+      "signal_tracking_window_minutes": 15,
+      "minimum_pnl_threshold": 0.0005,
+      "price_movement_threshold": 0.003,
+      "pnl_success_threshold": 0.008,
+      "strong_outcome_threshold": 0.02,
+      "use_realtime_price_updates": true,
+      "price_update_interval_seconds": 10
+    },
+    "persistence": {
+      "model_save_directory": "models/ptca/",
+      "model_save_interval_minutes": 20,
+      "enable_continuous_learning": true,
+      "enable_detailed_logging": true,
+      "auto_save_on_shutdown": true
+    },
+    "performance": {
+      "max_signals_to_track": 500,
+      "enable_memory_optimization": true,
+      "cleanup_interval_seconds": 60
+    },
+    "trading_filters": {
+      "enable_ptca_filter": true,
+      "strong_rejection_threshold": -0.4,
+      "boost_threshold": 0.2,
+      "caution_threshold": -0.1,
+      "max_strength_boost": 0.3,
+      "max_strength_reduction": 0.2
+    },
+    "outcome_types": {
+      "pnl": {
+        "enabled": true,
+        "weight": 1.0,
+        "evaluation_delay_minutes": 2
+      },
+      "price_movement": {
+        "enabled": true,
+        "weight": 0.7,
+        "evaluation_delay_minutes": 1,
+        "timeframes_ms": [30000, 60000, 300000]
+      },
+      "execution_success": {
+        "enabled": true,
+        "weight": 0.5,
+        "evaluation_delay_minutes": 0
+      }
+    }
+  },
+  "symbol_specific_overrides": {
+    "BTC/USDT": {
+      "strong_threshold": 0.025,
+      "weak_threshold": 0.005,
+      "outcome_evaluation_delay_minutes": 3
+    },
+    "ETH/USDT": {
+      "strong_threshold": 0.03,
+      "weak_threshold": 0.007,
+      "outcome_evaluation_delay_minutes": 2
+    }
+  },
+  "event_type_weights": {
+    "volume_imbalance": 1.0,
+    "price_level": 0.8,
+    "liquidity_removal": 0.9,
+    "order_flow": 1.1,
+    "large_order": 0.7,
+    "spread_change": 0.6,
+    "market_depth": 0.8,
+    "custom": 0.5
+  },
+  "learning_schedule": {
+    "initial_learning_period_hours": 24,
+    "evaluation_start_delay_hours": 1,
+    "model_validation_interval_hours": 6,
+    "performance_review_interval_hours": 24
+  }
+}
