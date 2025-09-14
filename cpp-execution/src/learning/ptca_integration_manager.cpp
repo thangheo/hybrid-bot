@@ -118,32 +118,7 @@ void PTCAIntegrationManager::registerSignal(const strategy::TradingSignal& signa
         }
     }
 }
-
-// void PTCAIntegrationManager::registerSignal(const strategy::TradingSignal& signal) {
-//     std::lock_guard<std::recursive_mutex> lock(signalMutex_);
-    
-//     // Limit memory usage by removing oldest signals if needed
-//     if (activeSignals_.size() >= config_.maxSignalsToTrack) {
-//         // Remove the oldest signal
-//         auto oldestIt = std::min_element(activeSignals_.begin(), activeSignals_.end(),
-//             [](const auto& a, const auto& b) {
-//                 return a.second.signalTime < b.second.signalTime;
-//             });
-//         if (oldestIt != activeSignals_.end()) {
-//             activeSignals_.erase(oldestIt);
-//         }
-//     }
-    
-//     // Create tracker for this signal
-//     SignalOutcomeTracker tracker(signal);
-//     activeSignals_[signal.id] = tracker;
-    
-//     totalSignalsTracked_++;
-    
-//     if (config_.enableDetailedLogging) {
-//         // Log signal registration
-//     }
-// }
+ 
 
 void PTCAIntegrationManager::registerExecution(const std::string& signalId,
                                               const ExecutionReport& executionReport) {
@@ -319,24 +294,8 @@ void PTCAIntegrationManager::processingLoop() {
         }
     }
 }
-// void PTCAIntegrationManager::processingLoop() {
-//     while (running_) {
-//         try {
-//             evaluateSignalOutcomes();
-//             cleanupOldSignals();
-//             checkModelSave();
-            
-//             // Sleep for processing interval
-//             std::this_thread::sleep_for(config_.priceUpdateInterval);
-            
-//         } catch (const std::exception& e) {
-//             // Log error but continue processing
-//             if (config_.enableDetailedLogging) {
-//                 // Log processing error
-//             }
-//         }
-//     }
-// }
+
+
 void PTCAIntegrationManager::evaluateSignalOutcomes() {
     std::lock_guard<std::recursive_mutex> lock(signalMutex_);
     auto now = core::now();
@@ -401,16 +360,48 @@ void PTCAIntegrationManager::evaluateSignalOutcomes() {
     }
 }
 
+// double PTCAIntegrationManager::calculateSignalPnL(const SignalOutcomeTracker& tracker) {
+//     if (!tracker.wasExecuted || tracker.executionPrice <= 0.0 || tracker.currentPrice <= 0.0) {
+//         return 0.0;
+//     }
+    
+//     double pnl = 0.0;
+//     if (tracker.originalSignal.direction == core::Direction::BUY) {
+//         pnl = (tracker.currentPrice - tracker.executionPrice) / tracker.executionPrice;
+//     } else if (tracker.originalSignal.direction == core::Direction::SELL) {
+//         pnl = (tracker.executionPrice - tracker.currentPrice) / tracker.executionPrice;
+//     }
+    
+//     return pnl;
+// }
 double PTCAIntegrationManager::calculateSignalPnL(const SignalOutcomeTracker& tracker) {
-    if (!tracker.wasExecuted || tracker.executionPrice <= 0.0 || tracker.currentPrice <= 0.0) {
-        return 0.0;
+    // Get current price for this symbol
+    auto priceIt = currentPrices_.find(tracker.originalSignal.symbol.toString());
+    if (priceIt == currentPrices_.end()) {
+        return 0.0; // No current price
     }
     
+    double currentPrice = priceIt->second;
+    double entryPrice = 0.0;
+    
+    if (tracker.wasExecuted && tracker.executionPrice > 0.0) {
+        // Use actual execution price
+        entryPrice = tracker.executionPrice;
+    } else {
+        // ✅ Use theoretical entry price from signal targets
+        if (!tracker.originalSignal.targets.empty()) {
+            entryPrice = tracker.originalSignal.targets[0].price;
+        } else {
+            return 0.0;
+        }
+    }
+    
+    // Calculate theoretical P&L
     double pnl = 0.0;
     if (tracker.originalSignal.direction == core::Direction::BUY) {
-        pnl = (tracker.currentPrice - tracker.executionPrice) / tracker.executionPrice;
+        pnl = (currentPrice - entryPrice) / entryPrice;
     } else if (tracker.originalSignal.direction == core::Direction::SELL) {
-        pnl = (tracker.executionPrice - tracker.currentPrice) / tracker.executionPrice;
+        pnl = (entryPrice - currentPrice) / entryPrice;
     }
     
     return pnl;
