@@ -78,29 +78,83 @@ data_ingestion:
     pool_size: 5
 
     symbols:
-    - "BTCUSDT"    # Bitcoin - Direct ETF correlation
-    - "ETHUSDT"    # Ethereum - Major DeFi
-    - "BNBUSDT"    # Binance Coin - Exchange token
-    - "LTCUSDT"    # Litecoin - Digital silver
-    - "XRPUSDT"    # Ripple - Payment network
-    - "BCHUSDT"    # Bitcoin Cash - Bitcoin fork
-    - "ADAUSDT"    # Cardano - Academic blockchain
-    - "DOTUSDT"    # Polkadot - Interoperability
-    - "LINKUSDT"   # Chainlink - Oracle network
-    - "XLMUSDT"    # Stellar - Cross-border payments
-    - "DOGEUSDT"   # Dogecoin - Payment/meme
-    - "SOLUSDT"    # Solana - High performance blockchain
-    - "MATICUSDT"  # Polygon - Ethereum scaling
-    - "AVAXUSDT"   # Avalanche - DeFi ecosystem
-    - "SHIBUSDT"   # Shiba Inu - Meme token
-    - "TRXUSDT"    # Tron - Content entertainment
-    - "UNIUSDT"    # Uniswap - DEX protocol
+    # Major Blue Chips - High Liquidity & Institutional Support
+    - "BTCUSDT"    # Bitcoin - Digital gold, ETF backing
+    - "ETHUSDT"    # Ethereum - Smart contracts, Layer 2 ecosystem  
+    - "BNBUSDT"    # Binance Coin - Largest exchange token
+    - "XRPUSDT"    # XRP - Cross-border payments, regulatory clarity
+    - "SOLUSDT"    # Solana - High-speed blockchain, DeFi/NFT hub
+    - "ADAUSDT"    # Cardano - Academic approach, sustainability
+    - "AVAXUSDT"   # Avalanche - Fast consensus, subnet flexibility
+    - "DOGEUSDT"   # Dogecoin - Meme king with utility potential
+    - "DOTUSDT"    # Polkadot - Interoperability leader
+    - "MATICUSDT"  # Polygon - Ethereum scaling solution
+
+    # DeFi & Layer 2 Powerhouses
+    - "LINKUSDT"   # Chainlink - Oracle infrastructure leader
+    - "UNIUSDT"    # Uniswap - DEX pioneer
+    - "AAVEUSDT"   # Aave - Lending protocol leader
+    - "MKRUSDT"    # MakerDAO - Decentralized stablecoin
+    - "CRVUSDT"    # Curve - Stablecoin trading specialist
+    - "COMPUSDT"   # Compound - Interest rate protocol
+    - "SUSHIUSDT"  # SushiSwap - Community-driven DEX
+    - "ARBUSDT"    # Arbitrum - Ethereum Layer 2 scaling
+    - "OPUSDT"     # Optimism - Another major L2 solution
+
+    # AI & Technology Innovators  
+    - "RENDERUSDT" # Render Network - GPU rendering for AI/metaverse
+    - "FETUSDT"    # Fetch.ai - AI agent marketplace
+    - "OCEANUSDT"  # Ocean Protocol - Data marketplace
+    - "AGIXUSDT"   # SingularityNET - AI services platform
+    - "INJUSDT"    # Injective - DeFi-focused blockchain
+    - "NEARUSDT"   # NEAR Protocol - Developer-friendly blockchain
+
+    # Real World Assets (RWA) - Major Growth Trend
+    - "ONDOUSDT"   # Ondo Finance - Tokenized treasuries leader
+    - "CFGUSDT"    # Centrifuge - RWA pioneer since 2017
+    - "HBARUSDT"   # Hedera - Hashgraph for enterprise RWA
+    - "XDCUSDT"    # XDC Network - Trade finance focus
+    - "PAXGUSDT"   # Pax Gold - Tokenized gold
+    - "GFIUSDT"    # Goldfinch - Decentralized credit
+
+    # Gaming & Metaverse
+    - "MANAUSDT"   # Decentraland - Metaverse pioneer
+    - "SANDUSDT"   # The Sandbox - Gaming metaverse
+    - "GALAUSDT"   # Gala Games - Blockchain gaming platform
+    - "IMXUSDT"    # Immutable X - NFT scaling solution
+    - "AXSUSDT"    # Axie Infinity - Play-to-earn leader
+    - "BEAMUSDT"   # Beam - Gaming-focused blockchain
+
+    # Emerging Altcoins with High Potential
+    - "SUIUSDT"    # Sui - Move-based high-performance chain
+    - "APTUSDT"    # Aptos - Another Move language blockchain
+    - "KASUSDT"    # Kaspa - DAG-based mining innovation
+    - "SEIUSDT"    # Sei - Trading-optimized Layer 1
+    - "TIAUSDT"    # Celestia - Modular blockchain pioneer
+    - "STRKUSDT"   # StarkNet - ZK-rollup scaling solution
+
+    # Meme Coins with Utility Potential
+    - "SHIBUSDT"   # Shiba Inu - Ecosystem expansion
+    - "PEPEUSDT"   # Pepe - Leading meme with strong community
+    - "FLOKIUSDT"  # Floki - Gaming and utility expansion
+    - "BONKUSDT"   # Bonk - Solana-based meme leader
+
+    # Infrastructure & Interoperability
     - "ATOMUSDT"   # Cosmos - Internet of blockchains
-    - "ALGOUSDT"   # Algorand - Pure proof of stake
-    - "VETUSDT"    # VeChain - Supply chain
-    - "FILUSDT"    # Filecoin - Decentralized storage
-    - "ENJUSDT"    # Enjin - Gaming/NFT platform
-    - "AAVEUSDT"
+    - "ICPUSDT"    # Internet Computer - Decentralized internet
+    - "FTMUSDT"    # Fantom - High-speed, low-cost platform
+    - "ALGOUSDT"   # Algorand - Pure proof-of-stake
+    - "HNTUSDT"    # Helium - Decentralized wireless network
+    - "FILUSDT"    # Filecoin - Decentralized storage network
+
+    # Privacy & Security
+    - "XMRUSDT"    # Monero - Privacy-by-default leader
+    - "ZECUSDT"    # Zcash - Selective privacy features
+
+    # # Stablecoins for Trading Pairs
+    # - "USDCUSDT"   # USD Coin - Regulated stablecoin
+    # - "DAIUSDT"    # Dai - Decentralized stablecoin
+    # - "TUSDUSDT"   # TrueUSD - Regulated stablecoin alternative
     
   
   # UPDATED: Optimal timeframes for Markov
