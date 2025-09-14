@@ -130,12 +130,6 @@
       "description": "Ondo Finance - Tokenized treasuries"
     },
     {
-      "symbol": "CFG/USDT", 
-      "exchange": "BINANCE",
-      "category": "rwa",
-      "description": "Centrifuge - RWA tokenization pioneer"
-    },
-    {
       "symbol": "HBAR/USDT",
       "exchange": "BINANCE",
       "category": "rwa_enterprise",
