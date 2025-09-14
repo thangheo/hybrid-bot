@@ -213,7 +213,7 @@ class EnhancedTradingBot:
         """Load and expand configuration"""
         load_dotenv()
         
-        config_files = [config_path, 'python-strategy/config/trading_bot.yaml']
+        config_files = [config_path, 'config/trading_bot.yaml']
         
         for config_file in config_files:
             if os.path.exists(config_file):

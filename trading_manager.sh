@@ -234,7 +234,7 @@ start_python() {
     fi
     
     # Check if config file exists
-    local config_path="python-strategy/config/trading_bot.yaml"
+    local config_path="config/trading_bot.yaml"
     if [[ ! -f "$config_path" ]]; then
         print_status "$RED" "ERROR: Config file not found: $config_path"
         return 1
