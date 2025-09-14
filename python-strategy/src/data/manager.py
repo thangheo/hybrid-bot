@@ -16,7 +16,11 @@ class DataIngestionManager:
     
     def __init__(self, config: dict):
         self.config = config
-        self.symbols = config.get('symbols', ['BTC/USDT', 'ETH/USDT'])
+        self.symbols = config.get('symbols',{})
+        # if symbols is empty log error and exit
+        if not self.symbols:
+            logger.error("No symbols provided in configuration")
+            raise ValueError("No symbols provided in configuration")
         # UPDATED: Support both 4h and 1d timeframes
         self.timeframes = config.get('timeframes', ['4h', '1d'])
         # Log all symbols
@@ -31,7 +35,7 @@ class DataIngestionManager:
         self.exchange = ccxt.binance({
             'apiKey': binance_config.get('api_key'),
             'secret': binance_config.get('api_secret'),
-            'sandbox': binance_config.get('testnet', True),
+            'sandbox': binance_config.get('testnet', False),
             'enableRateLimit': True,
             'rateLimit': 50,
         })
