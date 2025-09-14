@@ -330,7 +330,7 @@ public:
         std::cout << "PTCA timesteps: " << stats.ptcaStats.totalTimesteps << std::endl;
         std::cout << "=================================" << std::endl;
     }
-     void onOrderBookUpdate(const OrderBookUpdate& update) {
+     void onOrderBookUpdate(const OrderBookUpdate& update, std::shared_ptr<OrderBook> orderBook) {
         try {
             messagesProcessed_.fetch_add(1);
             
@@ -355,18 +355,17 @@ public:
             }
             
             // Generate market intelligence
-            generateMarketIntelligence(update);
-            
+            generateMarketIntelligence(update, orderBook);
+
         } catch (const std::exception& e) {
             std::cerr << "Error processing order book update: " << e.what() << std::endl;
         }
     }
 
-    void generateMarketIntelligence(const OrderBookUpdate& update) {
+    void generateMarketIntelligence(const OrderBookUpdate& update, std::shared_ptr<OrderBook> orderBook) {
         try {
-            // Get the order book from data service
-            auto orderBook = dataIngestionService_->getOrderBook(update.exchangeId, update.tradingPair);
             if (!orderBook) {
+                LOG_ERROR("failed to generate orderbook for intel, orderbook null");
                 return; // No order book available
             }
             
@@ -829,7 +828,7 @@ private:
             if (orderBook && strategyEngine_) {
                 strategyEngine_->processOrderBook(*orderBook);
             }
-            onOrderBookUpdate(update);
+            onOrderBookUpdate(update, orderBook);
 
         });
             
