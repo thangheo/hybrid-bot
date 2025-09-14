@@ -393,8 +393,9 @@ void PTCAIntegrationManager::evaluateSignalOutcomes() {
             signalsWithOutcomes_++;
             
             if (config_.enableDetailedLogging) {
-                std::cout << "PTCA Ignored: Signal " << signalId 
-                         << " P&L too small: " << (theoreticalPnL * 100) << "%" << std::endl;
+                std::cout << "Signal " << signalId << " theoretical P&L: " 
+                        << (theoreticalPnL * 100) << "% (threshold: " 
+                        << (config_.minimumPnLThreshold * 100) << "%)" << std::endl;
             }
         }
     }
@@ -476,7 +477,19 @@ OutcomeMeasure PTCAIntegrationManager::createOutcome(const SignalOutcomeTracker&
 
 void PTCAIntegrationManager::cleanupOldSignals() {
     std::lock_guard<std::recursive_mutex> lock(signalMutex_);
-    
+    // ✅ ADD: Emergency cleanup if too many signals
+    if (activeSignals_.size() > 10000) {  // Hard limit
+        std::cout << "EMERGENCY: Too many PTCA signals (" << activeSignals_.size() 
+                  << "), clearing oldest 50%" << std::endl;
+        
+        auto halfSize = activeSignals_.size() / 2;
+        auto it = activeSignals_.begin();
+        std::advance(it, halfSize);
+        activeSignals_.erase(activeSignals_.begin(), it);
+        
+        // Force garbage collection
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
     auto now = core::now();
     auto it = activeSignals_.begin();
     
@@ -491,7 +504,7 @@ void PTCAIntegrationManager::cleanupOldSignals() {
             ++it;
         }
     }
-}
+} 
 
 void PTCAIntegrationManager::checkModelSave() {
     if (!config_.enableContinuousLearning || config_.modelSaveDirectory.empty()) {

@@ -100,7 +100,7 @@ data_ingestion:
     - "VETUSDT"    # VeChain - Supply chain
     - "FILUSDT"    # Filecoin - Decentralized storage
     - "ENJUSDT"    # Enjin - Gaming/NFT platform
-
+    - "AAVEUSDT"
     
   
   # UPDATED: Optimal timeframes for Markov
