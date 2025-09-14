@@ -244,6 +244,8 @@ public:
     void runIndefinitely() {
         static auto lastIntelCheck = std::chrono::steady_clock::now();
         static uint64_t lastIntelCount = 0;
+        static auto lastCallbackCheck = std::chrono::steady_clock::now();
+        static uint64_t lastCallbackCount = 0;
         
         while (running_ && systemHealthy_) {
             std::this_thread::sleep_for(1s);
@@ -252,6 +254,36 @@ public:
             auto now = std::chrono::steady_clock::now();
             if (now - lastIntelCheck >= std::chrono::seconds(30)) {
                 uint64_t currentIntelCount = intelligenceGenerated_.load();
+                uint64_t currentCallbackCount = messagesProcessed_.load();
+                
+                // Check for stalled order book callbacks (more critical)
+                if (currentCallbackCount == lastCallbackCount && 
+                    now - lastCallbackCheck >= std::chrono::seconds(60)) {
+                    std::cout << "⚠️ ORDER BOOK CALLBACKS STOPPED - Data ingestion may be disconnected!" << std::endl;
+                    std::cout << "📊 Last callback count: " << currentCallbackCount << " (no change in 60s)" << std::endl;
+                    
+                    // Restart data ingestion service
+                    if (dataIngestionService_) {
+                        std::cout << "🔄 Restarting data ingestion service..." << std::endl;
+                        
+                        // Get current symbols before restart
+                        std::vector<Symbol> symbols;
+                        for (const auto& [name, pair] : strategyConfig_.tradingPairs) {
+                            symbols.push_back(Symbol::fromString(name));
+                        }
+                        
+                        // Stop and restart
+                        dataIngestionService_->stop();
+                        std::this_thread::sleep_for(std::chrono::seconds(2));
+                        
+                        if (!dataIngestionService_->start(symbols)) {
+                            std::cout << "❌ Failed to restart data ingestion service!" << std::endl;
+                            systemHealthy_ = false;
+                        } else {
+                            std::cout << "✅ Data ingestion service restarted successfully" << std::endl;
+                        }
+                    }
+                }
                 
                 // If no new intelligence in 60 seconds, restart the processor
                 if (currentIntelCount == lastIntelCount && 
@@ -269,14 +301,16 @@ public:
                 }
                 
                 lastIntelCount = currentIntelCount;
+                lastCallbackCount = currentCallbackCount;
                 lastIntelCheck = now;
+                lastCallbackCheck = now;
                 
                 // Print status
-                if (currentIntelCount > 0) {
-                    std::cout << "🧠 Intelligence status: " << currentIntelCount 
-                              << " generated, queue size: " << intelligenceQueue_.size() 
-                              << ", processor running: " << (intelligenceRunning_ ? "✅" : "❌") << std::endl;
-                }
+                std::cout << "🧠 Intelligence status: " << currentIntelCount 
+                          << " generated, queue size: " << intelligenceQueue_.size() 
+                          << ", processor running: " << (intelligenceRunning_ ? "✅" : "❌") << std::endl;
+                std::cout << "📊 Order book callbacks: " << currentCallbackCount 
+                          << " processed" << std::endl;
             }
             
             if (!checkSystemHealth()) {
@@ -1134,9 +1168,26 @@ private:
                 lastHealthCheck = now;
             }
             
+            // ✅ Check recent order book activity
+            static uint64_t lastCallbackCount = 0;
+            static auto lastCallbackCheck = std::chrono::steady_clock::now();
+            
+            uint64_t currentCallbackCount = messagesProcessed_.load();
+            auto timeSinceLastCallbackCheck = now - lastCallbackCheck;
+            
+            bool recentCallbacks = true;
+            if (timeSinceLastCallbackCheck > std::chrono::minutes(2)) {
+                if (currentCallbackCount == lastCallbackCount) {
+                    std::cout << "⚠️ No new order book callbacks in last 2 minutes!" << std::endl;
+                    recentCallbacks = false;
+                }
+                lastCallbackCount = currentCallbackCount;
+                lastCallbackCheck = now;
+            }
+            
             bool overallHealthy = dataIngestionHealthy && strategyEngineHealthy && 
                                 riskManagerHealthy && intelligenceHealthy && 
-                                zmqHealthy && recentIntelligence;
+                                zmqHealthy && recentIntelligence && recentCallbacks;
             
             if (!overallHealthy) {
                 std::cout << "⚠️ System health issues detected!" << std::endl;
@@ -1146,6 +1197,7 @@ private:
                 std::cout << "  Intelligence: " << (intelligenceHealthy ? "✅" : "❌") << std::endl;
                 std::cout << "  ZMQ Server: " << (zmqHealthy ? "✅" : "❌") << std::endl;
                 std::cout << "  Recent Intelligence: " << (recentIntelligence ? "✅" : "❌") << std::endl;
+                std::cout << "  Recent Callbacks: " << (recentCallbacks ? "✅" : "❌") << std::endl;
                 
                 systemHealthy_ = false;
                 
