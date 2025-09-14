@@ -142,16 +142,16 @@ class EnhancedPositionTracker:
                 
                 if asset != 'USDT' and quantity > 0:
                     # Check current price to determine value
-                    price = 1.0
-                    if self.pool:
-                        async with self.pool.acquire() as conn:
-                            result = await conn.fetchrow("""
-                                SELECT price FROM market_data
-                                WHERE symbol = $1
-                                ORDER BY timestamp DESC LIMIT 1
-                            """, f"{asset}/USDT")
-                            if result:
-                                price = float(result['price'])
+                    # price = 1.0
+                    # if self.pool:
+                    #     async with self.pool.acquire() as conn:
+                    #         result = await conn.fetchrow("""
+                    #             SELECT price FROM market_data
+                    #             WHERE symbol = $1
+                    #             ORDER BY timestamp DESC LIMIT 1
+                    #         """, f"{asset}/USDT")
+                    #         if result:
+                    #             price = float(result['price'])
                     position_value = quantity * price
                     if position_value < 10:
                         quantity = 0  # Treat as no position if value < $10
