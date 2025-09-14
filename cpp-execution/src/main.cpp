@@ -575,7 +575,6 @@ private:
     // }
     void onMarketPriceUpdate(const core::Symbol& symbol, double price) {
         ptcaManager_->updateMarketPrice(symbol, price);
-        std::cout << "PTCA price updated: " << symbol.toString() << " = " << price << std::endl;
     }
         // Add this to your FullSystemDemo class:
     void setupPTCAConnections() {
@@ -789,7 +788,7 @@ private:
         strategyEngine_->registerSignalCallback([this](const strategy::TradingSignal& signal) {
             signalsGenerated_++;
             ptcaManager_->registerSignal(signal);
-            std::cout << "PTCA tracking signals: " << ptcaManager_->getStats().currentlyTrackedSignals << std::endl;
+            // std::cout << "PTCA tracking signals: " << ptcaManager_->getStats().currentlyTrackedSignals << std::endl;
             double ptcaRecommendation = ptcaManager_->getSignalRecommendation(signal);
              // PTCA: Optionally, adjust signal strength based on PTCA confidence
             double adjustedStrength = signal.strength;
