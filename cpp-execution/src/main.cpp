@@ -225,6 +225,10 @@ public:
                 std::cerr << "Failed to start strategy engine" << std::endl;
                 return false;
             }
+            
+            // 3. Start intelligence processor
+            std::cout << "Starting market intelligence processor..." << std::endl;
+            startIntelligenceProcessor();
             //  /5. Initialize PTCA manager
             ptcaManager_->start();        
             lastPriceUpdate_ = std::chrono::steady_clock::now();
@@ -252,6 +256,10 @@ public:
             std::cout << "\n=== SHUTTING DOWN TRADING SYSTEM ===" << std::endl;
             
             running_ = false;
+            
+            // ✅ Stop intelligence processor first
+            stopIntelligenceProcessor();
+            
             if (ptcaManager_) {
                 std::cout << "Saving final PTCA model..." << std::endl;
                 ptcaManager_->saveModel("final_model.json");
@@ -355,8 +363,8 @@ public:
                 std::cout << "=================================" << std::endl;
             }
             
-            // Generate market intelligence
-            generateMarketIntelligence(update, orderBook);
+            // Generate market intelligence (using dedicated worker thread)
+            queueIntelligenceGeneration(update, orderBook);
 
         } catch (const std::exception& e) {
             std::cerr << "Error processing order book update: " << e.what() << std::endl;
@@ -464,11 +472,71 @@ public:
             std::cerr << "Error generating market intelligence: " << e.what() << std::endl;
         }
     }
+
+    // ✅ Intelligence processor methods
+    void startIntelligenceProcessor() {
+        intelligenceRunning_ = true;
+        intelligenceThread_ = std::thread([this]() {
+            while (intelligenceRunning_) {
+                std::unique_lock<std::mutex> lock(queueMutex_);
+                
+                // Wait for work or shutdown
+                queueCondition_.wait(lock, [this]() {
+                    return !intelligenceQueue_.empty() || !intelligenceRunning_;
+                });
+                
+                if (!intelligenceRunning_) break;
+                
+                // Process all queued items
+                while (!intelligenceQueue_.empty()) {
+                    auto [update, orderBook] = intelligenceQueue_.front();
+                    intelligenceQueue_.pop();
+                    lock.unlock();
+                    
+                    // Generate intelligence (your existing code)
+                    generateMarketIntelligence(update, orderBook);
+                    
+                    lock.lock();
+                }
+            }
+        });
+    }
+    
+    void stopIntelligenceProcessor() {
+        intelligenceRunning_ = false;
+        queueCondition_.notify_all();
+        if (intelligenceThread_.joinable()) {
+            intelligenceThread_.join();
+        }
+    }
+    
+    void queueIntelligenceGeneration(const OrderBookUpdate& update, 
+                                   std::shared_ptr<OrderBook> orderBook) {
+        {
+            std::lock_guard<std::mutex> lock(queueMutex_);
+            
+            // Limit queue size to prevent memory buildup
+            if (intelligenceQueue_.size() < 50) {
+                intelligenceQueue_.emplace(update, orderBook);
+            } else {
+                // Drop oldest item if queue is full
+                intelligenceQueue_.pop();
+                intelligenceQueue_.emplace(update, orderBook);
+            }
+        }
+        queueCondition_.notify_one();
+    }
 private:
     //market intel
     std::atomic<uint64_t> messagesProcessed_{0};
     std::atomic<uint64_t> intelligenceGenerated_{0};
-    // std::chrono::steady_clock::time_point startTime_;
+    
+    // ✅ Intelligence processing thread infrastructure
+    std::thread intelligenceThread_;
+    std::queue<std::pair<OrderBookUpdate, std::shared_ptr<OrderBook>>> intelligenceQueue_;
+    std::mutex queueMutex_;
+    std::condition_variable queueCondition_;
+    std::atomic<bool> intelligenceRunning_{false};
 
     // PTCA: Add PTCA-related members
     std::unique_ptr<trading::learning::PTCAIntegrationManager> ptcaManager_;
