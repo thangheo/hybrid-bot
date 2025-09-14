@@ -168,7 +168,9 @@ bool BinanceWebSocketClient::connect() {
         // Wait for connection with timeout
         int attempts = 0;
         while (!connected_.load() && keep_running_.load() && attempts < 50) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            // std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            std::this_thread::sleep_for(std::chrono::milliseconds(1000 + (attempts * 2000)));
+
             ++attempts;
         }
         
