@@ -1,0 +1,16 @@
+{
+  "config": {
+    "adaptiveLearningFactor": 0.05,
+    "baseLearningRate": 0.05,
+    "competitiveInhibition": 0.01,
+    "extinctionLambda": 0.001,
+    "lookbackWindow": 100,
+    "strongThreshold": 0.02,
+    "temporalDecayFactor": 0.98,
+    "weakThreshold": 0.003
+  },
+  "eventStats": null,
+  "lastSave": 1757862183097,
+  "totalTimesteps": 0,
+  "version": "1.0"
+}

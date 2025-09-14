@@ -338,7 +338,7 @@ public:
             static std::atomic<int> debugCount{0};
             int count = debugCount.fetch_add(1);
             
-            if (count < 5) {
+            if (count++ < 5) {
                 std::cout << "\n=== ORDER BOOK UPDATE #" << count << " ===" << std::endl;
                 std::cout << "Exchange: " << update.exchangeId.toString() << std::endl;
                 std::cout << "Symbol: " << update.tradingPair.toString() << std::endl;
@@ -351,6 +351,7 @@ public:
                     double spread = update.asks[0].price - update.bids[0].price;
                     std::cout << "Spread: " << spread << std::endl;
                 }
+                
                 std::cout << "=================================" << std::endl;
             }
             
@@ -823,12 +824,12 @@ private:
             
             // Get the existing order book and send to strategy
             auto orderBook = dataIngestionService_->getOrderBook(update.exchangeId, update.tradingPair);
+            onOrderBookUpdate(update, orderBook);
             orderBook->applySnapshot(update.bids, update.asks, 
                                    update.sequenceNumber, update.exchangeTimestamp);
             if (orderBook && strategyEngine_) {
                 strategyEngine_->processOrderBook(*orderBook);
             }
-            onOrderBookUpdate(update, orderBook);
 
         });
             
