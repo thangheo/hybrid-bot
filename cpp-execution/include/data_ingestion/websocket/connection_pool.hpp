@@ -2,6 +2,7 @@
 #pragma once
 
 #include "data_ingestion/websocket/client_interface.hpp"
+#include "core/types.hpp"
 #include <string>
 #include <memory>
 #include <vector>
@@ -32,6 +33,10 @@ public:
     // Pool lifecycle management
     bool initialize();
     void shutdown();
+    
+    // ✅ Subscription management
+    void setActiveSubscriptions(const std::vector<core::Symbol>& symbols);
+    std::vector<core::Symbol> getActiveSubscriptions() const;
     
     // Connect all connections in the pool
     bool connectAll();
@@ -108,12 +113,17 @@ private:
     std::thread monitorThread_;
     std::atomic<bool> running_{false};
     
-    // Statistics
+        // Statistics
     std::atomic<int> connectionRequests_{0};
     std::atomic<int> connectionTimeouts_{0};
     std::atomic<int> connectionFailures_{0};
     std::atomic<int> connectionReleases_{0};
     std::atomic<int> totalConnections_{0};
+    
+    // ✅ Subscription tracking
+    std::vector<core::Symbol> activeSubscriptions_;
+    mutable std::mutex subscriptionMutex_;
+
     std::atomic<int> activeConnections_{0};
 
 };
