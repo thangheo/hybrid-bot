@@ -54,8 +54,8 @@ struct PTCAIntegrationConfig {
     // Learning parameters
     std::chrono::minutes outcomeEvaluationDelay{5};     // Wait 5 minutes to evaluate outcomes
     std::chrono::minutes signalTrackingWindow{30};      // Track signals for 30 minutes max
-    double minimumPnLThreshold = 0.001;                 // Minimum P&L to consider as outcome
-    
+    double minimumPnLThreshold = 0.2 / 100;                 // Minimum P&L to consider as outcome as 0.2%
+
     // Market data integration
     bool useRealTimePriceUpdates = true;
     std::chrono::seconds priceUpdateInterval{10};       // Update prices every 10 seconds
