@@ -69,7 +69,7 @@ data_ingestion:
     api_secret: ${BINANCE_API_SECRET}
     testnet: false
     rate_limit:
-      requests_per_minute: 1200
+      requests_per_minute: 12
       weight_per_minute: 6000
   
   database:
@@ -111,7 +111,6 @@ data_ingestion:
 
     # Real World Assets (RWA) - Major Growth Trend
     - "ONDOUSDT"   # Ondo Finance - Tokenized treasuries leader
-    - "CFGUSDT"    # Centrifuge - RWA pioneer since 2017
     - "HBARUSDT"   # Hedera - Hashgraph for enterprise RWA
     - "PAXGUSDT"   # Pax Gold - Tokenized gold
 
@@ -168,7 +167,7 @@ data_ingestion:
     max_backfill_days: 90
   performance:
     max_concurrent_symbols: 3        # Process 3 symbols simultaneously
-    rate_limit_delay: 0.5           # Base delay between requests
+    rate_limit_delay: 1           # Base delay between requests
     max_rate_delay: 5.0             # Maximum delay on rate limits
     batch_insert_size: 1000         # Database batch size
     connection_pool_size: 10        # Larger pool for batch operations
@@ -236,9 +235,7 @@ strategy:
   # Fallback hierarchy
   strategy_fallback_order:
     - "markov_etf_enhanced"
-    - "etf_enhanced_e8"
-    - "e8_integrated" 
-    - "statistical_mean_reversion"
+    
     
   # Markov Strategy Parameters
   markov_etf_strategy:
@@ -379,7 +376,7 @@ scheduling:
     end: 22
   
   # UPDATED: Aligned with 4h timeframe
-  signal_interval: 180             # 4 hours (match primary timeframe)
+  signal_interval: 7200             # 4 hours (match primary timeframe)
   data_interval: 3600                # 1 hour data updates
   intelligent_interval: 60 #update C++ intelligence
   etf_update_interval: 1800          # 30 minutes ETF updates

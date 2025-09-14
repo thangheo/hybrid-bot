@@ -815,12 +815,7 @@ private:
                 double midPrice = (update.bids[0].price + update.asks[0].price) / 2.0;
                 onMarketPriceUpdate(update.tradingPair, midPrice);
             }
-             // Convert to OrderBook and send to strategy
-            // auto orderBook = update.
-            // Process the update (this calls your order book manager)
-             // Apply the update to create a valid order book
-            // orderBook->applySnapshot(update.bids, update.asks, 
-            //                        update.sequenceNumber, update.exchangeTimestamp);
+           
             
             // Get the existing order book and send to strategy
             auto orderBook = dataIngestionService_->getOrderBook(update.exchangeId, update.tradingPair);
