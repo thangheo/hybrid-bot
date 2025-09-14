@@ -152,9 +152,9 @@ class EnhancedPositionTracker:
                     #         """, f"{asset}/USDT")
                     #         if result:
                     #             price = float(result['price'])
-                    position_value = quantity * price
-                    if position_value < 10:
-                        quantity = 0  # Treat as no position if value < $10
+                    # position_value = quantity * price
+                    # if position_value < 10:
+                    #     quantity = 0  # Treat as no position if value < $10
                     existing_position = self.has_position(f"{asset}/USDT")
                     
                     await self.update_position(
