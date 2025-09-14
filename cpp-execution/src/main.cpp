@@ -746,36 +746,7 @@ private:
         }       
        
     }
-    void setupComponentConnections() {
-        LOG_INFO("FullSystemDemo", "Setting up component connections...");
-        // 1. Connect data ingestion to strategy engine
-        // dataIngestionService_->setOrderBookCallback([this](const auto& update) {
-        //     // ✅ ADD: Extract price and trigger PTCA update
-        //     if (!update.bids.empty() && !update.asks.empty()) {
-        //         double midPrice = (update.bids[0].price + update.asks[0].price) / 2.0;
-        //         onMarketPriceUpdate(update.tradingPair, midPrice);  // ADD THIS LINE
-        //     }
-        //     onOrderBookUpdate(update);
-        //     // print debug info
-        //     LOG_DEBUG("FullSystemDemo", "OrderBookUpdate received: " + 
-        //               update.exchangeId.toString() + " " + 
-        //               update.tradingPair.toString() + " Seq: " + 
-        //               std::to_string(update.sequenceNumber) + 
-        //               " Bids: " + std::to_string(update.bids.size()) + 
-        //               " Asks: " + std::to_string(update.asks.size()));
-        //     // Convert to OrderBook and send to strategy
-        //     auto orderBook = std::make_shared<data_ingestion::OrderBook>(
-        //         update.exchangeId, update.tradingPair);
-            
-        //     // Apply the update to create a valid order book
-        //     orderBook->applySnapshot(update.bids, update.asks, 
-        //                            update.sequenceNumber, update.exchangeTimestamp);
-            
-        //     // Send to strategy engine
-        //     if (strategyEngine_ && strategyEngine_->processOrderBook(*orderBook)) {
-        //         // Order book processed successfully
-        //     }
-        // });
+    void setupComponentConnections() {        
         
             // ✅ UNCOMMENT AND USE THIS:
         dataIngestionService_->setOrderBookCallback([this](const auto& update) {
@@ -792,16 +763,17 @@ private:
                 double midPrice = (update.bids[0].price + update.asks[0].price) / 2.0;
                 onMarketPriceUpdate(update.tradingPair, midPrice);
             }
-             LOG_DEBUG("FullSystemDemo", "OrderBookUpdate received: " + 
-                      update.exchangeId.toString() + " " + 
-                      update.tradingPair.toString() + " Seq: " + 
-                      std::to_string(update.sequenceNumber) + 
-                      " Bids: " + std::to_string(update.bids.size()) + 
-                      " Asks: " + std::to_string(update.asks.size()));
+             // Convert to OrderBook and send to strategy
+            // auto orderBook = update.
             // Process the update (this calls your order book manager)
+             // Apply the update to create a valid order book
+            // orderBook->applySnapshot(update.bids, update.asks, 
+            //                        update.sequenceNumber, update.exchangeTimestamp);
             
             // Get the existing order book and send to strategy
             auto orderBook = dataIngestionService_->getOrderBook(update.exchangeId, update.tradingPair);
+            orderBook->applySnapshot(update.bids, update.asks, 
+                                   update.sequenceNumber, update.exchangeTimestamp);
             if (orderBook && strategyEngine_) {
                 strategyEngine_->processOrderBook(*orderBook);
             }
@@ -815,13 +787,6 @@ private:
             signalsGenerated_++;
             ptcaManager_->registerSignal(signal);
             //print signal details
-            LOG_INFO("FullSystemDemo", "Received signal: ID=" + signal.id + 
-                     " Symbol=" + signal.symbol.toString() + 
-                     " Direction=" + core::directionToString(signal.direction) +
-                     " Strength=" + std::to_string(signal.strength) +
-                     " Confidence=" + std::to_string(signal.confidence) +
-                     " Quality=" + std::to_string(signal.quality) +
-                     " TargetSize=" + std::to_string(signal.targetSize));
             // std::cout << "PTCA tracking signals: " << ptcaManager_->getStats().currentlyTrackedSignals << std::endl;
             double ptcaRecommendation = ptcaManager_->getSignalRecommendation(signal);
              // PTCA: Optionally, adjust signal strength based on PTCA confidence
