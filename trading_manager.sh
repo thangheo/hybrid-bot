@@ -25,6 +25,104 @@ NC='\033[0m' # No Color
 # Create directories if they don't exist
 mkdir -p "$LOG_DIR" "$PID_DIR"
 
+# Add this function after the existing functions in trading_manager.sh:
+
+# Function to monitor and auto-restart C++ if it crashes
+monitor_cpp() {
+    local restart_count=0
+    local max_restarts=${1:-5}     # Default max 5 restarts per hour
+    local restart_window=3600      # 1 hour window
+    local restart_times=()
+    local check_interval=30        # Check every 30 seconds
+    
+    print_status "$BLUE" "Starting C++ monitor (max $max_restarts restarts per hour)..."
+    
+    while true; do
+        if ! is_running "$CPP_PID_FILE"; then
+            # Clean up old restart times (older than 1 hour)
+            local current_time=$(date +%s)
+            local new_restart_times=()
+            for time in "${restart_times[@]}"; do
+                if (( current_time - time < restart_window )); then
+                    new_restart_times+=("$time")
+                fi
+            done
+            restart_times=("${new_restart_times[@]}")
+            
+            # Check if we've hit the restart limit
+            if (( ${#restart_times[@]} >= max_restarts )); then
+                print_status "$RED" "ERROR: C++ has crashed $max_restarts times in the last hour. Stopping auto-restart."
+                # Optionally send alert/notification here
+                break
+            fi
+            
+            print_status "$YELLOW" "🚨 C++ bridge crashed! Attempting restart (${#restart_times[@]}/$max_restarts)..."
+            restart_times+=("$current_time")
+            
+            # Wait a bit before restarting to avoid rapid restart loops
+            sleep 10
+            
+            # Restart C++ only (don't touch Python)
+            if start_cpp; then
+                print_status "$GREEN" "✅ C++ bridge restarted successfully after crash"
+            else
+                print_status "$RED" "❌ Failed to restart C++ bridge"
+                sleep 60  # Wait longer before next attempt
+            fi
+        fi
+        
+        sleep "$check_interval"  # Check every 30 seconds
+    done
+}
+
+# Function to start with monitoring
+start_with_monitor() {
+    print_status "$BLUE" "=== Starting Trading System with C++ Auto-Restart ==="
+    
+    # Start C++ first
+    if start_cpp; then
+        print_status "$BLUE" "Waiting 5 seconds for C++ to initialize..."
+        sleep 5
+        
+        # Start Python
+        if start_python; then
+            print_status "$GREEN" "Both components started successfully"
+            
+            # Start monitoring C++ in background
+            print_status "$BLUE" "Starting C++ crash monitor..."
+            monitor_cpp ${2:-5} &  # Default 5 restarts per hour
+            local monitor_pid=$!
+            echo "$monitor_pid" > "$PID_DIR/monitor.pid"
+            print_status "$GREEN" "C++ monitoring started (PID: $monitor_pid)"
+            
+            # Show final status
+            show_status
+        else
+            print_status "$RED" "Failed to start Python. Stopping C++."
+            stop_process "$CPP_PID_FILE" "C++ bridge"
+            exit 1
+        fi
+    else
+        print_status "$RED" "Failed to start C++ bridge. Aborting."
+        exit 1
+    fi
+}
+
+# Function to stop monitor
+stop_monitor() {
+    local monitor_pid_file="$PID_DIR/monitor.pid"
+    if [[ -f "$monitor_pid_file" ]]; then
+        local monitor_pid=$(cat "$monitor_pid_file")
+        if ps -p "$monitor_pid" > /dev/null 2>&1; then
+            print_status "$BLUE" "Stopping C++ monitor (PID: $monitor_pid)..."
+            kill -TERM "$monitor_pid" 2>/dev/null
+            rm -f "$monitor_pid_file"
+            print_status "$GREEN" "C++ monitor stopped"
+        else
+            rm -f "$monitor_pid_file"  # Clean up stale PID
+        fi
+    fi
+}
 # Function to print colored output
 print_status() {
     local color=$1
@@ -269,6 +367,22 @@ show_logs() {
 
 # Main script logic
 case "$1" in
+
+    "start-monitored")
+        start_with_monitor "$@"
+        ;;
+        
+    "monitor")
+        # Start monitoring for existing C++ process
+        max_restarts=${2:-5}
+        print_status "$BLUE" "=== Starting C++ Monitor Only ==="
+        monitor_cpp "$max_restarts"
+        ;;
+        
+    "stop-monitor")
+        stop_monitor
+        ;;
+  
     "start")
         print_status "$BLUE" "=== Starting Trading System ==="
         
@@ -347,29 +461,25 @@ case "$1" in
         ;;
         
     *)
-        echo "Usage: $0 {start|stop|restart|build|status|logs|follow} [options]"
-        echo ""
-        echo "Commands:"
-        echo "  start     - Build C++ project, then start both C++ bridge and Python strategy"
-        echo "  stop      - Stop both processes gracefully"
-        echo "  restart   - Stop and start both processes (includes rebuild)"
-        echo "  build     - Build C++ project only (without starting services)"
-        echo "  status    - Show current status of both processes"
-        echo "  logs      - Show recent logs"
-        echo "            Usage: $0 logs [cpp|python|build|all] [number_of_lines]"
-        echo "  follow    - Follow logs in real-time"
-        echo "            Usage: $0 follow [cpp|python|build|all]"
-        echo ""
-        echo "Log Management:"
-        echo "  - Build logs: $BUILD_LOG_FILE"
-        echo "  - C++ runtime logs: $CPP_LOG_FILE"
-        echo "  - Python logs: $PYTHON_LOG_FILE"
-        echo ""
-        echo "Examples:"
-        echo "  $0 start"
-        echo "  $0 build"
-        echo "  $0 logs build 100"
-        echo "  $0 follow cpp"
-        exit 1
-        ;;
+    echo "Usage: $0 {start|start-monitored|stop|restart|monitor|stop-monitor|build|status|logs|follow} [options]"
+    echo ""
+    echo "Commands:"
+    echo "  start          - Build C++ project, then start both components"
+    echo "  start-monitored- Start with C++ auto-restart monitoring"
+    echo "  stop           - Stop both processes and monitor gracefully"
+    echo "  restart        - Stop and start both processes (includes rebuild)"
+    echo "  monitor        - Start monitoring existing C++ process"
+    echo "                   Usage: $0 monitor [max_restarts_per_hour]"
+    echo "  stop-monitor   - Stop the monitoring process only"
+    echo "  build          - Build C++ project only (without starting services)"
+    echo "  status         - Show current status of both processes"
+    echo "  logs           - Show recent logs"
+    echo "  follow         - Follow logs in real-time"
+    echo ""
+    echo "Examples:"
+    echo "  $0 start-monitored      # Start with auto-restart (5 restarts/hour max)"
+    echo "  $0 monitor 10           # Monitor existing C++ with 10 restarts/hour max"
+    echo "  $0 stop-monitor         # Stop monitoring only"
+    exit 1
+    ;;
 esac
