@@ -86,6 +86,11 @@ class MarketIntelligenceBridge:
                 # CRITICAL FIX: Proper field extraction with validation
                 symbol = intel.symbol.replace('/', '')
                 
+                # ✅ FIX: Ensure intelligence_history has entry for this symbol
+                if symbol not in self.intelligence_history:
+                    logger.info(f"Adding new symbol to intelligence tracking: {symbol}")
+                    self.intelligence_history[symbol] = deque(maxlen=100)
+                
                 # Debug first few messages to understand C++ data structure
                 if self.stats['messages_received'] <= 5:
                     logger.info(f"DEBUG Intelligence for {symbol}:")
@@ -137,9 +142,21 @@ class MarketIntelligenceBridge:
                 )
 
                 self.intelligence_cache[symbol] = state
-                self.intelligence_history[symbol].append(state)
+                
+                # ✅ SAFE: Add to history with error handling
+                try:
+                    self.intelligence_history[symbol].append(state)
+                except KeyError:
+                    # Should not happen after our fix above, but just in case
+                    logger.warning(f"Creating missing intelligence_history entry for {symbol}")
+                    self.intelligence_history[symbol] = deque(maxlen=100)
+                    self.intelligence_history[symbol].append(state)
                 
             except zmq.Again:
+                continue
+            except KeyError as e:
+                logger.error(f"KeyError in intelligence loop for symbol processing: {e}")
+                self.stats['parse_errors'] += 1
                 continue
             except Exception as e:
                 logger.error(f"Intelligence loop error: {e}")
