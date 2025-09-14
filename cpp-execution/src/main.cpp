@@ -242,8 +242,42 @@ public:
      
     // Or run without time limit:
     void runIndefinitely() {
+        static auto lastIntelCheck = std::chrono::steady_clock::now();
+        static uint64_t lastIntelCount = 0;
+        
         while (running_ && systemHealthy_) {
             std::this_thread::sleep_for(1s);
+            
+            // ✅ Check intelligence system every 30 seconds
+            auto now = std::chrono::steady_clock::now();
+            if (now - lastIntelCheck >= std::chrono::seconds(30)) {
+                uint64_t currentIntelCount = intelligenceGenerated_.load();
+                
+                // If no new intelligence in 60 seconds, restart the processor
+                if (currentIntelCount == lastIntelCount && 
+                    now - lastIntelCheck >= std::chrono::seconds(60)) {
+                    std::cout << "⚠️ Intelligence system appears stuck - restarting..." << std::endl;
+                    restartIntelligenceProcessor();
+                    
+                    // Also restart ZMQ if needed
+                    if (zmqServer_) {
+                        std::cout << "🔄 Restarting ZMQ server..." << std::endl;
+                        zmqServer_->Stop();
+                        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                        zmqServer_->Start();
+                    }
+                }
+                
+                lastIntelCount = currentIntelCount;
+                lastIntelCheck = now;
+                
+                // Print status
+                if (currentIntelCount > 0) {
+                    std::cout << "🧠 Intelligence status: " << currentIntelCount 
+                              << " generated, queue size: " << intelligenceQueue_.size() 
+                              << ", processor running: " << (intelligenceRunning_ ? "✅" : "❌") << std::endl;
+                }
+            }
             
             if (!checkSystemHealth()) {
                 std::cout << "⚠️ System health issues detected!" << std::endl;
@@ -477,6 +511,9 @@ public:
     void startIntelligenceProcessor() {
         intelligenceRunning_ = true;
         intelligenceThread_ = std::thread([this]() {
+            std::cout << "🧠 Intelligence processor thread started" << std::endl;
+            static std::atomic<int> processedCount{0};
+            
             while (intelligenceRunning_) {
                 std::unique_lock<std::mutex> lock(queueMutex_);
                 
@@ -485,33 +522,79 @@ public:
                     return !intelligenceQueue_.empty() || !intelligenceRunning_;
                 });
                 
-                if (!intelligenceRunning_) break;
+                if (!intelligenceRunning_) {
+                    std::cout << "🧠 Intelligence processor shutting down" << std::endl;
+                    break;
+                }
                 
                 // Process all queued items
+                int batchCount = 0;
                 while (!intelligenceQueue_.empty()) {
                     auto [update, orderBook] = intelligenceQueue_.front();
                     intelligenceQueue_.pop();
+                    batchCount++;
                     lock.unlock();
                     
                     // Generate intelligence (your existing code)
                     generateMarketIntelligence(update, orderBook);
                     
+                    int count = processedCount.fetch_add(1);
+                    if (count < 5 || count % 100 == 0) {
+                        std::cout << "🧠 Processed intelligence #" << count 
+                                  << " for " << update.tradingPair.toString() << std::endl;
+                    }
+                    
                     lock.lock();
                 }
+                
+                if (batchCount > 1) {
+                    std::cout << "🧠 Processed batch of " << batchCount << " intelligence items" << std::endl;
+                }
             }
+            
+            std::cout << "🧠 Intelligence processor thread finished" << std::endl;
         });
     }
     
     void stopIntelligenceProcessor() {
+        std::cout << "🧠 Stopping intelligence processor..." << std::endl;
         intelligenceRunning_ = false;
         queueCondition_.notify_all();
         if (intelligenceThread_.joinable()) {
             intelligenceThread_.join();
         }
+        std::cout << "🧠 Intelligence processor stopped" << std::endl;
+    }
+    
+    // ✅ Method to restart intelligence processor if it gets stuck
+    void restartIntelligenceProcessor() {
+        std::cout << "🔄 Restarting intelligence processor..." << std::endl;
+        stopIntelligenceProcessor();
+        
+        // Clear any stale queue items
+        {
+            std::lock_guard<std::mutex> lock(queueMutex_);
+            while (!intelligenceQueue_.empty()) {
+                intelligenceQueue_.pop();
+            }
+        }
+        
+        // Restart with fresh state
+        startIntelligenceProcessor();
+        std::cout << "✅ Intelligence processor restarted" << std::endl;
     }
     
     void queueIntelligenceGeneration(const OrderBookUpdate& update, 
                                    std::shared_ptr<OrderBook> orderBook) {
+        static std::atomic<int> queueCount{0};
+        int count = queueCount.fetch_add(1);
+        
+        if (count < 5 || count % 100 == 0) {
+            std::cout << "🧠 Queueing intelligence #" << count << " for " 
+                      << update.tradingPair.toString() << " (queue size: " 
+                      << intelligenceQueue_.size() << ")" << std::endl;
+        }
+        
         {
             std::lock_guard<std::mutex> lock(queueMutex_);
             
@@ -522,6 +605,10 @@ public:
                 // Drop oldest item if queue is full
                 intelligenceQueue_.pop();
                 intelligenceQueue_.emplace(update, orderBook);
+                
+                if (count % 50 == 0) {
+                    std::cout << "⚠️ Intelligence queue full, dropping oldest items" << std::endl;
+                }
             }
         }
         queueCondition_.notify_one();
@@ -870,21 +957,32 @@ private:
         
             // ✅ UNCOMMENT AND USE THIS:
         dataIngestionService_->setOrderBookCallback([this](const auto& update) {
+            static std::atomic<int> callbackCount{0};
+            int count = callbackCount.fetch_add(1);
+            
+            if (count < 5 || count % 500 == 0) {
+                std::cout << "📊 Order book callback #" << count 
+                          << " for " << update.tradingPair.toString() 
+                          << " (seq: " << update.sequenceNumber << ")" << std::endl;
+            }
+            
             // DEFENSIVE FILTER: Only process configured symbols
             std::string symbolStr = update.tradingPair.toString();
             auto it = strategyConfig_.tradingPairs.find(symbolStr);
             
             if (it == strategyConfig_.tradingPairs.end()) {
-                LOG_WARN(std::format("FullSystemDemo", "Received update for unconfigured symbol: " + symbolStr + " - IGNORING"));
+                if (count % 100 == 0) {
+                    LOG_WARN(std::format("FullSystemDemo", "Received update for unconfigured symbol: " + symbolStr + " - IGNORING"));
+                }
                 return;  // Skip this update
             }
+            
             // Extract price for PTCA
             if (!update.bids.empty() && !update.asks.empty()) {
                 double midPrice = (update.bids[0].price + update.asks[0].price) / 2.0;
                 onMarketPriceUpdate(update.tradingPair, midPrice);
             }
            
-            
             // Get the existing order book and send to strategy
             auto orderBook = dataIngestionService_->getOrderBook(update.exchangeId, update.tradingPair);
             onOrderBookUpdate(update, orderBook);
@@ -893,7 +991,6 @@ private:
             if (orderBook && strategyEngine_) {
                 strategyEngine_->processOrderBook(*orderBook);
             }
-
         });
             
        
@@ -1013,10 +1110,43 @@ private:
             bool strategyEngineHealthy = strategyEngine_ ? true : false;
             bool riskManagerHealthy = riskManager_ ? true : false;
             
-            bool overallHealthy = dataIngestionHealthy && strategyEngineHealthy && riskManagerHealthy;
+            // ✅ Check intelligence system health
+            bool intelligenceHealthy = intelligenceRunning_ && intelligenceThread_.joinable();
+            
+            // ✅ Check ZMQ health
+            bool zmqHealthy = zmqServer_ ? true : false; // Add more specific checks if available
+            
+            // ✅ Check recent intelligence generation
+            static uint64_t lastIntelCount = 0;
+            static auto lastHealthCheck = std::chrono::steady_clock::now();
+            auto now = std::chrono::steady_clock::now();
+            
+            uint64_t currentIntelCount = intelligenceGenerated_.load();
+            auto timeSinceLastCheck = now - lastHealthCheck;
+            
+            bool recentIntelligence = true;
+            if (timeSinceLastCheck > std::chrono::minutes(2)) {
+                if (currentIntelCount == lastIntelCount) {
+                    std::cout << "⚠️ No new intelligence generated in last 2 minutes!" << std::endl;
+                    recentIntelligence = false;
+                }
+                lastIntelCount = currentIntelCount;
+                lastHealthCheck = now;
+            }
+            
+            bool overallHealthy = dataIngestionHealthy && strategyEngineHealthy && 
+                                riskManagerHealthy && intelligenceHealthy && 
+                                zmqHealthy && recentIntelligence;
             
             if (!overallHealthy) {
                 std::cout << "⚠️ System health issues detected!" << std::endl;
+                std::cout << "  Data Ingestion: " << (dataIngestionHealthy ? "✅" : "❌") << std::endl;
+                std::cout << "  Strategy Engine: " << (strategyEngineHealthy ? "✅" : "❌") << std::endl;
+                std::cout << "  Risk Manager: " << (riskManagerHealthy ? "✅" : "❌") << std::endl;
+                std::cout << "  Intelligence: " << (intelligenceHealthy ? "✅" : "❌") << std::endl;
+                std::cout << "  ZMQ Server: " << (zmqHealthy ? "✅" : "❌") << std::endl;
+                std::cout << "  Recent Intelligence: " << (recentIntelligence ? "✅" : "❌") << std::endl;
+                
                 systemHealthy_ = false;
                 
                 // ❌ DISABLE: Don't call emergency action to avoid recursion
