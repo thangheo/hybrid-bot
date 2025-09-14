@@ -109,7 +109,7 @@ void ExchangeManager::onWebSocketData(const core::ExchangeId& exchange,
 }
 
 // SIMPLIFIED DIRECT SUBSCRIPTION - Remove event bus complexity
-bool ExchangeManager::subscribe(const std::vector<std::string>& tradingPairs,
+bool ExchangeManager::subscribe(const std::vector<Symbol>& tradingPairs,
                                const std::vector<DataType>& dataTypes,
                                int depth) {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
@@ -120,11 +120,11 @@ bool ExchangeManager::subscribe(const std::vector<std::string>& tradingPairs,
     }
     
     try {
-        std::cout << "=== SUBSCRIBING TO SYMBOLS ===" << std::endl;
-        for (const auto& pair : tradingPairs) {
-            std::cout << "Will subscribe to: " << pair << std::endl;
-        }
-        std::cout << "===============================" << std::endl;
+        // std::cout << "=== SUBSCRIBING TO SYMBOLS ===" << std::endl;
+        // for (const auto& pair : tradingPairs) {
+        //     std::cout << "Will subscribe to: " << pair << std::endl;
+        // }
+        // std::cout << "===============================" << std::endl;
         
         // Acquire a connection from the pool
         auto connection = connectionPool_->acquireConnection();
@@ -138,8 +138,8 @@ bool ExchangeManager::subscribe(const std::vector<std::string>& tradingPairs,
         symbols.reserve(tradingPairs.size());
         
         for (const auto& pair : tradingPairs) {
-            auto symbol = core::Symbol::fromString(pair);
-            std::cout << "Created symbol: " << symbol.base << "/" << symbol.quote << std::endl;
+            auto symbol = pair;
+            // std::cout << "Created symbol: " << symbol.base << "/" << symbol.quote << std::endl;
             symbols.emplace_back(symbol);
         }
         
@@ -153,7 +153,7 @@ bool ExchangeManager::subscribe(const std::vector<std::string>& tradingPairs,
             // Store the subscription request for reconnection scenarios
             SubscriptionRequest request{};
             request.exchangeId = core::ExchangeId::binance();
-            request.tradingPairs = tradingPairs;
+            request.tradingPairs = tradingPairs ;
             request.dataTypes = dataTypes;
             request.depth = depth;
             
@@ -292,7 +292,7 @@ void ExchangeManager::monitorConnections() {
 }
 
 std::vector<std::string> ExchangeManager::createStreamNames(
-    const std::vector<std::string>& tradingPairs,
+    const std::vector<Symbol>& tradingPairs,
     const std::vector<DataType>& dataTypes,
     int depth) {
     
@@ -301,8 +301,8 @@ std::vector<std::string> ExchangeManager::createStreamNames(
     
     for (const auto& pair : tradingPairs) {
         // Use ONLY ONE way to format the pair - choose the simpler one:
-        std::string formattedPair = toLowercase(pair);
-        std::cout << "Adding symbol: " << pair << " to stream as: " << formattedPair << std::endl;
+        std::string formattedPair = toLowercase(pair.toString());
+        std::cout << "Adding symbol: " << pair.toString() << " to stream as: " << formattedPair << std::endl;
 
         // Remove '/' separator if present
         formattedPair.erase(

@@ -157,7 +157,9 @@ public:
         // 2. Initialize data ingestion service
         dataIngestionService_ = std::make_unique<data_ingestion::DataIngestionService>(
             "config/data_ingestion.json");
-        
+
+        // sleep for 2s
+        std::this_thread::sleep_for(std::chrono::seconds(2));
         if (!dataIngestionService_->initialize()) {
             std::cerr << "Failed to initialize data ingestion service" << std::endl;
             return false;
@@ -169,8 +171,6 @@ public:
             LOG_ERROR("Application", "Failed to initialize risk manager");
             return false;
         }
-        // sleep for 5s
-        std::this_thread::sleep_for(std::chrono::seconds(1));
         if (!riskManager_->initialize()) {
             std::cerr << "Failed to initialize risk manager" << std::endl;
             return false;
@@ -202,14 +202,12 @@ public:
             systemHealthy_ = true;
             zmqServer_->Start();
             // Start services in order
-            // std::vector<std::string> symbols = {
-            //     "BTC/USDT", "ETH/USDT", "BNB/USDT", "ADA/USDT"
-            // };
+           
             //load symbols from strategy config
-            std::vector<std::string> symbols;
+            std::vector<Symbol> symbols;
             for (const auto& [name, pair] : strategyConfig_.tradingPairs) {
-                symbols.push_back(name);
-            }
+                symbols.push_back(Symbol::fromString(name));
+            } 
             // 1. Start data ingestion
             std::cout << "Starting data ingestion with symbols: ";
             for (const auto& symbol : symbols) {
@@ -227,7 +225,9 @@ public:
                 std::cerr << "Failed to start strategy engine" << std::endl;
                 return false;
             }
-             
+            //  /5. Initialize PTCA manager
+            ptcaManager_->start();        
+            lastPriceUpdate_ = std::chrono::steady_clock::now();
             std::cout << "🚀 FULL TRADING SYSTEM IS NOW LIVE!" << std::endl;
             std::cout << "Monitoring system health and processing..." << std::endl;
             
@@ -304,11 +304,6 @@ public:
             std::cout << "  Expected Outcome: " << decision.expectedOutcome << std::endl;
             std::cout << "  Reasoning: " << decision.reasoning << std::endl;
             
-            // You could use this decision to:
-            // 1. Override or modify existing signals
-            // 2. Generate new signals
-            // 3. Adjust position sizing
-            // 4. Trigger rebalancing
         }
     }
         
@@ -400,15 +395,6 @@ public:
             static std::unordered_map<std::string, int> intelDebugCounts;
             intelDebugCounts[tradingPair]++;
             
-            // if (intelDebugCounts[tradingPair] <= 3) {
-            //     std::cout << "\n=== ADAPTIVE INTELLIGENCE for " << tradingPair << " ===" << std::endl;
-            //     std::cout << "  Spread: " << intel.bid_ask_spread() << std::endl;
-            //     std::cout << "  Liquidity: " << intel.liquidity_ratio() << std::endl;
-            //     std::cout << "  Imbalance: " << intel.order_book_imbalance() << std::endl;
-            //     std::cout << "  Regime: " << intel.current_regime() << std::endl;
-            //     std::cout << "  Confidence: " << intel.regime_confidence() << std::endl;
-            //     std::cout << "=============================================" << std::endl;
-            // }
             
             // Store latest intelligence
             {
@@ -763,31 +749,79 @@ private:
     void setupComponentConnections() {
         LOG_INFO("FullSystemDemo", "Setting up component connections...");
         // 1. Connect data ingestion to strategy engine
+        // dataIngestionService_->setOrderBookCallback([this](const auto& update) {
+        //     // ✅ ADD: Extract price and trigger PTCA update
+        //     if (!update.bids.empty() && !update.asks.empty()) {
+        //         double midPrice = (update.bids[0].price + update.asks[0].price) / 2.0;
+        //         onMarketPriceUpdate(update.tradingPair, midPrice);  // ADD THIS LINE
+        //     }
+        //     onOrderBookUpdate(update);
+        //     // print debug info
+        //     LOG_DEBUG("FullSystemDemo", "OrderBookUpdate received: " + 
+        //               update.exchangeId.toString() + " " + 
+        //               update.tradingPair.toString() + " Seq: " + 
+        //               std::to_string(update.sequenceNumber) + 
+        //               " Bids: " + std::to_string(update.bids.size()) + 
+        //               " Asks: " + std::to_string(update.asks.size()));
+        //     // Convert to OrderBook and send to strategy
+        //     auto orderBook = std::make_shared<data_ingestion::OrderBook>(
+        //         update.exchangeId, update.tradingPair);
+            
+        //     // Apply the update to create a valid order book
+        //     orderBook->applySnapshot(update.bids, update.asks, 
+        //                            update.sequenceNumber, update.exchangeTimestamp);
+            
+        //     // Send to strategy engine
+        //     if (strategyEngine_ && strategyEngine_->processOrderBook(*orderBook)) {
+        //         // Order book processed successfully
+        //     }
+        // });
+        
+            // ✅ UNCOMMENT AND USE THIS:
         dataIngestionService_->setOrderBookCallback([this](const auto& update) {
-            // ✅ ADD: Extract price and trigger PTCA update
+            // DEFENSIVE FILTER: Only process configured symbols
+            std::string symbolStr = update.tradingPair.toString();
+            auto it = strategyConfig_.tradingPairs.find(symbolStr);
+            
+            if (it == strategyConfig_.tradingPairs.end()) {
+                LOG_WARN(std::format("FullSystemDemo", "Received update for unconfigured symbol: " + symbolStr + " - IGNORING"));
+                return;  // Skip this update
+            }
+            // Extract price for PTCA
             if (!update.bids.empty() && !update.asks.empty()) {
                 double midPrice = (update.bids[0].price + update.asks[0].price) / 2.0;
-                onMarketPriceUpdate(update.tradingPair, midPrice);  // ADD THIS LINE
+                onMarketPriceUpdate(update.tradingPair, midPrice);
+            }
+             LOG_DEBUG("FullSystemDemo", "OrderBookUpdate received: " + 
+                      update.exchangeId.toString() + " " + 
+                      update.tradingPair.toString() + " Seq: " + 
+                      std::to_string(update.sequenceNumber) + 
+                      " Bids: " + std::to_string(update.bids.size()) + 
+                      " Asks: " + std::to_string(update.asks.size()));
+            // Process the update (this calls your order book manager)
+            
+            // Get the existing order book and send to strategy
+            auto orderBook = dataIngestionService_->getOrderBook(update.exchangeId, update.tradingPair);
+            if (orderBook && strategyEngine_) {
+                strategyEngine_->processOrderBook(*orderBook);
             }
             onOrderBookUpdate(update);
-            // Convert to OrderBook and send to strategy
-            auto orderBook = std::make_shared<data_ingestion::OrderBook>(
-                update.exchangeId, update.tradingPair);
-            
-            // Apply the update to create a valid order book
-            orderBook->applySnapshot(update.bids, update.asks, 
-                                   update.sequenceNumber, update.exchangeTimestamp);
-            
-            // Send to strategy engine
-            if (strategyEngine_ && strategyEngine_->processOrderBook(*orderBook)) {
-                // Order book processed successfully
-            }
+
         });
             
+       
             // 2. Connect strategy engine to risk manager
         strategyEngine_->registerSignalCallback([this](const strategy::TradingSignal& signal) {
             signalsGenerated_++;
             ptcaManager_->registerSignal(signal);
+            //print signal details
+            LOG_INFO("FullSystemDemo", "Received signal: ID=" + signal.id + 
+                     " Symbol=" + signal.symbol.toString() + 
+                     " Direction=" + core::directionToString(signal.direction) +
+                     " Strength=" + std::to_string(signal.strength) +
+                     " Confidence=" + std::to_string(signal.confidence) +
+                     " Quality=" + std::to_string(signal.quality) +
+                     " TargetSize=" + std::to_string(signal.targetSize));
             // std::cout << "PTCA tracking signals: " << ptcaManager_->getStats().currentlyTrackedSignals << std::endl;
             double ptcaRecommendation = ptcaManager_->getSignalRecommendation(signal);
              // PTCA: Optionally, adjust signal strength based on PTCA confidence
@@ -822,9 +856,7 @@ private:
             execSignal.exchangeId = signal.exchangeId;
             
             // Basic filtering
-            //print signal details
-            
-            //create a asymmetric filter for buy and sell signals
+                    //create a asymmetric filter for buy and sell signals
             if (execSignal.direction == core::Direction::BUY) {
                 if (execSignal.strength < 0.5) return;     // 30% threshold
                 if (execSignal.confidence < 0.6) return;  // 30% threshold  
@@ -1002,22 +1034,8 @@ int main(int argc, char* argv[]) {
             return 1;
         }
         
-        // Determine demo duration
-        int durationMinutes = 5;  // Default 5 minutes
-        if (argc > 1) {
-            durationMinutes = std::stoi(argv[1]);
-        }
-        
-        std::cout << "\nSystem is now running!" << std::endl;
-        std::cout << "Press Ctrl+C to stop early" << std::endl;
-        
         // Run demo
         demoInstance->runIndefinitely();
-        // demoInstance->runDemo(durationMinutes);
-                // Replace the commented runDemo() line with:
-        // std::cout << "System running... Press Ctrl+C to stop" << std::endl;
-        // std::unique_lock<std::mutex> lock(shutdown_mutex);
-        // shutdown_cv.wait(lock, [] { return shutdown_requested; });
 
         // Cleanup
         demoInstance->shutdown();

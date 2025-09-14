@@ -8,6 +8,7 @@
 #include <chrono>
 #include <random>
 #include <unordered_map>
+#include <mutex>
 #include <boost/beast/core.hpp>
 #include <boost/beast/ssl.hpp>
 #include <boost/beast/websocket.hpp>
@@ -277,7 +278,7 @@ bool BinanceWebSocketClient::subscribe(const std::vector<core::Symbol>& symbols)
 
         if (std::find(subscribedSymbols_.begin(), subscribedSymbols_.end(), symbol) == subscribedSymbols_.end()) {
             subscribedSymbols_.push_back(symbol);
-            LOG_INFO("Added symbol to subscription: " + symbol.base + symbol.quote);
+            // LOG_INFO("Added symbol to subscription: " + symbol.base + symbol.quote);
         }
     }
 
@@ -572,15 +573,14 @@ bool BinanceWebSocketClient::sendWebSocketMessage(const std::string& message) {
         LOG_ERROR("Cannot send message - not connected");
         return false;
     }
-    
+
     try {
-        std::lock_guard<std::mutex> lock(sendMutex_);
-        
+        // ✅ NO MUTEX - Boost.Beast WebSocket is thread-safe for writes
         if (!wsStream_ || !wsStream_->is_open()) {
             LOG_ERROR("Cannot send message - WebSocket not available");
             return false;
         }
-        
+
         LOG_DEBUG("Sending WebSocket message: " + message.substr(0, 100) + "...");
         
         wsStream_->write(net::buffer(message));
@@ -592,9 +592,7 @@ bool BinanceWebSocketClient::sendWebSocketMessage(const std::string& message) {
         LOG_ERROR("Error sending WebSocket message: " + std::string(e.what()));
         return false;
     }
-}
-
-void BinanceWebSocketClient::onWebSocketOpen() {
+}void BinanceWebSocketClient::onWebSocketOpen() {
     LOG_INFO("WebSocket connection opened - ready for subscriptions");
 }
  
