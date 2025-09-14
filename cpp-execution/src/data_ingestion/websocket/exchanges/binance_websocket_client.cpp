@@ -458,6 +458,30 @@ void BinanceWebSocketClient::runIoLoop() {
         
         onWebSocketOpen();
         
+        // ✅ Auto-resubscribe to existing symbols after reconnection
+        if (!subscribedSymbols_.empty()) {
+            LOG_INFO("Auto-resubscribing to " + std::to_string(subscribedSymbols_.size()) + " symbols after reconnection");
+            
+            // Give connection time to stabilize
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+            
+            // Resubscribe without clearing existing subscriptions
+            std::vector<std::string> streams;
+            for (const auto& symbol : subscribedSymbols_) {
+                std::string depthStream = symbolToStream(symbol, "depth");
+                streams.push_back(depthStream);
+            }
+            
+            if (!streams.empty()) {
+                bool resubSuccess = subscribeToStreams(streams);
+                if (resubSuccess) {
+                    LOG_INFO("Successfully resubscribed to all symbols after reconnection");
+                } else {
+                    LOG_ERROR("Failed to resubscribe to symbols after reconnection");
+                }
+            }
+        }
+        
         // Message loop with proper error handling
         beast::flat_buffer buffer;
         
@@ -517,9 +541,21 @@ void BinanceWebSocketClient::runIoLoop() {
                     }
                 } else if (se.code() == websocket::error::closed) {
                     LOG_INFO("WebSocket closed by peer");
+                    
+                    // ✅ Notify connection callback about disconnection
+                    if (connectionCallback_) {
+                        connectionCallback_(ConnectionStatus::DISCONNECTED, "WebSocket closed by peer - will attempt reconnection");
+                    }
+                    
                     break;
                 } else {
-                    LOG_ERROR("WebSocket error: " + std::string(se.what()));
+                    LOG_ERROR("WebSocket error: " + std::string(se.what()) + " [" + se.code().category().name() + ":" + std::to_string(se.code().value()) + "]");
+                    
+                    // ✅ Notify connection callback about error
+                    if (connectionCallback_) {
+                        connectionCallback_(ConnectionStatus::ERROR, "WebSocket error: " + std::string(se.what()));
+                    }
+                    
                     break;
                 }
             } catch (const std::exception& e) {
