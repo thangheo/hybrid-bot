@@ -905,11 +905,10 @@ private:
             // Extract price for PTCA
             if (!update.bids.empty() && !update.asks.empty()) {
                 double midPrice = (update.bids[0].price + update.asks[0].price) / 2.0;
-                 // Rate-limited PTCA update
+                // Rate-limited PTCA update
                 static std::unordered_map<std::string, std::chrono::steady_clock::time_point> lastPtcaUpdate;
                 auto now = std::chrono::steady_clock::now();
                 std::string symbolStr = update.tradingPair.toString();
-                
                 if (now - lastPtcaUpdate[symbolStr] >= std::chrono::seconds(1)) {
                     onMarketPriceUpdate(update.tradingPair, midPrice);
                     lastPtcaUpdate[symbolStr] = now;
@@ -920,18 +919,21 @@ private:
             auto orderBook = dataIngestionService_->getOrderBook(update.exchangeId, update.tradingPair);
 
             if(orderBook) {
-                //only generate after in period of 100ms
-                messagesProcessed_++;
-                // modify the code so generateMarketIntelligence and publishOrderBookForRisk wont publish at the same time
-                //publish market intelligence
-                if (adaptiveIntel_ and messagesProcessed_ % 10 == 0) {
+                // Throttle generateMarketIntelligence and publishOrderBookForRisk per symbol
+                static std::unordered_map<std::string, std::chrono::steady_clock::time_point> lastIntelGen;
+                static std::unordered_map<std::string, std::chrono::steady_clock::time_point> lastOrderbookPub;
+                auto now = std::chrono::steady_clock::now();
+                std::string symbolStr = update.tradingPair.toString();
+
+                // Generate market intelligence at most every 100ms per symbol
+                if (adaptiveIntel_ && (now - lastIntelGen[symbolStr] >= std::chrono::milliseconds(100))) {
                     generateMarketIntelligence(update, orderBook);
+                    lastIntelGen[symbolStr] = now;
                 }
-                else{
-                    //publish orderbook for risk
-                    if (zmqServer_ and messagesProcessed_ % 11 == 0) {
-                        publishOrderBookForRisk(update);
-                    }
+                // Publish orderbook for risk at most every 150ms per symbol (adjust as needed)
+                else if (zmqServer_ && (now - lastOrderbookPub[symbolStr] >= std::chrono::milliseconds(150))) {
+                    publishOrderBookForRisk(update);
+                    lastOrderbookPub[symbolStr] = now;
                 }
               
                 // Update the order book state
