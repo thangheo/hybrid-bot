@@ -199,6 +199,34 @@ trading::ExecutionAcknowledgment TradingCommunicationServer::CreateDefaultAcknow
     return ack;
 }
 
+// ✅ NEW: Publish raw message with custom topic
+void TradingCommunicationServer::PublishRawMessage(const std::string& topic, const std::string& message) {
+    if (!running_ || !intelligence_publisher_) {
+        return;
+    }
+    
+    try {
+        // Send topic first
+        zmq::message_t topic_msg(topic.size());
+        memcpy(topic_msg.data(), topic.c_str(), topic.size());
+        intelligence_publisher_->send(topic_msg, zmq::send_flags::sndmore);
+        
+        // Send message data
+        zmq::message_t data_msg(message.size());
+        memcpy(data_msg.data(), message.c_str(), message.size());
+        intelligence_publisher_->send(data_msg, zmq::send_flags::none);
+        
+    } catch (const zmq::error_t& e) {
+        std::cerr << "Failed to publish raw message: " << e.what() << std::endl;
+    }
+}
+
+// ✅ NEW: Publish orderbook data for risk module
+void TradingCommunicationServer::PublishOrderBookData(const std::string& exchange, const std::string& symbol, const std::string& data) {
+    std::string topic = "market.orderbook." + exchange + "." + symbol;
+    PublishRawMessage(topic, data);
+}
+
 void TradingCommunicationServer::SendErrorAcknowledgment(const std::string& error_reason) {
     trading::ExecutionAcknowledgment ack;
     ack.set_intent_id("unknown");

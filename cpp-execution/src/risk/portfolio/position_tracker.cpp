@@ -320,6 +320,9 @@ void PositionTracker::updateMarketData(const MarketData& marketData) {
         }
         LOG_DEBUG(std::format("PositionTracker", "Updated market data: {} @ {}", 
                         marketData.tradingPair.toString(), marketData.price));
+        // print debug data
+        std::cout << "Updated market data: " << marketData.tradingPair.toString()
+                            << " @ " << marketData.price << std::endl;
         // Update positions with new price
         std::lock_guard<std::mutex> lock(m_positionsMutex);
         for (auto& [key, position] : m_positions) {

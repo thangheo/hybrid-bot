@@ -178,8 +178,9 @@ bool OrderBookManager::processUpdate(const OrderBookUpdate& update) {
             ++sequenceErrors_;
             logError("Sequence validation failed for " + key.toString());
         } else if (!success) {
+            return false;
             // Non-sequence related failure
-            logError("Update processing failed for " + key.toString());
+            // logError("Update processing failed for " + key.toString());
         }
         
     } catch (const std::exception& e) {

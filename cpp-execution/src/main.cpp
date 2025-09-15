@@ -31,6 +31,7 @@
 #include "communication/zmq_server.hpp"
 #include "market_intelligence/adaptive_intelligence.hpp"
 #include "../../generated/cpp/proto/trading_messages.pb.h"
+#include <nlohmann/json.hpp>
 
 // Strategy engine
 #include "strategy/engine/strategy_engine.hpp"
@@ -201,8 +202,7 @@ public:
             running_ = true;
             systemHealthy_ = true;
             zmqServer_->Start();
-            // Start services in order
-           
+            
             //load symbols from strategy config
             std::vector<Symbol> symbols;
             for (const auto& [name, pair] : strategyConfig_.tradingPairs) {
@@ -226,12 +226,10 @@ public:
                 return false;
             }
             
-            // 3. Start intelligence processor
-            std::cout << "Starting market intelligence processor..." << std::endl;
-            startIntelligenceProcessor();
-            //  /5. Initialize PTCA manager
+            // 3. Start PTCA manager
             ptcaManager_->start();        
             lastPriceUpdate_ = std::chrono::steady_clock::now();
+            
             std::cout << "🚀 FULL TRADING SYSTEM IS NOW LIVE!" << std::endl;
             std::cout << "Monitoring system health and processing..." << std::endl;
             
@@ -242,113 +240,16 @@ public:
      
     // Or run without time limit:
     void runIndefinitely() {
-        static auto lastIntelCheck = std::chrono::steady_clock::now();
-        static uint64_t lastIntelCount = 0;
-        static auto lastCallbackCheck = std::chrono::steady_clock::now();
-        static uint64_t lastCallbackCount = 0;
-        
-        // ✅ CRITICAL: Add rapid order book monitoring for trading safety
-        static auto lastRapidCallbackCheck = std::chrono::steady_clock::now();
-        static uint64_t lastRapidCallbackCount = 0;
-        static bool emergencyTradingHalt = false;
+        auto lastStatusTime = std::chrono::steady_clock::now();
         
         while (running_ && systemHealthy_) {
-            std::this_thread::sleep_for(1s);
+            std::this_thread::sleep_for(std::chrono::seconds(1));
             auto now = std::chrono::steady_clock::now();
             
-            // ✅ RAPID CHECK: Detect order book data gaps within 15 seconds (CRITICAL FOR TRADING)
-            if (now - lastRapidCallbackCheck >= std::chrono::seconds(5)) {
-                uint64_t currentCallbackCount = messagesProcessed_.load();
-                
-                // If no new callbacks in 15 seconds, this is a trading emergency
-                if (currentCallbackCount == lastRapidCallbackCount && 
-                    now - lastRapidCallbackCheck >= std::chrono::seconds(15)) {
-                    
-                    if (!emergencyTradingHalt) {
-                        std::cout << "🚨 EMERGENCY: ORDER BOOK DATA STOPPED - HALTING ALL TRADING!" << std::endl;
-                        std::cout << "🚨 Last callback count: " << currentCallbackCount << " (no change in 15+ seconds)" << std::endl;
-                        emergencyTradingHalt = true;
-                        
-                        // Emergency halt trading signals
-                        if (riskManager_) {
-                            riskManager_->emergencyAction("Order book data gap detected - trading halted");
-                        }
-                        
-                        // Immediately restart data ingestion
-                        restartDataIngestionEmergency();
-                    }
-                } else if (currentCallbackCount > lastRapidCallbackCount) {
-                    // Data is flowing again
-                    if (emergencyTradingHalt) {
-                        std::cout << "✅ ORDER BOOK DATA RESUMED - Trading can continue" << std::endl;
-                        emergencyTradingHalt = false;
-                    }
-                    lastRapidCallbackCount = currentCallbackCount;
-                }
-                
-                lastRapidCallbackCheck = now;
-            }
-            
-            // ✅ Check intelligence system every 30 seconds
-            if (now - lastIntelCheck >= std::chrono::seconds(30)) {
-                uint64_t currentIntelCount = intelligenceGenerated_.load();
-                uint64_t currentCallbackCount = messagesProcessed_.load();
-                
-                // Check for stalled order book callbacks (more critical)
-                if (currentCallbackCount == lastCallbackCount && 
-                    now - lastCallbackCheck >= std::chrono::seconds(60)) {
-                    std::cout << "⚠️ ORDER BOOK CALLBACKS STOPPED - Data ingestion may be disconnected!" << std::endl;
-                    std::cout << "📊 Last callback count: " << currentCallbackCount << " (no change in 60s)" << std::endl;
-                    
-                    // Restart data ingestion service
-                    if (dataIngestionService_) {
-                        std::cout << "🔄 Restarting data ingestion service..." << std::endl;
-                        
-                        // Get current symbols before restart
-                        std::vector<Symbol> symbols;
-                        for (const auto& [name, pair] : strategyConfig_.tradingPairs) {
-                            symbols.push_back(Symbol::fromString(name));
-                        }
-                        
-                        // Stop and restart
-                        dataIngestionService_->stop();
-                        std::this_thread::sleep_for(std::chrono::seconds(2));
-                        
-                        if (!dataIngestionService_->start(symbols)) {
-                            std::cout << "❌ Failed to restart data ingestion service!" << std::endl;
-                            systemHealthy_ = false;
-                        } else {
-                            std::cout << "✅ Data ingestion service restarted successfully" << std::endl;
-                        }
-                    }
-                }
-                
-                // If no new intelligence in 60 seconds, restart the processor
-                if (currentIntelCount == lastIntelCount && 
-                    now - lastIntelCheck >= std::chrono::seconds(60)) {
-                    std::cout << "⚠️ Intelligence system appears stuck - restarting..." << std::endl;
-                    restartIntelligenceProcessor();
-                    
-                    // Also restart ZMQ if needed
-                    if (zmqServer_) {
-                        std::cout << "🔄 Restarting ZMQ server..." << std::endl;
-                        zmqServer_->Stop();
-                        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-                        zmqServer_->Start();
-                    }
-                }
-                
-                lastIntelCount = currentIntelCount;
-                lastCallbackCount = currentCallbackCount;
-                lastIntelCheck = now;
-                lastCallbackCheck = now;
-                
-                // Print status
-                std::cout << "🧠 Intelligence status: " << currentIntelCount 
-                          << " generated, queue size: " << intelligenceQueue_.size() 
-                          << ", processor running: " << (intelligenceRunning_ ? "✅" : "❌") << std::endl;
-                std::cout << "📊 Order book callbacks: " << currentCallbackCount 
-                          << " processed" << (emergencyTradingHalt ? " 🚨 TRADING HALTED" : "") << std::endl;
+            // Print status every 30 seconds - simplified like full_bridge.cpp
+            if (std::chrono::duration_cast<std::chrono::seconds>(now - lastStatusTime).count() >= 30) {
+                printStatus();
+                lastStatusTime = now;
             }
             
             if (!checkSystemHealth()) {
@@ -363,9 +264,6 @@ public:
             
             running_ = false;
             
-            // ✅ Stop intelligence processor first
-            stopIntelligenceProcessor();
-            
             if (ptcaManager_) {
                 std::cout << "Saving final PTCA model..." << std::endl;
                 ptcaManager_->saveModel("final_model.json");
@@ -375,13 +273,14 @@ public:
                 ptcaManager_->stop();
                 ptcaManager_.reset();
             }
-            // ✅ Stop data ingestion FIRST and wait for cleanup
+            
+            // Stop data ingestion FIRST and wait for cleanup
             if (dataIngestionService_) {
                 std::cout << "Stopping data ingestion service..." << std::endl;
                 dataIngestionService_->stop();
                 
                 // Give WebSocket connections time to close gracefully
-                std::this_thread::sleep_for(std::chrono::milliseconds(1000)); // Increase to 1 second
+                std::this_thread::sleep_for(std::chrono::milliseconds(1000));
             }
             
             // Stop other services
@@ -389,12 +288,13 @@ public:
                 std::cout << "Stopping strategy engine..." << std::endl;
                 strategyEngine_->stop();
             }
+            
             // Stop services in reverse order
             if (zmqServer_) {
                 zmqServer_->Stop();
             }
              
-            // ✅ Clear data ingestion service pointer after shutdown
+            // Clear data ingestion service pointer after shutdown
             std::cout << "Clearing data ingestion service..." << std::endl;
             dataIngestionService_.reset();
             
@@ -429,7 +329,6 @@ public:
         // Your implementation here...
         return signals;
     }
-    // PTCA: Add periodic PTCA statistics reporting
     void reportPTCAStats() {
         auto stats = ptcaManager_->getStats();
         
@@ -444,26 +343,54 @@ public:
         std::cout << "PTCA timesteps: " << stats.ptcaStats.totalTimesteps << std::endl;
         std::cout << "=================================" << std::endl;
     }
+
+    void printStatus() {
+        auto now = std::chrono::steady_clock::now();
+        auto startTime = std::chrono::steady_clock::now(); // Add startTime_ as member variable
+        auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - startTime).count();
+        
+        std::cout << "\n=== FULL TRADING SYSTEM STATUS ===" << std::endl;
+        std::cout << "Runtime: " << elapsed << "s" << std::endl;
+        std::cout << "Service Health: " << (dataIngestionService_->isHealthy() ? "HEALTHY" : "UNHEALTHY") << std::endl;
+        std::cout << "Order book updates processed: " << messagesProcessed_.load() << std::endl;
+        std::cout << "Intelligence generated: " << intelligenceGenerated_.load() << std::endl;
+        
+        if (elapsed > 0) {
+            std::cout << "Update rate: " << (messagesProcessed_.load() / elapsed) << " updates/s" << std::endl;
+            std::cout << "Intelligence rate: " << (intelligenceGenerated_.load() / elapsed) << " intel/s" << std::endl;
+        }
+        
+        // Active symbols with intelligence
+        {
+            std::lock_guard<std::mutex> lock(intelligenceMutex_);
+            std::cout << "Symbols with intelligence: " << latestIntelligence_.size() << std::endl;
+            
+            int displayed = 0;
+            for (const auto& [symbol, intel] : latestIntelligence_) {
+                if (displayed < 5) { // Show first 5 symbols
+                    std::cout << "  " << symbol << ": " 
+                              << "spread=" << std::fixed << std::setprecision(6) << intel.bid_ask_spread() 
+                              << ", liq=" << std::setprecision(3) << intel.liquidity_ratio()
+                              << ", regime=" << intel.current_regime() << std::endl;
+                    displayed++;
+                } else if (displayed == 5) {
+                    std::cout << "  ... and " << (latestIntelligence_.size() - 5) << " more" << std::endl;
+                    break;
+                }
+            }
+        }
+        
+        std::cout << "=========================================" << std::endl;
+    }
      void onOrderBookUpdate(const OrderBookUpdate& update, std::shared_ptr<OrderBook> orderBook) {
         try {
-            //rate limit processing to max 10 per second globally and per symbol
-            static auto lastProcess = std::chrono::steady_clock::now();
-            static std::unordered_map<std::string, std::chrono::steady_clock::time_point> lastSymbolProcess;
-            
-            auto now = std::chrono::steady_clock::now();
-            std::string symbol = update.tradingPair.toString();
-            
-            // Rate limit per symbol (max 10 updates per second)
-            if (now - lastSymbolProcess[symbol] < std::chrono::milliseconds(100)) {
-                return; // Skip this update
-            }
             messagesProcessed_.fetch_add(1);
             
             // Debug output for first few messages
             static std::atomic<int> debugCount{0};
             int count = debugCount.fetch_add(1);
             
-            if (count++ < 5) {
+            if (count < 5) {
                 std::cout << "\n=== ORDER BOOK UPDATE #" << count << " ===" << std::endl;
                 std::cout << "Exchange: " << update.exchangeId.toString() << std::endl;
                 std::cout << "Symbol: " << update.tradingPair.toString() << std::endl;
@@ -476,12 +403,23 @@ public:
                     double spread = update.asks[0].price - update.bids[0].price;
                     std::cout << "Spread: " << spread << std::endl;
                 }
-                
                 std::cout << "=================================" << std::endl;
             }
             
-            // Generate market intelligence (using dedicated worker thread)
-            queueIntelligenceGeneration(update, orderBook);
+            // ✅ DIRECT intelligence generation - no queuing!
+            generateMarketIntelligence(update, orderBook);
+            
+            // ✅ Publish orderbook for risk module - ALWAYS, not just first 5!
+            if (zmqServer_) {
+                // Check if PublishOrderBookUpdate method exists
+                try {
+                    // This will send orderbook data with proper topic format for risk module
+                    publishOrderBookForRisk(update);
+                } catch (const std::exception& e) {
+                    // Fallback: use intelligence publishing
+                    std::cerr << "OrderBook publishing error: " << e.what() << std::endl;
+                }
+            } 
 
         } catch (const std::exception& e) {
             std::cerr << "Error processing order book update: " << e.what() << std::endl;
@@ -491,7 +429,6 @@ public:
     void generateMarketIntelligence(const OrderBookUpdate& update, std::shared_ptr<OrderBook> orderBook) {
         try {
             if (!orderBook) {
-                LOG_ERROR("failed to generate orderbook for intel, orderbook null");
                 return; // No order book available
             }
             
@@ -508,67 +445,42 @@ public:
                 return;
             }
             
-            // ✅ FIX: Generate intelligence on EVERY significant update, not just once
+            // Generate adaptive market intelligence
             std::string tradingPair = update.tradingPair.toString();
             
-            // Check if this is a significant enough update to generate new intelligence
+            // Throttle intelligence generation like full_bridge.cpp
             static std::unordered_map<std::string, std::chrono::steady_clock::time_point> lastIntelTime;
-            static std::unordered_map<std::string, double> lastBestBid;
-            static std::unordered_map<std::string, double> lastBestAsk;
+            static std::unordered_map<std::string, int> intelDebugCounts;
             
             auto now = std::chrono::steady_clock::now();
             bool shouldGenerate = false;
             
-            // Generate intelligence if:
-            // 1. First time for this symbol, OR
-            // 2. 30 seconds have passed since last generation, OR  
-            // 3. Significant price movement (>0.1%)
             if (lastIntelTime.find(tradingPair) == lastIntelTime.end()) {
                 shouldGenerate = true; // First time
             } else {
                 auto timeSinceLastIntel = now - lastIntelTime[tradingPair];
-                if (timeSinceLastIntel >= std::chrono::seconds(30)) {
-                    shouldGenerate = true; // Time-based refresh
-                } else {
-                    // Check for significant price movement
-                    double currentBid = bids[0].price;
-                    double currentAsk = asks[0].price;
-                    double lastBid = lastBestBid[tradingPair];
-                    double lastAsk = lastBestAsk[tradingPair];
-                    
-                    if (lastBid > 0 && lastAsk > 0) {
-                        double bidChange = std::abs(currentBid - lastBid) / lastBid;
-                        double askChange = std::abs(currentAsk - lastAsk) / lastAsk;
-                        
-                        if (bidChange > 0.001 || askChange > 0.001) { // 0.1% movement
-                            shouldGenerate = true;
-                        }
-                    }
+                if (timeSinceLastIntel >= std::chrono::seconds(10)) { // Generate every 10 seconds
+                    shouldGenerate = true;
                 }
             }
             
             if (!shouldGenerate) {
-                return; // Skip this update
+                return;
             }
             
-            // Generate fresh adaptive market intelligence
+            lastIntelTime[tradingPair] = now;
+            
             trading::MarketIntelligence intel = adaptiveIntel_->GenerateAdaptiveMarketIntelligence(tradingPair, orderBook);
 
             if (intel.symbol().empty()) {
                 return; // No valid intelligence generated
             }
 
-            // Update tracking variables
-            lastIntelTime[tradingPair] = now;
-            lastBestBid[tradingPair] = bids[0].price;
-            lastBestAsk[tradingPair] = asks[0].price;
-            
             // Debug output for intelligence generations
-            static std::unordered_map<std::string, int> intelDebugCounts;
             intelDebugCounts[tradingPair]++;
             
             if (intelDebugCounts[tradingPair] <= 3 || intelDebugCounts[tradingPair] % 50 == 0) {
-                std::cout << "Generated intelligence #" << intelDebugCounts[tradingPair] 
+                std::cout << "🧠 Generated intelligence #" << intelDebugCounts[tradingPair] 
                           << " for " << tradingPair << " (spread: " << intel.bid_ask_spread() 
                           << ", imbalance: " << intel.order_book_imbalance() << ")" << std::endl;
             }
@@ -579,7 +491,7 @@ public:
                 latestIntelligence_[tradingPair] = intel;
             }
             
-            // Publish to ZMQ
+            // ✅ Direct ZMQ publishing like full_bridge.cpp
             if (zmqServer_) {
                 zmqServer_->PublishMarketIntelligence(intel);
                 intelligenceGenerated_.fetch_add(1);
@@ -590,153 +502,94 @@ public:
         }
     }
 
-    // ✅ Intelligence processor methods
-    void startIntelligenceProcessor() {
-        intelligenceRunning_ = true;
-        intelligenceThread_ = std::thread([this]() {
-            std::cout << "🧠 Intelligence processor thread started" << std::endl;
-            static std::atomic<int> processedCount{0};
+    // ✅ NEW: Publish orderbook data for risk module
+    void publishOrderBookForRisk(const OrderBookUpdate& update) {
+        try {
+            // Check if zmqServer has orderbook publishing capability
+            if (!zmqServer_) return;
             
-            while (intelligenceRunning_) {
-                std::unique_lock<std::mutex> lock(queueMutex_);
-                
-                // Wait for work or shutdown
-                queueCondition_.wait(lock, [this]() {
-                    return !intelligenceQueue_.empty() || !intelligenceRunning_;
-                });
-                
-                if (!intelligenceRunning_) {
-                    std::cout << "🧠 Intelligence processor shutting down" << std::endl;
-                    break;
-                }
-                
-                // Process all queued items
-                int batchCount = 0;
-                while (!intelligenceQueue_.empty()) {
-                    auto [update, orderBook] = intelligenceQueue_.front();
-                    intelligenceQueue_.pop();
-                    batchCount++;
-                    lock.unlock();
-                    
-                    // Generate intelligence (your existing code)
-                    generateMarketIntelligence(update, orderBook);
-                    
-                    int count = processedCount.fetch_add(1);
-                    if (count < 5 || count % 100 == 0) {
-                        std::cout << "🧠 Processed intelligence #" << count 
-                                  << " for " << update.tradingPair.toString() << std::endl;
-                    }
-                    
-                    lock.lock();
-                }
-                
-                if (batchCount > 1) {
-                    std::cout << "🧠 Processed batch of " << batchCount << " intelligence items" << std::endl;
-                }
+            // Create JSON message for orderbook (compatible with risk module)
+            nlohmann::json orderBookMsg;
+            orderBookMsg["exchange"] = update.exchangeId.toString();
+            orderBookMsg["symbol"] = update.tradingPair.toString();
+            orderBookMsg["sequence"] = update.sequenceNumber;
+            orderBookMsg["timestamp"] = std::chrono::duration_cast<std::chrono::milliseconds>(
+                update.exchangeTimestamp.time_since_epoch()).count();
+            
+            // Add bids
+            orderBookMsg["bids"] = nlohmann::json::array();
+            for (const auto& bid : update.bids) {
+                orderBookMsg["bids"].push_back({bid.price, bid.quantity});
             }
             
-            std::cout << "🧠 Intelligence processor thread finished" << std::endl;
-        });
-    }
-    
-    void stopIntelligenceProcessor() {
-        std::cout << "🧠 Stopping intelligence processor..." << std::endl;
-        intelligenceRunning_ = false;
-        queueCondition_.notify_all();
-        if (intelligenceThread_.joinable()) {
-            intelligenceThread_.join();
-        }
-        std::cout << "🧠 Intelligence processor stopped" << std::endl;
-    }
-    
-    // ✅ Method to restart intelligence processor if it gets stuck
-    void restartIntelligenceProcessor() {
-        std::cout << "🔄 Restarting intelligence processor..." << std::endl;
-        stopIntelligenceProcessor();
-        
-        // Clear any stale queue items
-        {
-            std::lock_guard<std::mutex> lock(queueMutex_);
-            while (!intelligenceQueue_.empty()) {
-                intelligenceQueue_.pop();
+            // Add asks
+            orderBookMsg["asks"] = nlohmann::json::array();
+            for (const auto& ask : update.asks) {
+                orderBookMsg["asks"].push_back({ask.price, ask.quantity});
             }
-        }
-        
-        // Restart with fresh state
-        startIntelligenceProcessor();
-        std::cout << "✅ Intelligence processor restarted" << std::endl;
-    }
-    
-    // ✅ CRITICAL: Emergency restart for data ingestion when trading is at risk
-    void restartDataIngestionEmergency() {
-        std::cout << "🚨 EMERGENCY RESTART of data ingestion - Trading safety priority!" << std::endl;
-        
-        if (!dataIngestionService_) {
-            std::cout << "❌ No data ingestion service to restart!" << std::endl;
-            return;
-        }
-        
-        // Get current symbols before restart
-        std::vector<Symbol> symbols;
-        for (const auto& [name, pair] : strategyConfig_.tradingPairs) {
-            symbols.push_back(Symbol::fromString(name));
-        }
-        
-        std::cout << "🔄 Stopping data ingestion..." << std::endl;
-        dataIngestionService_->stop();
-        
-        // Minimal wait time for emergency restart
-        std::this_thread::sleep_for(std::chrono::milliseconds(500));
-        
-        std::cout << "🔄 Starting data ingestion with " << symbols.size() << " symbols..." << std::endl;
-        if (!dataIngestionService_->start(symbols)) {
-            std::cout << "❌ CRITICAL: Emergency restart failed!" << std::endl;
-            systemHealthy_ = false;
-        } else {
-            std::cout << "✅ Emergency restart successful - monitoring for data flow..." << std::endl;
-        }
-    }
-    
-    void queueIntelligenceGeneration(const OrderBookUpdate& update, 
-                                   std::shared_ptr<OrderBook> orderBook) {
-        static std::atomic<int> queueCount{0};
-        int count = queueCount.fetch_add(1);
-        
-        if (count < 5 || count % 100 == 0) {
-            std::cout << "🧠 Queueing intelligence #" << count << " for " 
-                      << update.tradingPair.toString() << " (queue size: " 
-                      << intelligenceQueue_.size() << ")" << std::endl;
-        }
-        
-        {
-            std::lock_guard<std::mutex> lock(queueMutex_);
             
-            // Limit queue size to prevent memory buildup
-            if (intelligenceQueue_.size() < 50) {
-                intelligenceQueue_.emplace(update, orderBook);
-            } else {
-                // Drop oldest item if queue is full
-                intelligenceQueue_.pop();
-                intelligenceQueue_.emplace(update, orderBook);
-                
-                if (count % 50 == 0) {
-                    std::cout << "⚠️ Intelligence queue full, dropping oldest items" << std::endl;
-                }
+            std::string jsonStr = orderBookMsg.dump();
+            
+            // Publish with risk-compatible topic format
+            static std::atomic<int> publishCount{0};
+            int count = publishCount.fetch_add(1);
+            
+            if (count < 5 || count % 100 == 0) {
+                std::cout << "📊 Publishing orderbook #" << count 
+                          << " for " << update.exchangeId.toString() 
+                          << ":" << update.tradingPair.toString() << std::endl;
             }
+            
+            // ✅ Use new API
+            zmqServer_->PublishOrderBookData(
+                update.exchangeId.toString(), 
+                update.tradingPair.toString(), 
+                jsonStr
+            );
+            
+        } catch (const std::exception& e) {
+            std::cerr << "Error publishing orderbook for risk: " << e.what() << std::endl;
         }
-        queueCondition_.notify_one();
+    }
+
+    // ✅ Simple health check like full_bridge.cpp
+    bool checkSystemHealth() {
+        try {
+            // Basic health checks
+            if (!running_ || !systemHealthy_) {
+                return false;
+            }
+            
+            // Check if services are responsive
+            bool dataIngestionHealthy = dataIngestionService_ ? dataIngestionService_->isHealthy() : false;
+            bool strategyEngineHealthy = strategyEngine_ ? true : false;
+            bool riskManagerHealthy = riskManager_ ? true : false;
+            bool zmqHealthy = zmqServer_ ? true : false;
+            
+            bool overallHealthy = dataIngestionHealthy && strategyEngineHealthy && 
+                                riskManagerHealthy && zmqHealthy;
+            
+            if (!overallHealthy) {
+                std::cout << "⚠️ System health issues detected!" << std::endl;
+                std::cout << "  Data Ingestion: " << (dataIngestionHealthy ? "✅" : "❌") << std::endl;
+                std::cout << "  Strategy Engine: " << (strategyEngineHealthy ? "✅" : "❌") << std::endl;
+                std::cout << "  Risk Manager: " << (riskManagerHealthy ? "✅" : "❌") << std::endl;
+                std::cout << "  ZMQ Server: " << (zmqHealthy ? "✅" : "❌") << std::endl;
+                
+                systemHealthy_ = false;
+                return false;
+            }
+            
+            return true;
+        } catch (const std::exception& e) {
+            std::cerr << "Error in system health check: " << e.what() << std::endl;
+            return false;
+        }
     }
 private:
     //market intel
     std::atomic<uint64_t> messagesProcessed_{0};
     std::atomic<uint64_t> intelligenceGenerated_{0};
-    
-    // ✅ Intelligence processing thread infrastructure
-    std::thread intelligenceThread_;
-    std::queue<std::pair<OrderBookUpdate, std::shared_ptr<OrderBook>>> intelligenceQueue_;
-    std::mutex queueMutex_;
-    std::condition_variable queueCondition_;
-    std::atomic<bool> intelligenceRunning_{false};
 
     // PTCA: Add PTCA-related members
     std::unique_ptr<trading::learning::PTCAIntegrationManager> ptcaManager_;
@@ -1222,90 +1075,6 @@ private:
         setupPTCAConnections();
     }
     
-        // In FullSystemDemo::checkSystemHealth(), temporarily disable emergency actions:
-    bool checkSystemHealth() {
-        try {
-            // Basic health checks
-            if (!running_ || !systemHealthy_) {
-                return false;
-            }
-            
-            // Check if services are responsive
-            bool dataIngestionHealthy = dataIngestionService_ ? true : false;
-            bool strategyEngineHealthy = strategyEngine_ ? true : false;
-            bool riskManagerHealthy = riskManager_ ? true : false;
-            
-            // ✅ Check intelligence system health
-            bool intelligenceHealthy = intelligenceRunning_ && intelligenceThread_.joinable();
-            
-            // ✅ Check ZMQ health
-            bool zmqHealthy = zmqServer_ ? true : false; // Add more specific checks if available
-            
-            // ✅ Check recent intelligence generation
-            static uint64_t lastIntelCount = 0;
-            static auto lastHealthCheck = std::chrono::steady_clock::now();
-            auto now = std::chrono::steady_clock::now();
-            
-            uint64_t currentIntelCount = intelligenceGenerated_.load();
-            auto timeSinceLastCheck = now - lastHealthCheck;
-            
-            bool recentIntelligence = true;
-            if (timeSinceLastCheck > std::chrono::minutes(2)) {
-                if (currentIntelCount == lastIntelCount) {
-                    std::cout << "⚠️ No new intelligence generated in last 2 minutes!" << std::endl;
-                    recentIntelligence = false;
-                }
-                lastIntelCount = currentIntelCount;
-                lastHealthCheck = now;
-            }
-            
-            // ✅ Check recent order book activity
-            static uint64_t lastCallbackCount = 0;
-            static auto lastCallbackCheck = std::chrono::steady_clock::now();
-            
-            uint64_t currentCallbackCount = messagesProcessed_.load();
-            auto timeSinceLastCallbackCheck = now - lastCallbackCheck;
-            
-            bool recentCallbacks = true;
-            if (timeSinceLastCallbackCheck > std::chrono::minutes(2)) {
-                if (currentCallbackCount == lastCallbackCount) {
-                    std::cout << "⚠️ No new order book callbacks in last 2 minutes!" << std::endl;
-                    recentCallbacks = false;
-                }
-                lastCallbackCount = currentCallbackCount;
-                lastCallbackCheck = now;
-            }
-            
-            bool overallHealthy = dataIngestionHealthy && strategyEngineHealthy && 
-                                riskManagerHealthy && intelligenceHealthy && 
-                                zmqHealthy && recentIntelligence && recentCallbacks;
-            
-            if (!overallHealthy) {
-                std::cout << "⚠️ System health issues detected!" << std::endl;
-                std::cout << "  Data Ingestion: " << (dataIngestionHealthy ? "✅" : "❌") << std::endl;
-                std::cout << "  Strategy Engine: " << (strategyEngineHealthy ? "✅" : "❌") << std::endl;
-                std::cout << "  Risk Manager: " << (riskManagerHealthy ? "✅" : "❌") << std::endl;
-                std::cout << "  Intelligence: " << (intelligenceHealthy ? "✅" : "❌") << std::endl;
-                std::cout << "  ZMQ Server: " << (zmqHealthy ? "✅" : "❌") << std::endl;
-                std::cout << "  Recent Intelligence: " << (recentIntelligence ? "✅" : "❌") << std::endl;
-                std::cout << "  Recent Callbacks: " << (recentCallbacks ? "✅" : "❌") << std::endl;
-                
-                systemHealthy_ = false;
-                
-                // ❌ DISABLE: Don't call emergency action to avoid recursion
-                if (riskManager_) {
-                    riskManager_->emergencyAction("System health check failed");
-                }
-                
-                return false;
-            }
-            
-            return true;
-        } catch (const std::exception& e) {
-            std::cerr << "Error in system health check: " << e.what() << std::endl;
-            return false;
-        }
-    }
     void realExecution(const execution::TradingSignal& signal) {
         ordersExecuted_++;
         

@@ -18,36 +18,6 @@ void signalHandler(int signal) {
         service->stop();
     }
 }
-// Create a minimal config file for testing
-void createTestConfig() {
-    const char* configContent = R"({
-    "exchanges": {
-        "BINANCE": {
-            "id": "BINANCE",
-            "name": "Binance",
-            "ws_url": "wss://stream.binance.com:9443/ws",
-            "rest_url": "https://api.binance.com",
-            "symbols": ["BTC/USDT", "ETH/USDT", "BNB/USDT", "LTC/USDT", "XRP/USDT", "BCH/USDT", "ADA/USDT", "DOT/USDT", "LINK/USDT", "XLM/USDT", "DOGE/USDT", "SOL/USDT", "MATIC/USDT", "AVAX/USDT", "SHIB/USDT", "TRX/USDT", "UNI/USDT", "ATOM/USDT", "ALGO/USDT", "VET/USDT", "FIL/USDT"],
-            "connection_timeout_ms": 5000,
-            "max_reconnect_attempts": 3
-        }
-    },
-    "order_book": {
-        "depth": 20,
-        "snapshot_interval_ms": 30000
-    },
-    "publisher": {
-        "zmq_endpoint": "tcp://*:5555",
-        "max_queue_size": 1000,
-        "publish_interval_ms": 100
-    }
-})";
-    
-    std::ofstream configFile("config/test_config.json");
-    configFile << configContent;
-    configFile.close();
-    std::cout << "Created test config file" << std::endl;
-}
 
 int main() {
     signal(SIGINT, signalHandler);
@@ -57,7 +27,7 @@ int main() {
     
     try {
         // Create test config if it doesn't exist
-        createTestConfig();
+        // createTestConfig();
         
         // Start the event bus first
         trading::common::EventBus::getInstance().start();
@@ -105,88 +75,7 @@ int main() {
             trading::common::EventBus::getInstance().stop();
             return 1;
         }
-        
-        // Start with test symbols
-        /*{
-      "symbol": "BTC/USDT",
-      "exchange": "BINANCE"
-    },
-    {
-      "symbol": "ETH/USDT", 
-      "exchange": "BINANCE"
-    },
-    {
-      "symbol": "LTC/USDT", 
-      "exchange": "BINANCE"
-    },
-    {
-      "symbol": "XRP/USDT", 
-      "exchange": "BINANCE"
-    },
-    {
-      "symbol": "BCH/USDT", 
-      "exchange": "BINANCE"
-    },
-    {
-      "symbol": "ADA/USDT", 
-      "exchange": "BINANCE"
-    },
-    {
-      "symbol": "DOT/USDT", 
-      "exchange": "BINANCE"
-    },
-    {
-      "symbol": "LINK/USDT", 
-      "exchange": "BINANCE"
-    },
-    {
-      "symbol": "XLM/USDT", 
-      "exchange": "BINANCE"
-    },
-    {
-      "symbol": "DOGE/USDT", 
-      "exchange": "BINANCE"
-    },
-    {
-      "symbol": "SOL/USDT", 
-      "exchange": "BINANCE"
-    },
-    {
-      "symbol": "MATIC/USDT", 
-      "exchange": "BINANCE"
-    },
-    {
-      "symbol": "AVAX/USDT", 
-      "exchange": "BINANCE"
-    },
-    {
-      "symbol": "SHIB/USDT", 
-      "exchange": "BINANCE"
-    },
-    {
-      "symbol": "TRX/USDT", 
-      "exchange": "BINANCE"
-    },
-    {
-      "symbol": "UNI/USDT", 
-      "exchange": "BINANCE"
-    },
-    {
-      "symbol": "ATOM/USDT", 
-      "exchange": "BINANCE"
-    },
-    {
-      "symbol": "ALGO/USDT", 
-      "exchange": "BINANCE"
-    },
-    {
-      "symbol": "VET/USDT", 
-      "exchange": "BINANCE"
-    },
-    {
-      "symbol": "FIL/USDT", 
-      "exchange": "BINANCE"
-    }*/
+      
         //load symbols from config file
         std::vector<Symbol> symbols;
         //for testing, hardcode symbols here

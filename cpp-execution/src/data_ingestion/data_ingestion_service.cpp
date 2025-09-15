@@ -223,7 +223,7 @@ bool DataIngestionService::setupExchangeManager() {
             this->onNormalizedOrderBook(update);
         };
         
-        exchangeManager_ = std::make_unique<ExchangeManager>(exchangeCallback, 5, 8);
+        exchangeManager_ = std::make_unique<ExchangeManager>(exchangeCallback, 2, 4);
         
         std::cout << "Exchange manager setup completed" << std::endl;
         return true;
