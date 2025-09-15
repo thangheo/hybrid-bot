@@ -668,9 +668,9 @@ void BinanceWebSocketClient::onWebSocketOpen() {
                     std::lock_guard<std::mutex> lock(subscriptionMutex_);
                     symbolsToResubscribe = subscribedSymbols_;
                     
-                    // ✅ Clear existing subscriptions to allow re-subscription
-                    subscribedSymbols_.clear();
-                    subscribedStreams_.clear();
+                    // 🚫 DON'T clear subscriptions - keep them for health checks
+                    // subscribedSymbols_.clear();
+                    // subscribedStreams_.clear();
                 }
                 
                 if (!symbolsToResubscribe.empty() && connected_.load()) {
