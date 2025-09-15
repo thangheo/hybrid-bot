@@ -228,7 +228,7 @@ private:
             }
             
             // Publish to ZMQ
-            if (zmqServer_) {
+            if (zmqServer_ && intel.symbol() == tradingPair) {
                 zmqServer_->PublishMarketIntelligence(intel);
                 intelligenceGenerated_.fetch_add(1);
             }

@@ -451,7 +451,14 @@ public:
             }
             
             // ✅ Direct ZMQ publishing like full_bridge.cpp
-            if (zmqServer_) {
+            if (zmqServer_ and !intel.symbol().empty()) {
+                // Debug output for publishing
+                static std::atomic<int> publishCount{0};
+                int count = publishCount.fetch_add(1);
+                if (count < 5 || count % 100 == 0) {
+                    std::cout << "📢 Publishing intelligence #" << count
+                              << " for " << tradingPair << std::endl;
+                }   
                 zmqServer_->PublishMarketIntelligence(intel);
                 intelligenceGenerated_.fetch_add(1);
             }
@@ -464,9 +471,18 @@ public:
     // ✅ NEW: Publish orderbook data for risk module
     void publishOrderBookForRisk(const OrderBookUpdate& update) {
         try {
-            // Check if zmqServer has orderbook publishing capability
-            if (!zmqServer_) return;
-            
+            // Check if zmqServer has orderbook publishing capability and update is valid
+            if (update.bids.empty() && update.asks.empty()  ) {
+                std::cerr << "Warning: Orderbook update is empty for "
+                          << update.exchangeId.toString() << ":" << update.tradingPair.toString() << std::endl;
+                return;
+            }
+            if (!zmqServer_) {
+                std::cerr << "Warning: ZMQ server is not available for "
+                          << update.exchangeId.toString() << ":" << update.tradingPair.toString() << std::endl;
+                return;
+            }
+
             // Create JSON message for orderbook (compatible with risk module)
             nlohmann::json orderBookMsg;
             orderBookMsg["exchange"] = update.exchangeId.toString();
@@ -499,7 +515,16 @@ public:
                           << ":" << update.tradingPair.toString() << std::endl;
             }
             
-            // ✅ Use new API
+            if (jsonStr.size() > 10000) {
+                std::cerr << "Warning: Orderbook message size is large (" 
+                          << jsonStr.size() << " bytes)" << std::endl;
+            }
+            //check if orderbook is empty
+            if (update.bids.empty() || update.asks.empty()) {
+                std::cerr << "Warning: Orderbook is empty for "
+                          << update.exchangeId.toString() << ":" << update.tradingPair.toString() << std::endl;
+                return;
+            }
             zmqServer_->PublishOrderBookData(
                 update.exchangeId.toString(), 
                 update.tradingPair.toString(), 
@@ -632,8 +657,6 @@ private:
         createDataIngestionConfig();
         createStrategyConfig();
         createRiskConfig();                
-        // ✅ Create DataInterface ONCE and store as member
-        // m_dataInterface = createDataInterface();
         createPTCAConfig();
     }
     
@@ -678,32 +701,13 @@ private:
                       << " on exchange " << pair.toString() << std::endl;            
         }
     }
-     // PTCA: Market price update handler
-    // void onMarketPriceUpdate(const core::Symbol& symbol, double price) {
-    //     std::cout << "Price update: " << symbol.toString() << " = " << price << std::endl;
-        
-    //     auto now = std::chrono::steady_clock::now();
-    //     if (now - lastPriceUpdate_ >= std::chrono::seconds(1)) {
-    //         ptcaManager_->updateMarketPrice(symbol, price);
-    //         lastPriceUpdate_ = now;
-    //         std::cout << "PTCA price updated" << std::endl;
-    //     } else {
-    //         std::cout << "PTCA price update throttled" << std::endl;
-    //     }
-    // }
+
     void onMarketPriceUpdate(const core::Symbol& symbol, double price) {
         ptcaManager_->updateMarketPrice(symbol, price);
     }
         // Add this to your FullSystemDemo class:
     void setupPTCAConnections() {
-        // 1. Market data callback (existing)
-        // if (m_dataInterface) {
-        //     m_dataInterface->registerMarketDataCallback(
-        //         [this](const MarketData& marketData) {
-        //             onMarketPriceUpdate(marketData.tradingPair.toString(), marketData.price);
-        //         }
-        //     );
-        // }
+      
         
         // 2. Execution callback - use executionService_ directly
         if (executionService_) {
@@ -842,15 +846,6 @@ private:
         // After initializing the router, add this debug check:
         smart_order_router->initialize(exchanges);
 
-        // Debug: Test if the exchange supports our trading pairs
-        std::cout << "Testing exchange support for BTC/USDT: " << 
-            (binanceInfo.supports_trading_pair(core::Symbol("BTC/USDT")) ? "YES" : "NO") << std::endl;
-
-        std::vector<std::string> available = smart_order_router->getAvailableExchanges(core::Symbol("BTC/USDT"));
-        std::cout << "Available exchanges for BTC/USDT: " << available.size() << std::endl;
-        for (const auto& ex : available) {
-            std::cout << "  - " << ex << std::endl;
-        }
         exchangeGateway_ = std::make_shared<common::ExchangeGateway>(api_client_manager);
         if (!exchangeGateway_->isHealthy()) {
             std::cout << "Exchange Gateway is not healthy!" << std::endl;
@@ -916,7 +911,7 @@ private:
             }
            
             // Get the existing order book and send to strategy
-            auto orderBook = dataIngestionService_->getOrderBook(update.exchangeId, update.tradingPair);
+            auto orderBook = dataIngestionService_->getOrderBook(update.exchangeId, update.tradingPair);            
 
             if(orderBook) {
                 // Throttle generateMarketIntelligence and publishOrderBookForRisk per symbol
@@ -925,13 +920,13 @@ private:
                 auto now = std::chrono::steady_clock::now();
                 std::string symbolStr = update.tradingPair.toString();
 
-                // Generate market intelligence at most every 100ms per symbol
-                if (adaptiveIntel_ && (now - lastIntelGen[symbolStr] >= std::chrono::milliseconds(100))) {
+                // Generate market intelligence at most every 53ms per symbol
+                if (adaptiveIntel_ && (now - lastIntelGen[symbolStr] >= std::chrono::milliseconds(53))) {
                     generateMarketIntelligence(update, orderBook);
                     lastIntelGen[symbolStr] = now;
                 }
-                // Publish orderbook for risk at most every 150ms per symbol (adjust as needed)
-                else if (zmqServer_ && (now - lastOrderbookPub[symbolStr] >= std::chrono::milliseconds(150))) {
+                // Publish orderbook for risk at most every 107ms per symbol (adjust as needed)
+                else if (zmqServer_ && (now - lastOrderbookPub[symbolStr] >= std::chrono::milliseconds(107))) {
                     publishOrderBookForRisk(update);
                     lastOrderbookPub[symbolStr] = now;
                 }

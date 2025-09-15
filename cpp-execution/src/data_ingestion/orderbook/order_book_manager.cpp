@@ -438,26 +438,27 @@ void OrderBookManager::updateStatistics(double latencyMs) const {
     // Update latency statistics (atomic operations)
     totalUpdateLatencyMs_ += latencyMs;
     
-    // Update max latency if needed
+    // Update max latency if needed  
     double currentMax = maxUpdateLatencyMs_.load();
-    while (latencyMs > currentMax && 
+    while (latencyMs > currentMax &&
            !maxUpdateLatencyMs_.compare_exchange_weak(currentMax, latencyMs)) {
         // Keep trying until we successfully update or latencyMs is no longer the max
     }
     
-    // Update per-second counter
+    // 🔧 FIX: TẤT CẢ LOGIC COUNTER PHẢI TRONG LOCK
     auto now = std::chrono::system_clock::now();
-    auto timeSinceReset = std::chrono::duration_cast<std::chrono::seconds>(now - lastSecondReset_).count();
-    
-    if (timeSinceReset >= 1) {
+    {
         std::lock_guard<std::mutex> lock(statsMutex_);
-        // Reset counter if more than 1 second has passed
-        if (std::chrono::duration_cast<std::chrono::seconds>(now - lastSecondReset_).count() >= 1) {
+        
+        auto timeSinceReset = std::chrono::duration_cast<std::chrono::seconds>(now - lastSecondReset_).count();
+        
+        if (timeSinceReset >= 1) {
+            // Reset counter if more than 1 second has passed
             updatesInLastSecond_ = 1;
             lastSecondReset_ = now;
+        } else {
+            ++updatesInLastSecond_;
         }
-    } else {
-        ++updatesInLastSecond_;
     }
 }
 
