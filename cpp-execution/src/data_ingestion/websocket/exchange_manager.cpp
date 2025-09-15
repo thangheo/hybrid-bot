@@ -26,6 +26,18 @@ ExchangeManager::ExchangeManager(const core::ExchangeId& exchangeId,
         };
         rateLimitController_->setRateLimitRules(rules);
     }
+   // Create the normalizer with the callback
+    normalizer_ = std::make_unique<OrderBookNormalizer>(normalizedCallback_);
+    
+    // Create WebSocket callback that properly forwards to normalizer
+    websocketCallback_ = [this](const core::ExchangeId& exchange,
+                               const core::Symbol& symbol,
+                               const std::vector<uint8_t>& data) {
+        this->onWebSocketData(exchange, symbol, data);
+    };
+    
+    std::cout << "ExchangeManager initialized with " << minConnections_
+              << "-" << maxConnections_ << " connections\n";
 }
 
 ExchangeManager::ExchangeManager(NormalizedOrderBookCallback callback,
