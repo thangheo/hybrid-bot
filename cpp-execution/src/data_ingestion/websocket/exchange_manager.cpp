@@ -217,8 +217,19 @@ void ExchangeManager::disconnect() {
 }
 
 bool ExchangeManager::isConnected() const {
-    std::lock_guard<std::recursive_mutex> lock(mutex_);
-    return isConnected_.load() && connectionPool_ && connectionPool_->isHealthy();
+    // 🔧 Don't hold mutex for atomic operations to prevent deadlock
+    bool connected = isConnected_.load();
+    
+    // Quick return if basic connection state is false
+    if (!connected) {
+        return false;
+    }
+    
+    // Only check pool health if we have a connection pool
+    {
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
+        return connectionPool_ && connectionPool_->isHealthy();
+    }
 }
 
 OrderBookUpdate ExchangeManager::getOrderBook(const core::Symbol& tradingPair,
