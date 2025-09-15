@@ -165,6 +165,29 @@ public:
             std::cerr << "Failed to initialize data ingestion service" << std::endl;
             return false;
         }
+
+        // Register connection status callback to refresh intelligence after reconnect
+        // dataIngestionService_->setStatusCallback([this](const std::string& component, const std::string& status) {
+        //     // Only act on exchange connection events
+        //     if (component == "connection" && status.find("status=CONNECTED") != std::string::npos) {
+        //         std::cout << "[FullSystemDemo] Detected exchange reconnect, refreshing all intelligence..." << std::endl;
+        //         // For each symbol in strategy config, force intelligence refresh
+        //         for (const auto& [name, pair] : strategyConfig_.tradingPairs) {
+        //             auto orderBook = dataIngestionService_->getOrderBook(core::ExchangeId::binance(), pair);
+        //             if (orderBook) {
+        //                 // Use a dummy OrderBookUpdate for refresh (minimal fields)
+        //                 OrderBookUpdate dummyUpdate;
+        //                 dummyUpdate.exchangeId = core::ExchangeId::binance();
+        //                 dummyUpdate.tradingPair = pair;
+        //                 dummyUpdate.bids = orderBook->getBids(20);
+        //                 dummyUpdate.asks = orderBook->getAsks(20);
+        //                 dummyUpdate.sequenceNumber = orderBook->getLastSequenceNumber();
+        //                 dummyUpdate.exchangeTimestamp = std::chrono::system_clock::now();
+        //                 generateMarketIntelligence(dummyUpdate, orderBook);
+        //             }
+        //         }
+        //     }
+        // });
         
         // ✅ NEW - Use the factory method
         riskManager_ = RiskManager::create(executionService_, riskConfig_);
