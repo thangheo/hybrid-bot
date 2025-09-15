@@ -113,14 +113,14 @@ public:
     StrategyInterfaceImpl() : StrategyInterface() {
         // Load configuration
         // In a real implementation, this would be loaded from a config file
-        requestEndpoint_ = "tcp://localhost:5555";
-        publishEndpoint_ = "tcp://localhost:5560";
+        requestEndpoint_ = "tcp://localhost:5562";
+        publishEndpoint_ = "tcp://localhost:5563";
         strategyEventsTopic_ = "strategy_events";
     }
     StrategyInterfaceImpl(const RiskConfig& config) : StrategyInterface(config) {
         // Load configuration from RiskConfig
-        requestEndpoint_ = "tcp://localhost:5555";
-        publishEndpoint_ = "tcp://localhost:5560";
+        requestEndpoint_ = "tcp://localhost:5562";
+        publishEndpoint_ = "tcp://localhost:5563";
         strategyEventsTopic_ = "strategy_events";
 
         // requestEndpoint_ = config.strategyRequestEndpoint;

@@ -68,7 +68,7 @@ bool MarketDataInterface::initialize() {
         });
         
         // Initialize order book normalizer
-        normalizer_ = std::make_unique<data_ingestion::OrderBookNormalizer>(
+        normalizer_ = std::make_shared<data_ingestion::OrderBookNormalizer>(
             [this](const data_ingestion::OrderBookUpdate& update) {
                 // This callback is called when order book is normalized
                 updateMarketDataCache(update.exchangeId, update.tradingPair, update);
