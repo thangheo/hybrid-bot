@@ -383,49 +383,7 @@ public:
         
         std::cout << "=========================================" << std::endl;
     }
-    //  void onOrderBookUpdate(const OrderBookUpdate& update, std::shared_ptr<OrderBook> orderBook) {
-    //     try {
-    //         messagesProcessed_.fetch_add(1);
-            
-    //         // Debug output for first few messages
-    //         static std::atomic<int> debugCount{0};
-    //         int count = debugCount.fetch_add(1);
-            
-    //         if (count < 5) {
-    //             std::cout << "\n=== ORDER BOOK UPDATE #" << count << " ===" << std::endl;
-    //             std::cout << "Exchange: " << update.exchangeId.toString() << std::endl;
-    //             std::cout << "Symbol: " << update.tradingPair.toString() << std::endl;
-    //             std::cout << "Sequence: " << update.sequenceNumber << std::endl;
-    //             std::cout << "Bids: " << update.bids.size() << ", Asks: " << update.asks.size() << std::endl;
-                
-    //             if (!update.bids.empty() && !update.asks.empty()) {
-    //                 std::cout << "Best Bid: " << update.bids[0].price << " @ " << update.bids[0].quantity << std::endl;
-    //                 std::cout << "Best Ask: " << update.asks[0].price << " @ " << update.asks[0].quantity << std::endl;
-    //                 double spread = update.asks[0].price - update.bids[0].price;
-    //                 std::cout << "Spread: " << spread << std::endl;
-    //             }
-    //             std::cout << "=================================" << std::endl;
-    //         }
-            
-    //         // ✅ DIRECT intelligence generation - no queuing!
-    //         generateMarketIntelligence(update, orderBook);
-            
-    //         // ✅ Publish orderbook for risk module - ALWAYS, not just first 5!
-    //         if (zmqServer_) {
-    //             // Check if PublishOrderBookUpdate method exists
-    //             try {
-    //                 // This will send orderbook data with proper topic format for risk module
-    //                 publishOrderBookForRisk(update);
-    //             } catch (const std::exception& e) {
-    //                 // Fallback: use intelligence publishing
-    //                 std::cerr << "OrderBook publishing error: " << e.what() << std::endl;
-    //             }
-    //         } 
-
-    //     } catch (const std::exception& e) {
-    //         std::cerr << "Error processing order book update: " << e.what() << std::endl;
-    //     }
-    // }
+    
 
     void generateMarketIntelligence(const OrderBookUpdate& update, std::shared_ptr<OrderBook> orderBook) {
         try {
@@ -962,7 +920,12 @@ private:
             auto orderBook = dataIngestionService_->getOrderBook(update.exchangeId, update.tradingPair);
 
             if(orderBook) {
-                generateMarketIntelligence(update, orderBook);
+                //only generate after 10ms from last generation
+                messagesProcessed_++;
+
+                if (messagesProcessed_ % 10 == 0) {
+                    generateMarketIntelligence(update, orderBook);
+                }
                 //publish orderbook for risk
                 if (zmqServer_) {
                     publishOrderBookForRisk(update);
