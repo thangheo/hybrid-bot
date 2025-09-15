@@ -482,7 +482,7 @@ public:
                 shouldGenerate = true; // First time
             } else {
                 auto timeSinceLastIntel = now - lastIntelTime[tradingPair];
-                if (timeSinceLastIntel >= std::chrono::seconds(10)) { // Generate every 10 seconds
+                if (timeSinceLastIntel >= std::chrono::milliseconds(10)) { // Generate every 10 milliseconds
                     shouldGenerate = true;
                 }
             }
