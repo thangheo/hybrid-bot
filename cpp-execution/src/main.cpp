@@ -920,16 +920,20 @@ private:
             auto orderBook = dataIngestionService_->getOrderBook(update.exchangeId, update.tradingPair);
 
             if(orderBook) {
-                //only generate after 10ms from last generation
+                //only generate after in period of 100ms
                 messagesProcessed_++;
-
-                if (messagesProcessed_ % 10 == 0) {
+                // modify the code so generateMarketIntelligence and publishOrderBookForRisk wont publish at the same time
+                //publish market intelligence
+                if (adaptiveIntel_ and messagesProcessed_ % 100 == 0) {
                     generateMarketIntelligence(update, orderBook);
                 }
-                //publish orderbook for risk
-                if (zmqServer_) {
-                    publishOrderBookForRisk(update);
+                else{
+                    //publish orderbook for risk
+                    if (zmqServer_ and messagesProcessed_ % 37 == 0) {
+                        publishOrderBookForRisk(update);
+                    }
                 }
+              
                 // Update the order book state
                 orderBook->applySnapshot(update.bids, update.asks, 
                                     update.sequenceNumber, update.exchangeTimestamp);
