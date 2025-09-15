@@ -25,8 +25,10 @@ class ExchangeManager {
 public:
     using NormalizedOrderBookCallback = std::function<void(const OrderBookUpdate&)>;
     using WebSocketDataCallback = std::function<void(const core::ExchangeId&, const std::string&, const std::vector<uint8_t>&)>;
-    ExchangeManager(const core::ExchangeId& exchangeId,
-                std::shared_ptr<execution::RateLimitController> rateLimitController = nullptr);
+    
+     ExchangeManager(const core::ExchangeId& exchangeId,
+                    std::shared_ptr<execution::RateLimitController> rateLimitController,
+                    NormalizedOrderBookCallback normalizedCallback);
 
     ExchangeManager(NormalizedOrderBookCallback callback,
                    int minConnections = 3,
