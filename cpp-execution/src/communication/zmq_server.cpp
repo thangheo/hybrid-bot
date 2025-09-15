@@ -72,7 +72,34 @@ void TradingCommunicationServer::PublishMarketIntelligence(const trading::Market
 
 void TradingCommunicationServer::PublishMarketIntelligenceSync(const trading::MarketIntelligence& intel) {
     try {
-        std::string serialized = intel.SerializeAsString();
+        // ✅ Validate intelligence data before serialization
+        if (intel.symbol().empty()) {
+            std::cerr << "❌ Cannot publish intelligence: empty symbol" << std::endl;
+            return;
+        }
+        
+        if (!intel.IsInitialized()) {
+            std::cerr << "❌ Cannot publish intelligence: protobuf not properly initialized" << std::endl;
+            return;
+        }
+        
+        // ✅ Safe serialization with error checking
+        std::string serialized;
+        if (!intel.SerializeToString(&serialized)) {
+            std::cerr << "❌ Failed to serialize market intelligence for " << intel.symbol() << std::endl;
+            return;
+        }
+        
+        if (serialized.empty()) {
+            std::cerr << "❌ Serialized intelligence is empty for " << intel.symbol() << std::endl;
+            return;
+        }
+        
+        // ✅ Verify publisher is available
+        if (!intelligence_publisher_) {
+            std::cerr << "❌ Intelligence publisher not available" << std::endl;
+            return;
+        }
         
         // Send topic first, then data
         zmq::message_t topic_msg(strlen("MARKET_INTEL"));
@@ -81,11 +108,19 @@ void TradingCommunicationServer::PublishMarketIntelligenceSync(const trading::Ma
         zmq::message_t data_msg(serialized.size());
         memcpy(data_msg.data(), serialized.c_str(), serialized.size());
         
-        intelligence_publisher_->send(topic_msg, zmq::send_flags::sndmore);
-        intelligence_publisher_->send(data_msg, zmq::send_flags::none);
+        auto topic_result = intelligence_publisher_->send(topic_msg, zmq::send_flags::sndmore);
+        auto data_result = intelligence_publisher_->send(data_msg, zmq::send_flags::none);
+        
+        if (!topic_result.has_value() || !data_result.has_value()) {
+            std::cerr << "❌ Failed to send intelligence message for " << intel.symbol() << std::endl;
+        }
         
     } catch (const zmq::error_t& e) {
-        std::cerr << "Failed to publish market intelligence: " << e.what() << std::endl;
+        std::cerr << "❌ ZMQ error publishing market intelligence: " << e.what() << std::endl;
+    } catch (const std::exception& e) {
+        std::cerr << "❌ Error publishing market intelligence: " << e.what() << std::endl;
+    } catch (...) {
+        std::cerr << "❌ Unknown error publishing market intelligence" << std::endl;
     }
 }
 
