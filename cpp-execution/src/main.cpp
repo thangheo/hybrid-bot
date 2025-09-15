@@ -201,6 +201,7 @@ public:
             
             running_ = true;
             systemHealthy_ = true;
+            startTime_ = std::chrono::steady_clock::now();
             zmqServer_->Start();
             
             //load symbols from strategy config
@@ -346,11 +347,10 @@ public:
 
     void printStatus() {
         auto now = std::chrono::steady_clock::now();
-        auto startTime = std::chrono::steady_clock::now(); // Add startTime_ as member variable
-        auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - startTime).count();
-        
+        auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - startTime_).count();
+
         std::cout << "\n=== FULL TRADING SYSTEM STATUS ===" << std::endl;
-        std::cout << "Runtime: " << elapsed << "s" << std::endl;
+        std::cout << "Runtime: " << elapsed << "s" << std::endl;  //this will be always 0s
         std::cout << "Service Health: " << (dataIngestionService_->isHealthy() ? "HEALTHY" : "UNHEALTHY") << std::endl;
         std::cout << "Order book updates processed: " << messagesProcessed_.load() << std::endl;
         std::cout << "Intelligence generated: " << intelligenceGenerated_.load() << std::endl;
@@ -613,10 +613,10 @@ private:
     // Configurations
     risk::RiskConfig riskConfig_;
     strategy::StrategyConfig strategyConfig_;
-    
     // System state
     std::atomic<bool> running_;
     std::atomic<bool> systemHealthy_;
+    std::chrono::steady_clock::time_point startTime_;
     
     // Monitoring threads
     std::vector<std::thread> monitoringThreads_;
