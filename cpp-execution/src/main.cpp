@@ -924,12 +924,12 @@ private:
                 messagesProcessed_++;
                 // modify the code so generateMarketIntelligence and publishOrderBookForRisk wont publish at the same time
                 //publish market intelligence
-                if (adaptiveIntel_ and messagesProcessed_ % 100 == 0) {
+                if (adaptiveIntel_ and messagesProcessed_ % 10 == 0) {
                     generateMarketIntelligence(update, orderBook);
                 }
                 else{
                     //publish orderbook for risk
-                    if (zmqServer_ and messagesProcessed_ % 37 == 0) {
+                    if (zmqServer_ and messagesProcessed_ % 11 == 0) {
                         publishOrderBookForRisk(update);
                     }
                 }
