@@ -123,6 +123,7 @@ BinanceWebSocketClient::~BinanceWebSocketClient() {
     }
 }
 
+
 bool BinanceWebSocketClient::connect() {
     if (connected_.load()) {
         LOG_WARN("Already connected to Binance WebSocket");
@@ -165,12 +166,10 @@ bool BinanceWebSocketClient::connect() {
             }
         });
         
-        // Wait for connection with timeout
+        // ✅ FIX: Reduce aggressive waiting - only wait 10 seconds total
         int attempts = 0;
-        while (!connected_.load() && keep_running_.load() && attempts < 50) {
-            // std::this_thread::sleep_for(std::chrono::milliseconds(100));
-            std::this_thread::sleep_for(std::chrono::milliseconds(1000 + (attempts * 2000)));
-
+        while (!connected_.load() && keep_running_.load() && attempts < 20) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(500)); // 500ms instead of 1-50s
             ++attempts;
         }
         
@@ -181,7 +180,7 @@ bool BinanceWebSocketClient::connect() {
             LOG_INFO("Connected to Binance WebSocket: " + endpoint_);
             return true;
         } else {
-            LOG_ERROR("Connection timeout after 5 seconds");
+            LOG_ERROR("Connection timeout after 10 seconds");
             status_.store(ConnectionStatus::ERROR);
             return false;
         }
@@ -259,6 +258,11 @@ ConnectionStatus BinanceWebSocketClient::getStatus() const {
     return status_.load();
 }
 
+
+
+
+
+// ✅ FIX: Add subscription management to prevent duplicates
 bool BinanceWebSocketClient::subscribe(const std::vector<core::Symbol>& symbols) {
     std::lock_guard<std::mutex> lock(subscriptionMutex_);
 
@@ -267,33 +271,58 @@ bool BinanceWebSocketClient::subscribe(const std::vector<core::Symbol>& symbols)
         return false;
     }
 
-    LOG_INFO("Subscribing to " + std::to_string(symbols.size()) + " symbols");
+    // ✅ Prevent duplicate subscriptions
+    std::vector<core::Symbol> newSymbols;
+    for (const auto& symbol : symbols) {
+        if (std::find(subscribedSymbols_.begin(), subscribedSymbols_.end(), symbol) == subscribedSymbols_.end()) {
+            newSymbols.push_back(symbol);
+        } else {
+            LOG_DEBUG("Symbol already subscribed, skipping: " + symbol.toString());
+        }
+    }
+    
+    if (newSymbols.empty()) {
+        LOG_INFO("All symbols already subscribed");
+        return true;
+    }
+
+    LOG_INFO("Subscribing to " + std::to_string(newSymbols.size()) + " new symbols");
 
     std::vector<std::string> streams;
-    for (const auto& symbol : symbols) {
+    for (const auto& symbol : newSymbols) {
         std::string depthStream = symbolToStream(symbol, "depth");
         streams.push_back(depthStream);
-
-        if (std::find(subscribedStreams_.begin(), subscribedStreams_.end(), depthStream) == subscribedStreams_.end()) {
-            subscribedStreams_.push_back(depthStream);
-        }
-
-        if (std::find(subscribedSymbols_.begin(), subscribedSymbols_.end(), symbol) == subscribedSymbols_.end()) {
-            subscribedSymbols_.push_back(symbol);
-            // LOG_INFO("Added symbol to subscription: " + symbol.base + symbol.quote);
-        }
+        subscribedStreams_.push_back(depthStream);
+        subscribedSymbols_.push_back(symbol);
     }
 
     bool success = subscribeToStreams(streams);
 
     if (success) {
-        LOG_INFO("Successfully subscribed to " + std::to_string(symbols.size()) + " symbols on Binance");
+        LOG_INFO("Successfully subscribed to " + std::to_string(newSymbols.size()) + " new symbols on Binance");
     } else {
         LOG_ERROR("Failed to subscribe to symbols on Binance");
+        
+        // ✅ Rollback on failure
+        for (const auto& symbol : newSymbols) {
+            std::string depthStream = symbolToStream(symbol, "depth");
+            auto streamIt = std::find(subscribedStreams_.begin(), subscribedStreams_.end(), depthStream);
+            if (streamIt != subscribedStreams_.end()) {
+                subscribedStreams_.erase(streamIt);
+            }
+            auto symbolIt = std::find(subscribedSymbols_.begin(), subscribedSymbols_.end(), symbol);
+            if (symbolIt != subscribedSymbols_.end()) {
+                subscribedSymbols_.erase(symbolIt);
+            }
+        }
     }
 
     return success;
 }
+
+
+
+
 
 bool BinanceWebSocketClient::unsubscribe(const std::vector<core::Symbol>& symbols) {
     std::lock_guard<std::mutex> lock(subscriptionMutex_);
@@ -606,66 +635,74 @@ bool BinanceWebSocketClient::sendWebSocketMessage(const std::string& message) {
         LOG_ERROR("Error sending WebSocket message: " + std::string(e.what()));
         return false;
     }
-}void BinanceWebSocketClient::onWebSocketOpen() {
+}
+
+
+
+
+
+
+
+// ✅ FIX: Improve auto-resubscription logic
+void BinanceWebSocketClient::onWebSocketOpen() {
     LOG_INFO("WebSocket connection opened - ready for subscriptions");
     
-    // ✅ Auto-resubscribe to existing symbols after reconnection
+    // Auto-resubscribe to existing symbols after reconnection
     if (!subscribedSymbols_.empty()) {
-        LOG_INFO("🔄 Auto-resubscribing to " + std::to_string(subscribedSymbols_.size()) + " symbols after reconnection");
+        LOG_INFO("Auto-resubscribing to " + std::to_string(subscribedSymbols_.size()) + " symbols after reconnection");
         
-        // Schedule resubscription in a separate thread to avoid blocking the IO loop
+        // ✅ Use existing subscription logic instead of custom thread
         std::thread([this]() {
             try {
-                // Give connection time to stabilize
-                std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+                // ✅ Shorter stabilization time
+                std::this_thread::sleep_for(std::chrono::milliseconds(500));
                 
-                // Resubscribe without clearing existing subscriptions
-                std::vector<std::string> streams;
+                if (!connected_.load()) {
+                    LOG_WARN("Connection lost during resubscription delay");
+                    return;
+                }
+                
+                // Get current subscribed symbols (copy to avoid holding lock)
+                std::vector<core::Symbol> symbolsToResubscribe;
                 {
                     std::lock_guard<std::mutex> lock(subscriptionMutex_);
-                    for (const auto& symbol : subscribedSymbols_) {
-                        std::string depthStream = symbolToStream(symbol, "depth");
-                        streams.push_back(depthStream);
-                        LOG_INFO("📊 Preparing to resubscribe to: " + symbol.toString() + " -> " + depthStream);
-                    }
+                    symbolsToResubscribe = subscribedSymbols_;
+                    
+                    // ✅ Clear existing subscriptions to allow re-subscription
+                    subscribedSymbols_.clear();
+                    subscribedStreams_.clear();
                 }
                 
-                if (!streams.empty() && connected_.load()) {
-                    LOG_INFO("📤 Sending resubscription request for " + std::to_string(streams.size()) + " streams");
-                    bool resubSuccess = subscribeToStreams(streams);
+                if (!symbolsToResubscribe.empty() && connected_.load()) {
+                    LOG_INFO("Sending resubscription request for " + std::to_string(symbolsToResubscribe.size()) + " symbols");
+                    bool resubSuccess = subscribe(symbolsToResubscribe); // Use normal subscribe method
                     if (resubSuccess) {
-                        LOG_INFO("✅ Successfully resubscribed to all symbols after reconnection");
+                        LOG_INFO("Successfully resubscribed to all symbols after reconnection");
                     } else {
-                        LOG_ERROR("❌ Failed to resubscribe to symbols after reconnection");
-                        
-                        // Retry once more after a delay
-                        std::this_thread::sleep_for(std::chrono::milliseconds(2000));
-                        if (connected_.load()) {
-                            LOG_INFO("🔄 Retrying resubscription...");
-                            bool retrySuccess = subscribeToStreams(streams);
-                            if (retrySuccess) {
-                                LOG_INFO("✅ Retry resubscription successful");
-                            } else {
-                                LOG_ERROR("❌ Retry resubscription also failed!");
-                            }
-                        }
+                        LOG_ERROR("Failed to resubscribe to symbols after reconnection");
                     }
                 } else {
-                    LOG_WARN("⚠️ No streams to resubscribe or connection lost");
+                    LOG_WARN("No symbols to resubscribe or connection lost");
                 }
             } catch (const std::exception& e) {
-                LOG_ERROR("❌ Exception during auto-resubscription: " + std::string(e.what()));
+                LOG_ERROR("Exception during auto-resubscription: " + std::string(e.what()));
             }
         }).detach();
     } else {
-        LOG_INFO("ℹ️ No existing symbols to resubscribe");
+        LOG_INFO("No existing symbols to resubscribe");
     }
 }
- 
+
+
+
+
+
+// ✅ Update message processing to track activity
 void BinanceWebSocketClient::onWebSocketMessage(const std::string& message) {
     try {
         messageCount_.fetch_add(1);
         lastMessageTime_ = std::chrono::system_clock::now();
+        updateActivity(); // ✅ Track activity
         
         json data = json::parse(message);
         

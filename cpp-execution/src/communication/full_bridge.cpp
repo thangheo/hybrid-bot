@@ -17,6 +17,8 @@
 #include <unordered_map>
 #include <mutex>
 #include <iomanip>
+// #include yaml-cpp for future config parsing if needed
+// #include <yaml-cpp/yaml.h>
 
 using namespace trading::data_ingestion;
 using namespace trading::common;
@@ -386,26 +388,21 @@ int main() {
     std::cout << "=== SIMPLIFIED TRADING SERVER ===" << std::endl;
     try {
         SimplifiedTradingServer server;
-        
-        // Define symbols to monitor
+
+        // Define symbols to monitor// just hardcode list above for now
         std::vector<std::string> pairs = {
-            "BTC/USDT", "ETH/USDT", "SOL/USDT", "XRP/USDT", "ADA/USDT",
-            "AVAX/USDT", "DOT/USDT", "LINK/USDT", "UNI/USDT", "ATOM/USDT"
-            , "ALGO/USDT"  
-            , "AAVE/USDT"   
-            , "ARB/USDT"   
-            , "OP/USDT"    
-            , "INJ/USDT"    
-            , "SUI/USDT"   
-            , "TRB/USDT"  
-            , "BAND/USDT"  
-            , "CHZ/USDT"    
-            , "ENJ/USDT"  
-            , "YFI/USDT"    
-            , "1INCH/USDT" 
-            , "DOGE/USDT"  
-            , "WIFI/USDT"   
-   };   
+            "BTCUSDT", "ETHUSDT", "BNBUSDT", "XRPUSDT", "SOLUSDT", "ADAUSDT", "AVAXUSDT", "DOGEUSDT", "DOTUSDT", "MATICUSDT",
+            "LINKUSDT", "UNIUSDT", "AAVEUSDT", "MKRUSDT", "CRVUSDT", "COMPUSDT", "SUSHIUSDT", "ARBUSDT", "OPUSDT",
+            "RENDERUSDT", "FETUSDT", "OCEANUSDT", "AGIXUSDT", "INJUSDT", "NEARUSDT",
+            "ONDOUSDT", "HBARUSDT", "PAXGUSDT",
+            "MANAUSDT", "SANDUSDT", "GALAUSDT", "IMXUSDT", "AXSUSDT", "BEAMUSDT",
+            "SUIUSDT", "APTUSDT", "KASUSDT", "SEIUSDT", "TIAUSDT", "STRKUSDT",
+            "SHIBUSDT", "PEPEUSDT", "FLOKIUSDT", "BONKUSDT",
+            "ATOMUSDT", "ICPUSDT", "FTMUSDT", "ALGOUSDT", "HNTUSDT", "FILUSDT",
+            "XMRUSDT", "ZECUSDT"
+        };
+
+        std::cout << "Monitoring " << pairs.size() << " symbols:" << std::endl;
         for (const auto& sym : pairs) {
                     std::cout << "  " << sym << std::endl;
                 }

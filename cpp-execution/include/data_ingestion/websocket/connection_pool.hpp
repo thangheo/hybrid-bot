@@ -68,6 +68,9 @@ public:
     };
     
     PoolStats getStats() const;
+    bool subscribeAllConnections(const std::vector<core::Symbol>& symbols);
+    void checkConnectionHealth();
+    void forceReconnectAll();
 
 private:
     // Connection tracking
