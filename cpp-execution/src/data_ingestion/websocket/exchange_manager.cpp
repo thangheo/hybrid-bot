@@ -1,4 +1,4 @@
-// Fixed exchange_manager.cpp - DEADLOCK ELIMINATED
+// DEADLOCK-FREE exchange_manager.cpp - ULTIMATE FIX
 #include "data_ingestion/exchange_manager.hpp"
 #include <iostream>
 #include <sstream>
@@ -209,30 +209,10 @@ void ExchangeManager::disconnect() {
     }
 }
 
-// ✅ DEADLOCK FIX: Remove mutex lock that was causing the deadlock
+// ✅ ULTIMATE DEADLOCK FIX: Only use atomic flag - NO MUTEX, NO CONNECTION POOL CALLS
 bool ExchangeManager::isConnected() const {
-    // Just check the atomic flag - don't hold the mutex
-    bool connected = isConnected_.load();
-    
-    // Quick return if basic connection state is false
-    if (!connected) {
-        return false;
-    }
-    
-    // Create a local copy of the pool pointer without holding the main mutex
-    std::shared_ptr<ConnectionPool> localPoolPtr;
-    {
-        std::lock_guard<std::recursive_mutex> lock(mutex_);
-        if (connectionPool_) {
-            // This is safe because ConnectionPool manages its own thread safety
-            localPoolPtr = std::shared_ptr<ConnectionPool>(connectionPool_.get(), [](ConnectionPool*) {
-                // Custom deleter that does nothing since we don't own the object
-            });
-        }
-    }
-    
-    // Check pool health without holding the main mutex
-    return localPoolPtr && localPoolPtr->isHealthy();
+    // SIMPLE: Just return the atomic flag - no locks, no external calls
+    return isConnected_.load();
 }
 
 OrderBookUpdate ExchangeManager::getOrderBook(const core::Symbol& tradingPair,
@@ -261,7 +241,7 @@ std::string ExchangeManager::getConnectionStats() const {
     return oss.str();
 }
 
-// ✅ DEADLOCK FIX: Use shorter lock scopes in monitor thread
+// ✅ DEADLOCK-FREE MONITOR: Update atomic flag based on pool health without mutex during checks
 void ExchangeManager::monitorConnections() {
     std::cout << "Starting connection monitor thread\n";
     
@@ -270,38 +250,50 @@ void ExchangeManager::monitorConnections() {
     while (running_.load()) {
         try {
             bool poolHealthy = false;
-            bool currentlyConnected = isConnected_.load();
-            std::string stats;
             
-            // Very short lock scope - just to copy what we need
+            // Get a safe reference to the pool without holding the main mutex
+            std::unique_ptr<ConnectionPool>* poolRef = nullptr;
             {
                 std::lock_guard<std::recursive_mutex> lock(mutex_);
-                
                 if (connectionPool_) {
-                    poolHealthy = connectionPool_->isHealthy();
-                    stats = getConnectionStats();
+                    poolRef = &connectionPool_;
                 }
             }
-            // Lock released here - all further work done without lock
             
-            // Update connection status if it changed
-            if (poolHealthy != currentlyConnected) {
-                isConnected_.store(poolHealthy);
-                
+            // Check pool health without holding the main mutex
+            if (poolRef && *poolRef) {
+                poolHealthy = (*poolRef)->isHealthy();
+            }
+            
+            // Update the atomic flag
+            bool wasConnected = isConnected_.exchange(poolHealthy);
+            
+            // Log status changes
+            if (poolHealthy != wasConnected) {
                 if (poolHealthy) {
                     std::cout << "Connection to Binance restored\n";
-                    
-                    // Note: activeSubscriptions_ access would need its own protection
-                    // For now, just log that we should restore subscriptions
-                    std::cout << "Connection restored - subscriptions should be reestablished\n";
                 } else {
                     std::cout << "Connection to Binance lost\n";
                 }
             }
             
-            // Periodic status logging
-            if (poolHealthy && !stats.empty()) {
-                std::cout << stats << '\n';
+            // Periodic status logging (without holding mutex for long)
+            if (poolHealthy) {
+                std::string stats;
+                {
+                    std::lock_guard<std::recursive_mutex> lock(mutex_);
+                    if (connectionPool_) {
+                        std::ostringstream oss;
+                        oss << "Pool status - Active: " 
+                            << connectionPool_->getActiveConnectionCount() 
+                            << ", Available: " << connectionPool_->getAvailableConnectionCount()
+                            << ", Total: " << connectionPool_->getTotalConnectionCount();
+                        stats = oss.str();
+                    }
+                }
+                if (!stats.empty()) {
+                    std::cout << stats << '\n';
+                }
             }
             
         } catch (const std::exception& e) {
