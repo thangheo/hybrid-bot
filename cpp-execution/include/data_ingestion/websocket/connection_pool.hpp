@@ -71,6 +71,8 @@ public:
     bool subscribeAllConnections(const std::vector<core::Symbol>& symbols);
     void checkConnectionHealth();
     void forceReconnectAll();
+    // emergencyRecovery
+    bool emergencyRecovery();
 
 private:
     // Connection tracking

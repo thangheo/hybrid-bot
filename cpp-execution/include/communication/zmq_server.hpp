@@ -50,6 +50,10 @@ public:
 
     void PublishMarketIntelligence(const trading::MarketIntelligence& intel);
     void PublishMarketIntelligenceSync(const trading::MarketIntelligence& intel);
+    
+    // ✅ NEW: Publish raw orderbook data for risk module  
+    void PublishRawMessage(const std::string& topic, const std::string& message);
+    void PublishOrderBookData(const std::string& exchange, const std::string& symbol, const std::string& data);
 
 private:
     void IntelligencePublisherLoop();

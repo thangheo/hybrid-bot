@@ -31,70 +31,7 @@ ConnectionPool::ConnectionPool(const std::string& poolId,
     LOG_INFO("Created connection pool '" + poolId_ + "' with " +
              std::to_string(minConnections_) + "-" + std::to_string(maxConnections_) + " connections");
 }
-
-// // 2. Update acquireConnection method
-// ClientInterfacePtr ConnectionPool::acquireConnection(int timeoutMs) {
-//     connectionRequests_++;
-    
-//     auto startTime = std::chrono::steady_clock::now();
-    
-//     {
-//         std::unique_lock<std::mutex> lock(mutex_);
-        
-//         // First check for any available connections
-//         for (auto& info : connections_) {
-//             if (!info.inUse && info.connection && info.connection->isConnected()) {
-//                 info.inUse = true;
-//                 info.lastUsed = std::chrono::steady_clock::now();
-                
-//                 LOG_DEBUG("Acquired existing connection from pool '" + poolId_ + "'");
-//                 return info.connection;
-//             }
-//         }
-        
-//         // No available connections, can we create a new one?
-//         if (static_cast<int>(connections_.size()) < maxConnections_) {
-//             auto conn = createConnection();
-//             if (conn) {
-//                 connections_.emplace_back(conn);
-//                 connections_.back().inUse = true;
-                
-//                 LOG_DEBUG("Created new connection for pool '" + poolId_ + "'");
-//                 return connections_.back().connection;
-//             }
-//         }
-        
-//         // Wait for connection to be released
-//         auto available = connectionAvailable_.wait_for(
-//             lock, 
-//             std::chrono::milliseconds(timeoutMs),
-//             [this]() {
-//                 return std::any_of(connections_.begin(), connections_.end(),
-//                     [](const ConnectionInfo& info) {
-//                         return !info.inUse && info.connection && info.connection->isConnected();
-//                     });
-//             });
-        
-//         if (available) {
-//             for (auto& info : connections_) {
-//                 if (!info.inUse && info.connection && info.connection->isConnected()) {
-//                     info.inUse = true;
-//                     info.lastUsed = std::chrono::steady_clock::now();
-                    
-//                     LOG_DEBUG("Acquired released connection from pool '" + poolId_ + "'");
-//                     return info.connection;
-//                 }
-//             }
-//         }
-//     }
-    
-//     // Timeout
-//     connectionTimeouts_++;
-//     LOG_WARN("Timed out waiting for connection from pool '" + poolId_ + "'");
-//     return nullptr;
-// }
-
-// ✅ UPDATE: Modified acquireConnection with health check
+ 
 ClientInterfacePtr ConnectionPool::acquireConnection(int timeoutMs) {
     connectionRequests_++;
     
@@ -129,6 +66,44 @@ ClientInterfacePtr ConnectionPool::acquireConnection(int timeoutMs) {
             }
         }
         
+        // ✅ EMERGENCY RECOVERY: If all connections are unhealthy, force recreate one
+        bool allUnhealthy = std::all_of(connections_.begin(), connections_.end(),
+            [](const ConnectionInfo& info) {
+                return !info.connection || !info.connection->isConnected() || info.failureCount >= 3;
+            });
+            
+        if (allUnhealthy && !connections_.empty()) {
+            LOG_ERROR("ALL CONNECTIONS UNHEALTHY - Starting emergency recovery for pool '" + poolId_ + "'");
+            
+            // Force recreate the first connection
+            auto& firstConn = connections_[0];
+            if (firstConn.connection) {
+                firstConn.connection->disconnect();
+                std::this_thread::sleep_for(std::chrono::milliseconds(1000)); // Brief pause
+                
+                if (firstConn.connection->connect()) {
+                    firstConn.failureCount = 0;
+                    firstConn.inUse = true;
+                    firstConn.lastUsed = std::chrono::steady_clock::now();
+                    
+                    // Resubscribe to active subscriptions
+                    if (!activeSubscriptions_.empty()) {
+                        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                        try {
+                            firstConn.connection->subscribe(activeSubscriptions_);
+                            LOG_INFO("Emergency recovery successful - reconnected and resubscribed");
+                        } catch (const std::exception& e) {
+                            LOG_ERROR("Failed to resubscribe during emergency recovery: " + std::string(e.what()));
+                        }
+                    }
+                    
+                    return firstConn.connection;
+                } else {
+                    LOG_ERROR("Emergency recovery failed - could not reconnect");
+                }
+            }
+        }
+        
         // No healthy available connections, can we create a new one?
         if (static_cast<int>(connections_.size()) < maxConnections_) {
             auto conn = createConnection();
@@ -136,11 +111,10 @@ ClientInterfacePtr ConnectionPool::acquireConnection(int timeoutMs) {
                 connections_.emplace_back(conn);
                 connections_.back().inUse = true;
                 
-                // ✅ Subscribe new connection to active subscriptions
+                // Subscribe new connection to active subscriptions
                 if (!activeSubscriptions_.empty()) {
                     LOG_INFO("Subscribing new connection to " + std::to_string(activeSubscriptions_.size()) + " active symbols");
                     
-                    // Give connection brief time to stabilize
                     std::this_thread::sleep_for(std::chrono::milliseconds(200));
                     
                     try {
@@ -286,48 +260,6 @@ bool ConnectionPool::subscribeAllConnections(const std::vector<core::Symbol>& sy
     return allSuccess;
 }
 
-
-
-// // 4. Update createConnection method
-// ClientInterfacePtr ConnectionPool::createConnection() {
-//     try {
-//         auto conn = connectionFactory_();
-        
-//         if (conn && conn->connect()) {
-//             LOG_DEBUG("Created new connection for pool '" + poolId_ + "'");
-            
-//             // ✅ Auto-subscribe to active subscriptions if any exist
-//             {
-//                 std::lock_guard<std::mutex> lock(subscriptionMutex_);
-//                 if (!activeSubscriptions_.empty()) {
-//                     LOG_INFO("Auto-subscribing new connection to " + std::to_string(activeSubscriptions_.size()) + " symbols");
-                    
-//                     // Give connection time to stabilize
-//                     std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-                    
-//                     bool subSuccess = conn->subscribe(activeSubscriptions_);
-//                     if (subSuccess) {
-//                         LOG_INFO("✅ Successfully auto-subscribed new connection to all symbols");
-//                     } else {
-//                         LOG_ERROR("❌ Failed to auto-subscribe new connection to symbols");
-//                     }
-//                 } else {
-//                     LOG_DEBUG("No active subscriptions to restore");
-//                 }
-//             }
-            
-//             return conn;
-//         } else {
-//             connectionFailures_++;
-//             LOG_ERROR("Failed to create/connect new connection for pool '" + poolId_ + "'");
-//         }
-//     } catch (const std::exception& e) {
-//         connectionFailures_++;
-//         LOG_ERROR("Exception creating connection for pool '" + poolId_ + "': " + e.what());
-//     }
-    
-//     return nullptr;
-// }    
 
 // ✅ Subscription management methods
 void ConnectionPool::setActiveSubscriptions(const std::vector<core::Symbol>& symbols) {
@@ -505,12 +437,10 @@ void ConnectionPool::monitorConnections() {
     LOG_INFO("Stopped enhanced connection pool monitor for '" + poolId_ + "'");
 }
 
-
-// ✅ NEW: Add connection health checking
 void ConnectionPool::checkConnectionHealth() {
     std::lock_guard<std::mutex> lock(mutex_);
-    
     int unhealthyCount = 0;
+    int reconnected = 0;
     auto now = std::chrono::steady_clock::now();
     
     for (auto& info : connections_) {
@@ -521,18 +451,51 @@ void ConnectionPool::checkConnectionHealth() {
             if (!wasConnected) {
                 info.failureCount++;
                 unhealthyCount++;
+                
+                // ✅ TRY TO RECONNECT if failure count is not too high
+                if (info.failureCount <= 3 && !info.inUse) {
+                    LOG_WARN("Attempting to reconnect failed connection in pool '" + poolId_ + "'");
+                    if (info.connection->connect()) {
+                        info.failureCount = 0; // Reset on successful reconnect
+                        reconnected++;
+                        LOG_INFO("Successfully reconnected connection in pool '" + poolId_ + "'");
+                        
+                        // Resubscribe after reconnect
+                        if (!activeSubscriptions_.empty()) {
+                            try {
+                                std::this_thread::sleep_for(std::chrono::milliseconds(200));
+                                info.connection->subscribe(activeSubscriptions_);
+                            } catch (const std::exception& e) {
+                                LOG_ERROR("Failed to resubscribe after reconnect: " + std::string(e.what()));
+                            }
+                        }
+                    }
+                }
                 continue;
             }
             
-            // ✅ Check connection-specific health if available
+            // ✅ Check connection-specific health if available (but be less aggressive)
             auto healthyConn = std::dynamic_pointer_cast<BinanceWebSocketClient>(info.connection);
             if (healthyConn && !healthyConn->isConnectionHealthy()) {
-                LOG_WARN("Connection in pool '" + poolId_ + "' appears inactive - marking as unhealthy");
-                info.failureCount++;
-                unhealthyCount++;
+                // ✅ Only increment failure count every other check to reduce false positives
+                static int healthCheckCounter = 0;
+                healthCheckCounter++;
+                
+                if (healthCheckCounter % 2 == 0) {  // Only increment every other check
+                    LOG_WARN("Connection in pool '" + poolId_ + "' appears inactive - marking as unhealthy");
+                    info.failureCount++;
+                    unhealthyCount++;
+                } else {
+                    LOG_DEBUG("Connection appears inactive but giving another chance");
+                }
+            } else if (healthyConn) {
+                // ✅ Connection is healthy - reduce failure count
+                if (info.failureCount > 0) {
+                    info.failureCount = std::max(0, info.failureCount - 1);
+                }
             }
             
-            // ✅ Check if connection has been idle too long while in use
+            // Check if connection has been idle too long while in use
             if (info.inUse) {
                 auto inUseTime = std::chrono::duration_cast<std::chrono::minutes>(now - info.lastUsed);
                 if (inUseTime.count() > 30) { // 30 minutes max usage
@@ -547,28 +510,57 @@ void ConnectionPool::checkConnectionHealth() {
     if (unhealthyCount > 0) {
         LOG_INFO("Found " + std::to_string(unhealthyCount) + " unhealthy connections in pool '" + poolId_ + "'");
     }
+    if (reconnected > 0) {
+        LOG_INFO("Reconnected " + std::to_string(reconnected) + " connections in pool '" + poolId_ + "'");
+    }
 }
 
+// ✅ Add this new method for emergency situations
+bool ConnectionPool::emergencyRecovery() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    
+    LOG_ERROR("INITIATING EMERGENCY RECOVERY for pool '" + poolId_ + "'");
+    
+    // Force disconnect all connections
+    for (auto& info : connections_) {
+        if (info.connection) {
+            info.connection->disconnect();
+            info.inUse = false;
+        }
+    }
+    
+    // Brief pause
+    std::this_thread::sleep_for(std::chrono::seconds(2));
+    
+    // Try to reconnect at least one connection
+    for (auto& info : connections_) {
+        if (info.connection) {
+            LOG_INFO("Attempting emergency reconnect...");
+            if (info.connection->connect()) {
+                info.failureCount = 0;
+                
+                // Resubscribe
+                if (!activeSubscriptions_.empty()) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                    try {
+                        bool subSuccess = info.connection->subscribe(activeSubscriptions_);
+                        if (subSuccess) {
+                            LOG_INFO("EMERGENCY RECOVERY SUCCESSFUL");
+                            connectionAvailable_.notify_all();
+                            return true;
+                        }
+                    } catch (const std::exception& e) {
+                        LOG_ERROR("Emergency resubscribe failed: " + std::string(e.what()));
+                    }
+                }
+            }
+        }
+    }
+    
+    LOG_ERROR("EMERGENCY RECOVERY FAILED");
+    return false;
+}
 
-// void ConnectionPool::monitorConnections() {
-//     std::cout << "Starting connection pool monitor for '" << poolId_ << "'" << std::endl;
-    
-//     while (running_) {
-//         // Sleep for the prune interval
-//         std::this_thread::sleep_for(pruneInterval_);
-        
-//         if (!running_) {
-//             break;
-//         }
-        
-//         // Perform maintenance tasks
-//         pruneConnections();
-//         ensureMinConnections();
-//         removeUnhealthyConnections();
-//     }
-    
-//     std::cout << "Stopped connection pool monitor for '" << poolId_ << "'" << std::endl;
-// }
 
 void ConnectionPool::pruneConnections() {
     std::lock_guard<std::mutex> lock(mutex_);

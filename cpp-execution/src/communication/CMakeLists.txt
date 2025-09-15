@@ -62,6 +62,7 @@ file(GLOB MARKET_INTEL_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../../src/market_inte
 # Add the sources to the SOURCES list
 set(SOURCES
     zmq_server.cpp
+    market_data_subscriber.cpp
     # full_bridge.cpp
     ${PROTO_SOURCES}  # Include protobuf-generated files
     ${WEBSOCKET_SOURCES}  # Add the expanded list of websocket .cpp files
