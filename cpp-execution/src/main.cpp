@@ -166,29 +166,7 @@ public:
             return false;
         }
 
-        // Register connection status callback to refresh intelligence after reconnect
-        // dataIngestionService_->setStatusCallback([this](const std::string& component, const std::string& status) {
-        //     // Only act on exchange connection events
-        //     if (component == "connection" && status.find("status=CONNECTED") != std::string::npos) {
-        //         std::cout << "[FullSystemDemo] Detected exchange reconnect, refreshing all intelligence..." << std::endl;
-        //         // For each symbol in strategy config, force intelligence refresh
-        //         for (const auto& [name, pair] : strategyConfig_.tradingPairs) {
-        //             auto orderBook = dataIngestionService_->getOrderBook(core::ExchangeId::binance(), pair);
-        //             if (orderBook) {
-        //                 // Use a dummy OrderBookUpdate for refresh (minimal fields)
-        //                 OrderBookUpdate dummyUpdate;
-        //                 dummyUpdate.exchangeId = core::ExchangeId::binance();
-        //                 dummyUpdate.tradingPair = pair;
-        //                 dummyUpdate.bids = orderBook->getBids(20);
-        //                 dummyUpdate.asks = orderBook->getAsks(20);
-        //                 dummyUpdate.sequenceNumber = orderBook->getLastSequenceNumber();
-        //                 dummyUpdate.exchangeTimestamp = std::chrono::system_clock::now();
-        //                 generateMarketIntelligence(dummyUpdate, orderBook);
-        //             }
-        //         }
-        //     }
-        // });
-        
+               
         // ✅ NEW - Use the factory method
         riskManager_ = RiskManager::create(executionService_, riskConfig_);
         if (!riskManager_) {
@@ -405,49 +383,49 @@ public:
         
         std::cout << "=========================================" << std::endl;
     }
-     void onOrderBookUpdate(const OrderBookUpdate& update, std::shared_ptr<OrderBook> orderBook) {
-        try {
-            messagesProcessed_.fetch_add(1);
+    //  void onOrderBookUpdate(const OrderBookUpdate& update, std::shared_ptr<OrderBook> orderBook) {
+    //     try {
+    //         messagesProcessed_.fetch_add(1);
             
-            // Debug output for first few messages
-            static std::atomic<int> debugCount{0};
-            int count = debugCount.fetch_add(1);
+    //         // Debug output for first few messages
+    //         static std::atomic<int> debugCount{0};
+    //         int count = debugCount.fetch_add(1);
             
-            if (count < 5) {
-                std::cout << "\n=== ORDER BOOK UPDATE #" << count << " ===" << std::endl;
-                std::cout << "Exchange: " << update.exchangeId.toString() << std::endl;
-                std::cout << "Symbol: " << update.tradingPair.toString() << std::endl;
-                std::cout << "Sequence: " << update.sequenceNumber << std::endl;
-                std::cout << "Bids: " << update.bids.size() << ", Asks: " << update.asks.size() << std::endl;
+    //         if (count < 5) {
+    //             std::cout << "\n=== ORDER BOOK UPDATE #" << count << " ===" << std::endl;
+    //             std::cout << "Exchange: " << update.exchangeId.toString() << std::endl;
+    //             std::cout << "Symbol: " << update.tradingPair.toString() << std::endl;
+    //             std::cout << "Sequence: " << update.sequenceNumber << std::endl;
+    //             std::cout << "Bids: " << update.bids.size() << ", Asks: " << update.asks.size() << std::endl;
                 
-                if (!update.bids.empty() && !update.asks.empty()) {
-                    std::cout << "Best Bid: " << update.bids[0].price << " @ " << update.bids[0].quantity << std::endl;
-                    std::cout << "Best Ask: " << update.asks[0].price << " @ " << update.asks[0].quantity << std::endl;
-                    double spread = update.asks[0].price - update.bids[0].price;
-                    std::cout << "Spread: " << spread << std::endl;
-                }
-                std::cout << "=================================" << std::endl;
-            }
+    //             if (!update.bids.empty() && !update.asks.empty()) {
+    //                 std::cout << "Best Bid: " << update.bids[0].price << " @ " << update.bids[0].quantity << std::endl;
+    //                 std::cout << "Best Ask: " << update.asks[0].price << " @ " << update.asks[0].quantity << std::endl;
+    //                 double spread = update.asks[0].price - update.bids[0].price;
+    //                 std::cout << "Spread: " << spread << std::endl;
+    //             }
+    //             std::cout << "=================================" << std::endl;
+    //         }
             
-            // ✅ DIRECT intelligence generation - no queuing!
-            generateMarketIntelligence(update, orderBook);
+    //         // ✅ DIRECT intelligence generation - no queuing!
+    //         generateMarketIntelligence(update, orderBook);
             
-            // ✅ Publish orderbook for risk module - ALWAYS, not just first 5!
-            if (zmqServer_) {
-                // Check if PublishOrderBookUpdate method exists
-                try {
-                    // This will send orderbook data with proper topic format for risk module
-                    publishOrderBookForRisk(update);
-                } catch (const std::exception& e) {
-                    // Fallback: use intelligence publishing
-                    std::cerr << "OrderBook publishing error: " << e.what() << std::endl;
-                }
-            } 
+    //         // ✅ Publish orderbook for risk module - ALWAYS, not just first 5!
+    //         if (zmqServer_) {
+    //             // Check if PublishOrderBookUpdate method exists
+    //             try {
+    //                 // This will send orderbook data with proper topic format for risk module
+    //                 publishOrderBookForRisk(update);
+    //             } catch (const std::exception& e) {
+    //                 // Fallback: use intelligence publishing
+    //                 std::cerr << "OrderBook publishing error: " << e.what() << std::endl;
+    //             }
+    //         } 
 
-        } catch (const std::exception& e) {
-            std::cerr << "Error processing order book update: " << e.what() << std::endl;
-        }
-    }
+    //     } catch (const std::exception& e) {
+    //         std::cerr << "Error processing order book update: " << e.what() << std::endl;
+    //     }
+    // }
 
     void generateMarketIntelligence(const OrderBookUpdate& update, std::shared_ptr<OrderBook> orderBook) {
         try {
@@ -982,10 +960,17 @@ private:
            
             // Get the existing order book and send to strategy
             auto orderBook = dataIngestionService_->getOrderBook(update.exchangeId, update.tradingPair);
+
             if(orderBook) {
+                generateMarketIntelligence(update, orderBook);
+                //publish orderbook for risk
+                if (zmqServer_) {
+                    publishOrderBookForRisk(update);
+                }
+                // Update the order book state
                 orderBook->applySnapshot(update.bids, update.asks, 
                                     update.sequenceNumber, update.exchangeTimestamp);
-                onOrderBookUpdate(update, orderBook);
+                
 
                 if (strategyEngine_) {
                     strategyEngine_->processOrderBook(*orderBook);
