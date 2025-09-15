@@ -149,8 +149,8 @@ private:
     std::unique_ptr<common::ZeroMQClient> zmqClient_;
     
     // Order book normalizer for processing raw data
-    std::unique_ptr<data_ingestion::OrderBookNormalizer> normalizer_;
-    
+    std::shared_ptr<data_ingestion::OrderBookNormalizer> normalizer_;
+    // we should use shared_ptr for normalizer_ to avoid ownership issues in callbacks
     // Cache for market data
     mutable std::shared_mutex cacheMutex_;
     std::unordered_map<std::string, MarketDataCacheEntry> marketDataCache_;
