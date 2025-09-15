@@ -19,7 +19,10 @@ enum class ExchangeRequestType {
     GetAccountBalance,
     GetMarketData,
     GetHealthStatus,     // Added for health check
-    GetExchangeStatuses  // Added for exchange statuses
+    GetExchangeStatuses,  // Added for exchange statuses,
+    CONNECTION,
+    SUBSCRIPTION,
+    STREAM_REQUEST
 };
 
 struct ExchangeCredentials {

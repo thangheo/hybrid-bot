@@ -22,6 +22,7 @@ file(GLOB_RECURSE DATA_INGESTION_SOURCES
     "time/*.cpp"
     "websocket/*.cpp"
     "config/config.cpp"
+    ${CMAKE_SOURCE_DIR}/src/execution/rate_limit_controller.cpp
 )
 
 # Remove example files from sources
