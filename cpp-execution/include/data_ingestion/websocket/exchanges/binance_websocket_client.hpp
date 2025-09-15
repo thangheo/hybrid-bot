@@ -84,8 +84,24 @@ public:
         totalLatency_.store(0.0);
         reconnectAttempts_ = 0;
     }
-
+    bool isConnectionHealthy() const {
+        if (!connected_.load()) {
+            return false;
+        }
+        
+        auto now = std::chrono::steady_clock::now();
+        auto lastActivity = lastActivityTime_.load();
+        auto timeSinceActivity = std::chrono::duration_cast<std::chrono::seconds>(now - lastActivity);
+        
+        // Consider unhealthy if no activity for 60 seconds
+        return timeSinceActivity.count() < 60;
+    }
 private:
+    std::atomic<std::chrono::steady_clock::time_point> lastActivityTime_{std::chrono::steady_clock::now()};
+    
+    void updateActivity() {
+        lastActivityTime_ = std::chrono::steady_clock::now();
+    }
     // std::unique_ptr<websocket::stream<ssl::stream<tcp::socket>>> wsStream_;
     // Replace this line:
     // With this:

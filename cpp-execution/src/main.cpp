@@ -446,6 +446,17 @@ public:
     }
      void onOrderBookUpdate(const OrderBookUpdate& update, std::shared_ptr<OrderBook> orderBook) {
         try {
+            //rate limit processing to max 10 per second globally and per symbol
+            static auto lastProcess = std::chrono::steady_clock::now();
+            static std::unordered_map<std::string, std::chrono::steady_clock::time_point> lastSymbolProcess;
+            
+            auto now = std::chrono::steady_clock::now();
+            std::string symbol = update.tradingPair.toString();
+            
+            // Rate limit per symbol (max 10 updates per second)
+            if (now - lastSymbolProcess[symbol] < std::chrono::milliseconds(100)) {
+                return; // Skip this update
+            }
             messagesProcessed_.fetch_add(1);
             
             // Debug output for first few messages
@@ -1082,17 +1093,29 @@ private:
             // Extract price for PTCA
             if (!update.bids.empty() && !update.asks.empty()) {
                 double midPrice = (update.bids[0].price + update.asks[0].price) / 2.0;
-                onMarketPriceUpdate(update.tradingPair, midPrice);
+                 // Rate-limited PTCA update
+                static std::unordered_map<std::string, std::chrono::steady_clock::time_point> lastPtcaUpdate;
+                auto now = std::chrono::steady_clock::now();
+                std::string symbolStr = update.tradingPair.toString();
+                
+                if (now - lastPtcaUpdate[symbolStr] >= std::chrono::seconds(1)) {
+                    onMarketPriceUpdate(update.tradingPair, midPrice);
+                    lastPtcaUpdate[symbolStr] = now;
+                }
             }
            
             // Get the existing order book and send to strategy
             auto orderBook = dataIngestionService_->getOrderBook(update.exchangeId, update.tradingPair);
-            onOrderBookUpdate(update, orderBook);
-            orderBook->applySnapshot(update.bids, update.asks, 
-                                   update.sequenceNumber, update.exchangeTimestamp);
-            if (orderBook && strategyEngine_) {
-                strategyEngine_->processOrderBook(*orderBook);
+            if(orderBook) {
+                orderBook->applySnapshot(update.bids, update.asks, 
+                                    update.sequenceNumber, update.exchangeTimestamp);
+                onOrderBookUpdate(update, orderBook);
+
+                if (strategyEngine_) {
+                    strategyEngine_->processOrderBook(*orderBook);
+                }
             }
+            
         });
             
        
