@@ -11,9 +11,13 @@ namespace trading {
 namespace data_ingestion {
 
 ExchangeManager::ExchangeManager(const core::ExchangeId& exchangeId,
-                            std::shared_ptr<execution::RateLimitController> rateLimitController)
-    : exchangeId_(exchangeId), rateLimitController_(rateLimitController) {
-
+                            std::shared_ptr<execution::RateLimitController> rateLimitController,
+                            NormalizedOrderBookCallback normalizedCallback)
+    : exchangeId_(exchangeId),
+    rateLimitController_(std::move(rateLimitController)),
+    normalizedCallback_(std::move(normalizedCallback)),
+    minConnections_(3),
+    maxConnections_(8) {
     // Setup Binance rate limits
     if (rateLimitController_ && exchangeId == core::ExchangeId::binance()) {
         std::unordered_map<execution::ExchangeRequestType, execution::RateLimitRule> rules = {
@@ -23,6 +27,7 @@ ExchangeManager::ExchangeManager(const core::ExchangeId& exchangeId,
         rateLimitController_->setRateLimitRules(rules);
     }
 }
+
 ExchangeManager::ExchangeManager(NormalizedOrderBookCallback callback,
                                 int minConnections,
                                 int maxConnections)
