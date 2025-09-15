@@ -1,5 +1,6 @@
 // DEADLOCK-FREE exchange_manager.cpp - ULTIMATE FIX
 #include "data_ingestion/exchange_manager.hpp"
+#include "execution/rate_limit_controller.hpp"
 #include <iostream>
 #include <sstream>
 #include <algorithm>
@@ -9,6 +10,19 @@
 namespace trading {
 namespace data_ingestion {
 
+ExchangeManager::ExchangeManager(const core::ExchangeId& exchangeId,
+                            std::shared_ptr<execution::RateLimitController> rateLimitController)
+    : exchangeId_(exchangeId), rateLimitController_(rateLimitController) {
+
+    // Setup Binance rate limits
+    if (rateLimitController_ && exchangeId == core::ExchangeId::binance()) {
+        std::unordered_map<execution::ExchangeRequestType, execution::RateLimitRule> rules = {
+            {execution::ExchangeRequestType::CONNECTION, {5, std::chrono::seconds(1)}},
+            {execution::ExchangeRequestType::SUBSCRIPTION, {10, std::chrono::seconds(1)}}
+        };
+        rateLimitController_->setRateLimitRules(rules);
+    }
+}
 ExchangeManager::ExchangeManager(NormalizedOrderBookCallback callback,
                                 int minConnections,
                                 int maxConnections)
@@ -109,6 +123,66 @@ void ExchangeManager::onWebSocketData(const core::ExchangeId& exchange,
 }
 
 // SIMPLIFIED DIRECT SUBSCRIPTION - Remove event bus complexity
+// bool ExchangeManager::subscribe(const std::vector<Symbol>& tradingPairs,
+//                                const std::vector<DataType>& dataTypes,
+//                                int depth) {
+//     std::lock_guard<std::recursive_mutex> lock(mutex_);
+    
+//     if (!connectionPool_ || !isConnected_.load()) {
+//         std::cerr << "Not connected. Call connect() first.\n";
+//         return false;
+//     }
+    
+//     try {
+//         // Acquire a connection from the pool
+//         auto connection = connectionPool_->acquireConnection();
+//         if (!connection) {
+//             std::cerr << "Failed to acquire connection for subscription\n";
+//             return false;
+//         }
+        
+//         // Convert trading pairs to Symbol objects
+//         std::vector<core::Symbol> symbols;
+//         symbols.reserve(tradingPairs.size());
+        
+//         for (const auto& pair : tradingPairs) {
+//             auto symbol = pair;
+//             symbols.emplace_back(symbol);
+//         }
+        
+//         // Subscribe using the connection
+//         bool success = connection->subscribe(symbols);
+        
+//         // Release the connection back to the pool
+//         connectionPool_->releaseConnection(connection);
+        
+//         if (success) {
+//             // Tell the connection pool about active subscriptions for auto-resubscription
+//             connectionPool_->setActiveSubscriptions(symbols);
+            
+//             // Store the subscription request for reconnection scenarios
+//             SubscriptionRequest request{};
+//             request.exchangeId = core::ExchangeId::binance();
+//             request.tradingPairs = tradingPairs ;
+//             request.dataTypes = dataTypes;
+//             request.depth = depth;
+            
+//             activeSubscriptions_.push_back(std::move(request));
+            
+//             std::cout << "Successfully subscribed to " << tradingPairs.size() 
+//                       << " trading pairs\n";
+//         } else {
+//             std::cerr << "Failed to subscribe to trading pairs\n";
+//         }
+        
+//         return success;
+        
+//     } catch (const std::exception& e) {
+//         std::cerr << "Error during subscription: " << e.what() << '\n';
+//         return false;
+//     }
+// }
+
 bool ExchangeManager::subscribe(const std::vector<Symbol>& tradingPairs,
                                const std::vector<DataType>& dataTypes,
                                int depth) {
@@ -120,7 +194,15 @@ bool ExchangeManager::subscribe(const std::vector<Symbol>& tradingPairs,
     }
     
     try {
-        // Acquire a connection from the pool
+        // 🔥 RATE LIMIT SUBSCRIPTION REQUESTS
+        if (rateLimitController_) {
+            if (!rateLimitController_->waitForPermission(execution::ExchangeRequestType::SUBSCRIPTION)) {
+                std::cerr << "Rate limited: subscription request blocked\n";
+                return false;
+            }
+        }
+        
+        // Acquire a connection from the pool  
         auto connection = connectionPool_->acquireConnection();
         if (!connection) {
             std::cerr << "Failed to acquire connection for subscription\n";
@@ -130,7 +212,6 @@ bool ExchangeManager::subscribe(const std::vector<Symbol>& tradingPairs,
         // Convert trading pairs to Symbol objects
         std::vector<core::Symbol> symbols;
         symbols.reserve(tradingPairs.size());
-        
         for (const auto& pair : tradingPairs) {
             auto symbol = pair;
             symbols.emplace_back(symbol);
@@ -143,26 +224,24 @@ bool ExchangeManager::subscribe(const std::vector<Symbol>& tradingPairs,
         connectionPool_->releaseConnection(connection);
         
         if (success) {
-            // Tell the connection pool about active subscriptions for auto-resubscription
+            // Tell the connection pool about active subscriptions
             connectionPool_->setActiveSubscriptions(symbols);
             
-            // Store the subscription request for reconnection scenarios
+            // Store the subscription request
             SubscriptionRequest request{};
-            request.exchangeId = core::ExchangeId::binance();
-            request.tradingPairs = tradingPairs ;
+            request.exchangeId = exchangeId_ == core::ExchangeId() ? core::ExchangeId::binance() : exchangeId_; //good default
+            request.tradingPairs = tradingPairs;
             request.dataTypes = dataTypes;
             request.depth = depth;
-            
             activeSubscriptions_.push_back(std::move(request));
             
-            std::cout << "Successfully subscribed to " << tradingPairs.size() 
-                      << " trading pairs\n";
+            std::cout << "Successfully subscribed to " << tradingPairs.size()
+                     << " trading pairs\n";
         } else {
             std::cerr << "Failed to subscribe to trading pairs\n";
         }
         
         return success;
-        
     } catch (const std::exception& e) {
         std::cerr << "Error during subscription: " << e.what() << '\n';
         return false;
@@ -171,7 +250,10 @@ bool ExchangeManager::subscribe(const std::vector<Symbol>& tradingPairs,
 
 bool ExchangeManager::connect() {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
-    
+     if (!rateLimitController_->waitForPermission(execution::ExchangeRequestType::CONNECTION)) {
+        std::cerr << "Rate limited: connection attempt blocked\n";
+        return false;
+    }
     if (!connectionPool_) {
         std::cerr << "Connection pool not initialized. Call initialize() first.\n";
         return false;

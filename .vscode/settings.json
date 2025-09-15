@@ -96,5 +96,7 @@
         "regex": "cpp"
     },
     "cmake.sourceDirectory": "/home/e8/works/hybrid-bot/cpp-execution",
-    "C_Cpp.default.compilerPath": "/usr/bin/gcc-14"
+    "C_Cpp.default.compilerPath": "/usr/bin/gcc-14",
+    "telemetry.editStats.enabled": false,
+    "telemetry.feedback.enabled": false
 }

@@ -9,7 +9,35 @@
 namespace trading {
 namespace data_ingestion {
 
-// 1. Update constructor
+// connection_pool.cpp - Modify createConnection method
+// ClientInterfacePtr ConnectionPool::createConnection() {
+//     try {
+//         // Rate limit connection attempts
+//         if (rateLimitController_) {
+//             if (!rateLimitController_->waitForPermission(execution::ExchangeRequestType::CONNECTION)) {
+//                 LOG_WARN("Rate limited: cannot create new connection");
+//                 return nullptr;
+//             }
+//         }
+        
+//         auto conn = connectionFactory_();
+        
+//         if (conn && conn->connect()) {
+//             LOG_DEBUG("Created new connection for pool '" + poolId_ + "'");
+//             return conn;
+//         } else {
+//             connectionFailures_++;
+//             LOG_ERROR("Failed to create/connect new connection for pool '" + poolId_ + "'");
+//         }
+//     } catch (const std::exception& e) {
+//         connectionFailures_++;
+//         LOG_ERROR("Exception creating connection for pool '" + poolId_ + "': " + e.what());
+//     }
+    
+//     return nullptr;
+// }
+
+// 1. old constructor
 ConnectionPool::ConnectionPool(const std::string& poolId,
                               ConnectionFactory factory,
                               int minConnections,
@@ -225,12 +253,37 @@ ClientInterfacePtr ConnectionPool::createConnection() {
     
     return nullptr;
 }    
-
+// connection_pool.cpp - Add rate limit configuration
+void ConnectionPool::setupRateLimits(const core::ExchangeId& exchangeId) {
+    if (!rateLimitController_) return;
+    
+    if (exchangeId == core::ExchangeId::binance()) {
+        // Binance WebSocket rate limits
+        std::unordered_map<execution::ExchangeRequestType, execution::RateLimitRule> rules = {
+            // Max 5 connections per second
+            {execution::ExchangeRequestType::CONNECTION, {5, std::chrono::seconds(1)}},
+            // Max 10 subscription requests per second  
+            {execution::ExchangeRequestType::SUBSCRIPTION, {10, std::chrono::seconds(1)}},
+            // Max 20 stream requests per second
+            {execution::ExchangeRequestType::STREAM_REQUEST, {20, std::chrono::seconds(1)}}
+        };
+        
+        rateLimitController_->setRateLimitRules(rules);
+        LOG_INFO("Configured Binance rate limits for connection pool");
+    }
+}
 
 // ✅ ADD: New method for explicit subscription management
 bool ConnectionPool::subscribeAllConnections(const std::vector<core::Symbol>& symbols) {
     std::lock_guard<std::mutex> lock(mutex_);
-    
+    // Rate limit subscription requests
+    if (rateLimitController_) {
+        if (!rateLimitController_->waitForPermission(execution::ExchangeRequestType::SUBSCRIPTION)) {
+            LOG_WARN("Rate limited: cannot subscribe to symbols");
+            return false;
+        }
+    }
+
     setActiveSubscriptions(symbols); // Track the subscriptions
     
     bool allSuccess = true;

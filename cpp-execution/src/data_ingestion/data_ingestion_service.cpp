@@ -223,7 +223,13 @@ bool DataIngestionService::setupExchangeManager() {
             this->onNormalizedOrderBook(update);
         };
         
-        exchangeManager_ = std::make_unique<ExchangeManager>(exchangeCallback, 2, 4);
+        // Setup rate limits for Binance
+        auto rateLimitController = std::make_shared<execution::RateLimitController>(core::ExchangeId::binance());
+
+        exchangeManager_ = std::make_unique<ExchangeManager>(
+            core::ExchangeId::binance(),
+            rateLimitController
+        );
         
         std::cout << "Exchange manager setup completed" << std::endl;
         return true;
