@@ -455,27 +455,10 @@ void ExchangeManager::processingWorker() {
             try {
                 ++processed;
                 total_bytes += rawData.rawData.size();
-
                 // Parse/normalize using adapter (existing behavior)
-                OrderBookUpdate normalized = adapter_->parseOrderBookData(rawData);
-
-                // If normalized result didn't capture raw payload, move it to avoid a copy
-                // if (normalized.data.empty() && !rawData.rawData.empty()) {
-                //     normalized.data = std::move(rawData.rawData);
-                // }
-
+                OrderBookUpdate normalized = adapter_->parseOrderBookData(rawData);             
                 // Forward to normalizer
-                normalizer_->processOrderBookUpdate(normalized);
-              
-                
-                // Release large buffers asap, but avoid thrashing the allocator
-                if (rawData.rawData.capacity() > 1024 * 1024) { // only shrink if >1MB
-                    // rawData.rawData is a std::string; swap with an empty string to free memory
-                    std::string().swap(rawData.rawData);
-                } else {
-                    rawData.rawData.clear();
-                }
-                // ...existing code...
+                normalizer_->processOrderBookUpdate(normalized);              
                 // Periodic logging
                 if ((processed % 100) == 0) {
                     std::cerr << "[ExchangeManager] processed=" << processed

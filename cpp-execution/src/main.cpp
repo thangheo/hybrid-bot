@@ -921,12 +921,12 @@ private:
                 std::string symbolStr = update.tradingPair.toString();
 
                 // Generate market intelligence at most every 53ms per symbol
-                if (adaptiveIntel_ && (now - lastIntelGen[symbolStr] >= std::chrono::milliseconds(17))) {
+                if (adaptiveIntel_ && (now - lastIntelGen[symbolStr] >= std::chrono::milliseconds(57))) {
                     generateMarketIntelligence(update, orderBook);
                     lastIntelGen[symbolStr] = now;
                 }
                 // Publish orderbook for risk at most every 107ms per symbol (adjust as needed)
-                else if (zmqServer_ && (now - lastOrderbookPub[symbolStr] >= std::chrono::milliseconds(7))) {
+                else if (zmqServer_ && (now - lastOrderbookPub[symbolStr] >= std::chrono::milliseconds(111))) {
                     publishOrderBookForRisk(update);
                     lastOrderbookPub[symbolStr] = now;
                 }
