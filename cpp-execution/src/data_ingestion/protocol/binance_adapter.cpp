@@ -342,9 +342,10 @@ PriceLevel BinanceAdapter::parsePriceLevel(const nlohmann::json& levelArray) {
         throw std::runtime_error("Failed to parse price/quantity: " + std::string(e.what()));
     }
 }
+
 OrderBookUpdate BinanceAdapter::parseOrderBookData(const RawMarketData& rawData) {
     auto json = nlohmann::json::parse(rawData.rawData);
-    
+    // std::cout << "Raw data: " << rawData.rawData << std::endl;
     if (json.contains("bids") && json.contains("asks")) {
         return parseBinanceDepth(json, rawData.symbol);
     } else if (json.contains("b") && json.contains("a")) {
@@ -353,6 +354,8 @@ OrderBookUpdate BinanceAdapter::parseOrderBookData(const RawMarketData& rawData)
     
     throw std::runtime_error("Unknown Binance orderbook format");
 }
+
+
 OrderBookUpdate BinanceAdapter::parseBinanceDepth(const nlohmann::json& data, const core::Symbol& symbol){
     OrderBookUpdate update;
     update.exchangeId = common::ExchangeId::binance();
@@ -382,7 +385,19 @@ OrderBookUpdate BinanceAdapter::parseBinanceDepth(const nlohmann::json& data, co
     }
     
     // Parse bids safely
-    if (data.contains("b") && data["b"].is_array()) {
+    // Parse bids safely - support both snapshot ("bids") and incremental ("b") formats
+    if (data.contains("bids") && data["bids"].is_array()) {
+        for (const auto& bidArray : data["bids"]) {
+            try {
+                PriceLevel level = parsePriceLevel(bidArray);
+                if (level.quantity > 0.0) {
+                    update.bids.push_back(level);
+                }
+            } catch (...) {
+                continue; // Skip invalid levels
+            }
+        }
+    } else if (data.contains("b") && data["b"].is_array()) {
         for (const auto& bidArray : data["b"]) {
             try {
                 PriceLevel level = parsePriceLevel(bidArray);
@@ -395,8 +410,19 @@ OrderBookUpdate BinanceAdapter::parseBinanceDepth(const nlohmann::json& data, co
         }
     }
     
-    // Parse asks safely
-    if (data.contains("a") && data["a"].is_array()) {
+    // Parse asks safely - support both snapshot ("asks") and incremental ("a") formats
+    if (data.contains("asks") && data["asks"].is_array()) {
+        for (const auto& askArray : data["asks"]) {
+            try {
+                PriceLevel level = parsePriceLevel(askArray);
+                if (level.quantity > 0.0) {
+                    update.asks.push_back(level);
+                }
+            } catch (...) {
+                continue; // Skip invalid levels
+            }
+        }
+    } else if (data.contains("a") && data["a"].is_array()) {
         for (const auto& askArray : data["a"]) {
             try {
                 PriceLevel level = parsePriceLevel(askArray);

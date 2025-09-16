@@ -36,8 +36,7 @@ using tcp = boost::asio::ip::tcp;
 #define LOG_INFO(msg) std::cout << "[INFO] " << msg << std::endl
 #define LOG_WARN(msg) std::cout << "[WARN] " << msg << std::endl
 #define LOG_ERROR(msg) std::cerr << "[ERROR] " << msg << std::endl
-//disable log debug
-#define LOG_DEBUG(msg)  
+#define LOG_DEBUG(msg) //std::cout << "[DEBUG] " << msg << std::endl
 
 BinanceWebSocketClient::BinanceWebSocketClient(std::string host, std::string port)
     : host_(host)
@@ -182,9 +181,10 @@ bool BinanceWebSocketClient::subscribe(const std::vector<Symbol>& symbols) {
             streams.push_back(stream);
             subscribed_streams_.insert(stream);
             subscribed_symbols_.push_back(symbol);
-        } else {
-            LOG_DEBUG("Already subscribed to " + symbol.toString());
-        }
+        } 
+        // else {
+        //     LOG_DEBUG("Already subscribed to " + symbol.toString());
+        // }
     }
 
     if (streams.empty()) {
