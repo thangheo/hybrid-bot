@@ -657,7 +657,7 @@ double OrderBookAnalyzer::calculateRealizedVolatility(double sample_interval_sec
     }
     
     if (returns.size() < 2) {
-        LOG_WARN("Not enough valid returns for volatility");
+        // LOG_WARN("Not enough valid returns for volatility");
         return 0.005;
     }
     
