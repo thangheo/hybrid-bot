@@ -34,7 +34,7 @@
 #include <unordered_set>
 
 #include "core/market_types.hpp"
-#include "websocket/client_interface.hpp"
+#include "data_ingestion/websocket/client_interface.hpp"
 
 namespace trading {
 namespace data_ingestion {

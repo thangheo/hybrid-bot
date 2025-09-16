@@ -10,6 +10,7 @@
 #include "data_ingestion/normalization/order_book_normalizer.hpp"
 #include "data_ingestion/websocket/exchanges/binance_websocket_client.hpp"
 #include "readerwriterqueue.h"
+#include <iostream>
 #include <memory>
 #include <vector>
 #include <string>
@@ -109,6 +110,8 @@ private:
         MarketDataUpdate update;
         while (running_) {
             if (processingQueue_.try_dequeue(update)) {
+                std::cout << "[ExchangeManager] processingWorker dequeued symbol=" << update.tradingPair.toString()
+                          << " bytes=" << update.data.size() << std::endl;
                 if (normalizer_) {
                     normalizer_->processMarketData(update);
                 }

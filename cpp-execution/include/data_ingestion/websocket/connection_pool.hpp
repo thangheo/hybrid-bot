@@ -13,6 +13,7 @@
 #include <functional>
 #include <unordered_map>
 #include <condition_variable>
+#include <iostream>
 
 // using namespace exec
 namespace trading {
@@ -95,12 +96,54 @@ private:
         bool inUse;
         std::chrono::steady_clock::time_point lastUsed;
         int failureCount;
+    // Background thread that runs the client's event loop (movable via unique_ptr)
+    std::unique_ptr<std::thread> runThread;
         
         ConnectionInfo(ClientInterfacePtr conn) 
             : connection(std::move(conn))
             , inUse(false)
             , lastUsed(std::chrono::steady_clock::now())
-            , failureCount(0) {}
+            , failureCount(0) {
+            // If the connection implements a run loop, start it in a background thread
+            if (connection) {
+                try {
+                    // Capture shared_ptr by value to keep object alive while thread runs
+                    auto conn_copy = connection;
+                    runThread = std::make_unique<std::thread>([conn_copy]() {
+                        try {
+                            conn_copy->run();
+                        } catch (const std::exception& e) {
+                            std::cerr << "Connection run() exception: " << e.what() << std::endl;
+                        } catch (...) {
+                            std::cerr << "Connection run() unknown exception" << std::endl;
+                        }
+                    });
+                } catch (const std::exception& e) {
+                    std::cerr << "Failed to start connection run thread: " << e.what() << std::endl;
+                }
+            }
+        }
+
+        ~ConnectionInfo() {
+            // Attempt graceful stop of the connection and join the thread
+            try {
+                if (connection) {
+                    connection->stop();
+                    connection->disconnect();
+                }
+            } catch (...) {
+                // ignore
+            }
+            if (runThread && runThread->joinable()) {
+                try { runThread->join(); } catch (...) { }
+            }
+        }
+
+        // Make movable but not copyable so this can be stored in containers like std::vector
+        ConnectionInfo(ConnectionInfo&&) = default;
+        ConnectionInfo& operator=(ConnectionInfo&&) = default;
+        ConnectionInfo(const ConnectionInfo&) = delete;
+        ConnectionInfo& operator=(const ConnectionInfo&) = delete;
     };
     
     // Internal methods

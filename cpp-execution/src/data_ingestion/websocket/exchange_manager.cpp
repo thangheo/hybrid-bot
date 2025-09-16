@@ -136,6 +136,8 @@ void ExchangeManager::onWebSocketData(const core::ExchangeId& exchange,
                         const core::Symbol& symbol,
                         const std::vector<uint8_t>& data) {
         try {
+            std::cout << "[ExchangeManager] onWebSocketData received for symbol=" << symbol.toString()
+                      << " bytes=" << data.size() << " exchange=" << exchange.toString() << std::endl;
             MarketDataUpdate update{};
             update.exchangeId = exchange;
             update.tradingPair = symbol;

@@ -801,11 +801,20 @@ void BinanceWebSocketClient::updateConnectionState(ConnectionStatus new_state, c
 void BinanceWebSocketClient::invokeDataCallback(const ExchangeId& exchange, const Symbol& symbol, 
                                                const std::vector<uint8_t>& data) {
     std::lock_guard<std::mutex> lock(callback_mutex_);
+    LOG_DEBUG("Invoking data callback for symbol=" + symbol.toString() + " bytes=" + std::to_string(data.size()));
     if (data_callback_) {
         try {
             data_callback_(exchange, symbol, data);
         } catch (const std::exception& e) {
             LOG_ERROR("Error in data callback: " + std::string(e.what()));
+        }
+    }
+    // Also call enhanced callback if set
+    if (enhanced_data_callback_) {
+        try {
+            enhanced_data_callback_(exchange, symbol.toString(), data);
+        } catch (const std::exception& e) {
+            LOG_ERROR("Error in enhanced data callback: " + std::string(e.what()));
         }
     }
 }
