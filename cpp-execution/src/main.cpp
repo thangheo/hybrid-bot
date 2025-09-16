@@ -967,6 +967,17 @@ private:
             //print signal details
             // std::cout << "PTCA tracking signals: " << ptcaManager_->getStats().currentlyTrackedSignals << std::endl;
             double ptcaRecommendation = ptcaManager_->getSignalRecommendation(signal);
+            std::cout << "🪧 Strategy Signal: " << signal.id 
+                      << " Symbol: " << signal.symbol.toString()
+                      << " Direction: " << (signal.direction == core::Direction::BUY ? "BUY" : 
+                                            signal.direction == core::Direction::SELL ? "SELL" : "NEUTRAL")
+                      << " Strength: " << signal.strength
+                      << " Confidence: " << signal.confidence
+                      << " Quality: " << signal.quality
+                      << " Target Size: " << signal.targetSize
+                      << " Expiration: " << signal.expirationTime
+                      << " PTCA Rec: " << ptcaRecommendation
+                      << std::endl;
              // PTCA: Optionally, adjust signal strength based on PTCA confidence
             double adjustedStrength = signal.strength;
             if (ptcaRecommendation > 0.2) {
