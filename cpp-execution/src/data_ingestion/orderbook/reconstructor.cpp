@@ -84,7 +84,8 @@ void OrderBookReconstructor::updateOrderBookFromJson(
 ) {
     try {
         static std::atomic<int> debugUpdates{0};
-        bool isDebug = debugUpdates.fetch_add(1) < 3;
+        // bool isDebug = debugUpdates.fetch_add(1) < 3;
+        bool isDebug = false;
         
         if (!initialized_ || !orderBookManager_) {
             std::cerr << "Error: OrderBookReconstructor not initialized" << std::endl;
@@ -203,7 +204,7 @@ void OrderBookReconstructor::updateOrderBookFromJson(
             if (isDebug) {
                 std::cout << "Applied update with " << bidUpdates.size() 
                         << " bid changes and " << askUpdates.size() << " ask changes" << std::endl;
-                std::cout << "Update success: " << (success ? "YES" : "NO") << std::endl;
+                // std::cout << "Update success: " << (success ? "YES" : "NO") << std::endl;
             }
             
             if (success) {
@@ -315,7 +316,6 @@ bool OrderBookReconstructor::processUpdate(
     //          << " with " << bids.size() << " bid changes and " << asks.size() << " ask changes" << std::endl;
     // Delegate to order book manager
     bool success = orderBookManager_->processUpdate(update);
-    std::cout << "Update success: " << (success ? "YES" : "NO") << std::endl;
     if (success) {
         // Get the updated order book from manager and publish
         auto orderBook = orderBookManager_->getOrderBook(exchange, symbol);
