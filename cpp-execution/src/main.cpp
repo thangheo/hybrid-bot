@@ -898,7 +898,7 @@ private:
             }
             
             // Extract price for PTCA
-            if (!update.bids.empty() && !update.asks.empty()) {
+            if (update.isSnapshot == false && !update.bids.empty() && !update.asks.empty()) {
                 double midPrice = (update.bids[0].price + update.asks[0].price) / 2.0;
                 // Rate-limited PTCA update
                 static std::unordered_map<std::string, std::chrono::steady_clock::time_point> lastPtcaUpdate;
@@ -912,31 +912,40 @@ private:
            
             // Get the existing order book and send to strategy
             auto orderBook = dataIngestionService_->getOrderBook(update.exchangeId, update.tradingPair);            
-
+            //generate market intelligence and publish orderbook for risk
             if(orderBook) {
+                orderBookUpdatesReceived_++;
                 // Throttle generateMarketIntelligence and publishOrderBookForRisk per symbol
                 static std::unordered_map<std::string, std::chrono::steady_clock::time_point> lastIntelGen;
                 static std::unordered_map<std::string, std::chrono::steady_clock::time_point> lastOrderbookPub;
                 auto now = std::chrono::steady_clock::now();
                 std::string symbolStr = update.tradingPair.toString();
 
-                // Generate market intelligence at most every 53ms per symbol
-                if (adaptiveIntel_ && (now - lastIntelGen[symbolStr] >= std::chrono::milliseconds(57))) {
-                    generateMarketIntelligence(update, orderBook);
-                    lastIntelGen[symbolStr] = now;
+                // Generate market intelligence at most every 53ms per symbol if orderbook update received (adjust as needed)
+                if(update.isSnapshot == false)
+                {
+                    if (now - lastIntelGen[symbolStr] >= std::chrono::milliseconds(53)) {
+                        generateMarketIntelligence(update, orderBook);
+                        lastIntelGen[symbolStr] = now;
+                    }
                 }
-                // Publish orderbook for risk at most every 107ms per symbol (adjust as needed)
-                else if (zmqServer_ && (now - lastOrderbookPub[symbolStr] >= std::chrono::milliseconds(111))) {
-                    publishOrderBookForRisk(update);
-                    lastOrderbookPub[symbolStr] = now;
+                // Publish orderbook for risk at most every 200ms per symbol if orderbook update received (adjust as needed)
+                if(update.isSnapshot == false)
+                {
+                    if (now - lastOrderbookPub[symbolStr] >= std::chrono::milliseconds(200)) {
+                        publishOrderBookForRisk(update);
+                        lastOrderbookPub[symbolStr] = now;
+                    }
                 }
+            
               
                 // NOTE: The DataIngestionService / OrderBookReconstructor already applied
                 // the snapshot/update before calling this callback. Do NOT re-apply it here
                 // (that would be a duplicate and can cause sequence/state inconsistencies).
 
                 // Strategy should work on the current orderBook state maintained by the reconstructor
-                if (strategyEngine_) {
+                if (strategyEngine_ && update.isSnapshot == false) {
+                    // Process the order book update in the strategy engine
                     strategyEngine_->processOrderBook(*orderBook);
                 }
             }
