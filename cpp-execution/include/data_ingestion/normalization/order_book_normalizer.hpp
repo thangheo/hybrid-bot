@@ -32,7 +32,8 @@ public:
     OrderBookUpdate getOrderBook(const ExchangeId exchangeId,
                                const core::Symbol& tradingPair,
                                int depth = 10) const;
-    
+    // processOrderBookUpdate
+    void processOrderBookUpdate(const OrderBookUpdate& update);
 private:
     NormalizedOrderBookCallback callback_;
     // Mutex for thread safety

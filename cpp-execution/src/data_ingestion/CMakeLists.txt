@@ -24,6 +24,7 @@ file(GLOB_RECURSE DATA_INGESTION_SOURCES
     "time/*.cpp"
     "websocket/*.cpp"
     "config/config.cpp"
+    "websocket/exchanges/*.cpp"    
     ${CMAKE_SOURCE_DIR}/src/execution/rate_limit_controller.cpp
 )
 
@@ -59,6 +60,7 @@ target_link_libraries(data_ingestion
         ${Protobuf_LIBRARIES}
         ${gRPC_LIBRARIES}
         fmt::fmt
+        
         # readerwriterqueue
 )
 # Add websocket directory for specific build rules if needed

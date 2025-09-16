@@ -29,7 +29,7 @@ using Timestamp = core::Timestamp;
 // Callback function types - updated to match BinanceWebSocketClient
 using DataCallback = std::function<void(const ExchangeId&, const Symbol&, const std::vector<uint8_t>&)>;
 using StatusCallback = std::function<void(ConnectionStatus, const std::string&)>;
-
+using RawDataCallback = std::function<void(const RawMarketData&)>;
 /**
  * @class ClientInterface
  * @brief Abstract interface for WebSocket client implementations
@@ -91,7 +91,7 @@ public:
      * @brief Set callback for incoming market data
      * @param callback Function to call when data arrives
      */
-    virtual void setDataCallback(DataCallback callback) = 0;
+    // virtual void setDataCallback(DataCallback callback) = 0;
     
     /**
      * @brief Set callback for connection status changes

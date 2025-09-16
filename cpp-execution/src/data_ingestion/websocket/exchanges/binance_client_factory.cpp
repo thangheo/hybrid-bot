@@ -11,21 +11,19 @@ std::shared_ptr<BinanceWebSocketClient> BinanceClientFactory::createClient(
     const std::string& host = useTestnet ? TESTNET_HOST : MAINNET_HOST;
     
     // Convert MarketDataCallback to the expected signature
-    auto dataCallback = [callback](const core::ExchangeId& exchange, const core::Symbol& symbol, const std::vector<uint8_t>& data) {
+    auto dataCallback = [callback](const core::RawMarketData& rawData) {
         if (callback) {
-            // Convert raw data back to MarketDataUpdate if needed
-            // For now, we'll create a basic update - you may need to parse JSON here
             MarketDataUpdate update;
-            update.exchangeId = exchange;
-            update.tradingPair = symbol;
-            update.timestamp = std::chrono::system_clock::now();
-            update.updateType = "orderbook"; // or parse from data
-            update.data = data;
-            
+            update.exchangeId = rawData.exchangeId;
+            update.tradingPair = rawData.symbol;
+            update.timestamp = rawData.timestamp;
+            update.updateType = rawData.streamType;
+            update.data = std::vector<uint8_t>(rawData.rawData.begin(), rawData.rawData.end());
+
             callback(update);
         }
     };
-    
+
     return std::make_shared<BinanceWebSocketClient>(host, PORT, dataCallback);
 }
 
@@ -38,14 +36,27 @@ std::unique_ptr<ConnectionPool> BinanceClientFactory::createConnectionPool(
     const std::string& host = useTestnet ? TESTNET_HOST : MAINNET_HOST;
     
     // Convert callback for connection factory
-    auto dataCallback = [callback](const core::ExchangeId& exchange, const core::Symbol& symbol, const std::vector<uint8_t>& data) {
+    // auto dataCallback = [callback](const core::ExchangeId& exchange, const core::Symbol& symbol, const std::vector<uint8_t>& data) {
+    //     if (callback) {
+    //         // MarketDataUpdate update;
+    //         MarketDataUpdate update;
+    //         update.exchangeId = exchange;
+    //         update.tradingPair = symbol;
+    //         update.timestamp = std::chrono::system_clock::now();
+    //         update.updateType = "orderbook";
+    //         update.data = data;
+            
+    //         callback(update);
+    //     }
+    // };
+    auto dataCallback = [callback](const RawMarketData& rawData) {
         if (callback) {
             MarketDataUpdate update;
-            update.exchangeId = exchange;
-            update.tradingPair = symbol;
-            update.timestamp = std::chrono::system_clock::now();
-            update.updateType = "orderbook";
-            update.data = data;
+            update.exchangeId = rawData.exchangeId;
+            update.tradingPair = rawData.symbol;
+            update.timestamp = rawData.timestamp;
+            update.updateType = rawData.streamType;
+            update.data = std::vector<uint8_t>(rawData.rawData.begin(), rawData.rawData.end());
             
             callback(update);
         }

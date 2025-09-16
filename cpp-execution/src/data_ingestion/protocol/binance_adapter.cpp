@@ -342,6 +342,179 @@ PriceLevel BinanceAdapter::parsePriceLevel(const nlohmann::json& levelArray) {
         throw std::runtime_error("Failed to parse price/quantity: " + std::string(e.what()));
     }
 }
+OrderBookUpdate BinanceAdapter::parseOrderBookData(const RawMarketData& rawData) {
+    auto json = nlohmann::json::parse(rawData.rawData);
+    
+    if (json.contains("bids") && json.contains("asks")) {
+        return parseBinanceDepth(json, rawData.symbol);
+    } else if (json.contains("b") && json.contains("a")) {
+        return parseBinanceBookTicker(json, rawData.symbol);
+    }
+    
+    throw std::runtime_error("Unknown Binance orderbook format");
+}
+OrderBookUpdate BinanceAdapter::parseBinanceDepth(const nlohmann::json& data, const core::Symbol& symbol){
+    OrderBookUpdate update;
+    update.exchangeId = common::ExchangeId::binance();
+    update.tradingPair = symbol;
+    update.receivedTimestamp = core::now();
+    update.isSnapshot = data.contains("lastUpdateId");
+    
+    // Extract timestamps safely
+    if (data.contains("E") && data["E"].is_number()) {
+        uint64_t rawTimestamp = data["E"].get<uint64_t>();
+        
+        // Convert raw timestamp to Timestamp (handles seconds/milliseconds detection)
+        if (rawTimestamp < 1000000000000ULL) {
+            // Timestamp is in seconds, convert to milliseconds first
+            update.exchangeTimestamp = core::timestampFromMillis(rawTimestamp * 1000);
+        } else {
+            // Timestamp is already in milliseconds
+            update.exchangeTimestamp = core::timestampFromMillis(rawTimestamp);
+        }
+    }
+    
+    // Extract sequence numbers safely
+    if (data.contains("u") && data["u"].is_number()) {
+        update.sequenceNumber = data["u"].get<uint64_t>();
+    } else if (data.contains("lastUpdateId") && data["lastUpdateId"].is_number()) {
+        update.sequenceNumber = data["lastUpdateId"].get<uint64_t>();
+    }
+    
+    // Parse bids safely
+    if (data.contains("b") && data["b"].is_array()) {
+        for (const auto& bidArray : data["b"]) {
+            try {
+                PriceLevel level = parsePriceLevel(bidArray);
+                if (level.quantity > 0.0) {
+                    update.bids.push_back(level);
+                }
+            } catch (...) {
+                continue; // Skip invalid levels
+            }
+        }
+    }
+    
+    // Parse asks safely
+    if (data.contains("a") && data["a"].is_array()) {
+        for (const auto& askArray : data["a"]) {
+            try {
+                PriceLevel level = parsePriceLevel(askArray);
+                if (level.quantity > 0.0) {
+                    update.asks.push_back(level);
+                }
+            } catch (...) {
+                continue; // Skip invalid levels
+            }
+        }
+    }
+    
+    // Generate checksum
+    update.checksum = generateChecksum(update.bids, update.asks);
+    
+    return update;
+}
+OrderBookUpdate BinanceAdapter::parseBinanceBookTicker(const nlohmann::json& data, const core::Symbol& symbol){
+    OrderBookUpdate update;
+    update.exchangeId = common::ExchangeId::binance();
+    update.tradingPair = symbol;
+    update.receivedTimestamp = core::now();
+    update.isSnapshot = false; // BookTicker is an update
+    
+    // Extract timestamps safely
+    if (data.contains("E") && data["E"].is_number()) {
+        uint64_t rawTimestamp = data["E"].get<uint64_t>();
+        
+        // Convert raw timestamp to Timestamp (handles seconds/milliseconds detection)
+        if (rawTimestamp < 1000000000000ULL) {
+            // Timestamp is in seconds, convert to milliseconds first
+            update.exchangeTimestamp = core::timestampFromMillis(rawTimestamp * 1000);
+        } else {
+            // Timestamp is already in milliseconds
+            update.exchangeTimestamp = core::timestampFromMillis(rawTimestamp);
+        }
+    }
+    
+    // Parse bid
+    if (data.contains("b") && data["b"].is_string() &&
+        data.contains("B") && data["B"].is_string()) {
+        try {
+            PriceLevel bid;
+            bid.price = std::stod(data["b"].get<std::string>());
+            bid.quantity = std::stod(data["B"].get<std::string>());
+            if (bid.quantity > 0.0) {
+                update.bids.push_back(bid);
+            }
+        } catch (...) {
+            // Ignore invalid bid
+        }
+    }
+    
+    // Parse ask
+    if (data.contains("a") && data["a"].is_string() &&
+        data.contains("A") && data["A"].is_string()) {
+        try {
+            PriceLevel ask;
+            ask.price = std::stod(data["a"].get<std::string>());
+            ask.quantity = std::stod(data["A"].get<std::string>());
+            if (ask.quantity > 0.0) {
+                update.asks.push_back(ask);
+            }
+        } catch (...) {
+            // Ignore invalid ask
+        }
+    }
+    
+    return update;
+}
+TradeUpdate BinanceAdapter::parseTradeData(const RawMarketData& rawData) {
+    auto json = nlohmann::json::parse(rawData.rawData);
+    
+    if (!json.contains("e") || !json["e"].is_string() || json["e"] != "trade") {
+        throw std::runtime_error("Not a trade message");
+    }
+    
+    TradeUpdate trade;
+    trade.exchangeId = rawData.exchangeId;
+    trade.tradingPair = rawData.symbol;
+    
+    // Extract timestamps
+    if (json.contains("E") && json["E"].is_number()) {
+        uint64_t rawTimestamp = json["E"].get<uint64_t>();
+        if (rawTimestamp < 1000000000000ULL) {
+            trade.exchangeTimestamp = core::timestampFromMillis(rawTimestamp * 1000);
+        } else {
+            trade.exchangeTimestamp = core::timestampFromMillis(rawTimestamp);
+        }
+    }
+    trade.receivedTimestamp = core::now();
+    
+    // Extract price and quantity
+    if (json.contains("p") && json["p"].is_string()) {
+        trade.price = std::stod(json["p"].get<std::string>());
+    }
+    if (json.contains("q") && json["q"].is_string()) {
+        trade.quantity = std::stod(json["q"].get<std::string>());
+    }
+    
+    // Extract trade ID
+    if (json.contains("t") && json["t"].is_number()) {
+        trade.tradeId = std::to_string(json["t"].get<uint64_t>());
+    }
+    
+    // Extract buyer maker flag
+    if (json.contains("m") && json["m"].is_boolean()) {
+        trade.isBuyerMaker = json["m"].get<bool>();
+    }
+    
+    // Extract best match flag
+    if (json.contains("M") && json["M"].is_boolean()) {
+        trade.isBestMatch = json["M"].get<bool>();
+    }
+    
+    return trade;
+
+}
 
 std::string BinanceAdapter::extractTradingPair(const std::string& binanceSymbol) {
     // Common quote currencies in Binance, ordered by length (longest first)

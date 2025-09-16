@@ -30,6 +30,7 @@
 namespace trading {
  namespace core {
 
+// using RawMarketData = std::vector<uint8_t>;
 
  // Connection status
  enum class ConnectionStatus {
@@ -126,6 +127,7 @@ namespace trading {
     bool empty() const { return base.empty() || quote.empty(); }
  };
  
+
 // Add proper namespace aliases where needed
 // Ensure all files use the same ExchangeId definition
 using ExchangeId = common::ExchangeId;
@@ -146,6 +148,14 @@ struct MarketDataUpdate {
 
 };
 
+struct RawMarketData {
+    ExchangeId exchangeId;
+    core::Symbol symbol;
+    std::string streamType;  // "depth", "bookTicker", "trade"
+    core::Timestamp timestamp;
+    // std::vector<uint8_t> rawData;     // Raw JSON bytes
+    std::string rawData;     // Raw JSON bytes
+};
 /**
  * Structure to hold market data information
  */
@@ -303,8 +313,7 @@ struct PriceLevel {
  using ExperimentId = std::string;
  using OrderId = std::string;
  
-
- } // namespace core
+ }
  
  // Add a namespace alias to maintain compatibility with existing code
  namespace data_ingestion {
@@ -315,6 +324,7 @@ struct PriceLevel {
      using UpdateType = core::UpdateType;
      using ConnectionStatus = core::ConnectionStatus;
      using ExchangeData = core::ExchangeData;
- } // namespace data_ingestion
+     using RawMarketData = core::RawMarketData;
+    } // namespace data_ingestion
  
- } // namespace trading
+} // namespace trading
