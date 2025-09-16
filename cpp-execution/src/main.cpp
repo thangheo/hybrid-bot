@@ -1100,7 +1100,8 @@ int main(int argc, char* argv[]) {
     // Setup signal handlers
     signal(SIGINT, signalHandler);
     signal(SIGTERM, signalHandler);
-    
+    //disable log debug
+    // Logger::getLogger()->setLevel(LogLevel::INFO);
     try {
         std::cout << "🚀 STARTING FULL TRADING SYSTEM INTEGRATION DEMO 🚀" << std::endl;
         std::cout << "=====================================================" << std::endl;
