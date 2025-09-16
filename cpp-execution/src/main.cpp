@@ -931,11 +931,11 @@ private:
                     lastOrderbookPub[symbolStr] = now;
                 }
               
-                // Update the order book state
-                orderBook->applySnapshot(update.bids, update.asks, 
-                                    update.sequenceNumber, update.exchangeTimestamp);
-                
+                // NOTE: The DataIngestionService / OrderBookReconstructor already applied
+                // the snapshot/update before calling this callback. Do NOT re-apply it here
+                // (that would be a duplicate and can cause sequence/state inconsistencies).
 
+                // Strategy should work on the current orderBook state maintained by the reconstructor
                 if (strategyEngine_) {
                     strategyEngine_->processOrderBook(*orderBook);
                 }

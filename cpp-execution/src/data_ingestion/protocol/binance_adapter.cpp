@@ -587,7 +587,7 @@ OrderBookUpdate BinanceAdapter::parseBinanceBookTicker(const nlohmann::json& dat
     update.exchangeId = common::ExchangeId::binance();
     update.tradingPair = symbol;
     update.receivedTimestamp = core::now();
-    update.isSnapshot = false; // BookTicker is an update
+    update.isSnapshot = false; // BookTicker is an update - it provides the latest price and quantity for a specific symbol
     
     // Extract timestamps safely
     if (data.contains("E") && data["E"].is_number()) {
