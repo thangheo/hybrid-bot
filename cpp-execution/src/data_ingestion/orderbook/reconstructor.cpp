@@ -311,8 +311,8 @@ bool OrderBookReconstructor::processUpdate(
     update.exchangeTimestamp = timestamp;
     update.receivedTimestamp = std::chrono::system_clock::now();
     update.isSnapshot = false;
-    std::cout << "Processing incremental update for " << symbol.toString() 
-             << " with " << bids.size() << " bid changes and " << asks.size() << " ask changes" << std::endl;
+    // std::cout << "Processing incremental update for " << symbol.toString() 
+    //          << " with " << bids.size() << " bid changes and " << asks.size() << " ask changes" << std::endl;
     // Delegate to order book manager
     bool success = orderBookManager_->processUpdate(update);
     std::cout << "Update success: " << (success ? "YES" : "NO") << std::endl;

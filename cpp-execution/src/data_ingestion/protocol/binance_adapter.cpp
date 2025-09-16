@@ -344,15 +344,145 @@ PriceLevel BinanceAdapter::parsePriceLevel(const nlohmann::json& levelArray) {
 }
 
 OrderBookUpdate BinanceAdapter::parseOrderBookData(const RawMarketData& rawData) {
-    auto json = nlohmann::json::parse(rawData.rawData);
-    // std::cout << "Raw data: " << rawData.rawData << std::endl;
-    if (json.contains("bids") && json.contains("asks")) {
-        return parseBinanceDepth(json, rawData.symbol);
-    } else if (json.contains("b") && json.contains("a")) {
-        return parseBinanceBookTicker(json, rawData.symbol);
+    // Lightweight SAX handler to extract only the fields we care about (bids/asks, seq, timestamps, symbol)
+    struct SaxHandler : public nlohmann::json::json_sax_t {
+        const core::Symbol& symbolRef;
+        std::vector<PriceLevel> bids;
+        std::vector<PriceLevel> asks;
+        uint64_t sequenceNumber = 0;
+        uint64_t exchangeTimestampMs = 0;
+        std::string symbolStr;
+
+        // parse state
+        std::string last_key;
+        bool in_bids_main = false;
+        bool in_asks_main = false;
+        bool in_level_array = false; // inside a [price, qty] level
+        int level_index = 0;
+        std::string temp_price;
+        std::string temp_qty;
+
+        SaxHandler(const core::Symbol& s) : symbolRef(s) {}
+
+        bool null() override { return true; }
+        bool boolean(bool) override { return true; }
+        bool number_integer(number_integer_t val) override {
+            if (last_key == "u" || last_key == "lastUpdateId") sequenceNumber = static_cast<uint64_t>(val);
+            if (last_key == "E") exchangeTimestampMs = static_cast<uint64_t>(val);
+            if (in_level_array) {
+                if (level_index == 0) temp_price = std::to_string(val);
+                else if (level_index == 1) temp_qty = std::to_string(val);
+                ++level_index;
+            }
+            return true;
+        }
+        bool number_unsigned(number_unsigned_t val) override {
+            return number_integer(static_cast<number_integer_t>(val));
+        }
+    bool number_float(number_float_t val, const string_t&) override {
+            if (in_level_array) {
+                if (level_index == 0) temp_price = std::to_string(val);
+                else if (level_index == 1) temp_qty = std::to_string(val);
+                ++level_index;
+            } else {
+                if (last_key == "E") exchangeTimestampMs = static_cast<uint64_t>(val);
+            }
+            return true;
+        }
+        bool string(string_t& val) override {
+            if (last_key == "s") {
+                symbolStr = val;
+            }
+
+            if (in_level_array) {
+                if (level_index == 0) temp_price = val;
+                else if (level_index == 1) temp_qty = val;
+                ++level_index;
+            }
+            return true;
+        }
+        bool start_object(std::size_t) override { last_key.clear(); return true; }
+        bool end_object() override { last_key.clear(); return true; }
+        bool start_array(std::size_t) override {
+            if (last_key == "bids") {
+                in_bids_main = true;
+            } else if (last_key == "asks") {
+                in_asks_main = true;
+            } else if (in_bids_main || in_asks_main) {
+                // starting a level array [price, qty]
+                in_level_array = true;
+                level_index = 0;
+                temp_price.clear();
+                temp_qty.clear();
+            }
+            // clear last_key after using it for arrays
+            last_key.clear();
+            return true;
+        }
+        bool end_array() override {
+            if (in_level_array) {
+                // close a level array
+                try {
+                    double p = std::stod(temp_price);
+                    double q = std::stod(temp_qty);
+                    if (q > 0.0) {
+                        PriceLevel level(p, q);
+                        if (in_bids_main) bids.push_back(level);
+                        else if (in_asks_main) asks.push_back(level);
+                    }
+                } catch (...) {
+                    // ignore malformed level
+                }
+                in_level_array = false;
+                level_index = 0;
+                temp_price.clear(); temp_qty.clear();
+            } else if (in_bids_main) {
+                // closing bids main array
+                in_bids_main = false;
+            } else if (in_asks_main) {
+                in_asks_main = false;
+            }
+            return true;
+        }
+        bool key(string_t& val) override { last_key = val; return true; }
+        bool binary(json::binary_t&) override { return true; }
+        bool parse_error(std::size_t, const std::string&, const nlohmann::detail::exception&) override { return false; }
+    };
+
+    SaxHandler handler(rawData.symbol);
+    bool ok = nlohmann::json::sax_parse(rawData.rawData, &handler);
+    if (!ok) {
+        throw std::runtime_error("Failed to parse Binance JSON (SAX)");
     }
-    
-    throw std::runtime_error("Unknown Binance orderbook format");
+
+    // Build OrderBookUpdate from SAX handler data
+    OrderBookUpdate update;
+    update.exchangeId = common::ExchangeId::binance();
+    update.tradingPair = rawData.symbol;
+    update.receivedTimestamp = core::now();
+    update.isSnapshot = false; // leave to caller to set if needed
+    update.sequenceNumber = handler.sequenceNumber;
+    if (handler.exchangeTimestampMs != 0) {
+        update.exchangeTimestamp = core::timestampFromMillis(handler.exchangeTimestampMs);
+    }
+    update.bids = std::move(handler.bids);
+    update.asks = std::move(handler.asks);
+    update.checksum = generateChecksum(update.bids, update.asks);
+
+    if (!update.bids.empty() || !update.asks.empty()) return update;
+
+    // If we didn't get bids/asks, attempt to detect bookTicker style fields (b/a)
+    // Fallback: try minimal DOM parse only for these small fields
+    try {
+        auto json = nlohmann::json::parse(rawData.rawData);
+        if (json.contains("b") && json.contains("a")) {
+            return parseBinanceBookTicker(json, rawData.symbol);
+        }
+    } catch (...) {
+        // ignore
+    }
+
+    throw std::runtime_error("Unknown Binance orderbook format (no bids/asks found)");
 }
 
 
