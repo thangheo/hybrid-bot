@@ -898,7 +898,7 @@ private:
             }
             
             // Extract price for PTCA
-            if (update.isSnapshot == false && !update.bids.empty() && !update.asks.empty()) {
+            if (!update.bids.empty() && !update.asks.empty()) {
                 double midPrice = (update.bids[0].price + update.asks[0].price) / 2.0;
                 // Rate-limited PTCA update
                 static std::unordered_map<std::string, std::chrono::steady_clock::time_point> lastPtcaUpdate;
@@ -920,7 +920,7 @@ private:
                 static std::unordered_map<std::string, std::chrono::steady_clock::time_point> lastOrderbookPub;
                 auto now = std::chrono::steady_clock::now();
                 std::string symbolStr = update.tradingPair.toString();
-
+                
                 // Generate market intelligence at most every 53ms per symbol when the order book has valid top-of-book
                 {
                     auto topBids = orderBook->getBids(1);
@@ -967,17 +967,17 @@ private:
             //print signal details
             // std::cout << "PTCA tracking signals: " << ptcaManager_->getStats().currentlyTrackedSignals << std::endl;
             double ptcaRecommendation = ptcaManager_->getSignalRecommendation(signal);
-            std::cout << "🪧 Strategy Signal: " << signal.id 
-                      << " Symbol: " << signal.symbol.toString()
-                      << " Direction: " << (signal.direction == core::Direction::BUY ? "BUY" : 
-                                            signal.direction == core::Direction::SELL ? "SELL" : "NEUTRAL")
-                      << " Strength: " << signal.strength
-                      << " Confidence: " << signal.confidence
-                      << " Quality: " << signal.quality
-                      << " Target Size: " << signal.targetSize
-                      << " Expiration: " << signal.expirationTime
-                      << " PTCA Rec: " << ptcaRecommendation
-                      << std::endl;
+            // std::cout << "🪧 Strategy Signal: " << signal.id 
+            //           << " Symbol: " << signal.symbol.toString()
+            //           << " Direction: " << (signal.direction == core::Direction::BUY ? "BUY" : 
+            //                                 signal.direction == core::Direction::SELL ? "SELL" : "NEUTRAL")
+            //           << " Strength: " << signal.strength
+            //           << " Confidence: " << signal.confidence
+            //           << " Quality: " << signal.quality
+            //           << " Target Size: " << signal.targetSize
+            //           << " Expiration: " << signal.expirationTime
+            //           << " PTCA Rec: " << ptcaRecommendation
+            //           << std::endl;
              // PTCA: Optionally, adjust signal strength based on PTCA confidence
             double adjustedStrength = signal.strength;
             if (ptcaRecommendation > 0.2) {
