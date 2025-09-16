@@ -523,7 +523,9 @@ private:
                 {"net_flow_30s", intel.net_flow_30s}
             };
             
-            std::string topic = "MARKET_INTEL";
+            // Use a distinct topic for JSON-formatted intelligence to avoid
+            // confusing subscribers that expect protobuf on the 'MARKET_INTEL' topic.
+            std::string topic = "MARKET_INTEL_JSON";
             std::string data = intel_json.dump();
             
             zmq::message_t topic_msg(topic.size());
