@@ -78,7 +78,7 @@ public:
     explicit BinanceWebSocketClient(
         std::string host,
         std::string port,
-        DataCallback data_callback
+        RawDataCallback data_callback
     );
     /**
      * @brief Destructor - ensures clean shutdown
@@ -140,7 +140,7 @@ public:
      * @brief Set callback for incoming market data (interface version)
      * @param callback Function to call when data arrives
      */
-    void setDataCallback(DataCallback callback) override;
+    // void setDataCallback(DataCallback callback) override;
 
     /**
      * @brief Set callback for connection status changes
@@ -252,7 +252,11 @@ public:
      * @return Current statistics
      */
     Statistics getStatistics() const;
+    //new method for raws data
 
+    void setRawDataCallback(RawDataCallback callback);
+    std::string extractStreamType(const std::string& stream_name) const;
+    void invokeRawDataCallback(const RawMarketData& rawData);
 private:
     // Connection configuration
     std::string host_;
@@ -273,8 +277,9 @@ private:
 
     // Callbacks (thread-safe access)
     mutable std::mutex callback_mutex_;
-    DataCallback data_callback_;                    // Interface callback
-    EnhancedDataCallback enhanced_data_callback_;   // Enhanced callback
+    // DataCallback data_callback_;                    // Interface callback
+    // EnhancedDataCallback enhanced_data_callback_;   // Enhanced callback
+    RawDataCallback raw_data_callback_;
     StatusCallback status_callback_;
 
     // Subscription management
@@ -293,6 +298,9 @@ private:
     // Heartbeat configuration
     std::chrono::seconds heartbeat_interval_{30};
     std::chrono::seconds heartbeat_timeout_{10};
+
+    // Per-instance read flag to prevent concurrent async_read calls for the same client
+    std::atomic<bool> reading_{false};
 
     // Statistics
     mutable std::mutex stats_mutex_;

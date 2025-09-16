@@ -22,6 +22,18 @@
 namespace trading {
 namespace data_ingestion {
 
+    // TradeUpdate
+struct TradeUpdate {
+    ExchangeId exchangeId;
+    core::Symbol tradingPair;
+    core::Timestamp exchangeTimestamp;
+    core::Timestamp receivedTimestamp;
+    double price;
+    double quantity;
+    std::string tradeId;
+    bool isBuyerMaker;  // true if buyer is the market maker
+    bool isBestMatch;   // true if trade is the best match
+};
 /**
  * Binance-specific protocol adapter
  * 
@@ -65,8 +77,14 @@ public:
      * Validate Binance message format
      */
     bool validateBinanceMessage(const std::string& jsonData) const;
-    
+    OrderBookUpdate parseOrderBookData(const RawMarketData& rawData);
+    TradeUpdate parseTradeData(const RawMarketData& rawData);
+
 private:
+
+    OrderBookUpdate parseBinanceDepth(const nlohmann::json& data, const core::Symbol& symbol);
+    OrderBookUpdate parseBinanceBookTicker(const nlohmann::json& data, const core::Symbol& symbol);
+
     /**
      * Parse price level from Binance format
      * Binance sends price levels as ["price", "quantity"] arrays

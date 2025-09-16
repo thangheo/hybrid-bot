@@ -9,6 +9,7 @@
 #include "data_ingestion/websocket/connection_pool.hpp"
 #include "data_ingestion/normalization/order_book_normalizer.hpp"
 #include "data_ingestion/websocket/exchanges/binance_websocket_client.hpp"
+#include "data_ingestion/protocol/binance_adapter.hpp"
 #include "readerwriterqueue.h"
 #include <iostream>
 #include <memory>
@@ -19,6 +20,8 @@
 #include <mutex>
 #include <future>
 #include <unordered_map>
+
+using RawDataCallback = std::function<void(const RawMarketData&)>;
 
 using namespace moodycamel;
 namespace trading {
@@ -52,11 +55,21 @@ public:
     // Query methods
     OrderBookUpdate getOrderBook(const core::Symbol& tradingPair, int32_t depth = 20) const;
     std::string getConnectionStats() const;
-    
+
+    // Thêm methods
+    void onWebSocketRawData(const RawMarketData& rawData);
+    void processingWorker();    
+
 private:
-    // ReaderWriterQueue<MarketDataUpdate> processingQueue_;
-    ReaderWriterQueue<MarketDataUpdate> processingQueue_{100000}; // capacity 100,000
+
+    std::unique_ptr<BinanceAdapter> adapter_;
+    ReaderWriterQueue<RawMarketData> processingQueue_;
+
     std::thread processingThread_;
+    RawDataCallback websocketCallback_;
+
+    // ReaderWriterQueue<MarketDataUpdate> processingQueue_;
+    // ReaderWriterQueue<MarketDataUpdate> processingQueue_{100000}; // capacity 100,000
     std::mutex enqueueMutex_;  
     // rateLimitController_
     std::shared_ptr<execution::RateLimitController> rateLimitController_;
@@ -71,8 +84,7 @@ private:
     
     // Callbacks
     NormalizedOrderBookCallback normalizedCallback_;
-    WebSocketDataCallback websocketCallback_;
-    
+    // WebSocketDataCallback websocketCallback_;
     // Connection management
     std::atomic<bool> isConnected_{false};
     std::atomic<bool> running_{false};
@@ -92,9 +104,9 @@ private:
     std::atomic<uint64_t> requestIdCounter_{1};
     
     // Internal methods
-    void onWebSocketData(const core::ExchangeId& exchange,
-                        const core::Symbol& symbol,
-                        const std::vector<uint8_t>& data);
+    // void onWebSocketData(const core::ExchangeId& exchange,
+    //                     const core::Symbol& symbol,
+    //                     const std::vector<uint8_t>& data);
     
     void monitorConnections();
     
@@ -106,27 +118,27 @@ private:
     std::string generateRequestId();
     std::string toLowercase(const std::string& str);
     //moodyCamel concurrence queue
-    void processingWorker() {
-        MarketDataUpdate update;
-        while (running_) {
-            if (processingQueue_.try_dequeue(update)) {
-                std::cout << "[ExchangeManager] processingWorker dequeued symbol=" << update.tradingPair.toString()
-                          << " bytes=" << update.data.size() << std::endl;
-                if (normalizer_) {
-                    normalizer_->processMarketData(update);
-                }
-            } else {
-                std::this_thread::sleep_for(std::chrono::milliseconds(100));
-            }
-        }
+//     void processingWorker() {
+//         MarketDataUpdate update;
+//         while (running_) {
+//             if (processingQueue_.try_dequeue(update)) {
+//                 std::cout << "[ExchangeManager] processingWorker dequeued symbol=" << update.tradingPair.toString()
+//                           << " bytes=" << update.data.size() << std::endl;
+//                 if (normalizer_) {
+//                     normalizer_->processMarketData(update);
+//                 }
+//             } else {
+//                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
+//             }
+//         }
 
-        // Process remaining items when shutting down
-        while (processingQueue_.try_dequeue(update)) {
-            if (normalizer_) {
-                normalizer_->processMarketData(update);
-            }
-        }
-    }
+//         // Process remaining items when shutting down
+//         while (processingQueue_.try_dequeue(update)) {
+//             if (normalizer_) {
+//                 normalizer_->processMarketData(update);
+//             }
+//         }
+//     }
 };
 
 } // namespace data_ingestion

@@ -82,10 +82,17 @@ public:
         
         // 2. Initialize ZeroMQ publisher
         if (!zmqPublisher_->start()) {
-            LOG_ERROR("Failed to start ZeroMQ publisher");
-            return false;
+            // If the default bind address is already in use (common in dev), try an ephemeral port
+            LOG_WARN("ZeroMQ bind failed on tcp://*:5555, attempting fallback to tcp://127.0.0.1:0");
+            zmqPublisher_ = std::make_unique<ZeroMQPublisher>(PublisherConfig{"tcp://127.0.0.1:0"});
+            if (!zmqPublisher_->start()) {
+                LOG_ERROR("Failed to start ZeroMQ publisher on fallback address");
+                return false;
+            }
+            LOG_INFO("ZeroMQ publisher started on fallback address tcp://127.0.0.1:0");
+        } else {
+            LOG_INFO("ZeroMQ publisher started on tcp://*:5555");
         }
-        LOG_INFO("ZeroMQ publisher started on tcp://*:5555");
         
         // 3. Initialize data ingestion service
         if (!dataService_->initialize()) {

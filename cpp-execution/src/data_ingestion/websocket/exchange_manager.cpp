@@ -18,6 +18,7 @@ ExchangeManager::ExchangeManager(const core::ExchangeId& exchangeId,
     normalizedCallback_(std::move(normalizedCallback)),
     minConnections_(3),
     maxConnections_(8) {
+    adapter_ = std::make_unique<BinanceAdapter>();
     // Setup Binance rate limits
     if (rateLimitController_ && exchangeId == core::ExchangeId::binance()) {
         std::unordered_map<execution::ExchangeRequestType, execution::RateLimitRule> rules = {
@@ -30,10 +31,14 @@ ExchangeManager::ExchangeManager(const core::ExchangeId& exchangeId,
     normalizer_ = std::make_unique<OrderBookNormalizer>(normalizedCallback_);
     
     // Create WebSocket callback that properly forwards to normalizer
-    websocketCallback_ = [this](const core::ExchangeId& exchange,
-                               const core::Symbol& symbol,
-                               const std::vector<uint8_t>& data) {
-        this->onWebSocketData(exchange, symbol, data);
+    // websocketCallback_ = [this](const core::ExchangeId& exchange,
+    //                            const core::Symbol& symbol,
+    //                            const std::vector<uint8_t>& data) {
+    //     this->onWebSocketData(exchange, symbol, data);
+    // };
+    //use raw data callback
+    websocketCallback_ = [this](const RawMarketData& rawData) {
+        this->onWebSocketRawData(rawData);
     };
     
     std::cout << "ExchangeManager initialized with " << minConnections_
@@ -51,12 +56,16 @@ ExchangeManager::ExchangeManager(NormalizedOrderBookCallback callback,
     normalizer_ = std::make_unique<OrderBookNormalizer>(normalizedCallback_);
     
     // Create WebSocket callback that properly forwards to normalizer
-    websocketCallback_ = [this](const core::ExchangeId& exchange,
-                               const core::Symbol& symbol,
-                               const std::vector<uint8_t>& data) {
-        this->onWebSocketData(exchange, symbol, data);
+    // websocketCallback_ = [this](const core::ExchangeId& exchange,
+    //                            const core::Symbol& symbol,
+    //                            const std::vector<uint8_t>& data) {
+    //     this->onWebSocketData(exchange, symbol, data);
+    // };
+    //use raw data callback
+    websocketCallback_ = [this](const RawMarketData& rawData) {
+        this->onWebSocketRawData(rawData);
     };
-    
+
     std::cout << "ExchangeManager initialized with " << minConnections_
               << "-" << maxConnections_ << " connections\n";
 }
@@ -96,15 +105,16 @@ bool ExchangeManager::initialize() {
                 auto client = std::make_shared<BinanceWebSocketClient>(
                     "stream.binance.com",
                     "9443");
-                client->setDataCallback(
-                    [this](const ExchangeId& exchange,
-                           const Symbol& symbol,
-                           const std::vector<uint8_t>& data) {
-                        // Forward the actual data to onWebSocketData
-                        core::Symbol coreSymbol(symbol);
-                        this->onWebSocketData(exchange, coreSymbol, data);
-                    }
-                );
+                client->setRawDataCallback(websocketCallback_);
+                // client->setDataCallback(
+                //     [this](const ExchangeId& exchange,
+                //            const Symbol& symbol,
+                //            const std::vector<uint8_t>& data) {
+                //         // Forward the actual data to onWebSocketData
+                //         core::Symbol coreSymbol(symbol);
+                //         this->onWebSocketData(exchange, coreSymbol, data);
+                //     }
+                // );
                 // If inheritance is correct, static_pointer_cast is valid
                 return std::static_pointer_cast<ClientInterface>(client);
             },
@@ -132,30 +142,35 @@ bool ExchangeManager::initialize() {
         return false;
     }
 }
-void ExchangeManager::onWebSocketData(const core::ExchangeId& exchange,
-                        const core::Symbol& symbol,
-                        const std::vector<uint8_t>& data) {
-        try {
-            std::cout << "[ExchangeManager] onWebSocketData received for symbol=" << symbol.toString()
-                      << " bytes=" << data.size() << " exchange=" << exchange.toString() << std::endl;
-            MarketDataUpdate update{};
-            update.exchangeId = exchange;
-            update.tradingPair = symbol;
-            update.receivedTimestamp = std::chrono::system_clock::now();
-            update.data = data;
-            update.updateType = "orderbook";
-            
-            std::lock_guard<std::mutex> lock(enqueueMutex_);
-            // Non-blocking enqueue - very fast
-            if (!processingQueue_.enqueue(std::move(update))) {
-                // Queue full - handle backpressure
-                std::cerr << "Processing queue full, dropping data\n";
-            }
-        } catch (const std::exception& e) {
-            std::cerr << "Error processing WebSocket data: " << e.what() << '\n';
-        }
-}
+// void ExchangeManager::onWebSocketData(const core::ExchangeId& exchange,
+//                         const core::Symbol& symbol,
+//                         const std::vector<uint8_t>& data) {
+//         try {
+//             std::cout << "[ExchangeManager] onWebSocketData received for symbol=" << symbol.toString()
+//                       << " bytes=" << data.size() << " exchange=" << exchange.toString() << std::endl;
+//             RawMarketData rawData;
+//             rawData.exchangeId = exchange;
+//             rawData.symbol = symbol;
+//             rawData.rawData = data;
+//             rawData.streamType = "orderbook";
+//             rawData.receivedTimestamp = std::chrono::system_clock::now();
 
+//             std::lock_guard<std::mutex> lock(enqueueMutex_);
+//             // Non-blocking enqueue - very fast
+//             if (!processingQueue_.enqueue(std::move(rawData))) {
+//                 // Queue full - handle backpressure
+//                 std::cerr << "Processing queue full, dropping data\n";
+//             }
+//         } catch (const std::exception& e) {
+//             std::cerr << "Error processing WebSocket data: " << e.what() << '\n';
+//         }
+// }
+
+void ExchangeManager::onWebSocketRawData(const RawMarketData& rawData) {
+    if (!processingQueue_.enqueue(rawData)) {
+        std::cerr << "Processing queue full, dropping data\n";
+    }
+}
 // void ExchangeManager::onWebSocketData(const core::ExchangeId& exchange,
 //                                     const core::Symbol& symbol, 
 //                                     const std::vector<uint8_t>& data) {
@@ -434,6 +449,37 @@ std::vector<std::string> ExchangeManager::createStreamNames(
     }
     
     return streams;
+}
+
+
+void ExchangeManager::processingWorker() {
+    while (running_.load()) {
+        RawMarketData rawData;
+        if (processingQueue_.try_dequeue(rawData)) {
+            try {
+                if (rawData.streamType == "depth" || rawData.streamType == "bookTicker") {
+                    auto orderbook = adapter_->parseOrderBookData(rawData);
+                    core::MarketDataUpdate update;
+                    update.exchangeId = rawData.exchangeId;
+                    update.tradingPair = orderbook.tradingPair;
+                    update.data = std::vector<uint8_t>(rawData.rawData.begin(), rawData.rawData.end());
+                    update.updateType = "orderbook";
+                    update.receivedTimestamp = rawData.timestamp;
+                    // if (normalizer_) {
+                    //     normalizer_->processOrderBookUpdate(orderbook);
+                    //     // normalizer_->processMarketData(update);
+                    // }
+                    if (normalizedCallback_) {
+                        normalizedCallback_(orderbook);
+                    }
+                }
+            } catch (const std::exception& e) {
+                std::cerr << "Parse error: " << e.what() << '\n';
+            }
+        } else {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+    }
 }
 
 std::string ExchangeManager::generateRequestId() {

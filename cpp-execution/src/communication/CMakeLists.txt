@@ -59,10 +59,12 @@ file(GLOB PUBLISH_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../../src/data_ingestion/p
 # protocol source
 file(GLOB PROTOCOL_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../../src/data_ingestion/protocol/*.cpp)
 file(GLOB MARKET_INTEL_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../../src/market_intelligence/adaptive_intelligence.cpp)
+
 # Add the sources to the SOURCES list
 set(SOURCES
     zmq_server.cpp
     market_data_subscriber.cpp
+
     # full_bridge.cpp
     ${PROTO_SOURCES}  # Include protobuf-generated files
     ${WEBSOCKET_SOURCES}  # Add the expanded list of websocket .cpp files
@@ -77,6 +79,7 @@ set(SOURCES
     ${TIME_SOURCES}
     ${PUBLISH_SOURCES}
     ${MARKET_INTEL_SOURCES}
+
 )
 
 # Include directories
@@ -99,7 +102,7 @@ include_directories(
 add_library(communication STATIC ${SOURCES})
 
 # Link libraries
-target_link_libraries(communication zmq jsoncpp pthread protobuf gRPC::grpc++)
+target_link_libraries(communication zmq jsoncpp pthread protobuf gRPC::grpc++ proto_lib)
 
 # Set the output directory for executables
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../../bin)
@@ -116,6 +119,6 @@ enable_testing()
 foreach(test_file ${TEST_SOURCES})
     get_filename_component(test_name ${test_file} NAME_WE)
     add_executable(${test_name} ${test_file})
-    target_link_libraries(${test_name} communication zmq jsoncpp pthread protobuf)
+    target_link_libraries(${test_name} communication zmq jsoncpp pthread protobuf proto_lib)
     add_test(NAME ${test_name} COMMAND ${test_name})
 endforeach()

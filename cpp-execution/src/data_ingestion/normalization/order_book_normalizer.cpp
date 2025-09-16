@@ -39,6 +39,14 @@ void OrderBookNormalizer::initAdapters() {
               << " exchange adapters" << std::endl;
 }
 
+void OrderBookNormalizer::processOrderBookUpdate(const OrderBookUpdate& update) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    // Forward the update to the callback
+    if (callback_) {
+        callback_(update);
+    }
+}
+
 OrderBookUpdate OrderBookNormalizer::getOrderBook(
     const ExchangeId exchangeId,
     const core::Symbol& tradingPair,
@@ -74,8 +82,7 @@ void OrderBookNormalizer::processMarketData(const MarketDataUpdate& update) {
         return;
     }
     
-    try {
-       
+    try {       
         // Normalize the update
         OrderBookUpdate normalized = adapter->normalize(update);
         if (normalized.tradingPair.toString().empty() || normalized.tradingPair.toString() == "UNKNOWN") {

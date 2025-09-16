@@ -46,11 +46,11 @@ BinanceWebSocketClient::BinanceWebSocketClient(std::string host, std::string por
     LOG_INFO("Created BinanceWebSocketClient for " + host + ":" + port);
 }
 // BinanceWebSocketClient constructor with data callback
-BinanceWebSocketClient::BinanceWebSocketClient(std::string host, std::string port, DataCallback data_callback)
+BinanceWebSocketClient::BinanceWebSocketClient(std::string host, std::string port, RawDataCallback data_callback)
     : host_(host)
     , port_(port)
     , endpoint_("/stream")
-    , data_callback_(data_callback)
+    , raw_data_callback_(data_callback)
 {
     LOG_INFO("Created BinanceWebSocketClient with data callback for " + host + ":" + port);
 }   
@@ -267,10 +267,11 @@ std::vector<Symbol> BinanceWebSocketClient::getSubscribedSymbols() const {
     return subscribed_symbols_;
 }
 
-void BinanceWebSocketClient::setDataCallback(DataCallback callback) {
-    std::lock_guard<std::mutex> lock(callback_mutex_);
-    data_callback_ = std::move(callback);
-}
+// void BinanceWebSocketClient::setDataCallback(DataCallback callback) {
+//     std::lock_guard<std::mutex> lock(callback_mutex_);
+//     data_callback_ = std::move(callback);
+//     LOG_INFO("Data callback registered");
+// }
 
 void BinanceWebSocketClient::setStatusCallback(StatusCallback callback) {
     std::lock_guard<std::mutex> lock(callback_mutex_);
@@ -411,6 +412,13 @@ bool BinanceWebSocketClient::performConnection() {
         // Perform WebSocket handshake
         ws_->handshake(host_, endpoint_);
         LOG_DEBUG("WebSocket handshake completed");
+
+        // Ensure we start reading immediately after successful handshake
+        try {
+            startRead();
+        } catch (const std::exception& e) {
+            LOG_WARN(std::string("startRead threw after handshake: ") + e.what());
+        }
         
         // Set up control callback for handling close/ping/pong
         ws_->control_callback([this](websocket::frame_type kind, beast::string_view payload) {
@@ -436,14 +444,16 @@ void BinanceWebSocketClient::startRead() {
         return;
     }
     
-    // Only start reading if we're not already reading
-    static std::atomic<bool> reading{false};
-    if (reading.exchange(true)) {
-        return; // Already reading
+        // Only start reading if we're not already reading for this client
+        bool expected = false;
+        if (!reading_.compare_exchange_strong(expected, true)) {
+            return; // Already reading for this client
     }
-    
+    LOG_DEBUG("startRead called, scheduling async_read");
+
     ws_->async_read(*buffer_, [this](beast::error_code ec, std::size_t bytes_transferred) {
-        reading.store(false); // Reset reading flag
+        LOG_DEBUG("async_read callback fired, bytes_transferred=" + std::to_string(bytes_transferred));
+            reading_.store(false); // Reset reading flag for this client
         boost::ignore_unused(bytes_transferred);
         
         if (ec) {
@@ -472,6 +482,7 @@ void BinanceWebSocketClient::startRead() {
 }
 
 void BinanceWebSocketClient::handleMessage(const std::string& message) {
+    LOG_DEBUG("handleMessage called, message_len=" + std::to_string(message.size()));
     try {
         auto data = json::parse(message);
         
@@ -517,24 +528,18 @@ void BinanceWebSocketClient::handleSubscriptionResponse(const json& data) {
     }
 }
 
-void BinanceWebSocketClient::handleStreamData(const json& data) {
-    try {
-        std::string stream = data.value("stream", "");
-        auto stream_data = data["data"];
-        
-        // Extract symbol from stream name
-        Symbol symbol = extractSymbolFromStream(stream);
-        
-        // Convert data to bytes for callback
-        std::string json_str = stream_data.dump();
-        std::vector<uint8_t> data_bytes(json_str.begin(), json_str.end());
-        
-        // Invoke callback
-        invokeDataCallback(ExchangeId::binance(), symbol.toString(), data_bytes);
-        
-    } catch (const std::exception& e) {
-        LOG_ERROR("Error processing stream data: " + std::string(e.what()));
+
+// Thêm helper method
+std::string BinanceWebSocketClient::extractStreamType(const std::string& stream_name) const {
+    size_t at_pos = stream_name.find('@');
+    if (at_pos != std::string::npos) {
+        std::string type = stream_name.substr(at_pos + 1);
+        if (type.find("depth") == 0) return "depth";
+        if (type == "bookTicker") return "bookTicker";
+        if (type == "trade") return "trade";
+        if (type == "ticker") return "ticker";
     }
+    return "unknown";
 }
 
 bool BinanceWebSocketClient::sendSubscriptionRequest(const std::vector<std::string>& streams, bool subscribe) {
@@ -553,8 +558,29 @@ bool BinanceWebSocketClient::sendSubscriptionRequest(const std::vector<std::stri
         
         LOG_DEBUG("Sending " + std::string(subscribe ? "SUBSCRIBE" : "UNSUBSCRIBE") + 
                  " request for " + std::to_string(streams.size()) + " streams");
-        
-        ws_->write(net::buffer(message));
+        // Perform the write on the client's io_context to avoid cross-thread synchronous IO
+        if (ioc_) {
+            auto msg = std::make_shared<std::string>(std::move(message));
+            LOG_DEBUG("Posting subscription message to io_context: " + std::string(msg->begin(), msg->begin() + std::min<size_t>(msg->size(), 200)));
+            net::post(*ioc_, [this, msg, subscribe]() {
+                try {
+                    LOG_DEBUG("Performing subscription async_write: " + std::string(msg->begin(), msg->begin() + std::min<size_t>(msg->size(), 200)));
+                    // Use async_write to remain on io_context and avoid blocking
+                    ws_->async_write(net::buffer(*msg), [this, msg](beast::error_code ec, std::size_t bytes_transferred) {
+                        if (ec) {
+                            LOG_ERROR(std::string("Subscription async_write error: ") + ec.message());
+                        } else {
+                            LOG_DEBUG(std::string("Subscription async_write completed, bytes=") + std::to_string(bytes_transferred));
+                        }
+                    });
+                } catch (const std::exception& e) {
+                    LOG_ERROR(std::string("Error scheduling subscription write: ") + e.what());
+                }
+            });
+        } else {
+            // Fallback to direct write
+            ws_->write(net::buffer(message));
+        }
         
         return true;
         
@@ -798,27 +824,6 @@ void BinanceWebSocketClient::updateConnectionState(ConnectionStatus new_state, c
     }
 }
 
-void BinanceWebSocketClient::invokeDataCallback(const ExchangeId& exchange, const Symbol& symbol, 
-                                               const std::vector<uint8_t>& data) {
-    std::lock_guard<std::mutex> lock(callback_mutex_);
-    LOG_DEBUG("Invoking data callback for symbol=" + symbol.toString() + " bytes=" + std::to_string(data.size()));
-    if (data_callback_) {
-        try {
-            data_callback_(exchange, symbol, data);
-        } catch (const std::exception& e) {
-            LOG_ERROR("Error in data callback: " + std::string(e.what()));
-        }
-    }
-    // Also call enhanced callback if set
-    if (enhanced_data_callback_) {
-        try {
-            enhanced_data_callback_(exchange, symbol.toString(), data);
-        } catch (const std::exception& e) {
-            LOG_ERROR("Error in enhanced data callback: " + std::string(e.what()));
-        }
-    }
-}
-
 void BinanceWebSocketClient::invokeStatusCallback(ConnectionStatus state, const std::string& message) {
     std::lock_guard<std::mutex> lock(callback_mutex_);
     if (status_callback_) {
@@ -846,9 +851,15 @@ std::chrono::steady_clock::time_point BinanceWebSocketClient::getLastMessageTime
     return stats_.lastMessageAt;
 }
 
-void BinanceWebSocketClient::setEnhancedDataCallback(EnhancedDataCallback callback) {
+// void BinanceWebSocketClient::setEnhancedDataCallback(EnhancedDataCallback callback) {
+//     std::lock_guard<std::mutex> lock(callback_mutex_);
+//     enhanced_data_callback_ = std::move(callback);
+// }
+// 
+void BinanceWebSocketClient::setRawDataCallback(RawDataCallback callback) {
     std::lock_guard<std::mutex> lock(callback_mutex_);
-    enhanced_data_callback_ = std::move(callback);
+    raw_data_callback_ = std::move(callback);
+    LOG_INFO("Raw data callback registered");
 }
 
 void BinanceWebSocketClient::cleanup() {
@@ -889,6 +900,48 @@ void BinanceWebSocketClient::cleanup() {
     
     waiting_for_pong_.store(false);
 }
+
+void BinanceWebSocketClient::handleStreamData(const json& data) {
+    try {
+        std::string stream = data.value("stream", "");
+        auto stream_data = data["data"];
+        
+        RawMarketData rawData;
+        rawData.exchangeId = ExchangeId::binance();
+        rawData.symbol = extractSymbolFromStream(stream);
+        rawData.streamType = extractStreamType(stream);
+        rawData.timestamp = std::chrono::system_clock::now();
+        rawData.rawData = stream_data.dump(); // Ensure rawData.rawData is std::string
+
+        invokeRawDataCallback(rawData);
+        
+    } catch (const std::exception& e) {
+        LOG_ERROR("Error processing stream data: " + std::string(e.what()));
+    }
+}
+// invokeRawDataCallback
+void BinanceWebSocketClient::invokeRawDataCallback(const RawMarketData& data) {
+    std::lock_guard<std::mutex> lock(callback_mutex_);
+    if (raw_data_callback_) {
+        try {
+            raw_data_callback_(data);
+        } catch (const std::exception& e) {
+            LOG_ERROR("Error in raw data callback: " + std::string(e.what()));
+        }
+    }
+}
+
+// std::string BinanceWebSocketClient::extractStreamType(const std::string& stream_name) const {
+//     size_t at_pos = stream_name.find('@');
+//     if (at_pos != std::string::npos) {
+//         std::string type = stream_name.substr(at_pos + 1);
+//         if (type.find("depth") == 0) return "depth";
+//         if (type == "bookTicker") return "bookTicker";
+//         if (type == "trade") return "trade";
+//         if (type == "ticker") return "ticker";
+//     }
+//     return "unknown";
+// }
 
 } // namespace data_ingestion
 } // namespace trading
