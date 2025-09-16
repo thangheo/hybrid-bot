@@ -6,6 +6,8 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # find fmt
 find_package(fmt REQUIRED)
 
+# find_package(readerwriterqueue REQUIRED)
+
 # Collect all source files
 file(GLOB_RECURSE DATA_INGESTION_SOURCES
     "*.cpp"
@@ -36,6 +38,7 @@ add_library(data_ingestion ${DATA_INGESTION_SOURCES})
 target_include_directories(data_ingestion
     PUBLIC
         ${CMAKE_SOURCE_DIR}/include
+        ${CMAKE_SOURCE_DIR}/third_party/readerwriterqueue  
     PRIVATE
         ${CMAKE_SOURCE_DIR}/include/data_ingestion
         ${CMAKE_SOURCE_DIR}/src/data_ingestion
@@ -56,6 +59,7 @@ target_link_libraries(data_ingestion
         ${Protobuf_LIBRARIES}
         ${gRPC_LIBRARIES}
         fmt::fmt
+        # readerwriterqueue
 )
 # Add websocket directory for specific build rules if needed
 add_subdirectory(websocket)

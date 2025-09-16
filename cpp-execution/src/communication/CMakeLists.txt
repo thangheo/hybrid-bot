@@ -91,6 +91,7 @@ include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/../../include/risk
     ${CMAKE_CURRENT_SOURCE_DIR}/../../include/market_intelligence
     ${CMAKE_CURRENT_SOURCE_DIR}/../../generated/cpp/
+    ${CMAKE_SOURCE_DIR}/third_party/readerwriterqueue
 
 )
 
