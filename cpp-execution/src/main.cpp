@@ -921,20 +921,27 @@ private:
                 auto now = std::chrono::steady_clock::now();
                 std::string symbolStr = update.tradingPair.toString();
 
-                // Generate market intelligence at most every 53ms per symbol if orderbook update received (adjust as needed)
-                if(update.isSnapshot == false)
+                // Generate market intelligence at most every 53ms per symbol when the order book has valid top-of-book
                 {
-                    if (now - lastIntelGen[symbolStr] >= std::chrono::milliseconds(53)) {
-                        generateMarketIntelligence(update, orderBook);
-                        lastIntelGen[symbolStr] = now;
+                    auto topBids = orderBook->getBids(1);
+                    auto topAsks = orderBook->getAsks(1);
+                    if (!topBids.empty() && !topAsks.empty()) {
+                        if (now - lastIntelGen[symbolStr] >= std::chrono::milliseconds(53)) {
+                            generateMarketIntelligence(update, orderBook);
+                            lastIntelGen[symbolStr] = now;
+                        }
                     }
                 }
-                // Publish orderbook for risk at most every 200ms per symbol if orderbook update received (adjust as needed)
-                if(update.isSnapshot == false)
+
+                // Publish orderbook for risk at most every 200ms per symbol when order book has valid data
                 {
-                    if (now - lastOrderbookPub[symbolStr] >= std::chrono::milliseconds(200)) {
-                        publishOrderBookForRisk(update);
-                        lastOrderbookPub[symbolStr] = now;
+                    auto topBids = orderBook->getBids(1);
+                    auto topAsks = orderBook->getAsks(1);
+                    if (!topBids.empty() && !topAsks.empty()) {
+                        if (now - lastOrderbookPub[symbolStr] >= std::chrono::milliseconds(200)) {
+                            publishOrderBookForRisk(update);
+                            lastOrderbookPub[symbolStr] = now;
+                        }
                     }
                 }
             
@@ -944,8 +951,8 @@ private:
                 // (that would be a duplicate and can cause sequence/state inconsistencies).
 
                 // Strategy should work on the current orderBook state maintained by the reconstructor
-                if (strategyEngine_ && update.isSnapshot == false) {
-                    // Process the order book update in the strategy engine
+                if (strategyEngine_) {
+                    // Process the order book update in the strategy engine (strategy may expect both snapshots and deltas)
                     strategyEngine_->processOrderBook(*orderBook);
                 }
             }
