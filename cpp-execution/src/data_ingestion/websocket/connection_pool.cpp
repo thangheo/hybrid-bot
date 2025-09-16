@@ -77,7 +77,7 @@ ClientInterfacePtr ConnectionPool::acquireConnection(int timeoutMs) {
                 // Check if connection has health monitoring
                 auto healthyConn = std::dynamic_pointer_cast<BinanceWebSocketClient>(info.connection);
                 if (healthyConn) {
-                    isHealthy = healthyConn->isConnectionHealthy();
+                    isHealthy = healthyConn->isConnected() && healthyConn->getStatus() == ConnectionStatus::CONNECTED;
                 }
                 
                 if (isHealthy) {
@@ -529,7 +529,13 @@ void ConnectionPool::checkConnectionHealth() {
             
             // ✅ Check connection-specific health if available (but be less aggressive)
             auto healthyConn = std::dynamic_pointer_cast<BinanceWebSocketClient>(info.connection);
-            if (healthyConn && !healthyConn->isConnectionHealthy()) {
+            if (healthyConn && !healthyConn->isConnected()) {
+                bool isHealthy = healthyConn->isConnected() && healthyConn->getStatus() == ConnectionStatus::CONNECTED;
+                if (!isHealthy) {
+                    info.failureCount++;
+                    unhealthyCount++;
+                    LOG_WARN("Connection in pool '" + poolId_ + "' failed health check - marking as unhealthy");
+                }
                 // ✅ Only increment failure count every other check to reduce false positives
                 static int healthCheckCounter = 0;
                 healthCheckCounter++;
