@@ -38,7 +38,7 @@ add_library(data_ingestion ${DATA_INGESTION_SOURCES})
 target_include_directories(data_ingestion
     PUBLIC
         ${CMAKE_SOURCE_DIR}/include
-        ${CMAKE_SOURCE_DIR}/third_party/readerwriterqueue  
+        ${CMAKE_SOURCE_DIR}/third_parties/readerwriterqueue  
     PRIVATE
         ${CMAKE_SOURCE_DIR}/include/data_ingestion
         ${CMAKE_SOURCE_DIR}/src/data_ingestion
