@@ -6,7 +6,10 @@
 #include <algorithm>
 #include <chrono>
 #include <functional>
-
+#include "common/logger.hpp"
+// #include "iostream"
+// using namespace trading::common;
+#define LOG_DEBUG(msg) Logger::getLogger()->debug(msg)
 namespace trading {
 namespace data_ingestion {
 
@@ -459,6 +462,7 @@ void ExchangeManager::processingWorker() {
             try {
                 if (rawData.streamType == "depth" || rawData.streamType == "bookTicker") {
                     auto orderbook = adapter_->parseOrderBookData(rawData);
+                                        
                     core::MarketDataUpdate update;
                     update.exchangeId = rawData.exchangeId;
                     update.tradingPair = orderbook.tradingPair;
