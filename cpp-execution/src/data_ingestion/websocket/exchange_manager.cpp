@@ -74,7 +74,11 @@ ExchangeManager::~ExchangeManager() {
     if (monitorThread_.joinable()) {
         monitorThread_.join();
     }
-    
+     if (running_.exchange(false)) {
+        if (processingThread_.joinable()) {
+            processingThread_.join();
+        }
+    }
     // Then disconnect
     disconnect();
     
@@ -109,6 +113,8 @@ bool ExchangeManager::initialize() {
         running_.store(true);
         monitorThread_ = std::thread(&ExchangeManager::monitorConnections, this);
         
+        processingThread_ = std::thread(&ExchangeManager::processingWorker, this);
+        
         std::cout << "Binance connection pool initialized successfully\n";
         return true;
         
@@ -117,88 +123,48 @@ bool ExchangeManager::initialize() {
         return false;
     }
 }
-
 void ExchangeManager::onWebSocketData(const core::ExchangeId& exchange,
-                                    const core::Symbol& symbol, 
-                                    const std::vector<uint8_t>& data) {
-    try {
-        // Convert WebSocket data to MarketDataUpdate format
-        MarketDataUpdate update{};
-        update.exchangeId = exchange;
-        update.tradingPair = symbol;
-        update.receivedTimestamp = std::chrono::system_clock::now();
-        update.data = data;
-        update.updateType = "orderbook";
-        // Forward to the normalizer
-        if (normalizer_) {
-            normalizer_->processMarketData(update);
-        } 
-        
-    } catch (const std::exception& e) {
-        std::cerr << "Error processing WebSocket data: " << e.what() << '\n';
-    }
+                        const core::Symbol& symbol,
+                        const std::vector<uint8_t>& data) {
+        try {
+            MarketDataUpdate update{};
+            update.exchangeId = exchange;
+            update.tradingPair = symbol;
+            update.receivedTimestamp = std::chrono::system_clock::now();
+            update.data = data;
+            update.updateType = "orderbook";
+            
+            // Non-blocking enqueue - very fast
+            if (!processingQueue_.enqueue(std::move(update))) {
+                // Queue full - handle backpressure
+                std::cerr << "Processing queue full, dropping data\n";
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "Error processing WebSocket data: " << e.what() << '\n';
+        }
 }
 
-// SIMPLIFIED DIRECT SUBSCRIPTION - Remove event bus complexity
-// bool ExchangeManager::subscribe(const std::vector<Symbol>& tradingPairs,
-//                                const std::vector<DataType>& dataTypes,
-//                                int depth) {
-//     std::lock_guard<std::recursive_mutex> lock(mutex_);
-    
-//     if (!connectionPool_ || !isConnected_.load()) {
-//         std::cerr << "Not connected. Call connect() first.\n";
-//         return false;
-//     }
-    
+// void ExchangeManager::onWebSocketData(const core::ExchangeId& exchange,
+//                                     const core::Symbol& symbol, 
+//                                     const std::vector<uint8_t>& data) {
 //     try {
-//         // Acquire a connection from the pool
-//         auto connection = connectionPool_->acquireConnection();
-//         if (!connection) {
-//             std::cerr << "Failed to acquire connection for subscription\n";
-//             return false;
-//         }
-        
-//         // Convert trading pairs to Symbol objects
-//         std::vector<core::Symbol> symbols;
-//         symbols.reserve(tradingPairs.size());
-        
-//         for (const auto& pair : tradingPairs) {
-//             auto symbol = pair;
-//             symbols.emplace_back(symbol);
-//         }
-        
-//         // Subscribe using the connection
-//         bool success = connection->subscribe(symbols);
-        
-//         // Release the connection back to the pool
-//         connectionPool_->releaseConnection(connection);
-        
-//         if (success) {
-//             // Tell the connection pool about active subscriptions for auto-resubscription
-//             connectionPool_->setActiveSubscriptions(symbols);
-            
-//             // Store the subscription request for reconnection scenarios
-//             SubscriptionRequest request{};
-//             request.exchangeId = core::ExchangeId::binance();
-//             request.tradingPairs = tradingPairs ;
-//             request.dataTypes = dataTypes;
-//             request.depth = depth;
-            
-//             activeSubscriptions_.push_back(std::move(request));
-            
-//             std::cout << "Successfully subscribed to " << tradingPairs.size() 
-//                       << " trading pairs\n";
-//         } else {
-//             std::cerr << "Failed to subscribe to trading pairs\n";
-//         }
-        
-//         return success;
+//         // Convert WebSocket data to MarketDataUpdate format
+//         MarketDataUpdate update{};
+//         update.exchangeId = exchange;
+//         update.tradingPair = symbol;
+//         update.receivedTimestamp = std::chrono::system_clock::now();
+//         update.data = data;
+//         update.updateType = "orderbook";
+//         // Forward to the normalizer
+//         if (normalizer_) {
+//             normalizer_->processMarketData(update);
+//         } 
         
 //     } catch (const std::exception& e) {
-//         std::cerr << "Error during subscription: " << e.what() << '\n';
-//         return false;
+//         std::cerr << "Error processing WebSocket data: " << e.what() << '\n';
 //     }
 // }
+
 
 bool ExchangeManager::subscribe(const std::vector<Symbol>& tradingPairs,
                                const std::vector<DataType>& dataTypes,
@@ -216,6 +182,9 @@ bool ExchangeManager::subscribe(const std::vector<Symbol>& tradingPairs,
             if (!rateLimitController_->waitForPermission(execution::ExchangeRequestType::SUBSCRIPTION)) {
                 std::cerr << "Rate limited: subscription request blocked\n";
                 return false;
+            }
+            else {
+                std::cout << "Subscription request permitted by rate limiter\n";
             }
         }
         
@@ -302,6 +271,7 @@ void ExchangeManager::disconnect() {
             connectionPool_->shutdown();
             isConnected_.store(false);
             std::cout << "Disconnected from Binance\n";
+           
         } catch (const std::exception& e) {
             std::cerr << "Error disconnecting: " << e.what() << '\n';
         }

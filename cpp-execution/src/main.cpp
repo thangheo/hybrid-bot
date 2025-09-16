@@ -296,9 +296,9 @@ public:
                 zmqServer_->Stop();
             }
              
-            // Clear data ingestion service pointer after shutdown
-            std::cout << "Clearing data ingestion service..." << std::endl;
-            dataIngestionService_.reset();
+            // // Clear data ingestion service pointer after shutdown
+            // std::cout << "Clearing data ingestion service..." << std::endl;
+            // dataIngestionService_.reset();
             
             // Stop event bus last
             std::cout << "Stopping event bus..." << std::endl;

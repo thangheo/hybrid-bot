@@ -9,6 +9,7 @@
 #include "data_ingestion/websocket/connection_pool.hpp"
 #include "data_ingestion/normalization/order_book_normalizer.hpp"
 #include "data_ingestion/websocket/exchanges/binance_websocket_client.hpp"
+#include "readerwriterqueue.h"
 #include <memory>
 #include <vector>
 #include <string>
@@ -18,6 +19,7 @@
 #include <future>
 #include <unordered_map>
 
+using namespace moodycamel;
 namespace trading {
 namespace data_ingestion {
 
@@ -51,6 +53,9 @@ public:
     std::string getConnectionStats() const;
     
 private:
+    // ReaderWriterQueue<MarketDataUpdate> processingQueue_;
+    ReaderWriterQueue<MarketDataUpdate> processingQueue_{100000}; // capacity 100,000
+    std::thread processingThread_;
     // rateLimitController_
     std::shared_ptr<execution::RateLimitController> rateLimitController_;
     core::ExchangeId exchangeId_;
@@ -98,6 +103,26 @@ private:
     
     std::string generateRequestId();
     std::string toLowercase(const std::string& str);
+    //moodyCamel concurrence queue
+    void processingWorker() {
+        MarketDataUpdate update;
+        while (running_) {
+            if (processingQueue_.try_dequeue(update)) {
+                if (normalizer_) {
+                    normalizer_->processMarketData(update);
+                }
+            } else {
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            }
+        }
+
+        // Process remaining items when shutting down
+        while (processingQueue_.try_dequeue(update)) {
+            if (normalizer_) {
+                normalizer_->processMarketData(update);
+            }
+        }
+    }
 };
 
 } // namespace data_ingestion
