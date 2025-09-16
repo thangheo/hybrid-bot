@@ -346,12 +346,15 @@ PriceLevel BinanceAdapter::parsePriceLevel(const nlohmann::json& levelArray) {
 OrderBookUpdate BinanceAdapter::parseOrderBookData(const RawMarketData& rawData) {
     // Lightweight SAX handler to extract only the fields we care about (bids/asks, seq, timestamps, symbol)
     struct SaxHandler : public nlohmann::json::json_sax_t {
-        const core::Symbol& symbolRef;
-        std::vector<PriceLevel> bids;
-        std::vector<PriceLevel> asks;
-        uint64_t sequenceNumber = 0;
-        uint64_t exchangeTimestampMs = 0;
-        std::string symbolStr;
+    const core::Symbol& symbolRef;
+    std::vector<PriceLevel> bids;
+    std::vector<PriceLevel> asks;
+    uint64_t sequenceNumber = 0;
+    uint64_t exchangeTimestampMs = 0;
+    std::string symbolStr;
+    bool found_lastUpdateId = false;
+    bool found_bids = false;
+    bool found_asks = false;
 
         // parse state
         std::string last_key;
@@ -367,7 +370,8 @@ OrderBookUpdate BinanceAdapter::parseOrderBookData(const RawMarketData& rawData)
         bool null() override { return true; }
         bool boolean(bool) override { return true; }
         bool number_integer(number_integer_t val) override {
-            if (last_key == "u" || last_key == "lastUpdateId") sequenceNumber = static_cast<uint64_t>(val);
+            if (last_key == "u") sequenceNumber = static_cast<uint64_t>(val);
+            if (last_key == "lastUpdateId") { sequenceNumber = static_cast<uint64_t>(val); found_lastUpdateId = true; }
             if (last_key == "E") exchangeTimestampMs = static_cast<uint64_t>(val);
             if (in_level_array) {
                 if (level_index == 0) temp_price = std::to_string(val);
@@ -406,8 +410,10 @@ OrderBookUpdate BinanceAdapter::parseOrderBookData(const RawMarketData& rawData)
         bool start_array(std::size_t) override {
             if (last_key == "bids") {
                 in_bids_main = true;
+                found_bids = true;
             } else if (last_key == "asks") {
                 in_asks_main = true;
+                found_asks = true;
             } else if (in_bids_main || in_asks_main) {
                 // starting a level array [price, qty]
                 in_level_array = true;
@@ -458,9 +464,15 @@ OrderBookUpdate BinanceAdapter::parseOrderBookData(const RawMarketData& rawData)
     // Build OrderBookUpdate from SAX handler data
     OrderBookUpdate update;
     update.exchangeId = common::ExchangeId::binance();
-    update.tradingPair = rawData.symbol;
+    // Prefer symbol carried in rawData, fallback to parsed symbol from payload
+    if (!rawData.symbol.toString().empty()) {
+        update.tradingPair = rawData.symbol;
+    } else if (!handler.symbolStr.empty()) {
+        update.tradingPair.fromString(extractTradingPair(handler.symbolStr));
+    }
     update.receivedTimestamp = core::now();
-    update.isSnapshot = false; // leave to caller to set if needed
+    // Mark snapshot if we saw lastUpdateId or both bids and asks arrays (snapshot payload)
+    update.isSnapshot = handler.found_lastUpdateId || (handler.found_bids && handler.found_asks);
     update.sequenceNumber = handler.sequenceNumber;
     if (handler.exchangeTimestampMs != 0) {
         update.exchangeTimestamp = core::timestampFromMillis(handler.exchangeTimestampMs);

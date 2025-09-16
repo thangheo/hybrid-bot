@@ -32,7 +32,7 @@ ExchangeManager::ExchangeManager(const core::ExchangeId& exchangeId,
     if (rateLimitController_ && exchangeId == core::ExchangeId::binance()) {
         std::unordered_map<execution::ExchangeRequestType, execution::RateLimitRule> rules = {
             {execution::ExchangeRequestType::CONNECTION, {5, std::chrono::seconds(1)}},
-            {execution::ExchangeRequestType::SUBSCRIPTION, {10, std::chrono::seconds(1)}}
+            {execution::ExchangeRequestType::SUBSCRIPTION, {40, std::chrono::seconds(1)}}
         };
         rateLimitController_->setRateLimitRules(rules);
     }
@@ -458,7 +458,10 @@ void ExchangeManager::processingWorker() {
                 // Parse/normalize using adapter (existing behavior)
                 OrderBookUpdate normalized = adapter_->parseOrderBookData(rawData);             
                 // Forward to normalizer
-                normalizer_->processOrderBookUpdate(normalized);              
+                normalizer_->processOrderBookUpdate(normalized);       
+                if (normalizedCallback_){
+                    normalizedCallback_(normalized);
+                }      
                 // Periodic logging
                 if ((processed % 100) == 0) {
                     std::cerr << "[ExchangeManager] processed=" << processed
