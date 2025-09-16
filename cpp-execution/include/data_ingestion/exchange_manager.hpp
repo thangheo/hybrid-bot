@@ -61,6 +61,7 @@ public:
     void processingWorker();    
 
 private:
+    static size_t getRSSKB() ;
 
     std::unique_ptr<BinanceAdapter> adapter_;
     ReaderWriterQueue<RawMarketData> processingQueue_;

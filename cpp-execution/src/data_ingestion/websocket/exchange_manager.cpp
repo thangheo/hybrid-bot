@@ -7,6 +7,12 @@
 #include <chrono>
 #include <functional>
 #include "common/logger.hpp"
+
+#include <fstream>
+#include <sys/types.h>
+#include <unistd.h>
+#include <atomic>
+
 // #include "iostream"
 // using namespace trading::common;
 #define LOG_DEBUG(msg) Logger::getLogger()->debug(msg)
@@ -145,30 +151,7 @@ bool ExchangeManager::initialize() {
         return false;
     }
 }
-// void ExchangeManager::onWebSocketData(const core::ExchangeId& exchange,
-//                         const core::Symbol& symbol,
-//                         const std::vector<uint8_t>& data) {
-//         try {
-//             std::cout << "[ExchangeManager] onWebSocketData received for symbol=" << symbol.toString()
-//                       << " bytes=" << data.size() << " exchange=" << exchange.toString() << std::endl;
-//             RawMarketData rawData;
-//             rawData.exchangeId = exchange;
-//             rawData.symbol = symbol;
-//             rawData.rawData = data;
-//             rawData.streamType = "orderbook";
-//             rawData.receivedTimestamp = std::chrono::system_clock::now();
-
-//             std::lock_guard<std::mutex> lock(enqueueMutex_);
-//             // Non-blocking enqueue - very fast
-//             if (!processingQueue_.enqueue(std::move(rawData))) {
-//                 // Queue full - handle backpressure
-//                 std::cerr << "Processing queue full, dropping data\n";
-//             }
-//         } catch (const std::exception& e) {
-//             std::cerr << "Error processing WebSocket data: " << e.what() << '\n';
-//         }
-// }
-
+ 
 void ExchangeManager::onWebSocketRawData(const RawMarketData& rawData) {
     if (!processingQueue_.enqueue(rawData)) {
         std::cerr << "Processing queue full, dropping data\n";
@@ -455,24 +438,49 @@ std::vector<std::string> ExchangeManager::createStreamNames(
 }
 
 
+size_t ExchangeManager::getRSSKB() {
+    std::ifstream f("/proc/self/statm");
+    size_t total_pages = 0, resident_pages = 0;
+    if (!(f >> total_pages >> resident_pages)) return 0;
+    long page = sysconf(_SC_PAGESIZE);
+    return (resident_pages * page) / 1024;
+}
+
 void ExchangeManager::processingWorker() {
+    size_t processed = 0;
+    size_t total_bytes = 0;
+    RawMarketData rawData;
     while (running_.load()) {
-        RawMarketData rawData;
         if (processingQueue_.try_dequeue(rawData)) {
             try {
-                if (rawData.streamType == "depth" || rawData.streamType == "bookTicker") {
-                    auto orderbook = adapter_->parseOrderBookData(rawData);
-                                        
-                    core::MarketDataUpdate update;
-                    update.exchangeId = rawData.exchangeId;
-                    update.tradingPair = orderbook.tradingPair;
-                    update.data = std::vector<uint8_t>(rawData.rawData.begin(), rawData.rawData.end());
-                    update.updateType = "orderbook";
-                    update.receivedTimestamp = rawData.timestamp;
-                    
-                    if (normalizedCallback_) {
-                        normalizedCallback_(orderbook);
-                    }
+                ++processed;
+                total_bytes += rawData.rawData.size();
+
+                // Parse/normalize using adapter (existing behavior)
+                OrderBookUpdate normalized = adapter_->parseOrderBookData(rawData);
+
+                // If normalized result didn't capture raw payload, move it to avoid a copy
+                // if (normalized.data.empty() && !rawData.rawData.empty()) {
+                //     normalized.data = std::move(rawData.rawData);
+                // }
+
+                // Forward to normalizer
+                normalizer_->processOrderBookUpdate(normalized);
+              
+                
+                // Release large buffers asap, but avoid thrashing the allocator
+                if (rawData.rawData.capacity() > 1024 * 1024) { // only shrink if >1MB
+                    // rawData.rawData is a std::string; swap with an empty string to free memory
+                    std::string().swap(rawData.rawData);
+                } else {
+                    rawData.rawData.clear();
+                }
+                // ...existing code...
+                // Periodic logging
+                if ((processed % 100) == 0) {
+                    std::cerr << "[ExchangeManager] processed=" << processed
+                              << " total_bytes=" << total_bytes
+                              << " RSS_KB=" << getRSSKB() << '\n';
                 }
             } catch (const std::exception& e) {
                 std::cerr << "Parse error: " << e.what() << '\n';
