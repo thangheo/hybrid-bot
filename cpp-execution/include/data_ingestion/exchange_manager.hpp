@@ -56,6 +56,7 @@ private:
     // ReaderWriterQueue<MarketDataUpdate> processingQueue_;
     ReaderWriterQueue<MarketDataUpdate> processingQueue_{100000}; // capacity 100,000
     std::thread processingThread_;
+    std::mutex enqueueMutex_;  
     // rateLimitController_
     std::shared_ptr<execution::RateLimitController> rateLimitController_;
     core::ExchangeId exchangeId_;

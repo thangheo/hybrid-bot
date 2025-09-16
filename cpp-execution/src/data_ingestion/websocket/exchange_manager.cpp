@@ -134,6 +134,7 @@ void ExchangeManager::onWebSocketData(const core::ExchangeId& exchange,
             update.data = data;
             update.updateType = "orderbook";
             
+            std::lock_guard<std::mutex> lock(enqueueMutex_);
             // Non-blocking enqueue - very fast
             if (!processingQueue_.enqueue(std::move(update))) {
                 // Queue full - handle backpressure
