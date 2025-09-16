@@ -31,6 +31,15 @@ namespace trading {
  namespace core {
 
 
+ // Connection status
+ enum class ConnectionStatus {
+     CONNECTED,
+     CONNECTING,
+     DISCONNECTED,
+     DISCONNECTING,
+     RECONNECTING,
+     ERROR
+ };
  /**
   * Represents a trading symbol (trading pair)
   */
@@ -286,15 +295,6 @@ struct PriceLevel {
      TICKER
  };
  
- // Connection status
- enum class ConnectionStatus {
-     CONNECTED,
-     CONNECTING,
-     DISCONNECTED,
-     DISCONNECTING,
-     RECONNECTING,
-     ERROR
- };
  
  /**
   * Common identifiers for strategy, signals, and other components

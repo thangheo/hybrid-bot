@@ -26,11 +26,11 @@ using ConnectionFactory = std::function<ClientInterfacePtr()>;
 
 class ConnectionPool {
 public:
-    ConnectionPool(const std::string& poolId,
-                  ConnectionFactory factory,
-                  std::shared_ptr<execution::RateLimitController> rateLimitController,
-                  int minConnections = 5,
-                  int maxConnections = 10);
+    // ConnectionPool(const std::string& poolId,
+    //               ConnectionFactory factory,
+    //               std::shared_ptr<execution::RateLimitController> rateLimitController,
+    //               int minConnections = 5,
+    //               int maxConnections = 10);
                   
     ConnectionPool(const std::string& poolId,
                   ConnectionFactory factory,

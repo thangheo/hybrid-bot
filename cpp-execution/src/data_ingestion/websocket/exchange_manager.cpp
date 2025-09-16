@@ -93,11 +93,20 @@ bool ExchangeManager::initialize() {
         connectionPool_ = std::make_unique<ConnectionPool>(
             "binance",
             [this]() -> ClientInterfacePtr {
-                return std::make_shared<BinanceWebSocketClient>(
+                auto client = std::make_shared<BinanceWebSocketClient>(
                     "stream.binance.com",
-                    "9443",
-                    this->websocketCallback_
+                    "9443");
+                client->setDataCallback(
+                    [this](const ExchangeId& exchange,
+                           const Symbol& symbol,
+                           const std::vector<uint8_t>& data) {
+                        // Forward the actual data to onWebSocketData
+                        core::Symbol coreSymbol(symbol);
+                        this->onWebSocketData(exchange, coreSymbol, data);
+                    }
                 );
+                // If inheritance is correct, static_pointer_cast is valid
+                return std::static_pointer_cast<ClientInterface>(client);
             },
             minConnections_,
             maxConnections_
