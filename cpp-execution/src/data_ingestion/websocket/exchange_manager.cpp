@@ -469,10 +469,7 @@ void ExchangeManager::processingWorker() {
                     update.data = std::vector<uint8_t>(rawData.rawData.begin(), rawData.rawData.end());
                     update.updateType = "orderbook";
                     update.receivedTimestamp = rawData.timestamp;
-                    // if (normalizer_) {
-                    //     normalizer_->processOrderBookUpdate(orderbook);
-                    //     // normalizer_->processMarketData(update);
-                    // }
+                    
                     if (normalizedCallback_) {
                         normalizedCallback_(orderbook);
                     }
