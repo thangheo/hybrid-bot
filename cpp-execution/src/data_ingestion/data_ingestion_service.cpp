@@ -196,7 +196,7 @@ bool DataIngestionService::setupPublisher() {
             return true;
         }
         const auto& pubConfig = config_->getPublisherConfig();
-        publisher_ = std::make_shared<TradingCommunicationServer>(pubConfig);
+        publisher_ = std::make_shared<GenericZmqServer>(pubConfig);
         return true;
     } catch (const std::exception& e) {
         std::cerr << "Publisher setup failed: " << e.what() << std::endl;

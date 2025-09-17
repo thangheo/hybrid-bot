@@ -9,6 +9,9 @@
 #include <stdexcept>
 #include <iostream>
 #include <nlohmann/json.hpp>
+#include "communication/zmq_config.hpp"
+
+using namespace trading::communication;
 
 namespace trading {
 namespace data_ingestion {
@@ -87,37 +90,44 @@ bool Configuration::loadFromJson(const std::string& jsonString) {
 }
 
 void Configuration::loadPublisherConfig(const nlohmann::json& pubJson) {
-    publisherConfig_.market_intel_endpoint = pubJson.value("market_intel_endpoint", "tcp://*:5555");
-    publisherConfig_.orderbook_endpoint = pubJson.value("orderbook_endpoint", "tcp://*:5557");
-    publisherConfig_.trading_intent_endpoint = pubJson.value("trading_intent_endpoint", "tcp://*:5556");
-    publisherConfig_.publisherType = pubJson.value("publisher_type", "zeromq");
-    publisherConfig_.bufferSize = pubJson.value("buffer_size", 10000);
+
+    publisherConfig_.publisher_endpoint = pubJson.value("market_intel_endpoint", "tcp://*:5555");
+    publisherConfig_.publisher_endpoint = pubJson.value("orderbook_endpoint", "tcp://*:5557");
+    publisherConfig_.request_endpoint = pubJson.value("trading_intent_endpoint", "tcp://*:5556");
+    // publisherConfig_. = pubJson.value("publisher_type", "zeromq");
+    // publisherConfig_.bufferSize = pubJson.value("buffer_size", 10000);
     publisherConfig_.max_queue_size = pubJson.value("max_queue_size", 10000);
     publisherConfig_.max_publish_rate = pubJson.value("max_publish_rate", 5000);
-    publisherConfig_.publish_interval_ms = pubJson.value("publish_interval_ms", 50);
-    publisherConfig_.publishInterval = std::chrono::milliseconds(publisherConfig_.publish_interval_ms);
-    publisherConfig_.heartbeat_interval_ms = pubJson.value("heartbeat_interval_ms", 30000);
-    publisherConfig_.zmq_linger_ms = pubJson.value("zmq_linger_ms", 1000);
-    publisherConfig_.zmq_hwm = pubJson.value("zmq_hwm", 10000);
-    publisherConfig_.enableCompression = pubJson.value("enable_compression", false);
-    publisherConfig_.publish_raw_data = pubJson.value("publish_raw_data", true);
-    publisherConfig_.publish_normalized_data = pubJson.value("publish_normalized_data", true);
+    publisherConfig_.publish_interval = std::chrono::milliseconds(pubJson.value("publish_interval_ms", 100));
+    publisherConfig_.queue_timeout = std::chrono::milliseconds(pubJson.value("queue_timeout_ms", 100));
+    publisherConfig_.publisher_hwm = pubJson.value("publisher_hwm", 10000);
+    publisherConfig_.publisher_linger = pubJson.value("publisher_linger_ms", 1000);
+    publisherConfig_.publisher_immediate = pubJson.value("publisher_immediate", true);
+    publisherConfig_.request_hwm = pubJson.value("request_hwm", 1000);
+    publisherConfig_.request_timeout_ms = pubJson.value("request_timeout_ms", 30000);
+    publisherConfig_.publisher_threads = pubJson.value("publisher_threads", 2);
+    publisherConfig_.request_handler_threads = pubJson.value("request_handler_threads", 4);
+    publisherConfig_.io_threads = pubJson.value("io_threads", 2);
+    publisherConfig_.enable_monitoring = pubJson.value("enable_monitoring", true);
+    publisherConfig_.stats_interval = std::chrono::seconds(pubJson.value("stats_interval_seconds", 60));
+    publisherConfig_.enable_heartbeat = pubJson.value("enable_heartbeat", true);
     
-    std::string compressionStr = pubJson.value("compression", "none");
-    if (compressionStr == "none") {
-        publisherConfig_.compression = CompressionAlgorithm::NONE;
-    } else if (compressionStr == "lz4") {
-        publisherConfig_.compression = CompressionAlgorithm::LZ4;
-    } else if (compressionStr == "zstd") {
-        publisherConfig_.compression = CompressionAlgorithm::ZSTD;
-    }
     
-    if (pubJson.contains("topics") && pubJson["topics"].is_array()) {
-        publisherConfig_.topics.clear();
-        for (const auto& topic : pubJson["topics"]) {
-            publisherConfig_.topics.push_back(topic.get<std::string>());
-        }
-    }
+    // std::string compressionStr = pubJson.value("compression", "none");
+    // if (compressionStr == "none") {
+    //     publisherConfig_.compression = CompressionAlgorithm::NONE;
+    // } else if (compressionStr == "lz4") {
+    //     publisherConfig_.compression = CompressionAlgorithm::LZ4;
+    // } else if (compressionStr == "zstd") {
+    //     publisherConfig_.compression = CompressionAlgorithm::ZSTD;
+    // }
+    
+    // if (pubJson.contains("topics") && pubJson["topics"].is_array()) {
+    //     publisherConfig_.topics.clear();
+    //     for (const auto& topic : pubJson["topics"]) {
+    //         publisherConfig_.topics.push_back(topic.get<std::string>());
+    //     }
+    // }
 }
 
 void Configuration::loadExchangeConfigs(const nlohmann::json& exchangesJson) {
@@ -231,7 +241,7 @@ void Configuration::loadEnabledExchanges(const nlohmann::json& enabledJson) {
 }
 
 // All your existing getter and setter methods remain unchanged
-PublisherConfig Configuration::getPublisherConfig() const {
+ZmqServerConfig Configuration::getPublisherConfig() const {
     std::lock_guard<std::mutex> lock(configMutex_);
     return publisherConfig_;
 }
@@ -286,13 +296,11 @@ std::vector<ExchangeId> Configuration::getEnabledExchanges() const {
     return enabled_exchanges_;
 }
 
-void Configuration::setPublisherConfig(const PublisherConfig& config) {
+void Configuration::setPublisherConfig(const ZmqServerConfig& config) {
     std::lock_guard<std::mutex> lock(configMutex_);
     publisherConfig_ = config;
-    publisherConfig_.market_intel_endpoint = config.market_intel_endpoint;
-    publisherConfig_.orderbook_endpoint = config.orderbook_endpoint;
-    publisherConfig_.trading_intent_endpoint = config.trading_intent_endpoint;
-    publisherConfig_.publish_interval_ms = config.publish_interval_ms;
+    // publisherConfig_.enable_monitoring = config.enable_monitoring;
+    // why? we just copied the whole struct
 }
 
 void Configuration::setExchangeConfig(const std::string& exchangeId, const ExchangeConfig& config) {
@@ -310,22 +318,24 @@ void Configuration::setStorageConfig(const StorageConfig& config) {
     storageConfig_ = config;
 }
 
+
 void Configuration::initializeDefaults() {
-    publisherConfig_.market_intel_endpoint = "tcp://*:5555";
-    publisherConfig_.orderbook_endpoint = "tcp://*:5557";
-    publisherConfig_.trading_intent_endpoint = "tcp://*:5556";
-    publisherConfig_.publisherType = "zeromq";
-    publisherConfig_.bufferSize = 1000;
-    publisherConfig_.max_queue_size = 1000;
-    publisherConfig_.max_publish_rate = 1000;
-    publisherConfig_.enableCompression = false;
-    publisherConfig_.publish_interval_ms = 100;
-    publisherConfig_.heartbeat_interval_ms = 30000;
-    publisherConfig_.zmq_linger_ms = 1000;
-    publisherConfig_.zmq_hwm = 1000;
-    publisherConfig_.publish_raw_data = true;
-    publisherConfig_.publish_normalized_data = true;
-    publisherConfig_.compression = CompressionAlgorithm::NONE;
+    ///this struct already has default values in its definition
+    // publisherConfig_.publisher_endpoint = "tcp://*:5555";
+    // publisherConfig_.market_intel_endpoint = "tcp://*:5556";
+    // publisherConfig_.trading_intent_endpoint = "tcp://*:5557";
+    // publisherConfig_.publisherType = "zeromq";
+    // publisherConfig_.bufferSize = 1000;
+    // publisherConfig_.max_queue_size = 1000;
+    // publisherConfig_.max_publish_rate = 1000;
+    // publisherConfig_.enableCompression = false;
+    // publisherConfig_.publish_interval_ms = 100;
+    // publisherConfig_.heartbeat_interval_ms = 30000;
+    // publisherConfig_.zmq_linger_ms = 1000;
+    // publisherConfig_.zmq_hwm = 1000;
+    // publisherConfig_.publish_raw_data = true;
+    // publisherConfig_.publish_normalized_data = true;
+    // publisherConfig_.compression = CompressionAlgorithm::NONE;
     
     normalizationConfig_.enableNormalization = true;
     normalizationConfig_.timestampFormat = "iso8601";

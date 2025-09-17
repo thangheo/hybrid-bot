@@ -27,6 +27,8 @@ public:
     
     // Process market data from any exchange
     void processMarketData(const MarketDataUpdate& update);
+    // Convenience: accept raw JSON (as received from subscriber) and convert to MarketDataUpdate
+    void processMarketDataJson(const nlohmann::json& jsonMsg);
     
     // Get current state of an order book
     OrderBookUpdate getOrderBook(const ExchangeId exchangeId,

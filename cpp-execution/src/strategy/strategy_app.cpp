@@ -8,7 +8,7 @@
 #include "common/logger.hpp"
 #include "common/event_bus.hpp"
 #include "common/trading_events.hpp"
-#include "common/zeromq_client.hpp"
+#include "communication/zmq_client.hpp"
 #include "data_ingestion/orderbook/order_book.hpp"
 #include <iostream>
 #include <fstream>

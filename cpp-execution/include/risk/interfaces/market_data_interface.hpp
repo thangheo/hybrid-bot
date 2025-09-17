@@ -1,7 +1,7 @@
 #pragma once
 
 #include "risk/interfaces/data_interface.hpp"
-#include "common/zeromq_client.hpp"
+#include "communication/zmq_client.hpp"
 #include "data_ingestion/orderbook/order_book.hpp"
 #include "data_ingestion/normalization/order_book_normalizer.hpp"
 #include "risk/risk_config.hpp"
@@ -14,6 +14,8 @@
 #include <chrono>
 #include <deque>
 
+using namespace trading::communication;
+using namespace trading::core;
 namespace trading {
 namespace risk {
 
@@ -40,7 +42,7 @@ struct VolatilityCalculator {
  */
 struct MarketDataCacheEntry {
     core::MarketData data;
-    std::chrono::system_clock::time_point lastUpdate;
+    std::chrono::steady_clock::time_point lastUpdate;
     bool isValid = false;
 };
 
@@ -146,7 +148,7 @@ private:
     core::MarketData convertOrderBookToMarketData(const data_ingestion::OrderBookUpdate& orderBook) const;
     
     // ZeroMQ client for subscribing to market data
-    std::unique_ptr<common::ZeroMQClient> zmqClient_;
+    std::unique_ptr<trading::communication::GenericZmqClient> zmqClient_;
     
     // Order book normalizer for processing raw data
     std::shared_ptr<data_ingestion::OrderBookNormalizer> normalizer_;

@@ -61,7 +61,7 @@ public:
     std::vector<Symbol> getActiveOrderBooks() const;
     // Monitoring
     //function to set communication server
-    bool setCommServer(std::shared_ptr<TradingCommunicationServer> server) {
+    bool setCommServer(std::shared_ptr<GenericZmqServer> server) {
         publisher_ = server;
         return true;
     }
@@ -75,7 +75,7 @@ private:
     std::unique_ptr<common::EventBus> eventBus_;
     
     // Publishing layer
-    std::shared_ptr<TradingCommunicationServer> publisher_;
+    std::shared_ptr<GenericZmqServer> publisher_;
     
     // Order book management
     OrderBookReconstructor* reconstructor_;
