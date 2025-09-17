@@ -47,8 +47,7 @@ private:
         while (running_) {
             for (const auto& symbol : symbols_) {
                 trading::MarketIntelligence intel = GenerateSimulatedIntelligence(symbol);
-                server_->publishAsync("market_intelligence", intel.SerializeAsString());
-                std::cout << "Published intelligence for " << symbol.toString() << std::endl;
+                server_->publishAsync("MARKET_INTEL", intel.SerializeAsString());
             }
             
             // Publish every 100ms

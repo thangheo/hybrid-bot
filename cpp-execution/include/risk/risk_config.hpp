@@ -504,17 +504,17 @@ public:
     CollateralConfig collateralConfig;
     PortfolioConfig portfolioConfig;
     // zmq endpoints
-    std::string executionRequestEndpoint = "tcp://localhost:5555";
-    std::string executionPublishEndpoint = "tcp://localhost:5556";
+    std::string executionRequestEndpoint = "tcp://localhost:5565";
+    std::string executionPublishEndpoint = "tcp://localhost:5566";
     std::string executionReportsTopic = "execution_reports";
     // marketDataRequestEndpoint
     std::string marketDataRequestEndpoint = "tcp://localhost:5560";
     std::string marketDataPublishEndpoint = "tcp://localhost:5561";
     std::string marketDataTopic = "market_data";
-    std::string zmqSubscriberEndpoint = "tcp://localhost:5556";
+    std::string zmqSubscriberEndpoint = "tcp://localhost:5562";
 
     // zmqPublisherEndpoint
-    std::string zmqPublisherEndpoint = "tcp://localhost:5557";
+    std::string zmqPublisherEndpoint = "tcp://localhost:5563";
     // cache validity duration in milliseconds
     int marketDataCacheDurationMs = 10;
     std::string defaultExchange = "binance";
