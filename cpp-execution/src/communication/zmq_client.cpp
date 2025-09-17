@@ -46,10 +46,27 @@ bool GenericZmqClient::connect() {
             return false;
         }
         
+        // Apply any pending subscriptions to the newly-created socket
+        {
+            std::lock_guard<std::mutex> lock(handlers_mutex_);
+            if (subscriber_socket_) {
+                for (const auto& [topic, handler] : message_handlers_) {
+                    try {
+                        subscriber_socket_->set(zmq::sockopt::subscribe, topic);
+                        if (logging_enabled_) {
+                            logInfo("Applied pending subscription for topic: " + topic);
+                        }
+                    } catch (const std::exception& e) {
+                        logError(std::string("Failed to apply pending subscription for topic '") + topic + "': " + e.what());
+                    }
+                }
+            }
+        }
+
         // Start subscriber thread
         running_.store(true);
         subscriber_thread_ = std::thread(&GenericZmqClient::subscriberWorker, this);
-        
+
         connected_.store(true);
         stats_.connection_time = std::chrono::steady_clock::now();
         
@@ -92,58 +109,60 @@ void GenericZmqClient::disconnect() {
 // =============================================================================
 
 bool GenericZmqClient::subscribe(const std::string& topic, MessageHandler handler) {
-    if (!connected_.load() || !subscriber_socket_) {
-        logError("Cannot subscribe - client not connected");
-        return false;
+    // Always store the handler so callers can subscribe before connect()
+    {
+        std::lock_guard<std::mutex> lock(handlers_mutex_);
+        message_handlers_[topic] = std::move(handler);
     }
-    
-    try {
-        // Set subscription filter on socket
-        subscriber_socket_->set(zmq::sockopt::subscribe, topic);
-        
-        // Store handler
-        {
-            std::lock_guard<std::mutex> lock(handlers_mutex_);
-            message_handlers_[topic] = std::move(handler);
+
+    // If already connected, apply the subscription to the socket immediately
+    if (connected_.load() && subscriber_socket_) {
+        try {
+            subscriber_socket_->set(zmq::sockopt::subscribe, topic);
+            logInfo("Subscribed to topic: " + topic);
+            return true;
+        } catch (const zmq::error_t& e) {
+            logError("ZMQ error subscribing to topic '" + topic + "': " + std::string(e.what()));
+            return false;
+        } catch (const std::exception& e) {
+            logError("Error subscribing to topic '" + topic + "': " + std::string(e.what()));
+            return false;
         }
-        
-        logInfo("Subscribed to topic: " + topic);
-        return true;
-        
-    } catch (const zmq::error_t& e) {
-        logError("ZMQ error subscribing to topic '" + topic + "': " + std::string(e.what()));
-        return false;
-    } catch (const std::exception& e) {
-        logError("Error subscribing to topic '" + topic + "': " + std::string(e.what()));
-        return false;
     }
+
+    // Not connected yet — subscription stored and will be applied on connect()
+    if (logging_enabled_) {
+        logInfo("Stored subscription for topic (pending connect): " + topic);
+    }
+    return true;
 }
 
 bool GenericZmqClient::unsubscribe(const std::string& topic) {
-    if (!connected_.load() || !subscriber_socket_) {
-        return false;
+    // Remove handler immediately
+    {
+        std::lock_guard<std::mutex> lock(handlers_mutex_);
+        message_handlers_.erase(topic);
     }
-    
-    try {
-        // Remove subscription filter from socket
-        subscriber_socket_->set(zmq::sockopt::unsubscribe, topic);
-        
-        // Remove handler
-        {
-            std::lock_guard<std::mutex> lock(handlers_mutex_);
-            message_handlers_.erase(topic);
+
+    // If connected, also remove subscription filter from socket
+    if (connected_.load() && subscriber_socket_) {
+        try {
+            subscriber_socket_->set(zmq::sockopt::unsubscribe, topic);
+            logInfo("Unsubscribed from topic: " + topic);
+            return true;
+        } catch (const zmq::error_t& e) {
+            logError("ZMQ error unsubscribing from topic '" + topic + "': " + std::string(e.what()));
+            return false;
+        } catch (const std::exception& e) {
+            logError("Error unsubscribing from topic '" + topic + "': " + std::string(e.what()));
+            return false;
         }
-        
-        logInfo("Unsubscribed from topic: " + topic);
-        return true;
-        
-    } catch (const zmq::error_t& e) {
-        logError("ZMQ error unsubscribing from topic '" + topic + "': " + std::string(e.what()));
-        return false;
-    } catch (const std::exception& e) {
-        logError("Error unsubscribing from topic '" + topic + "': " + std::string(e.what()));
-        return false;
     }
+
+    if (logging_enabled_) {
+        logInfo("Removed pending subscription for topic (was not connected): " + topic);
+    }
+    return true;
 }
 
 bool GenericZmqClient::subscribeMultiple(const std::vector<std::string>& topics, MessageHandler handler) {
