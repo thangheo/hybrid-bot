@@ -22,4 +22,6 @@ backtest/
 .testapi
 data/*
 models/*
-cpp-execution/libs/cpp-execution/cpp-execution-build/
+cpp-execution/cpp-execution/cpp-execution-build/
+cpp-execution/libs/readerwriterqueue/
+cpp-execution/libs/
