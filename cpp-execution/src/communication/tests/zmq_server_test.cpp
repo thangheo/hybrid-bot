@@ -18,13 +18,13 @@ using namespace trading::communication;
 // Market Intelligence Generator for simulation/testing
 class MarketIntelligenceGenerator {
 private:
-    TradingCommunicationServer* server_;
+    GenericZmqServer* server_;
     std::vector<Symbol> symbols_;
     std::atomic<bool> running_;
     std::thread generation_thread_;
 
 public:
-    MarketIntelligenceGenerator(TradingCommunicationServer* server, 
+    MarketIntelligenceGenerator(GenericZmqServer* server, 
                                const std::vector<Symbol>& symbols)
         : server_(server), symbols_(symbols), running_(false) {}
     
@@ -47,7 +47,8 @@ private:
         while (running_) {
             for (const auto& symbol : symbols_) {
                 trading::MarketIntelligence intel = GenerateSimulatedIntelligence(symbol);
-                server_->PublishMarketIntelligence(intel);
+                server_->publishAsync("market_intelligence", intel.SerializeAsString());
+                std::cout << "Published intelligence for " << symbol.toString() << std::endl;
             }
             
             // Publish every 100ms
@@ -230,14 +231,28 @@ int main() {
         std::cout << "ZMQ Version: " << std::get<0>(version) << "." << std::get<1>(version) << "." << std::get<2>(version) << std::endl;
         
         // Initialize server
-        TradingCommunicationServer server;
+        GenericZmqServer server;
         
         // Set up execution handler
         SimpleExecutionHandler execution_handler;
-        server.SetExecutionCallback([&execution_handler](const trading::TradingIntent& intent) {
-            return execution_handler.HandleTradingIntent(intent);
-        });
-        
+        // server.SetExecutionCallback([&execution_handler](const trading::TradingIntent& intent) {
+        //     return execution_handler.HandleTradingIntent(intent);
+        // });
+        server.registerRequestHandler("TradingIntent", 
+            [&execution_handler](const std::string& request_data, const std::unordered_map<std::string, std::string>& /*metadata*/) -> std::string {
+                trading::TradingIntent intent;
+                if (!intent.ParseFromString(request_data)) {
+                    std::cerr << "Failed to parse TradingIntent from request data." << std::endl;
+                    return "";
+                }
+                trading::ExecutionAcknowledgment ack = execution_handler.HandleTradingIntent(intent);
+                std::string response_data;
+                if (!ack.SerializeToString(&response_data)) {
+                    std::cerr << "Failed to serialize ExecutionAcknowledgment." << std::endl;
+                    return "";
+                }
+                return response_data;
+            });
         // Start server
         server.start();
         

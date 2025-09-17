@@ -6,7 +6,7 @@
  */
 
 #include "interfaces/strategy_interface.hpp"
-#include <common/zeromq_client.hpp>
+#include <communication/zmq_client.hpp>
 #include <nlohmann/json.hpp>
 #include <sstream>
 #include <chrono>

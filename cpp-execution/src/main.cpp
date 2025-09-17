@@ -23,7 +23,7 @@
 #include "common/event_bus.hpp"
 #include "common/trading_events.hpp"
 #include "common/logger.hpp"
-#include "common/zeromq_client.hpp"
+#include "communication/zmq_server.hpp"
 #include "common/exchange_types.hpp"
 // Data ingestion
 #include "data_ingestion/data_ingestion_service.hpp"
@@ -56,8 +56,7 @@
 #include "core/types.hpp"
 
 // zmq clients
-#include "common/zmq_config.hpp"
-#include "common/zeromq_client.hpp"
+#include "communication/zmq_config.hpp"
 
 using namespace trading;
 using namespace std::chrono_literals;
@@ -76,7 +75,7 @@ public:
         // Initialize adaptive intelligence
         adaptiveIntel_ = std::make_unique<trading::intelligence::AdaptiveMarketIntelligence>();
         
-        zmq_comm_server_ = std::make_shared<TradingCommunicationServer>();
+        zmq_comm_server_ = std::make_shared<GenericZmqServer>();
         // Initialize ZMQ communication
         setupCallbacks();
     }
@@ -587,7 +586,7 @@ private:
     std::chrono::time_point<std::chrono::steady_clock> lastPriceUpdate_;
     // std::unique_ptr<DataInterface> m_dataInterface;
 
-    std::shared_ptr<TradingCommunicationServer> zmq_comm_server_;
+    std::shared_ptr<GenericZmqServer> zmq_comm_server_;
 
     std::unique_ptr<trading::intelligence::AdaptiveMarketIntelligence> adaptiveIntel_;
     std::mutex intelligenceMutex_;
@@ -941,18 +940,19 @@ private:
                         }
                     }
                 }
+                //already publish in data reconstructor on topic: orderbook.BINANCE.ADA/USDT with size: 1616
 
-                // Publish orderbook for risk at most every 200ms per symbol when order book has valid data
-                {
-                    auto topBids = orderBook->getBids(1);
-                    auto topAsks = orderBook->getAsks(1);
-                    if (!topBids.empty() && !topAsks.empty()) {
-                        if (now - lastOrderbookPub[symbolStr] >= std::chrono::milliseconds(200)) {
-                            publishOrderBookForRisk(update);
-                            lastOrderbookPub[symbolStr] = now;
-                        }
-                    }
-                }
+                // // Publish orderbook for risk at most every 200ms per symbol when order book has valid data
+                // {
+                //     auto topBids = orderBook->getBids(1);
+                //     auto topAsks = orderBook->getAsks(1);
+                //     if (!topBids.empty() && !topAsks.empty()) {
+                //         if (now - lastOrderbookPub[symbolStr] >= std::chrono::milliseconds(200)) {
+                //             publishOrderBookForRisk(update);
+                //             lastOrderbookPub[symbolStr] = now;
+                //         }
+                //     }
+                // }
             
               
                 // NOTE: The DataIngestionService / OrderBookReconstructor already applied

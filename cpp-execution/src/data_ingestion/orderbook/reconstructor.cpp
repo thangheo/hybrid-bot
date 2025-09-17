@@ -35,7 +35,7 @@ OrderBookReconstructor::~OrderBookReconstructor() {
 }
 
 bool OrderBookReconstructor::initialize(
-    std::shared_ptr<trading::communication::TradingCommunicationServer> publisher,
+    std::shared_ptr<trading::communication::GenericZmqServer> publisher,
     std::shared_ptr<OrderBookManager> manager
 ) {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -465,7 +465,7 @@ void OrderBookReconstructor::publishOrderBook(const std::shared_ptr<OrderBook>& 
         // Publish with proper topic
         std::string topic = "orderbook." + update.exchangeId.toString() + "." + update.tradingPair.toString();
         // publisher_->PublishOrderBookData(topic, binaryPayload);
-        publisher_->PublishRawMessage(topic, jsonStr);
+        publisher_->publishAsync(topic, std::string(binaryPayload.begin(), binaryPayload.end()));
         
     } catch (const std::exception& e) {
         std::cerr << "Error publishing order book: " << e.what() << std::endl;

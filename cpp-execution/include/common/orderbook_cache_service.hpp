@@ -1,7 +1,7 @@
 // include/common/orderbook_cache_service.hpp
 #pragma once
 #include "data_ingestion/orderbook/order_book.hpp"
-#include "common/zeromq_client.hpp"
+#include "communication/zmq_server.hpp"
 #include <unordered_map>
 #include <memory>
 #include <shared_mutex>
@@ -106,7 +106,7 @@ private:
     mutable std::atomic<size_t> cacheMisses_{0};
     
     // Asynchronous publishing
-    std::unique_ptr<ZeroMQClient> publisher_;
+    std::unique_ptr<trading::communication::GenericZmqServer> publisher_;
     std::queue<std::shared_ptr<data_ingestion::OrderBook>> publishQueue_;
     mutable std::mutex publishMutex_;  // Make mutable for const methods
     std::condition_variable publishCondition_;

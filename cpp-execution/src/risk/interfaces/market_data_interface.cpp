@@ -5,6 +5,10 @@
 #include <algorithm>
 #include <numeric>
 #include <unordered_map>
+#include "communication/zmq_config.hpp"
+#include "communication/zmq_client.hpp"
+
+using namespace trading::communication;
 namespace trading {
 namespace risk {
 
@@ -50,22 +54,41 @@ bool MarketDataInterface::initialize() {
     
     try {
         // Initialize ZeroMQ client
-        common::ZeroMQConfig zmqConfig;
-        zmqConfig.subscriberEndpoint = zmqSubscriberEndpoint_;
-        zmqConfig.publisherEndpoint = zmqPublisherEndpoint_;
-        zmqConfig.receiveHighWaterMark = 10000;
-        zmqConfig.pollTimeout = std::chrono::milliseconds(100);
+        ZmqClientConfig zmqConfig;
+        zmqConfig.server_pub_endpoint = zmqSubscriberEndpoint_;
+        zmqConfig.server_req_endpoint = zmqPublisherEndpoint_;
+        zmqConfig.auto_reconnect = true;
+        zmqConfig.reconnect_interval = std::chrono::milliseconds(5000);
+        zmqConfig.request_timeout = std::chrono::milliseconds(10000);
+        zmqConfig.io_threads = 1;
         
-        zmqClient_ = std::make_unique<common::ZeroMQClient>(zmqConfig);
         
+        zmqClient_ = std::make_unique<GenericZmqClient>(zmqConfig);
+        RequestHandler requestHandler = 
+            [this](const std::string& request_data, 
+                   const std::unordered_map<std::string, std::string>& metadata) -> std::string {
+            // Handle incoming requests if needed
+            return "ACK"; // Simple acknowledgment for now
+        };
         // Set message handler
-        zmqClient_->setMessageHandler([this](const std::string& topic, const std::string& message) {
-            if (topic.find("orderbook") != std::string::npos) {
-                processOrderBookUpdate(topic, message);
-            } else if (topic.find("trade") != std::string::npos) {
-                processTradeUpdate(topic, message);
-            }
-        });
+        zmqClient_->subscribe("market_data", 
+            [this](const std::string& topic, const std::string& message, const std::unordered_map<std::string, std::string>& metadata) {
+                // Handle incoming market data messages
+                (void)metadata;
+                try {
+                    auto json_msg = nlohmann::json::parse(message);
+                    // Do not attempt to convert to MarketDataUpdate here because that requires
+                    // a nlohmann::from_json/from_json_t specialization for MarketDataUpdate.
+                    // The publisher/normalizer is responsible for producing normalized updates,
+                    // so just acknowledge or forward the raw JSON if needed.
+                    //so what is the point of this subscription then?
+                    // we should forward this to the normalizer
+                    normalizer_->processMarketDataJson(json_msg);
+                    (void)json_msg;
+                } catch (const std::exception& e) {
+                    LOG_ERROR("Failed to process market data message: " + std::string(e.what()));
+                }
+            });
         
         // Initialize order book normalizer
         normalizer_ = std::make_shared<data_ingestion::OrderBookNormalizer>(
@@ -76,7 +99,7 @@ bool MarketDataInterface::initialize() {
         );
         
         // Start ZeroMQ client
-        if (!zmqClient_->start()) {
+        if (!zmqClient_->connect()) {
             LOG_ERROR("Failed to start ZeroMQ client");
             return false;
         }
@@ -106,7 +129,7 @@ std::optional<MarketData> MarketDataInterface::getMarketData(
        if (it != marketDataCache_.end()) {
            const auto& entry = it->second;
            // Check if cache is still valid (within 10ms)
-           auto now = std::chrono::system_clock::now();
+           auto now = std::chrono::steady_clock::now();
            auto age = std::chrono::duration_cast<std::chrono::milliseconds>(
                now - entry.lastUpdate).count();
            if (age <= cacheValidityDuration_.count() && entry.isValid) {
@@ -126,7 +149,7 @@ std::optional<MarketData> MarketDataInterface::getMarketData(
            std::unique_lock<std::shared_mutex> lock(cacheMutex_);
            marketDataCache_[cacheKey] = MarketDataCacheEntry{
                marketData,
-               std::chrono::system_clock::now(),
+               std::chrono::steady_clock::now(),
                true
            };
        }
@@ -341,8 +364,16 @@ bool MarketDataInterface::subscribeMarketData(
     std::string tradeTopic = "market.trade." + exchange.toString() + "." + tradingPair.toString();
 
     bool success = true;
-    success &= zmqClient_->subscribe(orderBookTopic);
-    success &= zmqClient_->subscribe(tradeTopic);
+    MessageHandler handler = [this](const std::string& topic, const std::string& message,
+                                  const std::unordered_map<std::string, std::string>& metadata) {
+        if (topic.find("orderbook") != std::string::npos) {
+            processOrderBookUpdate(topic, message);
+        } else if (topic.find("trade") != std::string::npos) {
+            processTradeUpdate(topic, message);
+        }
+    };
+    success &= zmqClient_->subscribe(orderBookTopic, handler);
+    success &= zmqClient_->subscribe(tradeTopic, handler);
     
     if (success) {
         LOG_INFO("Subscribed to market data for " + exchange.toString() + ":" + tradingPair.toString());
@@ -463,7 +494,7 @@ void MarketDataInterface::updateMarketDataCache(
         std::unique_lock<std::shared_mutex> lock(cacheMutex_);
         marketDataCache_[cacheKey] = MarketDataCacheEntry{
             marketData,
-            std::chrono::system_clock::now(),
+            std::chrono::steady_clock::now(),
             true
         };
     }
@@ -585,31 +616,29 @@ void MarketDataInterface::connectionMonitorLoop() {
             try {
                 // Stop existing client
                 if (zmqClient_) {
-                    zmqClient_->stop();
+                    zmqClient_->disconnect();
                 }
                 
                 // Reinitialize
-                common::ZeroMQConfig zmqConfig;
-                zmqConfig.subscriberEndpoint = zmqSubscriberEndpoint_;
-                zmqConfig.publisherEndpoint = zmqPublisherEndpoint_;
-                
-                zmqClient_ = std::make_unique<common::ZeroMQClient>(zmqConfig);
-                
-                // Re-set message handler
-                zmqClient_->setMessageHandler(
-                    [this](const std::string& topic, const std::string& message) {
-                        try {
-                            if (topic.find("orderbook") != std::string::npos) {
-                                processOrderBookUpdate(topic, message);
-                            } else if (topic.find("trade") != std::string::npos) {
-                                processTradeUpdate(topic, message);
-                            }
-                        } catch (const std::exception& e) {
-                            errorStats_.dataErrors++;
-                            LOG_ERROR("Error processing message: " + std::string(e.what()));
-                        }
-                    }
-                );
+                communication::ZmqClientConfig zmqConfig;
+                zmqConfig.server_pub_endpoint = zmqSubscriberEndpoint_;
+                zmqConfig.server_req_endpoint = zmqPublisherEndpoint_;
+                zmqConfig.auto_reconnect = true;
+                zmqConfig.reconnect_interval = std::chrono::milliseconds(5000);
+                zmqConfig.request_timeout = std::chrono::milliseconds(10000);   
+
+                zmqClient_ = std::make_unique<communication::GenericZmqClient>(zmqConfig);
+               
+                // zmqClient_->subscribe("market.orderbook.*", [](const std::string& topic, 
+                //                          const std::string& data,
+                //                          const auto& metadata) {
+                //     // Process orderbook update
+                //     (void)metadata;
+                    
+                //     LOG_INFO("Received orderbook update on topic: " + topic);
+                // });
+
+               
                 
                 if (zmqClient_->start()) {
                     needsReconnection_.store(false);
@@ -628,7 +657,7 @@ void MarketDataInterface::connectionMonitorLoop() {
 }
 
 bool MarketDataInterface::checkConnection() {
-    if (!zmqClient_ || !zmqClient_->isRunning()) {
+    if (!zmqClient_ || !zmqClient_->isConnected()) {
         return false;
     }
     
@@ -641,9 +670,7 @@ bool MarketDataInterface::checkConnection() {
         std::shared_lock<std::shared_mutex> lock(cacheMutex_);
         for (const auto& [key, entry] : marketDataCache_) {
             auto dataAge = std::chrono::duration_cast<std::chrono::seconds>(
-                now - std::chrono::steady_clock::time_point(
-                    entry.lastUpdate.time_since_epoch()
-                )
+                now - entry.lastUpdate
             ).count();
             
             if (dataAge < 30) {

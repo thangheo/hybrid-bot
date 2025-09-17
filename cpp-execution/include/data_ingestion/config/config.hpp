@@ -13,9 +13,10 @@
 #include "core/market_types.hpp"
 #include "data_ingestion/orderbook/order_book_types.hpp"
 #include "communication/zmq_server.hpp"
-#include "common/zmq_config.hpp"
+#include "communication/zmq_config.hpp"
 // Forward declaration for nlohmann::json
-using PublisherConfig = trading::common::PublisherConfig;
+// using ZmqServerConfig = trading::common::ZmqServerConfig;
+
 // Forward declaration for nlohmann::json
 namespace nlohmann {
     // class basic_json;
@@ -149,7 +150,7 @@ public:
     bool loadFromJson(const std::string& json_string);
     
     // Getters
-    PublisherConfig getPublisherConfig() const;
+    ZmqServerConfig getPublisherConfig() const;
     ExchangeConfig getExchangeConfig(const std::string& exchangeId) const;
     const ExchangeConfig& getExchangeConfig(ExchangeId exchange) const;
     NormalizationConfig getNormalizationConfig() const;
@@ -162,7 +163,7 @@ public:
     std::vector<ExchangeId> getEnabledExchanges() const;
     
     // Setters
-    void setPublisherConfig(const PublisherConfig& config);
+    void setPublisherConfig(const ZmqServerConfig& config);
     void setExchangeConfig(const std::string& exchangeId, const ExchangeConfig& config);
     void setNormalizationConfig(const NormalizationConfig& config);
     void setStorageConfig(const StorageConfig& config);
@@ -178,7 +179,7 @@ private:
     void initializeDefaults();
     
     mutable std::mutex configMutex_;
-    PublisherConfig publisherConfig_;
+    ZmqServerConfig publisherConfig_;
     std::map<std::string, ExchangeConfig> exchangeConfigs_;
     std::map<ExchangeId, ExchangeConfig> exchange_configs_;  // For enum-based access
     NormalizationConfig normalizationConfig_;

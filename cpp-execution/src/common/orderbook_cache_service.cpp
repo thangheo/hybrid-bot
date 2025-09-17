@@ -5,6 +5,7 @@
 #include <chrono>
 
 using namespace trading::common;
+using namespace trading::communication;
 namespace trading {
 namespace common {
 
@@ -12,17 +13,17 @@ OrderBookCacheService::OrderBookCacheService(const OrderBookCacheConfig& config)
     : config_(config) {
     
     // Create ZeroMQ configuration
-    ZeroMQConfig zmqConfig;
-    zmqConfig.subscriberEndpoint = "tcp://localhost:5556";
-    zmqConfig.publisherEndpoint = "tcp://localhost:5557";
-    zmqConfig.reconnectInterval = std::chrono::milliseconds(500);
-    zmqConfig.maxReconnectAttempts = 5;
-    zmqConfig.sendHighWaterMark = 1000;
-    zmqConfig.receiveHighWaterMark = 1000;
-    zmqConfig.pollTimeout = std::chrono::milliseconds(100);
+    ZmqServerConfig zmqConfig;
+    // zmqConfig.subscriberEndpoint = "tcp://localhost:5556";
+    // zmqConfig.publisherEndpoint = "tcp://localhost:5557";
+    // zmqConfig.reconnectInterval = std::chrono::milliseconds(500);
+    // zmqConfig.maxReconnectAttempts = 5;
+    // zmqConfig.sendHighWaterMark = 1000;
+    // zmqConfig.receiveHighWaterMark = 1000;
+    // zmqConfig.pollTimeout = std::chrono::milliseconds(100);
     
     // Create and initialize the publisher (as a member variable)
-    publisher_ = std::make_unique<ZeroMQClient>(zmqConfig);
+    publisher_ = std::make_unique<GenericZmqServer>(zmqConfig);
     
     // Start the ZeroMQ client
     if (!publisher_->start()) {
@@ -86,6 +87,7 @@ OrderBookCacheService::getOrderBook(const std::string& exchangeId,
     cacheMisses_++;
     return nullptr;
 }
+
 void OrderBookCacheService::subscribeToUpdates(
     const std::string& topic, 
     std::function<void(const data_ingestion::OrderBook&)> callback) {
@@ -103,13 +105,21 @@ void OrderBookCacheService::subscribeToUpdates(
     
     try {
         // Set message handler for ZeroMQ client to receive our own published messages
-        publisher_->setMessageHandler([callback](const std::string& receivedTopic, const std::string& message) {
-            // Parse the message back to OrderBook (simplified)
-            // In production, you'd deserialize properly
-            LOG_INFO("Received message on topic: {}", receivedTopic);
-            // Note: This is a simplified callback - real implementation would reconstruct OrderBook
-        });
-        
+        // publisher_->setMessageHandler([callback](const std::string& receivedTopic, const std::string& message) {
+        //     // Parse the message back to OrderBook (simplified)
+        //     // In production, you'd deserialize properly
+        //     LOG_INFO("Received message on topic: {}", receivedTopic);
+        //     // Note: This is a simplified callback - real implementation would reconstruct OrderBook
+        // });
+        // publisher_->registerRequestHandler(topic, 
+        //     [callback](const std::string& receivedTopic, const std::string& message, 
+        //                const std::unordered_map<std::string, std::string>& metadata) {
+        //         (void)metadata;
+        //         // Parse the message back to OrderBook (simplified)
+        //         // In production, you'd deserialize properly
+        //         LOG_INFO("Received message on topic: {}", receivedTopic);
+        //         // Note: This is a simplified callback - real implementation would reconstruct OrderBook
+        //     });
         LOG_INFO("Successfully set up subscription for topic: {}", topic);
         
     } catch (const std::exception& e) {
@@ -412,7 +422,7 @@ bool OrderBookCacheService::isHealthy() const {
     // Health checks
     bool queueHealthy = metrics.publishQueueDepth < config_.publishQueueSize * 0.9;
     bool memoryHealthy = metrics.memoryUsageMB < 500; // 500MB threshold
-    bool publisherHealthy = publisher_ && publisher_->isConnected();
+    bool publisherHealthy = publisher_ && publisher_->isRunning();
     
     return queueHealthy && memoryHealthy && publisherHealthy;
 }

@@ -37,7 +37,7 @@ class SimplifiedTradingServer {
 private:
     // Core services
     std::unique_ptr<DataIngestionService> dataService_;
-    std::unique_ptr<TradingCommunicationServer> zmqServer_;
+    std::unique_ptr<GenericZmqServer> zmqServer_;
     std::unique_ptr<trading::intelligence::AdaptiveMarketIntelligence> adaptiveIntel_;
     
     // Market intelligence tracking
@@ -58,7 +58,7 @@ public:
         dataService_ = std::make_unique<DataIngestionService>("data_ingestion.json");
         
         // Initialize ZMQ communication
-        zmqServer_ = std::make_unique<TradingCommunicationServer>();
+        zmqServer_ = std::make_unique<GenericZmqServer>();
         
         setupCallbacks();
     }
@@ -141,9 +141,24 @@ private:
         });
         
         // Set up ZMQ execution callback
-        zmqServer_->SetExecutionCallback([this](const trading::TradingIntent& intent) {
-            return this->handleTradingIntent(intent);
-        });
+        // zmqServer_->SetExecutionCallback([this](const trading::TradingIntent& intent) {
+        //     return this->handleTradingIntent(intent);
+        // });
+        zmqServer_->registerRequestHandler("TradingIntent", 
+            [this](const std::string& request_data, const std::unordered_map<std::string, std::string>& /*metadata*/) -> std::string {
+                trading::TradingIntent intent;
+                if (!intent.ParseFromString(request_data)) {
+                    std::cerr << "Failed to parse TradingIntent from request data." << std::endl;
+                    return "";
+                }
+                trading::ExecutionAcknowledgment ack = this->handleTradingIntent(intent);
+                std::string response_data;
+                if (!ack.SerializeToString(&response_data)) {
+                    std::cerr << "Failed to serialize ExecutionAcknowledgment." << std::endl;
+                    return "";
+                }
+                return response_data;
+            });
     }
 
     void onOrderBookUpdate(const OrderBookUpdate& update) {
@@ -229,7 +244,8 @@ private:
             
             // Publish to ZMQ
             if (zmqServer_ && intel.symbol() == tradingPair) {
-                zmqServer_->PublishMarketIntelligence(intel);
+                // zmqServer_->PublishMarketIntelligence(intel)
+                zmqServer_->publishAsync("market_intelligence", intel.SerializeAsString());
                 intelligenceGenerated_.fetch_add(1);
             }
             

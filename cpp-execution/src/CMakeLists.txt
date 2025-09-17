@@ -70,25 +70,6 @@ target_link_libraries(semi_hft
         # market_intelligence
 )
 
-# Data ingestion publisher executable
-add_executable(data_ingestion_publisher 
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/data_ingestion/data_ingestion_publisher.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/market_intelligence/adaptive_intelligence.cpp
-)
-target_link_libraries(data_ingestion_publisher
-    PRIVATE
-        common
-        data_ingestion
-        communication
-        protobuf::libprotobuf
-        Boost::system
-        Boost::program_options
-        Boost::filesystem
-        OpenSSL::SSL
-        Threads::Threads
-        gRPC::grpc++
-        zmq
-)
 
 # ZeroMQ pub/sub test executable
 add_executable(test_zeromq_pubsub 

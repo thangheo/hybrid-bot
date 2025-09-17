@@ -204,7 +204,6 @@ create_file "$SRC_DIR/data_ingestion/sentiment/analyzer.cpp" "Implementation of 
 echo -e "${YELLOW}Generating files for Data Distribution and Storage...${NC}"
 
 # Data Distribution and Storage
-create_file "$INCLUDE_DIR/data_ingestion/publisher/zeromq_publisher.hpp" "ZeroMQ-based market data publisher" "hpp"
 create_file "$SRC_DIR/data_ingestion/publisher/zeromq_publisher.cpp" "Implementation of ZeroMQ market data publisher" "cpp"
 create_file "$INCLUDE_DIR/data_ingestion/storage/influxdb_writer.hpp" "Time-series database writer for market data persistence" "hpp"
 create_file "$SRC_DIR/data_ingestion/storage/influxdb_writer.cpp" "Implementation of InfluxDB writer" "cpp"

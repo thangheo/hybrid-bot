@@ -4,7 +4,6 @@
 add_library(common
     exchange_types.cpp
     logger.cpp
-    zeromq_client.cpp
     event_bus.cpp
     orderbook_cache_service.cpp
 )
