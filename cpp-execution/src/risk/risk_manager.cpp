@@ -37,7 +37,33 @@ namespace risk {
 //     m_portfolioManager = nullptr;
 //     // Don't create additional DataInterface instances here
 // }
-
+//new constructor
+RiskManager::RiskManager(std::shared_ptr<trading::execution::ExecutionService> execService, 
+                         const RiskConfig& config,
+                         std::shared_ptr<trading::risk::MarketDataInterface> marketDataInterface)
+    : m_execService(execService)
+    , m_config(config)
+    , m_mode(RiskManagerMode::NORMAL)
+    , m_marketDataInterface(marketDataInterface) // Use the provided MarketDataInterface
+{
+    // Initialize components
+    m_strategyInterface = createStrategyInterface(m_config);
+    LOG_INFO("RiskManager", "Created StrategyInterface");
+    
+    m_executionInterface = createExecutionInterface_withExecutionService(execService);
+    if (!m_executionInterface) {
+        LOG_ERROR("RiskManager", "Failed to create ExecutionInterface with provided ExecutionService");
+        throw std::runtime_error("Failed to create ExecutionInterface with provided ExecutionService");
+    }
+    LOG_INFO("RiskManager", "Created ExecutionInterface with provided ExecutionService");
+    
+    // ✅ Create DataInterface ONCE and store as member
+    m_dataInterface = createDataInterface();
+    LOG_INFO("RiskManager", "Created DataInterface as member variable");
+    
+    m_portfolioManager = nullptr;
+    // Don't create additional DataInterface instances here
+}
 bool RiskManager::initialize() {
     try {
         m_strategyInterface = createStrategyInterface(m_config);
@@ -633,8 +659,6 @@ void RiskManager::loadConfiguration() {
     std::cout << "Risk manager configuration loaded successfully" << std::endl;
 }
 
-} // namespace risk
-} // namespace trading
 RiskManager::~RiskManager() {
     // Cleanup code here if needed
     try {
@@ -655,3 +679,5 @@ RiskManager::~RiskManager() {
     }
 }
 
+} // namespace risk
+} // namespace trading

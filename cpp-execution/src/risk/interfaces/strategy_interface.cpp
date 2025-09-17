@@ -15,6 +15,9 @@
 #include <iostream>
 #include <iomanip>
 #include "common/logger.hpp"
+using namespace trading::core;
+using namespace trading::communication;
+
 namespace trading {
 namespace risk {
 
@@ -36,8 +39,8 @@ private:
     std::string strategyEventsTopic_;
     
     // ZeroMQ clients
-    std::unique_ptr<common::ZeroMQClient> requestClient_;
-    std::unique_ptr<common::ZeroMQClient> subscriptionClient_;
+    std::unique_ptr<communication::GenericZmqClient> requestClient_;
+    std::unique_ptr<communication::GenericZmqClient> subscriptionClient_;
     
     // Callback for strategy events
     std::function<void(const StrategyId&, const std::string&)> strategyEventCallback_;
@@ -103,6 +106,16 @@ private:
             }
         }
     }
+    // create MessageHandler for subscription client
+    // Provide an instance-bound MessageHandler factory (avoid static overload with same signature).
+    MessageHandler createSubscriptionHandler() {
+        return [this](const std::string& topic, const std::string& data,
+                      const std::unordered_map<std::string, std::string>& metadata) {
+            LOG_INFO("Received message on topic " + topic + ": " + data);
+            // metadata is currently unused but accepted to match MessageHandler signature
+            this->handleStrategyEventMessage(topic, data);
+        };
+    }
 
     // Handle error messages
     void handleErrorMessage(const std::string& context, const std::string& error) {
@@ -146,34 +159,26 @@ public:
         
         try {
             // Configure ZeroMQ clients
-            common::ZeroMQConfig requestConfig;
-            requestConfig.publisherEndpoint = requestEndpoint_;
+            communication::ZmqClientConfig requestConfig;
+            requestConfig.server_pub_endpoint = requestEndpoint_;
             
-            common::ZeroMQConfig subscriptionConfig;
-            subscriptionConfig.subscriberEndpoint = publishEndpoint_;
-            subscriptionConfig.reconnectInterval = std::chrono::milliseconds(1000);
-            subscriptionConfig.maxReconnectAttempts = 5;
+            communication::ZmqClientConfig subscriptionConfig;
+            subscriptionConfig.server_req_endpoint = publishEndpoint_;
+            subscriptionConfig.reconnect_interval = std::chrono::milliseconds(1000);
+            subscriptionConfig.auto_reconnect = true;
+            subscriptionConfig.request_timeout = std::chrono::milliseconds(5000);
             
             // Initialize request client
-            requestClient_ = std::make_unique<common::ZeroMQClient>(requestConfig);
+            requestClient_ = std::make_unique<communication::GenericZmqClient>(requestConfig);
             
             // Initialize subscription client
-            subscriptionClient_ = std::make_unique<common::ZeroMQClient>(subscriptionConfig);
+            subscriptionClient_ = std::make_unique<communication::GenericZmqClient>(subscriptionConfig);
             
-            // Set message handler for subscription client
-            subscriptionClient_->setMessageHandler(
-                std::bind(&StrategyInterfaceImpl::handleStrategyEventMessage, this, 
-                          std::placeholders::_1, std::placeholders::_2));
-            
-            // Set error handler for both clients
-            subscriptionClient_->setErrorHandler(
-                std::bind(&StrategyInterfaceImpl::handleErrorMessage, this,
-                          std::placeholders::_1, std::placeholders::_2));
-            requestClient_->setErrorHandler(
-                std::bind(&StrategyInterfaceImpl::handleErrorMessage, this,
-                          std::placeholders::_1, std::placeholders::_2));
-            
-            // Start the clients
+              // Subscribe to the strategy events topic using an instance-bound handler
+            if (!subscriptionClient_->subscribe(strategyEventsTopic_, this->createSubscriptionHandler())) {
+                LOG_ERROR( "Failed to subscribe to strategy events topic");
+                return false;
+            }
             if (!requestClient_->start()) {
                 LOG_ERROR( "Failed to start request client");
                 return false;
@@ -184,11 +189,7 @@ public:
                 return false;
             }
             
-            // Subscribe to the strategy events topic
-            if (!subscriptionClient_->subscribe(strategyEventsTopic_)) {
-                LOG_ERROR( "Failed to subscribe to strategy events topic");
-                return false;
-            }
+          
             
             initialized_ = true;
             LOG_INFO("Strategy interface initialized successfully");
@@ -219,7 +220,7 @@ public:
             };
             
             // Send request
-            if (!requestClient_->publish("strategy_risk", request.dump())) {
+            if (!requestClient_ || !requestClient_->sendRequest("strategy_risk", request.dump()).size()) {
                 LOG_ERROR( "Failed to send risk feedback request");
                 return false;
             }
@@ -247,7 +248,7 @@ public:
             };
             
             // Send request
-            if (!requestClient_->publish("strategy_request", request.dump())) {
+            if (!requestClient_ || !requestClient_->sendRequest("strategy_request", request.dump()).size()) {
                 LOG_ERROR( "Failed to send get parameters request");
                 return "{}";
             }
@@ -276,7 +277,7 @@ public:
             };
             
             // Send request
-            if (!requestClient_->publish("strategy_request", request.dump())) {
+            if (!requestClient_ || !requestClient_->sendRequest("strategy_request", request.dump()).size()) {
                 LOG_ERROR( "Failed to send update parameters request");
                 return false;
             }
@@ -305,7 +306,7 @@ public:
             };
             
             // Send request
-            if (!requestClient_->publish("strategy_risk", request.dump())) {
+            if (!requestClient_ || !requestClient_->sendRequest("strategy_risk", request.dump()).size()) {
                 LOG_ERROR( "Failed to send risk event notification");
                 return false;
             }
@@ -332,7 +333,7 @@ public:
             };
             
             // Send request
-            if (!requestClient_->publish("strategy_request", request.dump())) {
+            if (!requestClient_ || !requestClient_->sendRequest("strategy_request", request.dump()).size()) {
                 LOG_ERROR( "Failed to send get active strategies request");
                 return {};
             }
@@ -360,7 +361,7 @@ public:
             };
             
             // Send request
-            if (!requestClient_->publish("strategy_request", request.dump())) {
+            if (!requestClient_ || !requestClient_->sendRequest("strategy_request", request.dump()).size()) {
                 LOG_ERROR( "Failed to send strategy active check request");
                 return false;
             }
@@ -378,14 +379,30 @@ public:
         std::lock_guard<std::mutex> lock(mutex_);
         strategyEventCallback_ = callback;
     }
+    // bool notifyEmergencyState(const std::string& reason) {
     bool notifyEmergencyState(const std::string& reason) {
         if (!initialized_) {
             LOG_ERROR( "Strategy interface not initialized");
             return false;
         }
-    }
+        try {
+            nlohmann::json request = {
+                {"action", "emergency_state"},
+                {"reason", reason},
+                {"timestamp", std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::system_clock::now().time_since_epoch()).count()}
+            };
+            if (!requestClient_ || !requestClient_->sendRequest("strategy_risk", request.dump()).size()) {
+                LOG_ERROR( "Failed to send emergency state");
+                return false;
+            }
+            return true;
+        } catch (const std::exception& e) {
+            LOG_ERROR( "Failed to notify emergency state: " + std::string(e.what()));
+            return false;
+        }
+    } //
 };
- 
 std::unique_ptr<StrategyInterface> createStrategyInterface(const RiskConfig& config) {
     return std::make_unique<StrategyInterfaceImpl>(config);
 }

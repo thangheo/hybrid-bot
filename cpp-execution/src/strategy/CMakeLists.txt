@@ -4,6 +4,7 @@
 file(GLOB_RECURSE STRATEGY_SOURCES
     "core_analysis/*.cpp"
     "engine/*.cpp" 
+    "communication/*.cpp"
     "optimization/*.cpp"
     "pattern/*.cpp"
     "signal/*.cpp"
@@ -34,6 +35,8 @@ target_include_directories(strategy
 target_link_libraries(strategy
     PUBLIC
         common
+        communication
+        proto_lib
         data_ingestion
         nlohmann_json::nlohmann_json
     PRIVATE
@@ -51,6 +54,7 @@ target_link_libraries(strategy_app
         strategy          # Your strategy library
         data_ingestion    # Required dependencies
         common
+        communication
         zmq
         jsoncpp
         pthread
