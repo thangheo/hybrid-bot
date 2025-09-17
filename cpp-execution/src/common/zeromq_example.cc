@@ -1,4 +1,5 @@
 #include "common/zeromq_client.hpp"
+#include "common/zmq_topics.hpp"
 #include <iostream>
 #include <thread>
 #include <chrono>

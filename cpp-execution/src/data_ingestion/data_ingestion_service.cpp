@@ -88,23 +88,22 @@ bool DataIngestionService::start(const std::vector<Symbol>& symbols) {
         std::cout << "Starting DataIngestionService with " << symbols.size() << " symbols..." << std::endl;
         
         // 1. Start publisher
-        if (!publisher_->start()) {
-            std::cerr << "Failed to start publisher" << std::endl;
-            return false;
+        if (!publisher_->isRunning()) {
+            publisher_->start();
         }
-         for (const auto& symbol : symbols) {
-            std::vector<PriceLevel> empty_bids;
-            std::vector<PriceLevel> empty_asks;
+        //  for (const auto& symbol : symbols) {
+        //     std::vector<PriceLevel> empty_bids;
+        //     std::vector<PriceLevel> empty_asks;
             
-            reconstructor_->processSnapshot(
-                ExchangeId::binance(), 
-                symbol,
-                empty_bids,
-                empty_asks,
-                0,
-                std::chrono::system_clock::now()
-            );
-        }
+        //     reconstructor_->processSnapshot(
+        //         ExchangeId::binance(), 
+        //         symbol,
+        //         empty_bids,
+        //         empty_asks,
+        //         0,
+        //         std::chrono::system_clock::now()
+        //     );
+        // }
 
         // 2. Start exchange connections first (order books will be created when real data arrives)
         // 3. Start exchange connections
@@ -192,7 +191,7 @@ bool DataIngestionService::loadConfiguration() {
 bool DataIngestionService::setupPublisher() {
     try {
         const auto& pubConfig = config_->getPublisherConfig();
-        publisher_ = std::make_shared<ZeroMQPublisher>(pubConfig);
+        publisher_ = std::make_shared<TradingCommunicationServer>(pubConfig);
         return true;
     } catch (const std::exception& e) {
         std::cerr << "Publisher setup failed: " << e.what() << std::endl;

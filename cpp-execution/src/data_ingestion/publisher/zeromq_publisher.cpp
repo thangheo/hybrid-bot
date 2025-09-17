@@ -146,7 +146,7 @@
  
  bool ZeroMQPublisher::updateConfig(const PublisherConfig& config) {
      // We can't change the ZMQ endpoint while running
-     if (running_ && config_.zmq_endpoint != config.zmq_endpoint) {
+     if (running_ && config_.orderbook_endpoint != config.orderbook_endpoint) { //this is bs but we dont use anything else
          return false;
      }
      
@@ -237,7 +237,7 @@
          }
          
          // Bind to endpoint
-         publisher_->bind(config_.zmq_endpoint);
+         publisher_->bind(config_.orderbook_endpoint);
      }
      catch (const zmq::error_t& e) {
          std::cerr << "ZeroMQ error when initializing socket: " << e.what() << std::endl;
@@ -369,21 +369,7 @@
  bool MarketDataPublisher::updateConfig(const PublisherConfig& config) {
      config_ = config;
      return zmq_publisher_->updateConfig(config);
- }
-// bool ZeroMQPublisher::publish(const std::string& topic, const std::vector<uint8_t>& data) {
-//     // Example implementation: enqueue the message for the worker thread
-//     {
-//         std::lock_guard<std::mutex> lock(queue_mutex_);
-//         message_queue_.emplace(topic, data);
-//         stats_.messages_published++;
-//         stats_.bytes_published += data.size();
-//         stats_.current_queue_size = message_queue_.size();
-//         if (stats_.current_queue_size > stats_.max_queue_size_reached)
-//             stats_.max_queue_size_reached = stats_.current_queue_size;
-//     }
-//     queue_condition_.notify_one();
-//     return true;
-// }
+ } 
  
  } // namespace data_ingestion
  } // namespace trading

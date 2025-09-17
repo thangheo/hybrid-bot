@@ -87,9 +87,9 @@ bool Configuration::loadFromJson(const std::string& jsonString) {
 }
 
 void Configuration::loadPublisherConfig(const nlohmann::json& pubJson) {
-    publisherConfig_.zeromqEndpoint = pubJson.value("zmq_endpoint", "tcp://*:5560");
-    publisherConfig_.zmq_endpoint = publisherConfig_.zeromqEndpoint;
-    publisherConfig_.zmq_bind_address = publisherConfig_.zeromqEndpoint;
+    publisherConfig_.market_intel_endpoint = pubJson.value("market_intel_endpoint", "tcp://*:5555");
+    publisherConfig_.orderbook_endpoint = pubJson.value("orderbook_endpoint", "tcp://*:5557");
+    publisherConfig_.trading_intent_endpoint = pubJson.value("trading_intent_endpoint", "tcp://*:5556");
     publisherConfig_.publisherType = pubJson.value("publisher_type", "zeromq");
     publisherConfig_.bufferSize = pubJson.value("buffer_size", 10000);
     publisherConfig_.max_queue_size = pubJson.value("max_queue_size", 10000);
@@ -289,9 +289,10 @@ std::vector<ExchangeId> Configuration::getEnabledExchanges() const {
 void Configuration::setPublisherConfig(const PublisherConfig& config) {
     std::lock_guard<std::mutex> lock(configMutex_);
     publisherConfig_ = config;
-    publisherConfig_.zmq_endpoint = config.zeromqEndpoint;
-    publisherConfig_.zmq_bind_address = config.zeromqEndpoint;
-    publisherConfig_.publish_interval_ms = static_cast<int>(config.publishInterval.count());
+    publisherConfig_.market_intel_endpoint = config.market_intel_endpoint;
+    publisherConfig_.orderbook_endpoint = config.orderbook_endpoint;
+    publisherConfig_.trading_intent_endpoint = config.trading_intent_endpoint;
+    publisherConfig_.publish_interval_ms = config.publish_interval_ms;
 }
 
 void Configuration::setExchangeConfig(const std::string& exchangeId, const ExchangeConfig& config) {
@@ -310,9 +311,9 @@ void Configuration::setStorageConfig(const StorageConfig& config) {
 }
 
 void Configuration::initializeDefaults() {
-    publisherConfig_.zeromqEndpoint = "tcp://*:5555";
-    publisherConfig_.zmq_endpoint = "tcp://*:5555";
-    publisherConfig_.zmq_bind_address = "tcp://*:5555";
+    publisherConfig_.market_intel_endpoint = "tcp://*:5555";
+    publisherConfig_.orderbook_endpoint = "tcp://*:5557";
+    publisherConfig_.trading_intent_endpoint = "tcp://*:5556";
     publisherConfig_.publisherType = "zeromq";
     publisherConfig_.bufferSize = 1000;
     publisherConfig_.max_queue_size = 1000;
