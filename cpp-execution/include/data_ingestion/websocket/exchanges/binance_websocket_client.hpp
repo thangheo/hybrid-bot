@@ -58,7 +58,7 @@ using ws_stream = websocket::stream<ssl_stream>;
  * 3. Robust error handling and reconnection logic
  * 4. Clean resource management
  */
-class BinanceWebSocketClient : public ClientInterface {
+class BinanceWebSocketClient : public ClientInterface, public std::enable_shared_from_this<BinanceWebSocketClient> {
 public:
     // Additional callback type for enhanced data handling (beyond the interface)
     using EnhancedDataCallback = std::function<void(const ExchangeId&, const std::string&, const std::vector<uint8_t>&)>;
