@@ -75,12 +75,15 @@ public:
         setupStatistics();
         // Initialize adaptive intelligence
         adaptiveIntel_ = std::make_unique<trading::intelligence::AdaptiveMarketIntelligence>();
-        
-        zmq_comm_server_ = std::make_shared<GenericZmqServer>();
-        // create zmq_client for listening trading intent
+        ZmqServerConfig serverConfig;
+        serverConfig.publisher_endpoint = "tcp://localhost:5555"; // Address of the ZMQ publisher
+        serverConfig.request_endpoint = "tcp://localhost:5556";   // Address of the ZMQ request handler
+        serverConfig.enable_monitoring = true;
+        serverConfig.enable_heartbeat = true;
+        zmq_comm_server_ = std::make_shared<GenericZmqServer>(serverConfig);
         // config
         ZmqClientConfig clientConfig;
-        clientConfig.server_pub_endpoint = "tcp://localhost:5556"; // Address of the ZMQ server
+        clientConfig.server_pub_endpoint = "tcp://localhost:5555"; // Address of the ZMQ server
         clientConfig.auto_reconnect = true;
         clientConfig.request_timeout = std::chrono::milliseconds(30000); // 30 seconds
         zmq_client_ = std::make_unique<GenericZmqClient>(clientConfig);
@@ -500,9 +503,10 @@ public:
                               << intel.DebugString().size() << " bytes)" << std::endl;
                 }
                 if (zmq_comm_server_) {
-                    // Serialize protobuf message and publish on the "market_intelligence" topic.
+                    // Serialize protobuf message and publish on the "MARKET_INTEL" topic.
                     // Use publishAsync to avoid blocking the intelligence generation path.
-                    zmq_comm_server_->publishAsync("market_intelligence", intel.SerializeAsString(), MessagePriority::NORMAL);
+                    // zmq_comm_server_->publishAsync("MARKET_INTEL", intel.SerializeAsString(), MessagePriority::NORMAL);
+                    zmq_comm_server_->publishProtobuf("MARKET_INTEL", intel, MessagePriority::NORMAL);
                     intelligenceGenerated_.fetch_add(1);
                 }
             }

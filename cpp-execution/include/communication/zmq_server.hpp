@@ -36,6 +36,8 @@
 #include <common/logger.hpp>
 #include <common/types.hpp>
 #include "communication/zmq_config.hpp"
+#include <google/protobuf/message.h>
+#include <google/protobuf/message_lite.h>
 
 namespace trading {
 namespace communication {
@@ -90,7 +92,28 @@ public:
     // =============================================================================
     // PUBLISHING INTERFACE
     // =============================================================================
-    
+    /**
+     * Protobuf message handler type
+     */
+    // =============================================================================
+    // PROTOBUF PUBLISHING INTERFACE
+    // =============================================================================
+
+    /**
+     * Publish a protobuf message
+     */
+    template<typename ProtoMsg>
+    bool publishProtobuf(const std::string& topic, const ProtoMsg& message,
+                        MessagePriority priority = MessagePriority::NORMAL,
+                        const std::string& correlation_id = "");
+
+    /**
+     * Publish protobuf with type information for easier deserialization
+     */
+    template<typename ProtoMsg>
+    bool publishProtobufTyped(const std::string& topic, const ProtoMsg& message,
+                            MessagePriority priority = MessagePriority::NORMAL,
+                            const std::string& correlation_id = "");
     /**
      * Publish a generic message (non-blocking)
      */
@@ -398,6 +421,46 @@ bool GenericZmqServer::publish(const std::string& topic, const T& message,
     }
     
     return publishAsync(topic, serialized_data, priority, correlation_id);
+}
+
+// =============================================================================
+// Protobuf template implementations
+// =============================================================================
+template<typename ProtoMsg>
+bool GenericZmqServer::publishProtobuf(const std::string& topic, const ProtoMsg& message,
+                                      MessagePriority priority, const std::string& correlation_id) {
+    static_assert(std::is_base_of_v<google::protobuf::MessageLite, ProtoMsg>,
+                  "ProtoMsg must be a protobuf message type");
+
+    std::string serialized_data;
+    if (!message.SerializeToString(&serialized_data)) {
+        logError("Failed to serialize protobuf message for topic: " + topic);
+        return false;
+    }
+
+    return publishAsync(topic, serialized_data, priority, correlation_id);
+}
+
+template<typename ProtoMsg>
+bool GenericZmqServer::publishProtobufTyped(const std::string& topic, const ProtoMsg& message,
+                                           MessagePriority priority, const std::string& correlation_id) {
+    static_assert(std::is_base_of_v<google::protobuf::MessageLite, ProtoMsg>,
+                  "ProtoMsg must be a protobuf message type");
+
+    std::string serialized_data;
+    if (!message.SerializeToString(&serialized_data)) {
+        logError("Failed to serialize protobuf message for topic: " + topic);
+        return false;
+    }
+
+    // Add type information to metadata
+    std::unordered_map<std::string, std::string> metadata;
+    metadata["message_type"] = message.GetTypeName();
+    metadata["encoding"] = "protobuf";
+    metadata["correlation_id"] = correlation_id.empty() ? GenericMessage::generateCorrelationId() : correlation_id;
+    metadata["priority"] = std::to_string(static_cast<int>(priority));
+
+    return publishWithMetadata(topic, serialized_data, metadata, priority);
 }
 
 } // namespace communication
