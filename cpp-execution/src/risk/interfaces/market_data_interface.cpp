@@ -64,32 +64,20 @@ bool MarketDataInterface::initialize() {
         
         
         zmqClient_ = std::make_unique<GenericZmqClient>(zmqConfig);
+
+        // Start ZeroMQ client BEFORE subscribing so subscriptions succeed
+        if (!zmqClient_->connect()) {
+            LOG_ERROR("Failed to connect ZeroMQ client");
+            return false;
+        }
+
         RequestHandler requestHandler = 
             [this](const std::string& request_data, 
                    const std::unordered_map<std::string, std::string>& metadata) -> std::string {
             // Handle incoming requests if needed
             return "ACK"; // Simple acknowledgment for now
         };
-        // Set message handler
-        zmqClient_->subscribe("market_data", 
-            [this](const std::string& topic, const std::string& message, const std::unordered_map<std::string, std::string>& metadata) {
-                // Handle incoming market data messages
-                (void)metadata;
-                try {
-                    auto json_msg = nlohmann::json::parse(message);
-                    // Do not attempt to convert to MarketDataUpdate here because that requires
-                    // a nlohmann::from_json/from_json_t specialization for MarketDataUpdate.
-                    // The publisher/normalizer is responsible for producing normalized updates,
-                    // so just acknowledge or forward the raw JSON if needed.
-                    //so what is the point of this subscription then?
-                    // we should forward this to the normalizer
-                    normalizer_->processMarketDataJson(json_msg);
-                    (void)json_msg;
-                } catch (const std::exception& e) {
-                    LOG_ERROR("Failed to process market data message: " + std::string(e.what()));
-                }
-            });
-        
+
         // Initialize order book normalizer
         normalizer_ = std::make_shared<data_ingestion::OrderBookNormalizer>(
             [this](const data_ingestion::OrderBookUpdate& update) {
@@ -97,6 +85,19 @@ bool MarketDataInterface::initialize() {
                 updateMarketDataCache(update.exchangeId, update.tradingPair, update);
             }
         );
+
+        // Set message handler AFTER normalizer is initialized and client is connected
+        zmqClient_->subscribe("market_data", 
+            [this](const std::string& topic, const std::string& message, const std::unordered_map<std::string, std::string>& metadata) {
+                // Handle incoming market data messages
+                (void)metadata;
+                try {
+                    auto json_msg = nlohmann::json::parse(message);
+                    normalizer_->processMarketDataJson(json_msg);
+                } catch (const std::exception& e) {
+                    LOG_ERROR("Failed to process market data message: " + std::string(e.what()));
+                }
+            });
         
         // Start ZeroMQ client
         if (!zmqClient_->connect()) {
