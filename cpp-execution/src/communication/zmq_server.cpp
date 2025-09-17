@@ -236,9 +236,9 @@ bool GenericZmqServer::publishAsync(const std::string& topic, const std::string&
         lock.unlock();
         queue_cv_.notify_one();
         
-        if (logging_enabled_) {
-            logInfo("Message queued for topic: " + safe_topic + " (correlation: " + correlation_id + ")");
-        }
+        // if (logging_enabled_) {
+        //     logInfo("Message queued for topic: " + safe_topic + " (correlation: " + correlation_id + ")");
+        // }
         
         return true;
         
@@ -309,7 +309,7 @@ bool GenericZmqServer::publishSync(const std::string& topic, const std::string& 
         return false;
     }
 }
-
+// Template publishProtobuf implementations moved to header (for proper instantiation)
 bool GenericZmqServer::publishWithMetadata(const std::string& topic, const std::string& data,
                                          const std::unordered_map<std::string, std::string>& metadata,
                                          MessagePriority priority) {

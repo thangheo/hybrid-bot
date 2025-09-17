@@ -55,6 +55,7 @@ add_executable(semi_hft ${SOURCES})
 target_link_libraries(semi_hft
     PRIVATE
         common
+        communication  
         data_ingestion
         strategy
         execution
