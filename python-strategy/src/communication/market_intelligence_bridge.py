@@ -4,6 +4,9 @@ import threading
 import logging
 import json
 import base64
+import gc
+import tracemalloc
+import resource
 from typing import Dict, List, Optional, Deque
 from collections import deque
 from dataclasses import dataclass
@@ -42,6 +45,22 @@ class MarketIntelligenceBridge:
             'parse_errors': 0,
             'field_warnings': 0
         }
+        # Garbage collection / memory diagnostics
+        # Run a collection at least every `gc_interval_seconds` or every `gc_collect_every_n_messages` messages
+        self.gc_last_run = time.time()
+        self.gc_interval_seconds = 30
+        self.gc_collect_every_n_messages = 50
+        # Enable tracemalloc by env var MARKET_INTEL_TRACEMALLOC=1 if you want detailed allocation tracing
+        try:
+            self.enable_tracemalloc = os.environ.get('MARKET_INTEL_TRACEMALLOC', '0') == '1'
+        except Exception:
+            self.enable_tracemalloc = False
+        if self.enable_tracemalloc:
+            try:
+                tracemalloc.start()
+                logger.info("MarketIntelligenceBridge: tracemalloc started for memory diagnostics")
+            except Exception:
+                logger.warning("MarketIntelligenceBridge: failed to start tracemalloc")
         
     def start(self) -> bool:
         """Start intelligence integration"""
@@ -215,6 +234,27 @@ class MarketIntelligenceBridge:
                     logger.warning(f"Creating missing intelligence_history entry for {symbol}")
                     self.intelligence_history[symbol] = deque(maxlen=100)
                     self.intelligence_history[symbol].append(state)
+                # Periodic garbage collection to mitigate memory growth
+                try:
+                    now = time.time()
+                    if (self.stats['messages_received'] % self.gc_collect_every_n_messages) == 0 or (now - self.gc_last_run) >= self.gc_interval_seconds:
+                        before = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+                        logger.info(f"MarketIntelligenceBridge: running gc.collect() (before={before} KB)")
+                        collected = gc.collect()
+                        after = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+                        logger.info(f"MarketIntelligenceBridge: gc.collect() returned {collected}, memory after={after} KB")
+                        self.gc_last_run = now
+                        if self.enable_tracemalloc:
+                            try:
+                                snapshot = tracemalloc.take_snapshot()
+                                top_stats = snapshot.statistics('lineno')[:5]
+                                logger.debug("Top tracemalloc stats:")
+                                for stat in top_stats:
+                                    logger.debug(str(stat))
+                            except Exception:
+                                pass
+                except Exception as e:
+                    logger.debug(f"GC diagnostics failed: {e}")
                 
             except zmq.Again:
                 continue
