@@ -13,6 +13,7 @@
 #include <regex>
 #include <random>
 #include <nlohmann/json.hpp>
+#include <regex>
 
 namespace trading {
 namespace communication {
@@ -28,6 +29,24 @@ std::string GenericMessage::generateCorrelationId() {
     std::ostringstream oss;
     oss << std::hex << dis(gen);
     return oss.str();
+}
+
+// Replace characters not allowed in topic names with underscore
+static std::string sanitizeTopic(const std::string& topic) {
+    try {
+        static const std::regex invalid(R"([^a-zA-Z0-9._-])");
+        return std::regex_replace(topic, invalid, "_");
+    } catch (const std::regex_error&) {
+        // Fallback: simple character replace for common problematic chars
+        std::string out = topic;
+        for (auto &c : out) {
+            if (!( (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+                   (c >= '0' && c <= '9') || c == '.' || c == '_' || c == '-')) {
+                c = '_';
+            }
+        }
+        return out;
+    }
 }
 
 // =============================================================================
@@ -164,13 +183,15 @@ bool GenericZmqServer::publishAsync(const std::string& topic, const std::string&
         logError("Cannot publish - server not running");
         return false;
     }
-    
-    if (!isValidTopic(topic)) {
+    // Sanitize topic to conform to allowed characters
+    std::string safe_topic = sanitizeTopic(topic);
+
+    if (!isValidTopic(safe_topic)) {
         logError("Invalid topic format: " + topic);
         return false;
     }
-    
-    if (!isTopicAllowed(topic)) {
+
+    if (!isTopicAllowed(safe_topic)) {
         // Silently drop filtered topics
         return true;
     }
@@ -207,7 +228,7 @@ bool GenericZmqServer::publishAsync(const std::string& topic, const std::string&
         }
         
         // Add message to queue
-        GenericMessage message(topic, data, priority);
+    GenericMessage message(safe_topic, data, priority);
         message.correlation_id = correlation_id;
         message_queue_.push(std::move(message));
         stats_.messages_queued++;
@@ -216,7 +237,7 @@ bool GenericZmqServer::publishAsync(const std::string& topic, const std::string&
         queue_cv_.notify_one();
         
         if (logging_enabled_) {
-            logInfo("Message queued for topic: " + topic + " (correlation: " + correlation_id + ")");
+            logInfo("Message queued for topic: " + safe_topic + " (correlation: " + correlation_id + ")");
         }
         
         return true;
@@ -233,20 +254,22 @@ bool GenericZmqServer::publishSync(const std::string& topic, const std::string& 
         logError("Cannot publish sync - server not running or socket not available");
         return false;
     }
-    
-    if (!isValidTopic(topic)) {
+    // Sanitize topic to conform to allowed characters
+    std::string safe_topic = sanitizeTopic(topic);
+
+    if (!isValidTopic(safe_topic)) {
         logError("Invalid topic format: " + topic);
         return false;
     }
-    
-    if (!isTopicAllowed(topic)) {
+
+    if (!isTopicAllowed(safe_topic)) {
         return true; // Silently succeed for filtered topics
     }
     
     try {
         // Create topic message
-        zmq::message_t topic_msg(topic.size());
-        memcpy(topic_msg.data(), topic.c_str(), topic.size());
+    zmq::message_t topic_msg(safe_topic.size());
+    memcpy(topic_msg.data(), safe_topic.c_str(), safe_topic.size());
         
         // Create data message with metadata
         std::unordered_map<std::string, std::string> metadata;
@@ -265,11 +288,11 @@ bool GenericZmqServer::publishSync(const std::string& topic, const std::string& 
         
         if (topic_result.has_value() && data_result.has_value()) {
             stats_.messages_published++;
-            stats_.bytes_sent += topic.size() + serialized_data.size();
-            updateStats("publish_sync", topic.size() + serialized_data.size());
+            stats_.bytes_sent += safe_topic.size() + serialized_data.size();
+            updateStats("publish_sync", safe_topic.size() + serialized_data.size());
             
             if (logging_enabled_) {
-                logInfo("Message published sync to topic: " + topic);
+                logInfo("Message published sync to topic: " + safe_topic);
             }
             return true;
         } else {
@@ -290,16 +313,16 @@ bool GenericZmqServer::publishSync(const std::string& topic, const std::string& 
 bool GenericZmqServer::publishWithMetadata(const std::string& topic, const std::string& data,
                                          const std::unordered_map<std::string, std::string>& metadata,
                                          MessagePriority priority) {
-    
     // Extract correlation ID from metadata if present
     std::string correlation_id;
     auto it = metadata.find("correlation_id");
     if (it != metadata.end()) {
         correlation_id = it->second;
     }
-    
-    // For metadata-rich messages, always use sync publishing for immediate delivery
-    return publishSync(topic, serializeWithMetadata(data, metadata), priority, correlation_id);
+
+    // Sanitize topic and use sync publishing for metadata-rich messages
+    std::string safe_topic = sanitizeTopic(topic);
+    return publishSync(safe_topic, serializeWithMetadata(data, metadata), priority, correlation_id);
 }
 
 // =============================================================================
