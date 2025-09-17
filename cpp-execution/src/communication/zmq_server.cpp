@@ -14,6 +14,9 @@
 #include <random>
 #include <nlohmann/json.hpp>
 #include <regex>
+#include <vector>
+#include <cstdint>
+#include <algorithm>
 
 namespace trading {
 namespace communication {
@@ -184,7 +187,11 @@ bool GenericZmqServer::publishAsync(const std::string& topic, const std::string&
         return false;
     }
     // Sanitize topic to conform to allowed characters
+    // std::cout << "topic: " << topic << std::endl;
     std::string safe_topic = sanitizeTopic(topic);
+    // std::cout << "safe_topic: " << safe_topic << std::endl;
+    // print part of data
+    // std::cout << "data (partial): " << data.substr(0, 50) << "..." << std::endl;
 
     if (!isValidTopic(safe_topic)) {
         logError("Invalid topic format: " + topic);
@@ -232,9 +239,38 @@ bool GenericZmqServer::publishAsync(const std::string& topic, const std::string&
         message.correlation_id = correlation_id;
         message_queue_.push(std::move(message));
         stats_.messages_queued++;
-        
+        // Diagnostic log: message queued
+
+        // If the queue grows very large, process one message inline to unblock the system
+        // This is a temporary smoke-test helper to verify publish/send paths.
+        size_t inline_threshold = std::min<size_t>(std::max<size_t>(1, config_.max_queue_size / 4), 1024);
+        if (message_queue_.size() > inline_threshold) {
+            // Pop one message under the lock and process it outside the lock
+            GenericMessage to_process = std::move(message_queue_.front());
+            message_queue_.pop();
+            // Unlock before processing to avoid deadlocks
+            lock.unlock();
+            bool ok = false;
+           
+            try {
+                ok = processMessage(to_process);
+            } catch (const std::exception& e) {
+                logError(std::string("Error inline-processing message: ") + e.what());
+            }
+            if (ok) {
+                stats_.messages_published++;
+                stats_.bytes_sent += to_process.topic.size() + to_process.data.size();
+            } else {
+                stats_.messages_dropped++;
+            }
+            // Wake workers to continue processing remaining queue
+            queue_cv_.notify_all();
+            return true;
+        }
+
         lock.unlock();
-        queue_cv_.notify_one();
+        // Wake all publisher threads; avoids missed wake-ups when multiple threads are used
+        queue_cv_.notify_all();
         
         // if (logging_enabled_) {
         //     logInfo("Message queued for topic: " + safe_topic + " (correlation: " + correlation_id + ")");
@@ -530,38 +566,75 @@ void GenericZmqServer::cleanup() {
 // =============================================================================
 
 void GenericZmqServer::publisherWorker() {
+    // Unconditional print so we see the thread even if logging flags change
+    std::cout << "[THREAD] Publisher worker thread started id=" << std::this_thread::get_id() << std::endl;
     logInfo("Publisher worker thread started");
     
     while (state_.load() == ServerState::RUNNING) {
         try {
             std::unique_lock<std::mutex> lock(queue_mutex_);
-            
-            // Wait for messages or shutdown signal
-            queue_cv_.wait(lock, [this]() {
+            // Diagnostic: about to wait for messages
+            try {
+                logInfo(std::string("Diagnostic: Publisher worker waiting (queue_size=") + std::to_string(message_queue_.size()) + ")");
+            } catch(...) {}
+
+            // Wait for messages or shutdown signal (timed wait to avoid missed notifications)
+            queue_cv_.wait_for(lock, std::chrono::seconds(1), [this]() {
                 return !message_queue_.empty() || state_.load() != ServerState::RUNNING;
             });
+
+            // Diagnostic: woke from wait
+            try {
+                logInfo(std::string("Diagnostic: Publisher worker woke (queue_size=") + std::to_string(message_queue_.size()) + ")");
+            } catch(...) {}
             
             if (state_.load() != ServerState::RUNNING) {
                 break;
             }
             
             // Process all available messages
+            // while (!message_queue_.empty()) {
+            //     GenericMessage message = std::move(message_queue_.front());
+            //     message_queue_.pop();
+            //     lock.unlock();
+                
+            //     // Process the message
+            //     if (processMessage(message)) {
+            //         stats_.messages_published++;
+            //         stats_.bytes_sent += message.topic.size() + message.data.size();
+            //     } else {
+            //         stats_.messages_dropped++;
+            //     }
+                
+            //     lock.lock();
+            // }
             while (!message_queue_.empty()) {
                 GenericMessage message = std::move(message_queue_.front());
                 message_queue_.pop();
+                // Diagnostic: about to process a message
+                try {
+                    logInfo(std::string("Diagnostic: About to process message for topic: ") + message.topic + " (remaining_queue=" + std::to_string(message_queue_.size()) + ")");
+                } catch(...) {}
+
                 lock.unlock();
-                
-                // Process the message
-                if (processMessage(message)) {
+
+                bool ok = false;
+                try {
+                    ok = processMessage(message);
+                } catch (const std::exception& e) {
+                    logError("Error processing message: " + std::string(e.what()));
+                }
+
+                if (ok) {
                     stats_.messages_published++;
                     stats_.bytes_sent += message.topic.size() + message.data.size();
                 } else {
                     stats_.messages_dropped++;
                 }
-                
+
                 lock.lock();
             }
-            
+
         } catch (const std::exception& e) {
             logError("Error in publisher worker: " + std::string(e.what()));
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -690,15 +763,14 @@ bool GenericZmqServer::processMessage(const GenericMessage& message) {
         std::string serialized_data = serializeWithMetadata(message.data, metadata);
         zmq::message_t data_msg(serialized_data.size());
         memcpy(data_msg.data(), serialized_data.c_str(), serialized_data.size());
-        
         // Send messages
         auto topic_result = publisher_socket_->send(topic_msg, zmq::send_flags::sndmore);
         auto data_result = publisher_socket_->send(data_msg, zmq::send_flags::none);
         
         if (topic_result.has_value() && data_result.has_value()) {
-            if (logging_enabled_) {
-                logInfo("Processed message for topic: " + message.topic);
-            }
+            // if (logging_enabled_) {
+            //     logInfo("Processed message for topic: " + message.topic);
+            // }
             return true;
         }
         
@@ -805,9 +877,94 @@ void GenericZmqServer::sendErrorResponse(zmq::message_t& identity, const std::st
 
 std::string GenericZmqServer::serializeWithMetadata(const std::string& data,
                                                    const std::unordered_map<std::string, std::string>& metadata) const {
+    // Helper: check if buffer is valid UTF-8
+    auto isValidUtf8 = [](const std::string& s) {
+        const unsigned char* bytes = reinterpret_cast<const unsigned char*>(s.c_str());
+        size_t len = s.size();
+        size_t i = 0;
+        while (i < len) {
+            unsigned char c = bytes[i];
+            if (c <= 0x7F) { // ASCII
+                i++;
+            } else if ((c >> 5) == 0x6) { // 110xxxxx 10xxxxxx
+                if (i + 1 >= len) return false;
+                if ((bytes[i+1] >> 6) != 0x2) return false;
+                i += 2;
+            } else if ((c >> 4) == 0xE) { // 1110xxxx 10xxxxxx 10xxxxxx
+                if (i + 2 >= len) return false;
+                if ((bytes[i+1] >> 6) != 0x2 || (bytes[i+2] >> 6) != 0x2) return false;
+                i += 3;
+            } else if ((c >> 3) == 0x1E) { // 11110xxx 10xxxxxx 10xxxxxx 10xxxxxx
+                if (i + 3 >= len) return false;
+                if ((bytes[i+1] >> 6) != 0x2 || (bytes[i+2] >> 6) != 0x2 || (bytes[i+3] >> 6) != 0x2) return false;
+                i += 4;
+            } else {
+                return false;
+            }
+        }
+        return true;
+    };
+
+    // Basic base64 encode/decode helpers
+    auto base64_encode = [](const std::string &in) {
+        static const char* b64_chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        std::string out;
+        int val=0, valb=-6;
+        for (unsigned char c : in) {
+            val = (val<<8) + c;
+            valb += 8;
+            while (valb>=0) {
+                out.push_back(b64_chars[(val>>valb)&0x3F]);
+                valb-=6;
+            }
+        }
+        if (valb>-6) out.push_back(b64_chars[((val<<8)>>(valb+8))&0x3F]);
+        while (out.size()%4) out.push_back('=');
+        return out;
+    };
+
+    auto base64_decode = [](const std::string &in) {
+        static const std::vector<int> T = [](){
+            std::vector<int> t(256, -1);
+            for (int i=0;i<64;i++) t[static_cast<unsigned char>(std::string("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/")[i])] = i;
+            return t; }();
+        std::string out;
+        std::vector<int> val(4,0);
+        int valb= -8;
+        for (unsigned char c : in) {
+            if (T[c] == -1) break;
+            valb += 6;
+            int v = T[c];
+            if (valb >= 0) {
+                out.push_back(char((v << (valb%8)) & 0xFF));
+            }
+        }
+        // fallback: use a simpler decode (robustness over performance)
+        std::string ret;
+        std::vector<int> state(256, -1);
+        for (int i=0;i<64;i++) state[(unsigned char)std::string("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/")[i]] = i;
+        int val2=0, valb2=-8;
+        for (unsigned char c : in) {
+            if (state[c] == -1) break;
+            val2 = (val2<<6) + state[c];
+            valb2 += 6;
+            if (valb2>=0) {
+                ret.push_back(char((val2>>valb2)&0xFF));
+                valb2-=8;
+            }
+        }
+        return ret;
+    };
+
     nlohmann::json message;
-    message["data"] = data;
-    message["metadata"] = metadata;
+    std::unordered_map<std::string, std::string> meta = metadata; // copy so we can mutate
+    if (isValidUtf8(data)) {
+        message["data"] = data;
+    } else {
+        message["data"] = base64_encode(data);
+        meta["data_encoding"] = "base64";
+    }
+    message["metadata"] = meta;
     return message.dump();
 }
 
@@ -826,7 +983,31 @@ GenericZmqServer::deserializeWithMetadata(const std::string& serialized_data) co
                 }
             }
         }
-        
+        // Check for base64 encoding marker and decode if present
+        auto it = metadata.find("data_encoding");
+        if (it != metadata.end() && it->second == "base64") {
+            // decode base64
+            auto base64_decode_simple = [](const std::string &in) {
+                std::string ret;
+                std::vector<int> T(256, -1);
+                std::string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+                for (int i = 0; i < 64; ++i) T[(unsigned char)chars[i]] = i;
+                int val = 0, valb = -8;
+                for (unsigned char c : in) {
+                    if (T[c] == -1) break;
+                    val = (val << 6) + T[c];
+                    valb += 6;
+                    if (valb >= 0) {
+                        ret.push_back(char((val >> valb) & 0xFF));
+                        valb -= 8;
+                    }
+                }
+                return ret;
+            };
+            std::string decoded = base64_decode_simple(data);
+            return {decoded, metadata};
+        }
+
         return {data, metadata};
         
     } catch (const std::exception&) {

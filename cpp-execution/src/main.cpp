@@ -81,6 +81,14 @@ public:
         serverConfig.enable_monitoring = true;
         serverConfig.enable_heartbeat = true;
         zmq_comm_server_ = std::make_shared<GenericZmqServer>(serverConfig);
+        zmq_comm_server_->registerRequestHandler("ping", [](const std::string& request, 
+                                                const std::unordered_map<std::string, std::string>& metadata) -> std::string {
+            nlohmann::json response;
+            response["status"] = "pong";
+            response["timestamp"] = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count();
+            return response.dump();
+        });
         // config
         ZmqClientConfig clientConfig;
         clientConfig.server_pub_endpoint = "tcp://localhost:5555"; // Address of the ZMQ server
@@ -241,8 +249,11 @@ public:
             running_ = true;
             systemHealthy_ = true;
             startTime_ = std::chrono::steady_clock::now();
-            zmq_comm_server_->start();
 
+            if (!zmq_comm_server_->start()) {
+                std::cerr << "Failed to start ZMQ server: " << zmq_comm_server_->getLastError() << std::endl;
+                return -1;
+            }
             //load symbols from strategy config
             std::vector<Symbol> symbols;
             for (const auto& [name, pair] : strategyConfig_.tradingPairs) {
@@ -509,6 +520,10 @@ public:
                     zmq_comm_server_->publishProtobuf("MARKET_INTEL", intel, MessagePriority::NORMAL);
                     intelligenceGenerated_.fetch_add(1);
                 }
+                else {
+                    std::cerr << "ZMQ server not available for publishing intelligence" << std::endl;
+                    // Handle case where ZMQ server is not available
+                }
             }
             
         } catch (const std::exception& e) {
@@ -573,7 +588,7 @@ public:
             //     update.tradingPair.toString(), 
             //     jsonStr
             // );
-             zmq_comm_server_->publishAsync("orderbook_data", jsonStr, MessagePriority::HIGH);
+             zmq_comm_server_->publishAsync("orderbook_data", jsonStr, MessagePriority::HIGH, "123123");
             orderBookUpdatesReceived_.fetch_add(1);
         } catch (const std::exception& e) {
             std::cerr << "Error publishing orderbook for risk: " << e.what() << std::endl;
