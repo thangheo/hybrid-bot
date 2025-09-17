@@ -14,9 +14,12 @@
 #include <random>
 #include <cstring>
 #include <functional>  // Added for std::function
+#include <common/zmq_config.hpp>
 
 // Include generated protobuf headers
 #include "../../generated/cpp/proto/trading_messages.pb.h"
+namespace trading {
+namespace communication {
 
 class TradingCommunicationServer {
 private:
@@ -38,15 +41,15 @@ private:
 
 public:
     TradingCommunicationServer();
+    TradingCommunicationServer(trading::common::PublisherConfig config);  
     TradingCommunicationServer(const TradingCommunicationServer&) = delete;
     TradingCommunicationServer& operator=(const TradingCommunicationServer&) = delete;
     
     ~TradingCommunicationServer();
 
     void InitializeSockets();
+    void InitializeSockets(const std::string& intel_endpoint, const std::string& intent_endpoint);
     void SetExecutionCallback(std::function<trading::ExecutionAcknowledgment(const trading::TradingIntent&)> callback);
-    void Start();
-    void Stop();
 
     void PublishMarketIntelligence(const trading::MarketIntelligence& intel);
     void PublishMarketIntelligenceSync(const trading::MarketIntelligence& intel);
@@ -54,7 +57,10 @@ public:
     // ✅ NEW: Publish raw orderbook data for risk module  
     void PublishRawMessage(const std::string& topic, const std::string& message);
     void PublishOrderBookData(const std::string& exchange, const std::string& symbol, const std::string& data);
-
+    void start();
+    void stop();
+    // get status
+    bool isRunning() const { return running_.load(); }
 private:
     void IntelligencePublisherLoop();
     void IntentHandlerLoop();
@@ -63,5 +69,7 @@ private:
     trading::ExecutionAcknowledgment CreateDefaultAcknowledgment(const trading::TradingIntent& intent);
     void SendErrorAcknowledgment(const std::string& error_reason);
 };
+} // namespace communication
+} // namespace trading
 
 #endif // ZMQ_SERVER_HPP

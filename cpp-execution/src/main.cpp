@@ -28,7 +28,7 @@
 // Data ingestion
 #include "data_ingestion/data_ingestion_service.hpp"
 //zmq server for market intellgence
-#include "communication/zmq_server.hpp"
+// #include "communication/zmq_server.hpp"
 #include "market_intelligence/adaptive_intelligence.hpp"
 #include "../../generated/cpp/proto/trading_messages.pb.h"
 #include <nlohmann/json.hpp>
@@ -55,6 +55,10 @@
 #include "core/direction.hpp"
 #include "core/types.hpp"
 
+// zmq clients
+#include "common/zmq_config.hpp"
+#include "common/zeromq_client.hpp"
+
 using namespace trading;
 using namespace std::chrono_literals;
 using namespace trading::common;
@@ -69,11 +73,11 @@ public:
     FullSystemDemo() : running_(false), systemHealthy_(true) {
         setupConfigurations();
         setupStatistics();
-                // Initialize adaptive intelligence
+        // Initialize adaptive intelligence
         adaptiveIntel_ = std::make_unique<trading::intelligence::AdaptiveMarketIntelligence>();
-                
+        
+        zmq_comm_server_ = std::make_shared<TradingCommunicationServer>();
         // Initialize ZMQ communication
-        zmqServer_ = std::make_unique<TradingCommunicationServer>();
         setupCallbacks();
     }
     
@@ -137,7 +141,7 @@ public:
        
         
         // Set up ZMQ execution callback
-        zmqServer_->SetExecutionCallback([this](const trading::TradingIntent& intent) {
+        zmq_comm_server_->SetExecutionCallback([this](const trading::TradingIntent& intent) {
             return this->handleTradingIntent(intent);
         });
     }
@@ -158,7 +162,8 @@ public:
         // 2. Initialize data ingestion service
         dataIngestionService_ = std::make_unique<data_ingestion::DataIngestionService>(
             "config/data_ingestion.json");
-
+        //set comm server
+        dataIngestionService_->setCommServer(zmq_comm_server_);
         // sleep for 2s
         std::this_thread::sleep_for(std::chrono::seconds(2));
         if (!dataIngestionService_->initialize()) {
@@ -203,8 +208,8 @@ public:
             running_ = true;
             systemHealthy_ = true;
             startTime_ = std::chrono::steady_clock::now();
-            zmqServer_->Start();
-            
+            zmq_comm_server_->start();
+
             //load symbols from strategy config
             std::vector<Symbol> symbols;
             for (const auto& [name, pair] : strategyConfig_.tradingPairs) {
@@ -292,9 +297,10 @@ public:
             }
             
             // Stop services in reverse order
-            if (zmqServer_) {
-                zmqServer_->Stop();
+            if (zmq_comm_server_) {
+                zmq_comm_server_->stop();
             }
+        
              
             // // Clear data ingestion service pointer after shutdown
             // std::cout << "Clearing data ingestion service..." << std::endl;
@@ -451,7 +457,7 @@ public:
             }
             
             // ✅ Direct ZMQ publishing like full_bridge.cpp
-            if (zmqServer_ and !intel.symbol().empty()) {
+            if (zmq_comm_server_ && !intel.symbol().empty()) {
                 // Debug output for publishing
                 static std::atomic<int> publishCount{0};
                 int count = publishCount.fetch_add(1);
@@ -459,8 +465,14 @@ public:
                     std::cout << "📢 Publishing intelligence #" << count
                               << " for " << tradingPair << std::endl;
                 }   
-                zmqServer_->PublishMarketIntelligence(intel);
-                intelligenceGenerated_.fetch_add(1);
+                if (intel.DebugString().size() > 1000) {
+                    std::cerr << "Warning: Intelligence message size is large (" 
+                              << intel.DebugString().size() << " bytes)" << std::endl;
+                }
+                if (zmq_comm_server_) {
+                    zmq_comm_server_->PublishMarketIntelligence(intel);
+                    intelligenceGenerated_.fetch_add(1);
+                }
             }
             
         } catch (const std::exception& e) {
@@ -477,12 +489,7 @@ public:
                           << update.exchangeId.toString() << ":" << update.tradingPair.toString() << std::endl;
                 return;
             }
-            if (!zmqServer_) {
-                std::cerr << "Warning: ZMQ server is not available for "
-                          << update.exchangeId.toString() << ":" << update.tradingPair.toString() << std::endl;
-                return;
-            }
-
+            
             // Create JSON message for orderbook (compatible with risk module)
             nlohmann::json orderBookMsg;
             orderBookMsg["exchange"] = update.exchangeId.toString();
@@ -525,7 +532,7 @@ public:
                           << update.exchangeId.toString() << ":" << update.tradingPair.toString() << std::endl;
                 return;
             }
-            zmqServer_->PublishOrderBookData(
+            zmq_comm_server_->PublishOrderBookData(
                 update.exchangeId.toString(), 
                 update.tradingPair.toString(), 
                 jsonStr
@@ -548,18 +555,18 @@ public:
             bool dataIngestionHealthy = dataIngestionService_ ? dataIngestionService_->isHealthy() : false;
             bool strategyEngineHealthy = strategyEngine_ ? true : false;
             bool riskManagerHealthy = riskManager_ ? true : false;
-            bool zmqHealthy = zmqServer_ ? true : false;
-            
-            bool overallHealthy = dataIngestionHealthy && strategyEngineHealthy && 
-                                riskManagerHealthy && zmqHealthy;
-            
+            bool zmqHealthy = zmq_comm_server_ ? true : false;
+
+            bool overallHealthy = dataIngestionHealthy && strategyEngineHealthy &&
+                                riskManagerHealthy && zmqHealthy ;
+
             if (!overallHealthy) {
                 std::cout << "⚠️ System health issues detected!" << std::endl;
                 std::cout << "  Data Ingestion: " << (dataIngestionHealthy ? "✅" : "❌") << std::endl;
                 std::cout << "  Strategy Engine: " << (strategyEngineHealthy ? "✅" : "❌") << std::endl;
                 std::cout << "  Risk Manager: " << (riskManagerHealthy ? "✅" : "❌") << std::endl;
-                std::cout << "  ZMQ Server: " << (zmqHealthy ? "✅" : "❌") << std::endl;
-                
+                std::cout << "  ZMQ Intel Server: " << (zmqHealthy ? "✅" : "❌") << std::endl;
+
                 systemHealthy_ = false;
                 return false;
             }
@@ -579,7 +586,9 @@ private:
     std::unique_ptr<trading::learning::PTCAIntegrationManager> ptcaManager_;
     std::chrono::time_point<std::chrono::steady_clock> lastPriceUpdate_;
     // std::unique_ptr<DataInterface> m_dataInterface;
-    std::unique_ptr<TradingCommunicationServer> zmqServer_;
+
+    std::shared_ptr<TradingCommunicationServer> zmq_comm_server_;
+
     std::unique_ptr<trading::intelligence::AdaptiveMarketIntelligence> adaptiveIntel_;
     std::mutex intelligenceMutex_;
 

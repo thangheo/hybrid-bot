@@ -1,17 +1,33 @@
 #include "communication/zmq_server.hpp"
 
+namespace trading::communication {
+TradingCommunicationServer::TradingCommunicationServer(trading::common::PublisherConfig config) 
+    : context_(1), running_(false) {
+    
+    // Use config to set up sockets with specific endpoints
+    InitializeSockets(config.market_intel_endpoint, config.market_intel_endpoint);
+}
 TradingCommunicationServer::TradingCommunicationServer() : context_(1), running_(false) {
     InitializeSockets();
 }
 
 TradingCommunicationServer::~TradingCommunicationServer() {
-    Stop();
+    stop();
 }
 
 void TradingCommunicationServer::InitializeSockets() {
     try {
         // Market Intelligence Publisher (PUB socket)
         intelligence_publisher_ = std::make_unique<zmq::socket_t>(context_, ZMQ_PUB);
+        // Recommended socket options for stability
+        try {
+            intelligence_publisher_->set(zmq::sockopt::sndhwm, 1000);
+            intelligence_publisher_->set(zmq::sockopt::rcvhwm, 1000);
+            intelligence_publisher_->set(zmq::sockopt::linger, 0);
+            intelligence_publisher_->set(zmq::sockopt::immediate, 1);
+        } catch (const zmq::error_t& e) {
+            std::cerr << "Warning: failed to set ZMQ publisher options: " << e.what() << std::endl;
+        }
         intelligence_publisher_->bind("tcp://*:5555");
         
         // Trading Intent Receiver (ROUTER socket) 
@@ -27,20 +43,62 @@ void TradingCommunicationServer::InitializeSockets() {
         throw;
     }
 }
+//difference constructor with endpoint configuration
+void TradingCommunicationServer::InitializeSockets(const std::string& market_intel_endpoint, const std::string& trading_intent_endpoint) {
+    try {
+        // Market Intelligence Publisher (PUB socket)
+        intelligence_publisher_ = std::make_unique<zmq::socket_t>(context_, ZMQ_PUB);
+        // Recommended socket options for stability
+        try {
+            intelligence_publisher_->set(zmq::sockopt::sndhwm, 1000);
+            intelligence_publisher_->set(zmq::sockopt::rcvhwm, 1000);
+            intelligence_publisher_->set(zmq::sockopt::linger, 0);
+            intelligence_publisher_->set(zmq::sockopt::immediate, 1);
+        } catch (const zmq::error_t& e) {
+            std::cerr << "Warning: failed to set ZMQ publisher options: " << e.what() << std::endl;
+        }
+        intelligence_publisher_->bind(market_intel_endpoint);
+
+        // Trading Intent Receiver (ROUTER socket) 
+        intent_receiver_ = std::make_unique<zmq::socket_t>(context_, ZMQ_ROUTER);
+        // Defensive option for ROUTER to not block on close
+        try {
+            intent_receiver_->set(zmq::sockopt::linger, 0);
+        } catch (const zmq::error_t& e) {
+            std::cerr << "Warning: failed to set ZMQ intent receiver options: " << e.what() << std::endl;
+        }
+        intent_receiver_->bind(trading_intent_endpoint);
+        
+        std::cout << "ZMQ Server initialized successfully" << std::endl;
+        std::cout << "Market Intelligence Publisher: " << market_intel_endpoint << std::endl;
+        std::cout << "Trading Intent Receiver: " << trading_intent_endpoint << std::endl;
+
+    } catch (const zmq::error_t& e) {
+        std::cerr << "Failed to initialize ZMQ sockets: " << e.what() << std::endl;
+         throw;
+    } catch (const std::exception& e) {
+        std::cerr << "Standard exception during ZMQ initialization: " << e.what() << std::endl;
+         throw;
+    } catch (...) {
+        std::cerr << "Unknown error during ZMQ initialization" << std::endl;
+         throw;
+    }
+}
+
 
 void TradingCommunicationServer::SetExecutionCallback(std::function<trading::ExecutionAcknowledgment(const trading::TradingIntent&)> callback) {
     execution_callback_ = callback;
 }
 
-void TradingCommunicationServer::Start() {
+void TradingCommunicationServer::start() {
     running_ = true;
     
-    // Start market intelligence publishing thread
+    // start market intelligence publishing thread
     intelligence_thread_ = std::thread([this]() {
         this->IntelligencePublisherLoop();
     });
     
-    // Start trading intent handler thread
+    // start trading intent handler thread
     intent_handler_thread_ = std::thread([this]() {
         this->IntentHandlerLoop();
     });
@@ -48,7 +106,7 @@ void TradingCommunicationServer::Start() {
     std::cout << "Trading communication server started" << std::endl;
 }
 
-void TradingCommunicationServer::Stop() {
+void TradingCommunicationServer::stop() {
     running_ = false;
     intel_cv_.notify_all();
     
@@ -290,3 +348,5 @@ void TradingCommunicationServer::SendErrorAcknowledgment(const std::string& erro
     std::cerr << "Error acknowledgment created but cannot send without routing context: " 
               << error_reason << std::endl;
 }
+
+} // namespace trading::communication

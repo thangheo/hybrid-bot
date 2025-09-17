@@ -25,6 +25,7 @@ file(GLOB_RECURSE DATA_INGESTION_SOURCES
     "websocket/*.cpp"
     "config/config.cpp"
     "websocket/exchanges/*.cpp"    
+
     ${CMAKE_SOURCE_DIR}/src/execution/rate_limit_controller.cpp
 )
 
@@ -40,6 +41,8 @@ target_include_directories(data_ingestion
     PUBLIC
         ${CMAKE_SOURCE_DIR}/include
         ${CMAKE_SOURCE_DIR}/third_parties/readerwriterqueue  
+        ${CMAKE_SOURCE_DIR}/communication/
+        
     PRIVATE
         ${CMAKE_SOURCE_DIR}/include/data_ingestion
         ${CMAKE_SOURCE_DIR}/src/data_ingestion
@@ -51,6 +54,7 @@ target_include_directories(data_ingestion
 target_link_libraries(data_ingestion
     PUBLIC
         common
+        communication
         proto_lib
         Boost::system
         Boost::filesystem
@@ -79,6 +83,7 @@ target_include_directories(data_ingestion_main
         ${CMAKE_SOURCE_DIR}/include
         ${CMAKE_SOURCE_DIR}/include/data_ingestion
         ${CMAKE_SOURCE_DIR}/src/data_ingestion
+
 )
 
 # Link libraries for pipeline example

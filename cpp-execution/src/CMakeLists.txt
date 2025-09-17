@@ -1,6 +1,5 @@
 # src/CMakeLists.txt
 # find and search for protobuf 
-
 # Find required packages
 find_package(Threads REQUIRED)
 find_package(ZeroMQ REQUIRED)
@@ -48,7 +47,6 @@ add_subdirectory(learning)
 # add_subdirectory(market_intelligence)
 # Main executable
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../bin)
-
 set(SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../src/main.cpp 
             ${CMAKE_CURRENT_SOURCE_DIR}/../src/market_intelligence/adaptive_intelligence.cpp
             ${CMAKE_CURRENT_SOURCE_DIR}/../src/communication/zmq_server.cpp

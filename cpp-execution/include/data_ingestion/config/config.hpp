@@ -12,8 +12,10 @@
 #include <mutex>
 #include "core/market_types.hpp"
 #include "data_ingestion/orderbook/order_book_types.hpp"
+#include "communication/zmq_server.hpp"
+#include "common/zmq_config.hpp"
 // Forward declaration for nlohmann::json
-
+using PublisherConfig = trading::common::PublisherConfig;
 // Forward declaration for nlohmann::json
 namespace nlohmann {
     // class basic_json;
@@ -22,39 +24,6 @@ namespace nlohmann {
 namespace trading {
 namespace data_ingestion {
 
-/**
- * Configuration for publisher component
- */
-struct PublisherConfig {
-    // ZeroMQ configuration
-    std::string zeromqEndpoint = "tcp://*:5555";
-    std::string zmq_endpoint = "tcp://*:5555";  // Alias for compatibility
-    std::string zmq_bind_address = "tcp://*:5555";
-    std::string publisherType = "zeromq";
-    
-    // Buffer and rate limiting
-    int bufferSize = 1000;
-    int max_queue_size = 1000;
-    int max_publish_rate = 1000;  // messages per second
-    
-    // Timing configuration
-    std::chrono::milliseconds publishInterval{100};
-    int publish_interval_ms = 100;
-    int heartbeat_interval_ms = 30000;
-    
-    // ZeroMQ specific settings
-    int zmq_linger_ms = 1000;
-    int zmq_hwm = 1000;  // High Water Mark
-    
-    // Data publishing options
-    bool enableCompression = false;
-    bool publish_raw_data = true;
-    bool publish_normalized_data = true;
-    
-    // Topics and compression
-    std::vector<std::string> topics;
-    CompressionAlgorithm compression = CompressionAlgorithm::NONE;
-};
 
 /**
  * Configuration for exchange connections

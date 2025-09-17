@@ -4,9 +4,10 @@
 #include "data_ingestion/exchange_manager.hpp"
 #include "data_ingestion/orderbook/reconstructor.hpp"
 #include "data_ingestion/orderbook/order_book_manager.hpp"
-#include "data_ingestion/publisher/zeromq_publisher.hpp"
+#include "communication/zmq_server.hpp"
 #include "data_ingestion/config/config.hpp"
 #include "data_ingestion/normalization/order_book_normalizer.hpp"
+#include "communication/zmq_server.hpp"
 #include "common/event_bus.hpp"
 #include <memory>
 #include <atomic>
@@ -58,6 +59,12 @@ public:
     SimpleStats getStatistics() const ;
 
     std::vector<Symbol> getActiveOrderBooks() const;
+    // Monitoring
+    //function to set communication server
+    bool setCommServer(std::shared_ptr<TradingCommunicationServer> server) {
+        publisher_ = server;
+        return true;
+    }
 private:
     std::vector<Symbol> subscribedSymbols_;
     // Core components (proper order for RAII)
@@ -68,7 +75,7 @@ private:
     std::unique_ptr<common::EventBus> eventBus_;
     
     // Publishing layer
-    std::shared_ptr<ZeroMQPublisher> publisher_;
+    std::shared_ptr<TradingCommunicationServer> publisher_;
     
     // Order book management
     OrderBookReconstructor* reconstructor_;
@@ -104,7 +111,7 @@ private:
     void onOrderBookChanged(const OrderBook& orderBook);
     void onConnectionStatus(const std::string& exchange, const std::string& status);
     
-    // Monitoring
+    
     void runMonitoring();
     void publishStatus(const std::string& component, const std::string& status);
     

@@ -19,12 +19,15 @@
 
 #include "core/market_types.hpp"
 #include "data_ingestion/orderbook/order_book.hpp"
-#include "data_ingestion/publisher/zeromq_publisher.hpp"
+// #include "data_ingestion/publisher/zeromq_publisher.hpp"
+#include "communication/zmq_server.hpp"
 #include "data_ingestion/orderbook/order_book_types.hpp"
 #include "data_ingestion/orderbook/order_book_manager.hpp"
 #include "strategy/core_analysis/liquidity_flow_monitor.hpp"
 #include "nlohmann/json.hpp"
 
+using namespace trading::communication;
+using namespace trading::core;
 namespace trading {
 namespace data_ingestion {
 
@@ -68,7 +71,7 @@ public:
      * @return true if successful, false otherwise
      */
     bool initialize(
-        std::shared_ptr<trading::data_ingestion::ZeroMQPublisher> publisher,
+        std::shared_ptr<TradingCommunicationServer> publisher,
         std::shared_ptr<OrderBookManager> manager
     );
      
@@ -247,7 +250,7 @@ private:
      
     // Member variables
     bool initialized_;
-    std::shared_ptr<trading::data_ingestion::ZeroMQPublisher> publisher_;
+    std::shared_ptr<TradingCommunicationServer> publisher_;
     std::shared_ptr<OrderBookManager> orderBookManager_;
     mutable std::mutex mutex_;
 };

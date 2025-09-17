@@ -1,3 +1,4 @@
+
 cmake_minimum_required(VERSION 3.10)
 project(communication)
 
@@ -98,8 +99,10 @@ include_directories(
 
 )
 
+
 # Add the main communication library
 add_library(communication STATIC ${SOURCES})
+set_target_properties(communication PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 # Link libraries
 target_link_libraries(communication zmq jsoncpp pthread protobuf gRPC::grpc++ proto_lib)
