@@ -373,14 +373,23 @@ void BinanceWebSocketClient::initializeSslContext() {
     ssl_ctx_->set_verify_mode(ssl::verify_peer);
     
     // Set hostname verification for security
-    ssl_ctx_->set_verify_callback([this](bool preverified, ssl::verify_context& ctx) {
-        // For production, implement proper certificate verification
-        // For now, we'll be permissive but log any issues
-        if (!preverified) {
-            LOG_WARN("SSL certificate verification failed");
+        // Use weak_ptr capture to avoid extending this object's lifetime via the callback
+        if (auto self = shared_from_this()) {
+            std::weak_ptr<BinanceWebSocketClient> wp = self;
+            ssl_ctx_->set_verify_callback([wp](bool preverified, ssl::verify_context& ctx) {
+                if (auto s = wp.lock()) {
+                    // For production, implement proper certificate verification
+                    // For now, we'll be permissive but log any issues
+                    if (!preverified) {
+                        LOG_WARN("SSL certificate verification failed");
+                    }
+                }
+                return true; // Accept for development - CHANGE FOR PRODUCTION
+            });
+        } else {
+            // Fallback: set permissive callback
+            ssl_ctx_->set_verify_callback([](bool, ssl::verify_context&) { return true; });
         }
-        return true; // Accept for development - CHANGE FOR PRODUCTION
-    });
 }
 
 bool BinanceWebSocketClient::performConnection() {
@@ -422,15 +431,19 @@ bool BinanceWebSocketClient::performConnection() {
         }
         
         // Set up control callback for handling close/ping/pong
-        ws_->control_callback([this](websocket::frame_type kind, beast::string_view payload) {
-            boost::ignore_unused(payload);
-            
-            if (kind == websocket::frame_type::pong) {
-                handlePong();
-            } else if (kind == websocket::frame_type::close) {
-                LOG_INFO("Received close frame from server");
-            }
-        });
+        {
+            std::weak_ptr<BinanceWebSocketClient> wp = shared_from_this();
+            ws_->control_callback([wp](websocket::frame_type kind, beast::string_view payload) {
+                boost::ignore_unused(payload);
+                if (auto s = wp.lock()) {
+                    if (kind == websocket::frame_type::pong) {
+                        s->handlePong();
+                    } else if (kind == websocket::frame_type::close) {
+                        LOG_INFO("Received close frame from server");
+                    }
+                }
+            });
+        }
         
         return true;
         
@@ -452,34 +465,39 @@ void BinanceWebSocketClient::startRead() {
     }
     LOG_DEBUG("startRead called, scheduling async_read");
 
-    ws_->async_read(*buffer_, [this](beast::error_code ec, std::size_t bytes_transferred) {
-        LOG_DEBUG("async_read callback fired, bytes_transferred=" + std::to_string(bytes_transferred));
-            reading_.store(false); // Reset reading flag for this client
-        boost::ignore_unused(bytes_transferred);
-        
-        if (ec) {
-            if (ec == websocket::error::closed) {
-                LOG_INFO("WebSocket closed by peer");
-                handleClose(websocket::close_code::abnormal, "Connection closed by peer");
-            } else {
-                LOG_ERROR("Read error: " + ec.message());
-                handleError("Read error: " + ec.message());
+    {
+        std::weak_ptr<BinanceWebSocketClient> wp = shared_from_this();
+        ws_->async_read(*buffer_, [wp](beast::error_code ec, std::size_t bytes_transferred) {
+            if (auto s = wp.lock()) {
+                LOG_DEBUG("async_read callback fired, bytes_transferred=" + std::to_string(bytes_transferred));
+                s->reading_.store(false); // Reset reading flag for this client
+                boost::ignore_unused(bytes_transferred);
+
+                if (ec) {
+                    if (ec == websocket::error::closed) {
+                        LOG_INFO("WebSocket closed by peer");
+                        s->handleClose(websocket::close_code::abnormal, "Connection closed by peer");
+                    } else {
+                        LOG_ERROR("Read error: " + ec.message());
+                        s->handleError("Read error: " + ec.message());
+                    }
+                    return;
+                }
+
+                // Process the message
+                std::string message = beast::buffers_to_string(s->buffer_->data());
+                s->buffer_->consume(s->buffer_->size());
+
+                s->updateStatistics();
+                s->handleMessage(message);
+
+                // Continue reading if still connected
+                if (s->state_.load() == ConnectionStatus::CONNECTED) {
+                    s->startRead();
+                }
             }
-            return;
-        }
-        
-        // Process the message
-        std::string message = beast::buffers_to_string(buffer_->data());
-        buffer_->consume(buffer_->size());
-        
-        updateStatistics();
-        handleMessage(message);
-        
-        // Continue reading if still connected
-        if (state_.load() == ConnectionStatus::CONNECTED) {
-            startRead();
-        }
-    });
+        });
+    }
 }
 
 void BinanceWebSocketClient::handleMessage(const std::string& message) {
@@ -503,7 +521,9 @@ void BinanceWebSocketClient::handleMessage(const std::string& message) {
         } else {
             LOG_DEBUG("Unknown message format: " + message.substr(0, 100));
         }
-        
+        if (buffer_->capacity() > 64 * 1024) { // 64KB threshold
+            buffer_ = std::make_unique<beast::flat_buffer>();
+        }
     } catch (const json::parse_error& e) {
         LOG_ERROR("JSON parse error: " + std::string(e.what()));
     } catch (const std::exception& e) {
@@ -563,17 +583,22 @@ bool BinanceWebSocketClient::sendSubscriptionRequest(const std::vector<std::stri
         if (ioc_) {
             auto msg = std::make_shared<std::string>(std::move(message));
             LOG_DEBUG("Posting subscription message to io_context: " + std::string(msg->begin(), msg->begin() + std::min<size_t>(msg->size(), 200)));
-            net::post(*ioc_, [this, msg, subscribe]() {
+            std::weak_ptr<BinanceWebSocketClient> wp = shared_from_this();
+            net::post(*ioc_, [wp, msg, subscribe]() {
                 try {
-                    LOG_DEBUG("Performing subscription async_write: " + std::string(msg->begin(), msg->begin() + std::min<size_t>(msg->size(), 200)));
-                    // Use async_write to remain on io_context and avoid blocking
-                    ws_->async_write(net::buffer(*msg), [this, msg](beast::error_code ec, std::size_t bytes_transferred) {
-                        if (ec) {
-                            LOG_ERROR(std::string("Subscription async_write error: ") + ec.message());
-                        } else {
-                            LOG_DEBUG(std::string("Subscription async_write completed, bytes=") + std::to_string(bytes_transferred));
-                        }
-                    });
+                    if (auto s = wp.lock()) {
+                        LOG_DEBUG("Performing subscription async_write: " + std::string(msg->begin(), msg->begin() + std::min<size_t>(msg->size(), 200)));
+                        // Use async_write to remain on io_context and avoid blocking
+                        s->ws_->async_write(net::buffer(*msg), [wp, msg](beast::error_code ec, std::size_t bytes_transferred) {
+                            if (auto s2 = wp.lock()) {
+                                if (ec) {
+                                    LOG_ERROR(std::string("Subscription async_write error: ") + ec.message());
+                                } else {
+                                    LOG_DEBUG(std::string("Subscription async_write completed, bytes=") + std::to_string(bytes_transferred));
+                                }
+                            }
+                        });
+                    }
                 } catch (const std::exception& e) {
                     LOG_ERROR(std::string("Error scheduling subscription write: ") + e.what());
                 }
@@ -627,9 +652,14 @@ void BinanceWebSocketClient::startHeartbeat() {
     }
     
     heartbeat_timer_->expires_after(heartbeat_interval_);
-    heartbeat_timer_->async_wait([this](const boost::system::error_code& ec) {
-        handleHeartbeatTimer(ec);
-    });
+    {
+        std::weak_ptr<BinanceWebSocketClient> wp = shared_from_this();
+        heartbeat_timer_->async_wait([wp](const boost::system::error_code& ec) {
+            if (auto s = wp.lock()) {
+                s->handleHeartbeatTimer(ec);
+            }
+        });
+    }
 }
 
 void BinanceWebSocketClient::handleHeartbeatTimer(const boost::system::error_code& ec) {
@@ -666,12 +696,17 @@ void BinanceWebSocketClient::sendPing() {
         
         // Set timeout for pong response
         heartbeat_timer_->expires_after(heartbeat_timeout_);
-        heartbeat_timer_->async_wait([this](const boost::system::error_code& ec) {
-            if (!ec && waiting_for_pong_.load()) {
-                LOG_WARN("Pong timeout - connection may be stale");
-                handleError("Heartbeat timeout");
-            }
-        });
+        {
+            std::weak_ptr<BinanceWebSocketClient> wp = shared_from_this();
+            heartbeat_timer_->async_wait([wp](const boost::system::error_code& ec) {
+                if (auto s = wp.lock()) {
+                    if (!ec && s->waiting_for_pong_.load()) {
+                        LOG_WARN("Pong timeout - connection may be stale");
+                        s->handleError("Heartbeat timeout");
+                    }
+                }
+            });
+        }
         
     } catch (const std::exception& e) {
         LOG_ERROR("Error sending ping: " + std::string(e.what()));
@@ -744,10 +779,13 @@ void BinanceWebSocketClient::scheduleReconnect() {
     
     updateConnectionState(ConnectionStatus::RECONNECTING, "Scheduling reconnection");
     
-    if (reconnect_timer_) {
+        if (reconnect_timer_) {
         reconnect_timer_->expires_after(delay);
-        reconnect_timer_->async_wait([this](const boost::system::error_code& ec) {
-            handleReconnectTimer(ec);
+        std::weak_ptr<BinanceWebSocketClient> wp = shared_from_this();
+        reconnect_timer_->async_wait([wp](const boost::system::error_code& ec) {
+            if (auto s = wp.lock()) {
+                s->handleReconnectTimer(ec);
+            }
         });
     }
 }
@@ -863,8 +901,46 @@ void BinanceWebSocketClient::setRawDataCallback(RawDataCallback callback) {
     LOG_INFO("Raw data callback registered");
 }
 
+// void BinanceWebSocketClient::cleanup() {
+//     // Cancel all async operations
+//     if (heartbeat_timer_) {
+//         boost::system::error_code ec;
+//         heartbeat_timer_->cancel(ec);
+//     }
+    
+//     if (reconnect_timer_) {
+//         boost::system::error_code ec;
+//         reconnect_timer_->cancel(ec);
+//     }
+    
+//     // Reset components in proper order
+//     if (ws_) {
+//         try {
+//             if (ws_->is_open()) {
+//                 boost::system::error_code ec;
+//                 ws_->close(websocket::close_code::going_away, ec);
+//             }
+//         } catch (...) {
+//             // Ignore errors during cleanup
+//         }
+//         ws_.reset();
+//     }
+    
+//     buffer_.reset();
+//     heartbeat_timer_.reset();
+//     reconnect_timer_.reset();
+//     ssl_ctx_.reset();
+    
+//     // Reset io_context last
+//     if (ioc_) {
+//         ioc_->stop();
+//         ioc_.reset();
+//     }
+    
+//     waiting_for_pong_.store(false);
+// }
 void BinanceWebSocketClient::cleanup() {
-    // Cancel all async operations
+    // Cancel timers first
     if (heartbeat_timer_) {
         boost::system::error_code ec;
         heartbeat_timer_->cancel(ec);
@@ -875,31 +951,25 @@ void BinanceWebSocketClient::cleanup() {
         reconnect_timer_->cancel(ec);
     }
     
-    // Reset components in proper order
-    if (ws_) {
-        try {
-            if (ws_->is_open()) {
-                boost::system::error_code ec;
-                ws_->close(websocket::close_code::going_away, ec);
-            }
-        } catch (...) {
-            // Ignore errors during cleanup
-        }
-        ws_.reset();
+    // Close WebSocket to cancel pending operations
+    if (ws_ && ws_->is_open()) {
+        boost::system::error_code ec;
+        ws_->close(websocket::close_code::going_away, ec);
     }
     
+    // Run io_context briefly to process cancellations
+    if (ioc_) {
+        ioc_->poll(); // Process any immediate completions
+        ioc_->stop();
+    }
+    
+    // Reset in proper order
+    ws_.reset();
     buffer_.reset();
     heartbeat_timer_.reset();
     reconnect_timer_.reset();
     ssl_ctx_.reset();
-    
-    // Reset io_context last
-    if (ioc_) {
-        ioc_->stop();
-        ioc_.reset();
-    }
-    
-    waiting_for_pong_.store(false);
+    ioc_.reset();
 }
 
 void BinanceWebSocketClient::handleStreamData(const json& data) {

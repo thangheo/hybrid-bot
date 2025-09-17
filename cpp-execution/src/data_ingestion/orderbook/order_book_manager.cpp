@@ -375,8 +375,21 @@ size_t OrderBookManager::removeInactiveOrderBooks() {
 
 void OrderBookManager::cleanup() {
     std::unique_lock<std::shared_mutex> writeLock(orderBooksMutex_);
+
+    // Break any external strong references the manager might hold in callbacks
+    // This helps avoid retention cycles where callbacks capture the manager.
+    managerCallback_ = {};
+
+    // Clear order books to release shared_ptr references to OrderBook instances
     orderBooks_.clear();
-    
+
+    // Note: intentionally not swapping with a temporary unordered_map here because
+    // constructing a temporary may require default-constructible hashing/equality
+    // for OrderBookKey in some build configurations. If you need to force-free
+    // buckets, consider providing a dedicated clearAndShrink() helper that uses
+    // an appropriately constructed empty map or a custom allocator.
+    orderBooks_.rehash(0);
+
     if (config_.logErrors) {
         // Logger::info("OrderBookManager cleanup completed");
     }

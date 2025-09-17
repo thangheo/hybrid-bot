@@ -22,4 +22,4 @@ backtest/
 .testapi
 data/*
 models/*
-cpp-execution/libs
+cpp-execution/libs/cpp-execution/cpp-execution-build/
