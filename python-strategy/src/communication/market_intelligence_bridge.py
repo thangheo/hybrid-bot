@@ -2,6 +2,8 @@ import zmq
 import time
 import threading
 import logging
+import json
+import base64
 from typing import Dict, List, Optional, Deque
 from collections import deque
 from dataclasses import dataclass
@@ -76,11 +78,73 @@ class MarketIntelligenceBridge:
         """Background intelligence collection"""
         while self.running:
             try:
-                topic = self.subscriber.recv()
-                data = self.subscriber.recv()
-                
+                # Receive all frames for this message (supports legacy 2-frame and new 3-frame formats)
+                frames = self.subscriber.recv_multipart()
+                if not frames:
+                    continue
+
+                topic = frames[0]
+
+                # Determine payload bytes depending on frame count and shape
+                payload_bytes = None
+                metadata_obj = None
+
+                if len(frames) >= 3:
+                    # New multipart format: [topic, metadata_json, raw_payload]
+                    try:
+                        metadata_obj = json.loads(frames[1].decode('utf-8')) if frames[1] else {}
+                    except Exception:
+                        metadata_obj = {}
+                    payload_bytes = frames[2]
+                elif len(frames) == 2:
+                    # Legacy format: [topic, serialized_json_or_protobuf]
+                    # Try protobuf first, then JSON wrapper with possible base64 data field
+                    candidate = frames[1]
+                    # Quick attempt: try protobuf parse directly
+                    intel = MarketIntelligence()
+                    try:
+                        intel.ParseFromString(candidate)
+                        payload_bytes = candidate
+                    except Exception:
+                        # Not direct protobuf — try JSON wrapper
+                        try:
+                            wrapper = json.loads(candidate.decode('utf-8'))
+                            data_field = wrapper.get('data', '')
+                            meta = wrapper.get('metadata', {})
+                            metadata_obj = meta if isinstance(meta, dict) else {}
+                            # If metadata says base64, decode; else assume data_field is base64 or text
+                            if metadata_obj.get('data_encoding') == 'base64' or not _is_likely_utf8(data_field):
+                                try:
+                                    payload_bytes = base64.b64decode(data_field)
+                                except Exception:
+                                    # Last resort: treat raw candidate as payload
+                                    payload_bytes = candidate
+                            else:
+                                # data_field appears to be UTF-8 text; use its bytes
+                                payload_bytes = data_field.encode('utf-8')
+                        except Exception:
+                            # Can't parse JSON either - use raw candidate
+                            payload_bytes = candidate
+                else:
+                    # Unknown shape
+                    logger.warning(f"Received message with unexpected frame count: {len(frames)}")
+                    continue
+
+                # At this point payload_bytes should be raw protobuf bytes (or at least bytes to try)
+                if payload_bytes is None:
+                    logger.error("No payload bytes could be extracted from incoming message")
+                    self.stats['parse_errors'] += 1
+                    continue
+
                 intel = MarketIntelligence()
-                intel.ParseFromString(data)
+                try:
+                    intel.ParseFromString(payload_bytes)
+                except Exception as e:
+                    # Log helpful debug information to aid troubleshooting
+                    logger.error(f"Error parsing message with type 'trading.MarketIntelligence': {e}")
+                    logger.debug(f"Topic: {topic!r} frames={len(frames)} metadata={metadata_obj} payload_len={len(payload_bytes)}")
+                    self.stats['parse_errors'] += 1
+                    continue
                 self.stats['messages_received'] += 1
                 
                 # CRITICAL FIX: Proper field extraction with validation
