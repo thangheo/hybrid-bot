@@ -14,6 +14,7 @@
 #include "core/market_types.hpp"
 using namespace trading::core;
 using namespace trading;
+using namespace trading::communication;
 // Market Intelligence Generator for simulation/testing
 class MarketIntelligenceGenerator {
 private:
@@ -238,7 +239,7 @@ int main() {
         });
         
         // Start server
-        server.Start();
+        server.start();
         
         // Initialize market intelligence generator for testing
         std::vector<Symbol> symbols = {Symbol("AAPL"), Symbol("GOOGL"), Symbol("MSFT"), Symbol("NVDA"), Symbol("TSLA")};
@@ -250,7 +251,7 @@ int main() {
         
         // Graceful shutdown
         intel_generator.Stop();
-        server.Stop();
+        server.stop();
         
     } catch (const std::exception& e) {
         std::cerr << "Server error: " << e.what() << std::endl;

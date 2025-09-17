@@ -190,6 +190,11 @@ bool DataIngestionService::loadConfiguration() {
 
 bool DataIngestionService::setupPublisher() {
     try {
+        // check if publisher_ is already set (for testing)
+        if (publisher_) {
+            std::cout << "Using existing publisher instance" << std::endl;
+            return true;
+        }
         const auto& pubConfig = config_->getPublisherConfig();
         publisher_ = std::make_shared<TradingCommunicationServer>(pubConfig);
         return true;

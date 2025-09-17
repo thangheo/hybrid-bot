@@ -81,7 +81,7 @@ public:
         }
         
         // 2. Start ZMQ communication
-        zmqServer_->Start();
+        zmqServer_->start();
         
         // 3. Start data ingestion with symbols
         if (!dataService_->start(symbols)) {
@@ -103,7 +103,7 @@ public:
         
         // Stop services in reverse order
         if (zmqServer_) {
-            zmqServer_->Stop();
+            zmqServer_->stop();
         }
         
         if (dataService_) {
