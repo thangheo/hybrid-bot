@@ -52,11 +52,12 @@ public:
      */
     static std::shared_ptr<RiskManager> create(
         std::shared_ptr<trading::execution::ExecutionService> execService, 
-        const RiskConfig& config) {
-        
+        const RiskConfig& config, 
+        std::shared_ptr<trading::risk::MarketDataInterface> marketDataInterface
+    ) {
         // Create using make_shared - this enables shared_from_this()
-        auto manager = std::shared_ptr<RiskManager>(new RiskManager(execService, config));
-        
+        auto manager = std::shared_ptr<RiskManager>(new RiskManager(execService, config, marketDataInterface));
+
         // Now safe to call methods that use shared_from_this()
         if (!manager->initialize()) {
             LOG_ERROR("RiskManager", "Failed to initialize RiskManager");
@@ -76,6 +77,10 @@ public:
      * Destructor
      */
     ~RiskManager();
+// new constructor
+    RiskManager(std::shared_ptr<trading::execution::ExecutionService> execService, 
+                const RiskConfig& config,
+                std::shared_ptr<trading::risk::MarketDataInterface> marketDataInterface);   
 
     /**
      * Initialize the risk manager and its subsystems
@@ -161,7 +166,9 @@ public:
 private:
     std::shared_ptr<trading::execution::ExecutionService> m_execService;
     std::shared_ptr<trading::execution::ExecutionService> m_executionService;
-
+        // marketDataInterface
+    std::shared_ptr<trading::risk::MarketDataInterface> m_marketDataInterface;
+    // std::shared_ptr<trading::execution::ExecutionService> m_executionService;
     /**
      * Private constructor - forces use of create() method
      * @param execService The execution service  

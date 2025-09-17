@@ -36,133 +36,10 @@
 #include <common/logger.hpp>
 #include <common/types.hpp>
 #include "communication/zmq_config.hpp"
+
 namespace trading {
 namespace communication {
 
-/**
- * Message priority levels for routing
- */
-enum class MessagePriority {
-    LOW = 0,
-    NORMAL = 1,
-    HIGH = 2,
-    CRITICAL = 3
-};
-
-/**
- * Server operational states
- */
-enum class ServerState {
-    STOPPED,
-    STARTING,
-    RUNNING,
-    STOPPING,
-    ERROR
-};
-
-/**
- * Configuration for ZeroMQ server
- */
-// struct ZmqServerConfig {
-//     // Publisher configuration
-//     std::string publisher_endpoint = "tcp://*:5555";
-//     int publisher_hwm = 10000;
-//     int publisher_linger = 1000;
-//     bool publisher_immediate = true;
-    
-//     // Request-Reply configuration  
-//     std::string request_endpoint = "tcp://*:5556";
-//     int request_hwm = 1000;
-//     int request_timeout_ms = 30000;
-    
-//     // Threading configuration
-//     int publisher_threads = 2;
-//     int request_handler_threads = 4;
-//     int io_threads = 2;
-    
-//     // Queue configuration
-//     size_t max_queue_size = 100000;
-//     std::chrono::milliseconds queue_timeout{100};
-    
-//     // Monitoring configuration
-//     bool enable_monitoring = true;
-//     std::chrono::seconds stats_interval{60};
-    
-//     // Reliability configuration
-//     bool enable_heartbeat = true;
-//     std::chrono::seconds heartbeat_interval{30};
-//     int max_reconnect_attempts = 5;
-//     std::chrono::milliseconds reconnect_delay{1000};
-    
-//     // Validation
-//     bool validate() const {
-//         return !publisher_endpoint.empty() && 
-//                !request_endpoint.empty() &&
-//                publisher_hwm > 0 &&
-//                request_hwm > 0 &&
-//                publisher_threads > 0 &&
-//                request_handler_threads > 0 &&
-//                io_threads > 0 &&
-//                max_queue_size > 0;
-//     }
-// };
-
-/**
- * Generic message wrapper for internal processing
- */
-// struct GenericMessage {
-//     std::string topic;
-//     std::string data;
-//     MessagePriority priority;
-//     std::chrono::steady_clock::time_point timestamp;
-//     std::string correlation_id;
-//     std::unordered_map<std::string, std::string> metadata;
-    
-//     GenericMessage(const std::string& t, const std::string& d, 
-//                    MessagePriority p = MessagePriority::NORMAL)
-//         : topic(t), data(d), priority(p), 
-//           timestamp(std::chrono::steady_clock::now()) {
-        
-//         // Generate correlation ID if not provided
-//         if (correlation_id.empty()) {
-//             correlation_id = generateCorrelationId();
-//         }
-//     }
-    
-// // private:
-//     static std::string generateCorrelationId();
-// };
-
-/**
- * Statistics for monitoring and debugging
- */
-struct ServerStatistics {
-    std::atomic<uint64_t> messages_published{0};
-    std::atomic<uint64_t> messages_queued{0};
-    std::atomic<uint64_t> messages_dropped{0};
-    std::atomic<uint64_t> requests_processed{0};
-    std::atomic<uint64_t> requests_failed{0};
-    std::atomic<uint64_t> bytes_sent{0};
-    std::atomic<uint64_t> bytes_received{0};
-    std::atomic<uint64_t> queue_overflows{0};
-    std::atomic<uint64_t> connection_errors{0};
-    std::chrono::steady_clock::time_point start_time;
-    
-    ServerStatistics() : start_time(std::chrono::steady_clock::now()) {}
-    
-    void reset() {
-        messages_published = 0;
-        messages_queued = 0;
-        messages_dropped = 0;
-        requests_processed = 0;
-        requests_failed = 0;
-        bytes_sent = 0;
-        bytes_received = 0;
-        queue_overflows = 0;
-        connection_errors = 0;
-        start_time = std::chrono::steady_clock::now();
-    }
-};
 
 /**
  * Request handler callback type
@@ -242,6 +119,7 @@ public:
     bool publishWithMetadata(const std::string& topic, const std::string& data,
                            const std::unordered_map<std::string, std::string>& metadata,
                            MessagePriority priority = MessagePriority::NORMAL);
+    // publish protobuf intel message
     
     // =============================================================================
     // REQUEST-REPLY INTERFACE

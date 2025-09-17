@@ -18,6 +18,7 @@
 #include <vector>
 #include <fstream>
 #include <signal.h>
+#include <unordered_map>
 
 // Common includes
 #include "common/event_bus.hpp"
@@ -76,8 +77,31 @@ public:
         adaptiveIntel_ = std::make_unique<trading::intelligence::AdaptiveMarketIntelligence>();
         
         zmq_comm_server_ = std::make_shared<GenericZmqServer>();
-        // Initialize ZMQ communication
-        setupCallbacks();
+        // create zmq_client for listening trading intent
+        // config
+        ZmqClientConfig clientConfig;
+        clientConfig.server_pub_endpoint = "tcp://localhost:5556"; // Address of the ZMQ server
+        clientConfig.auto_reconnect = true;
+        clientConfig.request_timeout = std::chrono::milliseconds(30000); // 30 seconds
+        zmq_client_ = std::make_unique<GenericZmqClient>(clientConfig);
+        zmq_client_->connect();
+        zmq_client_->subscribe("trading_intent", [this](const std::string& topic, const std::string& data, const std::unordered_map<std::string, std::string>& metadata) {
+            // Parse the TradingIntent message (data is expected to be serialized protobuf)
+            trading::TradingIntent intent;
+            if (intent.ParseFromString(data)) {
+                auto ack = this->handleTradingIntent(intent);
+                // Here you would normally send the acknowledgment back via ZMQ and may use metadata if needed
+                std::cout << "Processed Trading Intent ID: " << intent.intent_id() << std::endl;
+            } else {
+                std::cerr << "Failed to parse TradingIntent message" << std::endl;
+            }
+        });
+        // Initialize MarketDataInterface
+        marketDataInterface_ = std::make_shared<trading::risk::MarketDataInterface>(riskConfig_);
+        // set zmq client to marketDataInterface_
+        marketDataInterface_->setZmqClient(std::move(zmq_client_));
+        // setupCallbacks();
+        // setupCallbacks();
     }
     
     ~FullSystemDemo() {
@@ -136,14 +160,16 @@ public:
         return ack;
     }
 
-     void setupCallbacks() {
+    //  void setupCallbacks() {
        
         
-        // Set up ZMQ execution callback
-        zmq_comm_server_->SetExecutionCallback([this](const trading::TradingIntent& intent) {
-            return this->handleTradingIntent(intent);
-        });
-    }
+    //     // Set up ZMQ execution callback
+    //     zmq_client_->SetExecutionCallback([this](const trading::TradingIntent& intent) {
+    //         return this->handleTradingIntent(intent);
+    //     });
+    //     // });
+
+    // }
 
     bool initialize() {
         // First, initialize the execution service
@@ -169,10 +195,15 @@ public:
             std::cerr << "Failed to initialize data ingestion service" << std::endl;
             return false;
         }
-
+        // 3. Initialize market data interface
+        if (!marketDataInterface_->initialize()) {
+            std::cerr << "Failed to initialize MarketDataInterface" << std::endl;
+            return false;
+        }
+        // 3. Initialize risk manager
                
         // ✅ NEW - Use the factory method
-        riskManager_ = RiskManager::create(executionService_, riskConfig_);
+        riskManager_ = RiskManager::create(executionService_, riskConfig_, marketDataInterface_);
         if (!riskManager_) {
             LOG_ERROR("Application", "Failed to initialize risk manager");
             return false;
@@ -469,7 +500,9 @@ public:
                               << intel.DebugString().size() << " bytes)" << std::endl;
                 }
                 if (zmq_comm_server_) {
-                    zmq_comm_server_->PublishMarketIntelligence(intel);
+                    // Serialize protobuf message and publish on the "market_intelligence" topic.
+                    // Use publishAsync to avoid blocking the intelligence generation path.
+                    zmq_comm_server_->publishAsync("market_intelligence", intel.SerializeAsString(), MessagePriority::NORMAL);
                     intelligenceGenerated_.fetch_add(1);
                 }
             }
@@ -531,12 +564,13 @@ public:
                           << update.exchangeId.toString() << ":" << update.tradingPair.toString() << std::endl;
                 return;
             }
-            zmq_comm_server_->PublishOrderBookData(
-                update.exchangeId.toString(), 
-                update.tradingPair.toString(), 
-                jsonStr
-            );
-            
+            // zmq_comm_server_->PublishOrderBookData(
+            //     update.exchangeId.toString(), 
+            //     update.tradingPair.toString(), 
+            //     jsonStr
+            // );
+             zmq_comm_server_->publishAsync("orderbook_data", jsonStr, MessagePriority::HIGH);
+            orderBookUpdatesReceived_.fetch_add(1);
         } catch (const std::exception& e) {
             std::cerr << "Error publishing orderbook for risk: " << e.what() << std::endl;
         }
@@ -580,13 +614,15 @@ private:
     //market intel
     std::atomic<uint64_t> messagesProcessed_{0};
     std::atomic<uint64_t> intelligenceGenerated_{0};
-
+    // marketDataInterface_
+    std::shared_ptr<trading::risk::MarketDataInterface> marketDataInterface_;
     // PTCA: Add PTCA-related members
     std::unique_ptr<trading::learning::PTCAIntegrationManager> ptcaManager_;
     std::chrono::time_point<std::chrono::steady_clock> lastPriceUpdate_;
     // std::unique_ptr<DataInterface> m_dataInterface;
 
     std::shared_ptr<GenericZmqServer> zmq_comm_server_;
+    std::unique_ptr<GenericZmqClient> zmq_client_;
 
     std::unique_ptr<trading::intelligence::AdaptiveMarketIntelligence> adaptiveIntel_;
     std::mutex intelligenceMutex_;

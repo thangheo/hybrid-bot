@@ -14,9 +14,10 @@
 #include "data_ingestion/orderbook/order_book_types.hpp"
 #include "communication/zmq_server.hpp"
 #include "communication/zmq_config.hpp"
+
 // Forward declaration for nlohmann::json
 // using ZmqServerConfig = trading::common::ZmqServerConfig;
-
+using namespace trading::communication;
 // Forward declaration for nlohmann::json
 namespace nlohmann {
     // class basic_json;

@@ -136,6 +136,10 @@ public:
     // createDataInterface(m_config) header
     static std::shared_ptr<DataInterface> createDataInterface(const RiskConfig& config);
 
+    // function to set zmqClient_
+    void setZmqClient(std::unique_ptr<trading::communication::GenericZmqClient> zmqClient){
+        zmqClient_ = std::move(zmqClient);
+    };
 
 private:
     VolatilityCalculator volatilityCalculator_;

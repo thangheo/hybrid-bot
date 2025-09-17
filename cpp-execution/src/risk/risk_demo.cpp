@@ -61,9 +61,13 @@ public:
             std::shared_ptr<FillReconciliation>(),
             std::shared_ptr<ApiClientManager>()
         );
-
+        marketDataInterface_ = std::make_shared<MarketDataInterface>(config_);
+        if (!marketDataInterface_->initialize()) {
+            std::cerr << "Failed to initialize MarketDataInterface" << std::endl;
+            return false;
+        }
         // riskManager_ = std::make_unique<RiskManager>(executionService_, config_); //avoid compiler error
-        riskManager_ = RiskManager::create(executionService_, config_);
+        riskManager_ = RiskManager::create(executionService_, config_, marketDataInterface_);
         if (!riskManager_) {
             std::cerr << "Failed to create risk manager" << std::endl;
             return false;
@@ -103,7 +107,8 @@ private:
     RiskConfig config_;
     std::atomic<bool> running_;
     std::mt19937 gen_;
-    
+    // marketDataInterface_ 
+    std::shared_ptr<MarketDataInterface> marketDataInterface_;
     // Test counters
     std::atomic<int> signalsProcessed_{0};
     std::atomic<int> signalsApproved_{0};

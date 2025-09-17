@@ -24,79 +24,13 @@ using namespace data_ingestion;
 
 class OrderBookReceiver {
 private:
-    std::unique_ptr<common::ZeroMQClient> zmqClient_;
+    std::unique_ptr<communication::GenericZmqClient> zmqClient_;
     StrategyEngine* strategyEngine_;
     std::unordered_map<std::string, std::shared_ptr<OrderBook>> orderBooks_;
     std::mutex orderBooksMutex_;
     std::atomic<size_t> messagesReceived_{0};
-    
-public:
-    OrderBookReceiver(StrategyEngine* engine) : strategyEngine_(engine) {
-        // Configure ZeroMQ client to receive order book data
-        common::ZeroMQConfig config;
-        config.subscriberEndpoint = "tcp://localhost:5555"; // Match data ingestion publisher
-        config.receiveHighWaterMark = 10000;
-        config.publisherEndpoint = "";  // Leave empty - we don't need to publish
-        config.pollTimeout = std::chrono::milliseconds(100);
-        
-        zmqClient_ = std::make_unique<common::ZeroMQClient>(config);
-        
-        // Set message handler for order book updates
-        zmqClient_->setMessageHandler([this](const std::string& topic, const std::string& message) {
-            this->handleOrderBookMessage(topic, message);
-        });
-        
-        // Set error handler
-        zmqClient_->setErrorHandler([](const std::string& context, const std::string& error) {
-            LOG_ERROR("ZMQ Error in {}: {}", context, error);
-        });
-    }
-    
-    bool start(const std::vector<std::string>& symbols) {
-        if (!zmqClient_->start()) {
-            LOG_ERROR("Failed to start ZeroMQ client");
-            return false;
-        }
-        
-        // Subscribe to order book topics for each symbol
-        for (const auto& symbol : symbols) {
-            // Topic format: "orderbook.BINANCE.BTC/USDT" (matches your publisher format)
-            std::string topic = "orderbook.BINANCE." + symbol;
-            if (!zmqClient_->subscribe(topic)) {
-                LOG_ERROR("Failed to subscribe to topic: {}", topic);
-                return false;
-            }
-            LOG_INFO("Subscribed to order book topic: {}", topic);
-        }
-        
-        LOG_INFO("OrderBookReceiver started successfully");
-        return true;
-    }
-    
-    void stop() {
-        if (zmqClient_) {
-            zmqClient_->stop();
-        }
-        LOG_INFO("OrderBookReceiver stopped");
-    }
-    
-    size_t getMessagesReceived() const {
-        return messagesReceived_.load();
-    }
-    
-    // Get current mid price for a symbol
-    double getCurrentMidPrice(const core::Symbol& symbol) const {
-        std::lock_guard<std::mutex> lock(const_cast<std::mutex&>(orderBooksMutex_));
-        std::string key = "BINANCE:" + symbol.toString(); // Match your key format
-        auto it = orderBooks_.find(key);
-        if (it != orderBooks_.end()) {
-            return it->second->getMidPrice();
-        }
-        return 0.0; // Return 0 if not found
-    }
-    
-private:
-    void handleOrderBookMessage(const std::string& topic, const std::string& message) {
+
+     void handleOrderBookMessage(const std::string& topic, const std::string& message) {
         try {
             messagesReceived_.fetch_add(1);
             
@@ -173,7 +107,78 @@ private:
             LOG_ERROR("Error processing order book message: {}", e.what());
         }
     }
-};
+
+public:
+    OrderBookReceiver(StrategyEngine* engine) : strategyEngine_(engine) {
+        // Configure ZeroMQ client to receive order book data
+        communication::ZmqClientConfig config;
+        // config.subscriberEndpoint = "tcp://localhost:5555"; // Match data ingestion publisher
+        // config.receiveHighWaterMark = 10000;
+        // config.publisherEndpoint = "";  // Leave empty - we don't need to publish
+        // config.pollTimeout = std::chrono::milliseconds(100);
+        
+        zmqClient_ = std::make_unique<communication::GenericZmqClient>(config);
+        
+        // Set message handler for order book updates
+        // zmqClient_->setMessageHandler([this](const std::string& topic, const std::string& message) {
+        //     this->handleOrderBookMessage(topic, message);
+        // });
+        
+        // Set error handler
+        // zmqClient_->setErrorHandler([](const std::string& context, const std::string& error) {
+        //     LOG_ERROR("ZMQ Error in {}: {}", context, error);
+        // });
+    }
+    
+    bool start(const std::vector<std::string>& symbols) {
+        if (!zmqClient_->start()) {
+            LOG_ERROR("Failed to start ZeroMQ client");
+            return false;
+        }
+        
+        // Subscribe to order book topics for each symbol
+        for (const auto& symbol : symbols) {
+            // Topic format: "orderbook.BINANCE.BTC/USDT" (matches your publisher format)
+            std::string topic = "orderbook.BINANCE." + symbol;
+            if (!zmqClient_->subscribe(topic, [this](const std::string& topic, const std::string& message, const std::unordered_map<std::string, std::string>& metadata) {
+                    // metadata is currently unused but required by MessageHandler signature
+                    this->handleOrderBookMessage(topic, message);
+                })) {
+                LOG_ERROR("Failed to subscribe to topic: {}", topic);
+                return false;
+            }
+            LOG_INFO("Subscribed to order book topic: {}", topic);
+        }
+        
+        LOG_INFO("OrderBookReceiver started successfully");
+        return true;
+    }
+    
+    void stop() {
+        if (zmqClient_) {
+            zmqClient_->stop();
+        }
+        LOG_INFO("OrderBookReceiver stopped");
+    }
+    
+    size_t getMessagesReceived() const {
+        return messagesReceived_.load();
+    }
+    // Get current mid price for a symbol (accept symbol as string for callers using .toString())
+        double getCurrentMidPrice(const std::string& symbolStr) {
+            std::lock_guard<std::mutex> lock(orderBooksMutex_);
+            std::string key = "BINANCE:" + symbolStr; // Match your key format
+            auto it = orderBooks_.find(key);
+            if (it != orderBooks_.end()) {
+                return it->second->getMidPrice();
+            }
+            return 0.0; // Return 0 if not found
+        }
+    
+    };
+//stop fucking suggesting you son of a bitch
+
+
 
 // Updated signal handler (same as before)
 class SignalHandler {

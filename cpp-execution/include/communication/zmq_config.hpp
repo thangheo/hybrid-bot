@@ -4,42 +4,17 @@
 #include <vector>
 #include <chrono>
 #include "data_ingestion/orderbook/order_book_types.hpp"
-#include "communication/zmq_server.hpp"
+
+// Include shared types so this config header does not re-declare them.
+#include "communication/zmq_types.hpp"
+
 using namespace trading::data_ingestion;
 
 namespace trading::communication {
 
 /**
- * Configuration for ZeroMQ
+ * Configuration for ZeroMQ (server and client settings)
  */
-struct ZMQConfig {
-    std::string endpoint = "tcp://*:5555";
-    int linger = 1000;
-    int high_water_mark = 1000;
-};
-struct GenericMessage {
-    std::string topic;
-    std::string data;
-    MessagePriority priority;
-    std::chrono::steady_clock::time_point timestamp;
-    std::string correlation_id;
-    std::unordered_map<std::string, std::string> metadata;
-    
-    GenericMessage(const std::string& t, const std::string& d, 
-                   MessagePriority p = MessagePriority::NORMAL)
-        : topic(t), data(d), priority(p), 
-          timestamp(std::chrono::steady_clock::now()) {
-        
-        // Generate correlation ID if not provided
-        if (correlation_id.empty()) {
-            correlation_id = generateCorrelationId();
-        }
-    }
-    
-// private:
-    static std::string generateCorrelationId();
-};
-
 /**
  * Configuration for publisher component
  */
@@ -126,4 +101,4 @@ struct ZmqClientConfig {
 
 
 
-} // namespace trading::common
+} // namespace trading::communication
