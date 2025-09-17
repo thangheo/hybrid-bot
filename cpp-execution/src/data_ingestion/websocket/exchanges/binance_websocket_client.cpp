@@ -374,7 +374,7 @@ void BinanceWebSocketClient::initializeSslContext() {
     
     // Set hostname verification for security
         // Use weak_ptr capture to avoid extending this object's lifetime via the callback
-        if (auto self = shared_from_this()) {
+        if (auto self = this->shared_from_this()) {
             std::weak_ptr<BinanceWebSocketClient> wp = self;
             ssl_ctx_->set_verify_callback([wp](bool preverified, ssl::verify_context& ctx) {
                 if (auto s = wp.lock()) {
@@ -466,7 +466,7 @@ void BinanceWebSocketClient::startRead() {
     LOG_DEBUG("startRead called, scheduling async_read");
 
     {
-        std::weak_ptr<BinanceWebSocketClient> wp = shared_from_this();
+            std::weak_ptr<BinanceWebSocketClient> wp = this->shared_from_this();
         ws_->async_read(*buffer_, [wp](beast::error_code ec, std::size_t bytes_transferred) {
             if (auto s = wp.lock()) {
                 LOG_DEBUG("async_read callback fired, bytes_transferred=" + std::to_string(bytes_transferred));
@@ -653,7 +653,7 @@ void BinanceWebSocketClient::startHeartbeat() {
     
     heartbeat_timer_->expires_after(heartbeat_interval_);
     {
-        std::weak_ptr<BinanceWebSocketClient> wp = shared_from_this();
+    std::weak_ptr<BinanceWebSocketClient> wp = this->shared_from_this();
         heartbeat_timer_->async_wait([wp](const boost::system::error_code& ec) {
             if (auto s = wp.lock()) {
                 s->handleHeartbeatTimer(ec);
@@ -697,7 +697,7 @@ void BinanceWebSocketClient::sendPing() {
         // Set timeout for pong response
         heartbeat_timer_->expires_after(heartbeat_timeout_);
         {
-            std::weak_ptr<BinanceWebSocketClient> wp = shared_from_this();
+            std::weak_ptr<BinanceWebSocketClient> wp = this->shared_from_this();
             heartbeat_timer_->async_wait([wp](const boost::system::error_code& ec) {
                 if (auto s = wp.lock()) {
                     if (!ec && s->waiting_for_pong_.load()) {
@@ -781,7 +781,7 @@ void BinanceWebSocketClient::scheduleReconnect() {
     
         if (reconnect_timer_) {
         reconnect_timer_->expires_after(delay);
-        std::weak_ptr<BinanceWebSocketClient> wp = shared_from_this();
+    std::weak_ptr<BinanceWebSocketClient> wp = this->shared_from_this();
         reconnect_timer_->async_wait([wp](const boost::system::error_code& ec) {
             if (auto s = wp.lock()) {
                 s->handleReconnectTimer(ec);
