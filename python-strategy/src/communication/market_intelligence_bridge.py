@@ -239,10 +239,10 @@ class MarketIntelligenceBridge:
                     now = time.time()
                     if (self.stats['messages_received'] % self.gc_collect_every_n_messages) == 0 or (now - self.gc_last_run) >= self.gc_interval_seconds:
                         before = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-                        logger.info(f"MarketIntelligenceBridge: running gc.collect() (before={before} KB)")
-                        collected = gc.collect()
-                        after = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-                        logger.info(f"MarketIntelligenceBridge: gc.collect() returned {collected}, memory after={after} KB")
+                        # logger.info(f"MarketIntelligenceBridge: running gc.collect() (before={before} KB)")
+                        # collected = gc.collect()
+                        # after = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+                        # logger.info(f"MarketIntelligenceBridge: gc.collect() returned {collected}, memory after={after} KB")
                         self.gc_last_run = now
                         if self.enable_tracemalloc:
                             try:

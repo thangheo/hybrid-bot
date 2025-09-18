@@ -283,6 +283,9 @@ public:
                 std::cerr << "Failed to start strategy engine" << std::endl;
                 return false;
             }
+
+            // Start signal worker pool
+            startSignalWorkerPool();
             
             // 3. Start PTCA manager
             ptcaManager_->start();        
@@ -343,6 +346,7 @@ public:
 
             // Stop worker pool
             stopOrderbookWorkerPool();
+            stopSignalWorkerPool();
             
             // Stop other services
             if (strategyEngine_) {
@@ -577,7 +581,7 @@ public:
             static std::atomic<int> publishCount{0};
             int count = publishCount.fetch_add(1);
             
-            if (count < 5 || count % 100 == 0) {
+            if (count < 5 || count % 5000== 0) {
                 std::cout << "📊 Publishing orderbook #" << count 
                           << " for " << update.exchangeId.toString() 
                           << ":" << update.tradingPair.toString() << std::endl;
@@ -598,7 +602,7 @@ public:
             //     update.tradingPair.toString(), 
             //     jsonStr
             // );
-             zmq_comm_server_->publishAsync("orderbook_data", jsonStr, MessagePriority::HIGH, "123123");
+             zmq_comm_server_->publishAsync("orderbook_data", jsonStr, MessagePriority::HIGH);
             orderBookUpdatesReceived_.fetch_add(1);
         } catch (const std::exception& e) {
             std::cerr << "Error publishing orderbook for risk: " << e.what() << std::endl;
@@ -649,6 +653,16 @@ private:
     size_t orderbookQueueLimit_ = 20000; // hard cap
     size_t orderbookBatchSize_ = 20; // number of updates per batch
     size_t orderbookWorkerCount_ = 2; // start with 2 workers (tune for VPS)
+
+    // Signal processing queue and worker pool
+    std::deque<strategy::TradingSignal> signalQueue_;
+    std::mutex signalQueueMutex_;
+    std::condition_variable signalQueueCv_;
+    std::vector<std::thread> signalWorkers_;
+    std::atomic<bool> signalWorkersRunning_{false};
+    size_t signalQueueLimit_ = 10000; // cap signals
+    size_t signalBatchSize_ = 16; // number of signals per batch
+    size_t signalWorkerCount_ = 2; // number of workers for signals
 
     //market intel
     std::atomic<uint64_t> messagesProcessed_{0};
@@ -1032,6 +1046,104 @@ private:
             }
         }
     }
+    // Signal worker pool control
+    void startSignalWorkerPool() {
+        if (signalWorkersRunning_.exchange(true)) return;
+        signalWorkers_.clear();
+        for (size_t i = 0; i < signalWorkerCount_; ++i) {
+            signalWorkers_.emplace_back([this, i]() {
+                this->signalWorkerLoop(i);
+            });
+        }
+        std::cout << "Started " << signalWorkers_.size() << " signal worker(s)" << std::endl;
+    }
+
+    void stopSignalWorkerPool() {
+        if (!signalWorkersRunning_.exchange(false)) return;
+        signalQueueCv_.notify_all();
+        for (auto &t : signalWorkers_) if (t.joinable()) t.join();
+        signalWorkers_.clear();
+        {
+            std::lock_guard<std::mutex> lk(signalQueueMutex_);
+            signalQueue_.clear();
+        }
+        std::cout << "Signal worker pool stopped" << std::endl;
+    }
+
+    void signalWorkerLoop(size_t workerId) {
+        std::vector<strategy::TradingSignal> batch;
+        batch.reserve(signalBatchSize_);
+        while (signalWorkersRunning_.load()) {
+            std::unique_lock<std::mutex> lk(signalQueueMutex_);
+            signalQueueCv_.wait_for(lk, std::chrono::milliseconds(200), [this]() {
+                return !signalQueue_.empty() || !signalWorkersRunning_.load();
+            });
+            if (!signalWorkersRunning_.load() && signalQueue_.empty()) break;
+            batch.clear();
+            for (size_t i = 0; i < signalBatchSize_ && !signalQueue_.empty(); ++i) {
+                batch.push_back(std::move(signalQueue_.front()));
+                signalQueue_.pop_front();
+            }
+            lk.unlock();
+            if (batch.empty()) continue;
+
+            for (auto &signal : batch) {
+                try {
+                    // PTCA registration (was done before)
+                    ptcaManager_->registerSignal(signal);
+                    double ptcaRecommendation = ptcaManager_->getSignalRecommendation(signal);
+                    double adjustedStrength = signal.strength;
+                    if (ptcaRecommendation > 0.2) {
+                        adjustedStrength = std::min(1.0, signal.strength * (1.0 + ptcaRecommendation * 0.3));
+                    } else if (ptcaRecommendation < -0.1) {
+                        adjustedStrength = signal.strength * (1.0 + ptcaRecommendation * 0.2);
+                    }
+
+                    // convert and validate
+                    execution::TradingSignal execSignal;
+                    execSignal.id = signal.id;
+                    execSignal.symbol = signal.symbol;
+                    execSignal.direction = signal.direction;
+                    execSignal.strength = adjustedStrength;
+                    execSignal.targetSize = signal.targetSize;
+                    execSignal.strategyId = signal.strategyId;
+                    execSignal.confidence = signal.confidence;
+                    execSignal.quality = signal.quality;
+                    execSignal.expirationTime = signal.expirationTime;
+                    execSignal.targets = signal.targets;
+                    execSignal.exchangeId = signal.exchangeId;
+
+                    // Basic filtering
+                    if (execSignal.direction == core::Direction::BUY) {
+                        if (execSignal.strength < 0.5) continue;
+                        if (execSignal.confidence < 0.6) continue;
+                    } else if (execSignal.direction == core::Direction::SELL) {
+                        if (execSignal.strength < 0.3) continue;
+                        if (execSignal.confidence < 0.6) continue;
+                    }
+
+                    int targetPass = 0;
+                    double percentage_change_threshold = 0.002;
+                    for (const auto &t : execSignal.targets) if (t.percentage > percentage_change_threshold) ++targetPass;
+                    if (targetPass == 0) continue;
+
+                    // Validate with risk manager
+                    if (riskManager_) {
+                        auto validationResult = riskManager_->validateSignal(execSignal);
+                        signalsValidated_++;
+                        if (validationResult.approved) {
+                            signalsApproved_++;
+                            realExecution(execSignal);
+                        } else {
+                            signalsRejected_++;
+                        }
+                    }
+                } catch (const std::exception &e) {
+                    std::cerr << "Signal worker " << workerId << " error: " << e.what() << std::endl;
+                }
+            }
+        }
+    }
     void setupComponentConnections() {        
         // Minimal callback: validate & enqueue update to worker queue
         dataIngestionService_->setOrderBookCallback([this](const auto& update) {
@@ -1054,107 +1166,18 @@ private:
             
        
             // 2. Connect strategy engine to risk manager
+        // Enqueue signals into bounded queue; processing done by worker pool
         strategyEngine_->registerSignalCallback([this](const strategy::TradingSignal& signal) {
+            // quick enqueue
             signalsGenerated_++;
-            ptcaManager_->registerSignal(signal);
-            //print signal details
-            double ptcaRecommendation = ptcaManager_->getSignalRecommendation(signal);
-            // std::cout << "🪧 Strategy Signal: " << signal.id 
-            //           << " Symbol: " << signal.symbol.toString()
-            //           << " Direction: " << (signal.direction == core::Direction::BUY ? "BUY" : 
-            //                                 signal.direction == core::Direction::SELL ? "SELL" : "NEUTRAL")
-            //           << " Strength: " << signal.strength
-            //           << " Confidence: " << signal.confidence
-            //           << " Quality: " << signal.quality
-            //           << " Target Size: " << signal.targetSize
-            //           << " Expiration: " << signal.expirationTime
-            //           << " PTCA Rec: " << ptcaRecommendation
-            //           << std::endl;
-            //  PTCA: Optionally, adjust signal strength based on PTCA confidence
-            double adjustedStrength = signal.strength;
-            if (ptcaRecommendation > 0.2) {
-                // Boost signals that PTCA likes
-                adjustedStrength = std::min(1.0, signal.strength * (1.0 + ptcaRecommendation * 0.3));
-                std::cout << "PTCA Boost: Signal " << signal.id 
-                        << " strength boosted from " << signal.strength 
-                        << " to " << adjustedStrength << std::endl;
-            } else if (ptcaRecommendation < -0.1) {
-                // Reduce strength for signals PTCA is uncertain about
-                adjustedStrength = signal.strength * (1.0 + ptcaRecommendation * 0.2);
-                std::cout << "PTCA Caution: Signal " << signal.id 
-                        << " strength reduced from " << signal.strength 
-                        << " to " << adjustedStrength << std::endl;
+            std::unique_lock<std::mutex> lk(signalQueueMutex_);
+            if (signalQueue_.size() >= signalQueueLimit_) {
+                // drop oldest to make room
+                signalQueue_.pop_front();
             }
-            // Convert strategy signal to execution signal for risk validation
-            execution::TradingSignal execSignal;
-            execSignal.id = signal.id;
-            execSignal.symbol = signal.symbol;
-            execSignal.direction = signal.direction;
-            execSignal.strength = signal.strength;
-            execSignal.targetSize = signal.targetSize;
-            execSignal.strategyId = signal.strategyId;
-            //get mid price from order book
-          
-            execSignal.confidence = signal.confidence;
-            execSignal.quality = signal.quality;
-            execSignal.expirationTime = signal.expirationTime;
-            execSignal.targets = signal.targets;
-            execSignal.exchangeId = signal.exchangeId;
-            
-            // Basic filtering
-                    //create a asymmetric filter for buy and sell signals
-            if (execSignal.direction == core::Direction::BUY) {
-                if (execSignal.strength < 0.5) return;     // 30% threshold
-                if (execSignal.confidence < 0.6) return;  // 30% threshold  
-                // if (execSignal.quality < 0.44) return;     // 30% threshold
-            } else if (execSignal.direction == core::Direction::SELL) {
-                if (execSignal.strength < 0.3) return;    // 20% threshold
-                if (execSignal.confidence < 0.6) return;  // 20% threshold
-                // if (execSignal.quality < 0.3) return;     // 20% threshold
-            }
-            
-            double percentage_change_threshold = 0.002; // 0.2%
-            int targetPass = 0;
-            //     bool allTargetsTooClose = true;
-            for (const auto& target : execSignal.targets) {
-                // std::cout << "  - Target Price: " << target.price 
-                //           << " | Percentage Change: " << target.percentage * 100 << "%"
-                //           << std::endl;
-                //check for percentage of long and short targets
-                if (target.percentage > percentage_change_threshold) {
-                    targetPass++;
-                }                
-            }
-            if (targetPass == 0) return; // Ignore signals with all targets too close
-            else{
-                std::cout << "Generated Signal: " << execSignal.id 
-                          << " Symbol: " << execSignal.symbol.toString()
-                          << " Direction: " << (execSignal.direction == core::Direction::BUY ? "BUY" : 
-                                              execSignal.direction == core::Direction::SELL ? "SELL" : "NEUTRAL")
-                          << " Strength: " << execSignal.strength
-                          << " Confidence: " << execSignal.confidence
-                          << " Quality: " << execSignal.quality
-                          << " Target Size: " << execSignal.targetSize
-                          << " Expiration: " << execSignal.expirationTime
-                          << " Valid Targets: " << targetPass
-                          << std::endl;
-            }
-            // Validate with risk manager
-            if (riskManager_) {
-                auto validationResult = riskManager_->validateSignal(execSignal);
-                signalsValidated_++;
-                
-                if (validationResult.approved) {
-                    signalsApproved_++;
-                    std::cout << "✅ Signal " << execSignal.id << " approved for execution" << std::endl;
-
-                    // Here we would normally send to execution engine
-                    realExecution(execSignal);
-                } else {
-                    signalsRejected_++;
-                    std::cout << "❌ Signal " << execSignal.id << " rejected by risk management" << std::endl;
-                }
-            }
+            signalQueue_.push_back(signal);
+            lk.unlock();
+            signalQueueCv_.notify_one();
         });
         
         // 3. Connect risk manager events
@@ -1246,11 +1269,9 @@ int main(int argc, char* argv[]) {
         if (!demoInstance->start()) {
             std::cerr << "Failed to start trading system" << std::endl;
             return 1;
-        }
-        
+        }        
         // Run demo
         demoInstance->runIndefinitely();
-
         // Cleanup
         demoInstance->shutdown();
         demoInstance.reset();

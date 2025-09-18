@@ -408,7 +408,7 @@ int main() {
         // Define symbols to monitor// just hardcode list above for now
         std::vector<std::string> pairs = {
             "BTCUSDT", "ETHUSDT", "BNBUSDT", "XRPUSDT", "SOLUSDT", "ADAUSDT", "AVAXUSDT", "DOGEUSDT", "DOTUSDT", "MATICUSDT",
-            "LINKUSDT", "UNIUSDT", "AAVEUSDT", "MKRUSDT", "CRVUSDT", "COMPUSDT", "SUSHIUSDT", "ARBUSDT", "OPUSDT",
+            "LINKUSDT", "UNIUSDT", "AAVEUSDT", "COMPUSDT", "SUSHIUSDT", "ARBUSDT", "OPUSDT",
             "RENDERUSDT", "FETUSDT", "OCEANUSDT", "AGIXUSDT", "INJUSDT", "NEARUSDT",
             "ONDOUSDT", "HBARUSDT", "PAXGUSDT",
             "MANAUSDT", "SANDUSDT", "GALAUSDT", "IMXUSDT", "AXSUSDT", "BEAMUSDT",

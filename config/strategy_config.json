@@ -76,12 +76,6 @@
       "description": "Aave - Lending protocol"
     },
     {
-      "symbol": "MKR/USDT",
-      "exchange": "BINANCE", 
-      "category": "defi",
-      "description": "MakerDAO - Decentralized stablecoin"
-    },
-    {
       "symbol": "ARB/USDT",
       "exchange": "BINANCE",
       "category": "layer2",
@@ -94,23 +88,11 @@
       "description": "Optimism - Ethereum Layer 2"
     },
     {
-      "symbol": "RENDER/USDT",
-      "exchange": "BINANCE",
-      "category": "ai_computing",
-      "description": "Render Network - GPU rendering"
-    },
-    {
       "symbol": "FET/USDT",
       "exchange": "BINANCE",
       "category": "ai",
       "description": "Fetch.ai - AI agent platform"
     },
-    {
-       "symbol": "OCEAN/USDT",
-       "exchange": "BINANCE",
-       "category": "ai",
-       "description": "Ocean Protocol - Data marketplace"
-     },
      {
        "symbol": "INJ/USDT",
        "exchange": "BINANCE",

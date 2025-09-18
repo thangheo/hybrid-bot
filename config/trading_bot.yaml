@@ -93,8 +93,6 @@ data_ingestion:
     - "LINKUSDT"   # Chainlink - Oracle infrastructure leader
     - "UNIUSDT"    # Uniswap - DEX pioneer
     - "AAVEUSDT"   # Aave - Lending protocol leader
-    - "MKRUSDT"    # MakerDAO - Decentralized stablecoin
-    - "CRVUSDT"    # Curve - Stablecoin trading specialist
     - "COMPUSDT"   # Compound - Interest rate protocol
     - "SUSHIUSDT"  # SushiSwap - Community-driven DEX
     - "ARBUSDT"    # Arbitrum - Ethereum Layer 2 scaling
