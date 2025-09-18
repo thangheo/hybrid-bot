@@ -66,6 +66,14 @@ private:
     std::unique_ptr<BinanceAdapter> adapter_;
     ReaderWriterQueue<RawMarketData> processingQueue_;
 
+    // Approximate size of the processing queue (maintained atomically by enqueue/dequeue sites)
+    std::atomic<size_t> processingQueueSize_{0};
+
+    // Memory-pressure protection: when RSS (KB) exceeds memoryLimitKB_, ExchangeManager
+    // will start shedding load (drop incoming messages and clear queue). 0 == disabled.
+    std::atomic<bool> memoryPressure_{false};
+    size_t memoryLimitKB_{0};
+
     std::thread processingThread_;
     RawDataCallback websocketCallback_;
 
@@ -110,6 +118,10 @@ private:
     //                     const std::vector<uint8_t>& data);
     
     void monitorConnections();
+    // Clear any queued items and update counters (best-effort, non-blocking)
+    void clearProcessingQueue();
+    // Configure memory limit in KB (0 disables the safeguard)
+    void setMemoryLimitKB(size_t kb) { memoryLimitKB_ = kb; }
     
     std::vector<std::string> createStreamNames(
         const std::vector<Symbol>& tradingPairs,

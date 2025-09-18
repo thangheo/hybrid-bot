@@ -153,8 +153,16 @@ bool ExchangeManager::initialize() {
 }
  
 void ExchangeManager::onWebSocketRawData(const RawMarketData& rawData) {
+    // If memory pressure is active, drop data early to avoid OOM
+    if (memoryPressure_.load()) {
+        std::cerr << "[ExchangeManager] memory pressure active, dropping incoming data\n";
+        return;
+    }
+
     if (!processingQueue_.enqueue(rawData)) {
         std::cerr << "Processing queue full, dropping data\n";
+    } else {
+        processingQueueSize_.fetch_add(1, std::memory_order_relaxed);
     }
 }
 // void ExchangeManager::onWebSocketData(const core::ExchangeId& exchange,
@@ -452,6 +460,8 @@ void ExchangeManager::processingWorker() {
     RawMarketData rawData;
     while (running_.load()) {
         if (processingQueue_.try_dequeue(rawData)) {
+            // Account for dequeue
+            processingQueueSize_.fetch_sub(1, std::memory_order_relaxed);
             try {
                 ++processed;
                 total_bytes += rawData.rawData.size();
@@ -464,9 +474,21 @@ void ExchangeManager::processingWorker() {
                 }      
                 // Periodic logging
                 if ((processed % 100) == 0) {
+                    size_t rss = getRSSKB();
                     std::cerr << "[ExchangeManager] processed=" << processed
                               << " total_bytes=" << total_bytes
-                              << " RSS_KB=" << getRSSKB() << '\n';
+                              << " RSS_KB=" << rss
+                              << " queue_items=" << processingQueueSize_.load() << '\n';
+
+                    // If user configured a memory limit, take protective action
+                    if (memoryLimitKB_ > 0 && rss > memoryLimitKB_) {
+                        std::cerr << "[ExchangeManager] RSS_KB=" << rss
+                                  << " exceeds limit=" << memoryLimitKB_
+                                  << ", entering memory pressure mode and clearing queue\n";
+                        memoryPressure_.store(true);
+                        // Best-effort clear of the queue to release memory
+                        clearProcessingQueue();
+                    }
                 }
             } catch (const std::exception& e) {
                 std::cerr << "Parse error: " << e.what() << '\n';
@@ -474,6 +496,27 @@ void ExchangeManager::processingWorker() {
         } else {
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
+    }
+}
+
+void ExchangeManager::clearProcessingQueue() {
+    RawMarketData tmp;
+    size_t removed = 0;
+    while (processingQueue_.try_dequeue(tmp)) {
+        ++removed;
+        processingQueueSize_.fetch_sub(1, std::memory_order_relaxed);
+    }
+    std::cerr << "[ExchangeManager] cleared processing queue, removed=" << removed << '\n';
+
+    // After clearing, attempt to release memory back to OS by hinting to allocator.
+    // This is platform and allocator dependent; we at least pause briefly to allow
+    // background threads or OS to reclaim.
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+    // If RSS has fallen below limit, resume normal operation.
+    if (memoryLimitKB_ > 0 && getRSSKB() < memoryLimitKB_) {
+        memoryPressure_.store(false);
+        std::cerr << "[ExchangeManager] memory pressure cleared, resuming normal processing\n";
     }
 }
 

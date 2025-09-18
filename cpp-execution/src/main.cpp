@@ -488,7 +488,7 @@ public:
             // Debug output for intelligence generations
             intelDebugCounts[tradingPair]++;
             
-            if (intelDebugCounts[tradingPair] <= 3 || intelDebugCounts[tradingPair] % 50 == 0) {
+            if (intelDebugCounts[tradingPair] <= 3 || intelDebugCounts[tradingPair] % 500 == 0) {
                 std::cout << "🧠 Generated intelligence #" << intelDebugCounts[tradingPair] 
                           << " for " << tradingPair << " (spread: " << intel.bid_ask_spread() 
                           << ", imbalance: " << intel.order_book_imbalance() << ")" << std::endl;
@@ -1030,7 +1030,7 @@ private:
             ptcaManager_->registerSignal(signal);
             //print signal details
             // std::cout << "PTCA tracking signals: " << ptcaManager_->getStats().currentlyTrackedSignals << std::endl;
-            double ptcaRecommendation = ptcaManager_->getSignalRecommendation(signal);
+            // double ptcaRecommendation = ptcaManager_->getSignalRecommendation(signal);
             // std::cout << "🪧 Strategy Signal: " << signal.id 
             //           << " Symbol: " << signal.symbol.toString()
             //           << " Direction: " << (signal.direction == core::Direction::BUY ? "BUY" : 
@@ -1043,20 +1043,20 @@ private:
             //           << " PTCA Rec: " << ptcaRecommendation
             //           << std::endl;
              // PTCA: Optionally, adjust signal strength based on PTCA confidence
-            double adjustedStrength = signal.strength;
-            if (ptcaRecommendation > 0.2) {
-                // Boost signals that PTCA likes
-                adjustedStrength = std::min(1.0, signal.strength * (1.0 + ptcaRecommendation * 0.3));
-                std::cout << "PTCA Boost: Signal " << signal.id 
-                        << " strength boosted from " << signal.strength 
-                        << " to " << adjustedStrength << std::endl;
-            } else if (ptcaRecommendation < -0.1) {
-                // Reduce strength for signals PTCA is uncertain about
-                adjustedStrength = signal.strength * (1.0 + ptcaRecommendation * 0.2);
-                std::cout << "PTCA Caution: Signal " << signal.id 
-                        << " strength reduced from " << signal.strength 
-                        << " to " << adjustedStrength << std::endl;
-            }
+            // double adjustedStrength = signal.strength;
+            // if (ptcaRecommendation > 0.2) {
+            //     // Boost signals that PTCA likes
+            //     adjustedStrength = std::min(1.0, signal.strength * (1.0 + ptcaRecommendation * 0.3));
+            //     std::cout << "PTCA Boost: Signal " << signal.id 
+            //             << " strength boosted from " << signal.strength 
+            //             << " to " << adjustedStrength << std::endl;
+            // } else if (ptcaRecommendation < -0.1) {
+            //     // Reduce strength for signals PTCA is uncertain about
+            //     adjustedStrength = signal.strength * (1.0 + ptcaRecommendation * 0.2);
+            //     std::cout << "PTCA Caution: Signal " << signal.id 
+            //             << " strength reduced from " << signal.strength 
+            //             << " to " << adjustedStrength << std::endl;
+            // }
             // Convert strategy signal to execution signal for risk validation
             execution::TradingSignal execSignal;
             execSignal.id = signal.id;
