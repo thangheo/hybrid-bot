@@ -611,11 +611,7 @@ void GenericZmqServer::publisherWorker() {
             while (!message_queue_.empty()) {
                 GenericMessage message = std::move(message_queue_.front());
                 message_queue_.pop();
-                // Diagnostic: about to process a message
-                try {
-                    logInfo(std::string("Diagnostic: About to process message for topic: ") + message.topic + " (remaining_queue=" + std::to_string(message_queue_.size()) + ")");
-                } catch(...) {}
-
+                
                 lock.unlock();
 
                 bool ok = false;

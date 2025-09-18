@@ -290,7 +290,7 @@ private:
     // =============================================================================
     mutable std::mutex error_mutex_;
     std::string last_error_;
-    std::atomic<bool> logging_enabled_{true};
+    std::atomic<bool> logging_enabled_{false};
     
     // =============================================================================
     // PRIVATE METHODS
