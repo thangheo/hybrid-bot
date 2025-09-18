@@ -997,23 +997,6 @@ private:
                 }
                 //already publish in data reconstructor on topic: orderbook.BINANCE.ADA/USDT with size: 1616
 
-                // // Publish orderbook for risk at most every 200ms per symbol when order book has valid data
-                // {
-                //     auto topBids = orderBook->getBids(1);
-                //     auto topAsks = orderBook->getAsks(1);
-                //     if (!topBids.empty() && !topAsks.empty()) {
-                //         if (now - lastOrderbookPub[symbolStr] >= std::chrono::milliseconds(200)) {
-                //             publishOrderBookForRisk(update);
-                //             lastOrderbookPub[symbolStr] = now;
-                //         }
-                //     }
-                // }
-            
-              
-                // NOTE: The DataIngestionService / OrderBookReconstructor already applied
-                // the snapshot/update before calling this callback. Do NOT re-apply it here
-                // (that would be a duplicate and can cause sequence/state inconsistencies).
-
                 // Strategy should work on the current orderBook state maintained by the reconstructor
                 if (strategyEngine_) {
                     // Process the order book update in the strategy engine (strategy may expect both snapshots and deltas)
@@ -1029,8 +1012,7 @@ private:
             signalsGenerated_++;
             ptcaManager_->registerSignal(signal);
             //print signal details
-            // std::cout << "PTCA tracking signals: " << ptcaManager_->getStats().currentlyTrackedSignals << std::endl;
-            // double ptcaRecommendation = ptcaManager_->getSignalRecommendation(signal);
+            double ptcaRecommendation = ptcaManager_->getSignalRecommendation(signal);
             // std::cout << "🪧 Strategy Signal: " << signal.id 
             //           << " Symbol: " << signal.symbol.toString()
             //           << " Direction: " << (signal.direction == core::Direction::BUY ? "BUY" : 
@@ -1042,21 +1024,21 @@ private:
             //           << " Expiration: " << signal.expirationTime
             //           << " PTCA Rec: " << ptcaRecommendation
             //           << std::endl;
-             // PTCA: Optionally, adjust signal strength based on PTCA confidence
-            // double adjustedStrength = signal.strength;
-            // if (ptcaRecommendation > 0.2) {
-            //     // Boost signals that PTCA likes
-            //     adjustedStrength = std::min(1.0, signal.strength * (1.0 + ptcaRecommendation * 0.3));
-            //     std::cout << "PTCA Boost: Signal " << signal.id 
-            //             << " strength boosted from " << signal.strength 
-            //             << " to " << adjustedStrength << std::endl;
-            // } else if (ptcaRecommendation < -0.1) {
-            //     // Reduce strength for signals PTCA is uncertain about
-            //     adjustedStrength = signal.strength * (1.0 + ptcaRecommendation * 0.2);
-            //     std::cout << "PTCA Caution: Signal " << signal.id 
-            //             << " strength reduced from " << signal.strength 
-            //             << " to " << adjustedStrength << std::endl;
-            // }
+            //  PTCA: Optionally, adjust signal strength based on PTCA confidence
+            double adjustedStrength = signal.strength;
+            if (ptcaRecommendation > 0.2) {
+                // Boost signals that PTCA likes
+                adjustedStrength = std::min(1.0, signal.strength * (1.0 + ptcaRecommendation * 0.3));
+                std::cout << "PTCA Boost: Signal " << signal.id 
+                        << " strength boosted from " << signal.strength 
+                        << " to " << adjustedStrength << std::endl;
+            } else if (ptcaRecommendation < -0.1) {
+                // Reduce strength for signals PTCA is uncertain about
+                adjustedStrength = signal.strength * (1.0 + ptcaRecommendation * 0.2);
+                std::cout << "PTCA Caution: Signal " << signal.id 
+                        << " strength reduced from " << signal.strength 
+                        << " to " << adjustedStrength << std::endl;
+            }
             // Convert strategy signal to execution signal for risk validation
             execution::TradingSignal execSignal;
             execSignal.id = signal.id;
