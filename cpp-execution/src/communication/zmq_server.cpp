@@ -572,11 +572,7 @@ void GenericZmqServer::publisherWorker() {
     
     while (state_.load() == ServerState::RUNNING) {
         try {
-            std::unique_lock<std::mutex> lock(queue_mutex_);
-            // Diagnostic: about to wait for messages
-            try {
-                logInfo(std::string("Diagnostic: Publisher worker waiting (queue_size=") + std::to_string(message_queue_.size()) + ")");
-            } catch(...) {}
+            std::unique_lock<std::mutex> lock(queue_mutex_);           
 
             // Wait for messages or shutdown signal (timed wait to avoid missed notifications)
             queue_cv_.wait_for(lock, std::chrono::seconds(1), [this]() {
