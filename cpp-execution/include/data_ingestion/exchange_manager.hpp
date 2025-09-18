@@ -56,6 +56,9 @@ public:
     OrderBookUpdate getOrderBook(const core::Symbol& tradingPair, int32_t depth = 20) const;
     std::string getConnectionStats() const;
 
+    // Configure memory limit in KB (0 disables the safeguard)
+    void setMemoryLimitKB(size_t kb) { memoryLimitKB_ = kb; }
+
     // Thêm methods
     void onWebSocketRawData(const RawMarketData& rawData);
     void processingWorker();    
@@ -120,8 +123,6 @@ private:
     void monitorConnections();
     // Clear any queued items and update counters (best-effort, non-blocking)
     void clearProcessingQueue();
-    // Configure memory limit in KB (0 disables the safeguard)
-    void setMemoryLimitKB(size_t kb) { memoryLimitKB_ = kb; }
     
     std::vector<std::string> createStreamNames(
         const std::vector<Symbol>& tradingPairs,

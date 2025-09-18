@@ -11,7 +11,7 @@
         }
     },
     "order_book": {
-        "depth": 20,
+        "depth": 10,
         "snapshot_interval_ms": 30000
     },
     "publisher": {

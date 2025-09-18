@@ -89,7 +89,7 @@ int main() {
         }
         std::cout << std::endl;
         
-        if (!service->start(symbols)) {
+        if (!service->start(symbols,20)) {
             std::cerr << "Failed to start service" << std::endl;
             trading::common::EventBus::getInstance().stop();
             return 1;

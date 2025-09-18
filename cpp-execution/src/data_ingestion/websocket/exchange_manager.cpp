@@ -31,8 +31,8 @@ ExchangeManager::ExchangeManager(const core::ExchangeId& exchangeId,
     // Setup Binance rate limits
     if (rateLimitController_ && exchangeId == core::ExchangeId::binance()) {
         std::unordered_map<execution::ExchangeRequestType, execution::RateLimitRule> rules = {
-            {execution::ExchangeRequestType::CONNECTION, {5, std::chrono::seconds(1)}},
-            {execution::ExchangeRequestType::SUBSCRIPTION, {40, std::chrono::seconds(1)}}
+            {execution::ExchangeRequestType::CONNECTION, {3, std::chrono::seconds(1)}},
+            {execution::ExchangeRequestType::SUBSCRIPTION, {21, std::chrono::seconds(1)}}
         };
         rateLimitController_->setRateLimitRules(rules);
     }
@@ -417,12 +417,15 @@ std::vector<std::string> ExchangeManager::createStreamNames(
         for (const auto& type : dataTypes) {
             switch (type) {
                 case DataType::ORDER_BOOK:
+                    std::cout << "Creating ORDER_BOOK stream for depth: " << depth << std::endl;
                     if (depth <= 10) {
                         streams.push_back(formattedPair + "@depth10@100ms");
                     } else if (depth <= 20) {
                         streams.push_back(formattedPair + "@depth20@100ms");
                     } else {
-                        streams.push_back(formattedPair + "@depth@100ms");
+                        // streams.push_back(formattedPair + "@depth@100ms");
+                        streams.push_back(formattedPair + "@depth" + std::to_string(depth) + "@100ms");
+
                     }
                     streams.push_back(formattedPair + "@bookTicker");
                     break;

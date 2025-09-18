@@ -1,6 +1,7 @@
 // Fixed data_ingestion_service.cpp - Use direct subscription
 #include "data_ingestion/data_ingestion_service.hpp"
 #include "common/logger.hpp"
+#include <cstdlib>
 #include <iostream>
 #include <stdexcept>
 
@@ -77,8 +78,14 @@ bool DataIngestionService::initialize() {
     }
 }
 
-bool DataIngestionService::start(const std::vector<Symbol>& symbols) {
+bool DataIngestionService::start(const std::vector<Symbol>& symbols, int depth) {
     subscribedSymbols_ = symbols;  // Store for later use
+    //get depth from config
+    // int depth = config_->
+    int defaultDepth = 20;
+    if (depth <= 0) {
+        depth = defaultDepth;
+    }
     if (!initialized_.load()) {
         std::cerr << "Service not initialized" << std::endl;
         return false;
@@ -126,7 +133,7 @@ bool DataIngestionService::start(const std::vector<Symbol>& symbols) {
         }
         std::cout << "=====================================" << std::endl;
         
-        if (!exchangeManager_->subscribe(symbols, dataTypes, 20)) {
+        if (!exchangeManager_->subscribe(symbols, dataTypes, depth)) {
             std::cerr << "Failed to subscribe to symbols" << std::endl;
             return false;
         }
@@ -238,6 +245,29 @@ bool DataIngestionService::setupExchangeManager() {
             rateLimitController,
             exchangeCallback
         );
+        // Configure memory limit for ExchangeManager from config or environment
+        try {
+            // First try exchange-specific config additional_params
+            const auto& exchConf = config_->getExchangeConfig(core::ExchangeId::binance());
+            size_t memoryLimitKB = 0;
+            auto it = exchConf.additional_params.find("memory_limit_kb");
+            if (it != exchConf.additional_params.end()) {
+                try {
+                    memoryLimitKB = std::stoull(it->second);
+                    std::cout << "Found exchange-specific memory limit: " << memoryLimitKB << " KB\n";
+                } catch (...) {
+                    std::cerr << "Invalid exchange additional_params.memory_limit_kb; ignoring" << std::endl;
+                }
+            }
+            // Next try environment variable
+            // memoryLimitKB = 207200; // 300 MB hardcoded for now //disable hardcoded limit
+            if (memoryLimitKB > 0) {
+                exchangeManager_->setMemoryLimitKB(memoryLimitKB);
+                std::cout << "ExchangeManager memory limit set to " << memoryLimitKB << " KB\n";
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "Error reading memory limit config: " << e.what() << std::endl;
+        }
         
         std::cout << "Exchange manager setup completed" << std::endl;
         return true;
