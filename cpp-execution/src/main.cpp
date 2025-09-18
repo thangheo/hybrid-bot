@@ -19,6 +19,9 @@
 #include <fstream>
 #include <signal.h>
 #include <unordered_map>
+#include <deque>
+#include <condition_variable>
+#include <mutex>
 
 // Common includes
 #include "common/event_bus.hpp"
@@ -267,13 +270,13 @@ public:
             std::cout << std::endl;
             //order book depth from config
             int depth = 10;//strategyConfig_.orderBookDepth;
-            if (depth <= 0) {
-                depth = 20; // default depth
-            }
+           
             if (!dataIngestionService_->start(symbols, depth)) {
                 std::cerr << "Failed to start data ingestion service" << std::endl;
                 return false;
             }
+            // Start orderbook worker pool after data ingestion starts
+            startOrderbookWorkerPool();
             
             // 2. Start strategy engine
             if (!strategyEngine_->start()) {
@@ -337,6 +340,9 @@ public:
                 // Give WebSocket connections time to close gracefully
                 std::this_thread::sleep_for(std::chrono::milliseconds(1000));
             }
+
+            // Stop worker pool
+            stopOrderbookWorkerPool();
             
             // Stop other services
             if (strategyEngine_) {
@@ -634,6 +640,16 @@ public:
         }
     }
 private:
+    // Orderbook processing queue and worker pool
+    std::deque<OrderBookUpdate> orderbookQueue_;
+    std::mutex orderbookQueueMutex_;
+    std::condition_variable orderbookQueueCv_;
+    std::vector<std::thread> orderbookWorkers_;
+    std::atomic<bool> orderbookWorkersRunning_{false};
+    size_t orderbookQueueLimit_ = 20000; // hard cap
+    size_t orderbookBatchSize_ = 20; // number of updates per batch
+    size_t orderbookWorkerCount_ = 2; // start with 2 workers (tune for VPS)
+
     //market intel
     std::atomic<uint64_t> messagesProcessed_{0};
     std::atomic<uint64_t> intelligenceGenerated_{0};
@@ -940,74 +956,100 @@ private:
         }       
        
     }
-    void setupComponentConnections() {        
-        
-            // ✅ UNCOMMENT AND USE THIS:
-        dataIngestionService_->setOrderBookCallback([this](const auto& update) {
-            static std::atomic<int> callbackCount{0};
-            int count = callbackCount.fetch_add(1);
-            
-            if (count < 3 || count % 5000 == 0) {
-                std::cout << "📊 Order book callback #" << count 
-                          << " for " << update.tradingPair.toString() 
-                          << " (seq: " << update.sequenceNumber << ")" << std::endl;
+    // Orderbook worker pool control
+    void startOrderbookWorkerPool() {
+        if (orderbookWorkersRunning_.exchange(true)) return; // already running
+        orderbookWorkers_.clear();
+        for (size_t i = 0; i < orderbookWorkerCount_; ++i) {
+            orderbookWorkers_.emplace_back([this, i]() {
+                this->orderbookWorkerLoop(i);
+            });
+        }
+        std::cout << "Started " << orderbookWorkers_.size() << " orderbook worker(s)" << std::endl;
+    }
+
+    void stopOrderbookWorkerPool() {
+        if (!orderbookWorkersRunning_.exchange(false)) return; // already stopped
+        orderbookQueueCv_.notify_all();
+        for (auto &t : orderbookWorkers_) {
+            if (t.joinable()) t.join();
+        }
+        orderbookWorkers_.clear();
+        // clear queue to free memory
+        {
+            std::lock_guard<std::mutex> lk(orderbookQueueMutex_);
+            orderbookQueue_.clear();
+        }
+        std::cout << "Orderbook worker pool stopped" << std::endl;
+    }
+
+    void orderbookWorkerLoop(size_t workerId) {
+        std::vector<OrderBookUpdate> batch;
+        batch.reserve(orderbookBatchSize_);
+        while (orderbookWorkersRunning_.load()) {
+            // Wait for data
+            std::unique_lock<std::mutex> lk(orderbookQueueMutex_);
+            orderbookQueueCv_.wait_for(lk, std::chrono::milliseconds(200), [this]() {
+                return !orderbookQueue_.empty() || !orderbookWorkersRunning_.load();
+            });
+
+            if (!orderbookWorkersRunning_.load() && orderbookQueue_.empty()) break;
+
+            // Pop up to batchSize items
+            batch.clear();
+            for (size_t i = 0; i < orderbookBatchSize_ && !orderbookQueue_.empty(); ++i) {
+                batch.push_back(std::move(orderbookQueue_.front()));
+                orderbookQueue_.pop_front();
             }
-            
-            // DEFENSIVE FILTER: Only process configured symbols
-            std::string symbolStr = update.tradingPair.toString();
-            auto it = strategyConfig_.tradingPairs.find(symbolStr);
-            
-            if (it == strategyConfig_.tradingPairs.end()) {
-                if (count % 100 == 0) {
-                    LOG_WARN(std::format("FullSystemDemo", "Received update for unconfigured symbol: " + symbolStr + " - IGNORING"));
-                }
-                return;  // Skip this update
-            }
-            
-            // Extract price for PTCA
-            if (!update.bids.empty() && !update.asks.empty()) {
-                double midPrice = (update.bids[0].price + update.asks[0].price) / 2.0;
-                // Rate-limited PTCA update
-                static std::unordered_map<std::string, std::chrono::steady_clock::time_point> lastPtcaUpdate;
-                auto now = std::chrono::steady_clock::now();
-                std::string symbolStr = update.tradingPair.toString();
-                if (now - lastPtcaUpdate[symbolStr] >= std::chrono::seconds(1)) {
-                    onMarketPriceUpdate(update.tradingPair, midPrice);
-                    lastPtcaUpdate[symbolStr] = now;
-                }
-            }
-           
-            // Get the existing order book and send to strategy
-            auto orderBook = dataIngestionService_->getOrderBook(update.exchangeId, update.tradingPair);            
-            //generate market intelligence and publish orderbook for risk
-            if(orderBook) {
-                orderBookUpdatesReceived_++;
-                // Throttle generateMarketIntelligence and publishOrderBookForRisk per symbol
-                static std::unordered_map<std::string, std::chrono::steady_clock::time_point> lastIntelGen;
-                static std::unordered_map<std::string, std::chrono::steady_clock::time_point> lastOrderbookPub;
-                auto now = std::chrono::steady_clock::now();
-                std::string symbolStr = update.tradingPair.toString();
-                
-                // Generate market intelligence at most every 53ms per symbol when the order book has valid top-of-book
-                {
-                    auto topBids = orderBook->getBids(1);
-                    auto topAsks = orderBook->getAsks(1);
-                    if (!topBids.empty() && !topAsks.empty()) {
-                        if (now - lastIntelGen[symbolStr] >= std::chrono::milliseconds(53)) {
-                            generateMarketIntelligence(update, orderBook);
-                            lastIntelGen[symbolStr] = now;
+            lk.unlock();
+
+            if (batch.empty()) continue;
+
+            // Process batch
+            for (const auto &update : batch) {
+                try {
+                    // PTCA quick update
+                    if (!update.bids.empty() && !update.asks.empty()) {
+                        double midPrice = (update.bids[0].price + update.asks[0].price) / 2.0;
+                        onMarketPriceUpdate(update.tradingPair, midPrice);
+                    }
+
+                    auto orderBook = dataIngestionService_->getOrderBook(update.exchangeId, update.tradingPair);
+                    if (orderBook) {
+                        orderBookUpdatesReceived_++;
+                        // Generate intelligence (throttling inside function)
+                        generateMarketIntelligence(update, orderBook);
+                        // Publish orderbook for risk asynchronously
+                        publishOrderBookForRisk(update);
+                        // Send to strategy engine
+                        if (strategyEngine_) {
+                            strategyEngine_->processOrderBook(*orderBook);
                         }
                     }
-                }
-                //already publish in data reconstructor on topic: orderbook.BINANCE.ADA/USDT with size: 1616
-
-                // Strategy should work on the current orderBook state maintained by the reconstructor
-                if (strategyEngine_) {
-                    // Process the order book update in the strategy engine (strategy may expect both snapshots and deltas)
-                    strategyEngine_->processOrderBook(*orderBook);
+                } catch (const std::exception &e) {
+                    std::cerr << "Orderbook worker " << workerId << " error: " << e.what() << std::endl;
                 }
             }
-            
+        }
+    }
+    void setupComponentConnections() {        
+        // Minimal callback: validate & enqueue update to worker queue
+        dataIngestionService_->setOrderBookCallback([this](const auto& update) {
+            // Quick checks only - avoid heavy work here
+            std::string symbolStr = update.tradingPair.toString();
+            if (strategyConfig_.tradingPairs.find(symbolStr) == strategyConfig_.tradingPairs.end()) {
+                return; // ignore unconfigured symbols early
+            }
+
+            // Enqueue (bounded)
+            std::unique_lock<std::mutex> lk(orderbookQueueMutex_);
+            if (orderbookQueue_.size() >= orderbookQueueLimit_) {
+                // Drop oldest to make space (or simply drop this update)
+                orderbookQueue_.pop_front();
+            }
+            orderbookQueue_.push_back(update);
+            lk.unlock();
+            orderbookQueueCv_.notify_one();
         });
             
        
