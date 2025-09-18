@@ -458,43 +458,53 @@ size_t ExchangeManager::getRSSKB() {
 }
 
 void ExchangeManager::processingWorker() {
+    constexpr size_t batchSize = 100; // Can be made configurable
     size_t processed = 0;
     size_t total_bytes = 0;
-    RawMarketData rawData;
+    std::vector<RawMarketData> batch;
+    batch.reserve(batchSize);
     while (running_.load()) {
-        if (processingQueue_.try_dequeue(rawData)) {
-            // Account for dequeue
-            processingQueueSize_.fetch_sub(1, std::memory_order_relaxed);
-            try {
-                ++processed;
-                total_bytes += rawData.rawData.size();
-                // Parse/normalize using adapter (existing behavior)
-                OrderBookUpdate normalized = adapter_->parseOrderBookData(rawData);             
-                // Forward to normalizer
-                normalizer_->processOrderBookUpdate(normalized);       
-                if (normalizedCallback_){
-                    normalizedCallback_(normalized);
-                }      
-                // Periodic logging
-                if ((processed % 100) == 0) {
-                    size_t rss = getRSSKB();
-                    std::cerr << "[ExchangeManager] processed=" << processed
-                              << " total_bytes=" << total_bytes
-                              << " RSS_KB=" << rss
-                              << " queue_items=" << processingQueueSize_.load() << '\n';
-
-                    // If user configured a memory limit, take protective action
-                    if (memoryLimitKB_ > 0 && rss > memoryLimitKB_) {
-                        std::cerr << "[ExchangeManager] RSS_KB=" << rss
-                                  << " exceeds limit=" << memoryLimitKB_
-                                  << ", entering memory pressure mode and clearing queue\n";
-                        memoryPressure_.store(true);
-                        // Best-effort clear of the queue to release memory
-                        clearProcessingQueue();
+        batch.clear();
+        // Try to dequeue up to batchSize items
+        RawMarketData rawData;
+        size_t dequeued = 0;
+        while (dequeued < batchSize && processingQueue_.try_dequeue(rawData)) {
+            batch.push_back(std::move(rawData));
+            ++dequeued;
+        }
+        if (!batch.empty()) {
+            processingQueueSize_.fetch_sub(batch.size(), std::memory_order_relaxed);
+            for (const auto& item : batch) {
+                try {
+                    ++processed;
+                    total_bytes += item.rawData.size();
+                    // Parse/normalize using adapter (existing behavior)
+                    OrderBookUpdate normalized = adapter_->parseOrderBookData(item);
+                    // Forward to normalizer
+                    normalizer_->processOrderBookUpdate(normalized);
+                    if (normalizedCallback_) {
+                        normalizedCallback_(normalized);
                     }
+                } catch (const std::exception& e) {
+                    std::cerr << "Parse error: " << e.what() << '\n';
                 }
-            } catch (const std::exception& e) {
-                std::cerr << "Parse error: " << e.what() << '\n';
+            }
+            // Periodic logging (every 100*batchSize processed)
+            if ((processed % (batchSize * 1)) == 0) {
+                size_t rss = getRSSKB();
+                std::cerr << "[ExchangeManager] processed=" << processed
+                          << " total_bytes=" << total_bytes
+                          << " RSS_KB=" << rss
+                          << " queue_items=" << processingQueueSize_.load() << '\n';
+                // If user configured a memory limit, take protective action
+                if (memoryLimitKB_ > 0 && rss > memoryLimitKB_) {
+                    std::cerr << "[ExchangeManager] RSS_KB=" << rss
+                              << " exceeds limit=" << memoryLimitKB_
+                              << ", entering memory pressure mode and clearing queue\n";
+                    memoryPressure_.store(true);
+                    // Best-effort clear of the queue to release memory
+                    clearProcessingQueue();
+                }
             }
         } else {
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
