@@ -99,9 +99,7 @@ data_ingestion:
     - "OPUSDT"     # Optimism - Another major L2 solution
 
     # AI & Technology Innovators  
-    - "RENDERUSDT" # Render Network - GPU rendering for AI/metaverse
     - "FETUSDT"    # Fetch.ai - AI agent marketplace
-    - "OCEANUSDT"  # Ocean Protocol - Data marketplace
     - "AGIXUSDT"   # SingularityNET - AI services platform
     - "INJUSDT"    # Injective - DeFi-focused blockchain
 
