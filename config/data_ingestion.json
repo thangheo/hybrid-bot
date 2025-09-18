@@ -35,7 +35,10 @@
         {"base": "BNB", "quote": "USDT"},
         {"base": "ADA", "quote": "USDT"},
         {"base": "DOT", "quote": "USDT"}
-      ]
+      ],
+      "additional_params": {
+        "memory_limit_kb": "204800"
+      }
     },
     "coinbase": {
       "exchange_id": "COINBASE",
@@ -65,7 +68,7 @@
     "max_depth": 20
   },
   "order_book": {
-    "depth": 20,
+    "depth": 10,
     "track_orders": false,
     "snapshot_interval_ms": 60000,
     "cleanup_interval_ms": 300000
@@ -101,5 +104,6 @@
     "batch_size": 100,
     "flush_interval_seconds": 10
   },
-  "enabled_exchanges": ["BINANCE", "COINBASE"]
+  "enabled_exchanges": ["BINANCE", "COINBASE"],
+
 }

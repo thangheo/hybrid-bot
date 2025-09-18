@@ -65,7 +65,7 @@
     "max_depth": 20
   },
   "order_book": {
-    "depth": 20,
+    "depth": 10,
     "track_orders": false,
     "snapshot_interval_ms": 60000,
     "cleanup_interval_ms": 300000

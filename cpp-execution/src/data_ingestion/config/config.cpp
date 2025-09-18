@@ -80,7 +80,7 @@ bool Configuration::loadFromJson(const std::string& jsonString) {
         if (configJson.contains("enabled_exchanges")) {
             loadEnabledExchanges(configJson["enabled_exchanges"]);
         }
-        
+       
         return true;
         
     } catch (const std::exception& e) {

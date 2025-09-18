@@ -41,7 +41,7 @@ public:
     
     // Service lifecycle
     bool initialize();
-    bool start(const std::vector<Symbol>& symbols);
+    bool start(const std::vector<Symbol>& symbols, int depth);
     void stop();
     bool isRunning() const { return running_.load(); }
     

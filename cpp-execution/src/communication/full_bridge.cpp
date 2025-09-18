@@ -84,7 +84,7 @@ public:
         zmqServer_->start();
         
         // 3. Start data ingestion with symbols
-        if (!dataService_->start(symbols)) {
+        if (!dataService_->start(symbols, 20)) {
             std::cerr << "Failed to start data ingestion service" << std::endl;
             return false;
         }

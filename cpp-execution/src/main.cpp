@@ -265,8 +265,12 @@ public:
                 std::cout << symbol << " ";
             }
             std::cout << std::endl;
-            
-            if (!dataIngestionService_->start(symbols)) {
+            //order book depth from config
+            int depth = 10;//strategyConfig_.orderBookDepth;
+            if (depth <= 0) {
+                depth = 20; // default depth
+            }
+            if (!dataIngestionService_->start(symbols, depth)) {
                 std::cerr << "Failed to start data ingestion service" << std::endl;
                 return false;
             }
@@ -488,7 +492,7 @@ public:
             // Debug output for intelligence generations
             intelDebugCounts[tradingPair]++;
             
-            if (intelDebugCounts[tradingPair] <= 3 || intelDebugCounts[tradingPair] % 500 == 0) {
+            if (intelDebugCounts[tradingPair] <= 2 || intelDebugCounts[tradingPair] % 5000 == 0) {
                 std::cout << "🧠 Generated intelligence #" << intelDebugCounts[tradingPair] 
                           << " for " << tradingPair << " (spread: " << intel.bid_ask_spread() 
                           << ", imbalance: " << intel.order_book_imbalance() << ")" << std::endl;
@@ -717,7 +721,7 @@ private:
 
     void setupConfigurations() {
         // Create configuration files
-        createDataIngestionConfig();
+        // createDataIngestionConfig();
         createStrategyConfig();
         createRiskConfig();                
         createPTCAConfig();
@@ -739,7 +743,7 @@ private:
         }
     },
     "order_book": {
-        "depth": 20,
+        "depth": 10,
         "snapshot_interval_ms": 30000
     },
     "publisher": {
@@ -943,7 +947,7 @@ private:
             static std::atomic<int> callbackCount{0};
             int count = callbackCount.fetch_add(1);
             
-            if (count < 5 || count % 500 == 0) {
+            if (count < 3 || count % 5000 == 0) {
                 std::cout << "📊 Order book callback #" << count 
                           << " for " << update.tradingPair.toString() 
                           << " (seq: " << update.sequenceNumber << ")" << std::endl;

@@ -126,7 +126,7 @@
   "components": {
     "orderBookAnalyzer": {
       "parameters": {
-        "depth": 20,
+        "depth": 10,
         "historySize": 100,
         "priceWeightFactor": 1.0,
         "volumeWeightFactor": 1.5,
