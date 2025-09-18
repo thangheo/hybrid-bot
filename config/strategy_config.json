@@ -58,12 +58,6 @@
       "description": "Polkadot - Cross-chain protocol"
     },
     {
-      "symbol": "MATIC/USDT",
-      "exchange": "BINANCE",
-      "category": "layer2",
-      "description": "Polygon - Ethereum scaling"
-    },
-    {
       "symbol": "LINK/USDT",
       "exchange": "BINANCE",
       "category": "defi_infrastructure", 
@@ -142,12 +136,6 @@
        "description": "Pax Gold - Tokenized gold"
      },
      {
-       "symbol": "MANA/USDT",
-       "exchange": "BINANCE",
-       "category": "metaverse",
-       "description": "Decentraland - Virtual world pioneer"
-     },
-     {
        "symbol": "SAND/USDT",
        "exchange": "BINANCE",
        "category": "metaverse",
@@ -220,12 +208,6 @@
        "description": "Cosmos - Internet of blockchains"
      },
      {
-       "symbol": "ICP/USDT",
-       "exchange": "BINANCE",
-       "category": "infrastructure",
-       "description": "Internet Computer - Web3 infrastructure"
-     },
-     {
        "symbol": "FTM/USDT",
        "exchange": "BINANCE",
        "category": "high_performance",
@@ -236,19 +218,7 @@
        "exchange": "BINANCE",
        "category": "consensus_innovation",
        "description": "Algorand - Pure proof-of-stake"
-     },
-     {
-       "symbol": "FIL/USDT",
-       "exchange": "BINANCE",
-       "category": "storage",
-       "description": "Filecoin - Decentralized storage"
-     },
-     {
-       "symbol": "NEAR/USDT",
-       "exchange": "BINANCE",
-       "category": "developer_friendly", 
-       "description": "NEAR Protocol - Sharded blockchain"
-      }
+     }
     ],
   "parameters": {
     "numeric": {

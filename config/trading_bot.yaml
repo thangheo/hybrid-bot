@@ -88,7 +88,6 @@ data_ingestion:
     - "AVAXUSDT"   # Avalanche - Fast consensus, subnet flexibility
     - "DOGEUSDT"   # Dogecoin - Meme king with utility potential
     - "DOTUSDT"    # Polkadot - Interoperability leader
-    - "MATICUSDT"  # Polygon - Ethereum scaling solution
 
     # DeFi & Layer 2 Powerhouses
     - "LINKUSDT"   # Chainlink - Oracle infrastructure leader
@@ -107,7 +106,6 @@ data_ingestion:
     - "OCEANUSDT"  # Ocean Protocol - Data marketplace
     - "AGIXUSDT"   # SingularityNET - AI services platform
     - "INJUSDT"    # Injective - DeFi-focused blockchain
-    - "NEARUSDT"   # NEAR Protocol - Developer-friendly blockchain
 
     # Real World Assets (RWA) - Major Growth Trend
     - "ONDOUSDT"   # Ondo Finance - Tokenized treasuries leader
@@ -115,7 +113,6 @@ data_ingestion:
     - "PAXGUSDT"   # Pax Gold - Tokenized gold
 
     # Gaming & Metaverse
-    - "MANAUSDT"   # Decentraland - Metaverse pioneer
     - "SANDUSDT"   # The Sandbox - Gaming metaverse
     - "GALAUSDT"   # Gala Games - Blockchain gaming platform
     - "IMXUSDT"    # Immutable X - NFT scaling solution
@@ -138,11 +135,9 @@ data_ingestion:
 
     # Infrastructure & Interoperability
     - "ATOMUSDT"   # Cosmos - Internet of blockchains
-    - "ICPUSDT"    # Internet Computer - Decentralized internet
     - "FTMUSDT"    # Fantom - High-speed, low-cost platform
     - "ALGOUSDT"   # Algorand - Pure proof-of-stake
     - "HNTUSDT"    # Helium - Decentralized wireless network
-    - "FILUSDT"    # Filecoin - Decentralized storage network
 
     # Privacy & Security
     - "XMRUSDT"    # Monero - Privacy-by-default leader

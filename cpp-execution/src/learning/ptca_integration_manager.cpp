@@ -469,7 +469,7 @@ OutcomeMeasure PTCAIntegrationManager::createOutcome(const SignalOutcomeTracker&
 void PTCAIntegrationManager::cleanupOldSignals() {
     std::lock_guard<std::recursive_mutex> lock(signalMutex_);
     // ✅ ADD: Emergency cleanup if too many signals
-    if (activeSignals_.size() > 10000) {  // Hard limit
+    if (activeSignals_.size() > 1000) {  // Hard limit
         std::cout << "EMERGENCY: Too many PTCA signals (" << activeSignals_.size() 
                   << "), clearing oldest 50%" << std::endl;
         
