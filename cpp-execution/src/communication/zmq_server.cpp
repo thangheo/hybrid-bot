@@ -52,6 +52,7 @@ static std::string sanitizeTopic(const std::string& topic) {
     }
 }
 
+
 // =============================================================================
 // CONSTRUCTOR AND DESTRUCTOR
 // =============================================================================
@@ -188,7 +189,7 @@ bool GenericZmqServer::publishAsync(const std::string& topic, const std::string&
     }
     // Sanitize topic to conform to allowed characters
     // std::cout << "topic: " << topic << std::endl;
-    std::string safe_topic = sanitizeTopic(topic);
+    std::string safe_topic = topic; //sanitizeTopic(topic); no need
     // std::cout << "safe_topic: " << safe_topic << std::endl;
     // print part of data
     // std::cout << "data (partial): " << data.substr(0, 50) << "..." << std::endl;
@@ -291,7 +292,8 @@ bool GenericZmqServer::publishSync(const std::string& topic, const std::string& 
         return false;
     }
     // Sanitize topic to conform to allowed characters
-    std::string safe_topic = sanitizeTopic(topic);
+    // std::string safe_topic = sanitizeTopic(topic);
+    std::string safe_topic = topic; // no need
 
     if (!isValidTopic(safe_topic)) {
         logError("Invalid topic format: " + topic);
@@ -357,7 +359,7 @@ bool GenericZmqServer::publishWithMetadata(const std::string& topic, const std::
     }
 
     // Sanitize topic and use sync publishing for metadata-rich messages
-    std::string safe_topic = sanitizeTopic(topic);
+    std::string safe_topic = topic; //sanitizeTopic(topic); no need
     return publishSync(safe_topic, serializeWithMetadata(data, metadata), priority, correlation_id);
 }
 
@@ -960,53 +962,86 @@ std::string GenericZmqServer::serializeWithMetadata(const std::string& data,
     return message.dump();
 }
 
+// 1. FIX: JSON parsing with proper exception safety
 std::pair<std::string, std::unordered_map<std::string, std::string>>
 GenericZmqServer::deserializeWithMetadata(const std::string& serialized_data) const {
     try {
-        auto message = nlohmann::json::parse(serialized_data);
+        // Reserve memory to avoid reallocation during parsing
+        std::string data;
+        data.reserve(serialized_data.size());
         
-        std::string data = message.value("data", "");
+        // Parse with explicit error handling
+        nlohmann::json message;
+        try {
+            message = nlohmann::json::parse(serialized_data);
+        } catch (const nlohmann::json::parse_error& e) {
+            // Fallback: treat as raw data to prevent parser leak
+            return {serialized_data, {}};
+        }
+        
+        data = message.value("data", "");
         std::unordered_map<std::string, std::string> metadata;
         
         if (message.contains("metadata") && message["metadata"].is_object()) {
-            for (auto& [key, value] : message["metadata"].items()) {
+            // Reserve space to prevent rehashing
+            metadata.reserve(message["metadata"].size());
+            for (const auto& [key, value] : message["metadata"].items()) {
                 if (value.is_string()) {
-                    metadata[key] = value.get<std::string>();
+                    metadata.emplace(key, value.get<std::string>());
                 }
             }
         }
-        // Check for base64 encoding marker and decode if present
+        
+        // Clear message explicitly to free JSON memory
+        message.clear();
+        
+        // Handle base64 decoding with memory safety
         auto it = metadata.find("data_encoding");
         if (it != metadata.end() && it->second == "base64") {
-            // decode base64
-            auto base64_decode_simple = [](const std::string &in) {
-                std::string ret;
-                std::vector<int> T(256, -1);
-                std::string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-                for (int i = 0; i < 64; ++i) T[(unsigned char)chars[i]] = i;
-                int val = 0, valb = -8;
-                for (unsigned char c : in) {
-                    if (T[c] == -1) break;
-                    val = (val << 6) + T[c];
-                    valb += 6;
-                    if (valb >= 0) {
-                        ret.push_back(char((val >> valb) & 0xFF));
-                        valb -= 8;
-                    }
-                }
-                return ret;
-            };
-            std::string decoded = base64_decode_simple(data);
-            return {decoded, metadata};
+            std::string decoded = base64_decode_safe(data);
+            return {std::move(decoded), std::move(metadata)};
         }
-
-        return {data, metadata};
+        
+        return {std::move(data), std::move(metadata)};
         
     } catch (const std::exception&) {
-        // If parsing fails, treat entire input as data
         return {serialized_data, {}};
     }
 }
+
+// 2. FIX: Memory-safe base64 decode
+std::string GenericZmqServer::base64_decode_safe(const std::string& input) const {
+    if (input.empty()) return {};
+    
+    // Pre-calculate output size to avoid reallocations
+    size_t output_size = (input.size() * 3) / 4;
+    std::string result;
+    result.reserve(output_size);
+    
+    static const std::array<int, 256> decode_table = []() {
+        std::array<int, 256> table;
+        table.fill(-1);
+        const std::string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        for (size_t i = 0; i < chars.size(); ++i) {
+            table[static_cast<unsigned char>(chars[i])] = static_cast<int>(i);
+        }
+        return table;
+    }();
+    
+    int val = 0, valb = -8;
+    for (unsigned char c : input) {
+        if (decode_table[c] == -1) break;
+        val = (val << 6) + decode_table[c];
+        valb += 6;
+        if (valb >= 0) {
+            result.push_back(static_cast<char>((val >> valb) & 0xFF));
+            valb -= 8;
+        }
+    }
+    
+    return result;
+}
+
 
 void GenericZmqServer::logError(const std::string& error_msg) {
     std::lock_guard<std::mutex> lock(error_mutex_);
