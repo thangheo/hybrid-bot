@@ -12,6 +12,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include <atomic>
+#include <malloc.h>
 
 // #include "iostream"
 // using namespace trading::common;
@@ -156,6 +157,12 @@ void ExchangeManager::onWebSocketRawData(const RawMarketData& rawData) {
     // If memory pressure is active, drop data early to avoid OOM
     if (memoryPressure_.load()) {
         std::cerr << "[ExchangeManager] memory pressure active, dropping incoming data\n";
+        // Track drops for observability
+        static std::atomic<size_t> dropCount{0};
+        dropCount.fetch_add(1, std::memory_order_relaxed);
+        if ((dropCount.load() % 100) == 0) {
+            std::cerr << "[ExchangeManager] dropped_count=" << dropCount.load() << '\n';
+        }
         return;
     }
 
@@ -520,16 +527,23 @@ void ExchangeManager::clearProcessingQueue() {
         processingQueueSize_.fetch_sub(1, std::memory_order_relaxed);
     }
     std::cerr << "[ExchangeManager] cleared processing queue, removed=" << removed << '\n';
-
     // After clearing, attempt to release memory back to OS by hinting to allocator.
-    // This is platform and allocator dependent; we at least pause briefly to allow
-    // background threads or OS to reclaim.
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    // Use malloc_trim when available on glibc systems.
+#if defined(__GLIBC__)
+    // malloc_trim(0) returns non-zero if memory was actually released.
+    int trimmed = malloc_trim(0);
+    std::cerr << "[ExchangeManager] malloc_trim returned=" << trimmed << '\n';
+#endif
+
+    // Sleep briefly to allow OS to reclaim memory
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
 
     // If RSS has fallen below limit, resume normal operation.
     if (memoryLimitKB_ > 0 && getRSSKB() < memoryLimitKB_) {
         memoryPressure_.store(false);
         std::cerr << "[ExchangeManager] memory pressure cleared, resuming normal processing\n";
+    } else {
+        std::cerr << "[ExchangeManager] memory still high after clearing queue: RSS_KB=" << getRSSKB() << '\n';
     }
 }
 

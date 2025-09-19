@@ -67,7 +67,9 @@ private:
     static size_t getRSSKB() ;
 
     std::unique_ptr<BinanceAdapter> adapter_;
-    ReaderWriterQueue<RawMarketData> processingQueue_;
+    // Bounded concurrent queue for incoming raw market data. Default capacity
+    // tuned to a large value to avoid unbounded growth; adjust as needed.
+    ReaderWriterQueue<RawMarketData> processingQueue_{100000};
 
     // Approximate size of the processing queue (maintained atomically by enqueue/dequeue sites)
     std::atomic<size_t> processingQueueSize_{0};
