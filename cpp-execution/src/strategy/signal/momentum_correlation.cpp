@@ -54,20 +54,26 @@ void MomentumCorrelation::updateCorrelationModel(
     dataPoint.metrics = metrics;
     dataPoint.price_movement = movement;
     dataPoint.timestamp = metrics.timestamp;
-    
-    // Add to data points
-    data_points_.push_back(dataPoint);
-    
-    // Maintain window size
-    while (data_points_.size() > window_size_) {
-        data_points_.pop_front();
+
+    // Add to data points under lock to avoid concurrent mutation from multiple threads
+    size_t currentSize = 0;
+    {
+        std::lock_guard<std::mutex> lock(correlation_mutex_);
+        data_points_.push_back(dataPoint);
+
+        // Maintain window size
+        while (data_points_.size() > window_size_) {
+            data_points_.pop_front();
+        }
+
+        currentSize = data_points_.size();
     }
     
     // LOG_INFO("Added data point. Total points: {}, Price movement: {}", 
             //  data_points_.size(), movement.percent_change);
     
     // Calculate correlations with fewer data points for testing
-    if (data_points_.size() >= params_.min_data_points) {
+    if (currentSize >= params_.min_data_points) {
         // LOG_INFO("Calculating correlations with {} data points", data_points_.size());
         calculateCorrelations();
         calculateFeatureImportance();
@@ -144,20 +150,27 @@ void MomentumCorrelation::updateCorrelationModel(
 // }
   
  CorrelationStats MomentumCorrelation::getCorrelationStats() const {
-     CorrelationStats stats;
-     stats.coefficients = correlation_coefficients_;
-     stats.feature_importance = feature_importance_;
-     stats.data_points = data_points_.size();
-     stats.market_regime = current_regime_;
-     
-     // Calculate overall predictive power
-     double sumImportance = 0.0;
-     for (const auto& [feature, importance] : feature_importance_) {
-         sumImportance += importance * std::abs(correlation_coefficients_.at(feature));
-     }
-     stats.overall_predictive_power = sumImportance;
-     LOG_INFO("Overall predictive power calculated: {}", stats.overall_predictive_power);
-     return stats;
+    CorrelationStats stats;
+    // Snapshot under lock to avoid concurrent mutation while computing stats
+    {
+        std::lock_guard<std::mutex> lock(correlation_mutex_);
+        stats.coefficients = correlation_coefficients_;
+        stats.feature_importance = feature_importance_;
+        stats.data_points = data_points_.size();
+        stats.market_regime = current_regime_;
+    }
+
+    // Calculate overall predictive power from the snapshot
+    double sumImportance = 0.0;
+    for (const auto& [feature, importance] : stats.feature_importance) {
+        auto it = stats.coefficients.find(feature);
+        if (it != stats.coefficients.end()) {
+            sumImportance += importance * std::abs(it->second);
+        }
+    }
+    stats.overall_predictive_power = sumImportance;
+    LOG_INFO("Overall predictive power calculated: {}", stats.overall_predictive_power);
+    return stats;
  }
  
  void MomentumCorrelation::configure(const CorrelationParameters& params) {
@@ -196,14 +209,21 @@ void MomentumCorrelation::updateParameters(const ParameterSet& params) {
 }
 
 void MomentumCorrelation::calculateCorrelations() {
-    // Check if we have enough data points
-    if (data_points_.size() < params_.min_data_points) {
-        LOG_WARN("Not enough data points for correlation calculation. Have {} but need at least {}", 
-                data_points_.size(), params_.min_data_points);
-        return;
+    // Snapshot data_points_ under lock to avoid concurrent modification while we iterate
+    std::vector<DataPoint> snapshot;
+    {
+        std::lock_guard<std::mutex> lock(correlation_mutex_);
+        if (data_points_.size() < params_.min_data_points) {
+            LOG_WARN("Not enough data points for correlation calculation. Have {} but need at least {}", 
+                    data_points_.size(), params_.min_data_points);
+            return;
+        }
+
+        snapshot.reserve(data_points_.size());
+        for (const auto& dp : data_points_) snapshot.push_back(dp);
     }
 
-    // Extract key metrics for correlation
+    // Extract key metrics for correlation from the snapshot
     std::map<std::string, std::vector<double>> metricValues;
     std::vector<double> priceMovements;
     std::vector<double> timeWeights;  // For time-weighted correlation
@@ -211,7 +231,7 @@ void MomentumCorrelation::calculateCorrelations() {
     // Get current time for time weighting
     auto currentTime = std::chrono::system_clock::now();
     
-    for (const auto& dataPoint : data_points_) {
+    for (const auto& dataPoint : snapshot) {
         // LOG_DEBUG("Processing data point at {}: {}", dataPoint.timestamp, dataPoint.price_movement.percent_change);
 
         // Add price movement
@@ -267,6 +287,9 @@ void MomentumCorrelation::calculateCorrelations() {
     }
 
     // Calculate time-weighted correlation coefficients for each metric
+    std::map<std::string, double> newCorrelationCoeffs;
+    std::map<std::string, double> newCorrelationStrengths;
+
     for (auto& [metric, values] : metricValues) {
         // Skip if we don't have enough data points or sizes don't match
         if (values.size() != priceMovements.size() || values.size() < params_.min_data_points) {
@@ -342,11 +365,11 @@ void MomentumCorrelation::calculateCorrelations() {
                                 (1.0 - params_.correlation_decay_rate) * correlation;
             }
             
-            // Store the result
-            correlation_coefficients_[metric] = correlation;
+            // Store in local maps (will commit under lock later)
+            newCorrelationCoeffs[metric] = correlation;
             
             // Store correlation strength (absolute value) for sorting
-            correlation_strengths_[metric] = std::abs(correlation);
+            newCorrelationStrengths[metric] = std::abs(correlation);
             
             // Log strong correlations for debugging
             if (std::abs(correlation) > params_.strong_correlation_threshold) {
@@ -355,11 +378,17 @@ void MomentumCorrelation::calculateCorrelations() {
         }
         catch (const std::exception& e) {
             LOG_ERROR("Error calculating correlation for metric {}: {}", metric, e.what());
-            correlation_coefficients_[metric] = 0.0;
+            newCorrelationCoeffs[metric] = 0.0;
         }
     }
-    
-    // Update highest correlated metrics list
+    // Commit new correlation maps under lock
+    {
+        std::lock_guard<std::mutex> lock(correlation_mutex_);
+        correlation_coefficients_.swap(newCorrelationCoeffs);
+        correlation_strengths_.swap(newCorrelationStrengths);
+    }
+
+    // Update highest correlated metrics list (it will take the lock internally)
     updateHighestCorrelatedMetrics();
 }
 
@@ -486,32 +515,49 @@ void MomentumCorrelation::updateHighestCorrelatedMetrics() {
      // In a more sophisticated implementation, this could be based on 
      // regression weights, mutual information, or other methods
      
+     // Snapshot correlation coefficients and data point count under lock
+     std::map<std::string, double> coeffsSnapshot;
+     size_t sampleCount = 0;
+     {
+         std::lock_guard<std::mutex> lock(correlation_mutex_);
+         coeffsSnapshot = correlation_coefficients_;
+         sampleCount = data_points_.size();
+     }
+
      double totalImportance = 0.0;
      std::map<std::string, double> rawImportance;
      
-     for (const auto& [metric, correlation] : correlation_coefficients_) {
+     for (const auto& [metric, correlation] : coeffsSnapshot) {
          double absCorrelation = std::abs(correlation);
          // Only consider correlations that are statistically significant
-         if (isStatisticallySignificant(correlation, data_points_.size())) {
+         if (isStatisticallySignificant(correlation, sampleCount)) {
              rawImportance[metric] = absCorrelation * absCorrelation; // Square to emphasize stronger correlations
              totalImportance += rawImportance[metric];
          } else {
              rawImportance[metric] = 0.0;
          }
-     }
+    }
      
      // Normalize importance values
-     if (totalImportance > 0.0) {
-         for (auto& [metric, importance] : rawImportance) {
-             feature_importance_[metric] = importance / totalImportance;
+     // Commit feature importance under lock
+     {
+         std::lock_guard<std::mutex> lock(correlation_mutex_);
+         feature_importance_.clear();
+         if (totalImportance > 0.0) {
+             for (auto& [metric, importance] : rawImportance) {
+                 feature_importance_[metric] = importance / totalImportance;
+             }
+         } else {
+             // If no significant correlations, assign equal importance
+             double equalImportance = 0.0;
+             if (!coeffsSnapshot.empty()) {
+                 equalImportance = 1.0 / static_cast<double>(coeffsSnapshot.size());
+             }
+             for (const auto& [metric, _] : coeffsSnapshot) {
+                 feature_importance_[metric] = equalImportance;
+             }
          }
-     } else {
-         // If no significant correlations, assign equal importance
-         double equalImportance = 1.0 / std::max(1.0, static_cast<double>(correlation_coefficients_.size()));
-         for (const auto& [metric, _] : correlation_coefficients_) {
-             feature_importance_[metric] = equalImportance;
-         }
-     }
+    }
  }
  
  bool MomentumCorrelation::isStatisticallySignificant(double coefficient, size_t sample_size) const {
@@ -551,13 +597,15 @@ void MomentumCorrelation::updateHighestCorrelatedMetrics() {
      }
     //  std::cout<<"Updating market regime based on recent data...\n";
      
-     // Get recent price movements
+     // Snapshot recent price movements under lock
      std::vector<double> recentMovements;
-     size_t startIdx = std::max(0, static_cast<int>(data_points_.size() - params_.regime_detection_window));
-     
-     for (size_t i = startIdx; i < data_points_.size(); ++i) {
-         recentMovements.push_back(data_points_[i].price_movement.percent_change);
-     }
+     {
+         std::lock_guard<std::mutex> lock(correlation_mutex_);
+         size_t startIdx = std::max(0, static_cast<int>(data_points_.size() - params_.regime_detection_window));
+         for (size_t i = startIdx; i < data_points_.size(); ++i) {
+             recentMovements.push_back(data_points_[i].price_movement.percent_change);
+         }
+    }
      
      // Calculate volatility (standard deviation of price movements)
      double mean = std::accumulate(recentMovements.begin(), recentMovements.end(), 0.0) / recentMovements.size();
@@ -596,20 +644,29 @@ void MomentumCorrelation::updateHighestCorrelatedMetrics() {
 
 
 double MomentumCorrelation::calculateWeightedPrediction(const ImbalanceEvent& event) const {
-    if (correlation_coefficients_.empty()) {
+    // Snapshot correlation data under lock for thread-safe reads
+    std::map<std::string, double> coeffsSnapshot;
+    std::map<std::string, double> importanceSnapshot;
+    {
+        std::lock_guard<std::mutex> lock(correlation_mutex_);
+        coeffsSnapshot = correlation_coefficients_;
+        importanceSnapshot = feature_importance_;
+    }
+
+    if (coeffsSnapshot.empty()) {
         LOG_DEBUG("No correlation data available for prediction");
         return 0.0;
     }
-    
+
     double prediction = 0.0;
     double totalWeight = 0.0;
     
     // Process supporting metrics
     for (const auto& [metricName, metricValue] : event.supportingMetrics) {
-        auto corrIt = correlation_coefficients_.find(metricName);
-        auto impIt = feature_importance_.find(metricName);
+        auto corrIt = coeffsSnapshot.find(metricName);
+        auto impIt = importanceSnapshot.find(metricName);
         
-        if (corrIt == correlation_coefficients_.end() || impIt == feature_importance_.end()) {
+        if (corrIt == coeffsSnapshot.end() || impIt == importanceSnapshot.end()) {
             continue;
         }
         
@@ -627,17 +684,14 @@ double MomentumCorrelation::calculateWeightedPrediction(const ImbalanceEvent& ev
         
         prediction += contribution;
         totalWeight += weight;
-        
-        // LOG_DEBUG("Metric {}: value={}, normalized={}, correlation={}, weight={}, contribution={}", 
-        //          metricName, metricValue, normalizedValue, correlation, weight, contribution);
     }
     
     // Process primary metric with extra weight
     std::string primaryMetricName = imbalanceTypeToString(event.type);
-    auto corrIt = correlation_coefficients_.find(primaryMetricName);
-    auto impIt = feature_importance_.find(primaryMetricName);
+    auto corrIt = coeffsSnapshot.find(primaryMetricName);
+    auto impIt = importanceSnapshot.find(primaryMetricName);
     
-    if (corrIt != correlation_coefficients_.end() && impIt != feature_importance_.end()) {
+    if (corrIt != coeffsSnapshot.end() && impIt != importanceSnapshot.end()) {
         double correlation = corrIt->second;
         double importance = impIt->second;
         
@@ -663,9 +717,16 @@ double MomentumCorrelation::calculateWeightedPrediction(const ImbalanceEvent& ev
     // Scale by event strength (0.0 to 1.0)
     prediction *= event.strength;
     
+    // Snapshot current market regime to avoid data race
+    MarketRegime regimeSnapshot = MarketRegime::NORMAL;
+    {
+        std::lock_guard<std::mutex> lock(correlation_mutex_);
+        regimeSnapshot = current_regime_;
+    }
+
     // Apply market regime adjustments
     double regimeMultiplier = 1.0;
-    switch (current_regime_) {
+    switch (regimeSnapshot) {
         case MarketRegime::HIGH_VOLATILITY: regimeMultiplier = 0.8; break;
         case MarketRegime::TRENDING:        regimeMultiplier = 1.2; break;
         case MarketRegime::RANGE_BOUND:     regimeMultiplier = 0.7; break;
