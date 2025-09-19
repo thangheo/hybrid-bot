@@ -51,6 +51,8 @@ namespace communication {
  */
 class GenericZmqServer {
 public:
+    std::string base64_decode_safe(const std::string& input) const ;
+
     /**
      * Constructor with configuration
      */
