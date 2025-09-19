@@ -15,13 +15,17 @@ target_include_directories(common
     PRIVATE
         ${CMAKE_SOURCE_DIR}/include/common
 )
-
+# add protobuf
+find_package(Protobuf REQUIRED)
+# target_include_directories(common PRIVATE ${Protobuf_INCLUDE_DIRS})
+# target_link_libraries(common PRIVATE ${Protobuf_LIBRARIES})
 # Link libraries
 target_link_libraries(common
     PUBLIC
         Threads::Threads
         cppzmq
         ZeroMQ::ZeroMQ
+        ${Protobuf_LIBRARIES}
         nlohmann_json::nlohmann_json
 )
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../../bin)
@@ -35,10 +39,12 @@ target_include_directories(test_cache_app PRIVATE
     ${CMAKE_SOURCE_DIR}/include/data_ingestion
     ${CMAKE_SOURCE_DIR}/include/core
     ${ZMQ_INCLUDE_DIRS}
+    ${Protobuf_INCLUDE_DIRS}
 )
 target_link_libraries(test_cache_app PRIVATE
     common              # Your common library with OrderBookCacheService
     data_ingestion      # Your data ingestion library with OrderBook
     ${ZMQ_LIBRARIES}
     pthread
+    ${Protobuf_LIBRARIES}
 )

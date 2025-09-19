@@ -182,26 +182,6 @@ void ExchangeManager::onWebSocketRawData(const RawMarketData& rawData) {
         }
     }
 }
-// void ExchangeManager::onWebSocketData(const core::ExchangeId& exchange,
-//                                     const core::Symbol& symbol, 
-//                                     const std::vector<uint8_t>& data) {
-//     try {
-//         // Convert WebSocket data to MarketDataUpdate format
-//         MarketDataUpdate update{};
-//         update.exchangeId = exchange;
-//         update.tradingPair = symbol;
-//         update.receivedTimestamp = std::chrono::system_clock::now();
-//         update.data = data;
-//         update.updateType = "orderbook";
-//         // Forward to the normalizer
-//         if (normalizer_) {
-//             normalizer_->processMarketData(update);
-//         } 
-        
-//     } catch (const std::exception& e) {
-//         std::cerr << "Error processing WebSocket data: " << e.what() << '\n';
-//     }
-// }
 
 
 bool ExchangeManager::subscribe(const std::vector<Symbol>& tradingPairs,

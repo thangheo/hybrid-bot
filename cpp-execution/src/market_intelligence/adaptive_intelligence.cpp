@@ -3,6 +3,7 @@
 #include <fstream>
 #include <filesystem>
 #include <iomanip>
+#include <google/protobuf/arena.h>
 
 namespace trading {
 namespace intelligence {
@@ -618,103 +619,106 @@ trading::MarketIntelligence AdaptiveMarketIntelligence::generateIntelligence(
     const core::Symbol& symbol,
     const std::vector<trading::PriceLevel>& bids,
     const std::vector<trading::PriceLevel>& asks) {
-    
-    MarketIntelligence intel;
-    intel.set_symbol(symbol.toString());
-    intel.set_timestamp(std::chrono::duration_cast<std::chrono::milliseconds>(
+
+    // Use a short-lived protobuf Arena to allocate temporary strings/fields while
+    // populating the message. This reduces per-field heap churn because
+    // intermediate strings are allocated on the arena and freed together when
+    // the arena is destroyed. We then CopyFrom into the returned message to
+    // preserve the existing function ABI.
+    google::protobuf::Arena arena;
+    auto* ai = google::protobuf::Arena::CreateMessage<trading::MarketIntelligence>(&arena);
+
+    ai->set_symbol(symbol.toString());
+    ai->set_timestamp(std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::system_clock::now().time_since_epoch()).count());
-    
-    if (bids.empty() || asks.empty()) return intel;
-    
+
+    if (bids.empty() || asks.empty()) {
+        trading::MarketIntelligence out;
+        out.CopyFrom(*ai);
+        return out;
+    }
+
     // Get profile
     CoinProfile* profile = getOrCreateProfile(symbol);
-    if (!profile) return intel;
-    
+    if (!profile) {
+        trading::MarketIntelligence out;
+        out.CopyFrom(*ai);
+        return out;
+    }
+
     // Calculate basic metrics
     double bestBid = bids[0].price();
     double bestAsk = asks[0].price();
     double spread = bestAsk - bestBid;
     double midPrice = (bestBid + bestAsk) / 2.0;
     double relative_spread = spread / midPrice;
-    // volatility estimate
     double volatility = estimateSimpleVolatility(relative_spread, profile->volatility_factor);
-    // Calculate volume metrics
     OrderBookMetrics metrics = calculateOrderBookMetrics(bids, asks);
-    
+
     // Update historical statistics
     profile->updateStatistics(metrics.total_volume, relative_spread);
-    
-    // Calculate percentile-based metrics
+
     double volume_percentile = profile->volume_stats.getVolumePercentile(metrics.total_volume);
     double spread_percentile = profile->spread_stats.getSpreadPercentile(relative_spread);
-    
-    // === SET ALL BASIC FIELDS ===
-    intel.set_bid_ask_spread(relative_spread);
-    intel.set_order_book_imbalance(metrics.imbalance);
-    intel.set_liquidity_ratio(volume_percentile);
-    
-    // === NEW: SET MISSING CRITICAL FIELDS ===
-    
-    // Depth imbalance (imbalance in deeper levels 6-10)
+
+    // Populate arena-backed message
+    ai->set_bid_ask_spread(relative_spread);
+    ai->set_order_book_imbalance(metrics.imbalance);
+    ai->set_liquidity_ratio(volume_percentile);
+
     double depth_imbalance = calculateDepthImbalance(bids, asks, 5, 10);
-    intel.set_depth_imbalance(depth_imbalance);  // Field 5
-    
-    // Spread stability (how stable the spread has been)
+    ai->set_depth_imbalance(depth_imbalance);
+
     double spread_stability = calculateSpreadStability(profile);
-    intel.set_spread_stability(spread_stability);  // Field 7
-    intel.set_realized_volatility_1m(volatility);  // Field 15
-    // Volume analysis
+    ai->set_spread_stability(spread_stability);
+    ai->set_realized_volatility_1m(volatility);
+
     double volume_ratio_to_avg = calculateVolumeRatio(metrics.total_volume, profile);
-    intel.set_volume_ratio_to_avg(volume_ratio_to_avg);  // Field 21
-    intel.set_volume_5s(metrics.total_volume * 0.2);     // Field 19 - estimated
-    intel.set_volume_30s(metrics.total_volume * 0.8);    // Field 20 - estimated
-    
-    // === CRITICAL FIX: SET volatility_trend ===
+    ai->set_volume_ratio_to_avg(volume_ratio_to_avg);
+    ai->set_volume_5s(metrics.total_volume * 0.2);
+    ai->set_volume_30s(metrics.total_volume * 0.8);
+
     double volatility_trend = calculateVolatilityTrend(profile, relative_spread);
-    intel.set_volatility_trend(volatility_trend);  // Field 18 - REQUIRED BY PYTHON!
-    
-    // Price impact estimate
+    ai->set_volatility_trend(volatility_trend);
+
     double price_impact = estimatePriceImpact(metrics.total_volume, relative_spread, profile);
-    intel.set_price_impact_estimate(price_impact);  // Field 17
-    
-    // Extended volatility metrics
+    ai->set_price_impact_estimate(price_impact);
+
     double volatility_1m = estimateSimpleVolatility(relative_spread, profile->volatility_factor);
-    intel.set_realized_volatility_1m(volatility_1m);     // Field 15
-    intel.set_realized_volatility_5m(volatility_1m * 1.2); // Field 16 - estimated
-    intel.set_expected_volatility_5m(volatility_1m * 1.1); // Field 25 - estimated
-    
-    // Flow metrics
+    ai->set_realized_volatility_1m(volatility_1m);
+    ai->set_realized_volatility_5m(volatility_1m * 1.2);
+    ai->set_expected_volatility_5m(volatility_1m * 1.1);
+
     FlowMetrics flow = estimateFlowMetrics(metrics.imbalance, metrics.total_volume);
-    intel.set_aggressive_buy_ratio(flow.aggressive_buy_ratio);   // Field 11
-    intel.set_aggressive_sell_ratio(flow.aggressive_sell_ratio); // Field 12
-    intel.set_net_flow_5s(flow.net_flow_5s);                    // Field 8
-    intel.set_net_flow_30s(flow.net_flow_30s);                  // Field 9
-    
-    // Extended flow metrics
-    intel.set_net_flow_5m(flow.net_flow_30s * 10.0);            // Field 10 - estimated
-    intel.set_passive_buy_ratio(1.0 - flow.aggressive_buy_ratio); // Field 13
-    intel.set_passive_sell_ratio(1.0 - flow.aggressive_sell_ratio); // Field 14
-    intel.set_flow_momentum(calculateFlowMomentum(flow));        // Field 26
-    
-    // Regime classification
+    ai->set_aggressive_buy_ratio(flow.aggressive_buy_ratio);
+    ai->set_aggressive_sell_ratio(flow.aggressive_sell_ratio);
+    ai->set_net_flow_5s(flow.net_flow_5s);
+    ai->set_net_flow_30s(flow.net_flow_30s);
+
+    ai->set_net_flow_5m(flow.net_flow_30s * 10.0);
+    ai->set_passive_buy_ratio(1.0 - flow.aggressive_buy_ratio);
+    ai->set_passive_sell_ratio(1.0 - flow.aggressive_sell_ratio);
+    ai->set_flow_momentum(calculateFlowMomentum(flow));
+
     RegimeProbabilities probs = calculateRegimeProbabilities(
         volume_percentile, spread_percentile, metrics.imbalance, profile->volatility_factor);
-    
     auto [regime, confidence] = probs.getBestRegime();
-    intel.set_current_regime(regime);           // Field 22
-    intel.set_regime_confidence(confidence);    // Field 23 - CRITICAL FOR PYTHON!
-    
-    // Regime stability
+    ai->set_current_regime(regime);
+    ai->set_regime_confidence(confidence);
+
     double regime_stability = calculateRegimeStability(profile, regime);
-    intel.set_regime_stability(regime_stability); // Field 24
-    
+    ai->set_regime_stability(regime_stability);
+
     // Periodic saving
     update_counter_++;
     if (update_counter_ % save_frequency_ == 0) {
         profile->saveToFile();
     }
-    
-    return intel;
+
+    // Copy out of arena-backed temporary into returned message (preserve ABI)
+    trading::MarketIntelligence out;
+    out.CopyFrom(*ai);
+    return out;
 }
 
 // ============================================================================
