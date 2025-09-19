@@ -424,6 +424,10 @@ void OrderBookReconstructor::publishOrderBook(const std::shared_ptr<OrderBook>& 
     if (!publisher_ || !orderBook) {
         return;
     }
+    // If publishing is disabled (e.g., main.cpp is the canonical publisher), skip to avoid duplicates
+    if (!publishEnabled_) {
+        return;
+    }
     
     try {
         // Get the full order book snapshot
@@ -462,10 +466,10 @@ void OrderBookReconstructor::publishOrderBook(const std::shared_ptr<OrderBook>& 
         std::string jsonStr = message.dump();
         std::vector<unsigned char> binaryPayload(jsonStr.begin(), jsonStr.end());
         
-        // Publish with proper topic
-        std::string topic = "orderbook." + update.exchangeId.toString() + "." + update.tradingPair.toString();
-        // publisher_->PublishOrderBookData(topic, binaryPayload);
-        publisher_->publishAsync(topic, std::string(binaryPayload.begin(), binaryPayload.end()));
+    // Publish with proper topic
+    std::string topic = "orderbook." + update.exchangeId.toString() + "." + update.tradingPair.toString();
+    // publisher_->PublishOrderBookData(topic, binaryPayload);
+    publisher_->publishAsync(topic, std::string(binaryPayload.begin(), binaryPayload.end()));
         
     } catch (const std::exception& e) {
         std::cerr << "Error publishing order book: " << e.what() << std::endl;
