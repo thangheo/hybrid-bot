@@ -86,7 +86,7 @@ bool MarketDataInterface::initialize() {
             }
         );
  
-        zmqClient_->subscribe("orderbook.",  // or "orderbook.*" if your ZMQ supports wildcards
+        zmqClient_->subscribe("orderbook.*",  // or "orderbook.*" if your ZMQ supports wildcards
             [this](const std::string& topic, const std::string& message, const auto&) {
                 this->processSyntheticOrderBook(topic, message);
             });
@@ -109,30 +109,16 @@ bool MarketDataInterface::initialize() {
 }
 void MarketDataInterface::processSyntheticOrderBook(const std::string& topic, const std::string& message) {
     try {
+        //this is bs but we should check topic to see if it's synthetic orderbook
+        if (topic.find("orderbook.") == std::string::npos) {
+            return; // Not a synthetic orderbook message
+        }
         auto json_msg = nlohmann::json::parse(message);
         std::string exchange = json_msg["exchange"];
         std::string symbol = json_msg["symbol"];
         // Parse bids/asks
         auto bids = json_msg["bids"];
-        auto asks = json_msg["asks"];
-        // struct MarketData {
-        //     core::Symbol tradingPair;              // Trading pair symbol (e.g., "BTC/USDT")
-        //     ExchangeId exchangeId;               // Exchange identifier
-        //     Timestamp timestamp;                  // Timestamp of the data
-        //     double price;                         // Current market price
-        //     double volume;                        // Trading volume
-        //     double bid;                           // Best bid price
-        //     double ask;                           // Best ask price
-        //     double lastTradePrice;                // Last trade price
-        //     double lastTradeQuantity;             // Last trade quantity
-        //     double open24h;                       // Opening price 24 hours ago
-        //     double high24h;                       // Highest price in last 24 hours
-        //     double low24h;                        // Lowest price in last 24 hours
-        //     double volumeQuote24h;                // 24-hour volume in quote currency
-        //     double priceChange24h;
-        //     double priceChangePercent24h;
-
-    
+        auto asks = json_msg["asks"];           
 
         MarketData data;
         data.exchangeId = core::ExchangeId::fromString(exchange);
