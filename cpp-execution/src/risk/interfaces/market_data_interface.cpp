@@ -85,20 +85,11 @@ bool MarketDataInterface::initialize() {
                 updateMarketDataCache(update.exchangeId, update.tradingPair, update);
             }
         );
-
-        // Set message handler AFTER normalizer is initialized and client is connected
-        zmqClient_->subscribe("market_data", 
-            [this](const std::string& topic, const std::string& message, const std::unordered_map<std::string, std::string>& metadata) {
-                // Handle incoming market data messages
-                (void)metadata;
-                try {
-                    auto json_msg = nlohmann::json::parse(message);
-                    normalizer_->processMarketDataJson(json_msg);
-                } catch (const std::exception& e) {
-                    LOG_ERROR("Failed to process market data message: " + std::string(e.what()));
-                }
+ 
+        zmqClient_->subscribe("orderbook.",  // or "orderbook.*" if your ZMQ supports wildcards
+            [this](const std::string& topic, const std::string& message, const auto&) {
+                this->processSyntheticOrderBook(topic, message);
             });
-        
         // Start ZeroMQ client
         if (!zmqClient_->connect()) {
             LOG_ERROR("Failed to start ZeroMQ client");
@@ -116,6 +107,67 @@ bool MarketDataInterface::initialize() {
         return false;
     }
 }
+void MarketDataInterface::processSyntheticOrderBook(const std::string& topic, const std::string& message) {
+    try {
+        auto json_msg = nlohmann::json::parse(message);
+        std::string exchange = json_msg["exchange"];
+        std::string symbol = json_msg["symbol"];
+        // Parse bids/asks
+        auto bids = json_msg["bids"];
+        auto asks = json_msg["asks"];
+        // struct MarketData {
+        //     core::Symbol tradingPair;              // Trading pair symbol (e.g., "BTC/USDT")
+        //     ExchangeId exchangeId;               // Exchange identifier
+        //     Timestamp timestamp;                  // Timestamp of the data
+        //     double price;                         // Current market price
+        //     double volume;                        // Trading volume
+        //     double bid;                           // Best bid price
+        //     double ask;                           // Best ask price
+        //     double lastTradePrice;                // Last trade price
+        //     double lastTradeQuantity;             // Last trade quantity
+        //     double open24h;                       // Opening price 24 hours ago
+        //     double high24h;                       // Highest price in last 24 hours
+        //     double low24h;                        // Lowest price in last 24 hours
+        //     double volumeQuote24h;                // 24-hour volume in quote currency
+        //     double priceChange24h;
+        //     double priceChangePercent24h;
+
+    
+
+        MarketData data;
+        data.exchangeId = core::ExchangeId::fromString(exchange);
+        data.tradingPair = core::Symbol::fromString(symbol);
+        data.timestamp = std::chrono::system_clock::now();
+        if (!bids.empty() && !asks.empty()) {
+            data.bid = bids[0][0]; // Best bid price
+            data.ask = asks[0][0]; // Best ask price
+            data.price = (data.bid + data.ask) / 2.0; // Mid price
+        }
+        //update cache directly here
+        std::string cacheKey = createCacheKey(data.exchangeId, data.tradingPair);
+        {
+            std::unique_lock<std::shared_mutex> lock(cacheMutex_);
+            marketDataCache_[cacheKey] = MarketDataCacheEntry{
+                data,
+                std::chrono::steady_clock::now(),
+                true
+            };
+        }
+        // For simplicity, we won't calculate volume, lastTradePrice, etc. here
+        // In a real implementation, you'd extract these from the message if available
+
+        
+        // ...convert to your internal types and update cache/state...
+        //this is the already process orderbook update, like this
+        // b'{"data":"{\\"asks\\":[[4518.98,0.1263],[4518.99,0.0096],[4519.0,0.0455],[4519.01,0.0036],[4519.02,1.1072],[4519.03,0.0467],[4519.04,0.0048],[4519.05,1.1012],[4519.06,0.0101],[4519.08,0.0676],[4519.12,0.'
+
+
+    } catch (const std::exception& e) {
+        LOG_ERROR("Failed to process synthetic orderbook: " + std::string(e.what()));
+    }
+}
+
+
 std::optional<MarketData> MarketDataInterface::getMarketData(
    const core::Symbol& tradingPair,
    const std::optional<std::string>& exchangeId) {
@@ -690,19 +742,7 @@ void MarketDataInterface::handleDisconnection() {
     errorStats_.connectionErrors++;
     errorStats_.lastError = std::chrono::steady_clock::now();
 }
-
-// Update initialize() to start monitoring thread
-// bool MarketDataInterface::initialize() {
-//     // ... existing code ...
-    
-//     if (initialized_) {
-//         // Start connection monitoring thread
-//         reconnectionThread_ = std::thread(&MarketDataInterface::connectionMonitorLoop, this);
-//     }
-    
-//     return initialized_;
-// }
-
+ 
 // Update destructor
 MarketDataInterface::~MarketDataInterface() {
     running_ = false;

@@ -10,7 +10,7 @@ sock.setsockopt(zmq.SUBSCRIBE, b"")
 start = time.time()
 count = 0
 try:
-    while time.time() - start < 8:
+    while time.time() - start < 1111:
         try:
             topic = sock.recv(flags=0)
             data = sock.recv(flags=0)

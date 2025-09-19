@@ -142,6 +142,8 @@ public:
     };
 
 private:
+
+    void processSyntheticOrderBook(const std::string& topic, const std::string& message);
     VolatilityCalculator volatilityCalculator_;
     // Helper methods
     std::string createCacheKey(const core::ExchangeId& exchangeId, const core::Symbol& tradingPair) const;

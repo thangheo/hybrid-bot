@@ -531,7 +531,6 @@ public:
                               << intel.DebugString().size() << " bytes)" << std::endl;
                 }
                 if (zmq_comm_server_) {
-                    // Serialize protobuf message and publish on the "MARKET_INTEL" topic.
                     // Use publishAsync to avoid blocking the intelligence generation path.
                     // zmq_comm_server_->publishAsync("MARKET_INTEL", intel.SerializeAsString(), MessagePriority::NORMAL);
                     zmq_comm_server_->publishProtobuf("MARKET_INTEL", intel, MessagePriority::NORMAL);
@@ -600,17 +599,91 @@ public:
                           << update.exchangeId.toString() << ":" << update.tradingPair.toString() << std::endl;
                 return;
             }
-            // zmq_comm_server_->PublishOrderBookData(
-            //     update.exchangeId.toString(), 
-            //     update.tradingPair.toString(), 
-            //     jsonStr
-            // );
-            zmq_comm_server_->publishAsync("orderbook_data", jsonStr, MessagePriority::HIGH);
+            
+            std::string topic = "orderbook." + update.exchangeId.toString() + "." + update.tradingPair.toString();
+
+            zmq_comm_server_->publishAsync(topic, jsonStr, MessagePriority::HIGH);
             orderBookUpdatesReceived_.fetch_add(1);
         } catch (const std::exception& e) {
             std::cerr << "Error publishing orderbook for risk: " << e.what() << std::endl;
         }
     }
+    //we need to send market data to risk module
+    // void publishMarketDataToRisk(const MarketDataUpdate& marketData) {
+    //     try {
+
+    //         // struct MarketData {
+    //         //     core::Symbol tradingPair;              // Trading pair symbol (e.g., "BTC/USDT")
+    //         //     ExchangeId exchangeId;               // Exchange identifier
+    //         //     Timestamp timestamp;                  // Timestamp of the data
+    //         //     double price;                         // Current market price
+    //         //     double volume;                        // Trading volume
+    //         //     double bid;                           // Best bid price
+    //         //     double ask;                           // Best ask price
+    //         //     double lastTradePrice;                // Last trade price
+    //         //     double lastTradeQuantity;             // Last trade quantity
+    //         //     double open24h;                       // Opening price 24 hours ago
+    //         //     double high24h;                       // Highest price in last 24 hours
+    //         //     double low24h;                        // Lowest price in last 24 hours
+    //         //     double volumeQuote24h;                // 24-hour volume in quote currency
+    //         //     double priceChange24h;
+    //         //     double priceChangePercent24h;
+
+    //         //     std::map<std::string, double> extra;  // Extra fields for extensibility
+                
+    //         //     MarketData() 
+    //         //         : price(0.0), volume(0.0), bid(0.0), ask(0.0), 
+    //         //         lastTradePrice(0.0), lastTradeQuantity(0.0),
+    //         //         open24h(0.0), high24h(0.0), low24h(0.0), volumeQuote24h(0.0) {}
+    //         // };
+    //         if (zmq_comm_server_) {
+    //             // Create JSON message for market data
+    //             nlohmann::json marketDataMsg;
+    //             marketDataMsg["exchange"] = marketData.exchangeId.toString();
+    //             marketDataMsg["symbol"] = marketData.tradingPair.toString();
+    //             marketDataMsg["timestamp"] = std::chrono::duration_cast<std::chrono::milliseconds>(
+    //                 marketData.timestamp.time_since_epoch()).count();
+                
+    //             if (marketData.type == MarketDataType::TRADE) {
+    //                 marketDataMsg["type"] = "trade";
+    //                 marketDataMsg["price"] = marketData.price;
+    //                 marketDataMsg["quantity"] = marketData.quantity;
+    //                 marketDataMsg["side"] = (marketData.side == SIDE_BUY) ? "buy" : "sell";
+    //             } else if (marketData.type == MarketDataType::QUOTE) {
+    //                 marketDataMsg["type"] = "quote";
+    //                 marketDataMsg["bid_price"] = marketData.bidPrice;
+    //                 marketDataMsg["bid_quantity"] = marketData.bidQuantity;
+    //                 marketDataMsg["ask_price"] = marketData.askPrice;
+    //                 marketDataMsg["ask_quantity"] = marketData.askQuantity;
+    //             } else {
+    //                 return; // Unsupported type
+    //             }
+                
+    //             std::string jsonStr = marketDataMsg.dump();
+                
+    //             // Publish with risk-compatible topic format
+    //             static std::atomic<int> publishCount{0};
+    //             int count = publishCount.fetch_add(1);
+                
+    //             if (count < 5 || count % 5000 == 0) {
+    //                 std::cout << "📈 Publishing market data #" << count 
+    //                           << " for " << marketData.exchangeId.toString() 
+    //                           << ":" << marketData.tradingPair.toString() << std::endl;
+    //             }
+                
+    //             if (jsonStr.size() > 5000) {
+    //                 std::cerr << "Warning: Market data message size is large (" 
+    //                           << jsonStr.size() << " bytes)" << std::endl;
+    //             }
+                
+    //             std::string topic = "marketdata." + marketData.exchangeId.toString() + "." + marketData.tradingPair.toString();
+                
+    //             zmq_comm_server_->publishAsync(topic, jsonStr, MessagePriority::HIGH);
+    //         }
+    //     } catch (const std::exception& e) {
+    //         std::cerr << "Error publishing market data to risk: " << e.what() << std::endl;
+    //     }
+    // }
 
     // ✅ Simple health check like full_bridge.cpp
     bool checkSystemHealth() {
