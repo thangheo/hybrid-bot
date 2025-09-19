@@ -2,6 +2,9 @@
 
 #include "risk/interfaces/data_interface.hpp"
 #include "communication/zmq_client.hpp"
+// later we should include abstract class for rest client interface
+//now use binance client directly
+#include "data_ingestion/rest/exchanges/binance_client.hpp"
 #include "data_ingestion/orderbook/order_book.hpp"
 #include "data_ingestion/normalization/order_book_normalizer.hpp"
 #include "risk/risk_config.hpp"
@@ -16,6 +19,7 @@
 
 using namespace trading::communication;
 using namespace trading::core;
+using namespace trading::data_ingestion;
 namespace trading {
 namespace risk {
 
@@ -142,6 +146,8 @@ public:
     };
 
 private:
+    // Binance REST client for balance and order history
+    data_ingestion::BinanceClient m_binanceClient;
 
     void processSyntheticOrderBook(const std::string& topic, const std::string& message);
     VolatilityCalculator volatilityCalculator_;
@@ -157,7 +163,7 @@ private:
     std::unique_ptr<trading::communication::GenericZmqClient> zmqClient_;
     
     // Order book normalizer for processing raw data
-    std::shared_ptr<data_ingestion::OrderBookNormalizer> normalizer_;
+    // std::shared_ptr<data_ingestion::OrderBookNormalizer> normalizer_;
     // we should use shared_ptr for normalizer_ to avoid ownership issues in callbacks
     // Cache for market data
     mutable std::shared_mutex cacheMutex_;

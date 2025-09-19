@@ -12,11 +12,11 @@ namespace common {
 using Timestamp = std::chrono::time_point<std::chrono::system_clock>;
 using TradingSignal = trading::strategy::TradingSignal;
 using OrderType = trading::execution::models::OrderType;
-
-enum class OrderSide {
-    BUY,
-    SELL
-};
+using OrderSide = trading::execution::models::OrderSide;
+// enum class OrderSide {
+//     BUY,
+//     SELL
+// };
  
 // using OrderBook = std::unordered_map<double, PriceLevel>;
 

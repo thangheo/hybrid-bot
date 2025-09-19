@@ -18,10 +18,7 @@ namespace models {
 /**
  * Represents the side of an order (buy or sell)
  */
-// enum class OrderSide {
-//     BUY,  // Buy order
-//     SELL  // Sell order
-// };
+
 using OrderSide = core::Direction;
 
 /**
