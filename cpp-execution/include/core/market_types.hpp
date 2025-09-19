@@ -44,6 +44,7 @@ namespace trading {
  /**
   * Represents a trading symbol (trading pair)
   */
+ 
  struct Symbol {
      std::string base;    // Base currency (e.g., BTC)
      std::string quote;   // Quote currency (e.g., USDT)

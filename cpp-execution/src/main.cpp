@@ -605,7 +605,7 @@ public:
             //     update.tradingPair.toString(), 
             //     jsonStr
             // );
-             zmq_comm_server_->publishAsync("orderbook_data", jsonStr, MessagePriority::HIGH);
+            zmq_comm_server_->publishAsync("orderbook_data", jsonStr, MessagePriority::HIGH);
             orderBookUpdatesReceived_.fetch_add(1);
         } catch (const std::exception& e) {
             std::cerr << "Error publishing orderbook for risk: " << e.what() << std::endl;

@@ -249,9 +249,19 @@ private:
      
     // Member variables
     bool initialized_;
+    bool publishEnabled_ = false; // when true, reconstructor will publish orderbook snapshots
     std::shared_ptr<trading::communication::GenericZmqServer> publisher_;
     std::shared_ptr<OrderBookManager> orderBookManager_;
     mutable std::mutex mutex_;
+
+public:
+    /**
+     * @brief Enable or disable publishing of order book snapshots from the reconstructor
+     *
+     * By default publishing is disabled to avoid duplicate messages when a higher-level
+     * component (for example the main application) also publishes order book updates.
+     */
+    void setPublishingEnabled(bool enabled) { publishEnabled_ = enabled; }
 };
  
 } // namespace data_ingestion
