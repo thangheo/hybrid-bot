@@ -7,6 +7,7 @@
 #include <unordered_map>
 #include "communication/zmq_config.hpp"
 #include "communication/zmq_client.hpp"
+#include <iostream>
 
 using namespace trading::communication;
 namespace trading {
@@ -41,6 +42,15 @@ MarketDataInterface::MarketDataInterface(const RiskConfig& config) : MarketDataI
     zmqPublisherEndpoint_ = config.zmqPublisherEndpoint;
     cacheValidityDuration_ = std::chrono::milliseconds(config.marketDataCacheDurationMs);
     auto DEFAULT_EXCHANGE = config.defaultExchange;
+    // config binance api key secret here later
+    //get api key from environment variable
+    std::string apiKey = std::getenv("BINANCE_API_KEY") ? std::getenv("BINANCE_API_KEY") : "";
+    std::string apiSecret = std::getenv("BINANCE_API_SECRET") ? std::getenv("BINANCE_API_SECRET") : "";
+    if(apiKey.empty() || apiSecret.empty()) {
+        LOG_ERROR("Binance API key or secret not set in environment variables");
+    }
+    m_binanceClient.setApiKey(apiKey, apiSecret);
+
     LOG_INFO("MarketDataInterface configured with subscriber: " + zmqSubscriberEndpoint_ + 
              ", publisher: " + zmqPublisherEndpoint_ + 
              ", cache duration: " + std::to_string(cacheValidityDuration_.count()) + "ms" +
@@ -77,19 +87,11 @@ bool MarketDataInterface::initialize() {
             // Handle incoming requests if needed
             return "ACK"; // Simple acknowledgment for now
         };
-
-        // Initialize order book normalizer
-        normalizer_ = std::make_shared<data_ingestion::OrderBookNormalizer>(
-            [this](const data_ingestion::OrderBookUpdate& update) {
-                // This callback is called when order book is normalized
-                updateMarketDataCache(update.exchangeId, update.tradingPair, update);
-            }
-        );
- 
-        zmqClient_->subscribe("orderbook.*",  // or "orderbook.*" if your ZMQ supports wildcards
-            [this](const std::string& topic, const std::string& message, const auto&) {
-                this->processSyntheticOrderBook(topic, message);
-            });
+        //we should not subscribe here, because there is subscribeMarketData function
+        // zmqClient_->subscribe("orderbook.*",  // or "orderbook.*" if your ZMQ supports wildcards
+        //     [this](const std::string& topic, const std::string& message, const auto&) {
+        //         this->processSyntheticOrderBook(topic, message);
+        //     });
         // Start ZeroMQ client
         if (!zmqClient_->connect()) {
             LOG_ERROR("Failed to start ZeroMQ client");
@@ -113,6 +115,7 @@ void MarketDataInterface::processSyntheticOrderBook(const std::string& topic, co
         if (topic.find("orderbook.") == std::string::npos) {
             return; // Not a synthetic orderbook message
         }
+        std::cout << "Processing synthetic orderbook message" << std::endl;
         auto json_msg = nlohmann::json::parse(message);
         std::string exchange = json_msg["exchange"];
         std::string symbol = json_msg["symbol"];
@@ -176,29 +179,30 @@ std::optional<MarketData> MarketDataInterface::getMarketData(
            }
        }
    }
-   
+   // Cache miss or expired
+   return std::nullopt;  // Indicate no data available
    // If not in cache or expired, try to get from order book normalizer
-   try {
-       auto orderBookUpdate = normalizer_->getOrderBook(exchange, tradingPair);
-       // Convert to MarketData
-       MarketData marketData = convertOrderBookToMarketData(orderBookUpdate);
+//    try {
+//        auto orderBookUpdate = normalizer_->getOrderBook(exchange, tradingPair);
+//        // Convert to MarketData
+//        MarketData marketData = convertOrderBookToMarketData(orderBookUpdate);
        
-       // Update cache
-       {
-           std::unique_lock<std::shared_mutex> lock(cacheMutex_);
-           marketDataCache_[cacheKey] = MarketDataCacheEntry{
-               marketData,
-               std::chrono::steady_clock::now(),
-               true
-           };
-       }
+//        // Update cache
+//        {
+//            std::unique_lock<std::shared_mutex> lock(cacheMutex_);
+//            marketDataCache_[cacheKey] = MarketDataCacheEntry{
+//                marketData,
+//                std::chrono::steady_clock::now(),
+//                true
+//            };
+//        }
        
-       return marketData;  // Automatic conversion to std::optional
+//        return marketData;  // Automatic conversion to std::optional
        
-   } catch (const std::exception& e) {
-       LOG_ERROR("Failed to get market data: " + std::string(e.what()));
-       return std::nullopt;  // Proper way to indicate failure
-   }
+//    } catch (const std::exception& e) {
+//        LOG_ERROR("Failed to get market data: " + std::string(e.what()));
+//        return std::nullopt;  // Proper way to indicate failure
+//    }
 }
 
 double MarketDataInterface::getCurrentPrice(
@@ -223,7 +227,7 @@ double MarketDataInterface::getCurrentPrice(
     if (marketData.lastTradePrice > 0) {
         return marketData.lastTradePrice;
     }
-    
+    //actually all are same
     // Fallback to price field
     return marketData.price;
 }
@@ -399,20 +403,21 @@ bool MarketDataInterface::subscribeMarketData(
     core::ExchangeId exchange = core::ExchangeId::fromString(exchangeId.value_or(DEFAULT_EXCHANGE));
     
     // Subscribe to orderbook and trade topics for this pair
-    std::string orderBookTopic = "market.orderbook." + exchange.toString() + "." + tradingPair.toString();
-    std::string tradeTopic = "market.trade." + exchange.toString() + "." + tradingPair.toString();
+    std::string orderBookTopic = "orderbook." + exchange.toString() + "." + tradingPair.toString();
+    // std::string tradeTopic = "trade." + exchange.toString() + "." + tradingPair.toString();
 
     bool success = true;
     MessageHandler handler = [this](const std::string& topic, const std::string& message,
                                   const std::unordered_map<std::string, std::string>& metadata) {
         if (topic.find("orderbook") != std::string::npos) {
-            processOrderBookUpdate(topic, message);
+            // processOrderBookUpdate(topic, message);
+            processSyntheticOrderBook(topic, message);
         } else if (topic.find("trade") != std::string::npos) {
             processTradeUpdate(topic, message);
         }
     };
     success &= zmqClient_->subscribe(orderBookTopic, handler);
-    success &= zmqClient_->subscribe(tradeTopic, handler);
+    // success &= zmqClient_->subscribe(tradeTopic, handler);
     
     if (success) {
         LOG_INFO("Subscribed to market data for " + exchange.toString() + ":" + tradingPair.toString());
@@ -437,12 +442,12 @@ bool MarketDataInterface::unsubscribeMarketData(
     core::ExchangeId exchange = core::ExchangeId::fromString(exchangeId.value_or(DEFAULT_EXCHANGE));
     
     // Unsubscribe from topics
-    std::string orderBookTopic = "market.orderbook." + exchange.toString() + "." + tradingPair.toString();
-    std::string tradeTopic = "market.trade." + exchange.toString() + "." + tradingPair.toString();
+    std::string orderBookTopic = "orderbook." + exchange.toString() + "." + tradingPair.toString();
+    // std::string tradeTopic = "trade." + exchange.toString() + "." + tradingPair.toString();
 
     bool success = true;
     success &= zmqClient_->unsubscribe(orderBookTopic);
-    success &= zmqClient_->unsubscribe(tradeTopic);
+    // success &= zmqClient_->unsubscribe(tradeTopic);
     
     return success;
 }
@@ -474,41 +479,41 @@ std::string MarketDataInterface::createCacheKey(
     return exchangeId.toString() + ":" + tradingPair.toString();
 }
 
-void MarketDataInterface::processOrderBookUpdate(
-    const std::string& topic, 
-    const std::string& message) {
+// void MarketDataInterface::processOrderBookUpdate(
+//     const std::string& topic, 
+//     const std::string& message) {
     
-    try {
-        // Parse topic to extract exchange and trading pair
-        // Format: "market.orderbook.binance.BTC/USDT"
-        std::vector<std::string> parts;
-        std::stringstream ss(topic);
-        std::string part;
+//     try {
+//         // Parse topic to extract exchange and trading pair
+//         // Format: "market.orderbook.binance.BTC/USDT"
+//         std::vector<std::string> parts;
+//         std::stringstream ss(topic);
+//         std::string part;
         
-        while (std::getline(ss, part, '.')) {
-            parts.push_back(part);
-        }
+//         while (std::getline(ss, part, '.')) {
+//             parts.push_back(part);
+//         }
         
-        if (parts.size() >= 4) {
-            core::ExchangeId exchange = core::ExchangeId::fromString(parts[2]);
-            core::Symbol tradingPair = parts[3];
+//         if (parts.size() >= 4) {
+//             core::ExchangeId exchange = core::ExchangeId::fromString(parts[2]);
+//             core::Symbol tradingPair = parts[3];
             
-            // Create MarketDataUpdate from the message
-            core::MarketDataUpdate update;
-            update.exchangeId = exchange;
-            update.tradingPair = tradingPair;
-            update.updateType = "orderbook";
-            update.timestamp = std::chrono::system_clock::now();
-            update.data = std::vector<uint8_t>(message.begin(), message.end());
+//             // Create MarketDataUpdate from the message
+//             core::MarketDataUpdate update;
+//             update.exchangeId = exchange;
+//             update.tradingPair = tradingPair;
+//             update.updateType = "orderbook";
+//             update.timestamp = std::chrono::system_clock::now();
+//             update.data = std::vector<uint8_t>(message.begin(), message.end());
             
-            // Process through normalizer
-            normalizer_->processMarketData(update);
-        }
+//             // Process through normalizer
+//             // normalizer_->processMarketData(update);
+//         }
         
-    } catch (const std::exception& e) {
-        LOG_ERROR("Error processing order book update: " + std::string(e.what()));
-    }
-}
+//     } catch (const std::exception& e) {
+//         LOG_ERROR("Error processing order book update: " + std::string(e.what()));
+//     }
+// }
 
 void MarketDataInterface::processTradeUpdate(
     const std::string& topic, 
@@ -603,7 +608,7 @@ core::MarketData MarketDataInterface::convertOrderBookToMarketData(
 }
 
 // Factory function implementation
-
+//we need to implement updateBalance and getBalance
 // Implementation
 void MarketDataInterface::updateBalance(const core::ExchangeId& exchangeId, 
                                        const std::string& asset, 
@@ -641,6 +646,9 @@ std::map<std::string, double> MarketDataInterface::getExchangeBalances(
 }
 // Implementation
 void MarketDataInterface::connectionMonitorLoop() {
+    auto lastBalanceUpdate = std::chrono::steady_clock::now();
+    const auto balanceUpdateInterval = std::chrono::seconds(60);
+
     while (running_) {
         std::this_thread::sleep_for(std::chrono::seconds(5));
         
@@ -667,17 +675,7 @@ void MarketDataInterface::connectionMonitorLoop() {
                 zmqConfig.request_timeout = std::chrono::milliseconds(10000);   
 
                 zmqClient_ = std::make_unique<communication::GenericZmqClient>(zmqConfig);
-               
-                // zmqClient_->subscribe("market.orderbook.*", [](const std::string& topic, 
-                //                          const std::string& data,
-                //                          const auto& metadata) {
-                //     // Process orderbook update
-                //     (void)metadata;
-                    
-                //     LOG_INFO("Received orderbook update on topic: " + topic);
-                // });
-
-               
+                // Subscribe to relevant topics
                 
                 if (zmqClient_->start()) {
                     needsReconnection_.store(false);
@@ -686,7 +684,19 @@ void MarketDataInterface::connectionMonitorLoop() {
                     // Resubscribe to all topics
                     // You'd need to track subscriptions for this
                 }
-                
+                auto now = std::chrono::steady_clock::now();
+                if (now - lastBalanceUpdate > balanceUpdateInterval) {
+                    try {
+                        auto balances = m_binanceClient.getBalances();
+                        for (const auto& [asset, amount] : balances) {
+                            updateBalance(core::ExchangeId::binance(), asset, amount);
+                        }
+                        lastBalanceUpdate = now;
+                    } catch (const std::exception& e) {
+                        LOG_ERROR("Failed to update Binance balances: " + std::string(e.what()));
+                    }
+                }
+            
             } catch (const std::exception& e) {
                 errorStats_.connectionErrors++;
                 LOG_ERROR("Reconnection failed: " + std::string(e.what()));
@@ -742,7 +752,7 @@ MarketDataInterface::~MarketDataInterface() {
         zmqClient_->stop();
     }
     zmqClient_.reset();
-    normalizer_.reset();
+    // normalizer_.reset();
     marketDataCache_.clear();
     priceHistories_.clear();
     orderHistoryCache_.clear();

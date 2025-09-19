@@ -5,7 +5,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 # find fmt
 find_package(fmt REQUIRED)
-
+find_package(Protobuf REQUIRED)
+find_package(CURL REQUIRED)
 # find_package(readerwriterqueue REQUIRED)
 
 # Collect all source files
@@ -42,7 +43,7 @@ target_include_directories(data_ingestion
         ${CMAKE_SOURCE_DIR}/include
         ${CMAKE_SOURCE_DIR}/third_parties/readerwriterqueue  
         ${CMAKE_SOURCE_DIR}/communication/
-        
+        ${CMAKE_SOURCE_DIR}/third_parties/curl/include
     PRIVATE
         ${CMAKE_SOURCE_DIR}/include/data_ingestion
         ${CMAKE_SOURCE_DIR}/src/data_ingestion
@@ -60,6 +61,7 @@ target_link_libraries(data_ingestion
         Boost::filesystem
         OpenSSL::SSL
         OpenSSL::Crypto
+        CURL::libcurl
     PRIVATE
         ${Protobuf_LIBRARIES}
         ${gRPC_LIBRARIES}
