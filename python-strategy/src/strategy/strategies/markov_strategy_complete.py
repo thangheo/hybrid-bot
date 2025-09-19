@@ -1268,24 +1268,50 @@ class MarkovETFStrategyPersistent(BaseStrategy):
                 break
         return duration
     
-    def _update_transition_matrix(self, regime_history: List[MarketRegime]) -> None:
+    def _update_transition_matrix(self, regime_history: List[MarketRegime], alpha: float = 0.5, min_transitions: int = 3, blend_weight: float = 0.7) -> None:
+        """
+        Update the transition matrix using both short-term (windowed) and long-term (cumulative) counts.
+        - Laplace/Dirichlet smoothing (alpha)
+        - Fallback to uniform for rare regimes
+        - Blend short-term and long-term matrices
+        """
+        n_regimes = 9
+        # --- Short-term (windowed) counts ---
+        short_counts = np.zeros((n_regimes, n_regimes)) + alpha
         if len(regime_history) < 2:
+            self.transition_matrix = np.ones((n_regimes, n_regimes)) / n_regimes
             return
-            
-        self.transition_matrix = np.zeros((9, 9))
-        
         for i in range(len(regime_history) - 1):
             current_regime = regime_history[i]
             next_regime = regime_history[i + 1]
             current_idx = self.regime_to_index[current_regime]
             next_idx = self.regime_to_index[next_regime]
-            self.transition_matrix[current_idx, next_idx] += 1
-        
-        # Normalize
-        row_sums = self.transition_matrix.sum(axis=1, keepdims=True)
-        row_sums[row_sums == 0] = 1
-        self.transition_matrix = self.transition_matrix / row_sums
-    
+            short_counts[current_idx, next_idx] += 1
+
+        # --- Long-term (cumulative) counts ---
+        if not hasattr(self, 'long_term_counts') or self.long_term_counts is None:
+            self.long_term_counts = np.zeros((n_regimes, n_regimes)) + alpha
+        # Update long-term counts with this window
+        for i in range(len(regime_history) - 1):
+            current_regime = regime_history[i]
+            next_regime = regime_history[i + 1]
+            current_idx = self.regime_to_index[current_regime]
+            next_idx = self.regime_to_index[next_regime]
+            self.long_term_counts[current_idx, next_idx] += 1
+
+        # --- Normalize to get probabilities ---
+        short_tm = short_counts / short_counts.sum(axis=1, keepdims=True)
+        long_tm = self.long_term_counts / self.long_term_counts.sum(axis=1, keepdims=True)
+
+        # --- Fallback for rare regimes (row sum too small) ---
+        for i in range(n_regimes):
+            if short_counts[i].sum() < min_transitions:
+                short_tm[i] = np.ones(n_regimes) / n_regimes
+            if self.long_term_counts[i].sum() < min_transitions:
+                long_tm[i] = np.ones(n_regimes) / n_regimes
+
+        # --- Blend short and long-term matrices ---
+        self.transition_matrix = blend_weight * short_tm + (1 - blend_weight) * long_tm
     def _update_regime_duration_stats(self, regime_history: List[MarketRegime]) -> None:
         if len(regime_history) < 3:
             return
@@ -1603,7 +1629,6 @@ class MarkovETFStrategyPersistent(BaseStrategy):
                 'next_most_likely': self.current_regime_info.next_most_likely.value,
                 'transition_confidence': self.current_regime_info.transition_confidence
             }
-        
         info['persistence'] = self.get_persistence_stats()
         return info
     def get_system_capabilities(self) -> Dict:

@@ -82,7 +82,7 @@ start_with_monitor() {
     # Start C++ first
     if start_cpp; then
         print_status "$BLUE" "Waiting 5 seconds for C++ to initialize..."
-        sleep 5
+        sleep 15
         
         # Start Python
         if start_python; then
@@ -389,7 +389,7 @@ case "$1" in
         # Start C++ first (includes build step, Python depends on it)
         if start_cpp; then
             print_status "$BLUE" "Waiting 5 seconds for C++ to initialize..."
-            sleep 5
+            sleep 15
             
             # Start Python
             start_python
