@@ -260,7 +260,7 @@ public:
             //load symbols from strategy config
             std::vector<Symbol> symbols;
             for (const auto& [name, pair] : strategyConfig_.tradingPairs) {
-                symbols.push_back(Symbol::fromString(name));
+                symbols.push_back(name);
             } 
             // 1. Start data ingestion
             std::cout << "Starting data ingestion with symbols: ";

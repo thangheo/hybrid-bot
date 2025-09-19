@@ -249,8 +249,7 @@
      AdaptiveMechanismConfig adaptiveMechanismConfig;
      
      // Map of trading pairs to monitor (symbol -> exchange ID)
-     std::map<std::string, core::ExchangeId> tradingPairs;
-     
+    std::map<core::Symbol, core::ExchangeId> tradingPairs;
      // Constructor
      StrategyConfig() : strategy_id(core::StrategyId("integrated_strategy", "1.0.0")), version("1.0.0") {}
 

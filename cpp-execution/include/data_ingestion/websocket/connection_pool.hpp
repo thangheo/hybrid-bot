@@ -129,7 +129,7 @@ private:
             try {
                 if (connection) {
                     connection->stop();
-                    connection->disconnect();
+                    // Do NOT call disconnect() here; cleanup will be handled by the run() thread
                 }
             } catch (...) {
                 // ignore

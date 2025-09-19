@@ -57,11 +57,8 @@ BinanceWebSocketClient::BinanceWebSocketClient(std::string host, std::string por
 
 BinanceWebSocketClient::~BinanceWebSocketClient() {
     LOG_INFO("Destroying BinanceWebSocketClient");
-    
-    // Signal stop and cleanup
+    // Only signal stop; cleanup will be handled by the run() thread
     stop();
-    cleanup();
-    
     LOG_INFO("BinanceWebSocketClient destroyed");
 }
 
@@ -281,20 +278,16 @@ void BinanceWebSocketClient::setStatusCallback(StatusCallback callback) {
 
 void BinanceWebSocketClient::run() {
     LOG_INFO("Starting WebSocket event loop");
-    
     should_stop_.store(false);
-    
     while (!should_stop_.load()) {
         try {
             if (!ioc_) {
                 LOG_ERROR("IO context not initialized");
                 break;
             }
-
             // Run pending operations with timeout
             auto start_time = std::chrono::steady_clock::now();
             auto handlers_run = ioc_->poll();
-            
             // If we're connected, start reading and heartbeat
             if (state_.load() == ConnectionStatus::CONNECTED && ws_ && ws_->is_open()) {
                 if (handlers_run == 0) {
@@ -303,27 +296,24 @@ void BinanceWebSocketClient::run() {
                     startHeartbeat();
                 }
             }
-            
             // Run IO context with timeout to prevent blocking indefinitely
             ioc_->run_for(std::chrono::milliseconds(100));
-            
             // If we lost connection and reconnection is enabled, schedule reconnect
             if ((state_.load() == ConnectionStatus::ERROR || 
                  state_.load() == ConnectionStatus::DISCONNECTED) &&
                 reconnect_enabled_ && !should_stop_.load()) {
                 scheduleReconnect();
             }
-            
         } catch (const std::exception& e) {
             LOG_ERROR("Event loop error: " + std::string(e.what()));
             handleError("Event loop exception: " + std::string(e.what()));
-            
             // Brief pause before continuing
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
     }
-    
     LOG_INFO("WebSocket event loop stopped");
+    // Only cleanup from the run() thread, after event loop exits
+    cleanup();
 }
 
 void BinanceWebSocketClient::stop() {

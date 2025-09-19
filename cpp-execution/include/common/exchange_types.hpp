@@ -9,6 +9,19 @@ namespace common {
 
 class ExchangeId {
 public:
+  // Rule of Five - add explicit copy semantics
+    ExchangeId(const ExchangeId& other) : id_(other.id_) {}
+    ExchangeId(ExchangeId&& other) noexcept : id_(std::move(other.id_)) {}
+    ExchangeId& operator=(const ExchangeId& other) {
+        if (this != &other) id_ = other.id_;
+        return *this;
+    }
+    ExchangeId& operator=(ExchangeId&& other) noexcept {
+        if (this != &other) id_ = std::move(other.id_);
+        return *this;
+    }
+    ~ExchangeId() = default;  // Make destruction explicit
+    
     // Default constructor for container usage
     ExchangeId() : id_("UNKNOWN") {}
     //for unkown exchange
