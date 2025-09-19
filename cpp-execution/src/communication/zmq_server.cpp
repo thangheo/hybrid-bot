@@ -1107,11 +1107,11 @@ bool GenericZmqServer::isValidTopic(const std::string& topic) {
     }
     
     // Manual validation - faster than regex
-    for (char c : topic) {
-        if (!std::isalnum(c) && c != '.' && c != '_' && c != '-') {
-            return false;
-        }
-    }
+    // for (char c : topic) {
+    //     if (!std::isalnum(c) && c != '.' && c != '_' && c != '-') {
+    //         return false;
+    //     }
+    // }
     return true;
 }
 
