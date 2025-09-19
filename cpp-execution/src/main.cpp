@@ -290,6 +290,8 @@ public:
             // 3. Start PTCA manager
             ptcaManager_->start();        
             lastPriceUpdate_ = std::chrono::steady_clock::now();
+            // Start exec worker pool
+            startExecWorkerPool();
             
             std::cout << "🚀 FULL TRADING SYSTEM IS NOW LIVE!" << std::endl;
             std::cout << "Monitoring system health and processing..." << std::endl;
@@ -347,6 +349,7 @@ public:
             // Stop worker pool
             stopOrderbookWorkerPool();
             stopSignalWorkerPool();
+            stopExecWorkerPool();
             
             // Stop other services
             if (strategyEngine_) {
@@ -663,6 +666,15 @@ private:
     size_t signalQueueLimit_ = 10000; // cap signals
     size_t signalBatchSize_ = 16; // number of signals per batch
     size_t signalWorkerCount_ = 2; // number of workers for signals
+
+    // Execution task queue and worker pool (avoid spawning detached threads)
+    std::deque<execution::TradingSignal> execQueue_;
+    std::mutex execQueueMutex_;
+    std::condition_variable execQueueCv_;
+    std::vector<std::thread> execWorkers_;
+    std::atomic<bool> execWorkersRunning_{false};
+    size_t execQueueLimit_ = 5000;
+    size_t execWorkerCount_ = 2; // tune for VPS
 
     //market intel
     std::atomic<uint64_t> messagesProcessed_{0};
@@ -1144,6 +1156,67 @@ private:
             }
         }
     }
+    // Execution worker pool control
+    void startExecWorkerPool() {
+        if (execWorkersRunning_.exchange(true)) return;
+        execWorkers_.clear();
+        for (size_t i = 0; i < execWorkerCount_; ++i) {
+            execWorkers_.emplace_back([this, i]() { this->execWorkerLoop(i); });
+        }
+        std::cout << "Started " << execWorkers_.size() << " exec worker(s)" << std::endl;
+    }
+
+    void stopExecWorkerPool() {
+        if (!execWorkersRunning_.exchange(false)) return;
+        execQueueCv_.notify_all();
+        for (auto &t : execWorkers_) if (t.joinable()) t.join();
+        execWorkers_.clear();
+        {
+            std::lock_guard<std::mutex> lk(execQueueMutex_);
+            execQueue_.clear();
+        }
+        std::cout << "Exec worker pool stopped" << std::endl;
+    }
+
+    void execWorkerLoop(size_t workerId) {
+        while (execWorkersRunning_.load()) {
+            execution::TradingSignal task;
+            {
+                std::unique_lock<std::mutex> lk(execQueueMutex_);
+                execQueueCv_.wait_for(lk, std::chrono::milliseconds(200), [this]() {
+                    return !execQueue_.empty() || !execWorkersRunning_.load();
+                });
+                if (!execWorkersRunning_.load() && execQueue_.empty()) break;
+                if (execQueue_.empty()) continue;
+                task = std::move(execQueue_.front());
+                execQueue_.pop_front();
+            }
+            try {
+                std::this_thread::sleep_for(100ms); // simulate delay
+                ExecutionResponse response = executionService_->executeSignal(task);
+                if (!response.success) {
+                    std::cout << "❌ Execution failed for signal " << task.id 
+                              << ": " << response.error_message << std::endl;
+                    continue;
+                }
+                execution::models::ExecutionReport report;
+                report.setOrderId("ORDER_" + task.id);
+                report.setSymbol(task.symbol);
+                report.setSide(task.direction == core::Direction::BUY ? execution::models::OrderSide::BUY : execution::models::OrderSide::SELL);
+                report.setQuantity(task.targetSize);
+                report.setFilledQuantity(task.targetSize);
+                report.setStatus(execution::models::OrderState::FILLED);
+                if (riskManager_) {
+                    riskManager_->processExecutionReport(report);
+                }
+                std::cout << "📈 Executed: " << task.symbol.toString() << " " 
+                          << (task.direction == core::Direction::BUY ? "BUY" : "SELL") 
+                          << " " << task.targetSize << std::endl;
+            } catch (const std::exception &e) {
+                std::cerr << "Exec worker " << workerId << " error: " << e.what() << std::endl;
+            }
+        }
+    }
     void setupComponentConnections() {        
         // Minimal callback: validate & enqueue update to worker queue
         dataIngestionService_->setOrderBookCallback([this](const auto& update) {
@@ -1190,38 +1263,16 @@ private:
     }
     
     void realExecution(const execution::TradingSignal& signal) {
+        // Enqueue execution task to worker pool to avoid thread explosion
         ordersExecuted_++;
-        
-        // Simulate execution delay
-        std::thread([this, signal]() {
-            std::this_thread::sleep_for(100ms);
-            ExecutionResponse response = executionService_->executeSignal(signal);
-            if (!response.success) {
-                std::cout << "❌ Execution failed for signal " << signal.id 
-                          << ": " << response.error_message << std::endl;
-                return;
-            }
-            // Create mock execution report
-            execution::models::ExecutionReport report;
-
-            report.setOrderId("ORDER_" + signal.id);
-            report.setSymbol(signal.symbol);
-            report.setSide(signal.direction == core::Direction::BUY ? 
-                          execution::models::OrderSide::BUY : 
-                          execution::models::OrderSide::SELL);
-            report.setQuantity(signal.targetSize);
-            report.setFilledQuantity(signal.targetSize);
-            report.setStatus(execution::models::OrderState::FILLED);
-            
-            // Send back to risk manager for position tracking
-            if (riskManager_) {
-                riskManager_->processExecutionReport(report);
-            }
-
-            std::cout << "📈 Executed: " << signal.symbol.toString()
-                      << " " << (signal.direction == core::Direction::BUY ? "BUY" : "SELL")
-                      << " " << signal.targetSize << std::endl;
-        }).detach();
+        std::unique_lock<std::mutex> lk(execQueueMutex_);
+        if (execQueue_.size() >= execQueueLimit_) {
+            // drop oldest
+            execQueue_.pop_front();
+        }
+        execQueue_.push_back(signal);
+        lk.unlock();
+        execQueueCv_.notify_one();
     }
     
           
