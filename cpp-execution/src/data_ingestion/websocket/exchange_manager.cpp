@@ -166,10 +166,20 @@ void ExchangeManager::onWebSocketRawData(const RawMarketData& rawData) {
         return;
     }
 
-    if (!processingQueue_.enqueue(rawData)) {
-        std::cerr << "Processing queue full, dropping data\n";
-    } else {
-        processingQueueSize_.fetch_add(1, std::memory_order_relaxed);
+    // Protect enqueue with a mutex so we can safely swap/destroy the queue
+    // instance in clearProcessingQueue without races.
+    {
+        std::lock_guard<std::mutex> lock(enqueueMutex_);
+        auto qptr = processingQueuePtr_.load(std::memory_order_acquire);
+        if (!qptr) {
+            std::cerr << "Processing queue not available, dropping data\n";
+            return;
+        }
+        if (!qptr->enqueue(rawData)) {
+            std::cerr << "Processing queue full, dropping data\n";
+        } else {
+            processingQueueSize_.fetch_add(1, std::memory_order_relaxed);
+        }
     }
 }
 // void ExchangeManager::onWebSocketData(const core::ExchangeId& exchange,
@@ -475,7 +485,9 @@ void ExchangeManager::processingWorker() {
         // Try to dequeue up to batchSize items
         RawMarketData rawData;
         size_t dequeued = 0;
-        while (dequeued < batchSize && processingQueue_.try_dequeue(rawData)) {
+        // Load the queue instance atomically for dequeuing
+    auto qptr = processingQueuePtr_.load(std::memory_order_acquire);
+        while (dequeued < batchSize && qptr && qptr->try_dequeue(rawData)) {
             batch.push_back(std::move(rawData));
             ++dequeued;
         }
@@ -520,9 +532,19 @@ void ExchangeManager::processingWorker() {
 }
 
 void ExchangeManager::clearProcessingQueue() {
+    // Replace current queue with a fresh instance atomically. This allows the
+    // old queue to be destroyed (and its internal buffers freed) once no more
+    // threads hold shared_ptr references to it.
+    // Acquire enqueue mutex to prevent producers from enqueuing while we swap
+    // and destroy the old queue instance.
+    std::lock_guard<std::mutex> lock(enqueueMutex_);
+    auto newQueue = std::make_shared<ReaderWriterQueue<RawMarketData>>(DEFAULT_PROCESSING_QUEUE_CAP);
+    auto oldQueue = processingQueuePtr_.exchange(newQueue, std::memory_order_acq_rel);
+
+    // Drain the old queue to update counters and know how many items were removed
     RawMarketData tmp;
     size_t removed = 0;
-    while (processingQueue_.try_dequeue(tmp)) {
+    while (oldQueue && oldQueue->try_dequeue(tmp)) {
         ++removed;
         processingQueueSize_.fetch_sub(1, std::memory_order_relaxed);
     }

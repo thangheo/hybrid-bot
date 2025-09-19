@@ -69,7 +69,14 @@ private:
     std::unique_ptr<BinanceAdapter> adapter_;
     // Bounded concurrent queue for incoming raw market data. Default capacity
     // tuned to a large value to avoid unbounded growth; adjust as needed.
-    ReaderWriterQueue<RawMarketData> processingQueue_{100000};
+    static constexpr size_t DEFAULT_PROCESSING_QUEUE_CAP = 100000;
+    // Use shared_ptr so we can atomically swap the queue instance to release
+    // internal buffers when clearing. Producers/consumers should use
+    // std::atomic_load/store on this shared_ptr to get a safe reference.
+    // Use atomic shared_ptr to allow safe atomic load/exchange without deprecated
+    // shared_ptr atomic helpers.
+    std::atomic<std::shared_ptr<ReaderWriterQueue<RawMarketData>>> processingQueuePtr_
+        { std::make_shared<ReaderWriterQueue<RawMarketData>>(DEFAULT_PROCESSING_QUEUE_CAP) };
 
     // Approximate size of the processing queue (maintained atomically by enqueue/dequeue sites)
     std::atomic<size_t> processingQueueSize_{0};
