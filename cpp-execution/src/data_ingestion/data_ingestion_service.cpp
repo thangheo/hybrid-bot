@@ -260,7 +260,7 @@ bool DataIngestionService::setupExchangeManager() {
                 }
             }
             // Next try environment variable
-            // memoryLimitKB = 307200; // 300 MB hardcoded for now //disable hardcoded limit
+            memoryLimitKB = 307200; // 300 MB hardcoded for now //disable hardcoded limit
             if (memoryLimitKB > 0) {
                 exchangeManager_->setMemoryLimitKB(memoryLimitKB);
                 std::cout << "ExchangeManager memory limit set to " << memoryLimitKB << " KB\n";
