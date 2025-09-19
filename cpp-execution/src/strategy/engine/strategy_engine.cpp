@@ -18,7 +18,7 @@
  #include <iomanip>
 #include <iostream>
 #include <common/logger.hpp>
-
+using namespace trading::core;
  namespace trading {
  namespace strategy {
  
@@ -92,13 +92,19 @@
 
         // Initialize trading pairs
         for (const auto& pair : config_.tradingPairs) {
-            if (!initializeTradingPair(pair.first, pair.second)) {
-                LOG_WARN("Failed to initialize trading pair: {} on exchange: {}", 
-                         pair.first, pair.second.toString());
-                continue;
-            }
+            std::string pairId = pair.second.toString() + ":" + pair.first.toString();
+            TradingPairState state;
+            state.symbol = pair.first;
+            state.exchangeId = pair.second;
+            state.state = TradingPairState::ACTIVE;
+            state.lastUpdateTime = std::chrono::system_clock::now();
+            state.lastPrice = 0.0;
+            state.previousPrice = 0.0;
+            tradingPairStates_[pairId] = std::move(state);
+            LOG_INFO("Monitoring trading pair: {} on exchange {}", 
+                     pair.first.toString(), pair.second.toString());
         }
-        
+         
         // Load default parameters
         loadDefaultParameters();
         

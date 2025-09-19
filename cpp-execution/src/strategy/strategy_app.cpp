@@ -38,13 +38,13 @@ private:
             auto json = nlohmann::json::parse(message);
             
             // Extract order book data
-            std::string exchangeIdStr = json["exchangeId"];
+            
             core::Symbol tradingPair = core::Symbol::fromString(json["tradingPair"]);
             uint64_t sequenceNumber = json["sequenceNumber"];
             bool isSnapshot = json["isSnapshot"];
                         
             // Convert to your types
-            core::ExchangeId exchangeId = core::ExchangeId::fromString(exchangeIdStr);
+            core::ExchangeId exchangeId = core::ExchangeId::fromString(json["exchangeId"]);
             core::Symbol symbol = tradingPair;
             
             // Parse bids and asks
@@ -71,7 +71,7 @@ private:
             std::shared_ptr<OrderBook> orderBook;
             {
                 std::lock_guard<std::mutex> lock(orderBooksMutex_);
-                std::string key = exchangeIdStr + ":" + tradingPair.toString(); // Match your key format
+                std::string key = exchangeId.toString() + ":" + tradingPair.toString(); // Match your key format
                 
                 auto it = orderBooks_.find(key);
                 if (it == orderBooks_.end()) {
@@ -130,7 +130,7 @@ public:
         // });
     }
     
-    bool start(const std::vector<std::string>& symbols) {
+    bool start(const std::vector<core::Symbol>& symbols) {
         if (!zmqClient_->start()) {
             LOG_ERROR("Failed to start ZeroMQ client");
             return false;
@@ -139,7 +139,7 @@ public:
         // Subscribe to order book topics for each symbol
         for (const auto& symbol : symbols) {
             // Topic format: "orderbook.BINANCE.BTC/USDT" (matches your publisher format)
-            std::string topic = "orderbook.BINANCE." + symbol;
+            std::string topic = "orderbook.BINANCE." + symbol.toString();
             if (!zmqClient_->subscribe(topic, [this](const std::string& topic, const std::string& message, const std::unordered_map<std::string, std::string>& metadata) {
                     // metadata is currently unused but required by MessageHandler signature
                     this->handleOrderBookMessage(topic, message);
@@ -396,7 +396,7 @@ int main() {
         
         // 5. Initialize and start OrderBook receiver
         OrderBookReceiver orderBookReceiver(&strategyEngine);
-        std::vector<std::string> symbols;
+        std::vector<core::Symbol> symbols;
         for (const auto& pair : config.tradingPairs) {
             symbols.push_back(pair.first);
         }

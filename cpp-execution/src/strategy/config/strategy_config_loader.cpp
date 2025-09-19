@@ -80,12 +80,16 @@ StrategyConfig loadStrategyConfigFromFile(const std::string& filePath) {
         // Parse trading pairs
         if (configJson.contains("tradingPairs") && configJson["tradingPairs"].is_array()) {
             for (const auto& pair : configJson["tradingPairs"]) {
-                std::string symbol = pair["symbol"];
-                ExchangeId exchangeId = ExchangeId::fromString(pair["exchange"]);
                 
+                if (!pair.contains("symbol") || !pair.contains("exchange")) {
+                    LOG_ERROR("Trading pair entry missing 'symbol' or 'exchange': {}", pair.dump());
+                    throw std::runtime_error("Trading pair entry missing 'symbol' or 'exchange': " + pair.dump());
+                }
+                core::Symbol symbol = core::Symbol::fromString(pair["symbol"].get<std::string>());
+                core::ExchangeId exchangeId = core::ExchangeId::fromString(pair["exchange"].get<std::string>());
                 if (!exchangeId.isValid()) {
-                    LOG_ERROR("Invalid exchange ID in trading pair: {}", pair.dump());
-                    throw std::runtime_error("Invalid exchange ID in trading pair: " + pair.dump());
+                    LOG_ERROR("Invalid exchange ID in trading pair: {}", pair["exchange"].get<std::string>());
+                    throw std::runtime_error("Invalid exchange ID in trading pair: " + pair["exchange"].get<std::string>());
                 }
                 if (symbol.empty()) {
                     LOG_ERROR("Empty symbol in trading pair: {}", pair.dump());
@@ -99,8 +103,11 @@ StrategyConfig loadStrategyConfigFromFile(const std::string& filePath) {
                 if (pair.contains("description")) {
                     LOG_DEBUG("Trading pair {} description: {}", symbol, pair["description"].get<std::string>());
                 }
-                
+                // std::string symbol = pair["symbol"];
+                // std::string exchange = pair["exchange"];
+                // config.tradingPairs[symbol] = exchange;
                 config.tradingPairs[symbol] = exchangeId;
+                // config.tradingPairs[core::Symbol::fromString(symbol)] = exchangeId; --- IGNORE ---
             }
         }
         
@@ -623,7 +630,7 @@ bool saveStrategyConfigToFile(const StrategyConfig& config, const std::string& f
         json pairsJson = json::array();
         for (const auto& [symbol, exchangeId] : config.tradingPairs) {
             json pairJson;
-            pairJson["symbol"] = symbol;
+            pairJson["symbol"] = symbol.toString();
             pairJson["exchange"] = exchangeId.toString();
             pairsJson.push_back(pairJson);
         }
