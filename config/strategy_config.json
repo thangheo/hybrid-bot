@@ -154,12 +154,6 @@
        "description": "Kaspa - DAG-based mining"
      },
      {
-       "symbol": "SEI/USDT",
-       "exchange": "BINANCE",
-       "category": "trading_focused",
-       "description": "Sei - Trading-optimized L1"
-     },
-     {
        "symbol": "TIA/USDT",
        "exchange": "BINANCE",
        "category": "modular_blockchain",

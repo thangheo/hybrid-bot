@@ -119,7 +119,6 @@ data_ingestion:
     - "SUIUSDT"    # Sui - Move-based high-performance chain
     - "APTUSDT"    # Aptos - Another Move language blockchain
     - "KASUSDT"    # Kaspa - DAG-based mining innovation
-    - "SEIUSDT"    # Sei - Trading-optimized Layer 1
     - "TIAUSDT"    # Celestia - Modular blockchain pioneer
     - "STRKUSDT"   # StarkNet - ZK-rollup scaling solution
 
@@ -133,7 +132,6 @@ data_ingestion:
     - "ATOMUSDT"   # Cosmos - Internet of blockchains
     - "FTMUSDT"    # Fantom - High-speed, low-cost platform
     - "ALGOUSDT"   # Algorand - Pure proof-of-stake
-    - "HNTUSDT"    # Helium - Decentralized wireless network
 
     # Privacy & Security
     - "XMRUSDT"    # Monero - Privacy-by-default leader
