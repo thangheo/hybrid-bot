@@ -146,6 +146,8 @@ public:
     };
 
 private:
+    void pruneMarketDataCache();
+
     // Binance REST client for balance and order history
     data_ingestion::BinanceClient m_binanceClient;
 

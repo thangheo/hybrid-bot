@@ -156,6 +156,18 @@ void MarketDataInterface::processSyntheticOrderBook(const std::string& topic, co
     }
 }
 
+void MarketDataInterface::pruneMarketDataCache() {
+    std::unique_lock<std::shared_mutex> lock(cacheMutex_);
+    auto now = std::chrono::steady_clock::now();
+    for (auto it = marketDataCache_.begin(); it != marketDataCache_.end(); ) {
+        auto age = std::chrono::duration_cast<std::chrono::milliseconds>(now - it->second.lastUpdate).count();
+        if (age > cacheValidityDuration_.count()) {
+            it = marketDataCache_.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
 
 std::optional<MarketData> MarketDataInterface::getMarketData(
    const core::Symbol& tradingPair,
@@ -702,6 +714,8 @@ void MarketDataInterface::connectionMonitorLoop() {
                 LOG_ERROR("Reconnection failed: " + std::string(e.what()));
             }
         }
+        std::this_thread::sleep_for(std::chrono::seconds(5));
+        pruneMarketDataCache();
     }
 }
 
