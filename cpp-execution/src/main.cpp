@@ -564,126 +564,54 @@ public:
             orderBookMsg["sequence"] = update.sequenceNumber;
             orderBookMsg["timestamp"] = std::chrono::duration_cast<std::chrono::milliseconds>(
                 update.exchangeTimestamp.time_since_epoch()).count();
-            
-            // Add bids
+                        
+            // Best bid/ask
+            orderBookMsg["bid"] = !update.bids.empty() ? update.bids[0].price : 0.0;
+            orderBookMsg["ask"] = !update.asks.empty() ? update.asks[0].price : 0.0;
+                        
+            // Mid price
+            orderBookMsg["price"] = (!update.bids.empty() && !update.asks.empty())
+                ? (update.bids[0].price + update.asks[0].price) / 2.0 : 0.0;
+
+            // Volume at top 5 levels
+            double bidVolume = 0.0, askVolume = 0.0;
+            for (int i = 0; i < std::min(5, (int)update.bids.size()); ++i) bidVolume += update.bids[i].quantity;
+            for (int i = 0; i < std::min(5, (int)update.asks.size()); ++i) askVolume += update.asks[i].quantity;
+            orderBookMsg["volume"] = bidVolume + askVolume;
+
+            // Add bids/asks arrays
             orderBookMsg["bids"] = nlohmann::json::array();
-            for (const auto& bid : update.bids) {
-                orderBookMsg["bids"].push_back({bid.price, bid.quantity});
-            }
-            
-            // Add asks
+            for (const auto& bid : update.bids) orderBookMsg["bids"].push_back({bid.price, bid.quantity});
             orderBookMsg["asks"] = nlohmann::json::array();
-            for (const auto& ask : update.asks) {
-                orderBookMsg["asks"].push_back({ask.price, ask.quantity});
-            }
-            
+            for (const auto& ask : update.asks) orderBookMsg["asks"].push_back({ask.price, ask.quantity});
+
+            // Placeholders for 24h stats and last trade
+            orderBookMsg["lastTradePrice"] = orderBookMsg["price"];
+            orderBookMsg["lastTradeQuantity"] = 0.0;
+            orderBookMsg["open24h"] = orderBookMsg["price"];
+            orderBookMsg["high24h"] = orderBookMsg["price"];
+            orderBookMsg["low24h"] = orderBookMsg["price"];
+            orderBookMsg["volumeQuote24h"] = 0.0;
+            orderBookMsg["priceChange24h"] = 0.0;
+            orderBookMsg["priceChangePercent24h"] = 0.0;
+            // Optionally: orderBookMsg["extra"] = nlohmann::json::object();
+
             std::string jsonStr = orderBookMsg.dump();
-            
-            // Publish with risk-compatible topic format
+            std::string topic = "orderbook." + update.exchangeId.toString() + "." + update.tradingPair.toString();
+            zmq_comm_server_->publishAsync(topic, jsonStr, MessagePriority::HIGH);          
+            orderBookUpdatesReceived_.fetch_add(1);
+            //print debug info for every 5000th
             static std::atomic<int> publishCount{0};
             int count = publishCount.fetch_add(1);
-            
-            if (count < 5 || count % 5000== 0) {
-                std::cout << "📊 Publishing orderbook #" << count 
-                          << " for " << update.exchangeId.toString() 
+            if (count < 5 || count % 5000 == 0) {
+                std::cout << "📢 Published orderbook #" << count
+                          << " for " << update.exchangeId.toString()
                           << ":" << update.tradingPair.toString() << std::endl;
             }
-            
-            if (jsonStr.size() > 10000) {
-                std::cerr << "Warning: Orderbook message size is large (" 
-                          << jsonStr.size() << " bytes)" << std::endl;
-            }
-            //check if orderbook is empty
-            if (update.bids.empty() || update.asks.empty()) {
-                std::cerr << "Warning: Orderbook is empty for "
-                          << update.exchangeId.toString() << ":" << update.tradingPair.toString() << std::endl;
-                return;
-            }
-            
-            std::string topic = "orderbook." + update.exchangeId.toString() + "." + update.tradingPair.toString();
-
-            zmq_comm_server_->publishAsync(topic, jsonStr, MessagePriority::HIGH);
-            orderBookUpdatesReceived_.fetch_add(1);
         } catch (const std::exception& e) {
             std::cerr << "Error publishing orderbook for risk: " << e.what() << std::endl;
         }
-    }
-    //we need to send market data to risk module
-    // void publishMarketDataToRisk(const MarketDataUpdate& marketData) {
-    //     try {
-
-    //         // struct MarketData {
-    //         //     core::Symbol tradingPair;              // Trading pair symbol (e.g., "BTC/USDT")
-    //         //     ExchangeId exchangeId;               // Exchange identifier
-    //         //     Timestamp timestamp;                  // Timestamp of the data
-    //         //     double price;                         // Current market price
-    //         //     double volume;                        // Trading volume
-    //         //     double bid;                           // Best bid price
-    //         //     double ask;                           // Best ask price
-    //         //     double lastTradePrice;                // Last trade price
-    //         //     double lastTradeQuantity;             // Last trade quantity
-    //         //     double open24h;                       // Opening price 24 hours ago
-    //         //     double high24h;                       // Highest price in last 24 hours
-    //         //     double low24h;                        // Lowest price in last 24 hours
-    //         //     double volumeQuote24h;                // 24-hour volume in quote currency
-    //         //     double priceChange24h;
-    //         //     double priceChangePercent24h;
-
-    //         //     std::map<std::string, double> extra;  // Extra fields for extensibility
-                
-    //         //     MarketData() 
-    //         //         : price(0.0), volume(0.0), bid(0.0), ask(0.0), 
-    //         //         lastTradePrice(0.0), lastTradeQuantity(0.0),
-    //         //         open24h(0.0), high24h(0.0), low24h(0.0), volumeQuote24h(0.0) {}
-    //         // };
-    //         if (zmq_comm_server_) {
-    //             // Create JSON message for market data
-    //             nlohmann::json marketDataMsg;
-    //             marketDataMsg["exchange"] = marketData.exchangeId.toString();
-    //             marketDataMsg["symbol"] = marketData.tradingPair.toString();
-    //             marketDataMsg["timestamp"] = std::chrono::duration_cast<std::chrono::milliseconds>(
-    //                 marketData.timestamp.time_since_epoch()).count();
-                
-    //             if (marketData.type == MarketDataType::TRADE) {
-    //                 marketDataMsg["type"] = "trade";
-    //                 marketDataMsg["price"] = marketData.price;
-    //                 marketDataMsg["quantity"] = marketData.quantity;
-    //                 marketDataMsg["side"] = (marketData.side == SIDE_BUY) ? "buy" : "sell";
-    //             } else if (marketData.type == MarketDataType::QUOTE) {
-    //                 marketDataMsg["type"] = "quote";
-    //                 marketDataMsg["bid_price"] = marketData.bidPrice;
-    //                 marketDataMsg["bid_quantity"] = marketData.bidQuantity;
-    //                 marketDataMsg["ask_price"] = marketData.askPrice;
-    //                 marketDataMsg["ask_quantity"] = marketData.askQuantity;
-    //             } else {
-    //                 return; // Unsupported type
-    //             }
-                
-    //             std::string jsonStr = marketDataMsg.dump();
-                
-    //             // Publish with risk-compatible topic format
-    //             static std::atomic<int> publishCount{0};
-    //             int count = publishCount.fetch_add(1);
-                
-    //             if (count < 5 || count % 5000 == 0) {
-    //                 std::cout << "📈 Publishing market data #" << count 
-    //                           << " for " << marketData.exchangeId.toString() 
-    //                           << ":" << marketData.tradingPair.toString() << std::endl;
-    //             }
-                
-    //             if (jsonStr.size() > 5000) {
-    //                 std::cerr << "Warning: Market data message size is large (" 
-    //                           << jsonStr.size() << " bytes)" << std::endl;
-    //             }
-                
-    //             std::string topic = "marketdata." + marketData.exchangeId.toString() + "." + marketData.tradingPair.toString();
-                
-    //             zmq_comm_server_->publishAsync(topic, jsonStr, MessagePriority::HIGH);
-    //         }
-    //     } catch (const std::exception& e) {
-    //         std::cerr << "Error publishing market data to risk: " << e.what() << std::endl;
-    //     }
-    // }
+    } 
 
     // ✅ Simple health check like full_bridge.cpp
     bool checkSystemHealth() {
