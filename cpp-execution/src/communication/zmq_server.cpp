@@ -1099,22 +1099,20 @@ bool GenericZmqServer::reconnectSocket(zmq::socket_t& socket, const std::string&
 }
 
 bool GenericZmqServer::isValidTopic(const std::string& topic) {
-    // Topic validation rules:
-    // - Not empty
-    // - Length between 1 and 255 characters
-    // - Contains only alphanumeric, dots, underscores, and hyphens
-    // - Doesn't start or end with a dot
-    
     if (topic.empty() || topic.length() > 255) {
         return false;
     }
-    
     if (topic.front() == '.' || topic.back() == '.') {
         return false;
     }
     
-    static const std::regex topic_regex(R"([a-zA-Z0-9._-]+)");
-    return std::regex_match(topic, topic_regex);
+    // Manual validation - faster than regex
+    for (char c : topic) {
+        if (!std::isalnum(c) && c != '.' && c != '_' && c != '-') {
+            return false;
+        }
+    }
+    return true;
 }
 
 std::function<bool(const GenericMessage&, const GenericMessage&)>
