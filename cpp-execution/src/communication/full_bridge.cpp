@@ -146,14 +146,20 @@ private:
         // });
         zmqServer_->registerRequestHandler("TradingIntent", 
             [this](const std::string& request_data, const std::unordered_map<std::string, std::string>& /*metadata*/) -> std::string {
-                trading::TradingIntent intent;
-                if (!intent.ParseFromString(request_data)) {
+                // Reuse protobuf objects to reduce heap churn from repeated allocations
+                static thread_local trading::TradingIntent tl_intent;
+                static thread_local trading::ExecutionAcknowledgment tl_ack;
+
+                tl_intent.Clear();
+                if (!tl_intent.ParseFromString(request_data)) {
                     std::cerr << "Failed to parse TradingIntent from request data." << std::endl;
                     return "";
                 }
-                trading::ExecutionAcknowledgment ack = this->handleTradingIntent(intent);
+
+                // Use the reused ack object for the response
+                tl_ack = this->handleTradingIntent(tl_intent);
                 std::string response_data;
-                if (!ack.SerializeToString(&response_data)) {
+                if (!tl_ack.SerializeToString(&response_data)) {
                     std::cerr << "Failed to serialize ExecutionAcknowledgment." << std::endl;
                     return "";
                 }
