@@ -460,11 +460,13 @@ bool RebalancingEngine::scheduleRebalancingChecks() {
                     }
                 }
                 
-                // Sleep until next scheduled rebalancing
+                // Sleep until next scheduled rebalancing (do not hold m_stateMutex while sleeping)
+                std::chrono::system_clock::time_point nextScheduled;
                 {
                     std::lock_guard<std::mutex> lock(m_stateMutex);
-                    std::this_thread::sleep_until(m_nextScheduledRebalancing);
+                    nextScheduled = m_nextScheduledRebalancing;
                 }
+                std::this_thread::sleep_until(nextScheduled);
                 
                 // Check if auto-rebalancing is still enabled after sleep
                 {

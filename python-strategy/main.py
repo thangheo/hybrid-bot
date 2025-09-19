@@ -439,9 +439,9 @@ class EnhancedTradingBot:
                     continue
                     
                 # Check for significant regime changes or high confidence signals
-                if (intel.regime_confidence > 0.85 or 
-                    intel.liquidity_ratio > 0.9 or 
-                    abs(intel.order_book_imbalance) > 0.4):
+                if (intel.regime_confidence > 0.7 or 
+                    intel.liquidity_ratio > 0.7 or 
+                    abs(intel.order_book_imbalance) > 0.3):
                     
                     # self.logger.info(f"🚀 High confidence C++ signal for {symbol}: "
                     #                 f"regime_conf={intel.regime_confidence:.2f}, "

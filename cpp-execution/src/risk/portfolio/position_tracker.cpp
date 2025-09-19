@@ -253,24 +253,36 @@ void PositionTracker::processExecutionReport(const ExecutionReport& executionRep
         double weightedAvgPrice = totalValue / std::abs(totalFillQuantity);
         
         // Update or create position
-        std::lock_guard<std::mutex> lock(m_positionsMutex);
-        std::string positionKey = createPositionKey(exchangeId, tradingPair);
-        
-        auto it = m_positions.find(positionKey);
-        if (it != m_positions.end()) {
-            // Update existing position
-            it->second.updatePosition(totalFillQuantity, weightedAvgPrice);
-            updatePositionCurrentPrice(it->second);
-            notifyPositionUpdate(it->second, "modified");
-        } else {
-            // Create new position
-            Position newPosition(exchangeId, tradingPair, strategyId, 
-                               totalFillQuantity, weightedAvgPrice);
-            updatePositionCurrentPrice(newPosition);
-            // m_positions.emplace(positionKey, std::move(newPosition));
-            // notifyPositionUpdate(m_positions[positionKey], "new");
-            auto [it, inserted] = m_positions.emplace(positionKey, std::move(newPosition));
-            notifyPositionUpdate(it->second, "new");
+        std::optional<Position> toNotify;
+        std::string notifyType;
+
+        {
+            std::lock_guard<std::mutex> lock(m_positionsMutex);
+            std::string positionKey = createPositionKey(exchangeId, tradingPair);
+
+            auto it = m_positions.find(positionKey);
+            if (it != m_positions.end()) {
+                // Update existing position
+                it->second.updatePosition(totalFillQuantity, weightedAvgPrice);
+                updatePositionCurrentPrice(it->second);
+                // make a copy to notify outside the lock
+                toNotify = it->second;
+                notifyType = "modified";
+            } else {
+                // Create new position
+                Position newPosition(exchangeId, tradingPair, strategyId, 
+                                   totalFillQuantity, weightedAvgPrice);
+                updatePositionCurrentPrice(newPosition);
+                auto [it2, inserted] = m_positions.emplace(positionKey, std::move(newPosition));
+                if (inserted) {
+                    toNotify = it2->second;
+                    notifyType = "new";
+                }
+            }
+        }
+
+        if (toNotify.has_value()) {
+            notifyPositionUpdate(*toNotify, notifyType);
         }
         
     } catch (const std::exception& e) {
@@ -323,14 +335,22 @@ void PositionTracker::updateMarketData(const MarketData& marketData) {
         // print debug data
         std::cout << "Updated market data: " << marketData.tradingPair.toString()
                             << " @ " << marketData.price << std::endl;
-        // Update positions with new price
-        std::lock_guard<std::mutex> lock(m_positionsMutex);
-        for (auto& [key, position] : m_positions) {
-            if (position.getTradingPair().toString() == marketData.tradingPair.toString() &&
-                position.getExchangeId() == marketData.exchangeId) {
-                position.setCurrentPrice(marketData.price);
-                notifyPositionUpdate(position, "price_update");
+
+        // Update positions with new price, but collect notifications to send outside the lock
+        std::vector<Position> notifyList;
+        {
+            std::lock_guard<std::mutex> lock(m_positionsMutex);
+            for (auto& [key, position] : m_positions) {
+                if (position.getTradingPair().toString() == marketData.tradingPair.toString() &&
+                    position.getExchangeId() == marketData.exchangeId) {
+                    position.setCurrentPrice(marketData.price);
+                    notifyList.push_back(position);
+                }
             }
+        }
+
+        for (const auto& p : notifyList) {
+            notifyPositionUpdate(p, "price_update");
         }
         
     } catch (const std::exception& e) {
@@ -413,36 +433,45 @@ bool PositionTracker::updatePosition(const ExchangeId& exchangeId, const Trading
             return false;
         }
         
-        std::lock_guard<std::mutex> lock(m_positionsMutex);
-        std::string key = createPositionKey(exchangeId, tradingPair);
-        
-        auto it = m_positions.find(key);
-        if (it != m_positions.end()) {
-            // Update existing position with direct quantity set
-            Position& position = it->second;
-            double quantityDelta = quantity - position.getQuantity();
-            
-            if (std::abs(quantityDelta) > 1e-8) {
-                position.updatePosition(quantityDelta, currentPrice);
-                notifyPositionUpdate(position, "reconciliation");
+        std::optional<Position> toNotifyPos;
+        std::string toNotifyType;
+
+        {
+            std::lock_guard<std::mutex> lock(m_positionsMutex);
+            std::string key = createPositionKey(exchangeId, tradingPair);
+
+            auto it = m_positions.find(key);
+            if (it != m_positions.end()) {
+                // Update existing position with direct quantity set
+                Position& position = it->second;
+                double quantityDelta = quantity - position.getQuantity();
+
+                if (std::abs(quantityDelta) > 1e-8) {
+                    position.updatePosition(quantityDelta, currentPrice);
+                    toNotifyPos = position; // copy for notify
+                    toNotifyType = "reconciliation";
+                }
+            } else if (std::abs(quantity) > 1e-8) {
+                // Create new position for reconciliation
+                StrategyId reconciliationStrategy;
+                reconciliationStrategy.id = "reconciliation";
+                reconciliationStrategy.version = "1.0";
+
+                Position newPosition(exchangeId, tradingPair, reconciliationStrategy, quantity, currentPrice);
+                updatePositionCurrentPrice(newPosition);
+                auto [it2, inserted] = m_positions.emplace(key, std::move(newPosition));
+                if (inserted) {
+                    toNotifyPos = it2->second;
+                    toNotifyType = "new_reconciliation";
+                } else {
+                    std::cerr << "Failed to insert new position during reconciliation" << std::endl;
+                    return false;
+                }
             }
-        } else if (std::abs(quantity) > 1e-8) {
-            // Create new position for reconciliation
-            StrategyId reconciliationStrategy;
-            reconciliationStrategy.id = "reconciliation";
-            reconciliationStrategy.version = "1.0";
-            
-            Position newPosition(exchangeId, tradingPair, reconciliationStrategy, quantity, currentPrice);
-            updatePositionCurrentPrice(newPosition);
-            // m_positions.emplace(key, std::move(newPosition));
-            // notifyPositionUpdate(m_positions[key], "new_reconciliation");
-            auto [it, inserted] = m_positions.emplace(key, std::move(newPosition));
-            if (inserted) {
-                notifyPositionUpdate(it->second, "new_reconciliation");
-            } else {
-                std::cerr << "Failed to insert new position during reconciliation" << std::endl;
-                return false;
-            }
+        }
+
+        if (toNotifyPos.has_value()) {
+            notifyPositionUpdate(*toNotifyPos, toNotifyType);
         }
         
         return true;
@@ -487,8 +516,15 @@ void PositionTracker::clearPositions() {
 
 // Private helper methods
 void PositionTracker::notifyPositionUpdate(const Position& position, const std::string& updateType) {
-    std::lock_guard<std::mutex> lock(m_callbackMutex);
-    for (const auto& callback : m_updateCallbacks) {
+    // Copy callbacks under lock, then invoke outside the lock to avoid
+    // potential deadlocks if callbacks call back into PositionTracker.
+    std::vector<PositionUpdateCallback> callbacksCopy;
+    {
+        std::lock_guard<std::mutex> lock(m_callbackMutex);
+        callbacksCopy = m_updateCallbacks;
+    }
+
+    for (const auto& callback : callbacksCopy) {
         try {
             callback(position, updateType);
         } catch (const std::exception& e) {
