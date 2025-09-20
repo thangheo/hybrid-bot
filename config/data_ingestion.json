@@ -1,19 +1,31 @@
 {
   "publisher": {
-    "zmq_endpoint": "tcp://*:5560",
+    "market_intel_endpoint": "tcp://*:5555",
+    "orderbook_endpoint": "tcp://*:5557",
+    "trading_intent_endpoint": "tcp://*:5556",
     "publisher_type": "zeromq",
     "buffer_size": 10000,
-    "max_queue_size": 10000,
-    "max_publish_rate": 5000,
-    "publish_interval_ms": 50,
+    "market_intel_max_queue_size": 100,
+    "orderbook_max_queue_size": 100,
+    "trading_intent_max_queue_size": 100,
+    "intel_max_publish_rate": 50,
+    "internal_max_publish_rate": 5000,
+    "trading_intent_max_publish_rate": 1000,
+    "intel_publish_interval_ms": 15000,
+    "internal_publish_interval_ms": 10,
+    "trading_intent_publish_interval_ms": 1000,
     "heartbeat_interval_ms": 30000,
-    "zmq_linger_ms": 1000,
-    "zmq_hwm": 10000,
+    "intel_zmq_linger_ms": 1000,
+    "internal_zmq_linger_ms": 1000,
+    "trading_intent_zmq_linger_ms": 1000,
+    "intel_zmq_hwm": 1000,
+    "internal_zmq_hwm": 10000,
+    "trading_intent_zmq_hwm": 10000,
     "enable_compression": false,
     "publish_raw_data": true,
     "publish_normalized_data": true,
     "compression": "none",
-    "topics": ["orderbook", "trades", "ticker"]
+    "topics": ["MARKET_INTEL", "orderbook", "trades", "ticker", "candles"]
   },
   "exchanges": {
     "binance": {

@@ -201,16 +201,29 @@ public:
     /**
      * Get queue size
      */
-    size_t getQueueSize() const {
-        std::lock_guard<std::mutex> lock(queue_mutex_);
-        return message_queue_.size();
+    size_t getQueueSize(std::string queue_type) const {
+        // std::lock_guard<std::mutex> lock(queue_mutex_);
+        if (queue_type == "intel") {
+            return intel_priority_queue_.size();
+        } else if (queue_type == "internal") {
+            return internal_priority_queue_.size();
+        }
+        return 0;
     }
     
     /**
      * Get queue utilization percentage (0.0 - 1.0)
      */
-    double getQueueUtilization() const {
-        return static_cast<double>(getQueueSize()) / config_.max_queue_size;
+    double getQueueUtilization(std::string queue_type) const {
+        //for intel and internal queues
+        std::lock_guard<std::mutex> lock(intel_queue_mutex_);
+        std::lock_guard<std::mutex> lock2(internal_queue_mutex_);
+        if (queue_type == "intel") {
+            return static_cast<double>(getQueueSize("intel")) / config_.max_intel_queue_size;
+        } else if (queue_type == "internal") {
+            return static_cast<double>(getQueueSize("internal")) / config_.max_internal_queue_size;
+        }
+        return 0.0;
     }
     
     /**
@@ -252,13 +265,18 @@ private:
     // ZEROMQ COMPONENTS
     // =============================================================================
     std::unique_ptr<zmq::context_t> context_;
-    std::unique_ptr<zmq::socket_t> publisher_socket_;
+    //separate publisher for internal high-frequency messages and market intel
+    std::unique_ptr<zmq::socket_t> intel_publisher_socket_;
+    std::unique_ptr<zmq::socket_t> internal_publisher_socket_;
     std::unique_ptr<zmq::socket_t> request_socket_;
     
     // =============================================================================
     // THREADING
     // =============================================================================
-    std::vector<std::thread> publisher_threads_;
+    // std::vector<std::thread> publisher_threads_;
+    //should have separate threads for intel and internal publishers
+    std::vector<std::thread> intel_threads_;
+    std::vector<std::thread> internal_threads_;
     std::vector<std::thread> request_threads_;
     std::thread monitoring_thread_;
     std::thread heartbeat_thread_;
@@ -266,9 +284,18 @@ private:
     // =============================================================================
     // MESSAGE QUEUING
     // =============================================================================
-    mutable std::mutex queue_mutex_;
-    std::queue<GenericMessage> message_queue_;
-    std::condition_variable queue_cv_;
+    // mutable std::mutex queue_mutex_;
+    //should have separate mutexes for intel and internal queues
+    mutable std::mutex intel_queue_mutex_;
+    mutable std::mutex internal_queue_mutex_;
+    // std::queue<GenericMessage> message_queue_;
+    //we create 2 priority queues for intel and internal messages
+    // std::queue<GenericMessage> message_queue_; // For normal priority messages
+    std::queue<GenericMessage> intel_priority_queue_; // For high-priority intel messages
+    std::queue<GenericMessage> internal_priority_queue_; // For high-priority internal messages
+    // std::condition_variable queue_cv_;
+    std::condition_variable intel_queue_cv_;
+    std::condition_variable internal_queue_cv_;
     
     // Priority queues for different message types
     std::priority_queue<GenericMessage, std::vector<GenericMessage>, 
@@ -292,7 +319,7 @@ private:
     // =============================================================================
     mutable std::mutex error_mutex_;
     std::string last_error_;
-    std::atomic<bool> logging_enabled_{false};
+    std::atomic<bool> logging_enabled_{true};
     
     // =============================================================================
     // PRIVATE METHODS
@@ -311,8 +338,10 @@ private:
     /**
      * Publisher worker thread function
      */
-    void publisherWorker();
-    
+    void intelPublisherWorker();
+    void internalPublisherWorker();
+    // calculateInlineThreshold
+    size_t calculateInlineThreshold() const;
     /**
      * Request handler worker thread function
      */

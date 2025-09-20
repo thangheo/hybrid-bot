@@ -79,12 +79,9 @@ public:
         // Initialize adaptive intelligence
         adaptiveIntel_ = std::make_unique<trading::intelligence::AdaptiveMarketIntelligence>();
         ZmqServerConfig serverConfig;
-        serverConfig.publisher_endpoint = "tcp://localhost:5555"; // Address of the ZMQ publisher
-        serverConfig.request_endpoint = "tcp://localhost:5556";   // Address of the ZMQ request handler
-        serverConfig.enable_monitoring = true;
-        serverConfig.enable_heartbeat = true;
-        zmq_comm_server_ = std::make_shared<GenericZmqServer>(serverConfig);
-        zmq_comm_server_->registerRequestHandler("ping", [](const std::string& request, 
+        //use default config for now
+        zmq_server_ = std::make_shared<GenericZmqServer>(serverConfig);
+        zmq_server_->registerRequestHandler("ping", [](const std::string& request, 
                                                 const std::unordered_map<std::string, std::string>& metadata) -> std::string {
             nlohmann::json response;
             response["status"] = "pong";
@@ -92,30 +89,19 @@ public:
                 std::chrono::system_clock::now().time_since_epoch()).count();
             return response.dump();
         });
-        // config
+       
         ZmqClientConfig clientConfig;
-        clientConfig.server_pub_endpoint = "tcp://localhost:5555"; // Address of the ZMQ server
+        clientConfig.server_pub_endpoint = "tcp://localhost:5557"; // Address of the ZMQ server
         clientConfig.auto_reconnect = true;
         clientConfig.request_timeout = std::chrono::milliseconds(30000); // 30 seconds
         zmq_client_ = std::make_unique<GenericZmqClient>(clientConfig);
-        zmq_client_->connect();
-        zmq_client_->subscribe("trading_intent", [this](const std::string& topic, const std::string& data, const std::unordered_map<std::string, std::string>& metadata) {
-            // Parse the TradingIntent message (data is expected to be serialized protobuf)
-            trading::TradingIntent intent;
-            if (intent.ParseFromString(data)) {
-                auto ack = this->handleTradingIntent(intent);
-                // Here you would normally send the acknowledgment back via ZMQ and may use metadata if needed
-                std::cout << "Processed Trading Intent ID: " << intent.intent_id() << std::endl;
-            } else {
-                std::cerr << "Failed to parse TradingIntent message" << std::endl;
-            }
-        });
+       
         // Initialize MarketDataInterface
+        riskConfig_.zmqSubscriberEndpoint = "tcp://localhost:5557"; // Connect to server's internal endpoint for orderbook
         marketDataInterface_ = std::make_shared<trading::risk::MarketDataInterface>(riskConfig_);
         // set zmq client to marketDataInterface_
         marketDataInterface_->setZmqClient(std::move(zmq_client_));
-        // setupCallbacks();
-        // setupCallbacks();
+       
     }
     
     ~FullSystemDemo() {
@@ -174,15 +160,6 @@ public:
         return ack;
     }
 
-    //  void setupCallbacks() {
-       
-        
-    //     // Set up ZMQ execution callback
-    //     zmq_client_->SetExecutionCallback([this](const trading::TradingIntent& intent) {
-    //         return this->handleTradingIntent(intent);
-    //     });
-    //     // });
-
     // }
 
     bool initialize() {
@@ -202,7 +179,7 @@ public:
         dataIngestionService_ = std::make_unique<data_ingestion::DataIngestionService>(
             "config/data_ingestion.json");
         //set comm server
-        dataIngestionService_->setCommServer(zmq_comm_server_);
+        dataIngestionService_->setCommServer(zmq_server_);
         // sleep for 2s
         std::this_thread::sleep_for(std::chrono::seconds(2));
         if (!dataIngestionService_->initialize()) {
@@ -253,10 +230,25 @@ public:
             systemHealthy_ = true;
             startTime_ = std::chrono::steady_clock::now();
 
-            if (!zmq_comm_server_->start()) {
-                std::cerr << "Failed to start ZMQ server: " << zmq_comm_server_->getLastError() << std::endl;
+            // if (!zmq_server_->start()) {
+            //     std::cerr << "Failed to start internal ZMQ server: " << zmq_server_->getLastError() << std::endl;
+            //     return -1;
+            // }
+            
+            if (!zmq_server_->start()) {
+                std::cerr << "Failed to start internal ZMQ server: " << zmq_server_->getLastError() << std::endl;
                 return -1;
             }
+
+            // CRITICAL DEBUG - Check if threads are actually running
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+
+            // Try to trigger the diagnostic logs by checking queue state
+            std::cout << "=== THREAD DEBUG ===" << std::endl;
+            std::cout << "Intel queue size: " << zmq_server_->getQueueSize("intel") << std::endl;
+            std::cout << "Internal queue size: " << zmq_server_->getQueueSize("internal") << std::endl;
+            std::cout << "Health check: " << (zmq_server_->healthCheck() ? "HEALTHY" : "UNHEALTHY") << std::endl;
+
             //load symbols from strategy config
             std::vector<Symbol> symbols;
             for (const auto& [name, pair] : strategyConfig_.tradingPairs) {
@@ -358,10 +350,19 @@ public:
             }
             
             // Stop services in reverse order
-            if (zmq_comm_server_) {
-                zmq_comm_server_->stop();
+            if (zmq_server_) {
+                zmq_server_->stop();
             }
-        
+            // if (riskManager_) {
+            //     std::cout << "Stopping risk manager..." << std::endl;
+            //     // riskManager_->
+            //     riskManager_.reset();
+            // }
+            // if (executionService_) {
+            //     std::cout << "Stopping execution service..." << std::endl;
+            //     executionService_->stop();
+            //     executionService_.reset();
+            // }
              
             // // Clear data ingestion service pointer after shutdown
             // std::cout << "Clearing data ingestion service..." << std::endl;
@@ -457,7 +458,6 @@ public:
             if (!orderBook) {
                 return; // No order book available
             }           
-
             // Validate order book has data
             auto bids = orderBook->getBids(5);
             auto asks = orderBook->getAsks(5);
@@ -485,7 +485,7 @@ public:
                 shouldGenerate = true; // First time
             } else {
                 auto timeSinceLastIntel = now - lastIntelTime[tradingPair];
-                if (timeSinceLastIntel >= std::chrono::milliseconds(30000)) { // Generate every 30s
+                if (timeSinceLastIntel >= std::chrono::milliseconds(5000)) { // Generate every 15 seconds
                     shouldGenerate = true;
                 }
             }
@@ -505,7 +505,7 @@ public:
             // Debug output for intelligence generations
             intelDebugCounts[tradingPair]++;
             
-            if (intelDebugCounts[tradingPair] <= 2 || intelDebugCounts[tradingPair] % 5000 == 0) {
+            if (intelDebugCounts[tradingPair] <= 1 || intelDebugCounts[tradingPair] % 5000 == 0) {
                 std::cout << "🧠 Generated intelligence #" << intelDebugCounts[tradingPair] 
                           << " for " << tradingPair << " (spread: " << intel.bid_ask_spread() 
                           << ", imbalance: " << intel.order_book_imbalance() << ")" << std::endl;
@@ -518,7 +518,7 @@ public:
             }
             
             // ✅ Direct ZMQ publishing like full_bridge.cpp
-            if (zmq_comm_server_ && !intel.symbol().empty()) {
+            if (zmq_server_ && !intel.symbol().empty()) {
                 // Debug output for publishing
                 static std::atomic<int> publishCount{0};
                 int count = publishCount.fetch_add(1);
@@ -530,10 +530,10 @@ public:
                     std::cerr << "Warning: Intelligence message size is large (" 
                               << intel.DebugString().size() << " bytes)" << std::endl;
                 }
-                if (zmq_comm_server_) {
+                if (zmq_server_) {
                     // Use publishAsync to avoid blocking the intelligence generation path.
                     // zmq_comm_server_->publishAsync("MARKET_INTEL", intel.SerializeAsString(), MessagePriority::NORMAL);
-                    zmq_comm_server_->publishProtobuf("MARKET_INTEL", intel, MessagePriority::NORMAL);
+                    zmq_server_->publishProtobuf("MARKET_INTEL", intel, MessagePriority::NORMAL);
                     intelligenceGenerated_.fetch_add(1);
                 }
                 else {
@@ -598,7 +598,7 @@ public:
 
             std::string jsonStr = orderBookMsg.dump();
             std::string topic = "orderbook." + update.exchangeId.toString() + "." + update.tradingPair.toString();
-            zmq_comm_server_->publishAsync(topic, jsonStr, MessagePriority::HIGH);          
+            zmq_server_->publishAsync(topic, jsonStr, MessagePriority::HIGH);
             orderBookUpdatesReceived_.fetch_add(1);
             //print debug info for every 5000th
             static std::atomic<int> publishCount{0};
@@ -625,7 +625,7 @@ public:
             bool dataIngestionHealthy = dataIngestionService_ ? dataIngestionService_->isHealthy() : false;
             bool strategyEngineHealthy = strategyEngine_ ? true : false;
             bool riskManagerHealthy = riskManager_ ? true : false;
-            bool zmqHealthy = zmq_comm_server_ ? true : false;
+            bool zmqHealthy = zmq_server_ ? zmq_server_->isRunning() : false;
 
             bool overallHealthy = dataIngestionHealthy && strategyEngineHealthy &&
                                 riskManagerHealthy && zmqHealthy ;
@@ -635,7 +635,7 @@ public:
                 std::cout << "  Data Ingestion: " << (dataIngestionHealthy ? "✅" : "❌") << std::endl;
                 std::cout << "  Strategy Engine: " << (strategyEngineHealthy ? "✅" : "❌") << std::endl;
                 std::cout << "  Risk Manager: " << (riskManagerHealthy ? "✅" : "❌") << std::endl;
-                std::cout << "  ZMQ Intel Server: " << (zmqHealthy ? "✅" : "❌") << std::endl;
+                std::cout << "  ZMQ Server: " << (zmqHealthy ? "✅" : "❌") << std::endl;
 
                 systemHealthy_ = false;
                 return false;
@@ -686,8 +686,12 @@ private:
     std::unique_ptr<trading::learning::PTCAIntegrationManager> ptcaManager_;
     std::chrono::time_point<std::chrono::steady_clock> lastPriceUpdate_;
     // std::unique_ptr<DataInterface> m_dataInterface;
-
-    std::shared_ptr<GenericZmqServer> zmq_comm_server_;
+    //intel zmq server and client
+    // std::shared_ptr<GenericZmqServer> intel_zmq_comm_server_;
+    // std::shared_ptr<GenericZmqServer> internal_zmq_comm_server_;
+    // just single server for both, if we create both there will be port conflict!!
+    //what should I do?
+    std::shared_ptr<GenericZmqServer> zmq_server_;
     std::unique_ptr<GenericZmqClient> zmq_client_;
 
     std::unique_ptr<trading::intelligence::AdaptiveMarketIntelligence> adaptiveIntel_;
@@ -769,38 +773,7 @@ private:
         createRiskConfig();                
         createPTCAConfig();
     }
-    
-    void createDataIngestionConfig() {
-        // what is the point of this function?
-        //no this file was never used
-        const char* configContent = R"({
-    "exchanges": {
-        "BINANCE": {
-            "id": "BINANCE",
-            "name": "Binance",
-            "ws_url": "wss://stream.binance.com:9443/ws",
-            "rest_url": "https://api.binance.com",
-            "symbols": ["ENJ/USDT", "ETH/USDT", "BNB/USDT", "ADA/USDT"],
-            "connection_timeout_ms": 5000,
-            "max_reconnect_attempts": 3
-        }
-    },
-    "order_book": {
-        "depth": 10,
-        "snapshot_interval_ms": 30000
-    },
-    "publisher": {
-        "zmq_endpoint": "tcp://*:5555",
-        "max_queue_size": 1000,
-        "publish_interval_ms": 100
-    }
-})";
         
-        std::ofstream configFile("system_config.json");
-        configFile << configContent;
-        configFile.close();
-    }
-    
     void createStrategyConfig() {
       
         std::string configPath = "config/strategy_config.json";
@@ -1013,6 +986,7 @@ private:
     void orderbookWorkerLoop(size_t workerId) {
         std::vector<OrderBookUpdate> batch;
         batch.reserve(orderbookBatchSize_);
+        std::cout << "Orderbook worker " << workerId << " started" << std::endl;
         while (orderbookWorkersRunning_.load()) {
             // Wait for data
             std::unique_lock<std::mutex> lk(orderbookQueueMutex_);

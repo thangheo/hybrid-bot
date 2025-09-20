@@ -91,43 +91,38 @@ bool Configuration::loadFromJson(const std::string& jsonString) {
 
 void Configuration::loadPublisherConfig(const nlohmann::json& pubJson) {
 
-    publisherConfig_.publisher_endpoint = pubJson.value("market_intel_endpoint", "tcp://*:5555");
-    publisherConfig_.publisher_endpoint = pubJson.value("orderbook_endpoint", "tcp://*:5557");
+    publisherConfig_.intel_endpoint = pubJson.value("market_intel_endpoint", "tcp://*:5555");
+    publisherConfig_.internal_endpoint = pubJson.value("orderbook_endpoint", "tcp://*:5557");
     publisherConfig_.request_endpoint = pubJson.value("trading_intent_endpoint", "tcp://*:5556");
     // publisherConfig_. = pubJson.value("publisher_type", "zeromq");
     // publisherConfig_.bufferSize = pubJson.value("buffer_size", 10000);
-    publisherConfig_.max_queue_size = pubJson.value("max_queue_size", 10000);
-    publisherConfig_.max_publish_rate = pubJson.value("max_publish_rate", 5000);
-    publisherConfig_.publish_interval = std::chrono::milliseconds(pubJson.value("publish_interval_ms", 100));
+    publisherConfig_.max_intel_queue_size = pubJson.value("market_intel_max_queue_size", 10);
+    publisherConfig_.max_internal_queue_size = pubJson.value("orderbook_max_queue_size", 1000);
+    // publisherConfig_.re = pubJson.value("trading_intent_max_queue_size", 10);
+    publisherConfig_.max_intel_publish_rate = pubJson.value("intel_max_publish_rate", 50);
+    publisherConfig_.max_internal_publish_rate = pubJson.value("internal_max_publish_rate", 5000);
+    // publisherConfig_.req = pubJson.value("trading_intent_max_publish_rate", 1000);
+    publisherConfig_.intel_publish_interval = std::chrono::milliseconds(pubJson.value("intel_publish_interval_ms", 15000));
+    publisherConfig_.internal_publish_interval = std::chrono::milliseconds(pubJson.value("internal_publish_interval_ms", 10));
+    // publisherConfig_.req = std::chrono::milliseconds(pubJson.value("trading_intent_publish_interval_ms", 1000));
     publisherConfig_.queue_timeout = std::chrono::milliseconds(pubJson.value("queue_timeout_ms", 100));
-    publisherConfig_.publisher_hwm = pubJson.value("publisher_hwm", 10000);
-    publisherConfig_.publisher_linger = pubJson.value("publisher_linger_ms", 1000);
-    publisherConfig_.publisher_immediate = pubJson.value("publisher_immediate", true);
+    publisherConfig_.intel_hwm = pubJson.value("intel_zmq_hwm", 10000);
+    publisherConfig_.internal_hwm = pubJson.value("internal_zmq_hwm", 10000);
+    publisherConfig_.request_hwm = pubJson.value("trading_intent_zmq_hwm", 10000);
+    publisherConfig_.intel_linger = pubJson.value("intel_zmq_linger_ms", 1000);
+    publisherConfig_.internal_linger = pubJson.value("internal_zmq_linger_ms", 1000);
+    publisherConfig_.request_linger = pubJson.value("trading_intent_zmq_linger_ms", 1000);
+    publisherConfig_.intel_immediate = pubJson.value("intel_immediate", true);
+    publisherConfig_.internal_immediate = pubJson.value("internal_immediate", true);
     publisherConfig_.request_hwm = pubJson.value("request_hwm", 1000);
     publisherConfig_.request_timeout_ms = pubJson.value("request_timeout_ms", 30000);
-    publisherConfig_.publisher_threads = pubJson.value("publisher_threads", 2);
+    publisherConfig_.intel_publisher_threads = pubJson.value("publisher_threads", 2);
     publisherConfig_.request_handler_threads = pubJson.value("request_handler_threads", 4);
     publisherConfig_.io_threads = pubJson.value("io_threads", 2);
     publisherConfig_.enable_monitoring = pubJson.value("enable_monitoring", true);
     publisherConfig_.stats_interval = std::chrono::seconds(pubJson.value("stats_interval_seconds", 60));
     publisherConfig_.enable_heartbeat = pubJson.value("enable_heartbeat", true);
     
-    
-    // std::string compressionStr = pubJson.value("compression", "none");
-    // if (compressionStr == "none") {
-    //     publisherConfig_.compression = CompressionAlgorithm::NONE;
-    // } else if (compressionStr == "lz4") {
-    //     publisherConfig_.compression = CompressionAlgorithm::LZ4;
-    // } else if (compressionStr == "zstd") {
-    //     publisherConfig_.compression = CompressionAlgorithm::ZSTD;
-    // }
-    
-    // if (pubJson.contains("topics") && pubJson["topics"].is_array()) {
-    //     publisherConfig_.topics.clear();
-    //     for (const auto& topic : pubJson["topics"]) {
-    //         publisherConfig_.topics.push_back(topic.get<std::string>());
-    //     }
-    // }
 }
 
 void Configuration::loadExchangeConfigs(const nlohmann::json& exchangesJson) {
@@ -320,23 +315,7 @@ void Configuration::setStorageConfig(const StorageConfig& config) {
 
 
 void Configuration::initializeDefaults() {
-    ///this struct already has default values in its definition
-    // publisherConfig_.publisher_endpoint = "tcp://*:5555";
-    // publisherConfig_.market_intel_endpoint = "tcp://*:5556";
-    // publisherConfig_.trading_intent_endpoint = "tcp://*:5557";
-    // publisherConfig_.publisherType = "zeromq";
-    // publisherConfig_.bufferSize = 1000;
-    // publisherConfig_.max_queue_size = 1000;
-    // publisherConfig_.max_publish_rate = 1000;
-    // publisherConfig_.enableCompression = false;
-    // publisherConfig_.publish_interval_ms = 100;
-    // publisherConfig_.heartbeat_interval_ms = 30000;
-    // publisherConfig_.zmq_linger_ms = 1000;
-    // publisherConfig_.zmq_hwm = 1000;
-    // publisherConfig_.publish_raw_data = true;
-    // publisherConfig_.publish_normalized_data = true;
-    // publisherConfig_.compression = CompressionAlgorithm::NONE;
-    
+        
     normalizationConfig_.enableNormalization = true;
     normalizationConfig_.timestampFormat = "iso8601";
     normalizationConfig_.priceFormat = "decimal";

@@ -63,18 +63,20 @@ bool MarketDataInterface::initialize() {
     }
     
     try {
-        // Initialize ZeroMQ client
-        ZmqClientConfig zmqConfig;
-        zmqConfig.server_pub_endpoint = zmqSubscriberEndpoint_;
-        zmqConfig.server_req_endpoint = zmqPublisherEndpoint_;
-        zmqConfig.auto_reconnect = true;
-        zmqConfig.reconnect_interval = std::chrono::milliseconds(5000);
-        zmqConfig.request_timeout = std::chrono::milliseconds(10000);
-        zmqConfig.io_threads = 1;
-        
-        
-        zmqClient_ = std::make_unique<GenericZmqClient>(zmqConfig);
-
+        if(!zmqClient_){
+            // Initialize ZeroMQ client
+            ZmqClientConfig zmqConfig;
+            // zmqConfig.server_pub_endpoint = zmqSubscriberEndpoint_;
+            // zmqConfig.server_req_endpoint = zmqPublisherEndpoint_;
+            // zmqConfig.auto_reconnect = true;
+            // zmqConfig.reconnect_interval = std::chrono::milliseconds(5000);
+            // zmqConfig.request_timeout = std::chrono::milliseconds(10000);
+            // zmqConfig.io_threads = 1;
+            
+            //only create if not already set via setter
+            
+            zmqClient_ = std::make_unique<GenericZmqClient>(zmqConfig);
+        }
         // Start ZeroMQ client BEFORE subscribing so subscriptions succeed
         if (!zmqClient_->connect()) {
             LOG_ERROR("Failed to connect ZeroMQ client");
@@ -87,16 +89,11 @@ bool MarketDataInterface::initialize() {
             // Handle incoming requests if needed
             return "ACK"; // Simple acknowledgment for now
         };
-        //we should not subscribe here, because there is subscribeMarketData function
-        // zmqClient_->subscribe("orderbook.*",  // or "orderbook.*" if your ZMQ supports wildcards
-        //     [this](const std::string& topic, const std::string& message, const auto&) {
-        //         this->processSyntheticOrderBook(topic, message);
-        //     });
-        // Start ZeroMQ client
-        if (!zmqClient_->connect()) {
-            LOG_ERROR("Failed to start ZeroMQ client");
-            return false;
-        }
+        // Subscribe to orderbook topics
+        zmqClient_->subscribe("orderbook.", 
+            [this](const std::string& topic, const std::string& message, const std::unordered_map<std::string, std::string>& metadata) {
+                this->processSyntheticOrderBook(topic, message);
+            });
         
         initialized_.store(true);
         running_.store(true);
@@ -115,7 +112,7 @@ void MarketDataInterface::processSyntheticOrderBook(const std::string& topic, co
         if (topic.find("orderbook.") == std::string::npos) {
             return; // Not a synthetic orderbook message
         }
-        std::cout << "Processing synthetic orderbook message" << std::endl;
+        // std::cout << "Processing synthetic orderbook message" << std::endl;
         auto json_msg = nlohmann::json::parse(message);
         std::string exchange = json_msg["exchange"];
         std::string symbol = json_msg["symbol"];

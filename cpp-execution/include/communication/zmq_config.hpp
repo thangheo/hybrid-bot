@@ -19,33 +19,43 @@ namespace trading::communication {
  * Configuration for publisher component
  */
 struct ZmqServerConfig {
-    // Publisher configuration
-    std::string publisher_endpoint = "tcp://*:5555";
-    int publisher_hwm = 10000;
-    int publisher_linger = 1000;
-    bool publisher_immediate = true;
-    // Internal modules (nếu cần high frequency)
-    std::string internal_endpoint = "tcp://*:5557";  // ← THÊM: endpoint riêng
-    int internal_hwm = 10000;  // ← Cao hơn cho internal
+    // Intel Publisher configuration (for Python - low frequency, protobuf)
+    std::string intel_endpoint = "tcp://*:5555";
+    int intel_hwm = 200;                              // Very low - Python consumes slow
+    int intel_linger = 0;                           // Don't wait on close
+    bool intel_immediate = true;
+    bool intel_conflate = true;                     // Only keep latest message
     
-    // Request-Reply configuration  
+    // Internal Publisher configuration (for orderbook - high frequency, JSON)
+    std::string internal_endpoint = "tcp://*:5557";
+    int internal_hwm = 10000;                       // High for fast consumers
+    int internal_linger = 1000;
+    bool internal_immediate = true;
+    bool internal_conflate = false;                 // Keep all messages
+    
+    // Request-Reply configuration
     std::string request_endpoint = "tcp://*:5556";
     int request_hwm = 1000;
     int request_timeout_ms = 30000;
-
+    int request_linger = 1000;
+    
     // Threading configuration
-    int publisher_threads = 2;
-    int request_handler_threads = 4;
     int io_threads = 2;
+    int intel_publisher_threads = 1;                // Low for intel
+    int internal_publisher_threads = 2;             // Higher for internal
+    int request_handler_threads = 4;
     
     // Queue configuration
-    size_t max_queue_size = 1000;
-    // max_publish_rate
-    int max_publish_rate = 1000;  // messages per second
-    std::chrono::milliseconds publish_interval{100};
+    size_t max_intel_queue_size = 200;                // Small for intel
+    size_t max_internal_queue_size = 10000;         // Large for internal
+    
+    // Rate limiting
+    int max_intel_publish_rate = 30;                 // 60 messages per minute
+    int max_internal_publish_rate = 1000;           // 1000 messages per second
+    std::chrono::milliseconds intel_publish_interval{300};    // 300 milliseconds
+    std::chrono::milliseconds internal_publish_interval{1};     // 1ms
     std::chrono::milliseconds queue_timeout{100};
-
-    // publish_interval_ms
+    
     // Monitoring configuration
     bool enable_monitoring = true;
     std::chrono::seconds stats_interval{60};
@@ -58,14 +68,27 @@ struct ZmqServerConfig {
     
     // Validation
     bool validate() const {
-        return !publisher_endpoint.empty() && 
+        return !intel_endpoint.empty() &&
+               !internal_endpoint.empty() &&
                !request_endpoint.empty() &&
-               publisher_hwm > 0 &&
+               intel_hwm > 0 &&
+               internal_hwm > 0 &&
                request_hwm > 0 &&
-               publisher_threads > 0 &&
+               intel_publisher_threads > 0 &&
+               internal_publisher_threads > 0 &&
                request_handler_threads > 0 &&
                io_threads > 0 &&
-               max_queue_size > 0;
+               max_intel_queue_size > 0 &&
+               max_internal_queue_size > 0;
+    }
+    
+    // Helper methods
+    bool isIntelEndpoint(const std::string& endpoint) const {
+        return endpoint == intel_endpoint;
+    }
+    
+    bool isInternalEndpoint(const std::string& endpoint) const {
+        return endpoint == internal_endpoint;
     }
 };
 
