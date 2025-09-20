@@ -133,7 +133,8 @@ public:
         const OrderBookManagerConfig& config = OrderBookManagerConfig{},
         OrderBookManagerCallback callback = nullptr
     );
-    
+    //setConfig
+    void setConfig(const OrderBookManagerConfig& config);
     /**
      * Destructor
      */

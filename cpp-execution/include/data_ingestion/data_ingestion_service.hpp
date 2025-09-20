@@ -38,7 +38,8 @@ public:
     
     explicit DataIngestionService(const std::string& configPath = "config/data_ingestion.json");
     ~DataIngestionService();
-    
+    // setRateLimitController
+   
     // Service lifecycle
     bool initialize();
     bool start(const std::vector<Symbol>& symbols, int depth);

@@ -42,7 +42,11 @@ bool DataIngestionService::initialize() {
         
         // 3. Setup order book manager
         OrderBookManagerConfig managerConfig;  // Use default config
-        orderBookManager_ = std::make_shared<OrderBookManager>(managerConfig);
+        // orderBookManager_ = std::make_shared<OrderBookManager>(managerConfig);
+        //create high frequency manager using factory
+        orderBookManager_ = OrderBookManagerFactory::createHighFrequencyManager();
+        // setup configuration managerConfig?
+        orderBookManager_->setConfig(managerConfig);
         
         // Set up callback for order book changes
         orderBookManager_->setManagerCallback([this](const OrderBookKey& key, const std::string& eventType) {
@@ -233,13 +237,13 @@ bool DataIngestionService::setupExchangeManager() {
         // Setup rate limits for Binance
         auto rateLimitController = std::make_shared<execution::RateLimitController>(core::ExchangeId::binance());
           
-        // exchangeManager_ = std::make_unique<ExchangeManager>(
-        //     core::ExchangeId::binance(),
-        //     rateLimitController,
-        //     [this](const OrderBookUpdate& update) { onNormalizedOrderBook(update); }
-        // );
-        orderBookManager_ = OrderBookManagerFactory::createHighFrequencyManager();
+        exchangeManager_ = std::make_unique<ExchangeManager>(
+            core::ExchangeId::binance(),
+            rateLimitController,
+            [this](const OrderBookUpdate& update) { onNormalizedOrderBook(update); }
+        );
         
+
         // Configure memory limit for ExchangeManager from config or environment
         try {
             // First try exchange-specific config additional_params

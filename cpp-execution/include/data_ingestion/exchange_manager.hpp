@@ -40,7 +40,7 @@ public:
                    int minConnections = 3,
                    int maxConnections = 8);
     ~ExchangeManager();
-    
+   
     // Core functionality
     bool initialize();
     bool connect();
@@ -62,7 +62,10 @@ public:
     // Thêm methods
     void onWebSocketRawData(const RawMarketData& rawData);
     void processingWorker();    
-
+    //create function to set rate limit controller in case we dont use constructor but using factory method
+    void setRateLimitController(std::shared_ptr<execution::RateLimitController> rateLimitController) {
+        rateLimitController_ = rateLimitController;
+    }
 private:
     static size_t getRSSKB() ;
 
@@ -98,6 +101,7 @@ private:
     // Configuration
     int minConnections_;
     int maxConnections_;
+    
     
     // Core components
     std::unique_ptr<ConnectionPool> connectionPool_;
