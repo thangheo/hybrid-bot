@@ -24,13 +24,11 @@ def receive_messages():
             socks = dict(poller.poll(1000))  # 1 second timeout
 
             if intel_socket in socks and socks[intel_socket] == zmq.POLLIN:
-                topic = intel_socket.recv()
-                message = intel_socket.recv()
+                topic, message = intel_socket.recv_multipart()
                 print(f"Received from Intel: topic={topic}, message={message[:100]}...")
 
             if internal_socket in socks and socks[internal_socket] == zmq.POLLIN:
-                topic = internal_socket.recv()
-                message = internal_socket.recv()
+                topic, message = internal_socket.recv_multipart()
                 print(f"Received from Internal: topic={topic}, message={message[:100]}...")
 
     except KeyboardInterrupt:
