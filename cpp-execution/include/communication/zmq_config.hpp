@@ -21,7 +21,7 @@ namespace trading::communication {
 struct ZmqServerConfig {
     // Intel Publisher configuration (for Python - low frequency, protobuf)
     std::string intel_endpoint = "tcp://*:5555";
-    int intel_hwm = 200;                              // Very low - Python consumes slow
+    int intel_hwm = 2000;                              // Very low - Python consumes slow
     int intel_linger = 0;                           // Don't wait on close
     bool intel_immediate = true;
     bool intel_conflate = true;                     // Only keep latest message
@@ -100,7 +100,7 @@ using RequestHandler = std::function<std::string(const std::string& request_data
  * Client configuration structure
  */
 struct ZmqClientConfig {
-    std::string server_pub_endpoint = "tcp://localhost:5555";
+    std::string server_pub_endpoint = "tcp://localhost:5557";
     std::string server_req_endpoint = "tcp://localhost:5556";
     std::chrono::milliseconds request_timeout{30000};  // 30 seconds
     int io_threads = 1;

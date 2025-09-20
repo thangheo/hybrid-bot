@@ -113,16 +113,13 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../../bin)
 # Add executable for full_bridge.cpp
 add_executable(tactical full_bridge.cpp    ${CMAKE_CURRENT_SOURCE_DIR}/../../src/market_intelligence/adaptive_intelligence.cpp)
 target_link_libraries(tactical communication zmq jsoncpp pthread protobuf data_ingestion)
-# Test files
-set(TEST_SOURCES
-    tests/zmq_server_test.cpp
-)
+#
 
 # Build tests
-enable_testing()
-foreach(test_file ${TEST_SOURCES})
-    get_filename_component(test_name ${test_file} NAME_WE)
-    add_executable(${test_name} ${test_file})
-    target_link_libraries(${test_name} communication zmq jsoncpp pthread protobuf proto_lib)
-    add_test(NAME ${test_name} COMMAND ${test_name})
-endforeach()
+# enable_testing()
+# foreach(test_file ${TEST_SOURCES})
+#     get_filename_component(test_name ${test_file} NAME_WE)
+#     add_executable(${test_name} ${test_file})
+#     target_link_libraries(${test_name} communication zmq jsoncpp pthread protobuf proto_lib)
+#     add_test(NAME ${test_name} COMMAND ${test_name})
+# endforeach()

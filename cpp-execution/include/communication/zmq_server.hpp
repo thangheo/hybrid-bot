@@ -264,7 +264,12 @@ private:
     // =============================================================================
     // ZEROMQ COMPONENTS
     // =============================================================================
-    std::unique_ptr<zmq::context_t> context_;
+    // std::unique_ptr<zmq::context_t> context_;
+    //use shared_ptr for context to allow sharing between multiple server instances if needed
+    // std::shared_ptr<zmq::context_t> context_;
+    //we should have separate contexts for intel and internal publishers
+    std::shared_ptr<zmq::context_t> intel_context_;
+    std::shared_ptr<zmq::context_t> internal_context_;
     //separate publisher for internal high-frequency messages and market intel
     std::unique_ptr<zmq::socket_t> intel_publisher_socket_;
     std::unique_ptr<zmq::socket_t> internal_publisher_socket_;

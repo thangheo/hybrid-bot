@@ -91,9 +91,9 @@ public:
         });
        
         ZmqClientConfig clientConfig;
-        clientConfig.server_pub_endpoint = "tcp://localhost:5557"; // Address of the ZMQ server
-        clientConfig.auto_reconnect = true;
-        clientConfig.request_timeout = std::chrono::milliseconds(30000); // 30 seconds
+        // clientConfig.server_pub_endpoint = "tcp://localhost:5557"; // Address of the ZMQ server
+        // clientConfig.auto_reconnect = true;
+        // clientConfig.request_timeout = std::chrono::milliseconds(30000); // 30 seconds
         zmq_client_ = std::make_unique<GenericZmqClient>(clientConfig);
        
         // Initialize MarketDataInterface
