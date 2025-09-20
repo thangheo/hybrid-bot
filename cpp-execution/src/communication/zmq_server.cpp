@@ -214,8 +214,10 @@ bool GenericZmqServer::publishAsync(const std::string& topic, const std::string&
         std::unique_lock<std::mutex> lock(internal_queue_mutex_, std::defer_lock);
         std::unique_lock<std::mutex> lock2(intel_queue_mutex_, std::defer_lock);
         if (topic == "MARKET_INTEL") {
+            logInfo("MARKET_INTEL Publishing Intel message: " + topic);
             lock2.lock();
         } else {
+            // logInfo("Publishing internal message: " + topic);
             lock.lock();
         }
        
@@ -275,7 +277,9 @@ bool GenericZmqServer::publishAsync(const std::string& topic, const std::string&
         
         // Add message to queue
         GenericMessage message(std::move(safe_topic), std::move(data), priority);
+        // GenericMessage message(topic, data, priority);  // No moves at all for debugging
         message.correlation_id = correlation_id;
+        logInfo("Async Publishing message: " + topic + " with priority " + std::to_string(static_cast<int>(priority)));
         if (topic == "MARKET_INTEL") {
             // logInfo("Publishing Intel message: " + topic);
             intel_priority_queue_.push(std::move(message));
@@ -515,58 +519,6 @@ void GenericZmqServer::sendHeartbeat() {
 // =============================================================================
 // PRIVATE METHODS - INITIALIZATION
 // =============================================================================
-// bool GenericZmqServer::initializeSockets() {
-//     try {
-//         // Create ZeroMQ context
-//         context_ = std::make_unique<zmq::context_t>(config_.io_threads);
-        
-//         // Create and configure intel publisher socket (for Python - protobuf)
-//         intel_publisher_socket_ = std::make_unique<zmq::socket_t>(*context_, ZMQ_PUB);
-//         intel_publisher_socket_->set(zmq::sockopt::sndhwm, config_.intel_hwm);
-//         intel_publisher_socket_->set(zmq::sockopt::linger, config_.intel_linger);
-//         if (config_.intel_immediate) {
-//             intel_publisher_socket_->set(zmq::sockopt::immediate, 1);
-//         }
-//         if (config_.intel_conflate) {
-//             intel_publisher_socket_->set(zmq::sockopt::conflate, 1);  // Only keep latest
-//         }
-//         intel_publisher_socket_->bind(config_.intel_endpoint);
-        
-//         // Create and configure internal publisher socket (for orderbook - JSON)
-//         internal_publisher_socket_ = std::make_unique<zmq::socket_t>(*context_, ZMQ_PUB);
-//         internal_publisher_socket_->set(zmq::sockopt::sndhwm, config_.internal_hwm);
-//         internal_publisher_socket_->set(zmq::sockopt::linger, config_.internal_linger);
-//         if (config_.internal_immediate) {
-//             internal_publisher_socket_->set(zmq::sockopt::immediate, 1);
-//         }
-//         if (config_.internal_conflate) {
-//             internal_publisher_socket_->set(zmq::sockopt::conflate, 1);
-//         }
-//         internal_publisher_socket_->bind(config_.internal_endpoint);
-        
-//         // Create and configure request socket
-//         request_socket_ = std::make_unique<zmq::socket_t>(*context_, ZMQ_ROUTER);
-//         request_socket_->set(zmq::sockopt::rcvhwm, config_.request_hwm);
-//         request_socket_->set(zmq::sockopt::sndhwm, config_.request_hwm);  // Moved after RCVHWM
-//         request_socket_->set(zmq::sockopt::linger, config_.request_linger);  // Use config value
-//         request_socket_->set(zmq::sockopt::rcvtimeo, 100);
-//         request_socket_->bind(config_.request_endpoint);
-        
-//         logInfo("ZeroMQ sockets initialized successfully");
-//         logInfo("Intel endpoint: " + config_.intel_endpoint);
-//         logInfo("Internal endpoint: " + config_.internal_endpoint);
-//         logInfo("Request endpoint: " + config_.request_endpoint);
-        
-//         return true;
-        
-//     } catch (const zmq::error_t& e) {
-//         logError("ZMQ error initializing sockets: " + std::string(e.what()));
-//         return false;
-//     } catch (const std::exception& e) {
-//         logError("Error initializing sockets: " + std::string(e.what()));
-//         return false;
-//     }
-// }
 
 bool GenericZmqServer::initializeSockets() {
     try {
@@ -717,30 +669,21 @@ void GenericZmqServer::intelPublisherWorker() {
 
             // Wait for messages or shutdown signal (timed wait to avoid missed notifications)
             logInfo("Intel worker: About to wait for messages");
-            intel_queue_cv_.wait_for(lock, std::chrono::seconds(1), [this]() {
+            intel_queue_cv_.wait_for(lock, std::chrono::seconds(100), [this]() {
                 return !intel_priority_queue_.empty() || state_.load() != ServerState::RUNNING;
             });
-            logInfo("Intel worker: Woke from wait, queue size: " + std::to_string(intel_priority_queue_.size()));
-            // Diagnostic: woke from wait
-            try {
-                logInfo(std::string("Diagnostic: Publisher worker woke (queue_size=") + std::to_string(intel_priority_queue_.size()) + ")");
-            } catch(...) {}
-            
-            if (state_.load() != ServerState::RUNNING) {
-                break;
-            }
-            
+            // Diagnostic:  
+                      
             while (!intel_priority_queue_.empty()) {
-                logInfo("Publishing Intel message: " + intel_priority_queue_.front().topic);
+                // logInfo("Publishing Intel message: " + intel_priority_queue_.front().topic);
                 GenericMessage message = std::move(intel_priority_queue_.front());
-                intel_priority_queue_.pop();
-                
+                intel_priority_queue_.pop();                
                 lock.unlock();
 
                 bool ok = false;
                 try {
                     logInfo("Processing Intel message: " + message.topic);
-                    ok = processMessage(message);
+                    ok = processIntelMessage(message);
                 } catch (const std::exception& e) {
                     logError("Error processing message: " + std::string(e.what()));
                 }
@@ -772,20 +715,20 @@ void GenericZmqServer::internalPublisherWorker() {
     while (state_.load() == ServerState::RUNNING) {
         try {
             std::unique_lock<std::mutex> lock(internal_queue_mutex_);
-            logInfo("Internal worker in main loop, state=" + std::to_string(static_cast<int>(state_.load())));
+            // logInfo("Internal worker in main loop, state=" + std::to_string(static_cast<int>(state_.load())));
             // Wait for messages or shutdown signal (timed wait to avoid missed notifications)
             internal_queue_cv_.wait_for(lock, std::chrono::seconds(1), [this]() {
                 return !internal_priority_queue_.empty() || state_.load() != ServerState::RUNNING;
             });
 
             // Diagnostic: woke from wait
-            try {
-                logInfo(std::string("Diagnostic: Publisher worker woke (queue_size=") + std::to_string(internal_priority_queue_.size()) + ")");
-            } catch(...) {}
+            // try {
+            //     logInfo(std::string("Diagnostic: Publisher worker woke (queue_size=") + std::to_string(internal_priority_queue_.size()) + ")");
+            // } catch(...) {}
             
-            if (state_.load() != ServerState::RUNNING) {
-                break;
-            }
+            // if (state_.load() != ServerState::RUNNING) {
+            //     break;
+            // }
             
             while (!internal_priority_queue_.empty()) {
                 GenericMessage message = std::move(internal_priority_queue_.front());
@@ -795,7 +738,7 @@ void GenericZmqServer::internalPublisherWorker() {
 
                 bool ok = false;
                 try {
-                    ok = processMessage(message);
+                    ok = processInternalMessage(message);
                 } catch (const std::exception& e) {
                     logError("Error processing message: " + std::string(e.what()));
                 }
@@ -921,61 +864,95 @@ void GenericZmqServer::heartbeatWorker() {
 // =============================================================================
 // PRIVATE METHODS - MESSAGE PROCESSING
 // =============================================================================
+// split into 2 functions for intel and internal
 
-bool GenericZmqServer::processMessage(const GenericMessage& message) {
-    if (!intel_publisher_socket_ || !internal_publisher_socket_) {
-        logError("Cannot process message - publisher socket not available");
+// bool GenericZmqServer::processIntelMessage(const GenericMessage& message) {
+//     if (!intel_publisher_socket_) {
+//         logError("Intel publisher socket not available");
+//         return false;
+//     }
+
+//     try {
+//         // Create topic message
+//         zmq::message_t topic_msg(message.topic.size());
+//         memcpy(topic_msg.data(), message.topic.c_str(), message.topic.size());        
+
+//         // Create metadata
+//         std::unordered_map<std::string, std::string> metadata;
+//         metadata["correlation_id"] = message.correlation_id;
+//         metadata["priority"] = std::to_string(static_cast<int>(message.priority));
+//         metadata["timestamp"] = std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
+//             message.timestamp.time_since_epoch()).count());
+
+//         // Serialize data with metadata
+//         std::string serialized_data = serializeWithMetadata(message.data, metadata);
+//         zmq::message_t data_msg(serialized_data.size());
+//         memcpy(data_msg.data(), serialized_data.c_str(), serialized_data.size());
+//         zmq::message_t data_msg(message.data.data(), message.data.size());
+//         // zmq::message_t data_msg;
+//         // data_msg.rebuild(message.data.size());
+//         // memcpy(data_msg.data(), message.data.c_str(), message.data.size());
+//         // Send messages
+//         if (message.topic.empty() || message.data.empty()) {
+//             logError("Empty topic or data in processMessage");
+//             return false;
+//         }
+//         logInfo("Async Publishing message: " + message.topic + " with priority " + std::to_string(static_cast<int>(message.priority)));
+//         auto topic_result = intel_publisher_socket_->send(topic_msg, zmq::send_flags::sndmore);
+//         auto data_result = intel_publisher_socket_->send(data_msg, zmq::send_flags::none);
+//         logInfo("Sent MARKET_INTEL message");
+//         if (topic_result.has_value() && data_result.has_value()) {
+//             return true;
+//         }
+//         return false;
+//     } catch (const zmq::error_t& e) {
+//         logError("ZMQ error processing message: " + std::string(e.what()));
+//         stats_.connection_errors++;
+//         return false;
+//     } catch (const std::exception& e) {
+//         logError("Error processing message: " + std::string(e.what()));
+//         return false;
+//     }
+// }
+bool GenericZmqServer::processIntelMessage(const GenericMessage& message) {
+    if (!intel_publisher_socket_) {
+        logError("Intel publisher socket not available");
         return false;
     }
-    
+
     try {
         // Create topic message
         zmq::message_t topic_msg(message.topic.size());
-        memcpy(topic_msg.data(), message.topic.c_str(), message.topic.size());
-        
+        memcpy(topic_msg.data(), message.topic.c_str(), message.topic.size());        
+
         // Create metadata
         std::unordered_map<std::string, std::string> metadata;
         metadata["correlation_id"] = message.correlation_id;
         metadata["priority"] = std::to_string(static_cast<int>(message.priority));
         metadata["timestamp"] = std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
             message.timestamp.time_since_epoch()).count());
-        
-        // Serialize data with metadata
+
+        // Serialize data with metadata (DO NOT overwrite this!)
         std::string serialized_data = serializeWithMetadata(message.data, metadata);
         zmq::message_t data_msg(serialized_data.size());
         memcpy(data_msg.data(), serialized_data.c_str(), serialized_data.size());
+
+        // Debug: Log what we're actually sending
+        logInfo("Sending topic: " + message.topic + ", data preview: " + serialized_data.substr(0, 100) + "...");
+
         // Send messages
-        if (message.topic.empty() || message.data.empty()) {
-            logError("Empty topic or data in processMessage");
+        if (message.topic.empty() || serialized_data.empty()) {  // Check serialized_data, not message.data
+            logError("Empty topic or serialized data in processIntelMessage");
             return false;
         }
-        logInfo("Processing message for topic: " + message.topic);
-        if (message.topic == "MARKET_INTEL") {
-            // High-frequency market intelligence goes to dedicated socket
-            auto topic_result = intel_publisher_socket_->send(topic_msg, zmq::send_flags::sndmore);
-            auto data_result = intel_publisher_socket_->send(data_msg, zmq::send_flags::none);
-            logInfo("Sent MARKET_INTEL message");
-            if (topic_result.has_value() && data_result.has_value()) {
-                if (logging_enabled_) {
-                    logInfo("Processed message for topic: " + message.topic);
-                }
-                return true;
-            }
-            return false;
-        }
-        logInfo("Sent internal message");
-        auto topic_result = internal_publisher_socket_->send(topic_msg, zmq::send_flags::sndmore);
-        auto data_result = internal_publisher_socket_->send(data_msg, zmq::send_flags::none);
-        logInfo("Sent internal message parts");
+        logInfo("Async Publishing message: " + message.topic + " with priority " + std::to_string(static_cast<int>(message.priority)));
+        auto topic_result = intel_publisher_socket_->send(topic_msg, zmq::send_flags::sndmore);
+        auto data_result = intel_publisher_socket_->send(data_msg, zmq::send_flags::none);
+        logInfo("Sent MARKET_INTEL message");
         if (topic_result.has_value() && data_result.has_value()) {
-            if (logging_enabled_) {
-                logInfo("Processed message for topic: " + message.topic);
-            }
             return true;
         }
-        logError("Failed to publish internal message: " + message.topic);
         return false;
-        
     } catch (const zmq::error_t& e) {
         logError("ZMQ error processing message: " + std::string(e.what()));
         stats_.connection_errors++;
@@ -985,6 +962,118 @@ bool GenericZmqServer::processMessage(const GenericMessage& message) {
         return false;
     }
 }
+
+bool GenericZmqServer::processInternalMessage(const GenericMessage& message) {
+    if (!internal_publisher_socket_) {
+        logError("Internal publisher socket not available");
+        return false;
+    }
+
+    try {
+        // Create topic message
+        zmq::message_t topic_msg(message.topic.size());
+        memcpy(topic_msg.data(), message.topic.c_str(), message.topic.size());
+
+        // Create metadata
+        std::unordered_map<std::string, std::string> metadata;
+        metadata["correlation_id"] = message.correlation_id;
+        metadata["priority"] = std::to_string(static_cast<int>(message.priority));
+        metadata["timestamp"] = std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
+            message.timestamp.time_since_epoch()).count());
+
+        // Serialize data with metadata
+        std::string serialized_data = serializeWithMetadata(message.data, metadata);
+        zmq::message_t data_msg(serialized_data.size());
+        memcpy(data_msg.data(), serialized_data.c_str(), serialized_data.size());
+
+        // Send messages
+        if (message.topic.empty() || message.data.empty()) {
+            logError("Empty topic or data in processMessage");
+            return false;
+        }
+        logInfo("Processing message for topic: " + message.topic);
+        auto topic_result = internal_publisher_socket_->send(topic_msg, zmq::send_flags::sndmore);
+        auto data_result = internal_publisher_socket_->send(data_msg, zmq::send_flags::none);
+        logInfo("Sent internal message");
+        if (topic_result.has_value() && data_result.has_value()) {
+            return true;
+        }
+        logError("Failed to publish internal message: " + message.topic);
+        return false;
+    } catch (const zmq::error_t& e) {
+        logError("ZMQ error processing message: " + std::string(e.what()));
+        stats_.connection_errors++;
+        return false;
+    } catch (const std::exception& e) {
+        logError("Error processing message: " + std::string(e.what()));
+        return false;
+    }
+}
+//         }
+//     } else {
+//         if (!internal_publisher_socket_) {
+//             logError("Internal publisher socket not available");
+//             return false;
+//         }
+//     }
+    
+//     try {
+//         // Create topic message
+//         zmq::message_t topic_msg(message.topic.size());
+//         memcpy(topic_msg.data(), message.topic.c_str(), message.topic.size());
+        
+//         // Create metadata
+//         std::unordered_map<std::string, std::string> metadata;
+//         metadata["correlation_id"] = message.correlation_id;
+//         metadata["priority"] = std::to_string(static_cast<int>(message.priority));
+//         metadata["timestamp"] = std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
+//             message.timestamp.time_since_epoch()).count());
+        
+//         // Serialize data with metadata
+//         std::string serialized_data = serializeWithMetadata(message.data, metadata);
+//         zmq::message_t data_msg(serialized_data.size());
+//         memcpy(data_msg.data(), serialized_data.c_str(), serialized_data.size());
+//         // Send messages
+//         if (message.topic.empty() || message.data.empty()) {
+//             logError("Empty topic or data in processMessage");
+//             return false;
+//         }
+//         logInfo("Processing message for topic: " + message.topic);
+//         if (message.topic == "MARKET_INTEL") {
+//             // High-frequency market intelligence goes to dedicated socket
+//             auto topic_result = intel_publisher_socket_->send(topic_msg, zmq::send_flags::sndmore);
+//             auto data_result = intel_publisher_socket_->send(data_msg, zmq::send_flags::none);
+//             logInfo("Sent MARKET_INTEL message");
+//             if (topic_result.has_value() && data_result.has_value()) {
+//                 // if (logging_enabled_) {
+//                 //     logInfo("Processed message for topic: " + message.topic);
+//                 // }
+//                 return true;
+//             }
+//             return false;
+//         }
+//         logInfo("Sent internal message");
+//         auto topic_result = internal_publisher_socket_->send(topic_msg, zmq::send_flags::sndmore);
+//         auto data_result = internal_publisher_socket_->send(data_msg, zmq::send_flags::none);
+//         logInfo("Sent internal message parts");
+//         if (topic_result.has_value() && data_result.has_value()) {
+//             if (logging_enabled_) {
+//                 logInfo("Processed message for topic: " + message.topic);
+//             }
+//             return true;
+//         }
+//         logError("Failed to publish internal message: " + message.topic);
+//         return false;
+        
+//     } catch (const zmq::error_t& e) {
+//         logError("ZMQ error processing message: " + std::string(e.what()));
+//         stats_.connection_errors++;
+//         return false;
+//     } catch (const std::exception& e) {
+//         logError("Error processing message: " + std::string(e.what()));
+//         return false;
+//     }
+// }
 
 void GenericZmqServer::handleRequest(zmq::message_t& identity, zmq::message_t& request) {
     try {

@@ -360,7 +360,10 @@ private:
     /**
      * Process a single message from queue
      */
-    bool processMessage(const GenericMessage& message);
+    // bool processMessage(const GenericMessage& message);
+    // bool processMessage(const GenericMessage& message, zmq::socket_t& socket);
+    bool processIntelMessage(const GenericMessage& message);
+    bool processInternalMessage(const GenericMessage& message);
     
     /**
      * Handle incoming request
