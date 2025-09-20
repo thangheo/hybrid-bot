@@ -329,7 +329,12 @@ bool OrderBookReconstructor::processUpdate(
             requestSnapshot(exchange, symbol);
         }
     }
-    
+    //cleanup old order books if too many
+    size_t maxOrderBooks = 1000; // This could be configurable
+    if (orderBookManager_->getOrderBookCount() > maxOrderBooks) {
+        orderBookManager_->cleanup();
+    }
+
     return success;
 }
 

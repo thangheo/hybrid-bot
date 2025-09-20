@@ -229,22 +229,17 @@ bool DataIngestionService::setupOrderBookComponents() {
 
 bool DataIngestionService::setupExchangeManager() {
     try {
-        // Create exchange manager with proper callback - DIRECT CALLBACK
-        auto exchangeCallback = [this](const OrderBookUpdate& update) {
-            this->onNormalizedOrderBook(update);
-        };
-        
+       
         // Setup rate limits for Binance
         auto rateLimitController = std::make_shared<execution::RateLimitController>(core::ExchangeId::binance());
-            // ExchangeManager(const core::ExchangeId& exchangeId,
-            //                 std::shared_ptr<execution::RateLimitController> rateLimitController = nullptr,
-            //                 NormalizedOrderBookCallback normalizedCallback = nullptr);
-
-        exchangeManager_ = std::make_unique<ExchangeManager>(
-            core::ExchangeId::binance(),
-            rateLimitController,
-            exchangeCallback
-        );
+          
+        // exchangeManager_ = std::make_unique<ExchangeManager>(
+        //     core::ExchangeId::binance(),
+        //     rateLimitController,
+        //     [this](const OrderBookUpdate& update) { onNormalizedOrderBook(update); }
+        // );
+        orderBookManager_ = OrderBookManagerFactory::createHighFrequencyManager();
+        
         // Configure memory limit for ExchangeManager from config or environment
         try {
             // First try exchange-specific config additional_params
