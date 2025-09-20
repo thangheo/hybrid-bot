@@ -20,6 +20,9 @@
 #include <memory>
 #include <functional>
 #include <chrono>
+#include <thread>
+#include <condition_variable>
+#include <atomic>
 
 namespace trading {
 namespace risk {
@@ -64,11 +67,12 @@ public:
                      std::shared_ptr<PositionTracker> positionTracker,
                      std::shared_ptr<ExecutionInterface> executionInterface,
                      std::shared_ptr<DataInterface> dataInterface);
-    //why no destructor?
-    ~RebalancingEngine() {
-        stopRebalancing();
-    }
     
+    /**
+     * Destructor - properly stops rebalancing thread
+     */
+    ~RebalancingEngine();
+
     /**
      * Initialize the rebalancing engine
      * @return true if initialization was successful, false otherwise
@@ -145,26 +149,34 @@ public:
     bool setAutoRebalancing(bool enabled);
 
 private:
+    /**
+     * Stop the rebalancing thread safely
+     */
     void stopRebalancing();
+    
+    // Thread management
     std::thread m_rebalancingThread;
     std::condition_variable m_cv;
-    bool m_stopRequested = false;
+    std::atomic<bool> m_stopRequested{false};
     
+    // Core dependencies
     std::shared_ptr<PositionTracker> m_positionTracker;
     std::shared_ptr<ExecutionInterface> m_executionInterface;
     std::shared_ptr<DataInterface> m_dataInterface;
     RiskConfig m_config;
     RebalancingConfig m_rebalancingConfig;
-    //exchangeTransferFees
+    
+    // Configuration members
     std::unordered_map<ExchangeId, double> m_exchangeTransferFees;
     double m_minimumRebalancingValue;
     double m_maximumRebalancingValue;
+    
     // Rebalancing state
     mutable std::mutex m_stateMutex;
     RebalancingResult m_lastRebalancing;
     std::chrono::system_clock::time_point m_nextScheduledRebalancing;
-    bool m_rebalancingScheduled;
-    bool m_autoRebalancingEnabled;
+    std::atomic<bool> m_rebalancingScheduled{false};
+    std::atomic<bool> m_autoRebalancingEnabled{false};
     
     // Target allocations
     mutable std::mutex m_allocationMutex;
