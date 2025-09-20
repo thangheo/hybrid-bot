@@ -1021,7 +1021,7 @@ private:
                         // Generate intelligence (throttling inside function)
                         generateMarketIntelligence(update, orderBook);
                         // Publish orderbook for risk asynchronously
-                        // publishOrderBookForRisk(update); //disable for debug
+                        publishOrderBookForRisk(update); //disable for debug
                         // Send to strategy engine
                         if (strategyEngine_) {
                             strategyEngine_->processOrderBook(*orderBook);
