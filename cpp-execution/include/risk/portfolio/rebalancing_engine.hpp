@@ -141,6 +141,11 @@ public:
     bool setAutoRebalancing(bool enabled);
 
 private:
+    void stopRebalancing();
+    std::thread m_rebalancingThread;
+    std::condition_variable m_cv;
+    bool m_stopRequested = false;
+    
     std::shared_ptr<PositionTracker> m_positionTracker;
     std::shared_ptr<ExecutionInterface> m_executionInterface;
     std::shared_ptr<DataInterface> m_dataInterface;
