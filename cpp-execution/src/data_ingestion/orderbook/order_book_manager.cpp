@@ -541,6 +541,58 @@ bool OrderBookManager::isOrderBookInactive(const std::shared_ptr<OrderBook>& ord
     return timeSinceUpdate > config_.inactiveTimeout;
 }
 
+size_t OrderBookManager::limitOrderBooks(size_t maxCount) {
+    if (orderBooks_.size() <= maxCount) return 0;
+
+    std::unique_lock<std::shared_mutex> writeLock(orderBooksMutex_);
+    
+    // Sort by last update time, keep newest
+    std::vector<std::pair<OrderBookKey, std::chrono::time_point<std::chrono::system_clock>>> items;
+    for (const auto& [key, orderBook] : orderBooks_) {
+        items.emplace_back(key, orderBook->getTimestamp());
+    }
+    
+    std::sort(items.begin(), items.end(), 
+              [](const auto& a, const auto& b) {
+                  return a.second > b.second; // Newest first
+              });
+    std::cout << "Order books before limiting: " << orderBooks_.size() << ", after limiting to " << maxCount << std::endl;
+
+    size_t removedCount = 0;
+    // Keep only maxCount newest
+    for (size_t i = maxCount; i < items.size(); ++i) {
+        orderBooks_.erase(items[i].first);
+        ++removedCount;
+        ++totalOrderBooksRemoved_;
+        notifyManagerEvent(items[i].first, "removed_oldest");
+    }
+    std::cout << "Order books after limiting: " << orderBooks_.size() << std::endl;
+    return removedCount;
+}
+
+// // Hoặc limit theo số lượng (keep most recent)
+// bool OrderBookManager::limitOrderBooks(size_t maxCount) {
+//     if (orderBooks_.size() <= maxCount) return false;
+
+//     std::unique_lock<std::shared_mutex> writeLock(orderBooksMutex_);
+    
+//     // Sort by last update time, keep newest
+//     std::vector<std::pair<OrderBookKey, std::chrono::time_point<std::chrono::system_clock>>> items;
+//     for (const auto& [key, orderBook] : orderBooks_) {
+//         items.emplace_back(key, orderBook->getTimestamp());
+//     }
+    
+//     std::sort(items.begin(), items.end(), 
+//               [](const auto& a, const auto& b) {
+//                   return a.second > b.second; // Newest first
+//               });
+    
+//     // Keep only maxCount newest
+//     for (size_t i = maxCount; i < items.size(); ++i) {
+//         orderBooks_.erase(items[i].first);
+//     }
+// }
+
 void OrderBookManager::removeOrderBookInternal(const OrderBookKey& key) {
     auto it = orderBooks_.find(key);
     if (it != orderBooks_.end()) {

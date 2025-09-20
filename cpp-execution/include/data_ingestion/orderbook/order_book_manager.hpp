@@ -298,7 +298,12 @@ public:
      * @return Mid price, or 0.0 if order book not found or invalid
      */
     double getMidPrice(const ExchangeId& exchangeId, const core::Symbol& symbol) const;
-
+    /**
+     * Limit the number of order books to a maximum count by removing oldest/inactive
+     * @param maxCount Maximum number of order books to retain
+     * @return Number of order books removed
+     */
+    size_t limitOrderBooks(size_t maxCount);
 private:
     // Configuration
     OrderBookManagerConfig config_;
