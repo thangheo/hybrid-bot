@@ -148,11 +148,19 @@ void GenericZmqServer::stop() {
     state_.store(ServerState::STOPPING);
     
     // Signal context termination to wake up any blocking operations
-    if (context_) {
+    if (intel_context_) {
         try {
-            context_->shutdown();
+            intel_context_->shutdown();
         } catch (const zmq::error_t& e) {
-            logError("Error shutting down context: " + std::string(e.what()));
+            logError("Error shutting down Intel context: " + std::string(e.what()));
+        }
+    }
+
+    if (internal_context_) {
+        try {
+            internal_context_->shutdown();
+        } catch (const zmq::error_t& e) {
+            logError("Error shutting down Internal context: " + std::string(e.what()));
         }
     }
     
@@ -555,16 +563,16 @@ bool GenericZmqServer::initializeSockets() {
         
         // Create ZeroMQ context with proper shutdown behavior
         logInfo("Creating ZMQ context with " + std::to_string(config_.io_threads) + " IO threads");
-        context_ = std::make_unique<zmq::context_t>(config_.io_threads);
-        
+        intel_context_ = std::make_unique<zmq::context_t>(config_.io_threads);
+        internal_context_ = std::make_unique<zmq::context_t>(config_.io_threads);
+
         // Set context options for safer shutdown
-        context_->set(zmq::ctxopt::blocky, false);  // Non-blocking context termination
-        
-        logInfo("ZMQ context created successfully");
-        
+        intel_context_->set(zmq::ctxopt::blocky, false);  // Non-blocking context termination
+        internal_context_->set(zmq::ctxopt::blocky, false);  // Non-blocking context termination
+
         // Create and configure intel publisher socket
         logInfo("Creating intel publisher socket...");
-        intel_publisher_socket_ = std::make_unique<zmq::socket_t>(*context_, ZMQ_PUB);
+        intel_publisher_socket_ = std::make_unique<zmq::socket_t>(*intel_context_, ZMQ_PUB);
         
         logInfo("Setting intel socket options...");
         intel_publisher_socket_->set(zmq::sockopt::sndhwm, config_.intel_hwm);
@@ -579,15 +587,10 @@ bool GenericZmqServer::initializeSockets() {
             intel_publisher_socket_->set(zmq::sockopt::conflate, 1);
         }
         
-        logInfo("Binding intel socket to: " + config_.intel_endpoint);
         intel_publisher_socket_->bind(config_.intel_endpoint);
-        logInfo("Intel socket bound successfully");
+       
+        internal_publisher_socket_ = std::make_unique<zmq::socket_t>(*internal_context_, ZMQ_PUB);
         
-        // Create and configure internal publisher socket
-        logInfo("Creating internal publisher socket...");
-        internal_publisher_socket_ = std::make_unique<zmq::socket_t>(*context_, ZMQ_PUB);
-        
-        logInfo("Setting internal socket options...");
         internal_publisher_socket_->set(zmq::sockopt::sndhwm, config_.internal_hwm);
         internal_publisher_socket_->set(zmq::sockopt::linger, 0);  // Immediate close
         internal_publisher_socket_->set(zmq::sockopt::sndtimeo, 1000);  // Send timeout
@@ -600,22 +603,17 @@ bool GenericZmqServer::initializeSockets() {
             internal_publisher_socket_->set(zmq::sockopt::conflate, 1);
         }
         
-        logInfo("Binding internal socket to: " + config_.internal_endpoint);
         internal_publisher_socket_->bind(config_.internal_endpoint);
-        logInfo("Internal socket bound successfully");
         
         // Create and configure request socket
-        logInfo("Creating request socket...");
-        request_socket_ = std::make_unique<zmq::socket_t>(*context_, ZMQ_ROUTER);
+        request_socket_ = std::make_unique<zmq::socket_t>(*internal_context_, ZMQ_ROUTER); //trading intent is from python
         
-        logInfo("Setting request socket options...");
         request_socket_->set(zmq::sockopt::rcvhwm, config_.request_hwm);
         request_socket_->set(zmq::sockopt::sndhwm, config_.request_hwm);
         request_socket_->set(zmq::sockopt::linger, 0);  // Immediate close
         request_socket_->set(zmq::sockopt::rcvtimeo, 100);  // Receive timeout
         request_socket_->set(zmq::sockopt::sndtimeo, 1000);  // Send timeout
         
-        logInfo("Binding request socket to: " + config_.request_endpoint);
         request_socket_->bind(config_.request_endpoint);
         logInfo("Request socket bound successfully");
         
@@ -670,15 +668,23 @@ void GenericZmqServer::cleanup() {
     }
     
     // Close context
-    if (context_) {
+    if (intel_context_) {
         try {
-            context_->close();
+            intel_context_->close();
         } catch (const zmq::error_t& e) {
-            logError("Error closing ZMQ context: " + std::string(e.what()));
+            logError("Error closing Intel ZMQ context: " + std::string(e.what()));
         }
-        context_.reset();
     }
-    
+
+    if (internal_context_) {
+        try {
+            internal_context_->close();
+        } catch (const zmq::error_t& e) {
+            logError("Error closing Internal ZMQ context: " + std::string(e.what()));
+        }
+    }
+    internal_context_.reset();
+    intel_context_.reset();
     // Clear queues
     {
         std::lock_guard<std::mutex> lock1(intel_queue_mutex_);
@@ -935,9 +941,10 @@ bool GenericZmqServer::processIntelMessage(const GenericMessage& message) {
 
     try {
         // Create topic message
+        // std::string topic = "MARKET_INTEL"; // Force topic to MARKET_INTEL
+        // zmq::message_t topic_msg(topic.data(), topic.size());
         zmq::message_t topic_msg(message.topic.size());
-        memcpy(topic_msg.data(), message.topic.c_str(), message.topic.size());        
-
+        memcpy(topic_msg.data(), message.topic.c_str(), message.topic.size());
         // Create metadata
         std::unordered_map<std::string, std::string> metadata;
         metadata["correlation_id"] = message.correlation_id;
@@ -949,22 +956,13 @@ bool GenericZmqServer::processIntelMessage(const GenericMessage& message) {
         std::string serialized_data = serializeWithMetadata(message.data, metadata);
         zmq::message_t data_msg(serialized_data.size());
         memcpy(data_msg.data(), serialized_data.c_str(), serialized_data.size());
-
-    // Debug: Log what we're actually sending
-    logInfo("Sending topic: " + message.topic + ", data preview: " + serialized_data.substr(0, 100) + "...");
-    // Diagnostic: log raw frame sizes to ensure topic frame is correct
-    logInfo("Diagnostic frames sizes - topic_size: " + std::to_string(message.topic.size()) + ", data_size: " + std::to_string(serialized_data.size()));
-
-        // Send messages
-        if (message.topic.empty() || serialized_data.empty()) {  // Check serialized_data, not message.data
-            logError("Empty topic or serialized data in processIntelMessage");
-            return false;
-        }
+        
+        //to debug we just send dummie topic and data
+        // logInfo("Processing MARKET_INTEL message for topic: " + topic);
         auto topic_result = intel_publisher_socket_->send(topic_msg, zmq::send_flags::sndmore);
         auto data_result = intel_publisher_socket_->send(data_msg, zmq::send_flags::none);
-        logInfo("Sent MARKET_INTEL message");
         if (topic_result.has_value() && data_result.has_value()) {
-            logInfo("Processed MARKET_INTEL message for topic: " + message.topic);
+            // logInfo("Processed MARKET_INTEL message for topic: " + topic);
             return true;
 
         }
@@ -1025,72 +1023,7 @@ bool GenericZmqServer::processInternalMessage(const GenericMessage& message) {
         return false;
     }
 }
-//         }
-//     } else {
-//         if (!internal_publisher_socket_) {
-//             logError("Internal publisher socket not available");
-//             return false;
-//         }
-//     }
-    
-//     try {
-//         // Create topic message
-//         zmq::message_t topic_msg(message.topic.size());
-//         memcpy(topic_msg.data(), message.topic.c_str(), message.topic.size());
-        
-//         // Create metadata
-//         std::unordered_map<std::string, std::string> metadata;
-//         metadata["correlation_id"] = message.correlation_id;
-//         metadata["priority"] = std::to_string(static_cast<int>(message.priority));
-//         metadata["timestamp"] = std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
-//             message.timestamp.time_since_epoch()).count());
-        
-//         // Serialize data with metadata
-//         std::string serialized_data = serializeWithMetadata(message.data, metadata);
-//         zmq::message_t data_msg(serialized_data.size());
-//         memcpy(data_msg.data(), serialized_data.c_str(), serialized_data.size());
-//         // Send messages
-//         if (message.topic.empty() || message.data.empty()) {
-//             logError("Empty topic or data in processMessage");
-//             return false;
-//         }
-//         logInfo("Processing message for topic: " + message.topic);
-//         if (message.topic == "MARKET_INTEL") {
-//             // High-frequency market intelligence goes to dedicated socket
-//             auto topic_result = intel_publisher_socket_->send(topic_msg, zmq::send_flags::sndmore);
-//             auto data_result = intel_publisher_socket_->send(data_msg, zmq::send_flags::none);
-//             logInfo("Sent MARKET_INTEL message");
-//             if (topic_result.has_value() && data_result.has_value()) {
-//                 // if (logging_enabled_) {
-//                 //     logInfo("Processed message for topic: " + message.topic);
-//                 // }
-//                 return true;
-//             }
-//             return false;
-//         }
-//         logInfo("Sent internal message");
-//         auto topic_result = internal_publisher_socket_->send(topic_msg, zmq::send_flags::sndmore);
-//         auto data_result = internal_publisher_socket_->send(data_msg, zmq::send_flags::none);
-//         logInfo("Sent internal message parts");
-//         if (topic_result.has_value() && data_result.has_value()) {
-//             if (logging_enabled_) {
-//                 logInfo("Processed message for topic: " + message.topic);
-//             }
-//             return true;
-//         }
-//         logError("Failed to publish internal message: " + message.topic);
-//         return false;
-        
-//     } catch (const zmq::error_t& e) {
-//         logError("ZMQ error processing message: " + std::string(e.what()));
-//         stats_.connection_errors++;
-//         return false;
-//     } catch (const std::exception& e) {
-//         logError("Error processing message: " + std::string(e.what()));
-//         return false;
-//     }
-// }
-
+ 
 void GenericZmqServer::handleRequest(zmq::message_t& identity, zmq::message_t& request) {
     try {
         // Parse request data
@@ -1390,15 +1323,15 @@ bool GenericZmqServer::reconnectSocket(zmq::socket_t& socket, const std::string&
         
         // Recreate socket
         if (&socket == intel_publisher_socket_.get()) {
-            intel_publisher_socket_ = std::make_unique<zmq::socket_t>(*context_, ZMQ_PUB);
+            intel_publisher_socket_ = std::make_unique<zmq::socket_t>(*intel_context_, ZMQ_PUB);
             intel_publisher_socket_->set(zmq::sockopt::sndhwm, config_.intel_hwm);
             intel_publisher_socket_->set(zmq::sockopt::linger, config_.intel_linger);
         } else if (&socket == internal_publisher_socket_.get()) {
-            internal_publisher_socket_ = std::make_unique<zmq::socket_t>(*context_, ZMQ_PUB);
+            internal_publisher_socket_ = std::make_unique<zmq::socket_t>(*internal_context_, ZMQ_PUB);
             internal_publisher_socket_->set(zmq::sockopt::sndhwm, config_.internal_hwm);
             internal_publisher_socket_->set(zmq::sockopt::linger, config_.internal_linger);
         } else if (&socket == request_socket_.get()) {
-            request_socket_ = std::make_unique<zmq::socket_t>(*context_, ZMQ_ROUTER);
+            request_socket_ = std::make_unique<zmq::socket_t>(*intel_context_, ZMQ_ROUTER);
             request_socket_->set(zmq::sockopt::rcvhwm, config_.request_hwm);
             request_socket_->set(zmq::sockopt::linger, 1000);
         }
