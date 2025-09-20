@@ -434,6 +434,7 @@ RebalancingResult RebalancingEngine::executeRebalancing(
         return result;
     }
 }
+
 bool RebalancingEngine::scheduleRebalancingChecks() {
     try {
         std::lock_guard<std::mutex> lock(m_stateMutex);
