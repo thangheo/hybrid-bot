@@ -422,7 +422,6 @@ bool MarketDataInterface::subscribeMarketData(
     MessageHandler handler = [this](const std::string& topic, const std::string& message,
                                   const std::unordered_map<std::string, std::string>& metadata) {
         if (topic.find("orderbook") != std::string::npos) {
-            // processOrderBookUpdate(topic, message);
             processSyntheticOrderBook(topic, message);
         } else if (topic.find("trade") != std::string::npos) {
             processTradeUpdate(topic, message);
@@ -490,42 +489,7 @@ std::string MarketDataInterface::createCacheKey(
 
     return exchangeId.toString() + ":" + tradingPair.toString();
 }
-
-// void MarketDataInterface::processOrderBookUpdate(
-//     const std::string& topic, 
-//     const std::string& message) {
-    
-//     try {
-//         // Parse topic to extract exchange and trading pair
-//         // Format: "market.orderbook.binance.BTC/USDT"
-//         std::vector<std::string> parts;
-//         std::stringstream ss(topic);
-//         std::string part;
-        
-//         while (std::getline(ss, part, '.')) {
-//             parts.push_back(part);
-//         }
-        
-//         if (parts.size() >= 4) {
-//             core::ExchangeId exchange = core::ExchangeId::fromString(parts[2]);
-//             core::Symbol tradingPair = parts[3];
-            
-//             // Create MarketDataUpdate from the message
-//             core::MarketDataUpdate update;
-//             update.exchangeId = exchange;
-//             update.tradingPair = tradingPair;
-//             update.updateType = "orderbook";
-//             update.timestamp = std::chrono::system_clock::now();
-//             update.data = std::vector<uint8_t>(message.begin(), message.end());
-            
-//             // Process through normalizer
-//             // normalizer_->processMarketData(update);
-//         }
-        
-//     } catch (const std::exception& e) {
-//         LOG_ERROR("Error processing order book update: " + std::string(e.what()));
-//     }
-// }
+ 
 
 void MarketDataInterface::processTradeUpdate(
     const std::string& topic, 
