@@ -24,23 +24,27 @@ struct ZmqServerConfig {
     int publisher_hwm = 10000;
     int publisher_linger = 1000;
     bool publisher_immediate = true;
+    // Internal modules (nếu cần high frequency)
+    std::string internal_endpoint = "tcp://*:5557";  // ← THÊM: endpoint riêng
+    int internal_hwm = 10000;  // ← Cao hơn cho internal
     
     // Request-Reply configuration  
     std::string request_endpoint = "tcp://*:5556";
     int request_hwm = 1000;
     int request_timeout_ms = 30000;
-    
+
     // Threading configuration
     int publisher_threads = 2;
     int request_handler_threads = 4;
     int io_threads = 2;
     
     // Queue configuration
-    size_t max_queue_size = 100000;
+    size_t max_queue_size = 1000;
     // max_publish_rate
     int max_publish_rate = 1000;  // messages per second
     std::chrono::milliseconds publish_interval{100};
     std::chrono::milliseconds queue_timeout{100};
+
     // publish_interval_ms
     // Monitoring configuration
     bool enable_monitoring = true;
@@ -89,6 +93,7 @@ struct ZmqClientConfig {
 };
 
 #define ZMQ_TOPIC_MARKET_DATA "market.data"
+#define ZMQ_TOPIC_ORDER_BOOK "orderbook"
 #define ZMQ_TOPIC_ORDERS "orders"
 #define ZMQ_TOPIC_TRADES "trades"
 #define ZMQ_TOPIC_POSITIONS "positions"

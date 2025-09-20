@@ -456,8 +456,8 @@ public:
         try {
             if (!orderBook) {
                 return; // No order book available
-            }
-            
+            }           
+
             // Validate order book has data
             auto bids = orderBook->getBids(5);
             auto asks = orderBook->getAsks(5);
@@ -485,7 +485,7 @@ public:
                 shouldGenerate = true; // First time
             } else {
                 auto timeSinceLastIntel = now - lastIntelTime[tradingPair];
-                if (timeSinceLastIntel >= std::chrono::milliseconds(10)) { // Generate every 10 milliseconds
+                if (timeSinceLastIntel >= std::chrono::milliseconds(30000)) { // Generate every 30s
                     shouldGenerate = true;
                 }
             }
