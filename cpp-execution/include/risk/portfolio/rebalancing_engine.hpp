@@ -64,6 +64,10 @@ public:
                      std::shared_ptr<PositionTracker> positionTracker,
                      std::shared_ptr<ExecutionInterface> executionInterface,
                      std::shared_ptr<DataInterface> dataInterface);
+    //why no destructor?
+    ~RebalancingEngine() {
+        stopRebalancing();
+    }
     
     /**
      * Initialize the rebalancing engine
