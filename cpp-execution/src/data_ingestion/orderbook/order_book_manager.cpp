@@ -42,7 +42,11 @@ OrderBookManager::OrderBookManager(
 OrderBookManager::~OrderBookManager() {
     cleanup();
 }
-
+// setConfig
+void OrderBookManager::setConfig(const OrderBookManagerConfig& config) {
+    std::unique_lock<std::shared_mutex> writeLock(orderBooksMutex_);
+    config_ = config;
+}
 bool OrderBookManager::createOrderBook(
     const ExchangeId& exchangeId, 
     const core::Symbol& symbol,
