@@ -1,9 +1,9 @@
 {
   "publisher": {
-    "zmq_endpoint": "tcp://*:5560",
+    "zmq_endpoint": "tcp://*:5555",
     "publisher_type": "zeromq",
     "buffer_size": 10000,
-    "max_queue_size": 10000,
+    "max_queue_size": 100,
     "max_publish_rate": 5000,
     "publish_interval_ms": 50,
     "heartbeat_interval_ms": 30000,
