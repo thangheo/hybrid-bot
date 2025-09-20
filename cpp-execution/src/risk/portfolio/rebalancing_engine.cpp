@@ -434,56 +434,42 @@ RebalancingResult RebalancingEngine::executeRebalancing(
         return result;
     }
 }
-
 bool RebalancingEngine::scheduleRebalancingChecks() {
     try {
-        // Check if already scheduled
-        {
-            std::lock_guard<std::mutex> lock(m_stateMutex);
-            if (m_rebalancingScheduled) {
-                return true; // Already scheduled
-            }
-            m_rebalancingScheduled = true;
+        std::lock_guard<std::mutex> lock(m_stateMutex);
+        if (m_rebalancingScheduled) {
+            return true;
         }
         
-        // Launch a detached thread for scheduling
-        std::thread([this]() {
+        m_stopRequested = false;
+        m_rebalancingScheduled = true;
+        
+        m_rebalancingThread = std::thread([this]() {
             while (true) {
-                // Check if auto-rebalancing is still enabled
-                bool autoRebalancingEnabled;
-                {
-                    std::lock_guard<std::mutex> lock(m_stateMutex);
-                    autoRebalancingEnabled = m_autoRebalancingEnabled;
-                    if (!autoRebalancingEnabled) {
-                        m_rebalancingScheduled = false;
-                        break; // Exit the loop if disabled
-                    }
+                std::unique_lock<std::mutex> lock(m_stateMutex);
+                
+                if (m_stopRequested || !m_autoRebalancingEnabled) {
+                    m_rebalancingScheduled = false;
+                    break;
                 }
                 
-                // Sleep until next scheduled rebalancing (do not hold m_stateMutex while sleeping)
-                std::chrono::system_clock::time_point nextScheduled;
-                {
-                    std::lock_guard<std::mutex> lock(m_stateMutex);
-                    nextScheduled = m_nextScheduledRebalancing;
-                }
-                std::this_thread::sleep_until(nextScheduled);
+                auto nextScheduled = m_nextScheduledRebalancing;
                 
-                // Check if auto-rebalancing is still enabled after sleep
-                {
-                    std::lock_guard<std::mutex> lock(m_stateMutex);
-                    if (!m_autoRebalancingEnabled) {
-                        m_rebalancingScheduled = false;
-                        break; // Exit the loop if disabled
-                    }
+                m_cv.wait_until(lock, nextScheduled, [this] {
+                    return m_stopRequested || !m_autoRebalancingEnabled;
+                });
+                
+                if (m_stopRequested || !m_autoRebalancingEnabled) {
+                    m_rebalancingScheduled = false;
+                    break;
                 }
                 
-                // Check if rebalancing is needed
+                lock.unlock();
+                
                 if (isRebalancingNeeded()) {
-                    // Auto-execute rebalancing if configured to do so
                     if (m_rebalancingConfig.autoExecuteRebalancing) {
                         executeRebalancing();
                     } else {
-                        // Just notify that rebalancing is needed
                         RebalancingResult notification;
                         notification.success = true;
                         notification.errors.push_back("Rebalancing needed but not auto-executed");
@@ -492,28 +478,113 @@ bool RebalancingEngine::scheduleRebalancingChecks() {
                     }
                 }
                 
-                // Schedule next rebalancing
-                {
-                    std::lock_guard<std::mutex> lock(m_stateMutex);
-                    m_nextScheduledRebalancing = std::chrono::system_clock::now() + 
-                        std::chrono::minutes(m_rebalancingConfig.rebalancingIntervalMinutes);
-                }
+                lock.lock();
+                m_nextScheduledRebalancing = std::chrono::system_clock::now() +
+                    std::chrono::minutes(m_rebalancingConfig.rebalancingIntervalMinutes);
             }
-        }).detach();
+        });
         
         return true;
     } catch (const std::exception& e) {
         std::cerr << "Error scheduling rebalancing checks: " << e.what() << std::endl;
-        
-        // Reset scheduled flag
-        {
-            std::lock_guard<std::mutex> lock(m_stateMutex);
-            m_rebalancingScheduled = false;
-        }
-        
+        std::lock_guard<std::mutex> lock(m_stateMutex);
+        m_rebalancingScheduled = false;
         return false;
     }
 }
+
+void RebalancingEngine::stopRebalancing() {
+    {
+        std::lock_guard<std::mutex> lock(m_stateMutex);
+        m_stopRequested = true;
+        m_autoRebalancingEnabled = false;
+    }
+    m_cv.notify_all();
+    
+    if (m_rebalancingThread.joinable()) {
+        m_rebalancingThread.join();
+    }
+}
+
+// bool RebalancingEngine::scheduleRebalancingChecks() {
+//     try {
+//         // Check if already scheduled
+//         {
+//             std::lock_guard<std::mutex> lock(m_stateMutex);
+//             if (m_rebalancingScheduled) {
+//                 return true; // Already scheduled
+//             }
+//             m_rebalancingScheduled = true;
+//         }
+        
+//         // Launch a detached thread for scheduling
+//         std::thread([this]() {
+//             while (true) {
+//                 // Check if auto-rebalancing is still enabled
+//                 bool autoRebalancingEnabled;
+//                 {
+//                     std::lock_guard<std::mutex> lock(m_stateMutex);
+//                     autoRebalancingEnabled = m_autoRebalancingEnabled;
+//                     if (!autoRebalancingEnabled) {
+//                         m_rebalancingScheduled = false;
+//                         break; // Exit the loop if disabled
+//                     }
+//                 }
+                
+//                 // Sleep until next scheduled rebalancing (do not hold m_stateMutex while sleeping)
+//                 std::chrono::system_clock::time_point nextScheduled;
+//                 {
+//                     std::lock_guard<std::mutex> lock(m_stateMutex);
+//                     nextScheduled = m_nextScheduledRebalancing;
+//                 }
+//                 std::this_thread::sleep_until(nextScheduled);
+                
+//                 // Check if auto-rebalancing is still enabled after sleep
+//                 {
+//                     std::lock_guard<std::mutex> lock(m_stateMutex);
+//                     if (!m_autoRebalancingEnabled) {
+//                         m_rebalancingScheduled = false;
+//                         break; // Exit the loop if disabled
+//                     }
+//                 }
+                
+//                 // Check if rebalancing is needed
+//                 if (isRebalancingNeeded()) {
+//                     // Auto-execute rebalancing if configured to do so
+//                     if (m_rebalancingConfig.autoExecuteRebalancing) {
+//                         executeRebalancing();
+//                     } else {
+//                         // Just notify that rebalancing is needed
+//                         RebalancingResult notification;
+//                         notification.success = true;
+//                         notification.errors.push_back("Rebalancing needed but not auto-executed");
+//                         notification.timestamp = std::chrono::system_clock::now();
+//                         notifyRebalancingEvent(notification);
+//                     }
+//                 }
+                
+//                 // Schedule next rebalancing
+//                 {
+//                     std::lock_guard<std::mutex> lock(m_stateMutex);
+//                     m_nextScheduledRebalancing = std::chrono::system_clock::now() + 
+//                         std::chrono::minutes(m_rebalancingConfig.rebalancingIntervalMinutes);
+//                 }
+//             }
+//         }).detach();
+        
+//         return true;
+//     } catch (const std::exception& e) {
+//         std::cerr << "Error scheduling rebalancing checks: " << e.what() << std::endl;
+        
+//         // Reset scheduled flag
+//         {
+//             std::lock_guard<std::mutex> lock(m_stateMutex);
+//             m_rebalancingScheduled = false;
+//         }
+        
+//         return false;
+//     }
+// }
 
 bool RebalancingEngine::cancelScheduledRebalancingChecks() {
     std::lock_guard<std::mutex> lock(m_stateMutex);
