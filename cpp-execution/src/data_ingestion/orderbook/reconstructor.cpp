@@ -285,6 +285,7 @@ bool OrderBookReconstructor::processSnapshot(
             publishOrderBook(orderBook);
         }
     }
+
     
     return success;
 }
@@ -330,9 +331,10 @@ bool OrderBookReconstructor::processUpdate(
         }
     }
     //cleanup old order books if too many
-    size_t maxOrderBooks = 1000; // This could be configurable
-    if (orderBookManager_->getOrderBookCount() > maxOrderBooks) {
-        orderBookManager_->cleanup();
+        
+    static size_t updateCount = 0;
+    if (++updateCount % 1000 == 0) { // Check mỗi 1000 updates
+        orderBookManager_->limitOrderBooks(100); // Keep 100 newest
     }
 
     return success;
