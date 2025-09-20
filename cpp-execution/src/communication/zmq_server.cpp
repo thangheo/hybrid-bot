@@ -146,12 +146,25 @@ void GenericZmqServer::stop() {
     
     logInfo("Stopping Generic ZMQ Server...");
     state_.store(ServerState::STOPPING);
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    
+    // Signal context termination to wake up any blocking operations
+    if (context_) {
+        try {
+            context_->shutdown();
+        } catch (const zmq::error_t& e) {
+            logError("Error shutting down context: " + std::string(e.what()));
+        }
+    }
+    
+    // Give threads time to see the state change and exit gracefully
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    
     // Notify all waiting threads
     intel_queue_cv_.notify_all();
     internal_queue_cv_.notify_all();
 
-    // Join publisher threads
+    // Join publisher threads first
+    logInfo("Stopping publisher threads...");
     for (auto& thread : intel_threads_) {
         if (thread.joinable()) {
             thread.join();
@@ -167,6 +180,7 @@ void GenericZmqServer::stop() {
     internal_threads_.clear();
 
     // Join request handler threads
+    logInfo("Stopping request threads...");
     for (auto& thread : request_threads_) {
         if (thread.joinable()) {
             thread.join();
@@ -175,17 +189,19 @@ void GenericZmqServer::stop() {
     request_threads_.clear();
     
     // Join monitoring thread
+    logInfo("Stopping monitoring thread...");
     if (monitoring_thread_.joinable()) {
         monitoring_thread_.join();
     }
     
     // Join heartbeat thread
+    logInfo("Stopping heartbeat thread...");
     if (heartbeat_thread_.joinable()) {
         heartbeat_thread_.join();
     }
 
-    // Cleanup resources after worker threads have stopped to avoid
-    // destroying sockets/context while other threads may still reference them.
+    // Only cleanup after ALL worker threads have stopped
+    logInfo("Cleaning up resources...");
     cleanup();
 
     state_.store(ServerState::STOPPED);
@@ -537,9 +553,13 @@ bool GenericZmqServer::initializeSockets() {
         logInfo("Internal endpoint: " + config_.internal_endpoint);
         logInfo("Request endpoint: " + config_.request_endpoint);
         
-        // Create ZeroMQ context
+        // Create ZeroMQ context with proper shutdown behavior
         logInfo("Creating ZMQ context with " + std::to_string(config_.io_threads) + " IO threads");
         context_ = std::make_unique<zmq::context_t>(config_.io_threads);
+        
+        // Set context options for safer shutdown
+        context_->set(zmq::ctxopt::blocky, false);  // Non-blocking context termination
+        
         logInfo("ZMQ context created successfully");
         
         // Create and configure intel publisher socket
@@ -548,19 +568,15 @@ bool GenericZmqServer::initializeSockets() {
         
         logInfo("Setting intel socket options...");
         intel_publisher_socket_->set(zmq::sockopt::sndhwm, config_.intel_hwm);
-        logInfo("Intel HWM set to: " + std::to_string(config_.intel_hwm));
-        
-        intel_publisher_socket_->set(zmq::sockopt::linger, config_.intel_linger);
-        logInfo("Intel linger set to: " + std::to_string(config_.intel_linger));
+        intel_publisher_socket_->set(zmq::sockopt::linger, 0);  // Immediate close
+        intel_publisher_socket_->set(zmq::sockopt::sndtimeo, 1000);  // Send timeout
         
         if (config_.intel_immediate) {
             intel_publisher_socket_->set(zmq::sockopt::immediate, 1);
-            logInfo("Intel immediate mode enabled");
         }
         
         if (config_.intel_conflate) {
             intel_publisher_socket_->set(zmq::sockopt::conflate, 1);
-            logInfo("Intel conflate mode enabled");
         }
         
         logInfo("Binding intel socket to: " + config_.intel_endpoint);
@@ -573,7 +589,8 @@ bool GenericZmqServer::initializeSockets() {
         
         logInfo("Setting internal socket options...");
         internal_publisher_socket_->set(zmq::sockopt::sndhwm, config_.internal_hwm);
-        internal_publisher_socket_->set(zmq::sockopt::linger, config_.internal_linger);
+        internal_publisher_socket_->set(zmq::sockopt::linger, 0);  // Immediate close
+        internal_publisher_socket_->set(zmq::sockopt::sndtimeo, 1000);  // Send timeout
         
         if (config_.internal_immediate) {
             internal_publisher_socket_->set(zmq::sockopt::immediate, 1);
@@ -594,8 +611,9 @@ bool GenericZmqServer::initializeSockets() {
         logInfo("Setting request socket options...");
         request_socket_->set(zmq::sockopt::rcvhwm, config_.request_hwm);
         request_socket_->set(zmq::sockopt::sndhwm, config_.request_hwm);
-        request_socket_->set(zmq::sockopt::linger, config_.request_linger);
-        request_socket_->set(zmq::sockopt::rcvtimeo, 100);
+        request_socket_->set(zmq::sockopt::linger, 0);  // Immediate close
+        request_socket_->set(zmq::sockopt::rcvtimeo, 100);  // Receive timeout
+        request_socket_->set(zmq::sockopt::sndtimeo, 1000);  // Send timeout
         
         logInfo("Binding request socket to: " + config_.request_endpoint);
         request_socket_->bind(config_.request_endpoint);
@@ -618,36 +636,63 @@ bool GenericZmqServer::initializeSockets() {
 }
 
 void GenericZmqServer::cleanup() {
-    // Close sockets
+    logInfo("Starting cleanup...");
+    
+    // Close sockets safely with error handling
     if (intel_publisher_socket_) {
-        intel_publisher_socket_->close();
+        try {
+            intel_publisher_socket_->set(zmq::sockopt::linger, 0);
+            intel_publisher_socket_->close();
+        } catch (const zmq::error_t& e) {
+            logError("Error closing intel publisher socket: " + std::string(e.what()));
+        }
         intel_publisher_socket_.reset();
     }
+    
     if (internal_publisher_socket_) {
-        internal_publisher_socket_->close();
+        try {
+            internal_publisher_socket_->set(zmq::sockopt::linger, 0);
+            internal_publisher_socket_->close();
+        } catch (const zmq::error_t& e) {
+            logError("Error closing internal publisher socket: " + std::string(e.what()));
+        }
         internal_publisher_socket_.reset();
     }
     
     if (request_socket_) {
-        request_socket_->close();
+        try {
+            request_socket_->set(zmq::sockopt::linger, 0);
+            request_socket_->close();
+        } catch (const zmq::error_t& e) {
+            logError("Error closing request socket: " + std::string(e.what()));
+        }
         request_socket_.reset();
     }
     
     // Close context
     if (context_) {
-        context_->close();
+        try {
+            context_->close();
+        } catch (const zmq::error_t& e) {
+            logError("Error closing ZMQ context: " + std::string(e.what()));
+        }
         context_.reset();
     }
     
     // Clear queues
     {
-        // std::lock_guard<std::mutex> lock(queue_mutex_);
         std::lock_guard<std::mutex> lock1(intel_queue_mutex_);
         std::lock_guard<std::mutex> lock2(internal_queue_mutex_);
+        
+        // Clear internal queue
         std::queue<GenericMessage> empty_queue;
         internal_priority_queue_.swap(empty_queue);
         
-        // Clear priority queue
+        // Clear intel priority queue
+        std::queue<GenericMessage> empty_intel_queue;
+        intel_priority_queue_.swap(empty_intel_queue);
+        
+        // Clear general priority queue
         std::priority_queue<GenericMessage, std::vector<GenericMessage>,
                            std::function<bool(const GenericMessage&, const GenericMessage&)>> empty_priority;
         priority_queue_.swap(empty_priority);
@@ -769,46 +814,52 @@ void GenericZmqServer::requestWorker() {
     
     while (state_.load() == ServerState::RUNNING) {
         try {
-            // CRITICAL: Check socket validity before use
-            if (!request_socket_) {
-                logError("Request socket is null, sleeping...");
-                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            // Check socket validity without accessing it
+            if (state_.load() != ServerState::RUNNING) {
+                break;
+            }
+            
+            // Use a simple sleep-based approach instead of polling
+            // This is less efficient but much safer for shutdown
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            
+            // Only proceed if we're still running and have a valid socket
+            if (state_.load() != ServerState::RUNNING || !request_socket_) {
                 continue;
             }
             
             zmq::message_t identity;
             zmq::message_t request;
             
-            // Add try-catch around socket operations
             try {
-                // Use blocking recv to avoid potential issues with dontwait
-                // Also check if socket is ready before receiving
-                zmq::pollitem_t items[] = {{*request_socket_, 0, ZMQ_POLLIN, 0}};
-                int rc = zmq::poll(items, 1, 100);  // Poll for 100ms
+                // Use non-blocking recv to check for messages
+                auto id_result = request_socket_->recv(identity, zmq::recv_flags::dontwait);
+                if (!id_result.has_value()) {
+                    continue; // No message available
+                }
                 
-                if (rc == -1) {
-                    logError("Poll error in request worker");
+                auto req_result = request_socket_->recv(request, zmq::recv_flags::dontwait);
+                if (!req_result.has_value()) {
+                    logError("Received identity but no request data");
                     continue;
                 }
                 
-                if (items[0].revents & ZMQ_POLLIN) {
-                    if (request_socket_->recv(identity) &&
-                        request_socket_->recv(request)) {
-                        
-                        handleRequest(identity, request);
-                        stats_.requests_processed++;
-                    }
-                }
+                // Process the request
+                handleRequest(identity, request);
+                stats_.requests_processed++;
+                
             } catch (const zmq::error_t& e) {
-                if (e.num() == ETERM) {
-                    logError("Socket terminated, exiting worker");
+                if (e.num() == ETERM || e.num() == ENOTSOCK) {
+                    logInfo("Socket terminated during recv, exiting worker");
                     break;
+                } else if (e.num() == EAGAIN) {
+                    // No message available, continue
+                    continue;
+                } else {
+                    logError("Recv error: " + std::string(e.what()) + " (errno: " + std::to_string(e.num()) + ")");
+                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
                 }
-                logError("ZMQ recv error: " + std::string(e.what()) + " (errno: " + std::to_string(e.num()) + ")");
             }
-            
-            // Remove the sleep since we're using poll with timeout
-            // std::this_thread::sleep_for(std::chrono::milliseconds(1));
             
         } catch (const std::exception& e) {
             logError("Error in request worker: " + std::string(e.what()));
