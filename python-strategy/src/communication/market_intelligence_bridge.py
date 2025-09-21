@@ -161,8 +161,27 @@ class MarketIntelligenceBridge:
                             # Can't parse JSON either - use raw candidate
                             payload_bytes = candidate
                 else:
-                    # Unknown shape
-                    logger.warning(f"Received message with unexpected frame count: {len(frames)}")
+                    # Unknown shape: log details and save payload for offline inspection
+                    try:
+                        logger.warning(f"Received message with unexpected frame count: {len(frames)}")
+                        # lengths and a short hex preview for quick diagnosis
+                        lengths = [len(f) for f in frames]
+                        hex_preview = ' '.join((f.hex()[:160]) for f in frames)
+                        logger.debug(f"  frame_lengths={lengths} hex_preview={hex_preview}")
+
+                        # Save raw frames to a file with 4-byte length prefixes for later analysis
+                        dump_path = f"/tmp/mi_unexpected_{int(time.time()*1000)}.bin"
+                        try:
+                            with open(dump_path, 'wb') as fh:
+                                for f in frames:
+                                    fh.write(len(f).to_bytes(4, 'big'))
+                                    fh.write(f)
+                            logger.info(f"Saved unexpected framed message to {dump_path}")
+                        except Exception as e:
+                            logger.debug(f"Failed to write unexpected frames to disk: {e}")
+                    except Exception as e:
+                        logger.debug(f"Error handling unexpected frame count: {e}")
+                    self.stats['parse_errors'] += 1
                     continue
 
                 # At this point payload_bytes should be raw protobuf bytes (or at least bytes to try)
