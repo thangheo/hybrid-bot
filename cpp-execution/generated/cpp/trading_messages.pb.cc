@@ -144,10 +144,11 @@ PROTOBUF_ATTRIBUTE_NO_DESTROY PROTOBUF_CONSTINIT PROTOBUF_ATTRIBUTE_INIT_PRIORIT
 PROTOBUF_CONSTEXPR MarketIntelligence::MarketIntelligence(
     ::_pbi::ConstantInitialized): _impl_{
     /*decltype(_impl_.symbol_)*/{&::_pbi::fixed_address_empty_string, ::_pbi::ConstantInitialized{}}
+  , /*decltype(_impl_.topic_)*/{&::_pbi::fixed_address_empty_string, ::_pbi::ConstantInitialized{}}
   , /*decltype(_impl_.timestamp_)*/int64_t{0}
   , /*decltype(_impl_.bid_ask_spread_)*/0
   , /*decltype(_impl_.order_book_imbalance_)*/0
-  , /*decltype(_impl_.depthimbalance_)*/0
+  , /*decltype(_impl_.depth_imbalance_)*/0
   , /*decltype(_impl_.liquidity_ratio_)*/0
   , /*decltype(_impl_.spread_stability_)*/0
   , /*decltype(_impl_.net_flow_5s_)*/0
@@ -543,7 +544,7 @@ const uint32_t TableStruct_trading_5fmessages_2eproto::offsets[] PROTOBUF_SECTIO
   PROTOBUF_FIELD_OFFSET(::trading::MarketIntelligence, _impl_.timestamp_),
   PROTOBUF_FIELD_OFFSET(::trading::MarketIntelligence, _impl_.bid_ask_spread_),
   PROTOBUF_FIELD_OFFSET(::trading::MarketIntelligence, _impl_.order_book_imbalance_),
-  PROTOBUF_FIELD_OFFSET(::trading::MarketIntelligence, _impl_.depthimbalance_),
+  PROTOBUF_FIELD_OFFSET(::trading::MarketIntelligence, _impl_.depth_imbalance_),
   PROTOBUF_FIELD_OFFSET(::trading::MarketIntelligence, _impl_.liquidity_ratio_),
   PROTOBUF_FIELD_OFFSET(::trading::MarketIntelligence, _impl_.spread_stability_),
   PROTOBUF_FIELD_OFFSET(::trading::MarketIntelligence, _impl_.net_flow_5s_),
@@ -565,6 +566,7 @@ const uint32_t TableStruct_trading_5fmessages_2eproto::offsets[] PROTOBUF_SECTIO
   PROTOBUF_FIELD_OFFSET(::trading::MarketIntelligence, _impl_.regime_stability_),
   PROTOBUF_FIELD_OFFSET(::trading::MarketIntelligence, _impl_.expected_volatility_5m_),
   PROTOBUF_FIELD_OFFSET(::trading::MarketIntelligence, _impl_.flow_momentum_),
+  PROTOBUF_FIELD_OFFSET(::trading::MarketIntelligence, _impl_.topic_),
   PROTOBUF_FIELD_OFFSET(::trading::OrderRequest_ExtraParamsEntry_DoNotUse, _has_bits_),
   PROTOBUF_FIELD_OFFSET(::trading::OrderRequest_ExtraParamsEntry_DoNotUse, _internal_metadata_),
   ~0u,  // no _extensions_
@@ -793,21 +795,21 @@ static const ::_pbi::MigrationSchema schemas[] PROTOBUF_SECTION_VARIABLE(protode
   { 31, -1, -1, sizeof(::trading::TradingIntent)},
   { 59, -1, -1, sizeof(::trading::ExecutionStatus)},
   { 90, -1, -1, sizeof(::trading::MarketIntelligence)},
-  { 122, 130, -1, sizeof(::trading::OrderRequest_ExtraParamsEntry_DoNotUse)},
-  { 132, 149, -1, sizeof(::trading::OrderRequest)},
-  { 160, -1, -1, sizeof(::trading::OrderResponse)},
-  { 172, -1, -1, sizeof(::trading::OrderStatusRequest)},
-  { 182, 204, -1, sizeof(::trading::DetailedOrderStatus)},
-  { 220, -1, -1, sizeof(::trading::ExecutionAcknowledgment)},
-  { 232, -1, -1, sizeof(::trading::ExecutionParameters)},
-  { 247, 255, -1, sizeof(::trading::SystemHeartbeat_MetricsEntry_DoNotUse)},
-  { 257, -1, -1, sizeof(::trading::SystemHeartbeat)},
-  { 268, -1, -1, sizeof(::trading::MarketDataSubscription)},
-  { 279, -1, -1, sizeof(::trading::BatchTradingIntent)},
-  { 289, -1, -1, sizeof(::trading::BatchExecutionStatus)},
-  { 299, 307, -1, sizeof(::trading::SystemControl_ParametersEntry_DoNotUse)},
-  { 309, -1, -1, sizeof(::trading::SystemControl)},
-  { 319, -1, -1, sizeof(::trading::TradingMessage)},
+  { 123, 131, -1, sizeof(::trading::OrderRequest_ExtraParamsEntry_DoNotUse)},
+  { 133, 150, -1, sizeof(::trading::OrderRequest)},
+  { 161, -1, -1, sizeof(::trading::OrderResponse)},
+  { 173, -1, -1, sizeof(::trading::OrderStatusRequest)},
+  { 183, 205, -1, sizeof(::trading::DetailedOrderStatus)},
+  { 221, -1, -1, sizeof(::trading::ExecutionAcknowledgment)},
+  { 233, -1, -1, sizeof(::trading::ExecutionParameters)},
+  { 248, 256, -1, sizeof(::trading::SystemHeartbeat_MetricsEntry_DoNotUse)},
+  { 258, -1, -1, sizeof(::trading::SystemHeartbeat)},
+  { 269, -1, -1, sizeof(::trading::MarketDataSubscription)},
+  { 280, -1, -1, sizeof(::trading::BatchTradingIntent)},
+  { 290, -1, -1, sizeof(::trading::BatchExecutionStatus)},
+  { 300, 308, -1, sizeof(::trading::SystemControl_ParametersEntry_DoNotUse)},
+  { 310, -1, -1, sizeof(::trading::SystemControl)},
+  { 320, -1, -1, sizeof(::trading::TradingMessage)},
 };
 
 static const ::_pb::Message* const file_default_instances[] = {
@@ -876,151 +878,152 @@ const char descriptor_table_protodef_trading_5fmessages_2eproto[] PROTOBUF_SECTI
   "\022(\n\013best_levels\030\025 \003(\0132\023.trading.PriceLev"
   "el\022\030\n\020vwap_performance\030\026 \001(\001\022\030\n\020twap_per"
   "formance\030\027 \001(\001\022\025\n\rerror_message\030\030 \001(\t\022\022\n"
-  "\nerror_code\030\031 \001(\t\"\307\005\n\022MarketIntelligence"
+  "\nerror_code\030\031 \001(\t\"\327\005\n\022MarketIntelligence"
   "\022\016\n\006symbol\030\001 \001(\t\022\021\n\ttimestamp\030\002 \001(\003\022\026\n\016b"
   "id_ask_spread\030\003 \001(\001\022\034\n\024order_book_imbala"
-  "nce\030\004 \001(\001\022\026\n\016depthImbalance\030\005 \001(\001\022\027\n\017liq"
-  "uidity_ratio\030\006 \001(\001\022\030\n\020spread_stability\030\007"
-  " \001(\001\022\023\n\013net_flow_5s\030\010 \001(\001\022\024\n\014net_flow_30"
-  "s\030\t \001(\001\022\023\n\013net_flow_5m\030\n \001(\001\022\034\n\024aggressi"
-  "ve_buy_ratio\030\013 \001(\001\022\035\n\025aggressive_sell_ra"
-  "tio\030\014 \001(\001\022\031\n\021passive_buy_ratio\030\r \001(\001\022\032\n\022"
-  "passive_sell_ratio\030\016 \001(\001\022\036\n\026realized_vol"
-  "atility_1m\030\017 \001(\001\022\036\n\026realized_volatility_"
-  "5m\030\020 \001(\001\022\035\n\025price_impact_estimate\030\021 \001(\001\022"
-  "\030\n\020volatility_trend\030\022 \001(\001\022\021\n\tvolume_5s\030\023"
-  " \001(\001\022\022\n\nvolume_30s\030\024 \001(\001\022\033\n\023volume_ratio"
-  "_to_avg\030\025 \001(\001\0220\n\016current_regime\030\026 \001(\0162\030."
-  "trading.OrderBookRegime\022\031\n\021regime_confid"
-  "ence\030\027 \001(\001\022\030\n\020regime_stability\030\030 \001(\001\022\036\n\026"
-  "expected_volatility_5m\030\031 \001(\001\022\025\n\rflow_mom"
-  "entum\030\032 \001(\001\"\223\003\n\014OrderRequest\022\027\n\017client_o"
-  "rder_id\030\001 \001(\t\022\023\n\013exchange_id\030\002 \001(\t\022\024\n\014tr"
-  "ading_pair\030\003 \001(\t\022&\n\norder_type\030\004 \001(\0162\022.t"
-  "rading.OrderType\022 \n\004side\030\005 \001(\0162\022.trading"
-  ".TradeSide\022\020\n\010quantity\030\006 \001(\001\022\022\n\005price\030\007 "
-  "\001(\001H\000\210\001\001\022+\n\rtime_in_force\030\010 \001(\0162\024.tradin"
-  "g.TimeInForce\022\023\n\013strategy_id\030\t \001(\t\022\021\n\tsi"
-  "gnal_id\030\n \001(\t\022<\n\014extra_params\030\013 \003(\0132&.tr"
-  "ading.OrderRequest.ExtraParamsEntry\0322\n\020E"
-  "xtraParamsEntry\022\013\n\003key\030\001 \001(\t\022\r\n\005value\030\002 "
-  "\001(\t:\0028\001B\010\n\006_price\"\240\001\n\rOrderResponse\022\027\n\017c"
-  "lient_order_id\030\001 \001(\t\022\031\n\021exchange_order_i"
-  "d\030\002 \001(\t\022#\n\006status\030\003 \001(\0162\023.trading.OrderS"
-  "tate\022\021\n\ttimestamp\030\004 \001(\003\022\017\n\007message\030\005 \001(\t"
-  "\022\022\n\nerror_code\030\006 \001(\t\"m\n\022OrderStatusReque"
-  "st\022\023\n\013exchange_id\030\001 \001(\t\022\033\n\021exchange_orde"
-  "r_id\030\002 \001(\tH\000\022\031\n\017client_order_id\030\003 \001(\tH\000B"
-  "\n\n\010order_id\"\301\003\n\023DetailedOrderStatus\022\027\n\017c"
-  "lient_order_id\030\001 \001(\t\022\031\n\021exchange_order_i"
-  "d\030\002 \001(\t\022\023\n\013exchange_id\030\003 \001(\t\022\024\n\014trading_"
-  "pair\030\004 \001(\t\022 \n\004side\030\005 \001(\0162\022.trading.Trade"
-  "Side\022&\n\norder_type\030\006 \001(\0162\022.trading.Order"
-  "Type\022\020\n\010quantity\030\007 \001(\001\022\027\n\017filled_quantit"
-  "y\030\010 \001(\001\022\032\n\022remaining_quantity\030\t \001(\001\022\022\n\005p"
-  "rice\030\n \001(\001H\000\210\001\001\022\032\n\022average_fill_price\030\013 "
-  "\001(\001\022#\n\006status\030\014 \001(\0162\023.trading.OrderState"
-  "\022\022\n\ncreated_at\030\r \001(\003\022\022\n\nupdated_at\030\016 \001(\003"
-  "\022\034\n\005fills\030\017 \003(\0132\r.trading.Fill\022\025\n\rreject"
-  "_reason\030\020 \001(\tB\010\n\006_price\"\277\001\n\027ExecutionAck"
-  "nowledgment\022\021\n\tintent_id\030\001 \001(\t\022\020\n\010accept"
-  "ed\030\002 \001(\010\022\024\n\014execution_id\030\003 \001(\t\022\016\n\006reason"
-  "\030\004 \001(\t\022!\n\031estimated_completion_time\030\005 \001("
-  "\003\0226\n\020execution_params\030\006 \001(\0132\034.trading.Ex"
-  "ecutionParameters\"\244\002\n\023ExecutionParameter"
-  "s\022\030\n\020chunk_size_ratio\030\001 \001(\001\022\030\n\020aggressio"
-  "n_level\030\002 \001(\001\022\032\n\022max_chunk_delay_ms\030\003 \001("
-  "\005\022#\n\033price_improvement_threshold\030\004 \001(\001\022\031"
-  "\n\021use_hidden_orders\030\005 \001(\010\022\036\n\026max_partici"
-  "pation_rate\030\006 \001(\001\0220\n\024preferred_order_typ"
-  "e\030\007 \001(\0162\022.trading.OrderType\022\021\n\tpost_only"
-  "\030\010 \001(\010\022\030\n\020time_in_force_ms\030\t \001(\005\"\303\001\n\017Sys"
-  "temHeartbeat\022\024\n\014component_id\030\001 \001(\t\022\021\n\tti"
-  "mestamp\030\002 \001(\003\022\016\n\006status\030\003 \001(\t\0226\n\007metrics"
-  "\030\004 \003(\0132%.trading.SystemHeartbeat.Metrics"
-  "Entry\022\017\n\007version\030\005 \001(\t\032.\n\014MetricsEntry\022\013"
-  "\n\003key\030\001 \001(\t\022\r\n\005value\030\002 \001(\001:\0028\001\"\234\001\n\026Marke"
-  "tDataSubscription\022\017\n\007symbols\030\001 \003(\t\022\"\n\032en"
-  "able_market_intelligence\030\002 \001(\010\022\031\n\021enable"
-  "_order_book\030\003 \001(\010\022\025\n\renable_trades\030\004 \001(\010"
-  "\022\033\n\023update_frequency_ms\030\005 \001(\005\"\202\001\n\022BatchT"
-  "radingIntent\022\'\n\007intents\030\001 \003(\0132\026.trading."
-  "TradingIntent\022\030\n\020atomic_execution\030\002 \001(\010\022"
-  "\020\n\010batch_id\030\003 \001(\t\022\027\n\017batch_timestamp\030\004 \001"
-  "(\003\"\210\001\n\024BatchExecutionStatus\022\020\n\010batch_id\030"
-  "\001 \001(\t\022*\n\010statuses\030\002 \003(\0132\030.trading.Execut"
-  "ionStatus\022\027\n\017batch_completed\030\003 \001(\010\022\031\n\021ba"
-  "tch_performance\030\004 \001(\001\"\326\002\n\rSystemControl\022"
-  "8\n\014control_type\030\001 \001(\0162\".trading.SystemCo"
-  "ntrol.ControlType\022\024\n\014component_id\030\002 \001(\t\022"
-  "\016\n\006reason\030\003 \001(\t\022:\n\nparameters\030\004 \003(\0132&.tr"
-  "ading.SystemControl.ParametersEntry\0321\n\017P"
-  "arametersEntry\022\013\n\003key\030\001 \001(\t\022\r\n\005value\030\002 \001"
-  "(\t:\0028\001\"v\n\013ControlType\022\016\n\nCTRL_START\020\000\022\r\n"
-  "\tCTRL_STOP\020\001\022\016\n\nCTRL_PAUSE\020\002\022\017\n\013CTRL_RES"
-  "UME\020\003\022\016\n\nCTRL_RESET\020\004\022\027\n\023CTRL_EMERGENCY_"
-  "STOP\020\005\"\315\010\n\016TradingMessage\0229\n\014message_typ"
-  "e\030\001 \001(\0162#.trading.TradingMessage.Message"
-  "Type\022\021\n\ttimestamp\030\002 \001(\003\022\021\n\tsource_id\030\003 \001"
-  "(\t\022\026\n\016destination_id\030\004 \001(\t\0220\n\016trading_in"
-  "tent\030\005 \001(\0132\026.trading.TradingIntentH\000\0224\n\020"
-  "execution_status\030\006 \001(\0132\030.trading.Executi"
-  "onStatusH\000\022:\n\023market_intelligence\030\007 \001(\0132"
-  "\033.trading.MarketIntelligenceH\000\0229\n\rexecut"
-  "ion_ack\030\010 \001(\0132 .trading.ExecutionAcknowl"
-  "edgmentH\000\0224\n\020system_heartbeat\030\t \001(\0132\030.tr"
-  "ading.SystemHeartbeatH\000\022:\n\017market_data_s"
-  "ub\030\n \001(\0132\037.trading.MarketDataSubscriptio"
-  "nH\000\0223\n\014batch_intent\030\013 \001(\0132\033.trading.Batc"
-  "hTradingIntentH\000\0225\n\014batch_status\030\014 \001(\0132\035"
-  ".trading.BatchExecutionStatusH\000\0220\n\016syste"
-  "m_control\030\r \001(\0132\026.trading.SystemControlH"
-  "\000\022.\n\rorder_request\030\016 \001(\0132\025.trading.Order"
-  "RequestH\000\0220\n\016order_response\030\017 \001(\0132\026.trad"
-  "ing.OrderResponseH\000\0224\n\014order_status\030\020 \001("
-  "\0132\034.trading.DetailedOrderStatusH\000\"\257\002\n\013Me"
-  "ssageType\022\026\n\022MSG_TRADING_INTENT\020\000\022\030\n\024MSG"
-  "_EXECUTION_STATUS\020\001\022\033\n\027MSG_MARKET_INTELL"
-  "IGENCE\020\002\022\025\n\021MSG_EXECUTION_ACK\020\003\022\030\n\024MSG_S"
-  "YSTEM_HEARTBEAT\020\004\022\027\n\023MSG_MARKET_DATA_SUB"
-  "\020\005\022\024\n\020MSG_BATCH_INTENT\020\006\022\024\n\020MSG_BATCH_ST"
-  "ATUS\020\007\022\026\n\022MSG_SYSTEM_CONTROL\020\010\022\025\n\021MSG_OR"
-  "DER_REQUEST\020\t\022\026\n\022MSG_ORDER_RESPONSE\020\n\022\024\n"
-  "\020MSG_ORDER_STATUS\020\013B\t\n\007payload*C\n\tTradeS"
-  "ide\022\020\n\014SIDE_UNKNOWN\020\000\022\014\n\010SIDE_BUY\020\001\022\026\n\tS"
-  "IDE_SELL\020\377\377\377\377\377\377\377\377\377\001*\\\n\016ExecutionStyle\022\023\n"
-  "\017EXEC_AGGRESSIVE\020\000\022\021\n\rEXEC_BALANCED\020\001\022\020\n"
-  "\014EXEC_PASSIVE\020\002\022\020\n\014EXEC_STEALTH\020\003*\340\001\n\014Ma"
-  "rketRegime\022\027\n\023REGIME_ACCUMULATION\020\000\022\035\n\031R"
-  "EGIME_INSTITUTIONAL_FOMO\020\001\022\023\n\017REGIME_EUP"
-  "HORIA\020\002\022\023\n\017REGIME_SIDEWAYS\020\003\022\023\n\017REGIME_B"
-  "ALANCED\020\004\022\024\n\020REGIME_UNCERTAIN\020\005\022\027\n\023REGIM"
-  "E_DISTRIBUTION\020\006\022\030\n\024REGIME_PROFIT_TAKING"
-  "\020\007\022\020\n\014REGIME_PANIC\020\010*=\n\020VolatilityRegime"
-  "\022\013\n\007VOL_LOW\020\000\022\016\n\nVOL_MEDIUM\020\001\022\014\n\010VOL_HIG"
-  "H\020\002*G\n\rETFFlowRegime\022\021\n\rFLOW_POSITIVE\020\000\022"
-  "\020\n\014FLOW_NEUTRAL\020\001\022\021\n\rFLOW_NEGATIVE\020\002*\222\001\n"
-  "\016ExecutionState\022\021\n\rSTATE_PENDING\020\000\022\025\n\021ST"
-  "ATE_IN_PROGRESS\020\001\022\023\n\017STATE_COMPLETED\020\002\022\032"
-  "\n\026STATE_PARTIALLY_FILLED\020\003\022\023\n\017STATE_CANC"
-  "ELLED\020\004\022\020\n\014STATE_FAILED\020\005*M\n\017OrderBookRe"
-  "gime\022\r\n\tOB_LIQUID\020\000\022\r\n\tOB_NORMAL\020\001\022\013\n\007OB"
-  "_THIN\020\002\022\017\n\013OB_VOLATILE\020\003*i\n\tOrderType\022\020\n"
-  "\014ORDER_MARKET\020\000\022\017\n\013ORDER_LIMIT\020\001\022\024\n\020ORDE"
-  "R_STOP_LIMIT\020\002\022\021\n\rORDER_ICEBERG\020\003\022\020\n\014ORD"
-  "ER_HIDDEN\020\004*\305\001\n\nOrderState\022\021\n\rORDER_CREA"
-  "TED\020\000\022\021\n\rORDER_PENDING\020\001\022\030\n\024ORDER_PENDIN"
-  "G_CANCEL\020\002\022\016\n\nORDER_OPEN\020\003\022\032\n\026ORDER_PART"
-  "IALLY_FILLED\020\004\022\020\n\014ORDER_FILLED\020\005\022\022\n\016ORDE"
-  "R_CANCELED\020\006\022\022\n\016ORDER_REJECTED\020\007\022\021\n\rORDE"
-  "R_EXPIRED\020\010*A\n\013TimeInForce\022\013\n\007TIF_GTC\020\000\022"
-  "\013\n\007TIF_IOC\020\001\022\013\n\007TIF_FOK\020\002\022\013\n\007TIF_GTD\020\003B>"
-  "\n\024com.trading.messagesB\024TradingMessagesP"
-  "rotoZ\020trading/messagesb\006proto3"
+  "nce\030\004 \001(\001\022\027\n\017depth_imbalance\030\005 \001(\001\022\027\n\017li"
+  "quidity_ratio\030\006 \001(\001\022\030\n\020spread_stability\030"
+  "\007 \001(\001\022\023\n\013net_flow_5s\030\010 \001(\001\022\024\n\014net_flow_3"
+  "0s\030\t \001(\001\022\023\n\013net_flow_5m\030\n \001(\001\022\034\n\024aggress"
+  "ive_buy_ratio\030\013 \001(\001\022\035\n\025aggressive_sell_r"
+  "atio\030\014 \001(\001\022\031\n\021passive_buy_ratio\030\r \001(\001\022\032\n"
+  "\022passive_sell_ratio\030\016 \001(\001\022\036\n\026realized_vo"
+  "latility_1m\030\017 \001(\001\022\036\n\026realized_volatility"
+  "_5m\030\020 \001(\001\022\035\n\025price_impact_estimate\030\021 \001(\001"
+  "\022\030\n\020volatility_trend\030\022 \001(\001\022\021\n\tvolume_5s\030"
+  "\023 \001(\001\022\022\n\nvolume_30s\030\024 \001(\001\022\033\n\023volume_rati"
+  "o_to_avg\030\025 \001(\001\0220\n\016current_regime\030\026 \001(\0162\030"
+  ".trading.OrderBookRegime\022\031\n\021regime_confi"
+  "dence\030\027 \001(\001\022\030\n\020regime_stability\030\030 \001(\001\022\036\n"
+  "\026expected_volatility_5m\030\031 \001(\001\022\025\n\rflow_mo"
+  "mentum\030\032 \001(\001\022\r\n\005topic\030\033 \001(\t\"\223\003\n\014OrderReq"
+  "uest\022\027\n\017client_order_id\030\001 \001(\t\022\023\n\013exchang"
+  "e_id\030\002 \001(\t\022\024\n\014trading_pair\030\003 \001(\t\022&\n\norde"
+  "r_type\030\004 \001(\0162\022.trading.OrderType\022 \n\004side"
+  "\030\005 \001(\0162\022.trading.TradeSide\022\020\n\010quantity\030\006"
+  " \001(\001\022\022\n\005price\030\007 \001(\001H\000\210\001\001\022+\n\rtime_in_forc"
+  "e\030\010 \001(\0162\024.trading.TimeInForce\022\023\n\013strateg"
+  "y_id\030\t \001(\t\022\021\n\tsignal_id\030\n \001(\t\022<\n\014extra_p"
+  "arams\030\013 \003(\0132&.trading.OrderRequest.Extra"
+  "ParamsEntry\0322\n\020ExtraParamsEntry\022\013\n\003key\030\001"
+  " \001(\t\022\r\n\005value\030\002 \001(\t:\0028\001B\010\n\006_price\"\240\001\n\rOr"
+  "derResponse\022\027\n\017client_order_id\030\001 \001(\t\022\031\n\021"
+  "exchange_order_id\030\002 \001(\t\022#\n\006status\030\003 \001(\0162"
+  "\023.trading.OrderState\022\021\n\ttimestamp\030\004 \001(\003\022"
+  "\017\n\007message\030\005 \001(\t\022\022\n\nerror_code\030\006 \001(\t\"m\n\022"
+  "OrderStatusRequest\022\023\n\013exchange_id\030\001 \001(\t\022"
+  "\033\n\021exchange_order_id\030\002 \001(\tH\000\022\031\n\017client_o"
+  "rder_id\030\003 \001(\tH\000B\n\n\010order_id\"\301\003\n\023Detailed"
+  "OrderStatus\022\027\n\017client_order_id\030\001 \001(\t\022\031\n\021"
+  "exchange_order_id\030\002 \001(\t\022\023\n\013exchange_id\030\003"
+  " \001(\t\022\024\n\014trading_pair\030\004 \001(\t\022 \n\004side\030\005 \001(\016"
+  "2\022.trading.TradeSide\022&\n\norder_type\030\006 \001(\016"
+  "2\022.trading.OrderType\022\020\n\010quantity\030\007 \001(\001\022\027"
+  "\n\017filled_quantity\030\010 \001(\001\022\032\n\022remaining_qua"
+  "ntity\030\t \001(\001\022\022\n\005price\030\n \001(\001H\000\210\001\001\022\032\n\022avera"
+  "ge_fill_price\030\013 \001(\001\022#\n\006status\030\014 \001(\0162\023.tr"
+  "ading.OrderState\022\022\n\ncreated_at\030\r \001(\003\022\022\n\n"
+  "updated_at\030\016 \001(\003\022\034\n\005fills\030\017 \003(\0132\r.tradin"
+  "g.Fill\022\025\n\rreject_reason\030\020 \001(\tB\010\n\006_price\""
+  "\277\001\n\027ExecutionAcknowledgment\022\021\n\tintent_id"
+  "\030\001 \001(\t\022\020\n\010accepted\030\002 \001(\010\022\024\n\014execution_id"
+  "\030\003 \001(\t\022\016\n\006reason\030\004 \001(\t\022!\n\031estimated_comp"
+  "letion_time\030\005 \001(\003\0226\n\020execution_params\030\006 "
+  "\001(\0132\034.trading.ExecutionParameters\"\244\002\n\023Ex"
+  "ecutionParameters\022\030\n\020chunk_size_ratio\030\001 "
+  "\001(\001\022\030\n\020aggression_level\030\002 \001(\001\022\032\n\022max_chu"
+  "nk_delay_ms\030\003 \001(\005\022#\n\033price_improvement_t"
+  "hreshold\030\004 \001(\001\022\031\n\021use_hidden_orders\030\005 \001("
+  "\010\022\036\n\026max_participation_rate\030\006 \001(\001\0220\n\024pre"
+  "ferred_order_type\030\007 \001(\0162\022.trading.OrderT"
+  "ype\022\021\n\tpost_only\030\010 \001(\010\022\030\n\020time_in_force_"
+  "ms\030\t \001(\005\"\303\001\n\017SystemHeartbeat\022\024\n\014componen"
+  "t_id\030\001 \001(\t\022\021\n\ttimestamp\030\002 \001(\003\022\016\n\006status\030"
+  "\003 \001(\t\0226\n\007metrics\030\004 \003(\0132%.trading.SystemH"
+  "eartbeat.MetricsEntry\022\017\n\007version\030\005 \001(\t\032."
+  "\n\014MetricsEntry\022\013\n\003key\030\001 \001(\t\022\r\n\005value\030\002 \001"
+  "(\001:\0028\001\"\234\001\n\026MarketDataSubscription\022\017\n\007sym"
+  "bols\030\001 \003(\t\022\"\n\032enable_market_intelligence"
+  "\030\002 \001(\010\022\031\n\021enable_order_book\030\003 \001(\010\022\025\n\rena"
+  "ble_trades\030\004 \001(\010\022\033\n\023update_frequency_ms\030"
+  "\005 \001(\005\"\202\001\n\022BatchTradingIntent\022\'\n\007intents\030"
+  "\001 \003(\0132\026.trading.TradingIntent\022\030\n\020atomic_"
+  "execution\030\002 \001(\010\022\020\n\010batch_id\030\003 \001(\t\022\027\n\017bat"
+  "ch_timestamp\030\004 \001(\003\"\210\001\n\024BatchExecutionSta"
+  "tus\022\020\n\010batch_id\030\001 \001(\t\022*\n\010statuses\030\002 \003(\0132"
+  "\030.trading.ExecutionStatus\022\027\n\017batch_compl"
+  "eted\030\003 \001(\010\022\031\n\021batch_performance\030\004 \001(\001\"\326\002"
+  "\n\rSystemControl\0228\n\014control_type\030\001 \001(\0162\"."
+  "trading.SystemControl.ControlType\022\024\n\014com"
+  "ponent_id\030\002 \001(\t\022\016\n\006reason\030\003 \001(\t\022:\n\nparam"
+  "eters\030\004 \003(\0132&.trading.SystemControl.Para"
+  "metersEntry\0321\n\017ParametersEntry\022\013\n\003key\030\001 "
+  "\001(\t\022\r\n\005value\030\002 \001(\t:\0028\001\"v\n\013ControlType\022\016\n"
+  "\nCTRL_START\020\000\022\r\n\tCTRL_STOP\020\001\022\016\n\nCTRL_PAU"
+  "SE\020\002\022\017\n\013CTRL_RESUME\020\003\022\016\n\nCTRL_RESET\020\004\022\027\n"
+  "\023CTRL_EMERGENCY_STOP\020\005\"\315\010\n\016TradingMessag"
+  "e\0229\n\014message_type\030\001 \001(\0162#.trading.Tradin"
+  "gMessage.MessageType\022\021\n\ttimestamp\030\002 \001(\003\022"
+  "\021\n\tsource_id\030\003 \001(\t\022\026\n\016destination_id\030\004 \001"
+  "(\t\0220\n\016trading_intent\030\005 \001(\0132\026.trading.Tra"
+  "dingIntentH\000\0224\n\020execution_status\030\006 \001(\0132\030"
+  ".trading.ExecutionStatusH\000\022:\n\023market_int"
+  "elligence\030\007 \001(\0132\033.trading.MarketIntellig"
+  "enceH\000\0229\n\rexecution_ack\030\010 \001(\0132 .trading."
+  "ExecutionAcknowledgmentH\000\0224\n\020system_hear"
+  "tbeat\030\t \001(\0132\030.trading.SystemHeartbeatH\000\022"
+  ":\n\017market_data_sub\030\n \001(\0132\037.trading.Marke"
+  "tDataSubscriptionH\000\0223\n\014batch_intent\030\013 \001("
+  "\0132\033.trading.BatchTradingIntentH\000\0225\n\014batc"
+  "h_status\030\014 \001(\0132\035.trading.BatchExecutionS"
+  "tatusH\000\0220\n\016system_control\030\r \001(\0132\026.tradin"
+  "g.SystemControlH\000\022.\n\rorder_request\030\016 \001(\013"
+  "2\025.trading.OrderRequestH\000\0220\n\016order_respo"
+  "nse\030\017 \001(\0132\026.trading.OrderResponseH\000\0224\n\014o"
+  "rder_status\030\020 \001(\0132\034.trading.DetailedOrde"
+  "rStatusH\000\"\257\002\n\013MessageType\022\026\n\022MSG_TRADING"
+  "_INTENT\020\000\022\030\n\024MSG_EXECUTION_STATUS\020\001\022\033\n\027M"
+  "SG_MARKET_INTELLIGENCE\020\002\022\025\n\021MSG_EXECUTIO"
+  "N_ACK\020\003\022\030\n\024MSG_SYSTEM_HEARTBEAT\020\004\022\027\n\023MSG"
+  "_MARKET_DATA_SUB\020\005\022\024\n\020MSG_BATCH_INTENT\020\006"
+  "\022\024\n\020MSG_BATCH_STATUS\020\007\022\026\n\022MSG_SYSTEM_CON"
+  "TROL\020\010\022\025\n\021MSG_ORDER_REQUEST\020\t\022\026\n\022MSG_ORD"
+  "ER_RESPONSE\020\n\022\024\n\020MSG_ORDER_STATUS\020\013B\t\n\007p"
+  "ayload*C\n\tTradeSide\022\020\n\014SIDE_UNKNOWN\020\000\022\014\n"
+  "\010SIDE_BUY\020\001\022\026\n\tSIDE_SELL\020\377\377\377\377\377\377\377\377\377\001*\\\n\016E"
+  "xecutionStyle\022\023\n\017EXEC_AGGRESSIVE\020\000\022\021\n\rEX"
+  "EC_BALANCED\020\001\022\020\n\014EXEC_PASSIVE\020\002\022\020\n\014EXEC_"
+  "STEALTH\020\003*\340\001\n\014MarketRegime\022\027\n\023REGIME_ACC"
+  "UMULATION\020\000\022\035\n\031REGIME_INSTITUTIONAL_FOMO"
+  "\020\001\022\023\n\017REGIME_EUPHORIA\020\002\022\023\n\017REGIME_SIDEWA"
+  "YS\020\003\022\023\n\017REGIME_BALANCED\020\004\022\024\n\020REGIME_UNCE"
+  "RTAIN\020\005\022\027\n\023REGIME_DISTRIBUTION\020\006\022\030\n\024REGI"
+  "ME_PROFIT_TAKING\020\007\022\020\n\014REGIME_PANIC\020\010*=\n\020"
+  "VolatilityRegime\022\013\n\007VOL_LOW\020\000\022\016\n\nVOL_MED"
+  "IUM\020\001\022\014\n\010VOL_HIGH\020\002*G\n\rETFFlowRegime\022\021\n\r"
+  "FLOW_POSITIVE\020\000\022\020\n\014FLOW_NEUTRAL\020\001\022\021\n\rFLO"
+  "W_NEGATIVE\020\002*\222\001\n\016ExecutionState\022\021\n\rSTATE"
+  "_PENDING\020\000\022\025\n\021STATE_IN_PROGRESS\020\001\022\023\n\017STA"
+  "TE_COMPLETED\020\002\022\032\n\026STATE_PARTIALLY_FILLED"
+  "\020\003\022\023\n\017STATE_CANCELLED\020\004\022\020\n\014STATE_FAILED\020"
+  "\005*M\n\017OrderBookRegime\022\r\n\tOB_LIQUID\020\000\022\r\n\tO"
+  "B_NORMAL\020\001\022\013\n\007OB_THIN\020\002\022\017\n\013OB_VOLATILE\020\003"
+  "*i\n\tOrderType\022\020\n\014ORDER_MARKET\020\000\022\017\n\013ORDER"
+  "_LIMIT\020\001\022\024\n\020ORDER_STOP_LIMIT\020\002\022\021\n\rORDER_"
+  "ICEBERG\020\003\022\020\n\014ORDER_HIDDEN\020\004*\305\001\n\nOrderSta"
+  "te\022\021\n\rORDER_CREATED\020\000\022\021\n\rORDER_PENDING\020\001"
+  "\022\030\n\024ORDER_PENDING_CANCEL\020\002\022\016\n\nORDER_OPEN"
+  "\020\003\022\032\n\026ORDER_PARTIALLY_FILLED\020\004\022\020\n\014ORDER_"
+  "FILLED\020\005\022\022\n\016ORDER_CANCELED\020\006\022\022\n\016ORDER_RE"
+  "JECTED\020\007\022\021\n\rORDER_EXPIRED\020\010*A\n\013TimeInFor"
+  "ce\022\013\n\007TIF_GTC\020\000\022\013\n\007TIF_IOC\020\001\022\013\n\007TIF_FOK\020"
+  "\002\022\013\n\007TIF_GTD\020\003B>\n\024com.trading.messagesB\024"
+  "TradingMessagesProtoZ\020trading/messagesb\006"
+  "proto3"
   ;
 static ::_pbi::once_flag descriptor_table_trading_5fmessages_2eproto_once;
 const ::_pbi::DescriptorTable descriptor_table_trading_5fmessages_2eproto = {
-    false, false, 7270, descriptor_table_protodef_trading_5fmessages_2eproto,
+    false, false, 7286, descriptor_table_protodef_trading_5fmessages_2eproto,
     "trading_messages.proto",
     &descriptor_table_trading_5fmessages_2eproto_once, nullptr, 0, 21,
     schemas, file_default_instances, TableStruct_trading_5fmessages_2eproto::offsets,
@@ -4216,10 +4219,11 @@ MarketIntelligence::MarketIntelligence(const MarketIntelligence& from)
   MarketIntelligence* const _this = this; (void)_this;
   new (&_impl_) Impl_{
       decltype(_impl_.symbol_){}
+    , decltype(_impl_.topic_){}
     , decltype(_impl_.timestamp_){}
     , decltype(_impl_.bid_ask_spread_){}
     , decltype(_impl_.order_book_imbalance_){}
-    , decltype(_impl_.depthimbalance_){}
+    , decltype(_impl_.depth_imbalance_){}
     , decltype(_impl_.liquidity_ratio_){}
     , decltype(_impl_.spread_stability_){}
     , decltype(_impl_.net_flow_5s_){}
@@ -4252,6 +4256,14 @@ MarketIntelligence::MarketIntelligence(const MarketIntelligence& from)
     _this->_impl_.symbol_.Set(from._internal_symbol(), 
       _this->GetArenaForAllocation());
   }
+  _impl_.topic_.InitDefault();
+  #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+    _impl_.topic_.Set("", GetArenaForAllocation());
+  #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  if (!from._internal_topic().empty()) {
+    _this->_impl_.topic_.Set(from._internal_topic(), 
+      _this->GetArenaForAllocation());
+  }
   ::memcpy(&_impl_.timestamp_, &from._impl_.timestamp_,
     static_cast<size_t>(reinterpret_cast<char*>(&_impl_.current_regime_) -
     reinterpret_cast<char*>(&_impl_.timestamp_)) + sizeof(_impl_.current_regime_));
@@ -4264,10 +4276,11 @@ inline void MarketIntelligence::SharedCtor(
   (void)is_message_owned;
   new (&_impl_) Impl_{
       decltype(_impl_.symbol_){}
+    , decltype(_impl_.topic_){}
     , decltype(_impl_.timestamp_){int64_t{0}}
     , decltype(_impl_.bid_ask_spread_){0}
     , decltype(_impl_.order_book_imbalance_){0}
-    , decltype(_impl_.depthimbalance_){0}
+    , decltype(_impl_.depth_imbalance_){0}
     , decltype(_impl_.liquidity_ratio_){0}
     , decltype(_impl_.spread_stability_){0}
     , decltype(_impl_.net_flow_5s_){0}
@@ -4295,6 +4308,10 @@ inline void MarketIntelligence::SharedCtor(
   #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
     _impl_.symbol_.Set("", GetArenaForAllocation());
   #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  _impl_.topic_.InitDefault();
+  #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+    _impl_.topic_.Set("", GetArenaForAllocation());
+  #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
 }
 
 MarketIntelligence::~MarketIntelligence() {
@@ -4309,6 +4326,7 @@ MarketIntelligence::~MarketIntelligence() {
 inline void MarketIntelligence::SharedDtor() {
   GOOGLE_DCHECK(GetArenaForAllocation() == nullptr);
   _impl_.symbol_.Destroy();
+  _impl_.topic_.Destroy();
 }
 
 void MarketIntelligence::SetCachedSize(int size) const {
@@ -4322,6 +4340,7 @@ void MarketIntelligence::Clear() {
   (void) cached_has_bits;
 
   _impl_.symbol_.ClearToEmpty();
+  _impl_.topic_.ClearToEmpty();
   ::memset(&_impl_.timestamp_, 0, static_cast<size_t>(
       reinterpret_cast<char*>(&_impl_.current_regime_) -
       reinterpret_cast<char*>(&_impl_.timestamp_)) + sizeof(_impl_.current_regime_));
@@ -4368,10 +4387,10 @@ const char* MarketIntelligence::_InternalParse(const char* ptr, ::_pbi::ParseCon
         } else
           goto handle_unusual;
         continue;
-      // double depthImbalance = 5;
+      // double depth_imbalance = 5;
       case 5:
         if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 41)) {
-          _impl_.depthimbalance_ = ::PROTOBUF_NAMESPACE_ID::internal::UnalignedLoad<double>(ptr);
+          _impl_.depth_imbalance_ = ::PROTOBUF_NAMESPACE_ID::internal::UnalignedLoad<double>(ptr);
           ptr += sizeof(double);
         } else
           goto handle_unusual;
@@ -4545,6 +4564,16 @@ const char* MarketIntelligence::_InternalParse(const char* ptr, ::_pbi::ParseCon
         } else
           goto handle_unusual;
         continue;
+      // string topic = 27;
+      case 27:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 218)) {
+          auto str = _internal_mutable_topic();
+          ptr = ::_pbi::InlineGreedyStringParser(str, ptr, ctx);
+          CHK_(ptr);
+          CHK_(::_pbi::VerifyUTF8(str, "trading.MarketIntelligence.topic"));
+        } else
+          goto handle_unusual;
+        continue;
       default:
         goto handle_unusual;
     }  // switch
@@ -4610,14 +4639,14 @@ uint8_t* MarketIntelligence::_InternalSerialize(
     target = ::_pbi::WireFormatLite::WriteDoubleToArray(4, this->_internal_order_book_imbalance(), target);
   }
 
-  // double depthImbalance = 5;
+  // double depth_imbalance = 5;
   static_assert(sizeof(uint64_t) == sizeof(double), "Code assumes uint64_t and double are the same size.");
-  double tmp_depthimbalance = this->_internal_depthimbalance();
-  uint64_t raw_depthimbalance;
-  memcpy(&raw_depthimbalance, &tmp_depthimbalance, sizeof(tmp_depthimbalance));
-  if (raw_depthimbalance != 0) {
+  double tmp_depth_imbalance = this->_internal_depth_imbalance();
+  uint64_t raw_depth_imbalance;
+  memcpy(&raw_depth_imbalance, &tmp_depth_imbalance, sizeof(tmp_depth_imbalance));
+  if (raw_depth_imbalance != 0) {
     target = stream->EnsureSpace(target);
-    target = ::_pbi::WireFormatLite::WriteDoubleToArray(5, this->_internal_depthimbalance(), target);
+    target = ::_pbi::WireFormatLite::WriteDoubleToArray(5, this->_internal_depth_imbalance(), target);
   }
 
   // double liquidity_ratio = 6;
@@ -4827,6 +4856,16 @@ uint8_t* MarketIntelligence::_InternalSerialize(
     target = ::_pbi::WireFormatLite::WriteDoubleToArray(26, this->_internal_flow_momentum(), target);
   }
 
+  // string topic = 27;
+  if (!this->_internal_topic().empty()) {
+    ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::VerifyUtf8String(
+      this->_internal_topic().data(), static_cast<int>(this->_internal_topic().length()),
+      ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::SERIALIZE,
+      "trading.MarketIntelligence.topic");
+    target = stream->WriteStringMaybeAliased(
+        27, this->_internal_topic(), target);
+  }
+
   if (PROTOBUF_PREDICT_FALSE(_internal_metadata_.have_unknown_fields())) {
     target = ::_pbi::WireFormat::InternalSerializeUnknownFieldsToArray(
         _internal_metadata_.unknown_fields<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>(::PROTOBUF_NAMESPACE_ID::UnknownFieldSet::default_instance), target, stream);
@@ -4848,6 +4887,13 @@ size_t MarketIntelligence::ByteSizeLong() const {
     total_size += 1 +
       ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::StringSize(
         this->_internal_symbol());
+  }
+
+  // string topic = 27;
+  if (!this->_internal_topic().empty()) {
+    total_size += 2 +
+      ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::StringSize(
+        this->_internal_topic());
   }
 
   // int64 timestamp = 2;
@@ -4873,12 +4919,12 @@ size_t MarketIntelligence::ByteSizeLong() const {
     total_size += 1 + 8;
   }
 
-  // double depthImbalance = 5;
+  // double depth_imbalance = 5;
   static_assert(sizeof(uint64_t) == sizeof(double), "Code assumes uint64_t and double are the same size.");
-  double tmp_depthimbalance = this->_internal_depthimbalance();
-  uint64_t raw_depthimbalance;
-  memcpy(&raw_depthimbalance, &tmp_depthimbalance, sizeof(tmp_depthimbalance));
-  if (raw_depthimbalance != 0) {
+  double tmp_depth_imbalance = this->_internal_depth_imbalance();
+  uint64_t raw_depth_imbalance;
+  memcpy(&raw_depth_imbalance, &tmp_depth_imbalance, sizeof(tmp_depth_imbalance));
+  if (raw_depth_imbalance != 0) {
     total_size += 1 + 8;
   }
 
@@ -5089,6 +5135,9 @@ void MarketIntelligence::MergeImpl(::PROTOBUF_NAMESPACE_ID::Message& to_msg, con
   if (!from._internal_symbol().empty()) {
     _this->_internal_set_symbol(from._internal_symbol());
   }
+  if (!from._internal_topic().empty()) {
+    _this->_internal_set_topic(from._internal_topic());
+  }
   if (from._internal_timestamp() != 0) {
     _this->_internal_set_timestamp(from._internal_timestamp());
   }
@@ -5107,11 +5156,11 @@ void MarketIntelligence::MergeImpl(::PROTOBUF_NAMESPACE_ID::Message& to_msg, con
     _this->_internal_set_order_book_imbalance(from._internal_order_book_imbalance());
   }
   static_assert(sizeof(uint64_t) == sizeof(double), "Code assumes uint64_t and double are the same size.");
-  double tmp_depthimbalance = from._internal_depthimbalance();
-  uint64_t raw_depthimbalance;
-  memcpy(&raw_depthimbalance, &tmp_depthimbalance, sizeof(tmp_depthimbalance));
-  if (raw_depthimbalance != 0) {
-    _this->_internal_set_depthimbalance(from._internal_depthimbalance());
+  double tmp_depth_imbalance = from._internal_depth_imbalance();
+  uint64_t raw_depth_imbalance;
+  memcpy(&raw_depth_imbalance, &tmp_depth_imbalance, sizeof(tmp_depth_imbalance));
+  if (raw_depth_imbalance != 0) {
+    _this->_internal_set_depth_imbalance(from._internal_depth_imbalance());
   }
   static_assert(sizeof(uint64_t) == sizeof(double), "Code assumes uint64_t and double are the same size.");
   double tmp_liquidity_ratio = from._internal_liquidity_ratio();
@@ -5278,6 +5327,10 @@ void MarketIntelligence::InternalSwap(MarketIntelligence* other) {
   ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr::InternalSwap(
       &_impl_.symbol_, lhs_arena,
       &other->_impl_.symbol_, rhs_arena
+  );
+  ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr::InternalSwap(
+      &_impl_.topic_, lhs_arena,
+      &other->_impl_.topic_, rhs_arena
   );
   ::PROTOBUF_NAMESPACE_ID::internal::memswap<
       PROTOBUF_FIELD_OFFSET(MarketIntelligence, _impl_.current_regime_)

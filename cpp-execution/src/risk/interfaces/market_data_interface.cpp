@@ -66,13 +66,13 @@ bool MarketDataInterface::initialize() {
         if(!zmqClient_){
             // Initialize ZeroMQ client
             ZmqClientConfig zmqConfig;
-            // zmqConfig.server_pub_endpoint = zmqSubscriberEndpoint_;
-            // zmqConfig.server_req_endpoint = zmqPublisherEndpoint_;
-            // zmqConfig.auto_reconnect = true;
-            // zmqConfig.reconnect_interval = std::chrono::milliseconds(5000);
-            // zmqConfig.request_timeout = std::chrono::milliseconds(10000);
-            // zmqConfig.io_threads = 1;
-            
+            zmqConfig.server_pub_endpoint = zmqSubscriberEndpoint_;
+            zmqConfig.server_req_endpoint = zmqPublisherEndpoint_;
+            zmqConfig.auto_reconnect = true;
+            zmqConfig.reconnect_interval = std::chrono::milliseconds(5000);
+            zmqConfig.request_timeout = std::chrono::milliseconds(10000);
+            zmqConfig.io_threads = 1;
+
             //only create if not already set via setter
             
             zmqClient_ = std::make_unique<GenericZmqClient>(zmqConfig);
@@ -112,8 +112,19 @@ void MarketDataInterface::processSyntheticOrderBook(const std::string& topic, co
         if (topic.find("orderbook.") == std::string::npos) {
             return; // Not a synthetic orderbook message
         }
+        // //print the topic and message
         // std::cout << "Processing synthetic orderbook message" << std::endl;
-        auto json_msg = nlohmann::json::parse(message);
+        // std::cout << "Topic: " << topic << std::endl;
+        // std::cout << "Message: " << message << std::endl;
+        //check if message is valid json
+        if (message.empty() || message[0] != '{') {
+            LOG_ERROR("Invalid JSON message in processSyntheticOrderBook");
+            //print message and topic
+            std::cout << "Topic: " << topic << std::endl;
+            std::cout << "Message: " << message << std::endl;
+            return;
+        }
+        auto json_msg = nlohmann::json::parse(message); //this causes error if message is not json
         std::string exchange = json_msg["exchange"];
         std::string symbol = json_msg["symbol"];
         // Parse bids/asks
@@ -361,7 +372,6 @@ double MarketDataInterface::getVolatility(
     
     return 0.0;
 }
-
 
 std::vector<OrderRequest> MarketDataInterface::getOrderHistory(
     const core::ExchangeId& exchangeId, 
@@ -634,21 +644,24 @@ void MarketDataInterface::connectionMonitorLoop() {
             LOG_INFO("Attempting to reconnect ZeroMQ client");
             
             try {
-                // Stop existing client
+                // Stop existing client// why?
                 if (zmqClient_) {
                     zmqClient_->disconnect();
+                }             
+               
+                //check if zmqClient_ is null
+                if(!zmqClient_){
+                     // Reinitialize
+                    communication::ZmqClientConfig zmqConfig;
+                    zmqConfig.server_pub_endpoint = zmqSubscriberEndpoint_;
+                    zmqConfig.server_req_endpoint = zmqPublisherEndpoint_;
+                    zmqConfig.auto_reconnect = true;
+                    zmqConfig.reconnect_interval = std::chrono::milliseconds(5000);
+                    zmqConfig.request_timeout = std::chrono::milliseconds(10000);   
+                    zmqClient_ = std::make_unique<communication::GenericZmqClient>(zmqConfig);
+                     LOG_INFO("Recreated ZeroMQ client");
                 }
-                
-                // Reinitialize
-                communication::ZmqClientConfig zmqConfig;
-                zmqConfig.server_pub_endpoint = zmqSubscriberEndpoint_;
-                zmqConfig.server_req_endpoint = zmqPublisherEndpoint_;
-                zmqConfig.auto_reconnect = true;
-                zmqConfig.reconnect_interval = std::chrono::milliseconds(5000);
-                zmqConfig.request_timeout = std::chrono::milliseconds(10000);   
-
-                zmqClient_ = std::make_unique<communication::GenericZmqClient>(zmqConfig);
-                // Subscribe to relevant topics
+                // Subscribe to relevant topics 
                 
                 if (zmqClient_->start()) {
                     needsReconnection_.store(false);

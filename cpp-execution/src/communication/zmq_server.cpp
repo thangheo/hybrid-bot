@@ -246,9 +246,7 @@ bool GenericZmqServer::publishAsync(const std::string& topic, const std::string&
             // logInfo("Publishing internal message: " + topic);
             lock.lock();
         }
-       
-        //MARKET_INTEL = intel message
-        //everything else = internal message
+        
         // this is for internal messages
         if (internal_priority_queue_.size() >= config_.max_internal_queue_size && topic != "MARKET_INTEL") {
             stats_.queue_overflows++;
@@ -563,7 +561,7 @@ bool GenericZmqServer::initializeSockets() {
         
         // Create ZeroMQ context with proper shutdown behavior
         logInfo("Creating ZMQ context with " + std::to_string(config_.io_threads) + " IO threads");
-        intel_context_ = std::make_unique<zmq::context_t>(config_.io_threads);
+        intel_context_ = std::make_unique<zmq::context_t>(1);  // Single thread for intel
         internal_context_ = std::make_unique<zmq::context_t>(config_.io_threads);
 
         // Set context options for safer shutdown
@@ -621,14 +619,14 @@ bool GenericZmqServer::initializeSockets() {
         return true;
         
     } catch (const zmq::error_t& e) {
-        logError("ZMQ error initializing sockets: " + std::string(e.what()) + 
+        logError("GenericZmqServer server error initializing sockets: " + std::string(e.what()) + 
                 " (errno: " + std::to_string(e.num()) + ")");
         return false;
     } catch (const std::exception& e) {
-        logError("Error initializing sockets: " + std::string(e.what()));
+        logError("GenericZmqServer server error initializing sockets: " + std::string(e.what()));
         return false;
     } catch (...) {
-        logError("Unknown error initializing sockets");
+        logError("GenericZmqServer server unknown error initializing sockets");
         return false;
     }
 }
@@ -722,7 +720,7 @@ void GenericZmqServer::intelPublisherWorker() {
 
             // Wait for messages or shutdown signal (timed wait to avoid missed notifications)
             logInfo("Intel worker: About to wait for messages");
-            intel_queue_cv_.wait_for(lock, std::chrono::seconds(100), [this]() {
+            intel_queue_cv_.wait_for(lock, std::chrono::seconds(1), [this]() {
                 return !intel_priority_queue_.empty() || state_.load() != ServerState::RUNNING;
             });
             // Diagnostic:  
@@ -943,29 +941,41 @@ bool GenericZmqServer::processIntelMessage(const GenericMessage& message) {
         // Create topic message
         // std::string topic = "MARKET_INTEL"; // Force topic to MARKET_INTEL
         // zmq::message_t topic_msg(topic.data(), topic.size());
-        zmq::message_t topic_msg(message.topic.size());
-        memcpy(topic_msg.data(), message.topic.c_str(), message.topic.size());
+        // zmq::message_t topic_msg(message.topic.size());
+        // memcpy(topic_msg.data(), message.topic.c_str(), message.topic.size());
         // Create metadata
         std::unordered_map<std::string, std::string> metadata;
         metadata["correlation_id"] = message.correlation_id;
         metadata["priority"] = std::to_string(static_cast<int>(message.priority));
         metadata["timestamp"] = std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
             message.timestamp.time_since_epoch()).count());
-
-        // Serialize data with metadata (DO NOT overwrite this!)
-        std::string serialized_data = serializeWithMetadata(message.data, metadata);
-        zmq::message_t data_msg(serialized_data.size());
-        memcpy(data_msg.data(), serialized_data.c_str(), serialized_data.size());
-        
-        //to debug we just send dummie topic and data
-        // logInfo("Processing MARKET_INTEL message for topic: " + topic);
-        auto topic_result = intel_publisher_socket_->send(topic_msg, zmq::send_flags::sndmore);
-        auto data_result = intel_publisher_socket_->send(data_msg, zmq::send_flags::none);
-        if (topic_result.has_value() && data_result.has_value()) {
-            // logInfo("Processed MARKET_INTEL message for topic: " + topic);
-            return true;
-
+        // Serialize data with metadata (DO NOT overwrite this!) //this is protobuf message. we dont want to overwrite
+        // std::string serialized_data = serializeWithMetadata(message.data, metadata);
+        // zmq::message_t data_msg(serialized_data.size());
+        // memcpy(data_msg.data(), serialized_data.c_str(), serialized_data.size());
+        //check message is empty
+        if (message.data.empty()) {
+            logError("Empty data in processIntelMessage");
+            return false;
         }
+        //send raw data as is
+        auto data_msg = zmq::message_t(message.data.size());    
+        memcpy(data_msg.data(), message.data.c_str(), message.data.size());
+        //to debug we just send dummie topic and data
+        std::string topic = sanitizeTopic(message.topic);
+        if (topic.empty() || message.data.empty()) {
+            logError("Empty topic or data in processIntelMessage");
+            return false;
+        }
+        // logInfo("Processing MARKET_INTEL message for topic: " + topic);
+        // auto topic_result = intel_publisher_socket_->send(zmq::buffer(topic), zmq::send_flags::sndmore | zmq::send_flags::dontwait);
+        // auto data_result = intel_publisher_socket_->send(data_msg, zmq::send_flags::dontwait);
+        intel_publisher_socket_->send(zmq::buffer("MARKET_INTEL"), zmq::send_flags::sndmore);
+        intel_publisher_socket_->send(data_msg, zmq::send_flags::none);
+        logInfo("Sent MARKET_INTEL message");
+        // if (topic_result.has_value() && data_result.has_value()) {
+        //     return true;
+        // }
         return false;
     } catch (const zmq::error_t& e) {
         logError("ZMQ error processing message: " + std::string(e.what()));
@@ -985,8 +995,10 @@ bool GenericZmqServer::processInternalMessage(const GenericMessage& message) {
 
     try {
         // Create topic message
-        zmq::message_t topic_msg(message.topic.size());
-        memcpy(topic_msg.data(), message.topic.c_str(), message.topic.size());
+        //sanitize topic
+        std::string topic = sanitizeTopic(message.topic);   
+        zmq::message_t topic_msg(topic.size());
+        memcpy(topic_msg.data(), topic.c_str(), topic.size());
 
         // Create metadata
         std::unordered_map<std::string, std::string> metadata;
@@ -1005,6 +1017,7 @@ bool GenericZmqServer::processInternalMessage(const GenericMessage& message) {
             logError("Empty topic or data in processMessage");
             return false;
         }
+        
         logInfo("Processing message for topic: " + message.topic);
         auto topic_result = internal_publisher_socket_->send(topic_msg, zmq::send_flags::sndmore);
         auto data_result = internal_publisher_socket_->send(data_msg, zmq::send_flags::none);

@@ -315,6 +315,8 @@ trading::MarketIntelligence AdaptiveMarketIntelligence::GenerateAdaptiveMarketIn
     if (bids_raw.empty() || asks_raw.empty()) {
         MarketIntelligence intel;
         intel.set_symbol(symbol.toString());
+        //set topic to MARKET_INTEL
+        intel.set_topic("MARKET_INTEL");
         return intel;
     }
     

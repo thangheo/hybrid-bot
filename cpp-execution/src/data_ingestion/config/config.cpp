@@ -91,9 +91,9 @@ bool Configuration::loadFromJson(const std::string& jsonString) {
 
 void Configuration::loadPublisherConfig(const nlohmann::json& pubJson) {
 
-    publisherConfig_.intel_endpoint = pubJson.value("market_intel_endpoint", "tcp://*:5555");
-    publisherConfig_.internal_endpoint = pubJson.value("orderbook_endpoint", "tcp://*:5557");
-    publisherConfig_.request_endpoint = pubJson.value("trading_intent_endpoint", "tcp://*:5556");
+    publisherConfig_.intel_endpoint = pubJson.value("market_intel_endpoint", INTEL_ENDPOINT);
+    publisherConfig_.internal_endpoint = pubJson.value("orderbook_endpoint", INTERNAL_ENDPOINT);
+    publisherConfig_.request_endpoint = pubJson.value("trading_intent_endpoint", REQUEST_ENDPOINT);
     // publisherConfig_. = pubJson.value("publisher_type", "zeromq");
     // publisherConfig_.bufferSize = pubJson.value("buffer_size", 10000);
     publisherConfig_.max_intel_queue_size = pubJson.value("market_intel_max_queue_size", 10);

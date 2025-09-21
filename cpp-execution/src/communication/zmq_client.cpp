@@ -292,10 +292,10 @@ bool GenericZmqClient::initializeSockets() {
         return true;
         
     } catch (const zmq::error_t& e) {
-        logError("ZMQ error initializing sockets: " + std::string(e.what()));
+        logError("GenericZmqClient Client error initializing sockets: " + std::string(e.what()));
         return false;
     } catch (const std::exception& e) {
-        logError("Error initializing sockets: " + std::string(e.what()));
+        logError("GenericZmqClient error initializing sockets: " + std::string(e.what()));
         return false;
     }
 }

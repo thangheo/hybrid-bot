@@ -22,7 +22,7 @@ import os
 
 # Import protobuf messages (assuming generated from trading_messages.proto)
 try:
-    from .trading_messages_pb2 import *
+    from trading_messages_pb2 import *
 except ImportError:
     print("Error: trading_messages_pb2 not found. Generate with: protoc --python_out=. trading_messages.proto")
     sys.exit(1)
@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class ConnectionConfig:
     """ZMQ connection configuration"""
-    intelligence_endpoint: str = "tcp://localhost:5555"
+    intelligence_endpoint: str = "tcp://localhost:5560"
     intent_endpoint: str = "tcp://localhost:5556"
     connection_timeout: int = 5000  # milliseconds
     max_retries: int = 3

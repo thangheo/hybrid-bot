@@ -8,6 +8,22 @@
 // Include shared types so this config header does not re-declare them.
 #include "communication/zmq_types.hpp"
 
+//define endpoint constants for easy reference
+constexpr const char* INTEL_ENDPOINT = "tcp://*:5560";
+constexpr const char* INTERNAL_ENDPOINT = "tcp://*:5557";
+constexpr const char* REQUEST_ENDPOINT = "tcp://*:5556";
+// for client
+constexpr const char* SERVER_INTEL_ENDPOINT = "tcp://localhost:5560";
+constexpr const char* SERVER_INTERNAL_ENDPOINT = "tcp://localhost:5557";
+constexpr const char* SERVER_REQUEST_ENDPOINT = "tcp://localhost:5556";
+//risk
+constexpr const char* SERVER_RISK_PUBLISH_ENDPOINT = "tcp://localhost:5558";
+
+// execution endpoints
+constexpr const char* SERVER_EXECUTION_REQUEST_ENDPOINT = "tcp://localhost:5565";
+constexpr const char* SERVER_EXECUTION_PUBLISH_ENDPOINT = "tcp://localhost:5566";
+
+
 using namespace trading::data_ingestion;
 
 namespace trading::communication {
@@ -20,7 +36,7 @@ namespace trading::communication {
  */
 struct ZmqServerConfig {
     // Intel Publisher configuration (for Python - low frequency, protobuf)
-    std::string intel_endpoint = "tcp://*:5555";
+    std::string intel_endpoint = "tcp://*:5560";
     int intel_hwm = 2000;                              // Very low - Python consumes slow
     int intel_linger = 0;                           // Don't wait on close
     bool intel_immediate = true;
@@ -42,8 +58,8 @@ struct ZmqServerConfig {
     // Threading configuration
     int io_threads = 2;
     int intel_publisher_threads = 1;                // Low for intel
-    int internal_publisher_threads = 2;             // Higher for internal
-    int request_handler_threads = 4;
+    int internal_publisher_threads = 1;             // Higher for internal
+    int request_handler_threads = 1;
     
     // Queue configuration
     size_t max_intel_queue_size = 200;                // Small for intel
@@ -100,8 +116,8 @@ using RequestHandler = std::function<std::string(const std::string& request_data
  * Client configuration structure
  */
 struct ZmqClientConfig {
-    std::string server_pub_endpoint = "tcp://localhost:5557";
-    std::string server_req_endpoint = "tcp://localhost:5556";
+    std::string server_pub_endpoint = SERVER_INTEL_ENDPOINT;
+    std::string server_req_endpoint = SERVER_REQUEST_ENDPOINT;
     std::chrono::milliseconds request_timeout{30000};  // 30 seconds
     int io_threads = 1;
     bool auto_reconnect = true;

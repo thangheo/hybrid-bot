@@ -15,7 +15,7 @@ from collections import defaultdict, deque
 import argparse
 
 class DataIngestionTester:
-    def __init__(self, zmq_endpoint="tcp://localhost:5555", verbose=False):
+    def __init__(self, zmq_endpoint=REQUEST_ENDPOINT, verbose=False):
         self.zmq_endpoint = zmq_endpoint
         self.verbose = verbose
         self.running = False
