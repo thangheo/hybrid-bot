@@ -80,7 +80,7 @@ def check_zmq_server_availability():
             context = zmq.Context()
             # Fixed: Use different variable name to avoid conflict with socket module
             zmq_socket = context.socket(zmq.SUB)
-            zmq_socket.setsockopt(zmq.SUBSCRIBE, b"MARKET_INTEL")
+            zmq_socket.setsockopt(zmq.SUBSCRIBE, b"")
             zmq_socket.setsockopt(zmq.RCVTIMEO, 2000)
             zmq_socket.connect("tcp://localhost:5560")
             

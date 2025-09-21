@@ -16,6 +16,19 @@ import os
 from .trading_messages_pb2 import MarketIntelligence
 logger = logging.getLogger(__name__)
 
+
+def _is_likely_utf8(s) -> bool:
+    """Quick heuristic: return True if input (bytes or str) looks like UTF-8 text."""
+    try:
+        if isinstance(s, (bytes, bytearray)):
+            s.decode('utf-8')
+        else:
+            # If it's not bytes, try encoding to UTF-8
+            str(s).encode('utf-8')
+        return True
+    except Exception:
+        return False
+
 @dataclass
 class IntelligenceState:
     """Current market intelligence state"""
@@ -70,7 +83,8 @@ class MarketIntelligenceBridge:
         try:
             self.subscriber = self.context.socket(zmq.SUB)
             self.subscriber.connect("tcp://localhost:5560")
-            self.subscriber.setsockopt(zmq.SUBSCRIBE, b"MARKET_INTEL")
+            # Subscribe to all topics — messages now carry topic inside payload or are single-frame
+            self.subscriber.setsockopt(zmq.SUBSCRIBE, b"")
             self.subscriber.setsockopt(zmq.RCVTIMEO, 1000)
             
             self.running = True
@@ -102,7 +116,11 @@ class MarketIntelligenceBridge:
                 if not frames:
                     continue
 
-                topic = frames[0]
+                # topic may be bytes from socket; decode defensively
+                try:
+                    topic = frames[0].decode('utf-8') if isinstance(frames[0], (bytes, bytearray)) else str(frames[0])
+                except Exception:
+                    topic = ''
 
                 # Determine payload bytes depending on frame count and shape
                 payload_bytes = None
@@ -117,29 +135,27 @@ class MarketIntelligenceBridge:
                     payload_bytes = frames[2]
                 elif len(frames) == 2:
                     # Legacy format: [topic, serialized_json_or_protobuf]
-                    # Try protobuf first, then JSON wrapper with possible base64 data field
                     candidate = frames[1]
+                    metadata_obj = {}
                     # Quick attempt: try protobuf parse directly
-                    intel = MarketIntelligence()
                     try:
-                        intel.ParseFromString(candidate)
+                        intel_test = MarketIntelligence()
+                        intel_test.ParseFromString(candidate)
                         payload_bytes = candidate
                     except Exception:
                         # Not direct protobuf — try JSON wrapper
                         try:
-                            wrapper = json.loads(candidate.decode('utf-8'))
+                            wrapper = json.loads(candidate.decode('utf-8', errors='ignore'))
                             data_field = wrapper.get('data', '')
                             meta = wrapper.get('metadata', {})
                             metadata_obj = meta if isinstance(meta, dict) else {}
-                            # If metadata says base64, decode; else assume data_field is base64 or text
+                            # If metadata says base64, or data_field not likely UTF-8, decode base64
                             if metadata_obj.get('data_encoding') == 'base64' or not _is_likely_utf8(data_field):
                                 try:
                                     payload_bytes = base64.b64decode(data_field)
                                 except Exception:
-                                    # Last resort: treat raw candidate as payload
                                     payload_bytes = candidate
                             else:
-                                # data_field appears to be UTF-8 text; use its bytes
                                 payload_bytes = data_field.encode('utf-8')
                         except Exception:
                             # Can't parse JSON either - use raw candidate
