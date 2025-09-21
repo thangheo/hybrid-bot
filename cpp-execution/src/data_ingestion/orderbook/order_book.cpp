@@ -73,69 +73,73 @@ bool OrderBook::applySnapshot(const std::vector<PriceLevel>& bids,
                             const std::vector<PriceLevel>& asks,
                             uint64_t sequenceNumber,
                             Timestamp timestamp) {
-    std::lock_guard<std::mutex> lock(mutex_);
- 
-    // Skip older snapshots
-    if (sequenceNumber <= sequence_number_) {
-        return false;
-    }
-    
-    // Store the current state for delta calculation
-    captureOrderBookState();
-    
-    // Initialize a delta for this snapshot
+    // Hold the mutex only for updating internal state. Release it before
+    // invoking external callbacks to avoid deadlocks if callbacks call
+    // back into OrderBook methods which also lock the same mutex.
     OrderBookDelta delta{
         .exchangeId = exchangeId_,
         .tradingPair = symbol_,
         .timestamp = timestamp,
         .sequenceNumber = sequenceNumber
     };
-    
-    // Clear existing book and track removed levels
-    for (const auto& [price, level] : bids_) {
-        delta.removed_bids.push_back(level);
+
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+
+        // Skip older snapshots
+        if (sequenceNumber <= sequence_number_) {
+            return false;
+        }
+
+        // Store the current state for delta calculation
+        captureOrderBookState();
+
+        // Clear existing book and track removed levels
+        for (const auto& [price, level] : bids_) {
+            delta.removed_bids.push_back(level);
+        }
+
+        for (const auto& [price, level] : asks_) {
+            delta.removed_asks.push_back(level);
+        }
+
+        bids_.clear();
+        asks_.clear();
+
+        // Add bid levels with depth limit
+        size_t bid_count = 0;
+        for (const auto& bid : bids) {
+            if (bid_count >= config_.max_depth) break;
+            updateBidLevel(bid);
+            delta.added_bids.push_back(bid);
+            bid_count++;
+        }
+
+        // Add ask levels with depth limit
+        size_t ask_count = 0;
+        for (const auto& ask : asks) {
+            if (ask_count >= config_.max_depth) break;
+            updateAskLevel(ask);
+            delta.added_asks.push_back(ask);
+            ask_count++;
+        }
+
+        // Update metadata
+        sequence_number_ = sequenceNumber;
+        timestamp_ = timestamp;
+        is_valid_ = true;
+
+        // Store this delta (must be done while holding mutex_)
+        storeDelta(delta);
+
+        // Perform cleanup if needed
+        autoCleanupIfNeeded();
     }
-    
-    for (const auto& [price, level] : asks_) {
-        delta.removed_asks.push_back(level);
-    }
-    
-    bids_.clear();
-    asks_.clear();
-    
-    // Add bid levels with depth limit
-    size_t bid_count = 0;
-    for (const auto& bid : bids) {
-        if (bid_count >= config_.max_depth) break;
-        updateBidLevel(bid);
-        delta.added_bids.push_back(bid);
-        bid_count++;
-    }
-    
-    // Add ask levels with depth limit
-    size_t ask_count = 0;
-    for (const auto& ask : asks) {
-        if (ask_count >= config_.max_depth) break;
-        updateAskLevel(ask);
-        delta.added_asks.push_back(ask);
-        ask_count++;
-    }
-    
-    // Update metadata
-    sequence_number_ = sequenceNumber;
-    timestamp_ = timestamp;
-    is_valid_ = true;
-    
-    // Store this delta
-    storeDelta(delta);
-    
-    // Perform cleanup if needed
-    autoCleanupIfNeeded();
-    
-    // Notify subscribers
+
+    // Notify subscribers outside the lock to avoid deadlocks
     notifyCallback();
     notifyDeltaCallback(delta);
-    
+
     return true;
 }
 
@@ -159,51 +163,54 @@ bool OrderBook::applyUpdate(const std::vector<PriceLevel>& bids,
         return false;
     }
     
-    std::lock_guard<std::mutex> lock(mutex_);
-    
-    // Store the current state for delta calculation
-    captureOrderBookState();
-    
-    // Initialize a delta for this update
     OrderBookDelta delta{
         .exchangeId = exchangeId_,
         .tradingPair = symbol_,
         .timestamp = timestamp,
         .sequenceNumber = sequenceNumber
     };
-    
-    // Apply bid updates and track deltas
-    for (const auto& bid : bids) {
-        trackBidDelta(bid, delta);
-        updateBidLevel(bid);
+
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+
+        // Store the current state for delta calculation
+        captureOrderBookState();
+
+        // Apply bid updates and track deltas
+        for (const auto& bid : bids) {
+            trackBidDelta(bid, delta);
+            updateBidLevel(bid);
+        }
+
+        // Apply ask updates and track deltas
+        for (const auto& ask : asks) {
+            trackAskDelta(ask, delta);
+            updateAskLevel(ask);
+        }
+
+        // Enforce depth limits after updates
+        enforceBidDepthLimit();
+        enforceAskDepthLimit();
+
+        // Update metadata
+        sequence_number_ = sequenceNumber;
+        timestamp_ = timestamp;
+
+        // Store this delta if it's not empty
+        if (!delta.isEmpty()) {
+            storeDelta(delta);
+        }
+
+        // Perform cleanup if needed
+        autoCleanupIfNeeded();
     }
-    
-    // Apply ask updates and track deltas
-    for (const auto& ask : asks) {
-        trackAskDelta(ask, delta);
-        updateAskLevel(ask);
-    }
-    
-    // Enforce depth limits after updates
-    enforceBidDepthLimit();
-    enforceAskDepthLimit();
-    
-    // Update metadata
-    sequence_number_ = sequenceNumber;
-    timestamp_ = timestamp;
-    
-    // Store this delta if it's not empty
+
+    // Notify subscribers outside the lock to avoid deadlocks
     if (!delta.isEmpty()) {
-        storeDelta(delta);
         notifyDeltaCallback(delta);
     }
-    
-    // Perform cleanup if needed
-    autoCleanupIfNeeded();
-    
-    // Notify subscribers
     notifyCallback();
-    
+
     return true;
 }
 

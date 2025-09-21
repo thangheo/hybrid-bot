@@ -422,7 +422,8 @@ public:
         std::cout << "\n=== FULL TRADING SYSTEM STATUS ===" << std::endl;
         std::cout << "Runtime: " << elapsed << "s" << std::endl;  //this will be always 0s
         std::cout << "Service Health: " << (dataIngestionService_->isHealthy() ? "HEALTHY" : "UNHEALTHY") << std::endl;
-        std::cout << "Order book updates processed: " << messagesProcessed_.load() << std::endl;
+    std::cout << "Order book updates received: " << messagesProcessed_.load() << std::endl;
+    std::cout << "Order book updates processed: " << orderBookUpdatesReceived_.load() << std::endl;
         std::cout << "Intelligence generated: " << intelligenceGenerated_.load() << std::endl;
         
         if (elapsed > 0) {
@@ -450,6 +451,29 @@ public:
             }
         }
         
+        // Print publish stats if available
+        uint64_t calls = publishCalls_.load();
+        if (calls > 0) {
+            double avg_ns = static_cast<double>(publishTimeNs_.load()) / static_cast<double>(calls);
+            double avg_ms = avg_ns / 1e6;
+            std::cout << "Avg publish latency: " << std::fixed << std::setprecision(3) << avg_ms << " ms over " << calls << " calls" << std::endl;
+        }
+        // Print process RSS to detect memory growth
+        try {
+            FILE* f = fopen("/proc/self/statm", "r");
+            if (f) {
+                long size = 0, resident = 0;
+                if (fscanf(f, "%ld %ld", &size, &resident) >= 2) {
+                    long pageSizeKb = sysconf(_SC_PAGESIZE) / 1024; // in KB
+                    long rssKb = resident * pageSizeKb;
+                    std::cout << "RSS: " << (rssKb / 1024) << " MB" << std::endl;
+                }
+                fclose(f);
+            }
+        } catch (...) {
+            // ignore
+        }
+
         std::cout << "=========================================" << std::endl;
     }
     
@@ -475,28 +499,23 @@ public:
             // Generate adaptive market intelligence
             std::string tradingPair = update.tradingPair.toString();
             
-            // Throttle intelligence generation like full_bridge.cpp
-            static std::unordered_map<std::string, std::chrono::steady_clock::time_point> lastIntelTime;
-            static std::unordered_map<std::string, int> intelDebugCounts;
-            
+            // Throttle intelligence generation (use instance maps to avoid data races)
             auto now = std::chrono::steady_clock::now();
             bool shouldGenerate = false;
-            
-            if (lastIntelTime.find(tradingPair) == lastIntelTime.end()) {
-                shouldGenerate = true; // First time
-            } else {
-                auto timeSinceLastIntel = now - lastIntelTime[tradingPair];
-                if (timeSinceLastIntel >= std::chrono::milliseconds(3000)) { // Generate every 500 ms
-                    shouldGenerate = true;
+            {
+                std::lock_guard<std::mutex> lm(intelMapsMutex_);
+                if (lastIntelTime_.find(tradingPair) == lastIntelTime_.end()) {
+                    shouldGenerate = true; // First time
+                } else {
+                    auto timeSinceLastIntel = now - lastIntelTime_[tradingPair];
+                    if (timeSinceLastIntel >= std::chrono::milliseconds(500)) { // Generate every 500 ms
+                        shouldGenerate = true;
+                    }
                 }
+                if (!shouldGenerate) return;
+                lastIntelTime_[tradingPair] = now;
             }
-            
-            if (!shouldGenerate) {
-                return;
-            }
-            
-            lastIntelTime[tradingPair] = now;
-            
+
             trading::MarketIntelligence intel = adaptiveIntel_->GenerateAdaptiveMarketIntelligence(tradingPair, orderBook);
 
             if (intel.symbol().empty()) {
@@ -504,12 +523,14 @@ public:
             }
 
             // Debug output for intelligence generations
-            intelDebugCounts[tradingPair]++;
-            
-            if (intelDebugCounts[tradingPair] <= 1 || intelDebugCounts[tradingPair] % 5000 == 0) {
-                std::cout << "🧠 Generated intelligence #" << intelDebugCounts[tradingPair] 
-                          << " for " << tradingPair << " (spread: " << intel.bid_ask_spread() 
-                          << ", imbalance: " << intel.order_book_imbalance() << ")" << std::endl;
+            {
+                std::lock_guard<std::mutex> lm(intelMapsMutex_);
+                intelDebugCounts_[tradingPair]++;
+                if (intelDebugCounts_[tradingPair] <= 5 || intelDebugCounts_[tradingPair] % 5000 == 0) {
+                    std::cout << "🧠 Generated intelligence #" << intelDebugCounts_[tradingPair]
+                              << " for " << tradingPair << " (spread: " << intel.bid_ask_spread()
+                              << ", imbalance: " << intel.order_book_imbalance() << ")" << std::endl;
+                }
             }
             
             // Store latest intelligence
@@ -528,7 +549,7 @@ public:
                               << " for " << tradingPair << std::endl;
                 }   
                 if (intel.DebugString().size() > 1000) {
-                    std::cerr << "Warning: Intelligence message size is large (" 
+                    std::cerr << "Warning: Intelligence message size is large ("
                               << intel.DebugString().size() << " bytes)" << std::endl;
                 }
                 if (zmq_server_) {
@@ -537,10 +558,26 @@ public:
                     if (!intel.SerializeToString(&serialized_intel)) {
                         std::cerr << "Failed to serialize MarketIntelligence protobuf" << std::endl;
                     } else {
-                        // Use publishAsync to avoid blocking the intelligence generation path.
-                        zmq_server_->publishAsync("MARKET_INTEL", serialized_intel, MessagePriority::NORMAL);
-                        // zmq_server_->publishProtobuf("MARKET_INTEL", intel, MessagePriority::NORMAL);
-                        intelligenceGenerated_.fetch_add(1);
+                        // Backpressure: check queue size for topic and skip if too large
+                        std::string topic = "MARKET_INTEL." + tradingPair;
+                        bool publishAllowed = true;
+                        try {
+                            size_t qsize = zmq_server_->getQueueSize(topic);
+                            if (qsize > 1000) { // arbitrary high watermark
+                                publishAllowed = false;
+                                std::cerr << "Backpressure: ZMQ queue for " << topic << " size=" << qsize
+                                          << ", skipping publish to avoid memory growth" << std::endl;
+                            }
+                        } catch (...) {
+                            // If getQueueSize not implemented or fails, allow publish
+                        }
+
+                        if (publishAllowed) {
+                            // Use publishAsync to avoid blocking the intelligence generation path.
+                            zmq_server_->publishAsync("MARKET_INTEL", serialized_intel, MessagePriority::NORMAL);
+                            // zmq_server_->publishProtobuf("MARKET_INTEL", intel, MessagePriority::NORMAL);
+                            intelligenceGenerated_.fetch_add(1);
+                        }
                     }
                 }
                 else {
@@ -706,6 +743,10 @@ private:
 
     // Market intelligence tracking
     std::unordered_map<std::string, trading::MarketIntelligence> latestIntelligence_;
+    // Thread-safe helper maps for intelligence throttling and debug counts
+    std::unordered_map<std::string, std::chrono::steady_clock::time_point> lastIntelTime_;
+    std::unordered_map<std::string, int> intelDebugCounts_;
+    std::mutex intelMapsMutex_;
 
     // Core components
     std::unique_ptr<data_ingestion::DataIngestionService> dataIngestionService_;
@@ -734,6 +775,9 @@ private:
     std::atomic<size_t> signalsRejected_{0};
     std::atomic<size_t> ordersExecuted_{0};
     std::atomic<size_t> riskEventsTriggered_{0};
+    // Instrumentation for publish latency
+    std::atomic<uint64_t> publishTimeNs_{0};
+    std::atomic<uint64_t> publishCalls_{0};
     
     int calculateCompletionDelay(const trading::TradingIntent& intent, 
                                 const trading::MarketIntelligence& intel,
@@ -1210,6 +1254,9 @@ private:
 
             // Enqueue (bounded)
             std::unique_lock<std::mutex> lk(orderbookQueueMutex_);
+            // Count incoming messages
+            messagesProcessed_.fetch_add(1);
+
             if (orderbookQueue_.size() >= orderbookQueueLimit_) {
                 // Drop oldest to make space (or simply drop this update)
                 orderbookQueue_.pop_front();
