@@ -133,6 +133,10 @@ class MarketIntelligenceBridge:
                     except Exception:
                         metadata_obj = {}
                     payload_bytes = frames[2]
+                elif len(frames) == 1:
+                    # Single-frame format: raw protobuf bytes (or raw payload)
+                    metadata_obj = {}
+                    payload_bytes = frames[0]
                 elif len(frames) == 2:
                     # Legacy format: [topic, serialized_json_or_protobuf]
                     candidate = frames[1]
