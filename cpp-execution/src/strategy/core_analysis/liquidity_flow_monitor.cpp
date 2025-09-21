@@ -85,49 +85,49 @@ void LiquidityFlowMonitor::processOrderBookDelta(const OrderBookDelta& delta) {
     last_sequence_number_ = delta.sequenceNumber;
 }
 
-void LiquidityFlowMonitor::processOrderBookSnapshots(
-    const data_ingestion::OrderBook& prev_book,
-    const data_ingestion::OrderBook& curr_book) {
+// void LiquidityFlowMonitor::processOrderBookSnapshots(
+//     const data_ingestion::OrderBook& prev_book,
+//     const data_ingestion::OrderBook& curr_book) {
     
-    std::lock_guard<std::mutex> lock(mutex_);
+//     std::lock_guard<std::mutex> lock(mutex_);
     
-    // Create a copy of the current order book using a shared pointer
-    // to avoid issues with non-copyable mutex and atomic members
-    auto curr_book_ptr = std::make_shared<data_ingestion::OrderBook>(
-        curr_book.getExchangeId(), curr_book.getSymbol());
+//     // Create a copy of the current order book using a shared pointer
+//     // to avoid issues with non-copyable mutex and atomic members
+//     auto curr_book_ptr = std::make_shared<data_ingestion::OrderBook>(
+//         curr_book.getExchangeId(), curr_book.getSymbol());
     
-    // Apply the current snapshot to our copy
-    auto snapshot = curr_book.getSnapshot();
-    curr_book_ptr->applySnapshot(
-        curr_book.getBids(),
-        curr_book.getAsks(),
-        curr_book.getSequenceNumber(),
-        curr_book.getTimestamp());
+//     // Apply the current snapshot to our copy
+//     auto snapshot = curr_book.getSnapshot();
+//     curr_book_ptr->applySnapshot(
+//         curr_book.getBids(),
+//         curr_book.getAsks(),
+//         curr_book.getSequenceNumber(),
+//         curr_book.getTimestamp());
     
-    // Store the copied book in history
-    order_book_history_.push_back(curr_book_ptr);
+//     // Store the copied book in history
+//     order_book_history_.push_back(curr_book_ptr);
     
-    // Remove old books based on window size
-    auto cutoff_time = std::chrono::system_clock::now() - 
-                      std::chrono::seconds(history_window_seconds_);
+//     // Remove old books based on window size
+//     auto cutoff_time = std::chrono::system_clock::now() - 
+//                       std::chrono::seconds(history_window_seconds_);
     
-    while (!order_book_history_.empty() && 
-           (*order_book_history_.front()).getTimestamp() < cutoff_time) {
-        order_book_history_.pop_front();
-    }
+//     while (!order_book_history_.empty() && 
+//            (*order_book_history_.front()).getTimestamp() < cutoff_time) {
+//         order_book_history_.pop_front();
+//     }
     
-    // Compute delta between the two snapshots
-    auto delta = computeDelta(
-        prev_book.getBids(),
-        prev_book.getAsks(),
-        curr_book.getBids(),
-        curr_book.getAsks(),
-        curr_book.getTimestamp(),
-        curr_book.getSequenceNumber());
+//     // Compute delta between the two snapshots
+//     auto delta = computeDelta(
+//         prev_book.getBids(),
+//         prev_book.getAsks(),
+//         curr_book.getBids(),
+//         curr_book.getAsks(),
+//         curr_book.getTimestamp(),
+//         curr_book.getSequenceNumber());
     
-    // Process the computed delta
-    processOrderBookDelta(delta);
-}
+//     // Process the computed delta
+//     processOrderBookDelta(delta);
+// }
  LiquidityMetrics LiquidityFlowMonitor::getLiquidityMetrics() const {
      std::lock_guard<std::mutex> lock(mutex_);
      return current_metrics_;
@@ -790,6 +790,234 @@ double LiquidityFlowMonitor::calculateTypicalOrderSize() const {
         return order_sizes[order_sizes.size() / 2];
     }
 }
+
+void LiquidityFlowMonitor::processOrderBookSnapshots(
+    const data_ingestion::OrderBook& prev_book,
+    const data_ingestion::OrderBook& curr_book) {
+    
+    std::lock_guard<std::mutex> lock(mutex_);
+    
+    // ✅ FIXED: Create lightweight snapshot instead of full OrderBook copy
+    auto curr_snapshot = OrderBookSnapshot::fromOrderBook(curr_book);
+    
+    // ✅ FIXED: Store lightweight snapshot (much smaller memory footprint)
+    snapshot_history_.push_back(std::move(curr_snapshot));
+    
+    // ✅ FIXED: Enforce strict limits immediately
+    enforceHistoryLimits();
+    
+    // ✅ FIXED: Use original OrderBook data for delta computation (no copy)
+    auto delta = computeDelta(
+        prev_book.getBids(20),  // Only get top 20 levels for analysis
+        prev_book.getAsks(20),
+        curr_book.getBids(20),
+        curr_book.getAsks(20),
+        curr_book.getTimestamp(),
+        curr_book.getSequenceNumber());
+    
+    // Process the computed delta
+    processOrderBookDelta(delta);
+    
+    // ✅ FIXED: Auto cleanup to prevent memory accumulation
+    autoCleanupIfNeeded();
+}
+
+void LiquidityFlowMonitor::enforceHistoryLimits() {
+    // ✅ FIXED: Multi-tier cleanup strategy
+    
+    // 1. Size-based cleanup (most important for VPS)
+    while (snapshot_history_.size() > config_.max_history_size) {
+        snapshot_history_.pop_front();
+    }
+    
+    // 2. Time-based cleanup
+    auto cutoff_time = std::chrono::system_clock::now() - 
+                      std::chrono::seconds(config_.history_window_seconds);
+    
+    while (!snapshot_history_.empty() && 
+           snapshot_history_.front().timestamp < cutoff_time) {
+        snapshot_history_.pop_front();
+    }
+    
+    // 3. Memory-based cleanup (critical for VPS)
+    size_t memory_usage_mb = getMemoryUsage() / (1024 * 1024);
+    while (memory_usage_mb > config_.max_memory_usage_mb && 
+           snapshot_history_.size() > 10) {  // Keep at least 10 snapshots
+        snapshot_history_.pop_front();
+        memory_usage_mb = getMemoryUsage() / (1024 * 1024);
+    }
+}
+
+void LiquidityFlowMonitor::performCleanup() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    
+    // Aggressive cleanup for VPS environment
+    enforceHistoryLimits();
+    
+    // Force container shrinking if needed
+    std::deque<OrderBookSnapshot> temp(snapshot_history_.begin(), 
+                                      snapshot_history_.end());
+    snapshot_history_.swap(temp);
+    
+    last_cleanup_time_ = std::chrono::system_clock::now();
+}
+
+void LiquidityFlowMonitor::autoCleanupIfNeeded() {
+    if (!config_.enable_auto_cleanup) return;
+    
+    auto now = std::chrono::system_clock::now();
+    auto time_since_cleanup = std::chrono::duration_cast<std::chrono::minutes>(
+        now - last_cleanup_time_);
+    
+    if (time_since_cleanup >= config_.cleanup_interval || shouldPerformCleanup()) {
+        performCleanup();
+    }
+}
+
+bool LiquidityFlowMonitor::shouldPerformCleanup() const {
+    return (snapshot_history_.size() > config_.cleanup_threshold) ||
+           (getMemoryUsage() / (1024 * 1024) > config_.max_memory_usage_mb);
+}
+
+size_t LiquidityFlowMonitor::getMemoryUsage() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    
+    size_t total = sizeof(*this);
+    
+    for (const auto& snapshot : snapshot_history_) {
+        total += snapshot.getMemoryUsage();
+    }
+    
+    return total;
+}
+
+size_t LiquidityFlowMonitor::getHistorySize() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return snapshot_history_.size();
+}
+
+void LiquidityFlowMonitor::clearHistory() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    snapshot_history_.clear();
+    
+    // Force memory deallocation
+    std::deque<OrderBookSnapshot> temp;
+    snapshot_history_.swap(temp);
+}
+
+void LiquidityFlowMonitor::updateConfig(const LiquidityFlowConfig& config) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    config_ = config;
+    
+    // Apply new limits immediately
+    enforceHistoryLimits();
+}
+
+// Analysis methods using lightweight snapshots
+double LiquidityFlowMonitor::calculateFlowImbalance(std::chrono::seconds lookback_period) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    
+    auto cutoff_time = std::chrono::system_clock::now() - lookback_period;
+    
+    double total_bid_volume = 0.0;
+    double total_ask_volume = 0.0;
+    int count = 0;
+    
+    for (auto it = snapshot_history_.rbegin(); it != snapshot_history_.rend(); ++it) {
+        if (it->timestamp < cutoff_time) break;
+        
+        total_bid_volume += it->bid_volume;
+        total_ask_volume += it->ask_volume;
+        count++;
+    }
+    
+    if (count == 0 || (total_bid_volume + total_ask_volume) == 0.0) {
+        return 0.0;
+    }
+    
+    return (total_bid_volume - total_ask_volume) / (total_bid_volume + total_ask_volume);
+}
+
+std::vector<double> LiquidityFlowMonitor::getPriceHistory(std::chrono::seconds lookback_period) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    
+    auto cutoff_time = std::chrono::system_clock::now() - lookback_period;
+    std::vector<double> prices;
+    
+    for (auto it = snapshot_history_.rbegin(); it != snapshot_history_.rend(); ++it) {
+        if (it->timestamp < cutoff_time) break;
+        prices.push_back(it->mid_price);
+    }
+    
+    // Reverse to get chronological order
+    std::reverse(prices.begin(), prices.end());
+    return prices;
+}
+
+double LiquidityFlowMonitor::getAverageSpread(std::chrono::seconds lookback_period) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    
+    auto cutoff_time = std::chrono::system_clock::now() - lookback_period;
+    
+    double total_spread = 0.0;
+    int count = 0;
+    
+    for (auto it = snapshot_history_.rbegin(); it != snapshot_history_.rend(); ++it) {
+        if (it->timestamp < cutoff_time) break;
+        
+        total_spread += it->spread;
+        count++;
+    }
+    
+    return count > 0 ? total_spread / count : 0.0;
+}
+
+// // Delta computation (simplified - only process essential changes)
+// data_ingestion::OrderBookDelta LiquidityFlowMonitor::computeDelta(
+//     const std::vector<PriceLevel>& prev_bids,
+//     const std::vector<PriceLevel>& prev_asks,
+//     const std::vector<PriceLevel>& curr_bids,
+//     const std::vector<PriceLevel>& curr_asks,
+//     core::Timestamp timestamp,
+//     uint64_t sequence_number) {
+    
+//     data_ingestion::OrderBookDelta delta;
+//     delta.timestamp = timestamp;
+//     delta.sequenceNumber = sequence_number;
+    
+//     // Simplified delta computation - only track significant changes
+//     // to reduce processing overhead on VPS
+    
+//     // Compare only top 5 levels to save CPU
+//     const size_t max_levels_to_compare = 5;
+    
+//     // Compare bids
+//     for (size_t i = 0; i < std::min({prev_bids.size(), curr_bids.size(), max_levels_to_compare}); ++i) {
+//         if (std::abs(prev_bids[i].quantity - curr_bids[i].quantity) > 0.001) {
+//             delta.added_bids.push_back(curr_bids[i]);
+//         }
+//     }
+    
+//     // Compare asks
+//     for (size_t i = 0; i < std::min({prev_asks.size(), curr_asks.size(), max_levels_to_compare}); ++i) {
+//         if (std::abs(prev_asks[i].quantity - curr_asks[i].quantity) > 0.001) {
+//             delta.added_asks.push_back(curr_asks[i]);
+//         }
+//     }
+    
+//     return delta;
+// }
+
+// void LiquidityFlowMonitor::processOrderBookDelta(const data_ingestion::OrderBookDelta& delta) {
+//     // Process delta for flow analysis
+//     // Keep this lightweight for VPS performance
+    
+//     if (delta.isEmpty()) return;
+    
+//     // Example: Update flow metrics
+//     // Implement your specific flow analysis logic here
+//     // But keep it memory-efficient!
+// }
 
 std::shared_ptr<LiquidityFlowMonitor> createLiquidityFlowMonitor(
     const core::ExchangeId& exchangeId, 

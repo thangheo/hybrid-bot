@@ -110,12 +110,24 @@
         double typicalOrderSize = 1.0;      // Typical order size for calculations
         std::chrono::system_clock::time_point lastUpdateTime; // Last update time
         uint64_t lastSequenceNumber = 0;   // Last sequence number for order book updates
-        // std::deque<OrderBookDelta> deltaHistory; // History of order book deltas
-        // std::deque<std::shared_ptr<data_ingestion::OrderBook>> orderBookHistory; // History of order books
-        // std::deque<std::tuple<double, double, bool, core::Timestamp>> recentTrades; // Recent trades
-        // std::vector<LiquidityEvent> events; // Detected liquidity events
-        // std::vector<LiquidityMetrics> metricsHistory; // History of liquidity metrics
-        // std::vector<PriceLevel> addedBids; // Added bid levels
+       
+            
+        // History management
+        static constexpr size_t DEFAULT_MAX_HISTORY_SIZE = 100;  // Max snapshots to keep
+        static constexpr int DEFAULT_HISTORY_WINDOW_SECONDS = 300;  // 5 minutes max
+        static constexpr size_t DEFAULT_CLEANUP_THRESHOLD = 120;
+        
+        size_t max_history_size = DEFAULT_MAX_HISTORY_SIZE;
+        int history_window_seconds = DEFAULT_HISTORY_WINDOW_SECONDS;
+        size_t cleanup_threshold = DEFAULT_CLEANUP_THRESHOLD;
+        
+        // Memory limits
+        size_t max_memory_usage_mb = 50;  // Max 50MB for history
+        bool enable_auto_cleanup = true;
+        std::chrono::minutes cleanup_interval{2};
+
+
+
         //params
         ParameterSet params;             // Parameters for liquidity flow analysis
         // large_order_threshold

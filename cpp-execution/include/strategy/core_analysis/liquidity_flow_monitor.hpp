@@ -117,6 +117,67 @@
      }
  };
  
+/**
+ * Lightweight OrderBook snapshot for history storage
+ * Stores only essential data instead of full OrderBook objects
+ */
+struct OrderBookSnapshot {
+    core::Timestamp timestamp;
+    uint64_t sequence_number;
+    ExchangeId exchange_id;
+    Symbol symbol;
+    
+    // Store only limited depth (top N levels)
+    std::vector<PriceLevel> top_bids;   // Only top 10-20 levels
+    std::vector<PriceLevel> top_asks;   // Only top 10-20 levels
+    
+    // Metrics for analysis
+    double mid_price;
+    double spread;
+    double bid_volume;
+    double ask_volume;
+    // capacity()
+    // size_t capacity() const {
+    //     return sizeof(*this) +
+    //            (top_bids.capacity() * sizeof(PriceLevel)) +
+    //            (top_asks.capacity() * sizeof(PriceLevel));
+    // }
+
+    // Memory footprint is much smaller than full OrderBook
+    static constexpr size_t MAX_LEVELS_TO_STORE = 20;
+    
+    // Factory method to create from OrderBook
+    static OrderBookSnapshot fromOrderBook(const data_ingestion::OrderBook& ob) {
+        OrderBookSnapshot snapshot;
+        snapshot.timestamp = ob.getTimestamp();
+        snapshot.sequence_number = ob.getSequenceNumber();
+        snapshot.exchange_id = ob.getExchangeId();
+        snapshot.symbol = ob.getSymbol();
+        
+        // Store only top levels to save memory
+        auto bids = ob.getBids(MAX_LEVELS_TO_STORE);
+        auto asks = ob.getAsks(MAX_LEVELS_TO_STORE);
+        
+        snapshot.top_bids = std::move(bids);
+        snapshot.top_asks = std::move(asks);
+        
+        // Pre-calculate metrics
+        snapshot.mid_price = ob.getMidPrice();
+        snapshot.spread = ob.getSpread();
+        snapshot.bid_volume = ob.getBidVolume(MAX_LEVELS_TO_STORE);
+        snapshot.ask_volume = ob.getAskVolume(MAX_LEVELS_TO_STORE);
+        
+        return snapshot;
+    }
+    
+    size_t getMemoryUsage() const {
+        return sizeof(*this) + 
+               (top_bids.capacity() * sizeof(PriceLevel)) +
+               (top_asks.capacity() * sizeof(PriceLevel));
+    }
+};
+
+
  /**
   * LiquidityFlowMonitor tracks changes in order book liquidity to detect
   * significant shifts that may precede price movements
@@ -215,7 +276,53 @@
       * @param params New parameters
       */
      virtual void updateParameters(const ParameterSet& params);
- protected:
+     // Fixed version - no more memory leaks!
+    // void processOrderBookSnapshots(
+    //     const data_ingestion::OrderBook& prev_book,
+    //     const data_ingestion::OrderBook& curr_book);
+    
+    // Memory management methods
+    void performCleanup();
+    size_t getMemoryUsage() const;
+    size_t getHistorySize() const;
+    void clearHistory();
+      // Configuration
+    void updateConfig(const LiquidityFlowConfig& config);
+    const LiquidityFlowConfig& getConfig() const { return config_; }
+    
+    // Analysis methods (using lightweight snapshots)
+    double calculateFlowImbalance(std::chrono::seconds lookback_period) const;
+    std::vector<double> getPriceHistory(std::chrono::seconds lookback_period) const;
+    double getAverageSpread(std::chrono::seconds lookback_period) const;
+
+private:
+    LiquidityFlowConfig config_;
+    
+    // Use lightweight snapshots instead of full OrderBooks
+    std::deque<OrderBookSnapshot> snapshot_history_;
+    
+    // Memory management
+    std::chrono::system_clock::time_point last_cleanup_time_;
+    
+    // Thread safety
+    mutable std::mutex mutex_;
+    
+    // Helper methods
+    void enforceHistoryLimits();
+    void autoCleanupIfNeeded();
+    bool shouldPerformCleanup() const;
+    
+    // Analysis helpers
+    data_ingestion::OrderBookDelta computeDelta(
+        const std::vector<PriceLevel>& prev_bids,
+        const std::vector<PriceLevel>& prev_asks,
+        const std::vector<PriceLevel>& curr_bids,
+        const std::vector<PriceLevel>& curr_asks,
+        core::Timestamp timestamp,
+        uint64_t sequence_number);
+    
+    // void processOrderBookDelta(const data_ingestion::OrderBookDelta& delta);
+
      /**
       * Compute order book delta between two snapshots
       * 
@@ -227,14 +334,16 @@
       * @param sequenceNumber Sequence number for the delta
       * @return Computed order book delta
       */
-     virtual OrderBookDelta computeDelta(
-         const std::vector<PriceLevel>& prev_bids,
-         const std::vector<PriceLevel>& prev_asks,
-         const std::vector<PriceLevel>& curr_bids,
-         const std::vector<PriceLevel>& curr_asks,
-         core::Timestamp timestamp,
-         uint64_t sequenceNumber);
+    //  virtual OrderBookDelta computeDelta(
+    //      const std::vector<PriceLevel>& prev_bids,
+    //      const std::vector<PriceLevel>& prev_asks,
+    //      const std::vector<PriceLevel>& curr_bids,
+    //      const std::vector<PriceLevel>& curr_asks,
+    //      core::Timestamp timestamp,
+        //  uint64_t sequenceNumber);
      
+ protected:
+
      /**
       * Identify large orders in a set of price levels
       * 
@@ -292,7 +401,7 @@
      int history_window_seconds_;        // Window size for historical analysis
      
      // State
-     mutable std::mutex mutex_;
+    //  mutable std::mutex mutex_;
      std::deque<OrderBookDelta> delta_history_;
     //  std::deque<data_ingestion::OrderBook> order_book_history_;
     std::deque<std::shared_ptr<data_ingestion::OrderBook>> order_book_history_;

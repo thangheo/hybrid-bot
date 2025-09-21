@@ -2,6 +2,7 @@
 
 #include "../../generated/cpp/proto/trading_messages.pb.h"
 #include "data_ingestion/orderbook/order_book.hpp"
+#include "strategy/core_analysis/liquidity_flow_monitor.hpp"
 #include <string>
 #include <unordered_map>
 #include <memory>
@@ -14,8 +15,11 @@
 #include <fstream>
 #include <numeric>
 #include <filesystem>
-using namespace trading::data_ingestion;
+#include <optional>
+#include <iostream>
 
+using namespace trading::data_ingestion;
+using namespace trading;
 namespace trading {
 namespace intelligence {
 
@@ -133,8 +137,9 @@ public:
     trading::MarketIntelligence generateIntelligence(
         const core::Symbol& symbol,
         const std::vector<trading::PriceLevel>& bids,
-        const std::vector<trading::PriceLevel>& asks);
-    
+        const std::vector<trading::PriceLevel>& asks,
+        std::shared_ptr<strategy::LiquidityMetrics> flowMetrics = nullptr);
+
     // Utility methods
     bool hasEnoughData() const;
     bool hasEnoughData(const core::Symbol& symbol) const;
@@ -159,6 +164,7 @@ public:
         double estimatePriceImpact(double volume, double spread, CoinProfile* profile) const ;
     double calculateRegimeStability(CoinProfile* profile, trading::OrderBookRegime current_regime) const ;
     double calculateFlowMomentum(const FlowMetrics& flow) const ;
+    
 
 private:
 
@@ -182,9 +188,9 @@ private:
         const std::vector<trading::PriceLevel>& bids,
         const std::vector<trading::PriceLevel>& asks) const;
     
-    OrderBookMetrics CalculateOrderBookMetrics(  // Legacy method signature
-        const std::vector<PriceLevel>& bids,
-        const std::vector<PriceLevel>& asks);
+    // OrderBookMetrics CalculateOrderBookMetrics(  // Legacy method signature
+    //     const std::vector<PriceLevel>& bids,
+    //     const std::vector<PriceLevel>& asks);
     
     RegimeProbabilities calculateRegimeProbabilities(
         double volume_percentile,

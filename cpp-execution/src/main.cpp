@@ -486,7 +486,7 @@ public:
                 shouldGenerate = true; // First time
             } else {
                 auto timeSinceLastIntel = now - lastIntelTime[tradingPair];
-                if (timeSinceLastIntel >= std::chrono::milliseconds(500)) { // Generate every 500 ms
+                if (timeSinceLastIntel >= std::chrono::milliseconds(3000)) { // Generate every 500 ms
                     shouldGenerate = true;
                 }
             }
@@ -1275,8 +1275,26 @@ int main(int argc, char* argv[]) {
     // Setup signal handlers
     signal(SIGINT, signalHandler);
     signal(SIGTERM, signalHandler);
-    //disable log debug
-    // Logger::getLogger()->setLevel(LogLevel::INFO);
+    // Initialize logger early and allow overriding via environment variable
+    // Use HYBRID_LOG_LEVEL (TRACE, DEBUG, INFO, WARN, ERROR, CRITICAL, OFF)
+    auto parseLogLevel = [](const std::string& s) {
+        if (s == "TRACE" || s == "trace") return trading::common::LogLevel::TRACE;
+        if (s == "DEBUG" || s == "debug") return trading::common::LogLevel::DEBUG;
+        if (s == "INFO" || s == "info") return trading::common::LogLevel::INFO;
+        if (s == "WARN" || s == "warn" || s == "WARNING" || s == "warning") return trading::common::LogLevel::WARN;
+        if (s == "ERROR" || s == "error") return trading::common::LogLevel::ERROR;
+        if (s == "CRITICAL" || s == "critical") return trading::common::LogLevel::CRITICAL;
+        if (s == "OFF" || s == "off") return trading::common::LogLevel::OFF;
+        return trading::common::LogLevel::INFO;
+    };
+
+    const char* envLevel = std::getenv("HYBRID_LOG_LEVEL");
+    if (envLevel) {
+        trading::common::Logger::initialize("TradingApp", parseLogLevel(envLevel));
+    } else {
+        // Default logger level - set to INFO to reduce noisy DEBUG logs
+        trading::common::Logger::initialize("TradingApp", trading::common::LogLevel::INFO);
+    }
     try {
         std::cout << "🚀 STARTING FULL TRADING SYSTEM INTEGRATION DEMO 🚀" << std::endl;
         std::cout << "=====================================================" << std::endl;

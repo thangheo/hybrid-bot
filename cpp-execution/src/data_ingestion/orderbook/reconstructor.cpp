@@ -345,7 +345,14 @@ void OrderBookReconstructor::registerLiquidityFlowMonitor(
 ) {
     // This would need to be implemented in the OrderBookManager
     // For now, we'll just log that the request was received
-    std::cout << "Liquidity flow monitor registration requested (not yet implemented)" << std::endl;
+    // std::cout << "Liquidity flow monitor registration requested (not yet implemented)" << std::endl;
+    //add liquidity flow monitor to order book manager
+    if (orderBookManager_) {
+        // create liquidity flow monitor map if not exists
+        // orderBookManager_->registerLiquidityFlowMonitor(monitor);
+        // createLiquidityFlowMonitor
+        orderBookManager_->createLiquidityFlowMonitor(monitor->getExchangeId(), monitor->getTradingPair(), monitor);
+    }
 }
 
 std::shared_ptr<OrderBook> OrderBookReconstructor::getOrderBook(
