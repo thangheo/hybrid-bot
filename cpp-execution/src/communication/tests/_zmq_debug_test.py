@@ -231,6 +231,78 @@ def test_comparison_with_5557():
         except Exception as e:
             print(f"  Error on port {port}: {e}")
 
+# ...existing code...
+def subscriber_worker(duration_seconds=10):
+    context = zmq.Context()
+    socket = context.socket(zmq.SUB)
+    socket.connect("tcp://localhost:5560")
+    socket.setsockopt(zmq.SUBSCRIBE, b"")  # receive everything
+    socket.setsockopt(zmq.RCVTIMEO, 1000)
+
+    message_count = 0
+    market_intel_count = 0
+    start_time = time.time()
+
+    print(f"Running subscriber for {duration_seconds} seconds...")
+
+    while time.time() - start_time < duration_seconds:
+        try:
+            parts = socket.recv_multipart(flags=0)  # returns list, len==1 for single-frame
+            message_count += 1
+
+            def short_hex(b): return b.hex()[:200]
+
+            # Debug info
+            print(f"[recv] frames={len(parts)} len0={len(parts[0])} len1={(len(parts[1]) if len(parts)>1 else 0)}")
+            print("  part0(hex):", short_hex(parts[0]))
+            if len(parts) > 1:
+                print("  part1(hex):", short_hex(parts[1]))
+
+            if len(parts) == 1:
+                # single-frame: try parsing protobuf, then JSON/text fallback
+                payload = parts[0]
+                try:
+                    intel = tm.MarketIntelligence()
+                    intel.ParseFromString(payload)
+                    print("  Parsed protobuf, symbol:", getattr(intel, "symbol", None))
+                    market_intel_count += 1
+                except Exception:
+                    try:
+                        txt = payload.decode("utf-8", errors="ignore")
+                        if txt.startswith("{"):
+                            j = json.loads(txt)
+                            print("  Parsed JSON keys:", list(j.keys()))
+                        else:
+                            print("  Raw text preview:", txt[:200])
+                    except Exception as e:
+                        print("  Unknown payload parse error:", e)
+
+            else:
+                # multipart: first part is topic, second is payload
+                topic = parts[0].decode("utf-8", errors="ignore")
+                payload = parts[1]
+                print("  topic:", repr(topic))
+                if topic == "MARKET_INTEL":
+                    try:
+                        intel = tm.MarketIntelligence()
+                        intel.ParseFromString(payload)
+                        print("  Parsed protobuf for MARKET_INTEL symbol:", getattr(intel, "symbol", None))
+                        market_intel_count += 1
+                    except Exception:
+                        print("  Failed to parse payload for MARKET_INTEL; payload hex preview:", short_hex(payload))
+                else:
+                    print("  Other topic:", topic)
+
+        except zmq.Again:
+            continue
+        except Exception as e:
+            print("Error receiving message:", e)
+
+    print(f"Subscriber stats: total={message_count} MARKET_INTEL={market_intel_count}")
+    socket.close()
+    context.term()
+# ...existing code...
+
 def main():
     print("ZMQ Debug Tool for MARKET_INTEL Issue")
     print("=" * 50)
@@ -243,7 +315,8 @@ def main():
             test_socket_options,
             test_concurrent_subscriber,
             test_port_connectivity,
-            test_comparison_with_5557
+            test_comparison_with_5557,
+            subscriber_worker
         ]
         if 1 <= test_num <= len(tests):
             tests[test_num - 1]()

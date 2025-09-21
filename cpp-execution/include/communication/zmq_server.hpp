@@ -122,7 +122,10 @@ public:
     bool publishAsync(const std::string& topic, const std::string& data, 
                      MessagePriority priority = MessagePriority::NORMAL,
                      const std::string& correlation_id = "");
-    
+    // pushToIntelQueue
+    bool pushToIntelQueue(GenericMessage&& message, const std::string& correlation_id);
+    // pushToInternalQueue
+    bool pushToInternalQueue(GenericMessage&& message, const std::string& correlation_id);
     /**
      * Publish a message synchronously (blocking until sent)
      */
@@ -254,6 +257,7 @@ public:
     void sendHeartbeat();
 
 private:
+
     // =============================================================================
     // CONFIGURATION AND STATE
     // =============================================================================
@@ -274,7 +278,9 @@ private:
     std::unique_ptr<zmq::socket_t> intel_publisher_socket_;
     std::unique_ptr<zmq::socket_t> internal_publisher_socket_;
     std::unique_ptr<zmq::socket_t> request_socket_;
-    
+    std::mutex intel_send_mutex_;
+    // static std::mutex internal_send_mutex_;
+
     // =============================================================================
     // THREADING
     // =============================================================================

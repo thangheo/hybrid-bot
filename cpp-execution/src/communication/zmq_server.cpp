@@ -20,6 +20,7 @@
 
 namespace trading {
 namespace communication {
+    
 
 // =============================================================================
 // HELPER FUNCTIONS
@@ -59,7 +60,7 @@ static std::string sanitizeTopic(const std::string& topic) {
 
 GenericZmqServer::GenericZmqServer(const ZmqServerConfig& config) 
     : config_(config), priority_queue_(createPriorityComparator()) {
-    
+
     if (!config_.validate()) {
         throw std::invalid_argument("Invalid ZeroMQ server configuration");
     }
@@ -219,6 +220,62 @@ void GenericZmqServer::stop() {
 // =============================================================================
 // PUBLISHING INTERFACE
 // =============================================================================
+// ...existing code...
+bool GenericZmqServer::pushToIntelQueue(GenericMessage&& message, const std::string& correlation_id) {
+    std::unique_lock<std::mutex> lock(intel_queue_mutex_);
+    if (intel_priority_queue_.size() >= config_.max_intel_queue_size) {
+        stats_.queue_overflows++;
+        logInfo("Intel queue overflow detected");
+        message.correlation_id = correlation_id;
+        if (shouldDropMessage(message)) {
+            stats_.messages_dropped++;
+            logError("Intel message dropped due to queue overflow: " + message.topic);
+            return false;
+        }
+        if (!intel_queue_cv_.wait_for(lock, config_.queue_timeout,
+                [this]() { return intel_priority_queue_.size() < config_.max_intel_queue_size || state_.load() != ServerState::RUNNING; })) {
+            stats_.messages_dropped++;
+            logError("Intel message timeout while waiting for queue space: " + message.topic);
+            return false;
+        }
+    }
+    if (state_.load() != ServerState::RUNNING) {
+        logError("Server stopped while waiting for intel queue space");
+        return false;
+    }
+    intel_priority_queue_.push(std::move(message));
+    intel_queue_cv_.notify_one();
+    stats_.messages_queued++;
+    return true;
+}
+
+bool GenericZmqServer::pushToInternalQueue(GenericMessage&& message, const std::string& correlation_id) {
+    std::unique_lock<std::mutex> lock(internal_queue_mutex_);
+    if (internal_priority_queue_.size() >= config_.max_internal_queue_size) {
+        stats_.queue_overflows++;
+        logInfo("Internal queue overflow detected");
+        message.correlation_id = correlation_id;
+        if (shouldDropMessage(message)) {
+            stats_.messages_dropped++;
+            logError("Message dropped due to queue overflow: " + message.topic);
+            return false;
+        }
+        if (!internal_queue_cv_.wait_for(lock, config_.queue_timeout,
+                [this]() { return internal_priority_queue_.size() < config_.max_internal_queue_size || state_.load() != ServerState::RUNNING; })) {
+            stats_.messages_dropped++;
+            logError("Message timeout while waiting for internal queue space: " + message.topic);
+            return false;
+        }
+    }
+    if (state_.load() != ServerState::RUNNING) {
+        logError("Server stopped while waiting for internal queue space");
+        return false;
+    }
+    internal_priority_queue_.push(std::move(message));
+    internal_queue_cv_.notify_one();
+    stats_.messages_queued++;
+    return true;
+}
 
 bool GenericZmqServer::publishAsync(const std::string& topic, const std::string& data,
                                    MessagePriority priority, const std::string& correlation_id) {
@@ -226,102 +283,128 @@ bool GenericZmqServer::publishAsync(const std::string& topic, const std::string&
         logError("Cannot publish - server not running");
         return false;
     }
-  
-    std::string safe_topic = topic;
-   
-    if (!isValidTopic(safe_topic)) {
+
+    if (!isValidTopic(topic)) {
         logError("Invalid topic format: " + topic);
         return false;
     }
-    // logInfo("Publishing async message on topic: " + safe_topic);
-    try {
-        // std::unique_lock<std::mutex> lock(queue_mutex_);
-        //should have separate locks for intel and internal queues
-        std::unique_lock<std::mutex> lock(internal_queue_mutex_, std::defer_lock);
-        std::unique_lock<std::mutex> lock2(intel_queue_mutex_, std::defer_lock);
-        if (topic == "MARKET_INTEL") {
-            logInfo("MARKET_INTEL Publishing Intel message: " + topic);
-            lock2.lock();
-        } else {
-            // logInfo("Publishing internal message: " + topic);
-            lock.lock();
-        }
-        
-        // this is for internal messages
-        if (internal_priority_queue_.size() >= config_.max_internal_queue_size && topic != "MARKET_INTEL") {
-            stats_.queue_overflows++;
-            logInfo("Internal queue overflow detected");
-            // Drop low priority messages if queue is full
-            GenericMessage new_msg(topic, data, priority);
-            new_msg.correlation_id = correlation_id;
-            
-            if (shouldDropMessage(new_msg)) {
-                stats_.messages_dropped++;
-                logError("Message dropped due to queue overflow: " + topic);
-                return false;
-            }
-            
-            // Wait for space or timeout
-            if (!internal_queue_cv_.wait_for(lock, config_.queue_timeout,
-                                  [this]() { return internal_priority_queue_.size() < config_.max_internal_queue_size ||
-                                            state_.load() != ServerState::RUNNING; })) {
-                stats_.messages_dropped++;
-                logError("Message timeout while waiting for queue space: " + topic);
-                return false;
-            }
-        }
-        //this is for intel messages
-        else if (intel_priority_queue_.size() >= config_.max_intel_queue_size && topic == "MARKET_INTEL") {
-            stats_.queue_overflows++;
-            logInfo("Intel queue overflow detected");
-            // Drop low priority messages if queue is full
-            GenericMessage new_msg(topic, data, priority);
-            new_msg.correlation_id = correlation_id;
-            
-            if (shouldDropMessage(new_msg)) {
-                stats_.messages_dropped++;
-                logError("Intel message dropped due to queue overflow: " + topic);
-                return false;
-            }
-            
-            // Wait for space or timeout
-            if (!intel_queue_cv_.wait_for(lock2, config_.queue_timeout,
-                                  [this]() { return intel_priority_queue_.size() < config_.max_intel_queue_size ||
-                                            state_.load() != ServerState::RUNNING; })) {
-                stats_.messages_dropped++;
-                logError("Intel message timeout while waiting for queue space: " + topic);
-                return false;
-            }
-        }        
-        if (state_.load() != ServerState::RUNNING) {
-            // Server stopped while waiting
-            logError("Server stopped while waiting for queue space: " + topic);
-            return false;
-        }
-        
-        // Add message to queue
-        GenericMessage message(std::move(safe_topic), std::move(data), priority);
-        // GenericMessage message(topic, data, priority);  // No moves at all for debugging
-        message.correlation_id = correlation_id;
-        logInfo("Async Publishing message: " + topic + " with priority " + std::to_string(static_cast<int>(priority)));
-        if (topic == "MARKET_INTEL") {
-            // logInfo("Publishing Intel message: " + topic);
-            intel_priority_queue_.push(std::move(message));
-            intel_queue_cv_.notify_one();
-        } else {
-            // logInfo("Publishing internal message: " + topic);
-            internal_priority_queue_.push(std::move(message));
-            internal_queue_cv_.notify_one();
-        }
-        stats_.messages_queued++;
-        
-        return true;
 
-    } catch (const std::exception& e) {
-        logError("Error publishing async message: " + std::string(e.what()));
-        return false;
+    std::string safe_topic = topic;
+    GenericMessage message(std::move(safe_topic), data, priority);
+    message.correlation_id = correlation_id;
+
+    logInfo("Async Publishing message: " + topic + " with priority " + std::to_string(static_cast<int>(priority)));
+
+    if (topic == "MARKET_INTEL") {
+        return pushToIntelQueue(std::move(message), correlation_id);
+    } else {
+        return pushToInternalQueue(std::move(message), correlation_id);
     }
 }
+
+// ...existing code...
+// bool GenericZmqServer::publishAsync(const std::string& topic, const std::string& data,
+//                                    MessagePriority priority, const std::string& correlation_id) {
+//     if (state_.load() != ServerState::RUNNING) {
+//         logError("Cannot publish - server not running");
+//         return false;
+//     }
+  
+//     std::string safe_topic = topic;
+   
+//     if (!isValidTopic(safe_topic)) {
+//         logError("Invalid topic format: " + topic);
+//         return false;
+//     }
+//     // logInfo("Publishing async message on topic: " + safe_topic);
+//     try {
+//         // std::unique_lock<std::mutex> lock(queue_mutex_);
+//         //should have separate locks for intel and internal queues
+//         std::unique_lock<std::mutex> lock(internal_queue_mutex_, std::defer_lock);
+//         std::unique_lock<std::mutex> lock2(intel_queue_mutex_, std::defer_lock);
+//         if (topic == "MARKET_INTEL") {
+//             logInfo("MARKET_INTEL Publishing Intel message: " + topic);
+//             lock2.lock();
+//         } else {
+//             // logInfo("Publishing internal message: " + topic);
+//             lock.lock();
+//         }
+        
+//         // this is for internal messages
+//         if (internal_priority_queue_.size() >= config_.max_internal_queue_size && topic != "MARKET_INTEL") {
+//             stats_.queue_overflows++;
+//             logInfo("Internal queue overflow detected");
+//             // Drop low priority messages if queue is full
+//             GenericMessage new_msg(topic, data, priority);
+//             new_msg.correlation_id = correlation_id;
+            
+//             if (shouldDropMessage(new_msg)) {
+//                 stats_.messages_dropped++;
+//                 logError("Message dropped due to queue overflow: " + topic);
+//                 return false;
+//             }
+            
+//             // Wait for space or timeout
+//             if (!internal_queue_cv_.wait_for(lock, config_.queue_timeout,
+//                                   [this]() { return internal_priority_queue_.size() < config_.max_internal_queue_size ||
+//                                             state_.load() != ServerState::RUNNING; })) {
+//                 stats_.messages_dropped++;
+//                 logError("Message timeout while waiting for queue space: " + topic);
+//                 return false;
+//             }
+//         }
+//         //this is for intel messages
+//         else if (intel_priority_queue_.size() >= config_.max_intel_queue_size && topic == "MARKET_INTEL") {
+//             stats_.queue_overflows++;
+//             logInfo("Intel queue overflow detected");
+//             // Drop low priority messages if queue is full
+//             GenericMessage new_msg(topic, data, priority);
+//             new_msg.correlation_id = correlation_id;
+            
+//             if (shouldDropMessage(new_msg)) {
+//                 stats_.messages_dropped++;
+//                 logError("Intel message dropped due to queue overflow: " + topic);
+//                 return false;
+//             }
+            
+//             // Wait for space or timeout
+//             if (!intel_queue_cv_.wait_for(lock2, config_.queue_timeout,
+//                                   [this]() { return intel_priority_queue_.size() < config_.max_intel_queue_size ||
+//                                             state_.load() != ServerState::RUNNING; })) {
+//                 stats_.messages_dropped++;
+//                 logError("Intel message timeout while waiting for queue space: " + topic);
+//                 return false;
+//             }
+//         }        
+//         if (state_.load() != ServerState::RUNNING) {
+//             // Server stopped while waiting
+//             logError("Server stopped while waiting for queue space: " + topic);
+//             return false;
+//         }
+        
+//         // Add message to queue
+//         GenericMessage message(std::move(safe_topic), std::move(data), priority);
+//         // GenericMessage message(topic, data, priority);  // No moves at all for debugging
+//         message.correlation_id = correlation_id;
+//         logInfo("Async Publishing message: " + topic + " with priority " + std::to_string(static_cast<int>(priority)));
+//         if (topic == "MARKET_INTEL") {
+//             // logInfo("Publishing Intel message: " + topic);
+//             intel_priority_queue_.push(std::move(message));
+//             intel_queue_cv_.notify_one();
+//         } else {
+//             // logInfo("Publishing internal message: " + topic);
+//             internal_priority_queue_.push(std::move(message));
+//             internal_queue_cv_.notify_one();
+//         }
+//         stats_.messages_queued++;
+        
+//         return true;
+
+//     } catch (const std::exception& e) {
+//         logError("Error publishing async message: " + std::string(e.what()));
+//         return false;
+//     }
+// }
 bool GenericZmqServer::publishSync(const std::string& topic, const std::string& data,
                                   MessagePriority priority, const std::string& correlation_id) {
     if (state_.load() != ServerState::RUNNING || !intel_publisher_socket_ || !internal_publisher_socket_) {
@@ -938,45 +1021,30 @@ bool GenericZmqServer::processIntelMessage(const GenericMessage& message) {
     }
 
     try {
-        // Create topic message
-        // std::string topic = "MARKET_INTEL"; // Force topic to MARKET_INTEL
-        // zmq::message_t topic_msg(topic.data(), topic.size());
-        // zmq::message_t topic_msg(message.topic.size());
-        // memcpy(topic_msg.data(), message.topic.c_str(), message.topic.size());
-        // Create metadata
-        std::unordered_map<std::string, std::string> metadata;
-        metadata["correlation_id"] = message.correlation_id;
-        metadata["priority"] = std::to_string(static_cast<int>(message.priority));
-        metadata["timestamp"] = std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
-            message.timestamp.time_since_epoch()).count());
-        // Serialize data with metadata (DO NOT overwrite this!) //this is protobuf message. we dont want to overwrite
-        // std::string serialized_data = serializeWithMetadata(message.data, metadata);
-        // zmq::message_t data_msg(serialized_data.size());
-        // memcpy(data_msg.data(), serialized_data.c_str(), serialized_data.size());
-        //check message is empty
+        // DO NOT lock the intel_queue_mutex_ here — the worker already popped and unlocked.
+        // Use a dedicated send mutex to serialize multipart sends so topic+data don't interleave.
         if (message.data.empty()) {
             logError("Empty data in processIntelMessage");
             return false;
         }
-        //send raw data as is
-        auto data_msg = zmq::message_t(message.data.size());    
-        memcpy(data_msg.data(), message.data.c_str(), message.data.size());
-        //to debug we just send dummie topic and data
+
         std::string topic = sanitizeTopic(message.topic);
         if (topic.empty() || message.data.empty()) {
             logError("Empty topic or data in processIntelMessage");
             return false;
         }
-        // logInfo("Processing MARKET_INTEL message for topic: " + topic);
-        // auto topic_result = intel_publisher_socket_->send(zmq::buffer(topic), zmq::send_flags::sndmore | zmq::send_flags::dontwait);
-        // auto data_result = intel_publisher_socket_->send(data_msg, zmq::send_flags::dontwait);
-        intel_publisher_socket_->send(zmq::buffer("MARKET_INTEL"), zmq::send_flags::sndmore);
-        intel_publisher_socket_->send(data_msg, zmq::send_flags::none);
-        logInfo("Sent MARKET_INTEL message");
-        // if (topic_result.has_value() && data_result.has_value()) {
-        //     return true;
-        // }
-        return false;
+
+        zmq::message_t topic_msg(topic.data(), topic.size());
+        zmq::message_t data_msg(message.data.data(), message.data.size());
+
+        std::lock_guard<std::mutex> send_guard(intel_send_mutex_);
+
+        // Send multipart: topic then data. Use blocking sends (no dontwait) to avoid partial sends.
+        intel_publisher_socket_->send(topic_msg, zmq::send_flags::sndmore | zmq::send_flags::dontwait);
+        intel_publisher_socket_->send(data_msg, zmq::send_flags::none | zmq::send_flags::dontwait);
+
+        logInfo("Sent MARKET_INTEL message: " + topic);
+        return true;
     } catch (const zmq::error_t& e) {
         logError("ZMQ error processing message: " + std::string(e.what()));
         stats_.connection_errors++;

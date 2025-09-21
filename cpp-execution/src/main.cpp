@@ -532,10 +532,16 @@ public:
                               << intel.DebugString().size() << " bytes)" << std::endl;
                 }
                 if (zmq_server_) {
-                    // Use publishAsync to avoid blocking the intelligence generation path.
-                    zmq_server_->publishAsync("MARKET_INTEL", intel.SerializeAsString(), MessagePriority::NORMAL);
-                    // zmq_server_->publishProtobuf("MARKET_INTEL", intel, MessagePriority::NORMAL);
-                    intelligenceGenerated_.fetch_add(1);
+                    // Serialize protobuf safely into a std::string (SerializeToString returns bool)
+                    std::string serialized_intel;
+                    if (!intel.SerializeToString(&serialized_intel)) {
+                        std::cerr << "Failed to serialize MarketIntelligence protobuf" << std::endl;
+                    } else {
+                        // Use publishAsync to avoid blocking the intelligence generation path.
+                        zmq_server_->publishAsync("MARKET_INTEL", serialized_intel, MessagePriority::NORMAL);
+                        // zmq_server_->publishProtobuf("MARKET_INTEL", intel, MessagePriority::NORMAL);
+                        intelligenceGenerated_.fetch_add(1);
+                    }
                 }
                 else {
                     std::cerr << "ZMQ server not available for publishing intelligence" << std::endl;
