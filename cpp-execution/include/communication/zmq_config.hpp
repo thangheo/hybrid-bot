@@ -68,7 +68,7 @@ struct ZmqServerConfig {
     // Rate limiting
     int max_intel_publish_rate = 30;                 // 60 messages per minute
     int max_internal_publish_rate = 1000;           // 1000 messages per second
-    std::chrono::milliseconds intel_publish_interval{300};    // 300 milliseconds
+    std::chrono::milliseconds intel_publish_interval{1000};    // 1 millisecond
     std::chrono::milliseconds internal_publish_interval{1};     // 1ms
     std::chrono::milliseconds queue_timeout{100};
     

@@ -486,7 +486,7 @@ public:
                 shouldGenerate = true; // First time
             } else {
                 auto timeSinceLastIntel = now - lastIntelTime[tradingPair];
-                if (timeSinceLastIntel >= std::chrono::milliseconds(5000)) { // Generate every 15 seconds
+                if (timeSinceLastIntel >= std::chrono::milliseconds(500)) { // Generate every 500 ms
                     shouldGenerate = true;
                 }
             }
@@ -661,7 +661,7 @@ private:
     std::condition_variable orderbookQueueCv_;
     std::vector<std::thread> orderbookWorkers_;
     std::atomic<bool> orderbookWorkersRunning_{false};
-    size_t orderbookQueueLimit_ = 20000; // hard cap
+    size_t orderbookQueueLimit_ = 2000; // hard cap
     size_t orderbookBatchSize_ = 20; // number of updates per batch
     size_t orderbookWorkerCount_ = 2; // start with 2 workers (tune for VPS)
 

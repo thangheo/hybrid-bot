@@ -78,7 +78,15 @@ bool OrderBookManager::createOrderBook(
     }
     
     try {
-        auto orderBook = std::make_shared<OrderBook>(exchangeId, symbol, callback);
+        // Configure for VPS constraints
+        OrderBookConfig config;
+        config.max_depth = 500;           // Giảm xuống 500 cho VPS 2GB
+        config.max_delta_history = 30;    // Giảm xuống 30
+        config.cleanup_threshold = 600;   // Cleanup sớm hơn
+        config.enable_auto_cleanup = true;
+        config.cleanup_interval = std::chrono::minutes(3); // Cleanup thường xuyên hơn
+        config.track_orders = false;      // Không theo dõi đơn hàng cá nhân
+        auto orderBook = std::make_shared<OrderBook>(exchangeId, symbol, callback, config);
         orderBooks_[key] = orderBook;
         
         // Update statistics
