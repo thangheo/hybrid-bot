@@ -72,7 +72,7 @@ private:
     std::unique_ptr<BinanceAdapter> adapter_;
     // Bounded concurrent queue for incoming raw market data. Default capacity
     // tuned to a large value to avoid unbounded growth; adjust as needed.
-    static constexpr size_t DEFAULT_PROCESSING_QUEUE_CAP = 100000;
+    static constexpr size_t DEFAULT_PROCESSING_QUEUE_CAP = 1000;
     // Use shared_ptr so we can atomically swap the queue instance to release
     // internal buffers when clearing. Producers/consumers should use
     // std::atomic_load/store on this shared_ptr to get a safe reference.
@@ -91,9 +91,7 @@ private:
 
     std::thread processingThread_;
     RawDataCallback websocketCallback_;
-
-    // ReaderWriterQueue<MarketDataUpdate> processingQueue_;
-    // ReaderWriterQueue<MarketDataUpdate> processingQueue_{100000}; // capacity 100,000
+ 
     std::mutex enqueueMutex_;  
     // rateLimitController_
     std::shared_ptr<execution::RateLimitController> rateLimitController_;

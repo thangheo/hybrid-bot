@@ -77,14 +77,27 @@ struct NormalizationConfig {
 };
 
 /**
- * Configuration for order book handling
+ * Configuration struct for OrderBook memory management
  */
 struct OrderBookConfig {
-    int depth = 20;                 // Maximum depth to maintain
+    int depth = DEFAULT_MAX_DEPTH;                 // Maximum depth to maintain
     bool track_orders = false;      // Whether to track individual orders
     int snapshot_interval_ms = 60000;  // How often to request full snapshots
-    int cleanup_interval_ms = 300000;   // How often to clean up stale data
+    int cleanup_interval_ms = 30000;   // How often to clean up stale data
+    // Maximum number of price levels to keep on each side
+    static constexpr size_t DEFAULT_MAX_DEPTH = 100;
+    static constexpr size_t DEFAULT_MAX_DELTA_HISTORY = 50;  // Reduced from 100
+    static constexpr size_t DEFAULT_CLEANUP_THRESHOLD = 1200;  // When to trigger cleanup
+    
+    size_t max_depth = DEFAULT_MAX_DEPTH;
+    size_t max_delta_history = DEFAULT_MAX_DELTA_HISTORY;
+    size_t cleanup_threshold = DEFAULT_CLEANUP_THRESHOLD;
+    
+    // Automatic cleanup settings
+    bool enable_auto_cleanup = true;
+    std::chrono::minutes cleanup_interval{5};  // Cleanup every 5 minutes
 };
+
 
 /**
  * Configuration for data quality control
