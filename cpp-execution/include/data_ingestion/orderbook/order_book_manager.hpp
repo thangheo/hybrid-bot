@@ -304,6 +304,13 @@ public:
      * @return Number of order books removed
      */
     size_t limitOrderBooks(size_t maxCount);
+    // Create liquidity flow monitor new function
+    void createLiquidityFlowMonitor(
+        const ExchangeId& exchangeId,
+        const core::Symbol& symbol,
+        std::shared_ptr<strategy::LiquidityFlowMonitor> monitor
+    );
+    
 private:
     // Configuration
     OrderBookManagerConfig config_;

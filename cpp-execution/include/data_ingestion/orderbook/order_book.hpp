@@ -1,5 +1,5 @@
 /**
- * @file order_book_fixed.hpp
+ * @file order_book.hpp
  * @brief Memory-optimized version of order book with depth limits
  * 
  * @details 
@@ -207,11 +207,17 @@ public:
     
     // Calculate checksum for validation
     std::string calculateChecksum() const;
-    
+    // setLiquidityFlowMonitor
+    void setLiquidityFlowMonitor(std::shared_ptr<strategy::LiquidityFlowMonitor> monitor) {
+        liquidityFlowMonitor_ = monitor;
+    }
+    std::shared_ptr<strategy::LiquidityFlowMonitor> getLiquidityFlowMonitor() const {
+        return liquidityFlowMonitor_;
+    }
 private:
     // Configuration
     OrderBookConfig config_;
-    
+    std::shared_ptr<strategy::LiquidityFlowMonitor> liquidityFlowMonitor_;
     // Core order book data
     ExchangeId exchangeId_;
     Symbol symbol_;

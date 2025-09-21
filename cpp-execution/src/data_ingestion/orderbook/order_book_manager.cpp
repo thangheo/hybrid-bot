@@ -626,7 +626,16 @@ bool OrderBookManager::validateSpread(const OrderBook& book) {
     }
     return true;
 }
-
+void OrderBookManager::createLiquidityFlowMonitor(
+        const ExchangeId& exchangeId,
+        const core::Symbol& symbol,
+        std::shared_ptr<strategy::LiquidityFlowMonitor> monitor
+    ) {
+    // Create liquidity flow monitor and register with order book
+    if (orderBooks_.count({exchangeId, symbol}) > 0) {
+        orderBooks_[{exchangeId, symbol}]->setLiquidityFlowMonitor(monitor);
+    }
+}
 // Factory implementations
 
 namespace OrderBookManagerFactory {

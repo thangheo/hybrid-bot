@@ -336,9 +336,16 @@ trading::MarketIntelligence AdaptiveMarketIntelligence::GenerateAdaptiveMarketIn
         level.set_quantity(ask.quantity);
         asks.push_back(level);
     }
-    
+    //get flow monitor from order book
+    auto flowMonitor = orderbook->getLiquidityFlowMonitor();
+   
+    if (flowMonitor) {
+        auto metrics = flowMonitor->getLiquidityMetrics();
+        auto flowMetrics = std::make_shared<strategy::LiquidityMetrics>(std::move(metrics));
+        return generateIntelligence(symbol, bids, asks, flowMetrics);
+    }
+    return generateIntelligence(symbol, bids, asks, nullptr);
     // Delegate to new implementation
-    return generateIntelligence(symbol, bids, asks);
 }
 
 // ============================================================================
@@ -496,29 +503,29 @@ void AdaptiveMarketIntelligence::saveAllProfiles() {
 // LEGACY METHODS FOR BACKWARD COMPATIBILITY
 // ============================================================================
 
-OrderBookMetrics AdaptiveMarketIntelligence::CalculateOrderBookMetrics(
-    const std::vector<PriceLevel>& bids,
-    const std::vector<PriceLevel>& asks) {
+// OrderBookMetrics AdaptiveMarketIntelligence::CalculateOrderBookMetrics(
+//     const std::vector<PriceLevel>& bids,
+//     const std::vector<PriceLevel>& asks) {
     
-    // Convert and delegate to new method
-    std::vector<trading::PriceLevel> converted_bids, converted_asks;
+//     // Convert and delegate to new method
+//     std::vector<trading::PriceLevel> converted_bids, converted_asks;
     
-    for (const auto& bid : bids) {
-        trading::PriceLevel level;
-        level.set_price(bid.price());  // Add parentheses - it's a method call
-        level.set_quantity(bid.quantity());  // Add parentheses - it's a method call
-        converted_bids.push_back(level);
-    }
+//     for (const auto& bid : bids) {
+//         trading::PriceLevel level;
+//         level.set_price(bid.price());  // Add parentheses - it's a method call
+//         level.set_quantity(bid.quantity());  // Add parentheses - it's a method call
+//         converted_bids.push_back(level);
+//     }
     
-    for (const auto& ask : asks) {
-        trading::PriceLevel level;
-        level.set_price(ask.price());  // Add parentheses - it's a method call
-        level.set_quantity(ask.quantity());  // Add parentheses - it's a method call
-        converted_asks.push_back(level);
-    }
+//     for (const auto& ask : asks) {
+//         trading::PriceLevel level;
+//         level.set_price(ask.price());  // Add parentheses - it's a method call
+//         level.set_quantity(ask.quantity());  // Add parentheses - it's a method call
+//         converted_asks.push_back(level);
+//     }
     
-    return calculateOrderBookMetrics(converted_bids, converted_asks);
-}
+//     return calculateOrderBookMetrics(converted_bids, converted_asks);
+// }
 
 
 double AdaptiveMarketIntelligence::CalculateAdaptiveLiquidityRatio(double volume, const CoinProfile& profile) {
@@ -617,10 +624,12 @@ std::vector<trading::PriceLevel> AdaptiveMarketIntelligence::ConvertPriceLevels(
     
     return result;
 }
+
 trading::MarketIntelligence AdaptiveMarketIntelligence::generateIntelligence(
     const core::Symbol& symbol,
     const std::vector<trading::PriceLevel>& bids,
-    const std::vector<trading::PriceLevel>& asks) {
+    const std::vector<trading::PriceLevel>& asks,
+    std::shared_ptr<strategy::LiquidityMetrics> flowMetrics) {
 
     // Use a short-lived protobuf Arena to allocate temporary strings/fields while
     // populating the message. This reduces per-field heap churn because
@@ -684,23 +693,66 @@ trading::MarketIntelligence AdaptiveMarketIntelligence::generateIntelligence(
     ai->set_volatility_trend(volatility_trend);
 
     double price_impact = estimatePriceImpact(metrics.total_volume, relative_spread, profile);
-    ai->set_price_impact_estimate(price_impact);
 
     double volatility_1m = estimateSimpleVolatility(relative_spread, profile->volatility_factor);
     ai->set_realized_volatility_1m(volatility_1m);
     ai->set_realized_volatility_5m(volatility_1m * 1.2);
     ai->set_expected_volatility_5m(volatility_1m * 1.1);
 
-    FlowMetrics flow = estimateFlowMetrics(metrics.imbalance, metrics.total_volume);
-    ai->set_aggressive_buy_ratio(flow.aggressive_buy_ratio);
-    ai->set_aggressive_sell_ratio(flow.aggressive_sell_ratio);
-    ai->set_net_flow_5s(flow.net_flow_5s);
-    ai->set_net_flow_30s(flow.net_flow_30s);
+    // If we have a richer liquidity monitor available, use it to populate flow metrics
+    FlowMetrics flow;
+    if (flowMetrics) {
+        // Use provided liquidity metrics to form our simplified FlowMetrics
+        double imbalance_signal = flowMetrics->flow_imbalance;
+        if (!std::isfinite(imbalance_signal)) imbalance_signal = metrics.imbalance;
 
-    ai->set_net_flow_5m(flow.net_flow_30s * 10.0);
-    ai->set_passive_buy_ratio(1.0 - flow.aggressive_buy_ratio);
-    ai->set_passive_sell_ratio(1.0 - flow.aggressive_sell_ratio);
-    ai->set_flow_momentum(calculateFlowMomentum(flow));
+        // Base net flows on imbalance and observed total volume, scaled by windows
+        flow.net_flow_5s = imbalance_signal * metrics.total_volume * 0.1;
+        flow.net_flow_30s = imbalance_signal * metrics.total_volume * 0.03;
+
+        // Aggressive ratio derived from execution/cancel/add rates and toxicity
+        double exec_delta = flowMetrics->bid_execution_rate - flowMetrics->ask_execution_rate;
+        double cancel_delta = flowMetrics->ask_cancel_rate - flowMetrics->bid_cancel_rate;
+        double toxicity_delta = flowMetrics->bid_toxicity - flowMetrics->ask_toxicity;
+
+        double agg = 0.5 + (imbalance_signal * 0.5) + (exec_delta * 0.1) + (cancel_delta * 0.05) - (toxicity_delta * 0.05);
+        agg = std::max(0.0, std::min(1.0, agg));
+        flow.aggressive_buy_ratio = agg;
+        flow.aggressive_sell_ratio = std::max(0.0, std::min(1.0, 1.0 - agg));
+
+        // Scale net flow by order size characteristics
+        double size_adj = 1.0 + (flowMetrics->large_order_ratio * 0.5) - (flowMetrics->cancellation_ratio * 0.2);
+        size_adj = std::max(0.1, size_adj);
+        flow.net_flow_5s *= size_adj;
+        flow.net_flow_30s *= size_adj;
+
+        ai->set_aggressive_buy_ratio(flow.aggressive_buy_ratio);
+        ai->set_aggressive_sell_ratio(flow.aggressive_sell_ratio);
+        ai->set_net_flow_5s(flow.net_flow_5s);
+        ai->set_net_flow_30s(flow.net_flow_30s);
+        ai->set_net_flow_5m(flow.net_flow_30s * 10.0);
+        ai->set_passive_buy_ratio(1.0 - flow.aggressive_buy_ratio);
+        ai->set_passive_sell_ratio(1.0 - flow.aggressive_sell_ratio);
+        ai->set_flow_momentum(flow.net_flow_5s - flow.net_flow_30s);
+
+        // Adjust price impact using pressure index and large order presence
+        if (flowMetrics->pressure_index > 0.0 || flowMetrics->large_order_ratio > 0.0) {
+            double adj = 1.0 + std::min(2.0, flowMetrics->pressure_index * 0.5 + flowMetrics->large_order_ratio * 0.3);
+            price_impact *= adj;
+        }
+    } else {
+        flow = estimateFlowMetrics(metrics.imbalance, metrics.total_volume);
+        ai->set_aggressive_buy_ratio(flow.aggressive_buy_ratio);
+        ai->set_aggressive_sell_ratio(flow.aggressive_sell_ratio);
+        ai->set_net_flow_5s(flow.net_flow_5s);
+        ai->set_net_flow_30s(flow.net_flow_30s);
+        ai->set_net_flow_5m(flow.net_flow_30s * 10.0);
+        ai->set_passive_buy_ratio(1.0 - flow.aggressive_buy_ratio);
+        ai->set_passive_sell_ratio(1.0 - flow.aggressive_sell_ratio);
+        ai->set_flow_momentum(calculateFlowMomentum(flow));
+    }
+
+    ai->set_price_impact_estimate(price_impact);
 
     RegimeProbabilities probs = calculateRegimeProbabilities(
         volume_percentile, spread_percentile, metrics.imbalance, profile->volatility_factor);
@@ -835,5 +887,6 @@ double AdaptiveMarketIntelligence::calculateRegimeStability(CoinProfile* profile
     // In full implementation, this would track regime changes over time
     return 0.7; // Moderate stability
 }
+
 } // namespace intelligence
 } // namespace trading

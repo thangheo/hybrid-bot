@@ -72,6 +72,7 @@ struct OrderBookMetrics {
     double volumeVelocity = 0.0;             // Rate of volume change
     double spreadVelocity = 0.0;             // Rate of spread change
     
+
     // Time-series metrics
     std::map<std::string, std::vector<double>> timeSeriesMetrics;
     
@@ -166,6 +167,7 @@ struct OrderBookMetrics {
         return metrics;
     }
 };
+
 
 } // namespace strategy
 } // namespace trading
