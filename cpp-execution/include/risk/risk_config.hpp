@@ -22,7 +22,7 @@
 #include <nlohmann/json.hpp>
 #include <common/types.hpp>
 #include <chrono>
-
+#include <communication/zmq_config.hpp>
 using namespace trading;
 using namespace trading::common;
 using namespace trading::risk;
@@ -504,14 +504,14 @@ public:
     CollateralConfig collateralConfig;
     PortfolioConfig portfolioConfig;
     // zmq endpoints
-    std::string executionRequestEndpoint = "tcp://localhost:5565";
-    std::string executionPublishEndpoint = "tcp://localhost:5566";
+    std::string executionRequestEndpoint = SERVER_EXECUTION_REQUEST_ENDPOINT;
+    std::string executionPublishEndpoint = SERVER_EXECUTION_PUBLISH_ENDPOINT;
     std::string executionReportsTopic = "execution_reports";
     // marketDataRequestEndpoint
-    std::string marketDataRequestEndpoint = "tcp://localhost:5560";
-    std::string marketDataPublishEndpoint = "tcp://localhost:5561";
+    std::string marketDataRequestEndpoint = SERVER_REQUEST_ENDPOINT;
+    std::string marketDataPublishEndpoint = SERVER_RISK_PUBLISH_ENDPOINT;
     std::string marketDataTopic = "market_data";
-    std::string zmqSubscriberEndpoint = "tcp://localhost:5562";
+    std::string zmqSubscriberEndpoint = SERVER_INTEL_ENDPOINT;
 
     // zmqPublisherEndpoint
     std::string zmqPublisherEndpoint = "tcp://localhost:5563";

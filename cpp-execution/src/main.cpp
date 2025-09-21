@@ -97,7 +97,8 @@ public:
         zmq_client_ = std::make_unique<GenericZmqClient>(clientConfig);
        
         // Initialize MarketDataInterface
-        riskConfig_.zmqSubscriberEndpoint = "tcp://localhost:5557"; // Connect to server's internal endpoint for orderbook
+        riskConfig_.zmqSubscriberEndpoint = SERVER_INTERNAL_ENDPOINT;
+        riskConfig_.zmqPublisherEndpoint = SERVER_REQUEST_ENDPOINT;
         marketDataInterface_ = std::make_shared<trading::risk::MarketDataInterface>(riskConfig_);
         // set zmq client to marketDataInterface_
         marketDataInterface_->setZmqClient(std::move(zmq_client_));
@@ -532,8 +533,8 @@ public:
                 }
                 if (zmq_server_) {
                     // Use publishAsync to avoid blocking the intelligence generation path.
-                    // zmq_comm_server_->publishAsync("MARKET_INTEL", intel.SerializeAsString(), MessagePriority::NORMAL);
-                    zmq_server_->publishProtobuf("MARKET_INTEL", intel, MessagePriority::NORMAL);
+                    zmq_server_->publishAsync("MARKET_INTEL", intel.SerializeAsString(), MessagePriority::NORMAL);
+                    // zmq_server_->publishProtobuf("MARKET_INTEL", intel, MessagePriority::NORMAL);
                     intelligenceGenerated_.fetch_add(1);
                 }
                 else {

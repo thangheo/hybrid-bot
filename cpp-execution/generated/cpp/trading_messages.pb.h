@@ -2020,6 +2020,7 @@ class MarketIntelligence final :
 
   enum : int {
     kSymbolFieldNumber = 1,
+    kTopicFieldNumber = 27,
     kTimestampFieldNumber = 2,
     kBidAskSpreadFieldNumber = 3,
     kOrderBookImbalanceFieldNumber = 4,
@@ -2060,6 +2061,20 @@ class MarketIntelligence final :
   std::string* _internal_mutable_symbol();
   public:
 
+  // string topic = 27;
+  void clear_topic();
+  const std::string& topic() const;
+  template <typename ArgT0 = const std::string&, typename... ArgT>
+  void set_topic(ArgT0&& arg0, ArgT... args);
+  std::string* mutable_topic();
+  PROTOBUF_NODISCARD std::string* release_topic();
+  void set_allocated_topic(std::string* topic);
+  private:
+  const std::string& _internal_topic() const;
+  inline PROTOBUF_ALWAYS_INLINE void _internal_set_topic(const std::string& value);
+  std::string* _internal_mutable_topic();
+  public:
+
   // int64 timestamp = 2;
   void clear_timestamp();
   int64_t timestamp() const;
@@ -2087,13 +2102,13 @@ class MarketIntelligence final :
   void _internal_set_order_book_imbalance(double value);
   public:
 
-  // double depthImbalance = 5;
-  void clear_depthimbalance();
-  double depthimbalance() const;
-  void set_depthimbalance(double value);
+  // double depth_imbalance = 5;
+  void clear_depth_imbalance();
+  double depth_imbalance() const;
+  void set_depth_imbalance(double value);
   private:
-  double _internal_depthimbalance() const;
-  void _internal_set_depthimbalance(double value);
+  double _internal_depth_imbalance() const;
+  void _internal_set_depth_imbalance(double value);
   public:
 
   // double liquidity_ratio = 6;
@@ -2294,10 +2309,11 @@ class MarketIntelligence final :
   typedef void DestructorSkippable_;
   struct Impl_ {
     ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr symbol_;
+    ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr topic_;
     int64_t timestamp_;
     double bid_ask_spread_;
     double order_book_imbalance_;
-    double depthimbalance_;
+    double depth_imbalance_;
     double liquidity_ratio_;
     double spread_stability_;
     double net_flow_5s_;
@@ -7263,24 +7279,24 @@ inline void MarketIntelligence::set_order_book_imbalance(double value) {
   // @@protoc_insertion_point(field_set:trading.MarketIntelligence.order_book_imbalance)
 }
 
-// double depthImbalance = 5;
-inline void MarketIntelligence::clear_depthimbalance() {
-  _impl_.depthimbalance_ = 0;
+// double depth_imbalance = 5;
+inline void MarketIntelligence::clear_depth_imbalance() {
+  _impl_.depth_imbalance_ = 0;
 }
-inline double MarketIntelligence::_internal_depthimbalance() const {
-  return _impl_.depthimbalance_;
+inline double MarketIntelligence::_internal_depth_imbalance() const {
+  return _impl_.depth_imbalance_;
 }
-inline double MarketIntelligence::depthimbalance() const {
-  // @@protoc_insertion_point(field_get:trading.MarketIntelligence.depthImbalance)
-  return _internal_depthimbalance();
+inline double MarketIntelligence::depth_imbalance() const {
+  // @@protoc_insertion_point(field_get:trading.MarketIntelligence.depth_imbalance)
+  return _internal_depth_imbalance();
 }
-inline void MarketIntelligence::_internal_set_depthimbalance(double value) {
+inline void MarketIntelligence::_internal_set_depth_imbalance(double value) {
   
-  _impl_.depthimbalance_ = value;
+  _impl_.depth_imbalance_ = value;
 }
-inline void MarketIntelligence::set_depthimbalance(double value) {
-  _internal_set_depthimbalance(value);
-  // @@protoc_insertion_point(field_set:trading.MarketIntelligence.depthImbalance)
+inline void MarketIntelligence::set_depth_imbalance(double value) {
+  _internal_set_depth_imbalance(value);
+  // @@protoc_insertion_point(field_set:trading.MarketIntelligence.depth_imbalance)
 }
 
 // double liquidity_ratio = 6;
@@ -7701,6 +7717,56 @@ inline void MarketIntelligence::_internal_set_flow_momentum(double value) {
 inline void MarketIntelligence::set_flow_momentum(double value) {
   _internal_set_flow_momentum(value);
   // @@protoc_insertion_point(field_set:trading.MarketIntelligence.flow_momentum)
+}
+
+// string topic = 27;
+inline void MarketIntelligence::clear_topic() {
+  _impl_.topic_.ClearToEmpty();
+}
+inline const std::string& MarketIntelligence::topic() const {
+  // @@protoc_insertion_point(field_get:trading.MarketIntelligence.topic)
+  return _internal_topic();
+}
+template <typename ArgT0, typename... ArgT>
+inline PROTOBUF_ALWAYS_INLINE
+void MarketIntelligence::set_topic(ArgT0&& arg0, ArgT... args) {
+ 
+ _impl_.topic_.Set(static_cast<ArgT0 &&>(arg0), args..., GetArenaForAllocation());
+  // @@protoc_insertion_point(field_set:trading.MarketIntelligence.topic)
+}
+inline std::string* MarketIntelligence::mutable_topic() {
+  std::string* _s = _internal_mutable_topic();
+  // @@protoc_insertion_point(field_mutable:trading.MarketIntelligence.topic)
+  return _s;
+}
+inline const std::string& MarketIntelligence::_internal_topic() const {
+  return _impl_.topic_.Get();
+}
+inline void MarketIntelligence::_internal_set_topic(const std::string& value) {
+  
+  _impl_.topic_.Set(value, GetArenaForAllocation());
+}
+inline std::string* MarketIntelligence::_internal_mutable_topic() {
+  
+  return _impl_.topic_.Mutable(GetArenaForAllocation());
+}
+inline std::string* MarketIntelligence::release_topic() {
+  // @@protoc_insertion_point(field_release:trading.MarketIntelligence.topic)
+  return _impl_.topic_.Release();
+}
+inline void MarketIntelligence::set_allocated_topic(std::string* topic) {
+  if (topic != nullptr) {
+    
+  } else {
+    
+  }
+  _impl_.topic_.SetAllocated(topic, GetArenaForAllocation());
+#ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  if (_impl_.topic_.IsDefault()) {
+    _impl_.topic_.Set("", GetArenaForAllocation());
+  }
+#endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  // @@protoc_insertion_point(field_set_allocated:trading.MarketIntelligence.topic)
 }
 
 // -------------------------------------------------------------------

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ZMQ Debug Subscriber for MARKET_INTEL on port 5555
+ZMQ Debug Subscriber for MARKET_INTEL on port 5560
 This script helps diagnose why MARKET_INTEL messages aren't being received
 """
 
@@ -17,11 +17,11 @@ def test_basic_connection():
     try:
         context = zmq.Context()
         socket = context.socket(zmq.SUB)
-        socket.connect("tcp://localhost:5555")
+        socket.connect("tcp://localhost:5560")
         socket.setsockopt(zmq.SUBSCRIBE, b"")  # Subscribe to all messages
         socket.setsockopt(zmq.RCVTIMEO, 5000)  # 5 second timeout
         
-        print("✓ Connected to tcp://localhost:5555")
+        print("✓ Connected to tcp://localhost:5560")
         print("✓ Subscribed to all topics")
         print("Waiting 5 seconds for any message...")
         
@@ -45,7 +45,7 @@ def test_market_intel_subscription():
     try:
         context = zmq.Context()
         socket = context.socket(zmq.SUB)
-        socket.connect("tcp://localhost:5555")
+        socket.connect("tcp://localhost:5560")
         
         # Try different subscription patterns
         subscriptions = [
@@ -93,7 +93,7 @@ def test_socket_options():
         print(f"  RCVTIMEO: {socket.getsockopt(zmq.RCVTIMEO)}")
         print(f"  CONFLATE: {socket.getsockopt(zmq.CONFLATE)}")
         
-        socket.connect("tcp://localhost:5555")
+        socket.connect("tcp://localhost:5560")
         socket.setsockopt(zmq.SUBSCRIBE, b"MARKET_INTEL")
         
         print("Socket options after connect:")
@@ -126,7 +126,7 @@ def test_concurrent_subscriber():
     def subscriber_worker(duration_seconds=10):
         context = zmq.Context()
         socket = context.socket(zmq.SUB)
-        socket.connect("tcp://localhost:5555")
+        socket.connect("tcp://localhost:5560")
         socket.setsockopt(zmq.SUBSCRIBE, b"")  # All messages
         socket.setsockopt(zmq.RCVTIMEO, 1000)  # 1 second timeout
         
@@ -180,17 +180,17 @@ def test_port_connectivity():
     print("\n=== TEST 5: Port Connectivity Test ===")
     import socket as sock
     
-    # Test if port 5555 is open
+    # Test if port 5560 is open
     try:
         s = sock.socket(sock.AF_INET, sock.SOCK_STREAM)
         s.settimeout(5)
-        result = s.connect_ex(('localhost', 5555))
+        result = s.connect_ex(('localhost', 5560))
         s.close()
         
         if result == 0:
-            print("✓ Port 5555 is open and accepting connections")
+            print("✓ Port 5560 is open and accepting connections")
         else:
-            print("✗ Port 5555 is not accepting TCP connections")
+            print("✗ Port 5560 is not accepting TCP connections")
             print("  This might be normal for ZMQ PUB sockets")
     except Exception as e:
         print(f"✗ Port connectivity test failed: {e}")
@@ -199,7 +199,7 @@ def test_comparison_with_5557():
     """Test 6: Compare with working port 5557"""
     print("\n=== TEST 6: Comparison with Port 5557 ===")
     
-    ports = [5555, 5557]
+    ports = [5560, 5557]
     for port in ports:
         print(f"\nTesting port {port}:")
         try:

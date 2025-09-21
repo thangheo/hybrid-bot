@@ -70,7 +70,7 @@ def check_zmq_server_availability():
             return False
     
     # Check both ZMQ ports
-    intelligence_port_open = check_port("localhost", 5555, "Market Intelligence")
+    intelligence_port_open = check_port("localhost", 5560, "Market Intelligence")
     execution_port_open = check_port("localhost", 5558, "Execution Engine")
     
     # Test ZMQ connection specifically
@@ -82,7 +82,7 @@ def check_zmq_server_availability():
             zmq_socket = context.socket(zmq.SUB)
             zmq_socket.setsockopt(zmq.SUBSCRIBE, b"MARKET_INTEL")
             zmq_socket.setsockopt(zmq.RCVTIMEO, 2000)
-            zmq_socket.connect("tcp://localhost:5555")
+            zmq_socket.connect("tcp://localhost:5560")
             
             # Try to receive a message
             try:
@@ -163,7 +163,7 @@ class MarketIntelligenceIntegrator:
         try:
             # Setup ZMQ connections with improved error handling
             self.intelligence_subscriber = self.context.socket(zmq.SUB)
-            self.intelligence_subscriber.connect("tcp://localhost:5555")
+            self.intelligence_subscriber.connect("tcp://localhost:5560")
             self.intelligence_subscriber.setsockopt(zmq.SUBSCRIBE, b"MARKET_INTEL")
             self.intelligence_subscriber.setsockopt(zmq.RCVTIMEO, 1000)
             

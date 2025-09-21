@@ -206,6 +206,7 @@ message ExecutionStatus {
 }
 
 message MarketIntelligence {
+
     // Message metadata
     string symbol = 1;
     int64 timestamp = 2;
@@ -213,7 +214,7 @@ message MarketIntelligence {
     // Order Book Metrics
     double bid_ask_spread = 3;
     double order_book_imbalance = 4;
-    double depthImbalance = 5;         // Imbalance in deeper levels
+    double depth_imbalance = 5;         // Imbalance in deeper levels
     double liquidity_ratio = 6;
     double spread_stability = 7;        // How stable the spread has been
     
@@ -245,6 +246,7 @@ message MarketIntelligence {
     // Predictive metrics
     double expected_volatility_5m = 25; // Expected volatility next 5 minutes
     double flow_momentum = 26;          // Acceleration of flow metrics
+    string topic = 27;                   // Added for bridge.py compatibility
 }
 
 // ============================================================================

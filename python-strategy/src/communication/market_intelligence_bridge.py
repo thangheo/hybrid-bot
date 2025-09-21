@@ -69,7 +69,7 @@ class MarketIntelligenceBridge:
             
         try:
             self.subscriber = self.context.socket(zmq.SUB)
-            self.subscriber.connect("tcp://localhost:5555")
+            self.subscriber.connect("tcp://localhost:5560")
             self.subscriber.setsockopt(zmq.SUBSCRIBE, b"MARKET_INTEL")
             self.subscriber.setsockopt(zmq.RCVTIMEO, 1000)
             

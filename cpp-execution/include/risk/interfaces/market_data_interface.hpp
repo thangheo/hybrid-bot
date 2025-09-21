@@ -184,8 +184,8 @@ private:
     std::mutex callbackMutex_;
     
     // Configuration
-    std::string zmqSubscriberEndpoint_ = "tcp://localhost:5557";
-    std::string zmqPublisherEndpoint_ = "tcp://localhost:5556";
+    std::string zmqSubscriberEndpoint_ = SERVER_INTERNAL_ENDPOINT;
+    std::string zmqPublisherEndpoint_ = SERVER_REQUEST_ENDPOINT;
     std::chrono::milliseconds cacheValidityDuration_{10};  // 10ms cache validity
     
     // State
