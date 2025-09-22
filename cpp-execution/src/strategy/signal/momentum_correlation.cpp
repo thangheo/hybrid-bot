@@ -59,7 +59,8 @@ void MomentumCorrelation::updateCorrelationModel(
     size_t currentSize = 0;
     {
         std::lock_guard<std::mutex> lock(correlation_mutex_);
-        data_points_.push_back(dataPoint);
+        // Emplace to avoid an extra copy of potentially-heavy DataPoint
+        data_points_.emplace_back(std::move(dataPoint));
 
         // Maintain window size
         while (data_points_.size() > window_size_) {
@@ -85,69 +86,6 @@ void MomentumCorrelation::updateCorrelationModel(
     // }
 } 
 
-// void MomentumCorrelation::calculateCorrelations() {
-//     LOG_INFO("Starting correlation calculation with {} data points", data_points_.size());
-    
-//     if (data_points_.size() < params_.min_data_points) {
-//         LOG_WARN("Insufficient data points for correlation calculation");
-//         return;
-//     }
-
-//     // Extract metrics and price movements
-//     std::map<std::string, std::vector<double>> metricValues;
-//     std::vector<double> priceMovements;
-    
-//     // Collect all data
-//     for (const auto& dataPoint : data_points_) {
-//         priceMovements.push_back(dataPoint.price_movement.percent_change);
-        
-//         // Extract key metrics with validation
-//         auto metricsMap = dataPoint.metrics.toMap();
-//         for (const auto& [key, value] : metricsMap) {
-//             if (!std::isnan(value) && !std::isinf(value)) {
-//                 metricValues[key].push_back(value);
-//             }
-//         }
-        
-//         // Add core metrics explicitly
-//         if (!std::isnan(dataPoint.metrics.bidAskVolumeRatio)) {
-//             metricValues["bid_ask_ratio"].push_back(dataPoint.metrics.bidAskVolumeRatio);
-//         }
-//         if (!std::isnan(dataPoint.metrics.volumeImbalance )) {
-//             metricValues["volumeImbalance "].push_back(dataPoint.metrics.volumeImbalance );
-//         }
-//         if (!std::isnan(dataPoint.metrics.spread)) {
-//             metricValues["spread"].push_back(dataPoint.metrics.spread);
-//         }
-//     }
-    
-//     LOG_INFO("Collected metrics for {} different metric types", metricValues.size());
-//     LOG_INFO("Price movements sample: [{}, {}, {}]", 
-//              priceMovements.size() > 0 ? priceMovements[0] : 0.0,
-//              priceMovements.size() > 1 ? priceMovements[1] : 0.0,
-//              priceMovements.size() > 2 ? priceMovements[2] : 0.0);
-
-//     // Calculate correlations for each metric
-//     for (const auto& [metricName, values] : metricValues) {
-//         if (values.size() != priceMovements.size() || values.size() < params_.min_data_points) {
-//             LOG_WARN("Skipping metric {} - size mismatch or insufficient data (values: {}, movements: {})", 
-//                      metricName, values.size(), priceMovements.size());
-//             continue;
-//         }
-        
-//         // Simple Pearson correlation calculation
-//         double correlation = calculatePearsonCorrelation(values, priceMovements);
-        
-//         LOG_INFO("Calculated correlation for {}: {}", metricName, correlation);
-        
-//         // Store result
-//         correlation_coefficients_[metricName] = correlation;
-//         correlation_strengths_[metricName] = std::abs(correlation);
-//     }
-    
-//     LOG_INFO("Calculated correlations for {} metrics", correlation_coefficients_.size());
-//     updateHighestCorrelatedMetrics();
-// }
   
  CorrelationStats MomentumCorrelation::getCorrelationStats() const {
     CorrelationStats stats;
@@ -209,8 +147,9 @@ void MomentumCorrelation::updateParameters(const ParameterSet& params) {
 }
 
 void MomentumCorrelation::calculateCorrelations() {
-    // Snapshot data_points_ under lock to avoid concurrent modification while we iterate
-    std::vector<DataPoint> snapshot;
+    // Snapshot pointers to data_points_ under lock to avoid heavy copies
+    std::vector<const DataPoint*> snapshotPtrs;
+    size_t n = 0;
     {
         std::lock_guard<std::mutex> lock(correlation_mutex_);
         if (data_points_.size() < params_.min_data_points) {
@@ -218,71 +157,134 @@ void MomentumCorrelation::calculateCorrelations() {
                     data_points_.size(), params_.min_data_points);
             return;
         }
-
-        snapshot.reserve(data_points_.size());
-        for (const auto& dp : data_points_) snapshot.push_back(dp);
+        n = data_points_.size();
+        snapshotPtrs.reserve(n);
+        for (const auto& dp : data_points_) snapshotPtrs.push_back(&dp);
     }
 
-    // Extract key metrics for correlation from the snapshot
+    // Extract key metrics for correlation from the snapshot pointers
     std::map<std::string, std::vector<double>> metricValues;
     std::vector<double> priceMovements;
     std::vector<double> timeWeights;  // For time-weighted correlation
-    
+    priceMovements.reserve(n);
+    timeWeights.reserve(n);
+
+    // Precompute level keys to avoid repeated string allocations
+    std::vector<std::string> levelKeys;
+    levelKeys.reserve(params_.max_level_depth);
+    for (size_t level = 1; level <= params_.max_level_depth; ++level) {
+        levelKeys.push_back("level_" + std::to_string(level) + "_imbalance");
+    }
+
     // Get current time for time weighting
     auto currentTime = std::chrono::system_clock::now();
-    
-    for (const auto& dataPoint : snapshot) {
-        // LOG_DEBUG("Processing data point at {}: {}", dataPoint.timestamp, dataPoint.price_movement.percent_change);
+
+    for (const auto* dataPointPtr : snapshotPtrs) {
+        const auto& dataPoint = *dataPointPtr;
 
         // Add price movement
         priceMovements.push_back(dataPoint.price_movement.percent_change);
-        
+
         // Calculate time weight (newer points have higher weight)
         auto timeDiff = std::chrono::duration_cast<std::chrono::seconds>(
             currentTime - dataPoint.timestamp).count();
         double timeWeight = std::exp(-params_.time_decay_factor * timeDiff / 3600.0); // decay per hour
         timeWeights.push_back(timeWeight);
-        
-        // Extract and store key metrics from OrderBookMetrics
-        // Directly access all relevant metrics using the OrderBookMetrics struct
-        metricValues["bid_ask_ratio"].push_back(dataPoint.metrics.bidAskVolumeRatio);
-        metricValues["volumeImbalance "].push_back(dataPoint.metrics.volumeImbalance );
-        metricValues["weightedVolumeImbalance"].push_back(dataPoint.metrics.weightedVolumeImbalance);
-        metricValues["depthImbalance"].push_back(dataPoint.metrics.depthImbalance);
-        metricValues["pressureImbalance"].push_back(dataPoint.metrics.pressureImbalance);
-        metricValues["spread"].push_back(dataPoint.metrics.spread);
-        metricValues["spreadPercent"].push_back(dataPoint.metrics.spreadPercent);
-        metricValues["priceLevelImbalance"].push_back(dataPoint.metrics.priceLevelImbalance);
-        metricValues["marketDirectionalCoefficient"].push_back(dataPoint.metrics.marketDirectionalCoefficient);
-        metricValues["liquidityProfileScore"].push_back(dataPoint.metrics.liquidityProfileScore);
-        
+
+        // Helper to reserve metric vector capacity on first insertion
+        auto ensureReserve = [&](std::vector<double>& vec) {
+            if (vec.empty()) vec.reserve(n);
+        };
+
+        // Extract and store key metrics from OrderBookMetrics with capacity hints
+        {
+            auto& v = metricValues["bid_ask_ratio"];
+            ensureReserve(v);
+            v.push_back(dataPoint.metrics.bidAskVolumeRatio);
+        }
+        {
+            auto& v = metricValues["volumeImbalance "];
+            ensureReserve(v);
+            v.push_back(dataPoint.metrics.volumeImbalance);
+        }
+        {
+            auto& v = metricValues["weightedVolumeImbalance"];
+            ensureReserve(v);
+            v.push_back(dataPoint.metrics.weightedVolumeImbalance);
+        }
+        {
+            auto& v = metricValues["depthImbalance"];
+            ensureReserve(v);
+            v.push_back(dataPoint.metrics.depthImbalance);
+        }
+        {
+            auto& v = metricValues["pressureImbalance"];
+            ensureReserve(v);
+            v.push_back(dataPoint.metrics.pressureImbalance);
+        }
+        {
+            auto& v = metricValues["spread"];
+            ensureReserve(v);
+            v.push_back(dataPoint.metrics.spread);
+        }
+        {
+            auto& v = metricValues["spreadPercent"];
+            ensureReserve(v);
+            v.push_back(dataPoint.metrics.spreadPercent);
+        }
+        {
+            auto& v = metricValues["priceLevelImbalance"];
+            ensureReserve(v);
+            v.push_back(dataPoint.metrics.priceLevelImbalance);
+        }
+        {
+            auto& v = metricValues["marketDirectionalCoefficient"];
+            ensureReserve(v);
+            v.push_back(dataPoint.metrics.marketDirectionalCoefficient);
+        }
+        {
+            auto& v = metricValues["liquidityProfileScore"];
+            ensureReserve(v);
+            v.push_back(dataPoint.metrics.liquidityProfileScore);
+        }
+
         // Add time-based metrics if they exist
         if (dataPoint.metrics.priceVelocity != 0.0) {
-            metricValues["priceVelocity"].push_back(dataPoint.metrics.priceVelocity);
+            auto& v = metricValues["priceVelocity"];
+            ensureReserve(v);
+            v.push_back(dataPoint.metrics.priceVelocity);
         }
         if (dataPoint.metrics.volumeVelocity != 0.0) {
-            metricValues["volumeVelocity"].push_back(dataPoint.metrics.volumeVelocity);
+            auto& v = metricValues["volumeVelocity"];
+            ensureReserve(v);
+            v.push_back(dataPoint.metrics.volumeVelocity);
         }
         if (dataPoint.metrics.spreadVelocity != 0.0) {
-            metricValues["spreadVelocity"].push_back(dataPoint.metrics.spreadVelocity);
+            auto& v = metricValues["spreadVelocity"];
+            ensureReserve(v);
+            v.push_back(dataPoint.metrics.spreadVelocity);
         }
-        
+
         // Process level-specific metrics from timeSeriesMetrics if available
-        for (size_t level = 1; level <= params_.max_level_depth; ++level) {
-            std::string levelKey = "level_" + std::to_string(level) + "_imbalance";
-            // Check if we have level-specific imbalance data
-            auto levelData = dataPoint.metrics.timeSeriesMetrics.find("level_imbalances");
-            if (levelData != dataPoint.metrics.timeSeriesMetrics.end() && 
-                level <= levelData->second.size()) {
-                metricValues[levelKey].push_back(levelData->second[level-1]);
+        auto levelIt = dataPoint.metrics.timeSeriesMetrics.find("level_imbalances");
+        if (levelIt != dataPoint.metrics.timeSeriesMetrics.end()) {
+            const auto& levelDataVec = levelIt->second;
+            for (size_t level = 1; level <= params_.max_level_depth; ++level) {
+                if (level <= levelDataVec.size()) {
+                    auto& v = metricValues[levelKeys[level-1]];
+                    ensureReserve(v);
+                    v.push_back(levelDataVec[level-1]);
+                }
             }
         }
-        
-        // Add any other metrics from the metrics map
-        for (const auto& [key, value] : dataPoint.metrics.toMap()) {
-            if (metricValues.find(key) == metricValues.end()) {
-                metricValues[key].push_back(value);
-            }
+
+        // Add any other metrics from the metrics map via const-ref accessor to avoid copies
+        for (const auto& kv : dataPoint.metrics.metricsMap()) {
+            const auto& key = kv.first;
+            const auto& value = kv.second;
+            auto& v = metricValues[key];
+            ensureReserve(v);
+            v.push_back(value);
         }
     }
 
