@@ -14,6 +14,7 @@
 #include <unordered_map>
 #include <condition_variable>
 #include <iostream>
+#include <future>
 
 namespace trading {
 namespace data_ingestion {
@@ -70,16 +71,17 @@ private:
     std::shared_ptr<execution::RateLimitController> rateLimitController_;
     void setupRateLimits(const core::ExchangeId& exchangeId);
 
-    // ✅ FIXED: Safer connection tracking with proper lifecycle management
+    // FIXED: Safer connection tracking with proper lifecycle management
     struct ConnectionInfo {
         ClientInterfacePtr connection;
         std::atomic<bool> inUse{false};
         std::chrono::steady_clock::time_point lastUsed;
         std::atomic<int> failureCount{0};
         
-        // ✅ FIXED: Use shared_ptr for thread to enable proper coordination
-        std::shared_ptr<std::thread> runThread;
+        // FIXED: Thread management with proper RAII
+        std::unique_ptr<std::thread> runThread;
         std::atomic<bool> shouldStop{false};
+        std::atomic<bool> isShuttingDown{false};
         
         ConnectionInfo(ClientInterfacePtr conn) 
             : connection(std::move(conn))
@@ -90,17 +92,22 @@ private:
             }
         }
 
-        // ✅ FIXED: Proper shutdown sequence
+        // FIXED: Explicit shutdown with timeout and proper error handling
         ~ConnectionInfo() {
             shutdown();
         }
 
-        // ✅ FIXED: Explicit shutdown method for controlled teardown
         void shutdown() {
+            // Prevent multiple shutdown calls
+            bool expected = false;
+            if (!isShuttingDown.compare_exchange_strong(expected, true)) {
+                return; // Already shutting down
+            }
+            
             // Signal the thread to stop
             shouldStop.store(true);
             
-            // Stop the connection first (this should interrupt the io_context)
+            // Stop the connection first to interrupt any blocking operations
             if (connection) {
                 try {
                     connection->stop();
@@ -111,18 +118,20 @@ private:
             
             // Wait for thread completion with timeout
             if (runThread && runThread->joinable()) {
-                auto threadPtr = runThread; // Keep reference alive
-                
-                // Try to join with timeout
-                auto future = std::async(std::launch::async, [threadPtr]() {
-                    if (threadPtr->joinable()) {
-                        threadPtr->join();
+                // Use a future to implement timeout for thread join
+                auto joinFuture = std::async(std::launch::async, [this]() {
+                    if (runThread && runThread->joinable()) {
+                        runThread->join();
                     }
                 });
                 
-                if (future.wait_for(std::chrono::seconds(5)) == std::future_status::timeout) {
-                    std::cerr << "Warning: Connection thread did not shutdown gracefully" << std::endl;
-                    // Thread will be detached when shared_ptr is destroyed
+                // Wait with timeout
+                auto status = joinFuture.wait_for(std::chrono::seconds(3));
+                if (status == std::future_status::timeout) {
+                    std::cerr << "Warning: Connection thread join timeout, detaching" << std::endl;
+                    if (runThread && runThread->joinable()) {
+                        runThread->detach();
+                    }
                 }
             }
             
@@ -133,32 +142,46 @@ private:
                 } catch (...) {
                     // Ignore exceptions during shutdown
                 }
+                connection.reset();
             }
+            
+            runThread.reset();
         }
 
-        // ✅ FIXED: Safer thread creation with proper error handling
+        // FIXED: Safer thread creation with proper weak_ptr usage
         void startRunThread() {
+            if (!connection) return;
+            
             try {
-                auto conn_weak = std::weak_ptr<ClientInterface>(connection);
+                // Create weak reference to avoid circular dependency
+                std::weak_ptr<ClientInterface> conn_weak = connection;
                 
-                runThread = std::make_shared<std::thread>([conn_weak, this]() {
+                runThread = std::make_unique<std::thread>([conn_weak, this]() {
                     try {
+                        // Check if we should stop before doing anything
+                        if (shouldStop.load()) return;
+                        
                         auto conn = conn_weak.lock();
                         if (!conn) {
                             return; // Connection was destroyed
                         }
                         
-                        // Run with periodic shutdown checks
+                        // Run the connection's event loop
                         while (!shouldStop.load()) {
                             try {
-                                // Run for short periods to enable responsive shutdown
+                                // Run with periodic checks for shutdown
                                 conn->run();
                                 
-                                // If run() returns, the connection likely stopped
+                                // If run() returns normally, the connection stopped
+                                if (!shouldStop.load()) {
+                                    failureCount.fetch_add(1);
+                                }
                                 break;
+                                
                             } catch (const std::exception& e) {
                                 if (!shouldStop.load()) {
                                     std::cerr << "Connection run() exception: " << e.what() << std::endl;
+                                    failureCount.fetch_add(1);
                                 }
                                 break;
                             }
@@ -166,17 +189,19 @@ private:
                         
                     } catch (...) {
                         if (!shouldStop.load()) {
-                            std::cerr << "Connection run() unknown exception" << std::endl;
+                            std::cerr << "Connection thread unknown exception" << std::endl;
+                            failureCount.fetch_add(1);
                         }
                     }
                 });
                 
             } catch (const std::exception& e) {
-                std::cerr << "Failed to start connection run thread: " << e.what() << std::endl;
+                std::cerr << "Failed to start connection thread: " << e.what() << std::endl;
+                failureCount.fetch_add(1);
             }
         }
 
-        // Make movable but not copyable
+        // FIXED: Proper move semantics
         ConnectionInfo(ConnectionInfo&& other) noexcept 
             : connection(std::move(other.connection))
             , lastUsed(other.lastUsed)
@@ -185,11 +210,16 @@ private:
             inUse.store(other.inUse.load());
             failureCount.store(other.failureCount.load());
             shouldStop.store(other.shouldStop.load());
+            isShuttingDown.store(other.isShuttingDown.load());
+            
+            // Reset the moved-from object
+            other.shouldStop.store(true);
+            other.isShuttingDown.store(true);
         }
         
         ConnectionInfo& operator=(ConnectionInfo&& other) noexcept {
             if (this != &other) {
-                shutdown(); // Clean up current state
+                shutdown(); // Clean up current state first
                 
                 connection = std::move(other.connection);
                 inUse.store(other.inUse.load());
@@ -197,10 +227,16 @@ private:
                 failureCount.store(other.failureCount.load());
                 runThread = std::move(other.runThread);
                 shouldStop.store(other.shouldStop.load());
+                isShuttingDown.store(other.isShuttingDown.load());
+                
+                // Reset the moved-from object
+                other.shouldStop.store(true);
+                other.isShuttingDown.store(true);
             }
             return *this;
         }
         
+        // Delete copy operations
         ConnectionInfo(const ConnectionInfo&) = delete;
         ConnectionInfo& operator=(const ConnectionInfo&) = delete;
     };
@@ -221,14 +257,15 @@ private:
     int maxFailures_{3};
     std::chrono::seconds pruneInterval_{60};
     
-    // Connection management
+    // FIXED: Connection management with proper shutdown order
     std::vector<ConnectionInfo> connections_;
     mutable std::mutex mutex_;
     std::condition_variable connectionAvailable_;
     
-    // Monitoring thread
-    std::thread monitorThread_;
+    // FIXED: Monitoring thread management
+    std::unique_ptr<std::thread> monitorThread_;
     std::atomic<bool> running_{false};
+    std::atomic<bool> shutdownRequested_{false};
     
     // Statistics
     std::atomic<int> connectionRequests_{0};
