@@ -63,11 +63,11 @@
      current_metrics_.timestamp = std::chrono::system_clock::now();
  }
  
-void LiquidityFlowMonitor::processOrderBookDelta(const OrderBookDelta& delta) {
+void LiquidityFlowMonitor::processOrderBookDelta(OrderBookDelta delta) {
     std::lock_guard<std::mutex> lock(mutex_);
-    
-    // Store delta in history
-    delta_history_.push_back(delta);
+
+    // Store delta in history (move to avoid copying large vectors)
+    delta_history_.push_back(std::move(delta));
     
     // Remove old deltas based on window size
     auto cutoff_time = std::chrono::system_clock::now() - 
@@ -80,9 +80,12 @@ void LiquidityFlowMonitor::processOrderBookDelta(const OrderBookDelta& delta) {
     // Update metrics based on this delta
     updateLiquidityMetrics();
     
-    // Update timestamps and sequence number
-    last_update_time_ = delta.timestamp;
-    last_sequence_number_ = delta.sequenceNumber;
+    // Update timestamps and sequence number using the moved-in element (back)
+    if (!delta_history_.empty()) {
+        const auto& d = delta_history_.back();
+        last_update_time_ = d.timestamp;
+        last_sequence_number_ = d.sequenceNumber;
+    }
 }
 
 // void LiquidityFlowMonitor::processOrderBookSnapshots(

@@ -225,7 +225,7 @@ void StrategyEngine::processQueuedSignals() {
 
         OrderBookDelta delta = orderBook.getOrderBookDelta();
         if (!delta.isEmpty()) {
-            liquidityMonitor_->processOrderBookDelta(delta);
+            liquidityMonitor_->processOrderBookDelta(std::move(delta));
         }
          // Update the volume profile analyzer
          volumeProfileAnalyzer_->updateVolumeProfile(orderBook, {});

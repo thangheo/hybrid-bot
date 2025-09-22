@@ -1040,8 +1040,8 @@ bool GenericZmqServer::processIntelMessage(const GenericMessage& message) {
         std::lock_guard<std::mutex> send_guard(intel_send_mutex_);
 
         // Send multipart: topic then data. Use blocking sends (no dontwait) to avoid partial sends.
-        intel_publisher_socket_->send(topic_msg, zmq::send_flags::sndmore | zmq::send_flags::dontwait);
-        intel_publisher_socket_->send(data_msg, zmq::send_flags::none | zmq::send_flags::dontwait);
+        intel_publisher_socket_->send(topic_msg, zmq::send_flags::sndmore);
+        intel_publisher_socket_->send(data_msg, zmq::send_flags::none);
 
         logInfo("Sent MARKET_INTEL message: " + topic);
         return true;
