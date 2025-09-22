@@ -24,17 +24,13 @@ struct BinanceApiClient::BinanceImpl {
     //for testnet
     // std::string baseUrl = "https://testnet.binance.vision";
     bool connected = false;
-    std::unique_ptr<CURL, decltype(&curl_easy_cleanup)> curl;
     
     // Constructor
-    BinanceImpl(const ExchangeCredentials& credentials) 
-        : apiKey(credentials.apiKey), 
-          apiSecret(credentials.apiSecret),
-          curl(curl_easy_init(), curl_easy_cleanup) {
-        if (!curl) {
-            throw std::runtime_error("Failed to initialize CURL");
+        BinanceImpl(const ExchangeCredentials& credentials) 
+                : apiKey(credentials.apiKey), 
+                    apiSecret(credentials.apiSecret) {
+                // CURL global init is handled by the outer class once
         }
-    }
     
     // CURL callback for writing response
     static size_t WriteCallback(void* contents, size_t size, size_t nmemb, std::string* userp) {
@@ -421,28 +417,31 @@ std::string BinanceApiClient::makeApiRequest(std::string endpoint, std::string m
         url += "?" + queryString;
     }
     
-    // Set up CURL
-    curl_easy_reset(pImpl_->curl.get());
-    curl_easy_setopt(pImpl_->curl.get(), CURLOPT_URL, url.c_str());
+    // Create a new CURL handle for this request to be thread-safe
+    CURL* curl = curl_easy_init();
+    if (!curl) {
+        throw std::runtime_error("Failed to initialize CURL handle");
+    }
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
     
     // Set request method
     if (method == "POST") {
-        curl_easy_setopt(pImpl_->curl.get(), CURLOPT_POST, 1L);
+        curl_easy_setopt(curl, CURLOPT_POST, 1L);
         if (!queryString.empty()) {
-            curl_easy_setopt(pImpl_->curl.get(), CURLOPT_POSTFIELDS, queryString.c_str());
+            curl_easy_setopt(curl, CURLOPT_POSTFIELDS, queryString.c_str());
         }
     } else if (method == "DELETE") {
-        curl_easy_setopt(pImpl_->curl.get(), CURLOPT_CUSTOMREQUEST, "DELETE");
+        curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "DELETE");
         if (!queryString.empty() && url.find('?') == std::string::npos) {
             url += "?" + queryString;
-            curl_easy_setopt(pImpl_->curl.get(), CURLOPT_URL, url.c_str());
+            curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
         }
     }
     
     // Set response callback
     std::string responseBuffer;
-    curl_easy_setopt(pImpl_->curl.get(), CURLOPT_WRITEFUNCTION, BinanceImpl::WriteCallback);
-    curl_easy_setopt(pImpl_->curl.get(), CURLOPT_WRITEDATA, &responseBuffer);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, BinanceImpl::WriteCallback);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &responseBuffer);
     
     // Set headers
     struct curl_slist* headers = nullptr;
@@ -461,7 +460,7 @@ std::string BinanceApiClient::makeApiRequest(std::string endpoint, std::string m
             } else {
                 url += "?signature=" + signature;
             }
-            curl_easy_setopt(pImpl_->curl.get(), CURLOPT_URL, url.c_str());
+            curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
         } else {
             // For POST, add to query string
             if (!queryString.empty()) {
@@ -469,24 +468,25 @@ std::string BinanceApiClient::makeApiRequest(std::string endpoint, std::string m
             } else {
                 queryString = "signature=" + signature;
             }
-            curl_easy_setopt(pImpl_->curl.get(), CURLOPT_POSTFIELDS, queryString.c_str());
+            curl_easy_setopt(curl, CURLOPT_POSTFIELDS, queryString.c_str());
         }
     }
     
-    curl_easy_setopt(pImpl_->curl.get(), CURLOPT_HTTPHEADER, headers);
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
     
     // Execute request
-    CURLcode res = curl_easy_perform(pImpl_->curl.get());
+    CURLcode res = curl_easy_perform(curl);
     curl_slist_free_all(headers);
-    
+    // Check HTTP response code
+    long httpCode = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
+
+    // Clean up the per-request CURL handle
+    curl_easy_cleanup(curl);
+
     if (res != CURLE_OK) {
         throw std::runtime_error(std::string("CURL request failed: ") + curl_easy_strerror(res));
     }
-    
-    // Check HTTP response code
-    long httpCode = 0;
-    curl_easy_getinfo(pImpl_->curl.get(), CURLINFO_RESPONSE_CODE, &httpCode);
-    
     if (httpCode >= 400) {
         throw std::runtime_error("HTTP error " + std::to_string(httpCode) + ": " + responseBuffer);
     }
