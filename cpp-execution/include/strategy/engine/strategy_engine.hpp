@@ -166,7 +166,8 @@ private:
     OrderBookAnalyzerPtr orderBookAnalyzer_;
     ImbalanceDetectionEnginePtr imbalanceDetector_;
     LiquidityFlowMonitorPtr liquidityMonitor_;
-    VolumeProfileAnalyzerPtr volumeProfileAnalyzer_;
+    // Keep a separate VolumeProfileAnalyzer per trading pair (exchange:symbol)
+    std::map<std::string, VolumeProfileAnalyzerPtr> volumeProfileAnalyzers_;
     ImbalanceSignalGeneratorPtr signalGenerator_;
     MomentumCorrelationPtr momentumCorrelator_;
     ThresholdManagerPtr thresholdManager_;
