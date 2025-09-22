@@ -96,13 +96,7 @@ void OrderBookAnalyzer::processOrderBook(const data_ingestion::OrderBook& snapsh
             groupPriceLevelsInPlace(cachedBids_, true);  // In-place modification
             groupPriceLevelsInPlace(cachedAsks_, false); // In-place modification
         }
-        
-        // Apply price grouping if configured
-        // if (priceGroupingFactor_ > 0.0) {
-        //     bids = groupPriceLevels(bids, true);
-        //     asks = groupPriceLevels(asks, false);
-        // }
-        
+                
         // Initialize metrics with snapshot metadata
         currentMetrics_.exchangeId = snapshot.getExchangeId();
         currentMetrics_.symbol = snapshot.getSymbol();
@@ -120,12 +114,7 @@ void OrderBookAnalyzer::processOrderBook(const data_ingestion::OrderBook& snapsh
         updateTimeSeries();
         calculateDerivedMetrics();
         calculateTimeBasedMetrics();
-        
-        // Store in history with size limit
-        // metricsHistory_.push_back(currentMetrics_);
-        // if (metricsHistory_.size() > 100) {
-        //     metricsHistory_.pop_front();
-        // }        
+               
         metricsHistory_.push_back(std::move(currentMetrics_)); // Use move
         while (metricsHistory_.size() > MAX_HISTORY_SIZE) {
             metricsHistory_.pop_front();
