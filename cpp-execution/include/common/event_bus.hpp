@@ -58,10 +58,14 @@ public:
                      "EventType must inherit from Event");
         
         {
+            // Allocate the event on the heap and capture a shared_ptr in the queued lambda.
+            // This avoids copying large event objects (and nested TradingSignal) into the
+            // std::function capture, reducing heap churn.
+            auto evtPtr = std::make_shared<std::decay_t<EventType>>(std::forward<EventType>(event));
             std::lock_guard<std::mutex> lock(queueMutex_);
-            eventQueue_.push([event = std::forward<EventType>(event), this]() {
+            eventQueue_.push([evtPtr, this]() {
                 // Process the event - this runs in the worker thread
-                this->processEventInternal(event);
+                this->processEventInternal(*evtPtr);
             });
         }
         

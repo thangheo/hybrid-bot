@@ -156,7 +156,10 @@ protected:
     virtual std::vector<data_ingestion::PriceLevel> groupPriceLevels(
         const std::vector<data_ingestion::PriceLevel>& levels,
         bool isBids) const;
-    
+    // groupPriceLevelsInPlace
+    virtual void groupPriceLevelsInPlace(
+        std::vector<data_ingestion::PriceLevel>& levels,
+        bool isBids) const;
     virtual double calculateWeightedImbalance(
         const std::vector<data_ingestion::PriceLevel>& bids,
         const std::vector<data_ingestion::PriceLevel>& asks,
@@ -173,6 +176,8 @@ protected:
     virtual void notifyMetricsUpdated();
 
 private:
+    mutable std::vector<PriceLevel> cachedBids_;
+    mutable std::vector<PriceLevel> cachedAsks_;
     // Configuration
     core::ExchangeId exchangeId_;
     core::Symbol tradingPair_;
@@ -184,6 +189,7 @@ private:
     // State
     OrderBookMetrics currentMetrics_;
     std::deque<OrderBookMetrics> metricsHistory_;
+    static constexpr size_t MAX_HISTORY_SIZE = 50; // Giảm từ 100
     
     // Historical data
     std::vector<double> historicalMidPrices_;
