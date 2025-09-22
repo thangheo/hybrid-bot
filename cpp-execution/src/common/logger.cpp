@@ -8,14 +8,20 @@
 namespace trading {
 namespace common {
 
-// Static instance initialization
-std::shared_ptr<Logger> Logger::instance_;
+// Static member initialization
+std::once_flag Logger::initialized_;
+std::atomic<bool> Logger::shutdown_called_{false};
 
 // Concrete logger implementation
 class ConsoleLogger : public Logger {
 public:
     explicit ConsoleLogger(const std::string& appName, LogLevel level)
         : appName_(appName), level_(level) {}
+    
+    ~ConsoleLogger() override {
+        // Ensure any pending output is flushed
+        std::cout.flush();
+    }
     
     void setLevel(LogLevel level) override {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -51,7 +57,7 @@ protected:
 private:
     std::string appName_;
     LogLevel level_;
-    std::mutex mutex_;
+    mutable std::mutex mutex_;
     
     std::string levelToString(LogLevel level) const {
         switch (level) {
@@ -67,20 +73,47 @@ private:
     }
 };
 
+// Thread-safe singleton using function-local static
+std::shared_ptr<Logger>& Logger::getInstance() {
+    static std::shared_ptr<Logger> instance;
+    return instance;
+}
+
 // Factory method to create the logger
 void Logger::initialize(const std::string& appName, LogLevel level) {
-    if (!instance_) {
-        instance_ = std::make_shared<ConsoleLogger>(appName, level);
-    }
+    std::call_once(initialized_, [&appName, level]() {
+        if (!shutdown_called_.load()) {
+            getInstance() = std::make_shared<ConsoleLogger>(appName, level);
+        }
+    });
 }
 
 // Get the logger instance (with auto-initialization if needed)
 std::shared_ptr<Logger> Logger::getLogger() {
-    if (!instance_) {
-        // Auto-initialize with default settings
+    // Check if shutdown was called
+    if (shutdown_called_.load()) {
+        return nullptr;
+    }
+    
+    auto& instance = getInstance();
+    if (!instance) {
+        // Auto-initialize with default settings if not explicitly initialized
         initialize("Application", LogLevel::INFO);
     }
-    return instance_;
+    
+    // Return a copy to prevent use-after-free during shutdown
+    return instance;
+}
+
+// Explicit shutdown method to clean up before static destruction
+void Logger::shutdown() {
+    shutdown_called_.store(true);
+    
+    // Clear the instance
+    auto& instance = getInstance();
+    if (instance) {
+        instance.reset();
+    }
 }
 
 } // namespace common

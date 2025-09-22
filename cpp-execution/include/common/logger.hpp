@@ -8,6 +8,7 @@
 #include <regex>
 #include <iomanip>
 #include <vector>
+#include <atomic>
 
 namespace trading {
 namespace common {
@@ -165,6 +166,7 @@ class Logger {
 public:
     static void initialize(const std::string& appName, LogLevel level);
     static std::shared_ptr<Logger> getLogger();
+    static void shutdown(); // Explicit shutdown to prevent use-after-free
     virtual ~Logger() = default;
     
     // Simple string logging (backward compatible)
@@ -260,30 +262,33 @@ protected:
     virtual void logMessage(LogLevel level, const std::string& message) = 0;
     
 private:
-    static std::shared_ptr<Logger> instance_;
+    // Thread-safe singleton implementation
+    static std::shared_ptr<Logger>& getInstance();
+    static std::once_flag initialized_;
+    static std::atomic<bool> shutdown_called_;
 };
 
-// Convenience macros (backward compatible)
-#define LOG_TRACE(...) trading::common::Logger::getLogger()->trace(__VA_ARGS__)
-#define LOG_DEBUG(...) trading::common::Logger::getLogger()->debug(__VA_ARGS__)
-#define LOG_INFO(...) trading::common::Logger::getLogger()->info(__VA_ARGS__)
-#define LOG_WARN(...) trading::common::Logger::getLogger()->warn(__VA_ARGS__)
-#define LOG_ERROR(...) trading::common::Logger::getLogger()->error(__VA_ARGS__)
-#define LOG_CRITICAL(...) trading::common::Logger::getLogger()->critical(__VA_ARGS__)
+// Convenience macros with safety check
+#define LOG_TRACE(...) do { auto logger = trading::common::Logger::getLogger(); if (logger) logger->trace(__VA_ARGS__); } while(0)
+#define LOG_DEBUG(...) do { auto logger = trading::common::Logger::getLogger(); if (logger) logger->debug(__VA_ARGS__); } while(0)
+#define LOG_INFO(...) do { auto logger = trading::common::Logger::getLogger(); if (logger) logger->info(__VA_ARGS__); } while(0)
+#define LOG_WARN(...) do { auto logger = trading::common::Logger::getLogger(); if (logger) logger->warn(__VA_ARGS__); } while(0)
+#define LOG_ERROR(...) do { auto logger = trading::common::Logger::getLogger(); if (logger) logger->error(__VA_ARGS__); } while(0)
+#define LOG_CRITICAL(...) do { auto logger = trading::common::Logger::getLogger(); if (logger) logger->critical(__VA_ARGS__); } while(0)
 
 // Source location logging macros
-#define LOG_TRACE_LOC(format, ...) trading::common::Logger::getLogger()->trace( \
-                                    std::string(__FILE__) + ":" + std::to_string(__LINE__) + " - " + format, ##__VA_ARGS__)
-#define LOG_DEBUG_LOC(format, ...) trading::common::Logger::getLogger()->debug( \
-                                   std::string(__FILE__) + ":" + std::to_string(__LINE__) + " - " + format, ##__VA_ARGS__)
-#define LOG_INFO_LOC(format, ...) trading::common::Logger::getLogger()->info( \
-                                  std::string(__FILE__) + ":" + std::to_string(__LINE__) + " - " + format, ##__VA_ARGS__)
-#define LOG_WARN_LOC(format, ...) trading::common::Logger::getLogger()->warn( \
-                                  std::string(__FILE__) + ":" + std::to_string(__LINE__) + " - " + format, ##__VA_ARGS__)
-#define LOG_ERROR_LOC(format, ...) trading::common::Logger::getLogger()->error( \
-                                   std::string(__FILE__) + ":" + std::to_string(__LINE__) + " - " + format, ##__VA_ARGS__)
-#define LOG_CRITICAL_LOC(format, ...) trading::common::Logger::getLogger()->critical( \
-                                      std::string(__FILE__) + ":" + std::to_string(__LINE__) + " - " + format, ##__VA_ARGS__)
+#define LOG_TRACE_LOC(format, ...) do { auto logger = trading::common::Logger::getLogger(); if (logger) logger->trace( \
+                                    std::string(__FILE__) + ":" + std::to_string(__LINE__) + " - " + format, ##__VA_ARGS__); } while(0)
+#define LOG_DEBUG_LOC(format, ...) do { auto logger = trading::common::Logger::getLogger(); if (logger) logger->debug( \
+                                   std::string(__FILE__) + ":" + std::to_string(__LINE__) + " - " + format, ##__VA_ARGS__); } while(0)
+#define LOG_INFO_LOC(format, ...) do { auto logger = trading::common::Logger::getLogger(); if (logger) logger->info( \
+                                  std::string(__FILE__) + ":" + std::to_string(__LINE__) + " - " + format, ##__VA_ARGS__); } while(0)
+#define LOG_WARN_LOC(format, ...) do { auto logger = trading::common::Logger::getLogger(); if (logger) logger->warn( \
+                                  std::string(__FILE__) + ":" + std::to_string(__LINE__) + " - " + format, ##__VA_ARGS__); } while(0)
+#define LOG_ERROR_LOC(format, ...) do { auto logger = trading::common::Logger::getLogger(); if (logger) logger->error( \
+                                   std::string(__FILE__) + ":" + std::to_string(__LINE__) + " - " + format, ##__VA_ARGS__); } while(0)
+#define LOG_CRITICAL_LOC(format, ...) do { auto logger = trading::common::Logger::getLogger(); if (logger) logger->critical( \
+                                      std::string(__FILE__) + ":" + std::to_string(__LINE__) + " - " + format, ##__VA_ARGS__); } while(0)
 
 } // namespace common
 } // namespace trading

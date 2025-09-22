@@ -730,11 +730,7 @@ private:
     std::unique_ptr<trading::learning::PTCAIntegrationManager> ptcaManager_;
     std::chrono::time_point<std::chrono::steady_clock> lastPriceUpdate_;
     // std::unique_ptr<DataInterface> m_dataInterface;
-    //intel zmq server and client
-    // std::shared_ptr<GenericZmqServer> intel_zmq_comm_server_;
-    // std::shared_ptr<GenericZmqServer> internal_zmq_comm_server_;
-    // just single server for both, if we create both there will be port conflict!!
-    //what should I do?
+    
     std::shared_ptr<GenericZmqServer> zmq_server_;
     std::unique_ptr<GenericZmqClient> zmq_client_;
 

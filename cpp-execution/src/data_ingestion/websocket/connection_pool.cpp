@@ -426,23 +426,17 @@ void ConnectionPool::shutdown() {
     std::cout << "Connection pool '" << poolId_ << "' shut down" << std::endl;
 }
 
-// bool ConnectionPool::isHealthy() const {
-//     std::lock_guard<std::mutex> lock(mutex_);
-    
-//     // The pool is healthy if at least one connection is working
-//     return std::any_of(connections_.begin(), connections_.end(),
-//         [](const ConnectionInfo& info) {
-//             return info.connection && info.connection->isConnected();
-//         });
-// }
 
 int ConnectionPool::getActiveConnectionCount() const {
     std::lock_guard<std::mutex> lock(mutex_);
     
-    return std::count_if(connections_.begin(), connections_.end(),
-        [](const ConnectionInfo& info) {
-            return info.inUse;
-        });
+    int count = 0;
+    for (const auto& info : connections_) {
+        if (info.inUse.load()) {
+            ++count;
+        }
+    }
+    return count;
 }
 
 int ConnectionPool::getAvailableConnectionCount() const {
