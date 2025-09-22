@@ -78,9 +78,18 @@ bool BinanceWebSocketClient::connect() {
     updateConnectionState(ConnectionStatus::CONNECTING, "Initiating connection");
     
     try {
-        // Initialize components
-        ioc_ = std::make_unique<net::io_context>();
-        
+        // Don't recreate if already exists
+        {
+            std::lock_guard<std::mutex> lock(io_context_mutex_);
+            if (!ioc_) {
+                ioc_ = std::make_unique<net::io_context>();
+                io_context_valid_.store(true);
+            }
+            if (!ssl_ctx_) {
+                ssl_ctx_ = std::make_unique<ssl::context>(ssl::context::tlsv12_client);
+            }
+        }
+
         initializeSslContext();
         
         ws_ = std::make_unique<ws_stream>(*ioc_, *ssl_ctx_);
@@ -279,6 +288,11 @@ void BinanceWebSocketClient::setStatusCallback(StatusCallback callback) {
 void BinanceWebSocketClient::run() {
     LOG_INFO("Starting WebSocket event loop");
     should_stop_.store(false);
+    {
+        std::lock_guard<std::mutex> lock(io_context_mutex_);
+        shutdown_requested_.store(false);
+        if (ioc_) io_context_valid_.store(true);
+    }
     while (!should_stop_.load()) {
         try {
             if (!ioc_) {
@@ -313,16 +327,25 @@ void BinanceWebSocketClient::run() {
     }
     LOG_INFO("WebSocket event loop stopped");
     // Only cleanup from the run() thread, after event loop exits
+    {
+        std::lock_guard<std::mutex> lock(io_context_mutex_);
+        io_context_valid_.store(false);
+    }
     cleanup();
 }
 
 void BinanceWebSocketClient::stop() {
     LOG_INFO("Stopping WebSocket client");
     should_stop_.store(true);
+    shutdown_requested_.store(true);
     
-    // Stop IO context
-    if (ioc_) {
-        ioc_->stop();
+    // Stop IO context safely
+    {
+        std::lock_guard<std::mutex> lock(io_context_mutex_);
+        if (ioc_) {
+            ioc_->stop();
+            io_context_valid_.store(false);
+        }
     }
 }
 
@@ -380,6 +403,29 @@ void BinanceWebSocketClient::initializeSslContext() {
             // Fallback: set permissive callback
             ssl_ctx_->set_verify_callback([](bool, ssl::verify_context&) { return true; });
         }
+}
+
+void BinanceWebSocketClient::safeAsyncOp(std::function<void()> op) {
+    try {
+        std::lock_guard<std::mutex> lock(io_context_mutex_);
+        if (shutdown_requested_.load() || !io_context_valid_.load() || !ioc_) {
+            LOG_DEBUG("safeAsyncOp: io_context not valid or shutdown requested");
+            return;
+        }
+
+        std::weak_ptr<BinanceWebSocketClient> wp = shared_from_this();
+        net::post(*ioc_, [wp, op]() {
+            if (auto s = wp.lock()) {
+                try {
+                    op();
+                } catch (const std::exception& e) {
+                    LOG_ERROR(std::string("safeAsyncOp op exception: ") + e.what());
+                }
+            }
+        });
+    } catch (const std::exception& e) {
+        LOG_ERROR(std::string("safeAsyncOp error: ") + e.what());
+    }
 }
 
 bool BinanceWebSocketClient::performConnection() {
@@ -574,7 +620,8 @@ bool BinanceWebSocketClient::sendSubscriptionRequest(const std::vector<std::stri
             auto msg = std::make_shared<std::string>(std::move(message));
             LOG_DEBUG("Posting subscription message to io_context: " + std::string(msg->begin(), msg->begin() + std::min<size_t>(msg->size(), 200)));
             std::weak_ptr<BinanceWebSocketClient> wp = shared_from_this();
-            net::post(*ioc_, [wp, msg, subscribe]() {
+            // Use safeAsyncOp to ensure io_context and object are valid when scheduling
+            safeAsyncOp([wp, msg, subscribe]() {
                 try {
                     if (auto s = wp.lock()) {
                         LOG_DEBUG("Performing subscription async_write: " + std::string(msg->begin(), msg->begin() + std::min<size_t>(msg->size(), 200)));

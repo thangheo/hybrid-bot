@@ -270,6 +270,14 @@ private:
     std::unique_ptr<net::steady_timer> heartbeat_timer_;
     std::unique_ptr<net::steady_timer> reconnect_timer_;
 
+    // ===== Fixes: safer io_context lifecycle and shutdown coordination =====
+    std::atomic<bool> shutdown_requested_{false};
+    std::atomic<bool> io_context_valid_{false};
+    mutable std::mutex io_context_mutex_;
+
+    // Helper to safely run async operations that touch io_context or ws_
+    void safeAsyncOp(std::function<void()> op);
+
     // Connection state
     std::atomic<ConnectionStatus> state_{ConnectionStatus::DISCONNECTED};
     std::atomic<bool> should_stop_{false};
