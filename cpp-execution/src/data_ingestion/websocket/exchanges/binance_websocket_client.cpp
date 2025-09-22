@@ -557,7 +557,13 @@ void BinanceWebSocketClient::handleMessage(const std::string& message) {
         } else {
             LOG_DEBUG("Unknown message format: " + message.substr(0, 100));
         }
-        if (buffer_->capacity() > 64 * 1024) { // 64KB threshold
+        // if (buffer_->capacity() > 64 * 1024) { // 64KB threshold
+        //     buffer_ = std::make_unique<beast::flat_buffer>();
+        // }
+     
+        if (buffer_->capacity() > 8 * 1024) { // Lower threshold
+            buffer_->clear();
+            buffer_->shrink_to_fit();
             buffer_ = std::make_unique<beast::flat_buffer>();
         }
     } catch (const json::parse_error& e) {
@@ -1020,7 +1026,7 @@ void BinanceWebSocketClient::handleStreamData(const json& data) {
         rawData.streamType = extractStreamType(stream);
         rawData.timestamp = std::chrono::system_clock::now();
         rawData.rawData = stream_data.dump(); // Ensure rawData.rawData is std::string
-
+        rawData.rawData.shrink_to_fit(); // Free unused capacity
         invokeRawDataCallback(rawData);
         
     } catch (const std::exception& e) {
