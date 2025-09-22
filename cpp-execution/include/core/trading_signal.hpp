@@ -77,7 +77,8 @@ struct TradingSignal {
     // Advanced properties
     double decayRate;                                 // Decay rate for the signal
     double expectedPriceImpact;                       // Expected price impact of the signal
-    std::map<std::string, double> signalMetrics;     // Metrics associated with this signal
+    #include <unordered_map>
+    std::unordered_map<std::string, double> signalMetrics;     // Metrics associated with this signal
     
     /**
      * Default constructor
@@ -163,7 +164,7 @@ struct TradingSignal {
     }
     const StrategyId& getStrategyId() const { return strategyId; }
     const std::string& getStrategyVersion() const { return strategyId.version; }
-    const std::map<std::string, double>& getSignalMetrics() const { return signalMetrics; }
+    const std::unordered_map<std::string, double>& getSignalMetrics() const { return signalMetrics; }
     
     // Setters
     void setId(const std::string& newId) { this->id = newId; }
@@ -213,8 +214,9 @@ struct TradingSignal {
     /**
      * Add or update a metric
      */
-    void setMetric(const std::string& name, double value) {
-        signalMetrics[name] = value;
+    void setMetric(std::string name, double value) {
+        // take name by value and move into the map to avoid an extra copy
+        signalMetrics.insert_or_assign(std::move(name), value);
     }
     
     /**

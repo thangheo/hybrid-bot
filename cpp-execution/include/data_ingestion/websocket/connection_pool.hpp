@@ -86,10 +86,12 @@ private:
         ConnectionInfo(ClientInterfacePtr conn) 
             : connection(std::move(conn))
             , lastUsed(std::chrono::steady_clock::now()) {
-            
-            if (connection) {
-                startRunThread();
-            }
+            // Note: do NOT start the run thread here. Starting a thread from
+            // within the constructor can allow the new thread to observe this
+            // object before construction is complete which causes data races
+            // (TSAN). The thread should be started after the object is
+            // published (for example, immediately after push_back into the
+            // connections_ vector while holding the pool mutex).
         }
 
         // FIXED: Explicit shutdown with timeout and proper error handling

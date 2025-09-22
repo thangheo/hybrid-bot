@@ -54,17 +54,12 @@ void BinanceApiClient::connect() {
     if (pImpl_->connected) return;
     
     try {
-        // Test connection by getting exchange info
+        // Lightweight connectivity check using ping to avoid large exchangeInfo allocations
         std::map<std::string, std::string> params;
-        std::string response = makeApiRequest("/api/v3/exchangeInfo", "GET", params, false);
-        
-        // Parse response to verify it's valid
-        Json::Value root;
-        Json::Reader reader;
-        if (!reader.parse(response, root)) {
-            throw std::runtime_error("Failed to parse Binance exchange info");
-        }
-        
+        // /api/v3/ping returns an empty JSON body but is much smaller than exchangeInfo
+        std::string response = makeApiRequest("/api/v3/ping", "GET", params, false);
+        // No need to parse large JSON here; success of the request indicates connectivity
+        (void)response;
         pImpl_->connected = true;
     } catch (const std::exception& e) {
         throw std::runtime_error(std::string("Failed to connect to Binance: ") + e.what());

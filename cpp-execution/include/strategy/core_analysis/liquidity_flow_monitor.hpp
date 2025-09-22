@@ -204,7 +204,7 @@ struct OrderBookSnapshot {
       * 
       * @param delta The order book changes
       */
-     virtual void processOrderBookDelta(const OrderBookDelta& delta);
+    virtual void processOrderBookDelta(OrderBookDelta delta);
      
      /**
       * Process two consecutive order book snapshots to derive a delta

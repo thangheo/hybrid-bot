@@ -346,6 +346,13 @@ bool ConnectionPool::initialize() {
         if (conn) {
             ConnectionInfo info(conn);
             connections_.push_back(std::move(info));
+            // Start the run thread after the object is fully constructed
+            // and has been published into the connections_ container. This
+            // prevents other threads from accessing a partially-constructed
+            // ConnectionInfo (TSAN data race).
+            if (!connections_.empty()) {
+                connections_.back().startRunThread();
+            }
             ++created;
         }
     }
@@ -716,6 +723,9 @@ void ConnectionPool::ensureMinConnections() {
             if (conn) {
                 ConnectionInfo info(conn);
                 connections_.push_back(std::move(info));
+                if (!connections_.empty()) {
+                    connections_.back().startRunThread();
+                }
                 
                 if (!activeSubscriptions_.empty()) {
                     LOG_DEBUG("Subscribing new maintenance connection to active symbols");

@@ -23,7 +23,7 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/modules")
 option(BUILD_TESTS "Build the test suite" OFF)
 option(BUILD_SHARED_LIBS "Build shared libraries" ON)
 option(ENABLE_COVERAGE "Enable code coverage" OFF)
-option(USE_SANITIZERS "Use address and undefined sanitizers in debug builds" OFF)
+option(USE_SANITIZERS "Use address and undefined sanitizers in debug builds" ON)
 
 # Find required packages
 find_package(Threads REQUIRED)
