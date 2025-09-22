@@ -1,13 +1,18 @@
 /**
- * @file order_book.hpp
- * @brief Memory-optimized version of order book with depth limits
+ * @file order_book_fixed.hpp
+ * @brief Fixed memory-optimized version of order book with depth limits
  * 
  * @details 
  * Part of the Data Ingestion & Processing Layer for the Crypto Trading System.
- * Added memory management features to prevent memory leaks.
+ * Fixed critical issues that could cause data processing to stop.
  * 
- * Created on: April 30, 2025
- * Updated: September 21, 2025 - Added memory management
+ * Key improvements:
+ * 1. Better thread safety
+ * 2. More robust cleanup mechanisms
+ * 3. Enhanced error handling
+ * 4. Deadlock prevention
+ * 
+ * Updated: September 22, 2025 - Critical fixes
  */
 #pragma once
 
@@ -89,56 +94,20 @@ public:
     OrderBook(const OrderBook&) = delete;
     OrderBook& operator=(const OrderBook&) = delete;
     
-    // Add move constructor and move assignment
-    OrderBook(OrderBook&& other) noexcept 
-        : exchangeId_(std::move(other.exchangeId_)),
-          symbol_(std::move(other.symbol_)),
-          config_(other.config_),
-          last_update_time_(other.last_update_time_),
-          last_cleanup_time_(other.last_cleanup_time_),
-          sequence_number_(other.sequence_number_),
-          timestamp_(other.timestamp_),
-          is_valid_(other.is_valid_.load()),
-          is_snapshot_(other.is_snapshot_.load()),
-          bids_(std::move(other.bids_)),
-          asks_(std::move(other.asks_)),
-          previous_bids_(std::move(other.previous_bids_)),
-          previous_asks_(std::move(other.previous_asks_)),
-          recent_deltas_(std::move(other.recent_deltas_)),
-          callback_(std::move(other.callback_)),
-          delta_callback_(std::move(other.delta_callback_)) {
-        // Reset the moved-from object
-        other.is_valid_.store(false);
-        other.is_snapshot_.store(false);
-        other.sequence_number_ = 0;
+    // FIXED: Simplified move constructor and assignment
+    OrderBook(OrderBook&& other) noexcept {
+        std::lock_guard<std::mutex> lock(other.mutex_);
+        moveFrom(std::move(other));
     }
     
     OrderBook& operator=(OrderBook&& other) noexcept {
         if (this != &other) {
-            std::lock_guard<std::mutex> lock1(mutex_);
-            std::lock_guard<std::mutex> lock2(other.mutex_);
+            // Lock both mutexes in consistent order to avoid deadlock
+            std::lock(mutex_, other.mutex_);
+            std::lock_guard<std::mutex> lock1(mutex_, std::adopt_lock);
+            std::lock_guard<std::mutex> lock2(other.mutex_, std::adopt_lock);
             
-            exchangeId_ = std::move(other.exchangeId_);
-            symbol_ = std::move(other.symbol_);
-            config_ = other.config_;
-            last_update_time_ = other.last_update_time_;
-            last_cleanup_time_ = other.last_cleanup_time_;
-            sequence_number_ = other.sequence_number_;
-            timestamp_ = other.timestamp_;
-            is_valid_.store(other.is_valid_.load());
-            is_snapshot_.store(other.is_snapshot_.load());
-            bids_ = std::move(other.bids_);
-            asks_ = std::move(other.asks_);
-            previous_bids_ = std::move(other.previous_bids_);
-            previous_asks_ = std::move(other.previous_asks_);
-            recent_deltas_ = std::move(other.recent_deltas_);
-            callback_ = std::move(other.callback_);
-            delta_callback_ = std::move(other.delta_callback_);
-            
-            // Reset the moved-from object
-            other.is_valid_.store(false);
-            other.is_snapshot_.store(false);
-            other.sequence_number_ = 0;
+            moveFrom(std::move(other));
         }
         return *this;
     }
@@ -207,17 +176,36 @@ public:
     
     // Calculate checksum for validation
     std::string calculateChecksum() const;
-    // setLiquidityFlowMonitor
+    
+    // FIXED: Add back the missing setLiquidityFlowMonitor function
     void setLiquidityFlowMonitor(std::shared_ptr<strategy::LiquidityFlowMonitor> monitor) {
         liquidityFlowMonitor_ = monitor;
     }
+    
     std::shared_ptr<strategy::LiquidityFlowMonitor> getLiquidityFlowMonitor() const {
         return liquidityFlowMonitor_;
     }
+    
+    // FIXED: Add health check method
+    bool isHealthy() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        auto now = std::chrono::system_clock::now();
+        auto time_since_update = std::chrono::duration_cast<std::chrono::seconds>(
+            now - last_update_time_);
+        
+        // Consider unhealthy if no updates for more than 30 seconds
+        return time_since_update < std::chrono::seconds(30) && 
+               is_valid_ && 
+               (!bids_.empty() || !asks_.empty());
+    }
+
 private:
     // Configuration
     OrderBookConfig config_;
+    
+    // FIXED: Add back the missing liquidityFlowMonitor
     std::shared_ptr<strategy::LiquidityFlowMonitor> liquidityFlowMonitor_;
+    
     // Core order book data
     ExchangeId exchangeId_;
     Symbol symbol_;
@@ -261,12 +249,42 @@ private:
     // Memory management helpers
     void enforceBidDepthLimit();
     void enforceAskDepthLimit();
+    void enforceBidDepthLimitUnsafe(); // FIXED: Unsafe versions for internal use
+    void enforceAskDepthLimitUnsafe();
     void autoCleanupIfNeeded();
     bool shouldPerformCleanup() const;
+    bool shouldPerformCleanupUrgently() const; // FIXED: More urgent cleanup detection
+    void performCleanupUnsafe(); // FIXED: Unsafe version for internal use
+    void clearOldDeltasUnsafe(); // FIXED: Unsafe version for internal use
     
     // Remove levels beyond max depth
     void trimBidsToDepth(size_t max_depth);
     void trimAsksToDepth(size_t max_depth);
+    
+    // FIXED: Helper method for move operations
+    void moveFrom(OrderBook&& other) {
+        exchangeId_ = std::move(other.exchangeId_);
+        symbol_ = std::move(other.symbol_);
+        config_ = other.config_;
+        last_update_time_ = other.last_update_time_;
+        last_cleanup_time_ = other.last_cleanup_time_;
+        sequence_number_ = other.sequence_number_;
+        timestamp_ = other.timestamp_;
+        is_valid_.store(other.is_valid_.load());
+        is_snapshot_.store(other.is_snapshot_.load());
+        bids_ = std::move(other.bids_);
+        asks_ = std::move(other.asks_);
+        previous_bids_ = std::move(other.previous_bids_);
+        previous_asks_ = std::move(other.previous_asks_);
+        recent_deltas_ = std::move(other.recent_deltas_);
+        callback_ = std::move(other.callback_);
+        delta_callback_ = std::move(other.delta_callback_);
+        
+        // Reset the moved-from object
+        other.is_valid_.store(false);
+        other.is_snapshot_.store(false);
+        other.sequence_number_ = 0;
+    }
 };
     
 } // namespace data_ingestion
