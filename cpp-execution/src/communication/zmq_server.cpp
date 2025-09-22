@@ -165,12 +165,13 @@ void GenericZmqServer::stop() {
         }
     }
     
-    // Give threads time to see the state change and exit gracefully
-    std::this_thread::sleep_for(std::chrono::milliseconds(200));
     
     // Notify all waiting threads
     intel_queue_cv_.notify_all();
     internal_queue_cv_.notify_all();
+
+    // Give threads time to see the state change and exit gracefully
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
     // Join publisher threads first
     logInfo("Stopping publisher threads...");
@@ -626,7 +627,6 @@ void GenericZmqServer::sendHeartbeat() {
 // =============================================================================
 // PRIVATE METHODS - INITIALIZATION
 // =============================================================================
-
 bool GenericZmqServer::initializeSockets() {
     try {
         logInfo("Starting socket initialization...");
@@ -659,6 +659,7 @@ bool GenericZmqServer::initializeSockets() {
         intel_publisher_socket_->set(zmq::sockopt::sndhwm, config_.intel_hwm);
         intel_publisher_socket_->set(zmq::sockopt::linger, 0);  // Immediate close
         intel_publisher_socket_->set(zmq::sockopt::sndtimeo, 1000);  // Send timeout
+        intel_publisher_socket_->set(zmq::sockopt::sndbuf, 0);  // OS buffer size 0 to drop messages when HWM is reached
         
         if (config_.intel_immediate) {
             intel_publisher_socket_->set(zmq::sockopt::immediate, 1);
@@ -669,12 +670,17 @@ bool GenericZmqServer::initializeSockets() {
         }
         
         intel_publisher_socket_->bind(config_.intel_endpoint);
+        logInfo("Intel publisher socket bound successfully to: " + config_.intel_endpoint);
        
+        // Create and configure internal publisher socket
+        logInfo("Creating internal publisher socket...");
         internal_publisher_socket_ = std::make_unique<zmq::socket_t>(*internal_context_, ZMQ_PUB);
         
+        logInfo("Setting internal socket options...");
         internal_publisher_socket_->set(zmq::sockopt::sndhwm, config_.internal_hwm);
         internal_publisher_socket_->set(zmq::sockopt::linger, 0);  // Immediate close
         internal_publisher_socket_->set(zmq::sockopt::sndtimeo, 1000);  // Send timeout
+        internal_publisher_socket_->set(zmq::sockopt::sndbuf, 0);  // OS buffer size 0 to drop messages when HWM is reached
         
         if (config_.internal_immediate) {
             internal_publisher_socket_->set(zmq::sockopt::immediate, 1);
@@ -685,18 +691,22 @@ bool GenericZmqServer::initializeSockets() {
         }
         
         internal_publisher_socket_->bind(config_.internal_endpoint);
+        logInfo("Internal publisher socket bound successfully to: " + config_.internal_endpoint);
         
         // Create and configure request socket
-        request_socket_ = std::make_unique<zmq::socket_t>(*internal_context_, ZMQ_ROUTER); //trading intent is from python
+        logInfo("Creating request socket...");
+        request_socket_ = std::make_unique<zmq::socket_t>(*internal_context_, ZMQ_ROUTER); // trading intent is from python
         
+        logInfo("Setting request socket options...");
         request_socket_->set(zmq::sockopt::rcvhwm, config_.request_hwm);
         request_socket_->set(zmq::sockopt::sndhwm, config_.request_hwm);
         request_socket_->set(zmq::sockopt::linger, 0);  // Immediate close
         request_socket_->set(zmq::sockopt::rcvtimeo, 100);  // Receive timeout
         request_socket_->set(zmq::sockopt::sndtimeo, 1000);  // Send timeout
+        request_socket_->set(zmq::sockopt::rcvbuf, 0);  // Receive buffer
         
         request_socket_->bind(config_.request_endpoint);
-        logInfo("Request socket bound successfully");
+        logInfo("Request socket bound successfully to: " + config_.request_endpoint);
         
         logInfo("All ZeroMQ sockets initialized successfully");
         return true;
@@ -1284,7 +1294,9 @@ std::string GenericZmqServer::serializeWithMetadata(const std::string& data,
         meta["data_encoding"] = "base64";
     }
     message["metadata"] = meta;
-    return message.dump();
+    std::string result = message.dump();
+    message.clear(); // Explicitly clear to free memory
+    return result;
 }
 
 // 1. FIX: JSON parsing with proper exception safety
