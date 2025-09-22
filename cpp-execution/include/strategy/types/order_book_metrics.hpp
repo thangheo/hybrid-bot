@@ -166,6 +166,11 @@ struct OrderBookMetrics {
     std::map<std::string, double> toMap() const {
         return metrics;
     }
+
+    // Const reference accessor to the internal metrics map to avoid copies
+    const std::map<std::string, double>& metricsMap() const {
+        return metrics;
+    }
 };
 
 
