@@ -574,7 +574,8 @@ public:
 
                         if (publishAllowed) {
                             // Use publishAsync to avoid blocking the intelligence generation path.
-                            zmq_server_->publishAsync("MARKET_INTEL", serialized_intel, MessagePriority::NORMAL);
+                            // Move the serialized string to avoid an extra copy.
+                            zmq_server_->publishAsync("MARKET_INTEL", std::move(serialized_intel), MessagePriority::NORMAL);
                             // zmq_server_->publishProtobuf("MARKET_INTEL", intel, MessagePriority::NORMAL);
                             intelligenceGenerated_.fetch_add(1);
                         }
@@ -642,7 +643,8 @@ public:
 
             std::string jsonStr = orderBookMsg.dump();
             std::string topic = "orderbook." + update.exchangeId.toString() + "." + update.tradingPair.toString();
-            zmq_server_->publishAsync(topic, jsonStr, MessagePriority::HIGH);
+            // Move the JSON string into publishAsync to avoid an extra copy.
+            zmq_server_->publishAsync(topic, std::move(jsonStr), MessagePriority::HIGH);
             orderBookUpdatesReceived_.fetch_add(1);
             //print debug info for every 5000th
             static std::atomic<int> publishCount{0};
@@ -1014,21 +1016,7 @@ private:
         }
         std::cout << "Started " << orderbookWorkers_.size() << " orderbook worker(s)" << std::endl;
     }
-
-    // void stopOrderbookWorkerPool() {
-    //     if (!orderbookWorkersRunning_.exchange(false)) return; // already stopped
-    //     orderbookQueueCv_.notify_all();
-    //     for (auto &t : orderbookWorkers_) {
-    //         if (t.joinable()) t.join();
-    //     }
-    //     orderbookWorkers_.clear();
-    //     // clear queue to free memory
-    //     {
-    //         std::lock_guard<std::mutex> lk(orderbookQueueMutex_);
-    //         orderbookQueue_.clear();
-    //     }
-    //     std::cout << "Orderbook worker pool stopped" << std::endl;
-    // }
+ 
     void stopOrderbookWorkerPool() {
         if (!orderbookWorkersRunning_.exchange(false)) return;
         
@@ -1273,7 +1261,7 @@ private:
     }
     void setupComponentConnections() {        
         // Minimal callback: validate & enqueue update to worker queue
-        dataIngestionService_->setOrderBookCallback([this](const auto& update) {
+        dataIngestionService_->setOrderBookCallback([this](auto update) {
             // Quick checks only - avoid heavy work here
             std::string symbolStr = update.tradingPair.toString();
             if (strategyConfig_.tradingPairs.find(symbolStr) == strategyConfig_.tradingPairs.end()) {
@@ -1289,7 +1277,8 @@ private:
                 // Drop oldest to make space (or simply drop this update)
                 orderbookQueue_.pop_front();
             }
-            orderbookQueue_.push_back(update);
+            // Move the update into the queue to avoid copying large OrderBookUpdate objects.
+            orderbookQueue_.push_back(std::move(update));
             lk.unlock();
             orderbookQueueCv_.notify_one();
         });

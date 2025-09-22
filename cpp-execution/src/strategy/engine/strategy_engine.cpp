@@ -226,18 +226,7 @@ void StrategyEngine::processQueuedSignals() {
      }
      
      try {
-        // Process through the analysis pipeline (no locking needed for these)
-        // Diagnostic: log order book validity and basic contents before analysis
-        try {
-            // std::cout << std::format("DBG: StrategyEngine - OrderBook valid={} bids={} asks={} bestBid={} bestAsk={} for {}\n",
-            //                          orderBook.isValid(), orderBook.getBidLevelCount(), orderBook.getAskLevelCount(),
-            //                          orderBook.getBestBid().price, orderBook.getBestAsk().price,
-            //                          orderBook.getSymbol().toString());
-        } catch (...) {
-            // Fallback if formatting fails
-            std::cout << "DBG: StrategyEngine - OrderBook diagnostic unavailable" << std::endl;
-        }
-      
+            // Process the order book through the analyzer      
         orderBookAnalyzer_->processOrderBook(orderBook);
          
          // Get the metrics from the analyzer

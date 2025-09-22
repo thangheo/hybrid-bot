@@ -119,7 +119,7 @@ public:
     /**
      * Publish a generic message (non-blocking)
      */
-    bool publishAsync(const std::string& topic, const std::string& data, 
+    bool publishAsync(const std::string& topic, std::string data, 
                      MessagePriority priority = MessagePriority::NORMAL,
                      const std::string& correlation_id = "");
     // pushToIntelQueue

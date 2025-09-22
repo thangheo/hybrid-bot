@@ -278,7 +278,7 @@ bool GenericZmqServer::pushToInternalQueue(GenericMessage&& message, const std::
     return true;
 }
 
-bool GenericZmqServer::publishAsync(const std::string& topic, const std::string& data,
+bool GenericZmqServer::publishAsync(const std::string& topic, std::string data,
                                    MessagePriority priority, const std::string& correlation_id) {
     if (state_.load() != ServerState::RUNNING) {
         logError("Cannot publish - server not running");
@@ -291,7 +291,8 @@ bool GenericZmqServer::publishAsync(const std::string& topic, const std::string&
     }
 
     std::string safe_topic = topic;
-    GenericMessage message(std::move(safe_topic), data, priority);
+    // data is taken by value so we can move it into the message without copy
+    GenericMessage message(std::move(safe_topic), std::move(data), priority);
     message.correlation_id = correlation_id;
 
     logInfo("Async Publishing message: " + topic + " with priority " + std::to_string(static_cast<int>(priority)));
