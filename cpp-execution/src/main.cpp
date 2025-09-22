@@ -1123,8 +1123,7 @@ private:
 
             for (auto &signal : batch) {
                 try {
-                    // PTCA registration (was done before)
-                    ptcaManager_->registerSignal(signal);
+                    // Get PTCA recommendation first (needs signal alive)
                     double ptcaRecommendation = ptcaManager_->getSignalRecommendation(signal);
                     double adjustedStrength = signal.strength;
                     if (ptcaRecommendation > 0.2) {
@@ -1132,6 +1131,9 @@ private:
                     } else if (ptcaRecommendation < -0.1) {
                         adjustedStrength = signal.strength * (1.0 + ptcaRecommendation * 0.2);
                     }
+
+                    // Register the signal with PTCA by moving it to avoid a copy
+                    ptcaManager_->registerSignal(std::move(signal));
 
                     // convert and validate
                     execution::TradingSignal execSignal;

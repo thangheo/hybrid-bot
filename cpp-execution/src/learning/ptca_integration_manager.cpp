@@ -39,6 +39,9 @@ PTCAIntegrationManager::PTCAIntegrationManager(const PTCAIntegrationConfig& conf
     ptcaConfig.enableAutoSave = false; // We'll handle saving ourselves
     
     ptca_ = std::make_unique<PavlovianCreditAssignment>(ptcaConfig);
+    // Reserve containers to avoid repeated reallocations in heavy workloads
+    activeSignals_.reserve(config_.maxSignalsToTrack);
+    currentPrices_.reserve(std::max<size_t>(16, config_.maxSignalsToTrack / 8));
     
     // Try to load the most recent model
     if (!config_.modelSaveDirectory.empty()) {
@@ -80,7 +83,7 @@ void PTCAIntegrationManager::stop() {
     }
 }
 
-void PTCAIntegrationManager::registerSignal(const strategy::TradingSignal& signal) {
+void PTCAIntegrationManager::registerSignal(strategy::TradingSignal signal) {
     std::lock_guard<std::recursive_mutex> lock(signalMutex_);
     
     // More aggressive memory management to prevent system errors
@@ -104,9 +107,10 @@ void PTCAIntegrationManager::registerSignal(const strategy::TradingSignal& signa
         }
     }
     
-    // Create tracker for this signal
-    SignalOutcomeTracker tracker(signal);
-    activeSignals_[signal.id] = tracker;
+    // Create tracker for this signal by moving the signal into the tracker
+    SignalOutcomeTracker tracker(std::move(signal));
+    // Move-assign into the map to avoid extra copies
+    activeSignals_.insert_or_assign(tracker.originalSignal.id, std::move(tracker));
     
     totalSignalsTracked_++;
     

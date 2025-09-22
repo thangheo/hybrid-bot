@@ -76,7 +76,8 @@ std::vector<TradingSignal> ImbalanceSignalGenerator::generateSignals() {
     std::vector<TradingSignal> signals;
     for (const auto& imbalance : pendingImbalances_) {
         TradingSignal signal = generateBaseSignal(imbalance);
-        signals.push_back(signal);
+        // signals.push_back(signal);
+        signals.emplace_back(std::move(signal));
     }
     pendingImbalances_.clear();
     return signals;

@@ -291,7 +291,8 @@ void StrategyEngine::processQueuedSignals() {
      signals.reserve(activeSignals_.size());
      
      for (const auto& [id, signal] : activeSignals_) {
-         signals.push_back(signal);
+        //  signals.push_back(signal);
+        signals.emplace_back(std::move(signal));
      }
      
      return signals;

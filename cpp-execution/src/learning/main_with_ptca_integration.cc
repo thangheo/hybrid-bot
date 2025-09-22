@@ -83,11 +83,11 @@ private:
     void onTradingSignal(const strategy::TradingSignal& signal) {
         signalsGenerated_++;
         
-        // PTCA: Register signal for learning
-        ptcaManager_->registerSignal(signal);
+    // PTCA: Get recommendation from learned patterns (use signal while valid)
+    double ptcaRecommendation = ptcaManager_->getSignalRecommendation(signal);
         
-        // PTCA: Get recommendation from learned patterns
-        double ptcaRecommendation = ptcaManager_->getSignalRecommendation(signal);
+    // PTCA: Register signal for learning by moving it to avoid a copy
+    ptcaManager_->registerSignal(std::move(const_cast<strategy::TradingSignal&>(signal)));
         
         // PTCA: Apply PTCA as a filter - you can adjust these thresholds
         if (ptcaRecommendation < -0.3) {

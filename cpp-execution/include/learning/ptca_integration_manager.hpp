@@ -43,8 +43,9 @@ struct SignalOutcomeTracker {
     bool outcomeReported = false;
     
     SignalOutcomeTracker() = default;
-    explicit SignalOutcomeTracker(const strategy::TradingSignal& signal)
-        : originalSignal(signal), signalTime(signal.generationTime) {}
+    // Accept signal by value so callers can move into this constructor.
+    explicit SignalOutcomeTracker(strategy::TradingSignal signal)
+        : originalSignal(std::move(signal)), signalTime(originalSignal.generationTime) {}
 };
 
 /**
@@ -104,7 +105,7 @@ public:
      * Register a new trading signal for learning
      * This should be called from your signal callback
      */
-    void registerSignal(const strategy::TradingSignal& signal);
+    void registerSignal(strategy::TradingSignal signal);
     
     /**
      * Register order execution (when a signal results in an order)

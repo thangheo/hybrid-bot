@@ -386,10 +386,14 @@ std::vector<LiquidityEvent> LiquidityFlowMonitor::detectRapidLiquidityChanges(
         return events;
     }
     
-    // Get recent deltas
-    std::vector<OrderBookDelta> recent_deltas(
-        delta_history_.end() - std::min(delta_history_.size(), static_cast<size_t>(window_size)),
-        delta_history_.end());
+    // Get recent deltas as pointers to avoid copying large OrderBookDelta objects
+    std::vector<const OrderBookDelta*> recent_deltas;
+    size_t start_index = (delta_history_.size() > static_cast<size_t>(window_size)) ?
+                         (delta_history_.size() - static_cast<size_t>(window_size)) : 0;
+    recent_deltas.reserve(std::min(delta_history_.size(), static_cast<size_t>(window_size)));
+    for (size_t i = start_index; i < delta_history_.size(); ++i) {
+        recent_deltas.push_back(&delta_history_[i]);
+    }
     
     // Calculate baseline rates of liquidity addition/removal
     double avg_bid_add_rate = 0.0;
@@ -397,126 +401,126 @@ std::vector<LiquidityEvent> LiquidityFlowMonitor::detectRapidLiquidityChanges(
     double avg_bid_remove_rate = 0.0;
     double avg_ask_remove_rate = 0.0;
     
-    for (const auto& delta : recent_deltas) {
-        avg_bid_add_rate += delta.getTotalAddedBidVolume();
-        avg_ask_add_rate += delta.getTotalAddedAskVolume();
-        avg_bid_remove_rate += delta.getTotalRemovedBidVolume();
-        avg_ask_remove_rate += delta.getTotalRemovedAskVolume();
+    for (const auto* delta : recent_deltas) {
+        avg_bid_add_rate += delta->getTotalAddedBidVolume();
+        avg_ask_add_rate += delta->getTotalAddedAskVolume();
+        avg_bid_remove_rate += delta->getTotalRemovedBidVolume();
+        avg_ask_remove_rate += delta->getTotalRemovedAskVolume();
     }
-    
+
     avg_bid_add_rate /= recent_deltas.size();
     avg_ask_add_rate /= recent_deltas.size();
     avg_bid_remove_rate /= recent_deltas.size();
     avg_ask_remove_rate /= recent_deltas.size();
-    
+
     // Check the most recent delta for significant changes
-    const auto& latest_delta = recent_deltas.back();
+    const auto* latest_delta = recent_deltas.back();
     
     // Check for rapid bid additions
-    if (latest_delta.getTotalAddedBidVolume() > avg_bid_add_rate * threshold) {
+    if (latest_delta->getTotalAddedBidVolume() > avg_bid_add_rate * threshold) {
         // Find the price level with the largest addition
         double max_add_volume = 0.0;
         double max_add_price = 0.0;
         
-        for (const auto& level : latest_delta.added_bids) {
+        for (const auto& level : latest_delta->added_bids) {
             if (level.quantity > max_add_volume) {
                 max_add_volume = level.quantity;
                 max_add_price = level.price;
             }
         }
         
-        double significance = latest_delta.getTotalAddedBidVolume() / (avg_bid_add_rate * threshold);
+    double significance = latest_delta->getTotalAddedBidVolume() / (avg_bid_add_rate * threshold);
         significance = std::min(1.0, significance - 0.5); // Normalize to [0, 1]
         
         events.emplace_back(
             LiquidityEvent::Type::RAPID_LIQUIDITY_ADDITION,
             exchangeId_,
             trading_pair_,
-            latest_delta.timestamp,
+            latest_delta->timestamp,
             core::Direction::BUY,
             max_add_price,
-            latest_delta.getTotalAddedBidVolume(),
+            latest_delta->getTotalAddedBidVolume(),
             significance);
     }
     
     // Check for rapid ask additions
-    if (latest_delta.getTotalAddedAskVolume() > avg_ask_add_rate * threshold) {
+    if (latest_delta->getTotalAddedAskVolume() > avg_ask_add_rate * threshold) {
         // Find the price level with the largest addition
         double max_add_volume = 0.0;
         double max_add_price = 0.0;
         
-        for (const auto& level : latest_delta.added_asks) {
+    for (const auto& level : latest_delta->added_asks) {
             if (level.quantity > max_add_volume) {
                 max_add_volume = level.quantity;
                 max_add_price = level.price;
             }
         }
         
-        double significance = latest_delta.getTotalAddedAskVolume() / (avg_ask_add_rate * threshold);
+    double significance = latest_delta->getTotalAddedAskVolume() / (avg_ask_add_rate * threshold);
         significance = std::min(1.0, significance - 0.5); // Normalize to [0, 1]
         
         events.emplace_back(
             LiquidityEvent::Type::RAPID_LIQUIDITY_ADDITION,
             exchangeId_,
             trading_pair_,
-            latest_delta.timestamp,
+            latest_delta->timestamp,
             core::Direction::SELL,
             max_add_price,
-            latest_delta.getTotalAddedAskVolume(),
+            latest_delta->getTotalAddedAskVolume(),
             significance);
     }
     
     // Check for rapid bid removals
-    if (latest_delta.getTotalRemovedBidVolume() > avg_bid_remove_rate * threshold) {
+    if (latest_delta->getTotalRemovedBidVolume() > avg_bid_remove_rate * threshold) {
         // Find the price level with the largest removal
         double max_remove_volume = 0.0;
         double max_remove_price = 0.0;
         
-        for (const auto& level : latest_delta.removed_bids) {
+    for (const auto& level : latest_delta->removed_bids) {
             if (level.quantity > max_remove_volume) {
                 max_remove_volume = level.quantity;
                 max_remove_price = level.price;
             }
         }
         
-        double significance = latest_delta.getTotalRemovedBidVolume() / (avg_bid_remove_rate * threshold);
+    double significance = latest_delta->getTotalRemovedBidVolume() / (avg_bid_remove_rate * threshold);
         significance = std::min(1.0, significance - 0.5); // Normalize to [0, 1]
         
         events.emplace_back(
             LiquidityEvent::Type::RAPID_LIQUIDITY_REMOVAL,
             exchangeId_,
             trading_pair_,
-            latest_delta.timestamp,
+            latest_delta->timestamp,
             core::Direction::SELL, // Removing bids often signals selling pressure
             max_remove_price,
-            latest_delta.getTotalRemovedBidVolume(),
+            latest_delta->getTotalRemovedBidVolume(),
             significance);
     }
     
     // Check for rapid ask removals
-    if (latest_delta.getTotalRemovedAskVolume() > avg_ask_remove_rate * threshold) {
+    if (latest_delta->getTotalRemovedAskVolume() > avg_ask_remove_rate * threshold) {
         // Find the price level with the largest removal
         double max_remove_volume = 0.0;
         double max_remove_price = 0.0;
         
-        for (const auto& level : latest_delta.removed_asks) {
+    for (const auto& level : latest_delta->removed_asks) {
             if (level.quantity > max_remove_volume) {
                 max_remove_volume = level.quantity;
                 max_remove_price = level.price;
             }
         }
         
-        double significance = latest_delta.getTotalRemovedAskVolume() / (avg_ask_remove_rate * threshold);
+    double significance = latest_delta->getTotalRemovedAskVolume() / (avg_ask_remove_rate * threshold);
         significance = std::min(1.0, significance - 0.5); // Normalize to [0, 1]
         
         events.emplace_back(
             LiquidityEvent::Type::RAPID_LIQUIDITY_REMOVAL,
             exchangeId_,
             trading_pair_,
-            latest_delta.timestamp,
+            latest_delta->timestamp,
             core::Direction::BUY, // Removing asks often signals buying pressure
             max_remove_price,
-            latest_delta.getTotalRemovedAskVolume(),
+            latest_delta->getTotalRemovedAskVolume(),
             significance);
     }
     
@@ -639,13 +643,12 @@ void LiquidityFlowMonitor::updateLiquidityMetrics() {
     // Update timestamp
     current_metrics_.timestamp = std::chrono::system_clock::now();
     
-    // Get recent deltas (up to last 10 seconds)
+    // Get recent deltas (up to last 10 seconds) as pointers to avoid copies
     auto cutoff_time = std::chrono::system_clock::now() - std::chrono::seconds(10);
-    std::vector<OrderBookDelta> recent_deltas;
-    
+    std::vector<const OrderBookDelta*> recent_deltas;
     for (auto it = delta_history_.rbegin(); it != delta_history_.rend(); ++it) {
         if (it->timestamp >= cutoff_time) {
-            recent_deltas.push_back(*it);
+            recent_deltas.push_back(&(*it));
         } else {
             break;
         }
@@ -657,7 +660,7 @@ void LiquidityFlowMonitor::updateLiquidityMetrics() {
     
     // Calculate time window in seconds
     double time_window = std::chrono::duration<double>(
-        recent_deltas.front().timestamp - recent_deltas.back().timestamp).count();
+        recent_deltas.front()->timestamp - recent_deltas.back()->timestamp).count();
     
     if (time_window <= 0) {
         time_window = 1.0; // Avoid division by zero
@@ -667,9 +670,9 @@ void LiquidityFlowMonitor::updateLiquidityMetrics() {
     double total_bid_adds = 0.0;
     double total_bid_removes = 0.0;
     
-    for (const auto& delta : recent_deltas) {
-        total_bid_adds += delta.getTotalAddedBidVolume();
-        total_bid_removes += delta.getTotalRemovedBidVolume();
+    for (const auto* delta : recent_deltas) {
+        total_bid_adds += delta->getTotalAddedBidVolume();
+        total_bid_removes += delta->getTotalRemovedBidVolume();
     }
     
     current_metrics_.bid_add_rate = total_bid_adds / time_window;
@@ -692,9 +695,9 @@ void LiquidityFlowMonitor::updateLiquidityMetrics() {
     double total_ask_adds = 0.0;
     double total_ask_removes = 0.0;
     
-    for (const auto& delta : recent_deltas) {
-        total_ask_adds += delta.getTotalAddedAskVolume();
-        total_ask_removes += delta.getTotalRemovedAskVolume();
+    for (const auto* delta : recent_deltas) {
+        total_ask_adds += delta->getTotalAddedAskVolume();
+        total_ask_removes += delta->getTotalRemovedAskVolume();
     }
     
     current_metrics_.ask_add_rate = total_ask_adds / time_window;
@@ -732,9 +735,9 @@ void LiquidityFlowMonitor::updateLiquidityMetrics() {
     double large_order_volume = 0.0;
     double total_volume = 0.0;
     
-    for (const auto& delta : recent_deltas) {
+    for (const auto* delta : recent_deltas) {
         // Check for large orders in added bids
-        for (const auto& level : delta.added_bids) {
+        for (const auto& level : delta->added_bids) {
             total_volume += level.quantity;
             if (level.quantity > typical_order_size_ * large_order_threshold_) {
                 large_order_volume += level.quantity;
@@ -742,7 +745,7 @@ void LiquidityFlowMonitor::updateLiquidityMetrics() {
         }
         
         // Check for large orders in added asks
-        for (const auto& level : delta.added_asks) {
+        for (const auto& level : delta->added_asks) {
             total_volume += level.quantity;
             if (level.quantity > typical_order_size_ * large_order_threshold_) {
                 large_order_volume += level.quantity;
