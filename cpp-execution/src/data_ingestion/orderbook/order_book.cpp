@@ -75,7 +75,7 @@ OrderBook::OrderBook(const ExchangeId& exchangeId, const Symbol& symbol,
     
     // Initialize with more aggressive defaults suitable for trading
     if (config_.cleanup_interval.count() == 0) {
-        config_.cleanup_interval = std::chrono::minutes(1); // Cleanup every 1 minute
+        config_.cleanup_interval = std::chrono::minutes(10); // Cleanup every 10 minutes
     }
     if (config_.cleanup_threshold == 0) {
         config_.cleanup_threshold = config_.max_depth * 2; // 2x max_depth, not 3x
