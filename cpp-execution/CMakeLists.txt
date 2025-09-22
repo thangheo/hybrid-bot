@@ -23,7 +23,8 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/modules")
 option(BUILD_TESTS "Build the test suite" OFF)
 option(BUILD_SHARED_LIBS "Build shared libraries" ON)
 option(ENABLE_COVERAGE "Enable code coverage" OFF)
-option(USE_SANITIZERS "Use address and undefined sanitizers in debug builds" ON)
+option(USE_SANITIZERS "Use address and undefined sanitizers in debug builds" OFF)
+option(ENABLE_TSAN "Enable ThreadSanitizer (TSAN)" OFF)
 
 # Find required packages
 find_package(Threads REQUIRED)
@@ -63,6 +64,30 @@ set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3")
 if(USE_SANITIZERS AND CMAKE_BUILD_TYPE MATCHES Debug)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address,undefined")
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fsanitize=address,undefined")
+endif()
+
+# ThreadSanitizer (TSAN) support
+if(ENABLE_TSAN AND USE_SANITIZERS)
+    message(FATAL_ERROR "ENABLE_TSAN and USE_SANITIZERS cannot both be ON; they conflict")
+endif()
+
+if(ENABLE_TSAN)
+    message(STATUS "ThreadSanitizer enabled: adding -fsanitize=thread flags")
+    # prefer a debug-like build for sanitizer-friendly output
+    if(NOT CMAKE_BUILD_TYPE)
+        set(CMAKE_BUILD_TYPE Debug CACHE STRING "Build type" FORCE)
+    endif()
+
+    if(CMAKE_CXX_COMPILER_ID MATCHES "(GNU|Clang)")
+        set(TSAN_FLAGS "-fsanitize=thread -fno-omit-frame-pointer")
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TSAN_FLAGS}")
+        set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${TSAN_FLAGS}")
+        set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} ${TSAN_FLAGS}")
+        # recommended for clearer stack traces
+        set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -g")
+    else()
+        message(WARNING "TSAN requested but unsupported compiler: ${CMAKE_CXX_COMPILER_ID}")
+    endif()
 endif()
 
 # Add components
