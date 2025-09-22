@@ -175,7 +175,7 @@ void ExchangeManager::onWebSocketRawData(const RawMarketData& rawData) {
             std::cerr << "Processing queue not available, dropping data\n";
             return;
         }
-        if (!qptr->enqueue(rawData)) {
+        if (!qptr->enqueue(std::move(rawData))) {
             std::cerr << "Processing queue full, dropping data\n";
         } else {
             processingQueueSize_.fetch_add(1, std::memory_order_relaxed);
@@ -251,7 +251,13 @@ bool ExchangeManager::subscribe(const std::vector<Symbol>& tradingPairs,
         return false;
     }
 }
-
+// Add to ExchangeManager
+// void ExchangeManager::checkQueueHealth() {
+//     auto queueSize = processingQueueSize_.load();
+//     if (queueSize > QUEUE_WARNING_THRESHOLD) {
+//         // Implement more aggressive dropping or processing
+//     }
+// }
 bool ExchangeManager::connect() {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
      if (!rateLimitController_->waitForPermission(execution::ExchangeRequestType::CONNECTION)) {
