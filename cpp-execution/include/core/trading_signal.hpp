@@ -18,6 +18,8 @@
  #include "core/types.hpp"
  #include "strategy/types/imbalance_type.hpp"
  #include <string>
+#include <vector>
+#include <unordered_map>
  #include <map>
  using namespace trading::common;
  namespace trading {
@@ -77,7 +79,6 @@ struct TradingSignal {
     // Advanced properties
     double decayRate;                                 // Decay rate for the signal
     double expectedPriceImpact;                       // Expected price impact of the signal
-    #include <unordered_map>
     std::unordered_map<std::string, double> signalMetrics;     // Metrics associated with this signal
     
     /**
@@ -127,29 +128,21 @@ struct TradingSignal {
           decayRate(0.0),
           expectedPriceImpact(0.0) {}
     
+    // Use defaulted copy/move semantics. We explicitly mark moves as noexcept
+    // so containers can rely on noexcept move operations (avoids fallback to copies).
+    TradingSignal(const TradingSignal& other) = default;
+    TradingSignal& operator=(const TradingSignal& other) = default;
+    TradingSignal(TradingSignal&& other) noexcept = default;
+    TradingSignal& operator=(TradingSignal&& other) noexcept = default;
+
     /**
-     * Copy constructor
+     * Reserve internal containers to avoid repeated reallocations during bulk operations.
+     * Call this before heavy push_back/emplace operations.
      */
-    TradingSignal(const TradingSignal& other)
-        : id(other.id),
-          sourceEventId(other.sourceEventId),
-          correlationId(other.correlationId),
-          direction(other.direction),
-          quality(other.quality),
-          strength(other.strength),
-          confidence(other.confidence),
-          generationTime(other.generationTime),
-          ttl(other.ttl),
-          expirationTime(other.expirationTime),
-          symbol(other.symbol),
-          exchangeId(other.exchangeId),
-          targetSize(other.targetSize),
-          targets(other.targets),
-          strategyId(other.strategyId),
-          sourceType(other.sourceType),
-          decayRate(other.decayRate),
-          expectedPriceImpact(other.expectedPriceImpact),
-          signalMetrics(other.signalMetrics) {}
+    void reserveContainers(size_t expectedTargets = 0, size_t expectedMetrics = 0) {
+        if (expectedTargets > 0) targets.reserve(expectedTargets);
+        if (expectedMetrics > 0) signalMetrics.reserve(expectedMetrics);
+    }
     
     // Getters (maintaining compatibility with execution interface)
     const std::string& getSignalId() const { return id; }
