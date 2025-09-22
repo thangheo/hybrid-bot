@@ -60,9 +60,12 @@ using namespace trading::core;
         
         // Initialize components
         orderBookAnalyzer_ = std::make_shared<OrderBookAnalyzerManager>(config_.orderBookAnalyzerConfig);
+        // we should use factory method to create order book analyzer manager with depth parameter for all pairs
+        
         imbalanceDetector_ = std::make_shared<ImbalanceDetectionEngine>(config_.imbalanceDetectionConfig);
         liquidityMonitor_ = std::make_shared<LiquidityFlowMonitor>(config_.liquidityFlowConfig);
-        volumeProfileAnalyzer_ = std::make_shared<VolumeProfileAnalyzer>(config_.volumeProfileConfig);
+        // volumeProfileAnalyzer_ = std::make_shared<VolumeProfileAnalyzer>(config_.volumeProfileConfig);
+     
         signalGenerator_ = std::make_shared<ImbalanceSignalGenerator>(config_.signalGeneratorConfig);
         momentumCorrelator_ = std::make_shared<MomentumCorrelation>(config_.momentumCorrelationConfig);
         thresholdManager_ = std::make_shared<ThresholdManager>(config_.thresholdManagerConfig);
@@ -90,7 +93,7 @@ using namespace trading::core;
         // Remove signal generated event subscription to avoid circular dependencies
         // We use direct callbacks from the signal generator instead
 
-        // Initialize trading pairs
+        // Initialize trading pairs and create a VolumeProfileAnalyzer per pair using factory
         for (const auto& pair : config_.tradingPairs) {
             std::string pairId = pair.second.toString() + ":" + pair.first.toString();
             TradingPairState state;
@@ -101,6 +104,15 @@ using namespace trading::core;
             state.lastPrice = 0.0;
             state.previousPrice = 0.0;
             tradingPairStates_[pairId] = std::move(state);
+
+            // Create VolumeProfileAnalyzer for this trading pair using the factory
+            try {
+                auto analyzer = createVolumeProfileAnalyzer(pair.second, pair.first, config_.volumeProfileConfig.params);
+                volumeProfileAnalyzers_[pairId] = analyzer;
+            } catch (const std::exception& e) {
+                LOG_ERROR("Failed to create VolumeProfileAnalyzer for {}: {}", pairId, e.what());
+            }
+
             LOG_INFO("Monitoring trading pair: {} on exchange {}", 
                      pair.first.toString(), pair.second.toString());
         }
@@ -214,8 +226,19 @@ void StrategyEngine::processQueuedSignals() {
      }
      
      try {
-         // Process through the analysis pipeline (no locking needed for these)
-         orderBookAnalyzer_->processOrderBook(orderBook);
+        // Process through the analysis pipeline (no locking needed for these)
+        // Diagnostic: log order book validity and basic contents before analysis
+        try {
+            // std::cout << std::format("DBG: StrategyEngine - OrderBook valid={} bids={} asks={} bestBid={} bestAsk={} for {}\n",
+            //                          orderBook.isValid(), orderBook.getBidLevelCount(), orderBook.getAskLevelCount(),
+            //                          orderBook.getBestBid().price, orderBook.getBestAsk().price,
+            //                          orderBook.getSymbol().toString());
+        } catch (...) {
+            // Fallback if formatting fails
+            std::cout << "DBG: StrategyEngine - OrderBook diagnostic unavailable" << std::endl;
+        }
+      
+        orderBookAnalyzer_->processOrderBook(orderBook);
          
          // Get the metrics from the analyzer
          auto metrics = orderBookAnalyzer_->getMetrics(orderBook.getSymbol(), orderBook.getExchangeId());
@@ -227,9 +250,30 @@ void StrategyEngine::processQueuedSignals() {
         if (!delta.isEmpty()) {
             liquidityMonitor_->processOrderBookDelta(std::move(delta));
         }
-         // Update the volume profile analyzer
-         volumeProfileAnalyzer_->updateVolumeProfile(orderBook, {});
-         
+        //the below function was never been called which mean orderbook delta is always empty
+        // liquidityMonitor_->processOrderBookDelta(std::move(delta)); //dont do this
+
+        // Update the volume profile analyzer for this trading pair (create on demand)
+         std::string vpId = orderBook.getExchangeId().toString() + ":" + orderBook.getSymbol().toString();
+
+         auto vpIt = volumeProfileAnalyzers_.find(vpId);
+         if (vpIt == volumeProfileAnalyzers_.end()) {
+             // Create analyzer on demand using params from config
+             try {
+                 auto analyzer = createVolumeProfileAnalyzer(orderBook.getExchangeId(), orderBook.getSymbol(), config_.volumeProfileConfig.params);
+                 volumeProfileAnalyzers_[vpId] = analyzer;
+                 vpIt = volumeProfileAnalyzers_.find(vpId);
+             } catch (const std::exception& e) {
+                 LOG_ERROR("Failed to create VolumeProfileAnalyzer on demand for {}: {}", vpId, e.what());
+             }
+         }
+
+         if (vpIt != volumeProfileAnalyzers_.end() && vpIt->second) {
+             vpIt->second->updateVolumeProfile(orderBook, {});
+            //  std::cout << std::format("Processed volume profile for {}: POC = {}", 
+            //                      orderBook.getSymbol().toString(), 
+            //                      vpIt->second->calculatePointOfControl());
+         }
          // Detect imbalances
          imbalanceDetector_->analyzeMetrics(metrics);
          
@@ -243,7 +287,8 @@ void StrategyEngine::processQueuedSignals() {
          // Variables to store data for processing outside the lock
          bool shouldUpdateCorrelation = false;
          PriceMovement movement;
-         
+         //print to know if we reach here
+        // std::cout << "imbalanceDetector_ reached" << std::endl;
          // Update the trading pair state - LOCK HERE (minimize lock duration)
          {
              std::lock_guard<std::recursive_mutex> lock(mutex_);
@@ -267,7 +312,8 @@ void StrategyEngine::processQueuedSignals() {
                  }
              }
          }
-         
+         //debug print
+
          // Update momentum correlation OUTSIDE the lock to avoid blocking other threads
          if (shouldUpdateCorrelation) {
              momentumCorrelator_->updateCorrelationModel(metrics, movement);
@@ -333,7 +379,10 @@ void StrategyEngine::processQueuedSignals() {
          orderBookAnalyzer_->updateParameters(params);
          imbalanceDetector_->updateParameters(params);
          liquidityMonitor_->updateParameters(params);
-         volumeProfileAnalyzer_->updateParameters(params);
+         // Update all volume profile analyzers
+         for (auto &entry : volumeProfileAnalyzers_) {
+             if (entry.second) entry.second->updateParameters(params);
+         }
          signalGenerator_->updateParameters(params);
          momentumCorrelator_->updateParameters(params);
          thresholdManager_->updateParameters(params);
@@ -619,6 +668,23 @@ std::optional<ImbalanceEvent> StrategyEngine::findSourceEvent(
     auto expiration_before = std::chrono::duration_cast<std::chrono::milliseconds>(signal.expirationTime.time_since_epoch()).count();
     // LOG_DEBUG("Before EventBus publish - Signal {} expirationTime: {}ms", signal.id, expiration_before);
     
+    // // Defensive: call registered callbacks directly while holding the callback mutex.
+    // // This ensures any in-process listeners (for example the enqueue callback in main.cpp)
+    // // are invoked even if the EventBus has an issue delivering events.
+    // {
+    //     std::lock_guard<std::recursive_mutex> lk(callbackMutex_);
+    //     for (const auto &entry : signalCallbacks_) {
+    //         try {
+    //             entry.second(signal);
+    //         } catch (const std::exception &e) {
+    //             LOG_ERROR("Exception invoking local signal callback {}: {}", entry.first, e.what());
+    //         } catch (...) {
+    //             LOG_ERROR("Unknown exception invoking local signal callback {}", entry.first);
+    //         }
+    //     }
+    // }
+
+    // Still publish to the EventBus for external subscribers
     common::EventBus::getInstance().publish(events::SignalGeneratedEvent{signal});
  }
  
@@ -685,7 +751,9 @@ std::optional<ImbalanceEvent> StrategyEngine::findSourceEvent(
      orderBookAnalyzer_->updateParameters(parameters_);
      imbalanceDetector_->updateParameters(parameters_);
      liquidityMonitor_->updateParameters(parameters_);
-     volumeProfileAnalyzer_->updateParameters(parameters_);
+     for (auto &entry : volumeProfileAnalyzers_) {
+         if (entry.second) entry.second->updateParameters(parameters_);
+     }
      signalGenerator_->updateParameters(parameters_);
      momentumCorrelator_->updateParameters(parameters_);
      thresholdManager_->updateParameters(parameters_);
@@ -717,7 +785,9 @@ std::optional<ImbalanceEvent> StrategyEngine::findSourceEvent(
              orderBookAnalyzer_->updateParameters(parameters_);
              imbalanceDetector_->updateParameters(parameters_);
              liquidityMonitor_->updateParameters(parameters_);
-             volumeProfileAnalyzer_->updateParameters(parameters_);
+             for (auto &entry : volumeProfileAnalyzers_) {
+                 if (entry.second) entry.second->updateParameters(parameters_);
+             }
              signalGenerator_->updateParameters(parameters_);
              momentumCorrelator_->updateParameters(parameters_);
              thresholdManager_->updateParameters(parameters_);

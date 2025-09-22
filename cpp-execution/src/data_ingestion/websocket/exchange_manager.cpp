@@ -497,10 +497,10 @@ void ExchangeManager::processingWorker() {
             // Periodic logging (every 100*batchSize processed)
             if ((processed % (batchSize * 1)) == 0) {
                 size_t rss = getRSSKB();
-                std::cerr << "[ExchangeManager] processed=" << processed
-                          << " total_bytes=" << total_bytes
-                          << " RSS_KB=" << rss
-                          << " queue_items=" << processingQueueSize_.load() << '\n';
+                // std::cerr << "[ExchangeManager] processed=" << processed
+                //           << " total_bytes=" << total_bytes
+                //           << " RSS_KB=" << rss
+                //           << " queue_items=" << processingQueueSize_.load() << '\n';
                 // If user configured a memory limit, take protective action
                 if (memoryLimitKB_ > 0 && rss > memoryLimitKB_) {
                     std::cerr << "[ExchangeManager] RSS_KB=" << rss

@@ -13,6 +13,8 @@
 #include <cmath>
 #include <thread>
 #include <common/logger.hpp>
+#include <iostream>
+#include <format>
 
 namespace trading {
 namespace strategy {
@@ -75,6 +77,8 @@ OrderBookAnalyzer::OrderBookAnalyzer(const OrderBookAnalyzerConfig& config)
 
 void OrderBookAnalyzer::processOrderBook(const data_ingestion::OrderBook& snapshot) {
     if (!snapshot.isValid()) {
+        std::cout << std::format("DBG: OrderBookAnalyzer - received invalid snapshot for {} on {}\n",
+                                 snapshot.getSymbol().toString(), snapshot.getExchangeId().toString());
         return;
     }
     
@@ -91,12 +95,21 @@ void OrderBookAnalyzer::processOrderBook(const data_ingestion::OrderBook& snapsh
         
         cachedBids_ = snapshot.getBids(depthLevels_);
         cachedAsks_ = snapshot.getAsks(depthLevels_);
+
+        // Diagnostic: if empty, print a message
+        if (cachedBids_.empty() || cachedAsks_.empty()) {
+            std::cout << std::format("DBG: OrderBookAnalyzer - empty bids={} asks={} for {} on {}\n",
+                                     cachedBids_.size(), cachedAsks_.size(), snapshot.getSymbol().toString(), snapshot.getExchangeId().toString());
+        }
         
         if (priceGroupingFactor_ > 0.0) {
             groupPriceLevelsInPlace(cachedBids_, true);  // In-place modification
             groupPriceLevelsInPlace(cachedAsks_, false); // In-place modification
         }
-                
+
+        // Ensure we calculate basic price metrics (midPrice, spread) before volume metrics
+        calculatePriceMetrics(cachedBids_, cachedAsks_);
+
         // Initialize metrics with snapshot metadata
         currentMetrics_.exchangeId = snapshot.getExchangeId();
         currentMetrics_.symbol = snapshot.getSymbol();
@@ -125,7 +138,21 @@ void OrderBookAnalyzer::processOrderBook(const data_ingestion::OrderBook& snapsh
         if (++cleanup_counter % 1000 == 0) {
             metricsHistory_.shrink_to_fit();
         }
-
+        //print some debug info
+        static size_t debug_counter = 0;
+        if (++debug_counter % 5000 == 0) {
+            std::cout << "OrderBookAnalyzer Debug: Processed " << debug_counter << " snapshots for "
+                      << tradingPair_.toString() << " on " << exchangeId_.toString() << std::endl;
+        }
+        //print some derrivative info
+        if (debug_counter % 1000 == 0) {
+            std::cout << "  MidPrice: " << currentMetrics_.midPrice 
+                      << ", Spread: " << currentMetrics_.spread 
+                      << ", Volume Imbalance: " << currentMetrics_.volumeImbalance 
+                      << ", Liquidity Pressure: " << currentMetrics_.liquidityPressure
+                      << ", Volatility Expectation: " << currentMetrics_.volatilityExpectation
+                      << std::endl;
+        }
         lastUpdateTime_ = snapshot.getTimestamp();
         metricsToNotify = currentMetrics_;
     }
@@ -821,9 +848,25 @@ OrderBookAnalyzerManager::OrderBookAnalyzerManager(const ParameterSet& params)
 // In OrderBookAnalyzerManager class
 OrderBookAnalyzerManager::OrderBookAnalyzerManager(const OrderBookAnalyzerConfig& config) {
     // Convert config to ParameterSet if needed
-    params_.setParameter("depth", config.depth);
+
+    //  int depth =20;                        // Default depth to analyze
+    //  int historySize = 1000;                // Size of history to maintain
+    //  double priceWeightFactor = 0.5;        // Weight factor for price-weighted metrics
+    //  // Default price weight factor
+    //     double volumeWeightFactor = 0.5;       // Weight factor for volume-weighted metrics
+    //     double imbalanceThreshold = 0.6;       // Threshold for imbalance detection
+    //     double liquidityPressureThreshold = 0.7; // Threshold for liquidity pressure detection
+    //     double orderFlowThreshold = 0.5;       // Threshold for order flow detection
+    // // ADD THESE MISSING ONES:
+    //     double priceGroupingFactor = 0.0001;
+    //     int minSamplesForStability = 5;
+    //     double emaAlpha = 0.2;
+    params_.setParameter("depth", config.depth); //we contruct orderbook with depth 
     params_.setParameter("priceWeightFactor", config.priceWeightFactor);
-    // etc...
+    params_.setParameter("minSamplesForStability", config.minSamplesForStability);
+    params_.setParameter("priceGroupingFactor", config.priceGroupingFactor);
+    params_.setParameter("emaAlpha", config.emaAlpha);
+    // Add other parameters as needed
 }
 
 std::shared_ptr<OrderBookAnalyzer> OrderBookAnalyzerManager::getAnalyzerForSymbol(

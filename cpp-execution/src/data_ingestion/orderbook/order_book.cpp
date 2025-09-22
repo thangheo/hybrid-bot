@@ -558,7 +558,6 @@ OrderBookDelta OrderBook::getOrderBookDelta(Timestamp previous_timestamp) const 
         for (const auto& [price, level] : asks_) {
             result.added_asks.push_back(level);
         }
-        
         return result;
     }
     

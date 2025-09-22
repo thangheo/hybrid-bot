@@ -526,7 +526,7 @@ public:
             {
                 std::lock_guard<std::mutex> lm(intelMapsMutex_);
                 intelDebugCounts_[tradingPair]++;
-                if (intelDebugCounts_[tradingPair] <= 5 || intelDebugCounts_[tradingPair] % 5000 == 0) {
+                if (intelDebugCounts_[tradingPair] <= 1 || intelDebugCounts_[tradingPair] % 5000 == 0) {
                     std::cout << "🧠 Generated intelligence #" << intelDebugCounts_[tradingPair]
                               << " for " << tradingPair << " (spread: " << intel.bid_ask_spread()
                               << ", imbalance: " << intel.order_book_imbalance() << ")" << std::endl;
@@ -1091,14 +1091,15 @@ private:
                     auto orderBook = dataIngestionService_->getOrderBook(update.exchangeId, update.tradingPair);
                     if (orderBook) {
                         orderBookUpdatesReceived_++;
-                        // Generate intelligence (throttling inside function)
-                        generateMarketIntelligence(update, orderBook);
-                        // Publish orderbook for risk asynchronously
-                        publishOrderBookForRisk(update); //disable for debug
+                      
                         // Send to strategy engine
                         if (strategyEngine_) {
                             strategyEngine_->processOrderBook(*orderBook);
                         }
+                          // Generate intelligence (throttling inside function)
+                        generateMarketIntelligence(update, orderBook);
+                        // Publish orderbook for risk asynchronously
+                        publishOrderBookForRisk(update); //disable for debug
                     }
                 } catch (const std::exception &e) {
                     std::cerr << "Orderbook worker " << workerId << " error: " << e.what() << std::endl;
@@ -1134,6 +1135,7 @@ private:
         std::vector<strategy::TradingSignal> batch;
         batch.reserve(signalBatchSize_);
         while (signalWorkersRunning_.load()) {
+            // Wait for data
             std::unique_lock<std::mutex> lk(signalQueueMutex_);
             signalQueueCv_.wait_for(lk, std::chrono::milliseconds(200), [this]() {
                 return !signalQueue_.empty() || !signalWorkersRunning_.load();
@@ -1151,6 +1153,8 @@ private:
                 try {
                     // Get PTCA recommendation first (needs signal alive)
                     double ptcaRecommendation = ptcaManager_->getSignalRecommendation(signal);
+                    std::cout << "PTCA recommendation for signal " << signal.id 
+                              << ": " << ptcaRecommendation << std::endl;
                     double adjustedStrength = signal.strength;
                     if (ptcaRecommendation > 0.2) {
                         adjustedStrength = std::min(1.0, signal.strength * (1.0 + ptcaRecommendation * 0.3));
@@ -1297,6 +1301,19 @@ private:
             // quick enqueue
             signalsGenerated_++;
             std::unique_lock<std::mutex> lk(signalQueueMutex_);
+            // std::cout << "Enqueuing signal " << signal.id << " from strategy " << signal.strategyId << std::endl;
+            //print debug info for every 20th signal
+            static std::atomic<int> signalCount{0};
+            int count = signalCount.fetch_add(1);
+            if (count < 20 || count % 500 == 0) {
+                std::cout << "🛎️ Signal #" << count << ": "
+                          << signal.symbol.toString() 
+                          << " Dir: " << (signal.direction == core::Direction::BUY ? "BUY" : "SELL")
+                          << " Strength: " << signal.strength 
+                          << " Confidence: " << signal.confidence 
+                          << " Quality: " << signal.quality 
+                          << " Targets: " << signal.targets.size() << std::endl;
+            }
             if (signalQueue_.size() >= signalQueueLimit_) {
                 // drop oldest to make room
                 signalQueue_.pop_front();

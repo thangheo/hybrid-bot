@@ -23,7 +23,7 @@
  struct OrderBookAnalyzerConfig {
     core::ExchangeId exchangeId; 
     core::Symbol tradingPair;
-     int depth = 10;                        // Default depth to analyze
+     int depth =20;                        // Default depth to analyze
      int historySize = 1000;                // Size of history to maintain
      double priceWeightFactor = 0.5;        // Weight factor for price-weighted metrics
      // Default price weight factor
