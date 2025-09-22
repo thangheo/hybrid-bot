@@ -84,14 +84,24 @@ void OrderBookAnalyzer::processOrderBook(const data_ingestion::OrderBook& snapsh
         std::lock_guard<std::mutex> lock(mutex_);
         
         // Get price levels limited to our depth
-        auto bids = snapshot.getBids(depthLevels_);
-        auto asks = snapshot.getAsks(depthLevels_);
+        // auto bids = snapshot.getBids(depthLevels_);
+        // auto asks = snapshot.getAsks(depthLevels_);
+        cachedBids_.clear();
+        cachedAsks_.clear();
+        
+        cachedBids_ = snapshot.getBids(depthLevels_);
+        cachedAsks_ = snapshot.getAsks(depthLevels_);
+        
+        if (priceGroupingFactor_ > 0.0) {
+            groupPriceLevelsInPlace(cachedBids_, true);  // In-place modification
+            groupPriceLevelsInPlace(cachedAsks_, false); // In-place modification
+        }
         
         // Apply price grouping if configured
-        if (priceGroupingFactor_ > 0.0) {
-            bids = groupPriceLevels(bids, true);
-            asks = groupPriceLevels(asks, false);
-        }
+        // if (priceGroupingFactor_ > 0.0) {
+        //     bids = groupPriceLevels(bids, true);
+        //     asks = groupPriceLevels(asks, false);
+        // }
         
         // Initialize metrics with snapshot metadata
         currentMetrics_.exchangeId = snapshot.getExchangeId();
@@ -100,10 +110,11 @@ void OrderBookAnalyzer::processOrderBook(const data_ingestion::OrderBook& snapsh
         currentMetrics_.sequenceNumber = snapshot.getSequenceNumber();
         
         // Calculate all metrics
-        calculatePriceMetrics(bids, asks);
-        calculateVolumeMetrics(bids, asks, depthLevels_);
-        calculateLevelMetrics(bids, asks);
-        calculateImbalanceMetrics(bids, asks);
+        // calculatePriceMetrics(bids, asks);
+        calculateVolumeMetrics(cachedBids_, cachedAsks_, depthLevels_);
+        calculateVolumeMetrics(cachedBids_, cachedAsks_, depthLevels_); // Twice for robustness
+        calculateLevelMetrics(cachedBids_, cachedAsks_);
+        calculateImbalanceMetrics(cachedBids_, cachedAsks_);
         
         // Update time series and derived metrics
         updateTimeSeries();
@@ -111,11 +122,21 @@ void OrderBookAnalyzer::processOrderBook(const data_ingestion::OrderBook& snapsh
         calculateTimeBasedMetrics();
         
         // Store in history with size limit
-        metricsHistory_.push_back(currentMetrics_);
-        if (metricsHistory_.size() > 100) {
+        // metricsHistory_.push_back(currentMetrics_);
+        // if (metricsHistory_.size() > 100) {
+        //     metricsHistory_.pop_front();
+        // }        
+        metricsHistory_.push_back(std::move(currentMetrics_)); // Use move
+        while (metricsHistory_.size() > MAX_HISTORY_SIZE) {
             metricsHistory_.pop_front();
         }
-        
+
+        // Thêm cleanup định kỳ
+        static size_t cleanup_counter = 0;
+        if (++cleanup_counter % 1000 == 0) {
+            metricsHistory_.shrink_to_fit();
+        }
+
         lastUpdateTime_ = snapshot.getTimestamp();
         metricsToNotify = currentMetrics_;
     }
@@ -496,6 +517,47 @@ void OrderBookAnalyzer::calculateTimeBasedMetrics() {
         currentMetrics_.volumeVelocity = (currentTotalVolume - prevTotalVolume) / timeDiff;
     }
 }
+// groupPriceLevelsInPlace  
+void OrderBookAnalyzer::groupPriceLevelsInPlace(
+    std::vector<data_ingestion::PriceLevel>& levels,
+    bool isBids) const {
+    
+    if (levels.empty() || priceGroupingFactor_ <= 0.0) {
+        return;
+    }
+    
+    std::map<double, double> priceGroups;
+    
+    for (const auto& level : levels) {
+        double groupPrice;
+        
+        if (isBids) {
+            groupPrice = std::floor(level.price / priceGroupingFactor_) * priceGroupingFactor_;
+        } else {
+            groupPrice = std::ceil(level.price / priceGroupingFactor_) * priceGroupingFactor_;
+        }
+        
+        priceGroups[groupPrice] += level.quantity;
+    }
+    
+    // Convert map back to vector
+    levels.clear();
+    levels.reserve(priceGroups.size());
+    
+    for (const auto& [price, quantity] : priceGroups) {
+        levels.emplace_back(price, quantity);
+    }
+    
+    // Sort appropriately
+    if (isBids) {
+        std::sort(levels.begin(), levels.end(), 
+            [](const auto& a, const auto& b) { return a.price > b.price; });
+    } else {
+        std::sort(levels.begin(), levels.end(), 
+            [](const auto& a, const auto& b) { return a.price < b.price; });
+    }
+}
+
 
 std::vector<data_ingestion::PriceLevel> OrderBookAnalyzer::groupPriceLevels(
     const std::vector<data_ingestion::PriceLevel>& levels,

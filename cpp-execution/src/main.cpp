@@ -1015,19 +1015,41 @@ private:
         std::cout << "Started " << orderbookWorkers_.size() << " orderbook worker(s)" << std::endl;
     }
 
+    // void stopOrderbookWorkerPool() {
+    //     if (!orderbookWorkersRunning_.exchange(false)) return; // already stopped
+    //     orderbookQueueCv_.notify_all();
+    //     for (auto &t : orderbookWorkers_) {
+    //         if (t.joinable()) t.join();
+    //     }
+    //     orderbookWorkers_.clear();
+    //     // clear queue to free memory
+    //     {
+    //         std::lock_guard<std::mutex> lk(orderbookQueueMutex_);
+    //         orderbookQueue_.clear();
+    //     }
+    //     std::cout << "Orderbook worker pool stopped" << std::endl;
+    // }
     void stopOrderbookWorkerPool() {
-        if (!orderbookWorkersRunning_.exchange(false)) return; // already stopped
+        if (!orderbookWorkersRunning_.exchange(false)) return;
+        
         orderbookQueueCv_.notify_all();
+        
+        // Join all threads first
         for (auto &t : orderbookWorkers_) {
             if (t.joinable()) t.join();
         }
+        
+        // Clear containers and force deallocation
         orderbookWorkers_.clear();
-        // clear queue to free memory
+        orderbookWorkers_.shrink_to_fit();
+        
         {
             std::lock_guard<std::mutex> lk(orderbookQueueMutex_);
             orderbookQueue_.clear();
+            orderbookQueue_.shrink_to_fit(); // Force deallocation
         }
-        std::cout << "Orderbook worker pool stopped" << std::endl;
+        
+        std::cout << "Orderbook worker pool stopped and memory cleared" << std::endl;
     }
 
     void orderbookWorkerLoop(size_t workerId) {
@@ -1045,6 +1067,10 @@ private:
 
             // Pop up to batchSize items
             batch.clear();
+            if (batch.capacity() > orderbookBatchSize_ * 2) {
+                batch.shrink_to_fit();
+                batch.reserve(orderbookBatchSize_);
+            }
             for (size_t i = 0; i < orderbookBatchSize_ && !orderbookQueue_.empty(); ++i) {
                 batch.push_back(std::move(orderbookQueue_.front()));
                 orderbookQueue_.pop_front();
