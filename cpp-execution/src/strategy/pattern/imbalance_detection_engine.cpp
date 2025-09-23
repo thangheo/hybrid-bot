@@ -451,11 +451,11 @@ bool ImbalanceDetectionEngine::detectVolumeImbalance(const OrderBookMetrics& met
             double strength = calculateImbalanceStrength(volumeRatio, baseThreshold);
             Direction direction = (volumeRatio > 1.0) ? Direction::BUY : Direction::SELL;
 
-            std::cout << "[VolumeImbalance] Ratio=" << volumeRatio
-                    << ", Threshold=" << baseThreshold
-                    << ", Strength=" << strength
-                    << ", Direction=" << (direction == Direction::BUY ? "BUY" : "SELL")
-                    << ", Change(log)=" << (ratioChange) << std::endl;
+            // std::cout << "[VolumeImbalance] Ratio=" << volumeRatio
+            //         << ", Threshold=" << baseThreshold
+            //         << ", Strength=" << strength
+            //         << ", Direction=" << (direction == Direction::BUY ? "BUY" : "SELL")
+            //         << ", Change(log)=" << (ratioChange) << std::endl;
 
             createImbalanceEvent(ImbalanceType::VOLUME_IMBALANCE, strength, direction, metrics);
         }
