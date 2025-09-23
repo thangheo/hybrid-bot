@@ -153,7 +153,8 @@ private:
     bool detectPriceVolatilityImbalance(const OrderBookMetrics& metrics);
     bool detectHiddenLiquidityImbalance(const OrderBookMetrics& metrics);
     bool detectCustomImbalance(const OrderBookMetrics& metrics);
-    
+    bool checkVolumeConcentration(const OrderBookMetrics& metrics) ;
+
     // Imbalance evaluation
     double calculateImbalanceStrength(ImbalanceType type, const OrderBookMetrics& metrics);
     core::Direction determineImbalanceDirection(ImbalanceType type, const OrderBookMetrics& metrics);

@@ -15,6 +15,7 @@
 #include <openssl/sha.h>
 // #include <iomanip>
 #include <chrono>
+#include <sys/stat.h>
 #include <sstream>
 #include <iomanip>
 #include <stdexcept>
@@ -412,6 +413,22 @@ std::string BinanceClient::makeHttpRequest(const std::string& url, const std::st
     
     // Set timeout
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30L);
+    // Enforce SSL verification and allow overriding CA bundle via env
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
+    const char* caBundle = getenv("BINANCE_CA_BUNDLE");
+    if (!caBundle) caBundle = getenv("CURL_CA_BUNDLE");
+    if (caBundle) {
+        curl_easy_setopt(curl, CURLOPT_CAINFO, caBundle);
+    } else {
+        // check common system locations
+        struct stat st;
+        if (stat("/etc/ssl/certs/ca-certificates.crt", &st) == 0) {
+            curl_easy_setopt(curl, CURLOPT_CAINFO, "/etc/ssl/certs/ca-certificates.crt");
+        } else if (stat("/etc/ssl/cert.pem", &st) == 0) {
+            curl_easy_setopt(curl, CURLOPT_CAINFO, "/etc/ssl/cert.pem");
+        }
+    }
     
     // Perform request
     res = curl_easy_perform(curl);
@@ -427,7 +444,12 @@ std::string BinanceClient::makeHttpRequest(const std::string& url, const std::st
     curl_easy_cleanup(curl);
     
     if (res != CURLE_OK) {
-        throw std::runtime_error("HTTP request failed: " + std::string(curl_easy_strerror(res)));
+        std::string err = curl_easy_strerror(res);
+        // Append hint about CA bundle to help debugging
+        if (res == CURLE_SSL_CACERT || res == CURLE_SSL_CACERT_BADFILE) {
+            err += std::string(" (check CA bundle path or set BINANCE_CA_BUNDLE/CURL_CA_BUNDLE)");
+        }
+        throw std::runtime_error("HTTP request failed: " + err);
     }
     
     if (response_code >= 400) {

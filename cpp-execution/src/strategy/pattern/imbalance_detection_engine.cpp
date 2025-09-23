@@ -703,7 +703,126 @@ bool ImbalanceDetectionEngine::detectMarketDepthChange(const OrderBookMetrics& m
     return depthChanged;
 }
 
-bool ImbalanceDetectionEngine::detectLargeOrderAppearance(const OrderBookMetrics& metrics){
+bool ImbalanceDetectionEngine::detectLargeOrderAppearance(const OrderBookMetrics& metrics) {
+    // Configuration thresholds - these should be configurable parameters
+    static const double VOLUME_IMBALANCE_THRESHOLD = 0.3;        // 30% imbalance
+    static const double WEIGHTED_IMBALANCE_THRESHOLD = 0.25;     // 25% weighted imbalance
+    static const double DEPTH_IMBALANCE_THRESHOLD = 0.4;         // 40% depth imbalance
+    static const double PRESSURE_IMBALANCE_THRESHOLD = 0.35;     // 35% pressure imbalance
+    static const double BID_ASK_RATIO_THRESHOLD_HIGH = 2.0;      // 2:1 ratio or higher
+    static const double BID_ASK_RATIO_THRESHOLD_LOW = 0.5;       // 1:2 ratio or lower
+    static const double DENSITY_RATIO_THRESHOLD = 1.5;          // 50% difference in density
+    static const double MARKET_DIRECTIONAL_THRESHOLD = 0.6;     // Strong directional signal
+    static const double LIQUIDITY_PRESSURE_THRESHOLD = 0.4;     // High liquidity pressure
+    
+    // Counter for detection signals
+    int detectionSignals = 0;
+    const int REQUIRED_SIGNALS = 3;  // Need at least 3 signals for confirmation
+    
+    // 1. Check volume imbalance - indicates large orders affecting volume distribution
+    double absVolumeImbalance = std::abs(metrics.volumeImbalance);
+    if (absVolumeImbalance > VOLUME_IMBALANCE_THRESHOLD) {
+        detectionSignals++;
+    }
+    
+    // 2. Check weighted volume imbalance - price-weighted indicator is more sensitive
+    double absWeightedImbalance = std::abs(metrics.weightedVolumeImbalance);
+    if (absWeightedImbalance > WEIGHTED_IMBALANCE_THRESHOLD) {
+        detectionSignals++;
+    }
+    
+    // 3. Check depth imbalance - large orders create depth asymmetries
+    double absDepthImbalance = std::abs(metrics.depthImbalance);
+    if (absDepthImbalance > DEPTH_IMBALANCE_THRESHOLD) {
+        detectionSignals++;
+    }
+    
+    // 4. Check pressure imbalance - combined pressure indicator
+    double absPressureImbalance = std::abs(metrics.pressureImbalance);
+    if (absPressureImbalance > PRESSURE_IMBALANCE_THRESHOLD) {
+        detectionSignals++;
+    }
+    
+    // 5. Check bid-ask volume ratio for extreme values
+    if (metrics.bidAskVolumeRatio > BID_ASK_RATIO_THRESHOLD_HIGH || 
+        metrics.bidAskVolumeRatio < BID_ASK_RATIO_THRESHOLD_LOW) {
+        detectionSignals++;
+    }
+    
+    // 6. Check density imbalance - large orders create density asymmetries
+    if (metrics.bidDensity > 0 && metrics.askDensity > 0) {
+        double densityRatio = std::max(metrics.bidDensity / metrics.askDensity, 
+                                     metrics.askDensity / metrics.bidDensity);
+        if (densityRatio > DENSITY_RATIO_THRESHOLD) {
+            detectionSignals++;
+        }
+    }
+    
+    // 7. Check market directional coefficient - strong directional bias
+    double absMarketDirectional = std::abs(metrics.marketDirectionalCoefficient);
+    if (absMarketDirectional > MARKET_DIRECTIONAL_THRESHOLD) {
+        detectionSignals++;
+    }
+    
+    // 8. Check liquidity pressure - high pressure indicates large order impact
+    double absLiquidityPressure = std::abs(metrics.liquidityPressure);
+    if (absLiquidityPressure > LIQUIDITY_PRESSURE_THRESHOLD) {
+        detectionSignals++;
+    }
+    
+    // 9. Check for significant level-by-level volume concentration
+    bool hasConcentratedVolume = checkVolumeConcentration(metrics);
+    if (hasConcentratedVolume) {
+        detectionSignals++;
+    }
+    
+    // 10. Additional check using custom metrics if available
+    double bidFlow = metrics.getMetric("bidFlow", 0.0);
+    double askFlow = metrics.getMetric("askFlow", 0.0);
+    if (std::abs(bidFlow - askFlow) > 0.5) {  // Significant flow imbalance
+        detectionSignals++;
+    }
+    
+    // Return true if we have enough confirming signals
+    return detectionSignals >= REQUIRED_SIGNALS;
+}
+
+// Helper function to check volume concentration at specific levels
+// Note: Add this declaration to your ImbalanceDetectionEngine class header:
+// bool checkVolumeConcentration(const OrderBookMetrics& metrics);
+
+bool ImbalanceDetectionEngine::checkVolumeConcentration(const OrderBookMetrics& metrics) {
+    const double CONCENTRATION_THRESHOLD = 0.6;  // 60% of volume in top levels
+    
+    // Check bid side concentration
+    if (!metrics.bidVolumesByLevel.empty() && metrics.totalBidVolume > 0) {
+        // Check if top 2 levels contain majority of volume
+        double topBidVolume = 0.0;
+        int levelsToCheck = std::min(2, static_cast<int>(metrics.bidVolumesByLevel.size()));
+        
+        for (int i = 0; i < levelsToCheck; ++i) {
+            topBidVolume += metrics.bidVolumesByLevel[i];
+        }
+        
+        if (topBidVolume / metrics.totalBidVolume > CONCENTRATION_THRESHOLD) {
+            return true;
+        }
+    }
+    
+    // Check ask side concentration
+    if (!metrics.askVolumesByLevel.empty() && metrics.totalAskVolume > 0) {
+        double topAskVolume = 0.0;
+        int levelsToCheck = std::min(2, static_cast<int>(metrics.askVolumesByLevel.size()));
+        
+        for (int i = 0; i < levelsToCheck; ++i) {
+            topAskVolume += metrics.askVolumesByLevel[i];
+        }
+        
+        if (topAskVolume / metrics.totalAskVolume > CONCENTRATION_THRESHOLD) {
+            return true;
+        }
+    }
+    
     return false;
 }
 bool ImbalanceDetectionEngine::detectLargeOrderDisappearance(const OrderBookMetrics& metrics){

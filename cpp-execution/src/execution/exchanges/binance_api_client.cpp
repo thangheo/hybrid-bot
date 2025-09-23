@@ -467,6 +467,21 @@ std::string BinanceApiClient::makeApiRequest(std::string endpoint, std::string m
     }
     
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+    // Enforce SSL verification and allow overriding CA bundle via env
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
+    const char* caBundle = getenv("BINANCE_CA_BUNDLE");
+    if (!caBundle) caBundle = getenv("CURL_CA_BUNDLE");
+    if (caBundle) {
+        curl_easy_setopt(curl, CURLOPT_CAINFO, caBundle);
+    } else {
+        struct stat st;
+        if (stat("/etc/ssl/certs/ca-certificates.crt", &st) == 0) {
+            curl_easy_setopt(curl, CURLOPT_CAINFO, "/etc/ssl/certs/ca-certificates.crt");
+        } else if (stat("/etc/ssl/cert.pem", &st) == 0) {
+            curl_easy_setopt(curl, CURLOPT_CAINFO, "/etc/ssl/cert.pem");
+        }
+    }
     
     // Execute request
     CURLcode res = curl_easy_perform(curl);
@@ -479,7 +494,11 @@ std::string BinanceApiClient::makeApiRequest(std::string endpoint, std::string m
     curl_easy_cleanup(curl);
 
     if (res != CURLE_OK) {
-        throw std::runtime_error(std::string("CURL request failed: ") + curl_easy_strerror(res));
+        std::string err = curl_easy_strerror(res);
+        if (res == CURLE_SSL_CACERT || res == CURLE_SSL_CACERT_BADFILE) {
+            err += std::string(" (SSL CA cert problem - check BINANCE_CA_BUNDLE/CURL_CA_BUNDLE or system CA path)");
+        }
+        throw std::runtime_error(std::string("CURL request failed: ") + err);
     }
     if (httpCode >= 400) {
         throw std::runtime_error("HTTP error " + std::to_string(httpCode) + ": " + responseBuffer);
