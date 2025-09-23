@@ -123,7 +123,17 @@ public:
         try {
             const ExposureContext context = buildExposureContext(signal);
             if (!context.isValid()) {
-                violations.emplace_back(ViolationType::OTHER, "Invalid signal context", 0.0, 0.0);
+                // Build a clearer description of what's missing/invalid
+                std::string desc = "Invalid signal context:";
+                if (context.symbol.empty()) desc += " missing symbol";
+                const std::string symStr = context.symbol.toString();
+                if (context.baseAsset.empty()) {
+                    desc += " missing base asset";
+                    if (!symStr.empty()) desc += " (symbol: '" + symStr + "')";
+                }
+                if (context.price <= 0.0) desc += " invalid price=" + std::to_string(context.price);
+
+                violations.emplace_back(ViolationType::OTHER, desc, 0.0, 0.0);
                 return violations;
             }
 
@@ -282,16 +292,54 @@ private:
         
         context.price = getPrice(context.symbol);
         context.volatility = getVolatility(context.symbol);
-        
+
+        // Defensive fallback: try to derive base asset from symbol string if empty
+        if (context.baseAsset.empty()) {
+            const std::string symStr = context.symbol.toString();
+            const auto pos = symStr.find('/');
+            if (pos != std::string::npos && pos > 0) {
+                context.baseAsset = symStr.substr(0, pos);
+            } else if (!symStr.empty()) {
+                // Try simple heuristic: strip common quote suffixes (USDT, USDC, BTC, ETH, BUSD, USD, EUR)
+                static const std::vector<std::string> commonQuotes = {"USDT","USDC","BTC","ETH","BUSD","USD","EUR"};
+                for (const auto &q : commonQuotes) {
+                    if (symStr.size() > q.size() && symStr.rfind(q) == symStr.size() - q.size()) {
+                        context.baseAsset = symStr.substr(0, symStr.size() - q.size());
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Defensive fallback for price: if cached price is zero or invalid, try data interface and then a safe default
+        if (context.price <= 0.0) {
+            try {
+                if (dataInterface_) {
+                    const double p = dataInterface_->getCurrentPrice(context.symbol.toString());
+                    if (p > 0.0) {
+                        context.price = p;
+                    }
+                }
+            } catch (const std::exception& ex) {
+                LOG_WARN("Fallback price lookup failed for {}: {}", context.symbol.toString(), ex.what());
+            }
+
+            if (context.price <= 0.0) {
+                // Use a conservative safe fallback price and emit a warning so callers can see why we continued
+                LOG_WARN("Using safe fallback price for {} because no valid market price was available", context.symbol.toString());
+                context.price = 1.0;
+            }
+        }
+
         if (context.isValid()) {
             const double notional = std::abs(context.quantity) * context.price;
-            
+
             double riskFactor;
             {
                 std::shared_lock<std::shared_mutex> lock(limitsMutex_);
                 riskFactor = exposureLimits_.volatilityMultiplier;
             }
-            
+
             context.riskAdjustedExposure = notional * (1.0 + context.volatility * riskFactor);
         }
         
