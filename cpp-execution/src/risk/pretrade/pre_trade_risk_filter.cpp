@@ -15,6 +15,17 @@
 namespace trading {
 namespace risk {
 
+// Helper to convert RiskManagerMode to readable string for logs
+static std::string riskModeToString(RiskManagerMode mode) {
+    switch (mode) {
+        case RiskManagerMode::NORMAL: return "NORMAL";
+        case RiskManagerMode::HEIGHTENED_RISK: return "HEIGHTENED_RISK";
+        case RiskManagerMode::EMERGENCY: return "EMERGENCY";
+        case RiskManagerMode::MAINTENANCE: return "MAINTENANCE";
+        default: return "UNKNOWN";
+    }
+}
+
 // // static std::unique_ptr<PreTradeRiskFilter> createPreTradeFilter(const RiskConfig& config);
 // std::unique_ptr<PreTradeRiskFilter> createPreTradeFilter(const RiskConfig& config) {
 //     auto filter = std::make_unique<PreTradeRiskFilter>(config);
@@ -122,16 +133,23 @@ ValidationResult PreTradeRiskFilter::validateSignal(const TradingSignal& signal)
         ValidationResult result;
         result.signalId = signal.getSignalId();
         result.approved = false;
-        
+        result.timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count();
+
+        std::string desc = "Risk system is in emergency mode, all signals rejected";
         RiskViolation violation(
             ViolationType::OTHER,
-            "Risk system is in emergency mode, all signals rejected",
+            desc,
             0.0,
             0.0
         );
         result.violations.push_back(violation);
-        
-        LOG_WARN("Signal {} rejected: risk system in emergency mode", signal.getSignalId());
+
+        LOG_WARN("Signal {} rejected (mode={}): {} pair={} dir={} size={}",
+                 signal.getSignalId(), riskModeToString(m_activeMode), desc,
+                 signal.getTradingPair().toString(),
+                 (signal.getDirection() == core::Direction::BUY ? "BUY" : "SELL"),
+                 signal.getTargetSize());
         return result;
     }
     
@@ -153,16 +171,23 @@ ValidationResult PreTradeRiskFilter::validateOrder(const OrderRequest& orderRequ
         ValidationResult result;
         result.signalId = orderRequest.clientOrderId;
         result.approved = false;
-        
+        result.timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count();
+
+        std::string desc = "Risk system is in emergency mode, all orders rejected";
         RiskViolation violation(
             ViolationType::OTHER,
-            "Risk system is in emergency mode, all orders rejected",
+            desc,
             0.0,
             0.0
         );
         result.violations.push_back(violation);
-        
-        LOG_WARN("Order {} rejected: risk system in emergency mode", orderRequest.clientOrderId);
+
+        LOG_WARN("Order {} rejected (mode={}): {} pair={} side={} qty={}",
+                 orderRequest.clientOrderId, riskModeToString(m_activeMode), desc,
+                 orderRequest.tradingPair.toString(),
+                 (orderRequest.side == core::Direction::BUY ? "BUY" : "SELL"),
+                 orderRequest.quantity);
         return result;
     }
     
@@ -252,6 +277,11 @@ ValidationResult PreTradeRiskFilter::performAllChecks(const TradingSignal& signa
     if (!passesBasicValidation(signal, result.violations)) {
         result.approved = false;
         LOG_INFO("Signal {} rejected: failed basic validation", signal.getSignalId());
+        // Log detailed violations for easier debugging
+        for (const auto& v : result.violations) {
+            LOG_INFO("  Violation: type={} desc='{}' limit={} actual={}",
+                     toString(v.type), v.description, v.limitValue, v.actualValue);
+        }
         return result;
     }
     
@@ -270,6 +300,10 @@ ValidationResult PreTradeRiskFilter::performAllChecks(const TradingSignal& signa
                                 exposureViolations.end());
         result.approved = false;
         LOG_INFO("Signal {} rejected: failed exposure check", signal.getSignalId());
+        for (const auto& v : exposureViolations) {
+            LOG_INFO("  Exposure Violation: type={} desc='{}' limit={} actual={}",
+                     toString(v.type), v.description, v.limitValue, v.actualValue);
+        }
     }
     
     // Check order validation
@@ -304,6 +338,11 @@ ValidationResult PreTradeRiskFilter::performAllChecks(const OrderRequest& orderR
     if (!passesBasicValidation(orderRequest, result.violations)) {
         result.approved = false;
         LOG_INFO("Order {} rejected: failed basic validation", orderRequest.clientOrderId);
+        // Log detailed violations for easier debugging
+        for (const auto& v : result.violations) {
+            LOG_INFO("  Violation: type={} desc='{}' limit={} actual={}",
+                     toString(v.type), v.description, v.limitValue, v.actualValue);
+        }
         return result;
     }
     
@@ -330,6 +369,10 @@ ValidationResult PreTradeRiskFilter::performAllChecks(const OrderRequest& orderR
                                 exposureViolations.end());
         result.approved = false;
         LOG_INFO("Order {} rejected: failed exposure check", orderRequest.clientOrderId);
+        for (const auto& v : exposureViolations) {
+            LOG_INFO("  Exposure Violation: type={} desc='{}' limit={} actual={}'",
+                     toString(v.type), v.description, v.limitValue, v.actualValue);
+        }
     }
     
     // Check order validation
@@ -357,6 +400,7 @@ bool PreTradeRiskFilter::passesBasicValidation(const TradingSignal& signal,
                                               std::vector<RiskViolation>& violations) {
     // Check for missing required fields
     if (signal.getSignalId().empty()) {
+        LOG_INFO("Signal rejected: missing Signal ID");
         RiskViolation violation(
             ViolationType::OTHER,
             "Signal ID is missing",
@@ -368,6 +412,7 @@ bool PreTradeRiskFilter::passesBasicValidation(const TradingSignal& signal,
     }
 
     if (signal.getTradingPair().isEmpty()) {
+        LOG_INFO("Signal {} rejected: missing Trading Pair", signal.getSignalId());
         RiskViolation violation(
             ViolationType::OTHER,
             "Trading pair is missing",
@@ -380,6 +425,7 @@ bool PreTradeRiskFilter::passesBasicValidation(const TradingSignal& signal,
     
     // Check for invalid values
     if (signal.getTargetSize() <= 0) {
+        LOG_INFO("Signal {} rejected: non-positive target size", signal.getSignalId());
         RiskViolation violation(
             ViolationType::ORDER_SIZE_LIMIT,
             "Target size must be positive",
@@ -393,6 +439,7 @@ bool PreTradeRiskFilter::passesBasicValidation(const TradingSignal& signal,
     // Check for valid direction
     if (signal.getDirection() != core::Direction::BUY && 
         signal.getDirection() != core::Direction::SELL) {
+        LOG_INFO("Signal {} rejected: invalid direction", signal.getSignalId());
         RiskViolation violation(
             ViolationType::OTHER,
             "Invalid direction value",
