@@ -48,6 +48,19 @@ struct PositionLimitConfig {
 };
 
 /**
+ * Configuration for position sizing algorithms
+ */
+struct PositionSizingConfig {
+    std::string method = "kelly_criterion"; // kelly_criterion, volatility_adjusted, fixed_percent, risk_parity
+    double base_risk_per_trade = 0.02;        // 2% default
+    double max_position_size = 0.15;          // 15% default
+    double kelly_safety_factor = 0.25;        // use 25% of Kelly by default
+    int volatility_lookback = 14;             // lookback window for volatility
+
+    PositionSizingConfig() = default;
+};
+
+/**
  * Configuration structure for exposure limits
  */
 struct ExposureLimitConfig {

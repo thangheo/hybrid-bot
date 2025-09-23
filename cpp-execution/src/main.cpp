@@ -49,6 +49,9 @@
 #include "risk/risk_manager.hpp"
 #include "risk/risk_config.hpp"
 #include "risk/risk_types.hpp"
+// Position sizer
+#include "risk/position_sizer.hpp"
+#include <algorithm>
 
 // Execution engine
 #include "execution/execution_service.hpp"
@@ -102,6 +105,8 @@ public:
         marketDataInterface_ = std::make_shared<trading::risk::MarketDataInterface>(riskConfig_);
         // set zmq client to marketDataInterface_
         marketDataInterface_->setZmqClient(std::move(zmq_client_));
+    // Initialize position sizer with default config for now
+    positionSizer_ = std::make_unique<trading::risk::PositionSizer>();
        
     }
     
@@ -751,6 +756,8 @@ private:
     std::unique_ptr<strategy::StrategyEngine> strategyEngine_;
     std::shared_ptr<risk::RiskManager> riskManager_;
     std::shared_ptr<execution::ExecutionService> executionService_;
+    // Position sizing helper (Kelly / volatility adjusted)
+    std::unique_ptr<trading::risk::PositionSizer> positionSizer_;
     // gateway
     std::shared_ptr<common::ExchangeGateway> exchangeGateway_;
 
@@ -1331,12 +1338,32 @@ private:
                 report.setOrderId("ORDER_" + task.id);
                 report.setSymbol(task.symbol);
                 report.setSide(task.direction == core::Direction::BUY ? execution::models::OrderSide::BUY : execution::models::OrderSide::SELL);
-                //targetSize is a scale from 0 to 1, we assume 1 means full position size
-                //we use exposure limits to determine actual size
-                double positionSize = riskManager_->getAllowedPositionSize(task.symbol);
-                // report.setPrice(response.execution_price);
-                report.setQuantity(positionSize * task.targetSize);
-                report.setFilledQuantity(positionSize * task.targetSize);
+                // targetSize is a scale from 0 to 1 (1 == full position as allowed by risk)
+                // We compute an allowed size from the risk manager then modulate it by the PositionSizer
+                double allowedSize = 0.0;
+                if (riskManager_) {
+                    allowedSize = riskManager_->getAllowedPositionSize(task.symbol);
+                }
+
+                double sizerFraction = 1.0;
+                if (positionSizer_) {
+                    std::map<std::string, double> metrics;
+                    // Minimal metrics: use confidence as a rough proxy for win_rate
+                    metrics["win_rate"] = task.confidence;
+                    // placeholder volatility - can be replaced with real vol from market data
+                    metrics["volatility"] = 0.05;
+                    std::map<std::string, double> portfolio;
+                    sizerFraction = positionSizer_->calculateSize(task.symbol.toString(), metrics, portfolio);
+                    sizerFraction = std::clamp(sizerFraction, 0.0, 1.0);
+                }
+
+                double positionSize = allowedSize * sizerFraction;
+                // clamp this to
+                double finalQty = positionSize * task.targetSize;
+                // clamp to limit exposure or it will be rejected by risk
+                finalQty = std::clamp(finalQty, 0.0, allowedSize);
+                report.setQuantity(finalQty);
+                report.setFilledQuantity(finalQty);
                 report.setStatus(execution::models::OrderState::FILLED);
                 if (riskManager_) {
                     riskManager_->processExecutionReport(report);
