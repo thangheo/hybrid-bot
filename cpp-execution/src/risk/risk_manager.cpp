@@ -505,7 +505,14 @@ bool RiskManager::emergencyAction(const std::string& reason) {
         return false;
     }
 }
-
+// getAllowedPositionSize
+double RiskManager::getAllowedPositionSize(const TradingPair& tradingPair) const {
+    if (m_preTradeFilter) {
+        return m_preTradeFilter->getAllowedPositionSize(tradingPair);
+    }
+    // Default to 0 if pre-trade filter is unavailable
+    return 0.0;
+}
 // void RiskManager::notifyRiskEvent(const RiskEvent& event) {
 //     std::lock_guard<std::mutex> lock(m_callbackMutex);
 //     for (const auto& callback : m_eventCallbacks) {

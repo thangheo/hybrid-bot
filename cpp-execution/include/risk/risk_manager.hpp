@@ -162,7 +162,8 @@ public:
      * @return true if action was successful, false otherwise
      */
     bool emergencyAction(const std::string& reason);
-   
+    // getAllowedPositionSize
+    double getAllowedPositionSize(const TradingPair& tradingPair) const;
 private:
     std::shared_ptr<trading::execution::ExecutionService> m_execService;
     std::shared_ptr<trading::execution::ExecutionService> m_executionService;
