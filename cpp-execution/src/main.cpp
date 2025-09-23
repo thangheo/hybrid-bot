@@ -1147,8 +1147,8 @@ private:
                 try {
                     // Get PTCA recommendation first (needs signal alive)
                     double ptcaRecommendation = ptcaManager_->getSignalRecommendation(signal);
-                    std::cout << "PTCA recommendation for signal " << signal.id 
-                              << ": " << ptcaRecommendation << std::endl;
+                    // std::cout << "PTCA recommendation for signal " << signal.id 
+                            //   << ": " << ptcaRecommendation << std::endl;
                     double adjustedStrength = signal.strength;
                     if (ptcaRecommendation > 0.2) {
                         adjustedStrength = std::min(1.0, signal.strength * (1.0 + ptcaRecommendation * 0.3));

@@ -5,7 +5,6 @@
 #include <cmath>
 #include <iostream>
 #include <chrono>
-#include <thread>
 #include <random>
 #include <algorithm>
 #include <numeric>
@@ -14,41 +13,6 @@ namespace trading {
 namespace execution {
 namespace algorithms {
 
-// Simple timer implementation for bucket processing
-// class Timer {
-// public:
-//     Timer(std::function<void(void)> callback, std::chrono::milliseconds interval)
-//         : callback_(callback), interval_(interval), running_(false) {}
-    
-//     ~Timer() {
-//         stop();
-//     }
-    
-//     void start() {
-//         running_ = true;
-//         thread_ = std::thread([this]() {
-//             while (running_) {
-//                 std::this_thread::sleep_for(interval_);
-//                 if (running_) {
-//                     callback_();
-//                 }
-//             }
-//         });
-//     }
-    
-//     void stop() {
-//         running_ = false;
-//         if (thread_.joinable()) {
-//             thread_.join();
-//         }
-//     }
-    
-// private:
-//     std::function<void(void)> callback_;
-//     std::chrono::milliseconds interval_;
-//     std::thread thread_;
-//     std::atomic<bool> running_;
-// };
 
 VwapAlgorithm::VwapAlgorithm() = default;
 
