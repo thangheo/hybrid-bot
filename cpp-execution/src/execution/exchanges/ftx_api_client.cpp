@@ -237,7 +237,7 @@ std::future<models::ExecutionReport> FtxApiClient::placeOrder(const models::Orde
         
         // Prepare parameters
         std::map<std::string, std::string> params;
-        params["market"] = tradingPair.toString();
+    params["market"] = trading::execution::util::normalizeSymbolForExchange(tradingPair.toString());
         params["side"] = translateOrderSide(side);
         params["type"] = translateOrderType(type);
         params["size"] = std::to_string(quantity);

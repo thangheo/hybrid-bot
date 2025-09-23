@@ -154,7 +154,7 @@ std::future<models::ExecutionReport> BinanceApiClient::placeOrder(const models::
         
         // Prepare parameters
         std::map<std::string, std::string> params;
-        params["symbol"] = tradingPair.toString();
+    params["symbol"] = trading::execution::util::normalizeSymbolForExchange(tradingPair.toString());
         params["side"] = translateOrderSide(side);
         params["type"] = translateOrderType(type);
         params["quantity"] = std::to_string(quantity);
@@ -199,7 +199,7 @@ std::future<models::ExecutionReport> BinanceApiClient::cancelOrder(const std::st
         
         // Prepare parameters
         std::map<std::string, std::string> params;
-        params["symbol"] = symbol.toString();
+    params["symbol"] = trading::execution::util::normalizeSymbolForExchange(symbol.toString());
         
         // Check if orderId is a client order ID or exchange order ID
         if (orderId.find("CLIENT:") == 0) {
@@ -237,7 +237,7 @@ std::future<models::ExecutionReport> BinanceApiClient::getOrderStatus(const std:
         
         // Prepare parameters
         std::map<std::string, std::string> params;
-        params["symbol"] = symbol.toString();
+    params["symbol"] = trading::execution::util::normalizeSymbolForExchange(symbol.toString());
         
         // Check if orderId is a client order ID or exchange order ID
         if (orderId.find("CLIENT:") == 0) {
@@ -316,7 +316,7 @@ std::future<double> BinanceApiClient::getCurrentPrice(const core::Symbol& symbol
         
         // Prepare parameters
         std::map<std::string, std::string> params;
-        params["symbol"] = symbol.toString();
+    params["symbol"] = trading::execution::util::normalizeSymbolForExchange(symbol.toString());
         
         // Send request
         std::string response = makeApiRequest("/api/v3/ticker/price", "GET", params, false);

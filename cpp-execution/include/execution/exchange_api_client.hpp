@@ -7,6 +7,30 @@
 #include <future>
 #include "execution/models/order.hpp"
 #include "execution/models/execution_report.hpp"
+#include <algorithm>
+#include <cctype>
+
+namespace trading {
+namespace execution {
+namespace util {
+// Normalize trading symbol to acceptable characters for exchanges.
+// Removes separators like '/', ':' and spaces, uppercases letters, and
+// keeps only A-Z, 0-9, '-', '_' and '.'. Implemented inline so it can
+// be used across translation units without adding a new source file.
+static inline std::string normalizeSymbolForExchange(const std::string& sym) {
+    std::string out;
+    out.reserve(sym.size());
+    for (unsigned char c : sym) {
+        if (c == '/' || c == ':' || c == ' ') continue;
+        if (std::isalnum(c) || c == '-' || c == '_' || c == '.') {
+            out.push_back(static_cast<char>(std::toupper(c)));
+        }
+    }
+    return out;
+}
+} // namespace util
+} // namespace execution
+} // namespace trading
 
 namespace trading {
 namespace execution {
