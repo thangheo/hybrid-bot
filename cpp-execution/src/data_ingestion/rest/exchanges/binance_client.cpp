@@ -353,7 +353,66 @@ std::string BinanceClient::sendSignedRequest(const std::string& endpoint,
     std::map<std::string, std::string> headers;
     headers["X-MBX-APIKEY"] = m_api_key;
     
-    return makeHttpRequest(url, "POST", "", headers);
+    // Attempt the request, but if Binance returns code -1021 (timestamp outside recvWindow)
+    // perform a server time sync and retry once with corrected timestamp.
+    try {
+        return makeHttpRequest(url, "POST", "", headers);
+    } catch (const std::exception& ex) {
+        std::string err = ex.what();
+        // Try to extract JSON body from the error message ("HTTP error <code>: <body>")
+        auto jsonPos = err.find('{');
+        if (jsonPos != std::string::npos) {
+            std::string body = err.substr(jsonPos);
+            try {
+                auto root = nlohmann::json::parse(body);
+                if (root.contains("code") && root["code"].is_number_integer()) {
+                    int code = root["code"].get<int>();
+                    if (code == -1021) {
+                        LOG_WARN("BinanceClient: received -1021 Timestamp error, performing server time sync and retry");
+                        // Resync server time
+                        try {
+                            std::map<std::string, std::string> empty;
+                            std::string resp = sendPublicRequest("/api/v3/time", empty);
+                            auto rt = nlohmann::json::parse(resp);
+                            if (rt.contains("serverTime")) {
+                                long long serverTime = rt["serverTime"].get<long long>();
+                                long long local = getCurrentTimestamp();
+                                clockOffsetMs_ = serverTime - local;
+                                LOG_INFO("BinanceClient: resynced clock offset {} ms", clockOffsetMs_);
+                            }
+                        } catch (const std::exception& e2) {
+                            LOG_WARN("BinanceClient: server time resync failed: {}", e2.what());
+                        }
+
+                        // Rebuild params with corrected timestamp and signature, then retry once
+                        std::map<std::string, std::string> p2 = p;
+                        long long ts2 = getCurrentTimestamp() + clockOffsetMs_;
+                        p2["timestamp"] = std::to_string(ts2);
+                        if (p2.find("recvWindow") == p2.end()) {
+                            p2["recvWindow"] = std::to_string(defaultRecvWindowMs_);
+                        }
+                        std::string query_string2 = buildQueryString(p2);
+                        std::string signature2 = generateSignature(query_string2);
+                        if (!query_string2.empty()) query_string2 += "&";
+                        query_string2 += "signature=" + signature2;
+                        std::string url2 = m_base_url + endpoint + "?" + query_string2;
+
+                        try {
+                            return makeHttpRequest(url2, "POST", "", headers);
+                        } catch (const std::exception& ex2) {
+                            // propagate the second error
+                            throw;
+                        }
+                    }
+                }
+            } catch (const std::exception&) {
+                // ignore parsing errors and rethrow original
+            }
+        }
+
+        // Not a recoverable -1021 or couldn't parse: rethrow original
+        throw;
+    }
 }
 
 std::string BinanceClient::sendPublicRequest(const std::string& endpoint, 
