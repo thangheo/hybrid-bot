@@ -219,10 +219,18 @@ bool DataIngestionService::setupOrderBookComponents() {
     try {
         // Initialize reconstructor
         reconstructor_ = &OrderBookReconstructor::getInstance();
-        if (!reconstructor_->initialize(publisher_, orderBookManager_)) {
-            std::cerr << "Failed to initialize order book reconstructor" << std::endl;
+        if (!reconstructor_) {
+            std::cerr << "Failed to get OrderBookReconstructor instance (null)" << std::endl;
             return false;
         }
+        std::cout << "Attempting to initialize OrderBookReconstructor..." << std::endl;
+        if (!reconstructor_->initialize(publisher_, orderBookManager_)) {
+            std::cerr << "Failed to initialize order book reconstructor: publisher=" 
+                      << (publisher_ ? "set" : "null") << ", manager=" 
+                      << (orderBookManager_ ? "set" : "null") << std::endl;
+            return false;
+        }
+        std::cout << "OrderBookReconstructor initialized and ready" << std::endl;
         
         return true;
     } catch (const std::exception& e) {
@@ -304,11 +312,12 @@ void DataIngestionService::onNormalizedOrderBook(const OrderBookUpdate& update) 
                     update.receivedTimestamp
                 );
             }
+        } else {
+            std::cerr << "Warning: reconstructor_ is null in onNormalizedOrderBook" << std::endl;
+            errorsEncountered_.fetch_add(1);
         }
-        
         // Notify external callback
         if (orderBookCallback_) {
-            // std::cout << "[DEBUG] Calling external orderBookCallback_" << std::endl;            
             orderBookCallback_(update);
         } else {
             std::cout << "[ERROR] orderBookCallback_ is null!" << std::endl;
