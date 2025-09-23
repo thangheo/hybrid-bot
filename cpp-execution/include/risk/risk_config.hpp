@@ -515,8 +515,9 @@ public:
 
     // zmqPublisherEndpoint
     std::string zmqPublisherEndpoint = "tcp://localhost:5563";
-    // cache validity duration in milliseconds
-    int marketDataCacheDurationMs = 10;
+    // cache validity duration in milliseconds (default increased to 1000ms to avoid
+    // immediate expirations during fast lookups). Can be overridden via config.
+    int marketDataCacheDurationMs = 1000;
     std::string defaultExchange = "binance";
     //
 
