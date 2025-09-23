@@ -210,6 +210,8 @@ public:
     ReconciliationResult forceFullReconciliation();
 
 private:
+// m_schedulingMutex
+    mutable std::mutex m_schedulingMutex;
     // Dependencies
     std::shared_ptr<PositionTracker> m_positionTracker;
     std::shared_ptr<DataInterface> m_dataInterface;

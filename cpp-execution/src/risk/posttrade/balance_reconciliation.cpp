@@ -269,13 +269,44 @@ ReconciliationResult BalanceReconciliation::reconcileTradingPair(
     return result;
 }
 
+// bool BalanceReconciliation::startScheduledReconciliation() {
+//     if (m_isScheduledActive.load()) {
+//         return false; // Already active
+//     }
+    
+//     if (m_config.reconciliationFrequency.count() <= 0) {
+//         return false; // Invalid frequency
+//     }
+    
+//     m_shouldStop.store(false);
+//     m_isScheduledActive.store(true);
+    
+//     // Calculate first reconciliation time
+//     m_nextScheduledTime = calculateNextReconciliationTime();
+    
+//     // Start background thread
+//     m_scheduledThread = std::make_unique<std::thread>(
+//         &BalanceReconciliation::scheduledReconciliationLoop, this
+//     );
+    
+//     return true;
+// }
+
 bool BalanceReconciliation::startScheduledReconciliation() {
+    // FIX: Use a mutex to make the check-and-set atomic
+    std::lock_guard<std::mutex> lock(m_schedulingMutex);  // Add this mutex to your class
+    
     if (m_isScheduledActive.load()) {
         return false; // Already active
     }
     
     if (m_config.reconciliationFrequency.count() <= 0) {
         return false; // Invalid frequency
+    }
+    
+    // Clean up any existing thread first
+    if (m_scheduledThread && m_scheduledThread->joinable()) {
+        m_scheduledThread->join();
     }
     
     m_shouldStop.store(false);
