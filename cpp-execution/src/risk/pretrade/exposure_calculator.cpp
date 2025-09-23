@@ -294,22 +294,23 @@ private:
         context.volatility = getVolatility(context.symbol);
 
         // Defensive fallback: try to derive base asset from symbol string if empty
-        if (context.baseAsset.empty()) {
-            const std::string symStr = context.symbol.toString();
-            const auto pos = symStr.find('/');
-            if (pos != std::string::npos && pos > 0) {
-                context.baseAsset = symStr.substr(0, pos);
-            } else if (!symStr.empty()) {
-                // Try simple heuristic: strip common quote suffixes (USDT, USDC, BTC, ETH, BUSD, USD, EUR)
-                static const std::vector<std::string> commonQuotes = {"USDT","USDC","BTC","ETH","BUSD","USD","EUR"};
-                for (const auto &q : commonQuotes) {
-                    if (symStr.size() > q.size() && symStr.rfind(q) == symStr.size() - q.size()) {
-                        context.baseAsset = symStr.substr(0, symStr.size() - q.size());
-                        break;
-                    }
-                }
-            }
-        }
+        context.baseAsset = context.symbol.base;
+        // if (context.baseAsset.empty()) {
+        //     const std::string symStr = context.symbol.toString();
+        //     const auto pos = symStr.find('/');
+        //     if (pos != std::string::npos && pos > 0) {
+        //         context.baseAsset = symStr.substr(0, pos);
+        //     } else if (!symStr.empty()) {
+        //         // Try simple heuristic: strip common quote suffixes (USDT, USDC, BTC, ETH, BUSD, USD, EUR)
+        //         static const std::vector<std::string> commonQuotes = {"USDT","USDC","BTC","ETH","BUSD","USD","EUR"};
+        //         for (const auto &q : commonQuotes) {
+        //             if (symStr.size() > q.size() && symStr.rfind(q) == symStr.size() - q.size()) {
+        //                 context.baseAsset = symStr.substr(0, symStr.size() - q.size());
+        //                 break;
+        //             }
+        //         }
+        //     }
+        // }
 
         // Defensive fallback for price: if cached price is zero or invalid, try data interface and then a safe default
         if (context.price <= 0.0) {
@@ -420,7 +421,9 @@ private:
     double calculatePositionExposure(const Position& position) const {
         try {
             const double quantity = std::abs(position.getQuantity());
-            const std::string symbol = position.getTradingPair().base; // Assuming Position has getTradingPair() method
+            // Use the full trading pair symbol when looking up prices/volatility
+            const TradingPair tradingPair = position.getTradingPair();
+            const core::Symbol symbol = tradingPair; // convert to core::Symbol
 
             const double price = getPrice(symbol);
             const double volatility = getVolatility(symbol);

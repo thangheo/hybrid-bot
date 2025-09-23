@@ -304,11 +304,11 @@ ValidationResult PreTradeRiskFilter::performAllChecks(const TradingSignal& signa
     // Check basic validation first
     if (!passesBasicValidation(signal, result.violations)) {
         result.approved = false;
-        LOG_INFO("Signal {} rejected: failed basic validation", signal.getSignalId());
-        // Log detailed violations for easier debugging
+        LOG_WARN("Signal {} rejected: failed basic validation", signal.getSignalId());
+        // Detailed violations are noisy under INFO; keep them at DEBUG level
         for (const auto& v : result.violations) {
-            LOG_INFO("  Violation: type={} desc='{}' limit={} actual={}",
-                     toString(v.type), v.description, v.limitValue, v.actualValue);
+            LOG_DEBUG("  Violation: type={} desc='{}' limit={} actual={}",
+                      toString(v.type), v.description, v.limitValue, v.actualValue);
         }
         return result;
     }
@@ -316,7 +316,11 @@ ValidationResult PreTradeRiskFilter::performAllChecks(const TradingSignal& signa
     // Check position limits
     if (!m_positionLimitChecker->checkPositionLimit(signal, result.violations)) {
         result.approved = false;
-        LOG_INFO("Signal {} rejected: failed position limit check", signal.getSignalId());
+        LOG_WARN("Signal {} rejected: failed position limit check", signal.getSignalId());
+        for (const auto& v : result.violations) {
+            LOG_DEBUG("  Violation: type={} desc='{}' limit={} actual={}",
+                      toString(v.type), v.description, v.limitValue, v.actualValue);
+        }
     }
     
     // Check exposure limits
@@ -327,10 +331,10 @@ ValidationResult PreTradeRiskFilter::performAllChecks(const TradingSignal& signa
                                 exposureViolations.begin(), 
                                 exposureViolations.end());
         result.approved = false;
-        LOG_INFO("Signal {} rejected: failed exposure check", signal.getSignalId());
+        LOG_WARN("Signal {} rejected: failed exposure check", signal.getSignalId());
         for (const auto& v : exposureViolations) {
-            LOG_INFO("  Exposure Violation: type={} desc='{}' limit={} actual={}",
-                     toString(v.type), v.description, v.limitValue, v.actualValue);
+            LOG_DEBUG("  Exposure Violation: type={} desc='{}' limit={} actual={}",
+                      toString(v.type), v.description, v.limitValue, v.actualValue);
         }
     }
     
