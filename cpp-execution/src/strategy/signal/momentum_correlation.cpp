@@ -10,7 +10,6 @@
 #include <cmath>
 #include <numeric>
 #include <iostream>
-#include <thread>
 #include <mutex>
  
  namespace trading {

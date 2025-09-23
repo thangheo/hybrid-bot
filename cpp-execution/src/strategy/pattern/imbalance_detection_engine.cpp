@@ -86,35 +86,41 @@
  
  // Analyze order book metrics to detect imbalances
  bool ImbalanceDetectionEngine::analyzeMetrics(const OrderBookMetrics& metrics) {
-     std::lock_guard<std::mutex> lock(mutex_);
-     // Store metrics history for time-series analysis
-     for (const auto& metric : metrics.metrics) {
-         metricHistory_[metric.first] = metric.second;
-     }
-    // Initialize lastMetrics_ on first call and return early - detectors need a previous snapshot
-    if (!lastMetrics_) {
-        lastMetrics_ = metrics;
-        return false;
+    // Only hold the main mutex briefly to update shared history and to initialize lastMetrics_.
+    // Do NOT hold the mutex while running the detectors below — detectors may also lock the same
+    // mutex and holding it here causes a deadlock when detect* functions attempt to acquire it.
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        // Store metrics history for time-series analysis
+        for (const auto& metric : metrics.metrics) {
+            metricHistory_[metric.first] = metric.second;
+        }
+
+        // Initialize lastMetrics_ on first call and return early - detectors need a previous snapshot
+        if (!lastMetrics_) {
+            lastMetrics_ = metrics;
+            return false;
+        }
     }
-    //chekc if metrics is valid
+
+    // Validate metrics without holding the main mutex
     if (metrics.bidVolumesByLevel.empty() || metrics.askVolumesByLevel.empty()) {
-        // std::cerr << "Invalid metrics: empty bid or ask volumes." << std::endl;
+        std::cerr << "Invalid metrics: empty bid or ask volumes." << std::endl;
         return false;
     }
-     // Apply different detection algorithms
-     bool volumeImbalance = detectVolumeImbalance(metrics);
-    //  std::cout << "[analyzeMetrics] volumeImbalance =" << volumeImbalance << std::endl;
-     bool priceLevelImbalance = detectPriceLevelImbalance(metrics);
-    //  std::cout << "[analyzeMetrics] priceLevelImbalance =" << priceLevelImbalance << std::endl;
-     bool liquidityFlowImbalance = detectLiquidityFlowImbalance(metrics);
-    //  std::cout << "[analyzeMetrics] liquidityFlowImbalance =" << liquidityFlowImbalance << std::endl;
-     bool abnormalSpread = detectAbnormalSpread(metrics);
-    //  std::cout << "[analyzeMetrics] abnormalSpread =" << abnormalSpread << std::endl;
-     bool marketDepthChange = detectMarketDepthChange(metrics);
-    //  std::cout << "[analyzeMetrics] marketDepthChange =" << marketDepthChange << std::endl;
-     //data looks correct
+
+    // Call detectors without holding the main mutex to avoid lock-order inversion / deadlocks.
+    bool volumeImbalance = detectVolumeImbalance(metrics);
+    bool priceLevelImbalance = detectPriceLevelImbalance(metrics);
+    bool liquidityFlowImbalance = detectLiquidityFlowImbalance(metrics);
+    bool abnormalSpread = detectAbnormalSpread(metrics);
+    bool marketDepthChange = detectMarketDepthChange(metrics);
+
     // Update last snapshot after all detectors ran (keeps detectors comparing to the same previous snapshot)
-    lastMetrics_ = metrics;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        lastMetrics_ = metrics;
+    }
 
     // Return true if any imbalance was detected
     return volumeImbalance || priceLevelImbalance || liquidityFlowImbalance || abnormalSpread || marketDepthChange;
@@ -342,140 +348,127 @@ double ImbalanceDetectionEngine::calculateImbalanceConfidence(ImbalanceType type
     double adjustedConfidence = baseConfidence + liquidityAdjustment - volatilityAdjustment;
     return std::clamp(adjustedConfidence, 0.0, 1.0);
 }
-//  // Detect volume imbalance
-//  bool ImbalanceDetectionEngine::detectVolumeImbalance(const OrderBookMetrics& metrics) {
-//      // Check if required metrics are available
-//      auto bidVolIt = metrics.metrics.find("bidVolume");
-//      auto askVolIt = metrics.metrics.find("askVolume");
-     
-//      if (bidVolIt == metrics.metrics.end() || askVolIt == metrics.metrics.end()) {
-//          return false; // Required metrics not available
-//      }
-     
-//      double bidVolume = bidVolIt->second;
-//      double askVolume = askVolIt->second;
-//      //print bid and ask volume
-//      // Avoid division by zero
-//      if (askVolume < 1e-10) {
-//          askVolume = 1e-10;
-//      }
-     
-//      // Calculate bid/ask volume ratio
-//      double volumeRatio = bidVolume / askVolume;
-     
-//      // Get threshold for volume imbalance
-//      double threshold = thresholds_.getTypeThreshold(ImbalanceType::VOLUME_IMBALANCE).activation_threshold;
-     
-//      // Detect imbalance if ratio exceeds threshold or is below its inverse
-//      bool isImbalance = (volumeRatio >= threshold || volumeRatio <= 1.0 / threshold);
-     
-//      // Update imbalance state
-//      imbalanceState_[ImbalanceType::VOLUME_IMBALANCE] = isImbalance;
-     
-//      // If imbalance detected, create an event
-//      if (isImbalance) {
-//             double strength;                       
-//             //simplified strength calculation
-//             if (volumeRatio > threshold) {
-//                 strength = (volumeRatio - threshold) / threshold; // Normalize above threshold
-//             } else if (volumeRatio < 1.0 / threshold) {
-//                 strength = (1.0/threshold - volumeRatio) / (1.0/threshold); // Normalize below inverse threshold
-//             } else {
-//                 strength = 0.0; // Should not happen as isImbalance is true
-//             }
-//             strength = std::min(1.0, strength); // Cap at 1.0
-//             // Ensure strength is never negative or invalid
-//             if (strength < 0.0 || !std::isfinite(strength)) {
-//                 strength = 0.0;
-//             }
-//          Direction direction = (volumeRatio > 1.0) ? Direction::BUY : Direction::SELL;
-//          createImbalanceEvent(ImbalanceType::VOLUME_IMBALANCE, strength, direction, metrics);
-//         //  std::cout<<"[TradingApp]ImbalanceDetectionEngine::detectVolumeImbalance:strength="<<strength<<", volumeRatio="<<volumeRatio<<", threshold="<<threshold<<"\n";
 
-//      }
-     
-//      return isImbalance;
-//  }
- bool ImbalanceDetectionEngine::detectVolumeImbalance(const OrderBookMetrics& metrics) {
-    // Check if required metrics are available
-    auto bidVolIt = metrics.metrics.find("bidVolume");
-    auto askVolIt = metrics.metrics.find("askVolume");
-    if (bidVolIt == metrics.metrics.end() || askVolIt == metrics.metrics.end()) {
+// //a more thread safe approach?
+bool ImbalanceDetectionEngine::detectVolumeImbalance(const OrderBookMetrics& metrics) {
+    try {
+        
+        // Check if required metrics are available
+        auto bidVolIt = metrics.metrics.find("bidVolume");
+        auto askVolIt = metrics.metrics.find("askVolume");
+        if (bidVolIt == metrics.metrics.end() || askVolIt == metrics.metrics.end()) {
+            return false;
+        }
+
+        double bidVolume = bidVolIt->second;
+        double askVolume = askVolIt->second;
+
+        // Avoid division by zero
+        if (askVolume < 1e-10) {
+            askVolume = 1e-10;
+        }
+
+        double volumeRatio = bidVolume / askVolume;
+
+        // Snapshot thresholds and current state under the main mutex to avoid races
+        double baseThreshold = 1.0;
+        bool currentlyImbalanced = false;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            baseThreshold = thresholds_.getTypeThreshold(ImbalanceType::VOLUME_IMBALANCE).activation_threshold;
+            auto it = imbalanceState_.find(ImbalanceType::VOLUME_IMBALANCE);
+            if (it != imbalanceState_.end()) currentlyImbalanced = it->second;
+        }
+
+        double enterThreshold = baseThreshold;
+        double exitThreshold = baseThreshold * 0.8; // hysteresis exit level
+        double effectiveThreshold = currentlyImbalanced ? exitThreshold : enterThreshold;
+
+        bool isImbalance = (volumeRatio >= effectiveThreshold || volumeRatio <= 1.0 / effectiveThreshold);
+
+        // ---- Thread-safe lastVolumeRatio storage ----
+        std::pair<core::ExchangeId, core::Symbol> key{metrics.exchangeId, metrics.symbol};
+
+        // If EMA is provided, blend it with raw ratio to avoid abrupt swaps.
+        auto emaIt = metrics.metrics.find("emaVolumeImbalance");
+        const double EMA_BLEND_ALPHA = 0.7; // weight for EMA (configurable later)
+        double rawRatio = bidVolume / askVolume; // recompute raw for blending clarity
+        if (emaIt != metrics.metrics.end()) {
+            double emaVal = emaIt->second;
+            // Only blend when emaVal is finite and positive
+            if (std::isfinite(emaVal) && emaVal > 0.0) {
+                volumeRatio = EMA_BLEND_ALPHA * emaVal + (1.0 - EMA_BLEND_ALPHA) * rawRatio;
+            } else {
+                volumeRatio = rawRatio;
+            }
+        } else {
+            volumeRatio = rawRatio;
+        }
+
+        // Access and update per-key last ratio under its mutex
+        double lastVolumeRatio = volumeRatio; // default to current to avoid spurious first-change
+        {
+            std::lock_guard<std::mutex> lock(lastVolumeMutex_);
+            auto it = lastVolumeRatio_.find(key);
+            if (it == lastVolumeRatio_.end() || !(std::isfinite(it->second) && it->second > 0.0)) {
+                // Initialize to current reading so first comparison doesn't cause a spurious event
+                lastVolumeRatio_[key] = volumeRatio;
+                lastVolumeRatio = volumeRatio;
+            } else {
+                lastVolumeRatio = it->second;
+            }
+        }
+
+        // Compute a symmetric change metric using log-delta which handles up/down ratio similarly
+        double minChangeThreshold = 0.05; // ~5% change (in log space it's approximate)
+        double ratioChange = 0.0;
+        if (lastVolumeRatio > 0.0 && std::isfinite(lastVolumeRatio) && volumeRatio > 0.0 && std::isfinite(volumeRatio)) {
+            ratioChange = std::abs(std::log(volumeRatio) - std::log(lastVolumeRatio));
+        }
+
+        // If currently imbalanced and change is too small, update last snapshot and keep the state
+        if (ratioChange < minChangeThreshold && currentlyImbalanced) {
+            std::lock_guard<std::mutex> lock(lastVolumeMutex_);
+            lastVolumeRatio_[key] = volumeRatio;
+            return currentlyImbalanced;
+        }
+
+        // Persist new last ratio
+        {
+            std::lock_guard<std::mutex> lock(lastVolumeMutex_);
+            lastVolumeRatio_[key] = volumeRatio;
+        }
+
+        // Update shared imbalance state under main mutex to avoid races
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            imbalanceState_[ImbalanceType::VOLUME_IMBALANCE] = isImbalance;
+        }
+
+        // Only generate event if we're newly imbalanced or change is significant
+        if (isImbalance && (!currentlyImbalanced || ratioChange >= minChangeThreshold)) {
+            // Compute strength relative to base activation threshold for consistency
+            double strength = calculateImbalanceStrength(volumeRatio, baseThreshold);
+            Direction direction = (volumeRatio > 1.0) ? Direction::BUY : Direction::SELL;
+
+            std::cout << "[VolumeImbalance] Ratio=" << volumeRatio
+                    << ", Threshold=" << baseThreshold
+                    << ", Strength=" << strength
+                    << ", Direction=" << (direction == Direction::BUY ? "BUY" : "SELL")
+                    << ", Change(log)=" << (ratioChange) << std::endl;
+
+            createImbalanceEvent(ImbalanceType::VOLUME_IMBALANCE, strength, direction, metrics);
+        }
+
+        return isImbalance;
+    } catch (const std::exception& ex) {
+        std::cerr << "Exception in detectVolumeImbalance: " << ex.what() << std::endl;
+        return false;
+    } catch (...) {
+        std::cerr << "Unknown exception in detectVolumeImbalance." << std::endl;
         return false;
     }
-
-    double bidVolume = bidVolIt->second;
-    double askVolume = askVolIt->second;
-
-    // Avoid division by zero
-    if (askVolume < 1e-10) {
-        askVolume = 1e-10;
-    }
-
-    double volumeRatio = bidVolume / askVolume;
-    //try emaVolumeImbalance
-    auto emaIt = metrics.metrics.find("emaVolumeImbalance");
-    if (emaIt != metrics.metrics.end()) {
-        double emaVolumeImbalance = emaIt->second;
-        // Combine raw ratio and EMA for a smoothed ratio
-        // volumeRatio = (volumeRatio + emaVolumeImbalance) / 2.0;
-        volumeRatio = emaVolumeImbalance; // Use EMA directly for detection
-    }
-    
-    // Get current threshold
-    double baseThreshold = thresholds_.getTypeThreshold(ImbalanceType::VOLUME_IMBALANCE).activation_threshold;
-    
-    // HYSTERESIS: Use different thresholds based on current state
-    bool currentlyImbalanced = imbalanceState_[ImbalanceType::VOLUME_IMBALANCE];
-    
-    double enterThreshold = baseThreshold;           // e.g., 1.5
-    double exitThreshold = baseThreshold * 0.8;     // e.g., 1.2 (20% lower)
-    
-    double effectiveThreshold = currentlyImbalanced ? exitThreshold : enterThreshold;
-    
-    // Detect imbalance with hysteresis
-    bool isImbalance = (volumeRatio >= effectiveThreshold || volumeRatio <= 1.0 / effectiveThreshold);
-    
-    // Add minimum change requirement
-    static double lastVolumeRatio = 1.0;
-    double ratioChange = std::abs(volumeRatio - lastVolumeRatio) / lastVolumeRatio;
-    double minChangeThreshold = 0.05; // Require 5% change
-    std::cout << "[detectVolumeImbalance] volumeRatio=" << volumeRatio 
-              << ", lastVolumeRatio=" << lastVolumeRatio 
-              << ", ratioChange=" << (ratioChange * 100) << "%" 
-              << ", effectiveThreshold=" << effectiveThreshold 
-              << ", isImbalance=" << isImbalance 
-              << ", currentlyImbalanced=" << currentlyImbalanced 
-              << std::endl;
-    if (ratioChange < minChangeThreshold && currentlyImbalanced) {
-        // Not enough change, keep current state
-        lastVolumeRatio = volumeRatio;
-        return currentlyImbalanced;
-    }
-    
-    lastVolumeRatio = volumeRatio;
-    
-    // Update state
-    imbalanceState_[ImbalanceType::VOLUME_IMBALANCE] = isImbalance;
-    
-    // Create event only if state changed
-    if (isImbalance && (!currentlyImbalanced || ratioChange >= minChangeThreshold)) {
-        double strength = calculateImbalanceStrength(volumeRatio, effectiveThreshold);
-        Direction direction = (volumeRatio > 1.0) ? Direction::BUY : Direction::SELL;
-        
-        std::cout << "[VolumeImbalance] Ratio=" << volumeRatio 
-                  << ", Threshold=" << effectiveThreshold 
-                  << ", Strength=" << strength 
-                  << ", Direction=" << (direction == Direction::BUY ? "BUY" : "SELL")
-                  << ", Change=" << (ratioChange * 100) << "%" << std::endl;
-        
-        createImbalanceEvent(ImbalanceType::VOLUME_IMBALANCE, strength, direction, metrics);
-    }
-    
-    return isImbalance;
 }
-
-
  // Detect price level imbalance
  bool ImbalanceDetectionEngine::detectPriceLevelImbalance(const OrderBookMetrics& metrics) {
      // Check if required metrics are available

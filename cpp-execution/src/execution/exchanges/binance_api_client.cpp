@@ -8,7 +8,6 @@
 #include <iomanip>
 #include <openssl/hmac.h>
 #include <chrono>
-#include <thread>
 #include <future>
 #include <stdexcept>
 #include <iostream>

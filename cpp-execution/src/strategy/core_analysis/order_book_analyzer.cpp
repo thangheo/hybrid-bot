@@ -217,8 +217,13 @@ void OrderBookAnalyzer::processOrderBook(const data_ingestion::OrderBook& snapsh
         updateTimeSeries();
         calculateDerivedMetrics();
         calculateTimeBasedMetrics();
-               
-        metricsHistory_.push_back(std::move(currentMetrics_)); // Use move
+
+        // Store a copy of the current metrics in history but strip heavy
+        // time-series payload to avoid keeping large duplicated vectors
+        // inside the history which can cause memory growth over time.
+        OrderBookMetrics historyEntry = currentMetrics_;
+        historyEntry.timeSeriesMetrics.clear();
+        metricsHistory_.push_back(std::move(historyEntry));
         while (metricsHistory_.size() > MAX_HISTORY_SIZE) {
             metricsHistory_.pop_front();
         }
@@ -246,6 +251,9 @@ void OrderBookAnalyzer::processOrderBook(const data_ingestion::OrderBook& snapsh
         }
         lastUpdateTime_ = snapshot.getTimestamp();
         metricsToNotify = currentMetrics_;
+        // Avoid sending large time-series data in the notification copy. Callers
+        // interested in time series should query the analyzer directly.
+        metricsToNotify.timeSeriesMetrics.clear();
     }
     
     // Publish event outside of lock to prevent deadlocks
@@ -899,6 +907,10 @@ void OrderBookAnalyzer::notifyMetricsUpdated() {
         metricsCopy = currentMetrics_;
     }
     
+    // Strip heavy time-series data before dispatching to external callbacks to
+    // avoid accidental retention of large vectors by listeners.
+    metricsCopy.timeSeriesMetrics.clear();
+
     // Execute callbacks asynchronously to prevent deadlocks
     for (const auto& callback : callbacks) {
         std::thread([callback, metricsCopy]() {

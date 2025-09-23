@@ -241,7 +241,7 @@ void StrategyEngine::processQueuedSignals() {
         }
         //the below function was never been called which mean orderbook delta is always empty
         // liquidityMonitor_->processOrderBookDelta(std::move(delta)); //dont do this
-
+        
         // Update the volume profile analyzer for this trading pair (create on demand)
          std::string vpId = orderBook.getExchangeId().toString() + ":" + orderBook.getSymbol().toString();
 

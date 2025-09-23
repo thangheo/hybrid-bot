@@ -166,6 +166,10 @@ private:
     
     // Thread safety
     mutable std::mutex mutex_;
+    // Per-(exchange,symbol) last observed volume ratio to avoid cross-symbol interference
+    // and to allow per-instrument change gating in a multi-threaded environment.
+    std::map<std::pair<core::ExchangeId, core::Symbol>, double> lastVolumeRatio_;
+    mutable std::mutex lastVolumeMutex_;
 };
 
 // Type alias
