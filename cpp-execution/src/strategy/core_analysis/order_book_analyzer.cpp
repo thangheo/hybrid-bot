@@ -95,6 +95,43 @@ void OrderBookAnalyzer::processOrderBook(const data_ingestion::OrderBook& snapsh
         
         cachedBids_ = snapshot.getBids(depthLevels_);
         cachedAsks_ = snapshot.getAsks(depthLevels_);
+        //prepare to delete
+        // Simple content hash over top levels to detect unchanged snapshots
+        // size_t h = 1469598103934665603u; // FNV-1a 64-bit offset
+        // auto mix = [&](double price, double qty) {
+        //     uint64_t pbits = std::bit_cast<uint64_t>(price);
+        //     uint64_t qbits = std::bit_cast<uint64_t>(qty);
+        //     h ^= pbits; h *= 1099511628211u;
+        //     h ^= qbits; h *= 1099511628211u;
+        // };
+
+        // size_t sample = std::min<size_t>(cachedBids_.size(), static_cast<size_t>(depthLevels_));
+        // for (size_t i = 0; i < sample; ++i) mix(cachedBids_[i].price, cachedBids_[i].quantity);
+        // sample = std::min<size_t>(cachedAsks_.size(), static_cast<size_t>(depthLevels_));
+        // for (size_t i = 0; i < sample; ++i) mix(cachedAsks_[i].price, cachedAsks_[i].quantity);
+
+        // if (h == lastContentHash_) {
+        //     ++repeatSnapshotCount_;
+        // } else {
+        //     repeatSnapshotCount_ = 0;
+        //     lastContentHash_ = h;
+        // }
+
+        // // Sequence number staleness
+        // uint64_t seq = snapshot.getSequenceNumber();
+        // if (seq == lastSnapshotSequenceNumber_) {
+        //     // no seq change
+        //     ++repeatSnapshotCount_;
+        // } else {
+        //     lastSnapshotSequenceNumber_ = seq;
+        // }
+
+        // if (repeatSnapshotCount_ > staleSnapshotThreshold_) {
+        //     std::cout << std::format("DBG: OrderBookAnalyzer - detected {} repeated identical snapshots (seq={}) for {} on {}\n",
+        //                              repeatSnapshotCount_, seq, snapshot.getSymbol().toString(), snapshot.getExchangeId().toString());
+        //     // Reset counter to avoid spamming
+        //     repeatSnapshotCount_ = 0;
+        // }
 
         // Diagnostic: if empty, print a message
         if (cachedBids_.empty() || cachedAsks_.empty()) {
@@ -136,12 +173,12 @@ void OrderBookAnalyzer::processOrderBook(const data_ingestion::OrderBook& snapsh
             priceGroupingFactor_ = savedGrouping;
 
             // Optional debug: if grouping reduced levels significantly, log it
-            if (cachedBids_.size() < preGroupBidCount || cachedAsks_.size() < preGroupAskCount) {
-                std::cout << std::format("DBG: OrderBookAnalyzer - grouping reduced levels preBid={} postBid={} preAsk={} postAsk={} (effectiveFactor={}) for {} on {}\n",
-                                         preGroupBidCount, cachedBids_.size(), preGroupAskCount, cachedAsks_.size(),
-                                         effectiveGroupingFactor, snapshot.getSymbol().toString(), snapshot.getExchangeId().toString());
-            }
-        }
+        //     if (cachedBids_.size() < preGroupBidCount || cachedAsks_.size() < preGroupAskCount) {
+        //         std::cout << std::format("DBG: OrderBookAnalyzer - grouping reduced levels preBid={} postBid={} preAsk={} postAsk={} (effectiveFactor={}) for {} on {}\n",
+        //                                  preGroupBidCount, cachedBids_.size(), preGroupAskCount, cachedAsks_.size(),
+        //                                  effectiveGroupingFactor, snapshot.getSymbol().toString(), snapshot.getExchangeId().toString());
+        //     }
+        // }
 
         // STARTUP WARM-UP: skip publishing metrics until we have a minimum
         // amount of depth on both sides and non-zero volume. Use pre-group
