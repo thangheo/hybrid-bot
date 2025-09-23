@@ -159,13 +159,13 @@ void MarketDataInterface::processSyntheticOrderBook(const std::string& topic, co
         //update cache directly here
     std::string cacheKey = createCacheKey(data.exchangeId, data.tradingPair);
         // Diagnostic log: record what we received and the cache key we're using
-        LOG_INFO("processSyntheticOrderBook: cacheKey={}, exchange={}, tradingPair={}, bidsPresent={}, asksPresent={}, midPrice={}",
-                 cacheKey,
-                 data.exchangeId.toString(),
-                 data.tradingPair.toString(),
-                 !bids.empty(),
-                 !asks.empty(),
-                 data.price);
+        // LOG_INFO("processSyntheticOrderBook: cacheKey={}, exchange={}, tradingPair={}, bidsPresent={}, asksPresent={}, midPrice={}",
+        //          cacheKey,
+        //          data.exchangeId.toString(),
+        //          data.tradingPair.toString(),
+        //          !bids.empty(),
+        //          !asks.empty(),
+        //          data.price);
         {
             std::unique_lock<std::shared_mutex> lock(cacheMutex_);
             marketDataCache_[cacheKey] = MarketDataCacheEntry{

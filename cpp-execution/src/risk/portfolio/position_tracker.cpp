@@ -330,12 +330,6 @@ void PositionTracker::updateMarketData(const MarketData& marketData) {
             std::lock_guard<std::mutex> lock(m_marketDataMutex);
             m_priceCache[marketData.tradingPair.toString()] = marketData.price;
         }
-        LOG_DEBUG(std::format("PositionTracker", "Updated market data: {} @ {}", 
-                        marketData.tradingPair.toString(), marketData.price));
-        // print debug data
-        std::cout << "Updated market data: " << marketData.tradingPair.toString()
-                            << " @ " << marketData.price << std::endl;
-
         // Update positions with new price, but collect notifications to send outside the lock
         std::vector<Position> notifyList;
         {
