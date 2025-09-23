@@ -1252,6 +1252,31 @@ private:
                         if (execSignal.strength < 0.3) continue;
                         if (execSignal.confidence < 0.6) continue;
                     }
+                    //recalculate targetSize based on limit money
+                    double allowedSize = 0.0;
+                    if (riskManager_) {
+                        allowedSize = riskManager_->getAllowedPositionSize(execSignal.symbol);
+                    }
+
+                    double sizerFraction = 1.0;
+                    if (positionSizer_) {
+                        std::map<std::string, double> metrics;
+                        // Minimal metrics: use confidence as a rough proxy for win_rate
+                        metrics["win_rate"] = execSignal.confidence;
+                        // placeholder volatility - can be replaced with real vol from market data
+                        metrics["volatility"] = 0.05;
+                        std::map<std::string, double> portfolio;
+                        sizerFraction = positionSizer_->calculateSize(execSignal.symbol.toString(), metrics, portfolio);
+                        sizerFraction = std::clamp(sizerFraction, 0.0, 1.0);
+                    }
+                    double positionSize = allowedSize * sizerFraction;
+                    // clamp this to
+                    double finalQty = positionSize * execSignal.targetSize;
+                    // clamp to limit exposure or it will be rejected by risk
+                    finalQty = std::clamp(finalQty, 0.0, allowedSize);
+
+                    execSignal.targetSize = finalQty; // now this is absolute size
+                    
                     // std::cout << "🛎️ Signal passed filtering: " << execSignal.id 
                     //           << " for " << execSignal.symbol.toString() 
                     //           << " Direction: " << (execSignal.direction == core::Direction::BUY ? "BUY" : "SELL")
@@ -1360,6 +1385,7 @@ private:
                 double positionSize = allowedSize * sizerFraction;
                 // clamp this to
                 double finalQty = positionSize * task.targetSize;
+
                 // clamp to limit exposure or it will be rejected by risk
                 finalQty = std::clamp(finalQty, 0.0, allowedSize);
                 report.setQuantity(finalQty);
