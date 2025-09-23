@@ -102,9 +102,63 @@ void OrderBookAnalyzer::processOrderBook(const data_ingestion::OrderBook& snapsh
                                      cachedBids_.size(), cachedAsks_.size(), snapshot.getSymbol().toString(), snapshot.getExchangeId().toString());
         }
         
+        // Capture pre-grouping counts and volumes for warm-up decision. Grouping
+        // can collapse many levels into fewer aggregated groups; use the raw
+        // snapshot counts so we don't falsely consider the book incomplete.
+        size_t preGroupBidCount = cachedBids_.size();
+        size_t preGroupAskCount = cachedAsks_.size();
+        double preGroupTotalBidVol = 0.0;
+        for (const auto &lvl : cachedBids_) preGroupTotalBidVol += lvl.quantity;
+        double preGroupTotalAskVol = 0.0;
+        for (const auto &lvl : cachedAsks_) preGroupTotalAskVol += lvl.quantity;
+
         if (priceGroupingFactor_ > 0.0) {
+            // Support an optional relative grouping factor: priceGroupingRelative is
+            // a fraction of the mid price (e.g. 0.0001 = 0.01%). If provided and
+            // mid price is known, compute an effective absolute grouping factor.
+            double effectiveGroupingFactor = priceGroupingFactor_;
+            double rel = params_.getDouble("priceGroupingRelative", -1.0);
+            double midPricePreGroup = 0.0;
+            if (preGroupBidCount > 0 && preGroupAskCount > 0) {
+                midPricePreGroup = (cachedBids_[0].price + cachedAsks_[0].price) / 2.0;
+            }
+
+            if (rel > 0.0 && midPricePreGroup > 0.0) {
+                effectiveGroupingFactor = midPricePreGroup * rel;
+            }
+
+            // Temporarily override the member grouping factor while we call the
+            // in-place grouping so we don't need to change the group helper
+            double savedGrouping = priceGroupingFactor_;
+            priceGroupingFactor_ = effectiveGroupingFactor;
             groupPriceLevelsInPlace(cachedBids_, true);  // In-place modification
             groupPriceLevelsInPlace(cachedAsks_, false); // In-place modification
+            priceGroupingFactor_ = savedGrouping;
+
+            // Optional debug: if grouping reduced levels significantly, log it
+            if (cachedBids_.size() < preGroupBidCount || cachedAsks_.size() < preGroupAskCount) {
+                std::cout << std::format("DBG: OrderBookAnalyzer - grouping reduced levels preBid={} postBid={} preAsk={} postAsk={} (effectiveFactor={}) for {} on {}\n",
+                                         preGroupBidCount, cachedBids_.size(), preGroupAskCount, cachedAsks_.size(),
+                                         effectiveGroupingFactor, snapshot.getSymbol().toString(), snapshot.getExchangeId().toString());
+            }
+        }
+
+        // STARTUP WARM-UP: skip publishing metrics until we have a minimum
+        // amount of depth on both sides and non-zero volume. Use pre-group
+        // counts so grouping doesn't cause false negatives. Threshold is
+        // configurable via params_.getInt("warmupMinLevels", 5).
+        int warmupMinLevels = params_.getInt("warmupMinLevels", 5);
+
+        // Require both sides to have at least warmupMinLevels AND non-zero volume
+        if (!(preGroupBidCount >= static_cast<size_t>(warmupMinLevels)
+              && preGroupAskCount >= static_cast<size_t>(warmupMinLevels)
+              && preGroupTotalBidVol > 0.0
+              && preGroupTotalAskVol > 0.0)) {
+            std::cout << std::format("DBG: OrderBookAnalyzer - warmup skip bids={} asks={} bidVol={} askVol={} requiredLevels={} for {} on {}\n",
+                                     preGroupBidCount, preGroupAskCount, preGroupTotalBidVol, preGroupTotalAskVol,
+                                     warmupMinLevels, snapshot.getSymbol().toString(), snapshot.getExchangeId().toString());
+            // Do not publish metrics yet; wait for fuller book
+            return;
         }
 
         // Ensure we calculate basic price metrics (midPrice, spread) before volume metrics
@@ -117,9 +171,8 @@ void OrderBookAnalyzer::processOrderBook(const data_ingestion::OrderBook& snapsh
         currentMetrics_.sequenceNumber = snapshot.getSequenceNumber();
         
         // Calculate all metrics
-        // calculatePriceMetrics(bids, asks);
         calculateVolumeMetrics(cachedBids_, cachedAsks_, depthLevels_);
-        calculateVolumeMetrics(cachedBids_, cachedAsks_, depthLevels_); // Twice for robustness
+        // calculateVolumeMetrics(cachedBids_, cachedAsks_, depthLevels_); // Twice for robustness? really?
         calculateLevelMetrics(cachedBids_, cachedAsks_);
         calculateImbalanceMetrics(cachedBids_, cachedAsks_);
         
@@ -146,7 +199,8 @@ void OrderBookAnalyzer::processOrderBook(const data_ingestion::OrderBook& snapsh
         }
         //print some derrivative info
         if (debug_counter % 1000 == 0) {
-            std::cout << "  MidPrice: " << currentMetrics_.midPrice 
+            std::cout << "Metrics for " << tradingPair_.toString() << " on " << exchangeId_.toString()
+                      << "  MidPrice: " << currentMetrics_.midPrice 
                       << ", Spread: " << currentMetrics_.spread 
                       << ", Volume Imbalance: " << currentMetrics_.volumeImbalance 
                       << ", Liquidity Pressure: " << currentMetrics_.liquidityPressure
@@ -477,8 +531,8 @@ void OrderBookAnalyzer::calculateImbalanceMetrics(
     currentMetrics_.metrics["emaVolumeImbalance"] = emaVolumeImbalance_;
     currentMetrics_.metrics["averageVolumeImbalance"] = emaVolumeImbalance_;
     currentMetrics_.metrics["pressureImbalance"] = currentMetrics_.pressureImbalance;
-    // currentMetrics_.metrics["volatilityExpectation"] =
-    //currentMetrics_.volatilityExpectation;
+    currentMetrics_.metrics["volatilityExpectation"] = currentMetrics_.volatilityExpectation;
+    currentMetrics_.metrics["realizedVolatility"] = currentMetrics_.realizedVolatility;
 }
 
 void OrderBookAnalyzer::updateTimeSeries() {
@@ -504,7 +558,10 @@ void OrderBookAnalyzer::calculateDerivedMetrics() {
     currentMetrics_.marketDirectionalCoefficient = calculateDirectionalCoefficient();
     currentMetrics_.volatilityExpectation = calculateVolatilityExpectation();
     currentMetrics_.realizedVolatility = calculateRealizedVolatility(60.0); // 1-minute interval
-    
+    currentMetrics_.volatilityPerUnitTime = 
+        currentMetrics_.realizedVolatility / (1.0 + std::chrono::duration<double>(
+            currentMetrics_.timestamp - lastUpdateTime_).count());
+    currentMetrics_.liquidityPressure = std::abs(currentMetrics_.pressureImbalance);
     // Composite liquidity score
     const double bidLiquidity = currentMetrics_.totalBidVolume * (1.0 + currentMetrics_.bidDensity);
     const double askLiquidity = currentMetrics_.totalAskVolume * (1.0 + currentMetrics_.askDensity);
@@ -866,6 +923,11 @@ OrderBookAnalyzerManager::OrderBookAnalyzerManager(const OrderBookAnalyzerConfig
     params_.setParameter("minSamplesForStability", config.minSamplesForStability);
     params_.setParameter("priceGroupingFactor", config.priceGroupingFactor);
     params_.setParameter("emaAlpha", config.emaAlpha);
+    params_.setParameter("volumeWeightFactor", config.volumeWeightFactor);
+    params_.setParameter("imbalanceThreshold", config.imbalanceThreshold);
+    params_.setParameter("liquidityPressureThreshold", config.liquidityPressureThreshold);
+    params_.setParameter("orderFlowThreshold", config.orderFlowThreshold);
+    params_.setParameter("historySize", config.historySize);
     // Add other parameters as needed
 }
 

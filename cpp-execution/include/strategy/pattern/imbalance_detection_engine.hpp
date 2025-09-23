@@ -128,17 +128,31 @@ private:
     // Configuration
     ImbalanceDetectionConfig config_;
     ThresholdSet thresholds_;
-    
+    // lastMetrics_
+    std::optional<OrderBookMetrics> lastMetrics_;
     // Detection state
     std::vector<ImbalanceEvent> detectedImbalances_;
     std::map<ImbalanceType, bool> imbalanceState_;
     std::map<std::string, double> metricHistory_;
     
-    // Detection algorithms
+    // Detection algorithms for all supported imbalance types
     bool detectVolumeImbalance(const OrderBookMetrics& metrics);
     bool detectPriceLevelImbalance(const OrderBookMetrics& metrics);
     bool detectLiquidityFlowImbalance(const OrderBookMetrics& metrics);
     bool detectAbnormalSpread(const OrderBookMetrics& metrics);
+    bool detectMarketDepthChange(const OrderBookMetrics& metrics);
+    bool detectLargeOrderAppearance(const OrderBookMetrics& metrics);
+    bool detectLargeOrderDisappearance(const OrderBookMetrics& metrics);
+    bool detectOrderFlowImbalance(const OrderBookMetrics& metrics);
+    bool detectPriceLevelConcentration(const OrderBookMetrics& metrics);
+    bool detectLiquidityImbalance(const OrderBookMetrics& metrics);
+    bool detectTrendContinuation(const OrderBookMetrics& metrics);
+    bool detectTrendReversal(const OrderBookMetrics& metrics);
+    bool detectTradeImbalance(const OrderBookMetrics& metrics);
+    bool detectCancellationImbalance(const OrderBookMetrics& metrics);
+    bool detectPriceVolatilityImbalance(const OrderBookMetrics& metrics);
+    bool detectHiddenLiquidityImbalance(const OrderBookMetrics& metrics);
+    bool detectCustomImbalance(const OrderBookMetrics& metrics);
     
     // Imbalance evaluation
     double calculateImbalanceStrength(ImbalanceType type, const OrderBookMetrics& metrics);

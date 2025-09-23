@@ -50,7 +50,20 @@
      double volumeImbalanceThreshold = 0.7;       // Threshold for volume imbalance detection
      double priceLevelImbalanceThreshold = 0.6;   // Threshold for price level imbalance
      double liquidityRemovalThreshold = 0.5;      // Threshold for liquidity removal detection
-     
+    //  spreadChangeThreshold_
+    double spreadChangeThreshold = 0.5;         // Threshold for bid-ask spread change
+    double orderFlowImbalanceThreshold = 0.6;    // Threshold for order flow imbalance
+    double marketDepthChangeThreshold = 0.4;     // Threshold for market depth change
+    // levelVolumeChangeThreshold
+    double levelVolumeChangeThreshold = 0.3;     // Threshold for volume change at price levels
+    double liquidityFlowImbalanceThreshold = 0.6; // Threshold for liquidity flow imbalance
+    double abnormalSpreadThreshold = 0.5;        // Threshold for abnormal spread detection
+    double liquidityImbalanceThreshold = 0.5;    // Threshold for general liquidity imbalance
+    double trendContinuationThreshold = 0.4;     // Threshold for trend continuation detection
+    double trendReversalThreshold = 0.4;         // Threshold for trend reversal detection
+    double volumeSpikeThreshold = 0.6;           // Threshold for volume spike detection
+    double priceSpikeThreshold = 0.6;            // Threshold for price spike detection
+    double liquidityPressureThreshold = 0.5;     // Threshold for liquidity pressure changes
      // Window and history settings
      int detectionWindowMs = 1000;                // Detection window in milliseconds
      int maxHistorySize = 1000;                   // Maximum history size for metrics
