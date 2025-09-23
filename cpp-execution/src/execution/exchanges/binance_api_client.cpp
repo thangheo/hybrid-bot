@@ -11,6 +11,7 @@
 #include <future>
 #include <stdexcept>
 #include <iostream>
+#include <sys/stat.h>
 
 namespace trading {
 namespace execution {
