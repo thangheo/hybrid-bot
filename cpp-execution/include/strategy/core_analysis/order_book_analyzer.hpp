@@ -214,6 +214,12 @@ private:
     // Helper methods
     void initializeHistoricalData(size_t capacity);
     void trimHistoricalData(size_t maxSize);
+
+    // Diagnostics for detecting stale/unchanged snapshots
+    size_t lastContentHash_ = 0;
+    int repeatSnapshotCount_ = 0;
+    int staleSnapshotThreshold_ = 50; // configurable via params (warmup/diagnostics)
+    uint64_t lastSnapshotSequenceNumber_ = 0;
 };
 
 /**
