@@ -149,7 +149,15 @@ bool OrderBook::applySnapshot(const std::vector<PriceLevel>& bids,
         // Update metadata
         sequence_number_ = sequenceNumber;
         timestamp_ = timestamp;
-        is_valid_ = true;
+        if (bid_count > 0 && ask_count > 0) {
+            is_valid_ = true;
+        } else {
+            is_valid_ = false; // Snapshot must have both sides
+            std::cerr << "Invalid snapshot for "
+                      << exchangeId_.toString() << " "
+                      << symbol_.base << "/" << symbol_.quote
+                      << " - missing bids or asks." << std::endl;
+        }
         is_snapshot_ = true;
 
         // Store this delta - FIXED: Only store if not empty

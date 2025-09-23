@@ -66,7 +66,7 @@
             time_decay_factor(0.1),
            min_stddev_threshold(1e-6),
            strong_correlation_threshold(0.7),
-            max_level_depth(10) ,
+            max_level_depth(20) ,
             top_metrics_count(5) {}
         // Constructor with custom values
         CorrelationParameters(size_t min_points, double significance, double decay_rate,

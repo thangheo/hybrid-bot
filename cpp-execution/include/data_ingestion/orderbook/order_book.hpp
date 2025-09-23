@@ -198,6 +198,11 @@ public:
                is_valid_ && 
                (!bids_.empty() || !asks_.empty());
     }
+    //function to get depth levels of bids and asks
+    std::pair<size_t, size_t> getDepthLevels() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return {bids_.size(), asks_.size()};
+    }
 
 private:
     // Configuration

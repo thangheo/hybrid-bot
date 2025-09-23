@@ -20,23 +20,27 @@
   * Enum for different types of order book imbalances
   */
  enum class ImbalanceType {
-     VOLUME_IMBALANCE,              // Significant difference between bid and ask volume
-     PRICE_LEVEL_IMBALANCE,         // Imbalance across multiple price levels
-     LIQUIDITY_REMOVAL,             // Sudden removal of liquidity from one side
-     ORDER_FLOW_IMBALANCE,          // Directional bias in order submissions
-     LARGE_ORDER_APPEARANCE,        // Large orders appearing in the book
-     LARGE_ORDER_DISAPPEARANCE,     // Large orders being removed from the book
-     PRICE_LEVEL_CONCENTRATION,     // Concentration of volume at specific price levels
-     BID_ASK_SPREAD_CHANGE,         // Significant change in the bid-ask spread
-     MARKET_DEPTH_CHANGE,           // Significant change in market depth
-     LIQUIDITY_FLOW_IMBALANCE,      // Imbalance in liquidity flow
-     ABNORMAL_SPREAD,               // Abnormal spread between bid and ask prices
-     LIQUIDITY_IMBALANCE,           // General liquidity imbalance
-     TREND_CONTINUATION,            // Continuation of a price trend
-     TREND_REVERSAL,                // Reversal of a price trend
-     CUSTOM                         // Custom imbalance type defined by strategy
- };
- 
+    VOLUME_IMBALANCE,              // bid vs ask volume
+    PRICE_LEVEL_IMBALANCE,         // level count imbalance
+    LIQUIDITY_REMOVAL,             // sudden removal
+    ORDER_FLOW_IMBALANCE,          // order submissions imbalance
+    LARGE_ORDER_APPEARANCE,        // big orders enter
+    LARGE_ORDER_DISAPPEARANCE,     // big orders vanish
+    PRICE_LEVEL_CONCENTRATION,     // volume concentrated at specific price
+    BID_ASK_SPREAD_CHANGE,         // spread change
+    MARKET_DEPTH_CHANGE,           // depth change
+    LIQUIDITY_FLOW_IMBALANCE,      // liquidity flow imbalance
+    ABNORMAL_SPREAD,               // spread abnormal
+    LIQUIDITY_IMBALANCE,           // general liquidity imbalance
+    TREND_CONTINUATION,            // price trend continuation
+    TREND_REVERSAL,                // price trend reversal
+    TRADE_IMBALANCE,               // aggressive trades imbalance
+    CANCELLATION_IMBALANCE,        // one-sided cancellations
+    PRICE_VOLATILITY_IMBALANCE,    // volatility surge
+    HIDDEN_LIQUIDITY_IMBALANCE,    // iceberg / hidden liquidity
+    CUSTOM                         // strategy-defined
+};
+
  /**
   * String conversion for ImbalanceType enum
   */

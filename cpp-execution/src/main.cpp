@@ -262,7 +262,7 @@ public:
             }
             std::cout << std::endl;
             //order book depth from config
-            int depth = 10;//strategyConfig_.orderBookDepth;
+            int depth = 20;//strategyConfig_.orderBookDepth;
            
             if (!dataIngestionService_->start(symbols, depth)) {
                 std::cerr << "Failed to start data ingestion service" << std::endl;
@@ -1077,17 +1077,23 @@ private:
                     }
 
                     auto orderBook = dataIngestionService_->getOrderBook(update.exchangeId, update.tradingPair);
+                   
                     if (orderBook) {
-                        orderBookUpdatesReceived_++;
-                      
+                        orderBookUpdatesReceived_++;                      
+                        // print the level of depth of ob for debug
+                        // auto [bidDepth, askDepth] = orderBook->getDepthLevels();
+                        // std::cout << "OrderBook worker " << workerId << " processing update for "
+                        //           << update.exchangeId.toString() << ":" << update.tradingPair.toString()
+                        //           << " | Bids: " << bidDepth << " levels, Asks: " << askDepth << " levels"
+                        //           << std::endl;
+                          // Generate intelligence (throttling inside function)
+                        // generateMarketIntelligence(update, orderBook); //no need at this time
+                        // Publish orderbook for risk asynchronously
+                        publishOrderBookForRisk(update);                 
                         // Send to strategy engine
                         if (strategyEngine_) {
                             strategyEngine_->processOrderBook(*orderBook);
                         }
-                          // Generate intelligence (throttling inside function)
-                        generateMarketIntelligence(update, orderBook);
-                        // Publish orderbook for risk asynchronously
-                        publishOrderBookForRisk(update); //disable for debug
                     }
                 } catch (const std::exception &e) {
                     std::cerr << "Orderbook worker " << workerId << " error: " << e.what() << std::endl;
@@ -1370,7 +1376,7 @@ int main(int argc, char* argv[]) {
         trading::common::Logger::initialize("TradingApp", parseLogLevel(envLevel));
     } else {
         // Default logger level - set to INFO to reduce noisy DEBUG logs
-        trading::common::Logger::initialize("TradingApp", trading::common::LogLevel::INFO);
+        trading::common::Logger::initialize("TradingApp", trading::common::LogLevel::DEBUG);
     }
     try {
         std::cout << "🚀 STARTING FULL TRADING SYSTEM INTEGRATION DEMO 🚀" << std::endl;

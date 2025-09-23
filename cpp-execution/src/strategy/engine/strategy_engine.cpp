@@ -258,14 +258,20 @@ void StrategyEngine::processQueuedSignals() {
          }
 
          if (vpIt != volumeProfileAnalyzers_.end() && vpIt->second) {
-             vpIt->second->updateVolumeProfile(orderBook, {});
+            //  vpIt->second->updateVolumeProfile(orderBook, {});
             //  std::cout << std::format("Processed volume profile for {}: POC = {}", 
             //                      orderBook.getSymbol().toString(), 
-            //                      vpIt->second->calculatePointOfControl());
+            //                      vpIt->second->calculatePointOfControl()) << std::endl;
          }
          // Detect imbalances
          imbalanceDetector_->analyzeMetrics(metrics);
          
+         //print detected imbalances
+         auto imbalances = imbalanceDetector_->getDetectedImbalances();
+         for (const auto& imb : imbalances) {
+             LOG_DEBUG("Detected imbalance: Type={} Strength={} Confidence={}",
+                       static_cast<int>(imb.type), imb.strength, static_cast<int>(imb.confidence));
+         }
          // Prepare data for locked section
          auto symbol = orderBook.getSymbol();
          ExchangeId exchangeId = orderBook.getExchangeId();
