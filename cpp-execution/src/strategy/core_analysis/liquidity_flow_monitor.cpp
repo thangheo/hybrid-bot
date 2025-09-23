@@ -726,14 +726,15 @@ void LiquidityFlowMonitor::updateLiquidityMetrics() {
 }
 
 double LiquidityFlowMonitor::calculateTypicalOrderSize() const {
-    // Avoid unbounded temporary allocations. NOTE: This method does NOT acquire
-    // the mutex — callers that access shared state should hold `mutex_`.
+    // Avoid unbounded temporary allocations.
+    // IMPORTANT: This method does NOT acquire the mutex; callers MUST hold
+    // `mutex_` when calling to ensure thread-safety and avoid deadlocks/dangling
+    // pointers. Do not acquire the mutex here.
     std::vector<double> order_sizes;
     const size_t kMinSamples = 10;
     const size_t kMaxSamples = 1000; // cap number of samples to collect
 
-    std::lock_guard<std::mutex> lock(mutex_);
-
+    // NOTE: Do NOT lock mutex_ here. Caller is responsible for locking.
     order_sizes.reserve(std::min(kMaxSamples, delta_history_.size() * size_t(4)));
 
     // Collect order sizes from recent deltas, newest-first until cap reached

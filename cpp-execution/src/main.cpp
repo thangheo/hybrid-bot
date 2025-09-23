@@ -1188,19 +1188,23 @@ private:
                         if (execSignal.strength < 0.3) continue;
                         if (execSignal.confidence < 0.6) continue;
                     }
-                    std::cout << "🛎️ Signal passed filtering: " << execSignal.id 
-                              << " for " << execSignal.symbol.toString() 
-                              << " Direction: " << (execSignal.direction == core::Direction::BUY ? "BUY" : "SELL")
-                              << " Strength: " << execSignal.strength 
-                              << " Confidence: " << execSignal.confidence 
-                              << " Quality: " << execSignal.quality 
-                              << " TargetSize: " << execSignal.targetSize 
-                              << " PTCA Recommendation: " << ptcaRecommendation
-                              << std::endl;
+                    // std::cout << "🛎️ Signal passed filtering: " << execSignal.id 
+                    //           << " for " << execSignal.symbol.toString() 
+                    //           << " Direction: " << (execSignal.direction == core::Direction::BUY ? "BUY" : "SELL")
+                    //           << " Strength: " << execSignal.strength 
+                    //           << " Confidence: " << execSignal.confidence 
+                    //           << " Quality: " << execSignal.quality 
+                    //           << " TargetSize: " << execSignal.targetSize 
+                    //           << " PTCA Recommendation: " << ptcaRecommendation
+                    //           << std::endl;
                     int targetPass = 0;
-                    double percentage_change_threshold = 0.002;
-                    for (const auto &t : execSignal.targets) if (t.percentage > percentage_change_threshold) ++targetPass;
-                    if (targetPass == 0) continue;
+                    // double percentage_change_threshold = 0.002;
+                    // for (const auto &t : execSignal.targets) if (t.percentage > percentage_change_threshold) ++targetPass;
+                    // std::cout << "🛎️ Signal " << execSignal.id 
+                    //           << " has " << targetPass 
+                    //           << " targets exceeding " << (percentage_change_threshold * 100) 
+                    //           << "% change threshold" << std::endl;
+                    // if (targetPass == 0) continue;
 
                     // Validate with risk manager
                     if (riskManager_) {
