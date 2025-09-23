@@ -155,9 +155,27 @@ private:
     bool detectCustomImbalance(const OrderBookMetrics& metrics);
     bool checkVolumeConcentration(const OrderBookMetrics& metrics) ;
 
+    bool detectSpreadPersistence(const OrderBookMetrics& metrics) ;
+    bool detectDepthVolumeInconsistency(const OrderBookMetrics& metrics) ;
+    bool detectVolatilitySuppression(const OrderBookMetrics& metrics) ;
+    // bool detectMarketImpact(const OrderBookMetrics& metrics) ;
+    bool detectHiddenLiquidityPatterns(const OrderBookMetrics& metrics) ;
+    // bool detectOrderBookImbalance(const OrderBookMetrics& metrics) ;
+    double calculateVariance(const std::vector<double>& data) ;
+    // bool detectQuoteStuffing(const OrderBookMetrics& metrics) ;
+    // bool
+    // detectFlashCrashPattern
+    bool detectCorrelationAnomalies(const OrderBookMetrics& metrics) ;
+    core::Direction determineImbalanceDirection(ImbalanceType type, const OrderBookMetrics& metrics);
+    // detectMarketImpactResistance
+    bool detectMarketImpactResistance(const OrderBookMetrics& metrics) ;
+    // detectFlashCrashPattern
+    // bool detectFlashCrashPattern(const OrderBookMetrics& metrics) ;
+    bool detectDensityPressureMismatch(const OrderBookMetrics& metrics) ;
+    bool detectVelocityAnomalies(const OrderBookMetrics& metrics) ;
+    // Event ID generation
     // Imbalance evaluation
     double calculateImbalanceStrength(ImbalanceType type, const OrderBookMetrics& metrics);
-    core::Direction determineImbalanceDirection(ImbalanceType type, const OrderBookMetrics& metrics);
     void createImbalanceEvent(ImbalanceType type, double strength, core::Direction direction, const OrderBookMetrics& metrics);
     
     // Callback management
