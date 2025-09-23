@@ -14,11 +14,11 @@ namespace trading::risk {
 // Helper functions to extract data from TradingSignal
 namespace {
     // Based on your TradingSignal structure from execution namespace
-    std::string getSymbolFromSignal(const TradingSignal& signal) {
-        // Assuming TradingSignal has tradingPair field
-        return signal.getTradingPair().quote;
+    core::Symbol getSymbolFromSignal(const TradingSignal& signal) {
+        // Return the full trading pair symbol (base/quote)
+        return signal.getTradingPair();
     }
-    
+
     std::string getBaseAssetFromSignal(const TradingSignal& signal) {
         // Extract base asset from trading pair (e.g., "BTC/USDT" -> "BTC")
         return signal.getTradingPair().base;
