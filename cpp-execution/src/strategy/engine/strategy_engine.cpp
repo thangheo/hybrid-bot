@@ -268,10 +268,10 @@ void StrategyEngine::processQueuedSignals() {
          
          //print detected imbalances
          auto imbalances = imbalanceDetector_->getDetectedImbalances();
-         for (const auto& imb : imbalances) {
-             LOG_DEBUG("Detected imbalance: Type={} Strength={} Confidence={}",
-                       static_cast<int>(imb.type), imb.strength, static_cast<int>(imb.confidence));
-         }
+        //  for (const auto& imb : imbalances) {
+        //      LOG_DEBUG("Detected imbalance: Type={} Strength={} Confidence={}",
+        //                static_cast<int>(imb.type), imb.strength, static_cast<int>(imb.confidence));
+        //  }
          // Prepare data for locked section
          auto symbol = orderBook.getSymbol();
          ExchangeId exchangeId = orderBook.getExchangeId();
