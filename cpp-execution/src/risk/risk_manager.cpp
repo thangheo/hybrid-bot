@@ -122,6 +122,23 @@ bool RiskManager::initialize() {
         }
         LOG_INFO(std::format("{} {}", "RiskManager", "DataInterface initialization complete"));
 
+        // Register RiskManager to receive market data updates so updateMarketData()
+        // is invoked automatically when new market data arrives from the DataInterface.
+        try {
+            m_dataInterface->registerMarketDataCallback(
+                [this](const MarketData& marketData) {
+                    try {
+                        this->updateMarketData(marketData);
+                    } catch (const std::exception& e) {
+                        LOG_ERROR("RiskManager: exception handling market data callback: {}", e.what());
+                    }
+                }
+            );
+            LOG_INFO("RiskManager", "Registered for market data callbacks");
+        } catch (const std::exception& e) {
+            LOG_ERROR("RiskManager: failed to register market data callback: {}", e.what());
+        }
+
         // Initialize portfolio manager first
         m_portfolioManager = std::make_unique<PortfolioManager>(m_config);
         if (!m_portfolioManager->initialize()) {
