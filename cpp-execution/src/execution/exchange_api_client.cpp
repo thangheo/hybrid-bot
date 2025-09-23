@@ -7,6 +7,7 @@
 #include <chrono>
 #include <thread>
 #include <algorithm>  // For std::transform
+#include <cctype>
 
 namespace trading {
 namespace execution {
@@ -32,6 +33,28 @@ std::string toLower(const std::string& str) {
     std::string result = str;
     std::transform(result.begin(), result.end(), result.begin(), ::tolower);
     return result;
+}
+
+// Normalize trading symbol to a form acceptable by most exchange APIs.
+// Removes or replaces illegal characters and uppercases letters. Allowed
+// characters (per exchange regex) are A-Z, 0-9, '-', '_' and '.'.
+std::string normalizeSymbolForExchange(const std::string& sym) {
+    std::string out;
+    out.reserve(sym.size());
+
+    for (unsigned char c : sym) {
+        // Skip common separators that are illegal for some exchanges
+        if (c == '/' || c == ':' || c == ' ') {
+            continue;
+        }
+
+        if (std::isalnum(c) || c == '-' || c == '_' || c == '.') {
+            out.push_back(static_cast<char>(std::toupper(c)));
+        }
+        // Any other character is ignored
+    }
+
+    return out;
 }
 
 // Generate a nonce (timestamp in milliseconds)
@@ -140,7 +163,7 @@ std::map<std::string, std::string> createOrderParams(const models::Order& order)
     std::map<std::string, std::string> params;
     
     // Common parameters
-    params["symbol"] = order.getTradingPair().toString();
+    params["symbol"] = normalizeSymbolForExchange(order.getTradingPair().toString());
     params["side"] = formatOrderSide(order.getSide(), "LOWER");
     params["type"] = formatOrderType(order.getType(), "LOWER");
     
