@@ -157,7 +157,7 @@ void MarketDataInterface::processSyntheticOrderBook(const std::string& topic, co
             data.price = (data.bid + data.ask) / 2.0; // Mid price
         }
         //update cache directly here
-        std::string cacheKey = createCacheKey(data.exchangeId, data.tradingPair);
+    std::string cacheKey = createCacheKey(data.exchangeId, data.tradingPair);
         // Diagnostic log: record what we received and the cache key we're using
         LOG_INFO("processSyntheticOrderBook: cacheKey={}, exchange={}, tradingPair={}, bidsPresent={}, asksPresent={}, midPrice={}",
                  cacheKey,
@@ -228,7 +228,7 @@ std::optional<MarketData> MarketDataInterface::getMarketData(
    const std::optional<std::string>& exchangeId) {
    
    core::ExchangeId exchange = core::ExchangeId::fromString(exchangeId.value_or(DEFAULT_EXCHANGE));
-   std::string cacheKey = createCacheKey(exchange, tradingPair);
+    std::string cacheKey = createCacheKey(exchange, tradingPair);
 
    // Check cache
    {
@@ -713,12 +713,12 @@ void MarketDataInterface::connectionMonitorLoop() {
             LOG_INFO("Attempting to reconnect ZeroMQ client");
 
             try {
-                // Stop existing client
+                // Attempt graceful disconnect if the client exists
                 if (zmqClient_) {
                     try { zmqClient_->disconnect(); } catch (...) {}
                 }
 
-                // Reinitialize if necessary
+                // Ensure we have a client instance
                 if (!zmqClient_) {
                     communication::ZmqClientConfig zmqConfig;
                     zmqConfig.server_pub_endpoint = zmqSubscriberEndpoint_;
@@ -726,16 +726,42 @@ void MarketDataInterface::connectionMonitorLoop() {
                     zmqConfig.auto_reconnect = true;
                     zmqConfig.reconnect_interval = std::chrono::milliseconds(5000);
                     zmqConfig.request_timeout = std::chrono::milliseconds(10000);
+                    zmqConfig.io_threads = 1;
                     zmqClient_ = std::make_unique<communication::GenericZmqClient>(zmqConfig);
-                    LOG_INFO("Recreated ZeroMQ client");
+                    LOG_INFO("Created ZeroMQ client for reconnection");
                 }
-                //why reconnect this?
+
+                // Try to start/connect
                 if (zmqClient_ && zmqClient_->start()) {
                     needsReconnection_.store(false);
-                    // record time of successful start/connect
                     lastConnectionCheck_ = std::chrono::steady_clock::now();
                     LOG_INFO("Successfully reconnected ZeroMQ client");
-                    // TODO: resubscribe tracked topics
+
+                    // Reapply tracked subscriptions so we actually receive messages again
+                    std::vector<std::string> toApply;
+                    {
+                        std::lock_guard<std::mutex> sLock(subscriptionMutex_);
+                        toApply.assign(subscribedTopics_.begin(), subscribedTopics_.end());
+                    }
+
+                    for (const auto& topic : toApply) {
+                        try {
+                            // Use a generic handler that dispatches by topic prefix
+                            zmqClient_->subscribe(topic,
+                                [this](const std::string& t, const std::string& msg, const std::unordered_map<std::string, std::string>& meta) {
+                                    if (t.find("orderbook") != std::string::npos) {
+                                        this->processSyntheticOrderBook(t, msg);
+                                    } else if (t.find("trade") != std::string::npos) {
+                                        this->processTradeUpdate(t, msg);
+                                    }
+                                }
+                            );
+                            LOG_INFO("Reapplied subscription for topic: {}", topic);
+                        } catch (const std::exception& e) {
+                            errorStats_.subscriptionErrors++;
+                            LOG_ERROR("Failed to reapply subscription for topic {}: {}", topic, e.what());
+                        }
+                    }
                 }
 
                 auto now = std::chrono::steady_clock::now();
@@ -769,12 +795,22 @@ bool MarketDataInterface::checkConnection() {
     // Check if we're receiving data
     auto now = std::chrono::steady_clock::now();
     // If we just connected recently, allow a short grace period before declaring loss
-    const auto gracePeriod = std::chrono::seconds(2);
+    const auto gracePeriod = std::chrono::seconds(5);
     if (now - lastConnectionCheck_ < gracePeriod) {
         return true;
     }
-    
-    // If no data for 30 seconds, consider connection dead
+    // Prefer the ZMQ client's last_message_time if available (more reliable).
+    try {
+        const auto& stats = zmqClient_->getStats();
+        if (stats.last_message_time.time_since_epoch().count() > 0) {
+            auto age = std::chrono::duration_cast<std::chrono::seconds>(now - stats.last_message_time).count();
+            if (age < 30) return true;
+        }
+    } catch (...) {
+        // fall back to cache check below
+    }
+
+    // If no data for 30 seconds in cache, consider connection dead
     bool hasRecentData = false;
     {
         std::shared_lock<std::shared_mutex> lock(cacheMutex_);
@@ -782,14 +818,13 @@ bool MarketDataInterface::checkConnection() {
             auto dataAge = std::chrono::duration_cast<std::chrono::seconds>(
                 now - entry.lastUpdate
             ).count();
-            
             if (dataAge < 30) {
                 hasRecentData = true;
                 break;
             }
         }
     }
-    
+
     return hasRecentData;
 }
 
