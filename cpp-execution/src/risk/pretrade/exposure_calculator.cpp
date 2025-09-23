@@ -325,9 +325,11 @@ private:
             }
 
             if (context.price <= 0.0) {
-                // Use a conservative safe fallback price and emit a warning so callers can see why we continued
-                LOG_WARN("Using safe fallback price for {} because no valid market price was available", context.symbol.toString());
-                context.price = 1.0;
+                // Do NOT use a numeric safe fallback. Leaving price <= 0 will mark
+                // the context invalid and cause validation to fail. This prevents
+                // approving signals/orders using a dummy price (which can trigger
+                // exchange filter errors like -1013).
+                LOG_ERROR("No valid market price available for {} — marking signal as invalid for safety", context.symbol.toString());
             }
         }
 
@@ -452,7 +454,8 @@ private:
             LOG_WARN("Failed to get price from data interface: {}", ex.what());
         }
         
-        return 1.0; // Safe fallback
+        // No valid price found; return 0.0 to indicate missing market data.
+        return 0.0;
     }
 
     double getVolatility(const core::Symbol& symbol) const {

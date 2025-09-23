@@ -11,6 +11,7 @@
 #include <core/market_types.hpp>
 #include <memory>
 #include <unordered_map>
+#include <unordered_set>
 #include <shared_mutex>
 #include <thread>
 #include <atomic>
@@ -182,11 +183,16 @@ private:
     // Callbacks
     std::vector<std::function<void(const MarketData&)>> marketDataCallbacks_;
     std::mutex callbackMutex_;
+    // Track subscriptions so we can reapply them after reconnect
+    mutable std::mutex subscriptionMutex_;
+    std::unordered_set<std::string> subscribedTopics_;
     
     // Configuration
     std::string zmqSubscriberEndpoint_ = SERVER_INTERNAL_ENDPOINT;
     std::string zmqPublisherEndpoint_ = SERVER_REQUEST_ENDPOINT;
-    std::chrono::milliseconds cacheValidityDuration_{10};  // 10ms cache validity
+    // Default cache validity for market data. Config overrides this in constructor.
+    // Made more reasonable default to avoid immediate expiration on each read.
+    std::chrono::milliseconds cacheValidityDuration_{1000};  // 1000ms (1s) cache validity
     
     // State
     std::atomic<bool> initialized_{false};
@@ -198,6 +204,8 @@ private:
     std::unordered_map<core::ExchangeId, std::map<std::string, double>> exchangeBalances_;
         std::thread reconnectionThread_;
     std::atomic<bool> needsReconnection_{false};
+        std::mutex reconnectionMutex_;
+        std::condition_variable reconnectionCv_;
     std::chrono::steady_clock::time_point lastConnectionCheck_;
     
     void connectionMonitorLoop();
