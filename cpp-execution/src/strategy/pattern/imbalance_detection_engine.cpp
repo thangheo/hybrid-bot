@@ -852,13 +852,291 @@ bool ImbalanceDetectionEngine::detectCancellationImbalance(const OrderBookMetric
 bool ImbalanceDetectionEngine::detectPriceVolatilityImbalance(const OrderBookMetrics& metrics){
     return false;
 }
-bool ImbalanceDetectionEngine::detectHiddenLiquidityImbalance(const OrderBookMetrics& metrics){
-    return false;
-}
+
 bool ImbalanceDetectionEngine::detectCustomImbalance(const OrderBookMetrics& metrics){
     return false;
 }
+bool ImbalanceDetectionEngine::detectHiddenLiquidityImbalance(const OrderBookMetrics& metrics) {
+    // Configuration thresholds for hidden liquidity detection
+    static const double VELOCITY_ANOMALY_THRESHOLD = 0.5;          // Significant velocity changes
+    static const double PRESSURE_VELOCITY_CORRELATION = 0.3;      // Pressure vs velocity correlation
+    static const double DEPTH_VOLUME_INCONSISTENCY = 0.4;         // Depth doesn't match volume
+    static const double LIQUIDITY_PROFILE_ANOMALY = 0.6;          // Unusual liquidity profile
+    static const double SPREAD_PERSISTENCE_THRESHOLD = 0.8;       // Spread remains stable despite volume
+    static const double VOLATILITY_SUPPRESSION_THRESHOLD = 0.3;   // Volatility lower than expected
+    static const double FLOW_RESISTANCE_THRESHOLD = 0.4;          // Resistance to price movement
+    static const double MARKET_IMPACT_ANOMALY = 0.5;              // Lower than expected market impact
+    
+    int hiddenLiquiditySignals = 0;
+    const int REQUIRED_SIGNALS = 2;  // Need fewer signals as hidden liquidity is subtle
+    
+    // 1. Velocity Anomaly Detection
+    // Hidden liquidity often causes unusual velocity patterns
+    if (detectVelocityAnomalies(metrics)) {
+        hiddenLiquiditySignals++;
+    }
+    
+    // 2. Spread Persistence Analysis
+    // Hidden liquidity can keep spreads stable despite volume changes
+    if (detectSpreadPersistence(metrics)) {
+        hiddenLiquiditySignals++;
+    }
+    
+    // 3. Depth-Volume Inconsistency
+    // Visible depth doesn't match the apparent market strength
+    if (detectDepthVolumeInconsistency(metrics)) {
+        hiddenLiquiditySignals++;
+    }
+    
+    // 4. Liquidity Profile Anomaly
+    // The liquidity profile suggests more depth than visible
+    if (metrics.liquidityProfileScore > LIQUIDITY_PROFILE_ANOMALY && 
+        std::abs(metrics.depthImbalance) < 0.2) {  // Low visible imbalance but high profile
+        hiddenLiquiditySignals++;
+    }
+    
+    // 5. Volatility Suppression
+    // Hidden liquidity often suppresses expected volatility
+    if (detectVolatilitySuppression(metrics)) {
+        hiddenLiquiditySignals++;
+    }
+    
+    // 6. Market Impact Resistance
+    // Price movements are smaller than volume would suggest
+    if (detectMarketImpactResistance(metrics)) {
+        hiddenLiquiditySignals++;
+    }
+    
+    // 7. Flow Imbalance vs Price Stability
+    // Significant flow imbalance but price remains stable
+    double bidFlow = metrics.getMetric("bidFlow", 0.0);
+    double askFlow = metrics.getMetric("askFlow", 0.0);
+    double flowImbalance = std::abs(bidFlow - askFlow) / (bidFlow + askFlow + 1e-10);
+    
+    if (flowImbalance > FLOW_RESISTANCE_THRESHOLD && 
+        std::abs(metrics.priceVelocity) < 0.1) {  // High flow imbalance but low price movement
+        hiddenLiquiditySignals++;
+    }
+    
+    // 8. Density-Pressure Mismatch
+    // Order density doesn't match liquidity pressure
+    if (detectDensityPressureMismatch(metrics)) {
+        hiddenLiquiditySignals++;
+    }
+    
+    // 9. Time-Series Pattern Analysis
+    // Look for patterns in historical metrics that suggest hidden liquidity
+    if (detectHiddenLiquidityPatterns(metrics)) {
+        hiddenLiquiditySignals++;
+    }
+    
+    // 10. Cross-Metric Correlation Anomalies
+    // Correlations between metrics are different than expected
+    if (detectCorrelationAnomalies(metrics)) {
+        hiddenLiquiditySignals++;
+    }
+    
+    return hiddenLiquiditySignals >= REQUIRED_SIGNALS;
+}
 
+// Helper function to detect velocity anomalies
+bool ImbalanceDetectionEngine::detectVelocityAnomalies(const OrderBookMetrics& metrics) {
+    // Check for unusual patterns in price, volume, and spread velocities
+    
+    // Price velocity vs volume velocity inconsistency
+    double priceVolRatio = std::abs(metrics.priceVelocity) / (std::abs(metrics.volumeVelocity) + 1e-10);
+    if (priceVolRatio < 0.2) {  // Price moves much less than volume suggests
+        return true;
+    }
+    
+    // Spread velocity vs other velocities
+    double spreadVolRatio = std::abs(metrics.spreadVelocity) / (std::abs(metrics.volumeVelocity) + 1e-10);
+    if (spreadVolRatio < 0.3) {  // Spread stable despite volume changes
+        return true;
+    }
+    
+    // Check if liquidity pressure doesn't match velocity patterns
+    if (std::abs(metrics.liquidityPressure) > 0.3 && std::abs(metrics.priceVelocity) < 0.1) {
+        return true;
+    }
+    
+    return false;
+}
+
+// Helper function to detect spread persistence
+bool ImbalanceDetectionEngine::detectSpreadPersistence(const OrderBookMetrics& metrics) {
+    // Hidden liquidity often keeps spreads tight despite volume imbalances
+    
+    // Check if spread is stable despite volume imbalance
+    if (std::abs(metrics.volumeImbalance) > 0.3 && metrics.spreadPercent < 0.05) {
+        return true;
+    }
+    
+    // Check if spread velocity is low despite other changes
+    if (std::abs(metrics.spreadVelocity) < 0.1 && 
+        (std::abs(metrics.volumeVelocity) > 0.3 || std::abs(metrics.priceVelocity) > 0.2)) {
+        return true;
+    }
+    
+    return false;
+}
+
+// Helper function to detect depth-volume inconsistency
+bool ImbalanceDetectionEngine::detectDepthVolumeInconsistency(const OrderBookMetrics& metrics) {
+    // Compare visible depth with market behavior
+    
+    // Calculate apparent market strength vs visible depth
+    double apparentStrength = std::abs(metrics.marketDirectionalCoefficient) * 
+                             std::abs(metrics.liquidityPressure);
+    
+    double visibleDepthStrength = (metrics.totalBidVolume + metrics.totalAskVolume) * 
+                                 (1.0 - std::abs(metrics.depthImbalance));
+    
+    // If apparent strength is much higher than visible depth suggests
+    if (apparentStrength > 0.4 && visibleDepthStrength < 0.3) {
+        return true;
+    }
+    
+    // Check for density vs volume mismatch
+    double avgDensity = (metrics.bidDensity + metrics.askDensity) / 2.0;
+    double totalVolume = metrics.totalBidVolume + metrics.totalAskVolume;
+    
+    if (avgDensity > 0.7 && totalVolume < 0.3) {  // High density but low visible volume
+        return true;
+    }
+    
+    return false;
+}
+
+// Helper function to detect volatility suppression
+bool ImbalanceDetectionEngine::detectVolatilitySuppression(const OrderBookMetrics& metrics) {
+    // Hidden liquidity often suppresses volatility below expected levels
+    
+    // Compare realized vs expected volatility
+    if (metrics.volatilityExpectation > 0.3 && metrics.realizedVolatility < 0.15) {
+        return true;
+    }
+    
+    // Check if volatility is low despite market pressure
+    if (std::abs(metrics.liquidityPressure) > 0.4 && metrics.realizedVolatility < 0.2) {
+        return true;
+    }
+    
+    // Volatility per unit time is lower than pressure suggests
+    double expectedVolatility = std::abs(metrics.liquidityPressure) * 0.5;
+    if (metrics.volatilityPerUnitTime < expectedVolatility * 0.5) {
+        return true;
+    }
+    
+    return false;
+}
+
+// Helper function to detect market impact resistance
+bool ImbalanceDetectionEngine::detectMarketImpactResistance(const OrderBookMetrics& metrics) {
+    // Price impact is lower than volume/pressure would suggest
+    
+    // Calculate expected price impact based on volume imbalance
+    double expectedImpact = std::abs(metrics.volumeImbalance) * 0.3;
+    if (expectedImpact > 0.2 && std::abs(metrics.priceVelocity) < expectedImpact * 0.3) {
+        return true;
+    }
+    
+    // Check if weighted imbalance suggests more impact than realized
+    double expectedWeightedImpact = std::abs(metrics.weightedVolumeImbalance) * 0.4;
+    if (expectedWeightedImpact > 0.15 && std::abs(metrics.priceVelocity) < expectedWeightedImpact * 0.25) {
+        return true;
+    }
+    
+    return false;
+}
+
+// Helper function to detect density-pressure mismatch
+bool ImbalanceDetectionEngine::detectDensityPressureMismatch(const OrderBookMetrics& metrics) {
+    // Order density patterns don't match liquidity pressure
+    
+    double densityImbalance = (metrics.bidDensity - metrics.askDensity) / 
+                             (metrics.bidDensity + metrics.askDensity + 1e-10);
+    
+    // Density suggests one direction but pressure suggests another
+    if (std::abs(densityImbalance) > 0.3 && std::abs(metrics.liquidityPressure) > 0.3) {
+        // Check if they point in opposite directions
+        if ((densityImbalance > 0 && metrics.liquidityPressure < -0.1) ||
+            (densityImbalance < 0 && metrics.liquidityPressure > 0.1)) {
+            return true;
+        }
+    }
+    
+    return false;
+}
+
+// Helper function to detect hidden liquidity patterns in time series
+bool ImbalanceDetectionEngine::detectHiddenLiquidityPatterns(const OrderBookMetrics& metrics) {
+    // This would analyze patterns in the timeSeriesMetrics map
+    // For now, implement basic pattern detection
+    
+    // Check if we have time series data
+    if (metrics.timeSeriesMetrics.empty()) {
+        return false;
+    }
+    
+    // Look for patterns where metrics suggest hidden liquidity
+    // This is a simplified implementation - in practice, you'd want more sophisticated pattern recognition
+    
+    auto spreadSeries = metrics.timeSeriesMetrics.find("spreadPercent");
+    auto volumeSeries = metrics.timeSeriesMetrics.find("totalVolume");
+    
+    if (spreadSeries != metrics.timeSeriesMetrics.end() && 
+        volumeSeries != metrics.timeSeriesMetrics.end()) {
+        
+        const auto& spreads = spreadSeries->second;
+        const auto& volumes = volumeSeries->second;
+        
+        if (spreads.size() >= 3 && volumes.size() >= 3) {
+            // Check for spread stability despite volume changes
+            double spreadVariance = calculateVariance(spreads);
+            double volumeVariance = calculateVariance(volumes);
+            
+            if (spreadVariance < 0.01 && volumeVariance > 0.1) {  // Stable spread, volatile volume
+                return true;
+            }
+        }
+    }
+    
+    return false;
+}
+
+// Helper function to detect correlation anomalies
+bool ImbalanceDetectionEngine::detectCorrelationAnomalies(const OrderBookMetrics& metrics) {
+    // Check for unusual correlations between metrics that might indicate hidden liquidity
+    
+    // Example: High market directional coefficient but low depth imbalance
+    if (std::abs(metrics.marketDirectionalCoefficient) > 0.6 && 
+        std::abs(metrics.depthImbalance) < 0.2) {
+        return true;
+    }
+    
+    // High liquidity profile score but moderate visible volume
+    if (metrics.liquidityProfileScore > 0.7 && 
+        (metrics.totalBidVolume + metrics.totalAskVolume) < 0.5) {
+        return true;
+    }
+    
+    return false;
+}
+
+// Utility function to calculate variance
+double ImbalanceDetectionEngine::calculateVariance(const std::vector<double>& data) {
+    if (data.empty()) return 0.0;
+    
+    double mean = std::accumulate(data.begin(), data.end(), 0.0) / data.size();
+    double variance = 0.0;
+    
+    for (double value : data) {
+        variance += (value - mean) * (value - mean);
+    }
+    
+    return variance / data.size();
+}
 // Calculate imbalance strength based on type and metrics
  double ImbalanceDetectionEngine::calculateImbalanceStrength(ImbalanceType type, const OrderBookMetrics& metrics) {
      double strength = 0.0;
