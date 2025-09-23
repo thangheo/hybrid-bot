@@ -131,13 +131,21 @@ public:
      * @brief Get the current configuration of the signal generator
      * @return Current configuration
      */
-    const SignalGeneratorConfig& getConfig() const;
-    
+    // const SignalGeneratorConfig& getConfig() const;
+    SignalGeneratorConfig getConfig() const;
+
     /**
      * @brief Get the current state of the signal generator
      * @return Current state
      */
     std::string getState() const;
+    // calculateTargetSize
+    /**
+     * @brief Calculate target size based on imbalance strength
+     * @param imbalance Imbalance event
+     * @return Calculated target size
+     */
+    double calculateTargetSize(const ImbalanceEvent& imbalance) const;
 private:
     // Configuration
     SignalGeneratorConfig config_;

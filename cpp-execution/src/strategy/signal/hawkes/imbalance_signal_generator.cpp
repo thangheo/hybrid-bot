@@ -235,6 +235,8 @@ TradingSignal ImbalanceSignalGenerator::generateBaseSignal(const ImbalanceEvent&
     
     // Basic targets based on imbalance
     double targetSize = calculateTargetSize(imbalance);
+    // Ensure the signal's targetSize field is populated for downstream consumers
+    signal.targetSize = targetSize;
     if (targetSize > 0.0) {
         PriceTarget target;
         target.size = targetSize;
@@ -242,8 +244,11 @@ TradingSignal ImbalanceSignalGenerator::generateBaseSignal(const ImbalanceEvent&
         signal.targets.push_back(target);
     }
     
-    // Initial metrics
-    signal.signalMetrics = createSignalMetrics(imbalance);
+    // Initial metrics (convert std::map -> std::unordered_map)
+    {
+        auto metrics = createSignalMetrics(imbalance);
+        signal.signalMetrics = std::unordered_map<std::string, double>(metrics.begin(), metrics.end());
+    }
     
     bool hawkesEnhanced = false;
     double clusteringProbability = 0.0;
@@ -284,6 +289,8 @@ TradingSignal ImbalanceSignalGenerator::generateBaseSignal(const ImbalanceEvent&
         stats_.rateLimitedSignals++;
         return TradingSignal(); // Return default invalid signal
     }
+    // Successful construction
+    return signal;
 }
 
 /**

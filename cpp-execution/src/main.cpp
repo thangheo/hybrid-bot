@@ -1163,11 +1163,9 @@ private:
                         adjustedStrength = signal.strength * (1.0 + ptcaRecommendation * 0.2);
                     }
 
-                    // Register the signal with PTCA by moving it to avoid a copy
-                    ptcaManager_->registerSignal(std::move(signal));
-
                     // convert and validate
                     execution::TradingSignal execSignal;
+                    // Copy needed fields from the strategy signal BEFORE we move it
                     execSignal.id = signal.id;
                     execSignal.symbol = signal.symbol;
                     execSignal.direction = signal.direction;
@@ -1180,6 +1178,9 @@ private:
                     execSignal.targets = signal.targets;
                     execSignal.exchangeId = signal.exchangeId;
 
+                    // Now register the original signal with PTCA by moving it (no further use of `signal`)
+                    ptcaManager_->registerSignal(std::move(signal));
+
                     // Basic filtering
                     if (execSignal.direction == core::Direction::BUY) {
                         if (execSignal.strength < 0.5) continue;
@@ -1188,23 +1189,27 @@ private:
                         if (execSignal.strength < 0.3) continue;
                         if (execSignal.confidence < 0.6) continue;
                     }
-                    // std::cout << "🛎️ Signal passed filtering: " << execSignal.id 
-                    //           << " for " << execSignal.symbol.toString() 
-                    //           << " Direction: " << (execSignal.direction == core::Direction::BUY ? "BUY" : "SELL")
-                    //           << " Strength: " << execSignal.strength 
-                    //           << " Confidence: " << execSignal.confidence 
-                    //           << " Quality: " << execSignal.quality 
-                    //           << " TargetSize: " << execSignal.targetSize 
-                    //           << " PTCA Recommendation: " << ptcaRecommendation
-                    //           << std::endl;
-                    int targetPass = 0;
-                    // double percentage_change_threshold = 0.002;
-                    // for (const auto &t : execSignal.targets) if (t.percentage > percentage_change_threshold) ++targetPass;
-                    // std::cout << "🛎️ Signal " << execSignal.id 
-                    //           << " has " << targetPass 
-                    //           << " targets exceeding " << (percentage_change_threshold * 100) 
-                    //           << "% change threshold" << std::endl;
-                    // if (targetPass == 0) continue;
+                    std::cout << "🛎️ Signal passed filtering: " << execSignal.id 
+                              << " for " << execSignal.symbol.toString() 
+                              << " Direction: " << (execSignal.direction == core::Direction::BUY ? "BUY" : "SELL")
+                              << " Strength: " << execSignal.strength 
+                              << " Confidence: " << execSignal.confidence 
+                              << " Quality: " << execSignal.quality 
+                              << " TargetSize: " << execSignal.targetSize 
+                              << " PTCA Recommendation: " << ptcaRecommendation
+                              << std::endl;
+                    // int targetPass = 0;
+                    // for (const auto& target : execSignal.targets) {
+                    //     if (target.type == trading::TARGET_PRICE) {
+                    //         targetPass++;
+                    //     } else if (target.type == trading::TARGET_TIME) {
+                    //         // Ensure time target is within reasonable bounds
+                    //         auto now = std::chrono::steady_clock::now();
+                    //         if (target.timePoint > now && target.timePoint < now + std::chrono::hours(1)) {
+                    //             targetPass++;
+                    //         }
+                    //     }
+                    // }
 
                     // Validate with risk manager
                     if (riskManager_) {
