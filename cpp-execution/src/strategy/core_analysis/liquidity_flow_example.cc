@@ -15,7 +15,8 @@
  #include "strategy/engine/strategy_engine.hpp"
  #include "data_ingestion/orderbook/order_book.hpp"
  #include "data_ingestion/websocket/client_interface.hpp"
- 
+ #include "core/market_types.hpp"
+ #include "core/direction.hpp"
  #include <iostream>
  #include <memory>
  #include <thread>
@@ -23,7 +24,8 @@
  
  using namespace trading::strategy;
  using namespace trading::data_ingestion;
- 
+ using namespace trading::core;
+ using namespace trading;
  // Simple callback to log liquidity events
  void logLiquidityEvent(const LiquidityEvent& event) {
      std::cout << "Liquidity Event Detected: " 

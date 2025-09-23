@@ -1131,7 +1131,7 @@ private:
         while (signalWorkersRunning_.load()) {
             // Wait for data
             std::unique_lock<std::mutex> lk(signalQueueMutex_);
-            signalQueueCv_.wait_for(lk, std::chrono::milliseconds(200), [this]() {
+            signalQueueCv_.wait_for(lk, std::chrono::milliseconds(100), [this]() {
                 return !signalQueue_.empty() || !signalWorkersRunning_.load();
             });
             if (!signalWorkersRunning_.load() && signalQueue_.empty()) break;
@@ -1145,12 +1145,19 @@ private:
 
             for (auto &signal : batch) {
                 try {
+                    //if signal is neutral, skip
+                    if (signal.direction == core::Direction::NEUTRAL) continue;
+                    signalsGenerated_++;
                     // Get PTCA recommendation first (needs signal alive)
                     double ptcaRecommendation = ptcaManager_->getSignalRecommendation(signal);
                     // std::cout << "PTCA recommendation for signal " << signal.id 
                             //   << ": " << ptcaRecommendation << std::endl;
                     double adjustedStrength = signal.strength;
                     if (ptcaRecommendation > 0.2) {
+                        // std::cout << "Boosting strength for signal " << signal.id 
+                        //           << " from " << signal.strength 
+                        //           << " to " << std::min(1.0, signal.strength * (1.0 + ptcaRecommendation * 0.3))
+                        //           << " based on PTCA recommendation of " << ptcaRecommendation << std::endl;
                         adjustedStrength = std::min(1.0, signal.strength * (1.0 + ptcaRecommendation * 0.3));
                     } else if (ptcaRecommendation < -0.1) {
                         adjustedStrength = signal.strength * (1.0 + ptcaRecommendation * 0.2);
@@ -1181,7 +1188,15 @@ private:
                         if (execSignal.strength < 0.3) continue;
                         if (execSignal.confidence < 0.6) continue;
                     }
-
+                    std::cout << "🛎️ Signal passed filtering: " << execSignal.id 
+                              << " for " << execSignal.symbol.toString() 
+                              << " Direction: " << (execSignal.direction == core::Direction::BUY ? "BUY" : "SELL")
+                              << " Strength: " << execSignal.strength 
+                              << " Confidence: " << execSignal.confidence 
+                              << " Quality: " << execSignal.quality 
+                              << " TargetSize: " << execSignal.targetSize 
+                              << " PTCA Recommendation: " << ptcaRecommendation
+                              << std::endl;
                     int targetPass = 0;
                     double percentage_change_threshold = 0.002;
                     for (const auto &t : execSignal.targets) if (t.percentage > percentage_change_threshold) ++targetPass;
@@ -1300,15 +1315,15 @@ private:
             //print debug info for every 20th signal
             static std::atomic<int> signalCount{0};
             int count = signalCount.fetch_add(1);
-            if (count < 20 || count % 500 == 0) {
-                std::cout << "🛎️ Signal #" << count << ": "
-                          << signal.symbol.toString() 
-                          << " Dir: " << (signal.direction == core::Direction::BUY ? "BUY" : "SELL")
-                          << " Strength: " << signal.strength 
-                          << " Confidence: " << signal.confidence 
-                          << " Quality: " << signal.quality 
-                          << " Targets: " << signal.targets.size() << std::endl;
-            }
+            // if (count < 20 || count % 500 == 0) {
+            //     std::cout << "🛎️ Signal #" << count << ": "
+            //               << signal.symbol.toString() 
+            //               << " Dir: " << (signal.direction == core::Direction::BUY ? "BUY" : "SELL")
+            //               << " Strength: " << signal.strength 
+            //               << " Confidence: " << signal.confidence 
+            //               << " Quality: " << signal.quality 
+            //               << " Targets: " << signal.targets.size() << std::endl;
+            // }
             if (signalQueue_.size() >= signalQueueLimit_) {
                 // drop oldest to make room
                 signalQueue_.pop_front();
