@@ -858,7 +858,7 @@ private:
         // Register with PTCA if needed
         if (ptcaManager_) {
             // Convert ExecutionResponse to ExecutionReport format if needed
-            // ptcaManager_->registerExecution(response.order_id, response);
+            // ptcaManager_->registerExecution(response.client_order_id, response.order_status);
         }
     }
 
@@ -1200,8 +1200,14 @@ private:
                     signalsGenerated_++;
                     // Get PTCA recommendation first (needs signal alive)
                     double ptcaRecommendation = ptcaManager_->getSignalRecommendation(signal);
+                    auto decision = ptcaManager_->generateTradingDecision(signal.symbol, std::vector<strategy::TradingSignal>{signal});
+                    // if (decision.recommendedDirection == core::Direction::NEUTRAL) {
+                    //         std::cout << "PTCA suggests HOLD for signal " << signal.id 
+                    //                   << " on " << signal.symbol.toString() << std::endl;
+                    //     continue; // Skip further processing
+                    // }
                     // std::cout << "PTCA recommendation for signal " << signal.id 
-                            //   << ": " << ptcaRecommendation << std::endl;
+                    //           << ": " << ptcaRecommendation << std::endl;
                     double adjustedStrength = signal.strength;
                     if (ptcaRecommendation > 0.2) {
                         // std::cout << "Boosting strength for signal " << signal.id 
@@ -1239,15 +1245,15 @@ private:
                         if (execSignal.strength < 0.3) continue;
                         if (execSignal.confidence < 0.6) continue;
                     }
-                    std::cout << "🛎️ Signal passed filtering: " << execSignal.id 
-                              << " for " << execSignal.symbol.toString() 
-                              << " Direction: " << (execSignal.direction == core::Direction::BUY ? "BUY" : "SELL")
-                              << " Strength: " << execSignal.strength 
-                              << " Confidence: " << execSignal.confidence 
-                              << " Quality: " << execSignal.quality 
-                              << " TargetSize: " << execSignal.targetSize 
-                              << " PTCA Recommendation: " << ptcaRecommendation
-                              << std::endl;
+                    // std::cout << "🛎️ Signal passed filtering: " << execSignal.id 
+                    //           << " for " << execSignal.symbol.toString() 
+                    //           << " Direction: " << (execSignal.direction == core::Direction::BUY ? "BUY" : "SELL")
+                    //           << " Strength: " << execSignal.strength 
+                    //           << " Confidence: " << execSignal.confidence 
+                    //           << " Quality: " << execSignal.quality 
+                    //           << " TargetSize: " << execSignal.targetSize 
+                    //           << " PTCA Recommendation: " << ptcaRecommendation
+                    //           << std::endl;
                     // int targetPass = 0;
                     // for (const auto& target : execSignal.targets) {
                     //     if (target.type == trading::TARGET_PRICE) {

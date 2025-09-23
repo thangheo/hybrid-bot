@@ -275,6 +275,65 @@ ExecutionResponse ExecutionService::executeSignal(const TradingSignal& signal) {
         };
     }
     
+    // === Pre-submit validation ===
+    // Prevent obvious price/symbol mismatches from being sent to the exchange.
+    // Heuristic: for LIMIT orders, compare requested price to current market price
+    // from the exchange (if available). If deviation is too large, reject the
+    // order locally to avoid exchange -1013 / filter rejections.
+    try {
+        if (exchange_order->getType() == models::OrderType::LIMIT) {
+            const double requestedPrice = exchange_order->getPrice();
+            const std::string normalizedSymbol = trading::execution::util::normalizeSymbolForExchange(exchange_order->getTradingPair().toString());
+            double marketPrice = 0.0;
+
+            // Try to get market price via gateway (preferred) or via client
+            if (exchangeGateway_) {
+                auto fut = exchangeGateway_->getCurrentPrice(exchangeId, exchange_order->getTradingPair(), false);
+                marketPrice = fut.get();
+            } else if (api_client) {
+                auto fut = api_client->getCurrentPrice(exchange_order->getTradingPair());
+                marketPrice = fut.get();
+            }
+
+            if (marketPrice > 0.0 && requestedPrice > 0.0) {
+                double deviation = std::abs(requestedPrice - marketPrice) / marketPrice;
+                const double kMaxDeviation = 0.50; // 50% default pre-submit threshold (configurable later)
+                if (deviation > kMaxDeviation) {
+                    std::ostringstream oss;
+                    oss << "Pre-submit validation failed: price deviation too large for " << normalizedSymbol
+                        << " (requested=" << requestedPrice << ", market=" << marketPrice
+                        << ", deviation=" << (deviation * 100.0) << "%)";
+                    const std::string reason = oss.str();
+
+                    // Mark order rejected in lifecycle tracker
+                    order_lifecycle_tracker_->updateOrderState(
+                        exchange_order->getClientOrderId(),
+                        models::OrderState::REJECTED,
+                        exchange_order->getExchangeOrderId(),
+                        reason
+                    );
+
+                    return ExecutionResponse{
+                        exchange_order->getClientOrderId(),
+                        "",
+                        false,
+                        reason,
+                        std::chrono::system_clock::now(),
+                        "REJECTED_PRE_SUBMIT"
+                    };
+                }
+            } else {
+                // marketPrice not available or requestedPrice invalid; log a warning and continue
+                std::cerr << "Warning: could not fetch market price for pre-submit validation (" 
+                          << exchange_order->getTradingPair().toString() << ") or invalid requested price=" 
+                          << exchange_order->getPrice() << ". Proceeding without exchange filter checks." << std::endl;
+            }
+        }
+    } catch (const std::exception& e) {
+        // If validation cannot complete (temporary error), do not block submission; log and continue.
+        std::cerr << "Pre-submit validation error: " << e.what() << ". Proceeding to submit order." << std::endl;
+    }
+
     // Submit the order to the exchange
     // auto future_result = api_client->placeOrder(*exchange_order);
     execution::models::ExecutionReport executionReport;
