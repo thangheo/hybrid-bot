@@ -392,8 +392,8 @@ bool ImbalanceSignalGenerator::passesSignalFilters(const ImbalanceEvent& imbalan
      
      // Ensure strength is in [0, 1] range
      return std::max(0.0, std::min(1.0, baseStrength));
- }
- 
+}
+
 std::vector<PriceTarget> ImbalanceSignalGenerator::generatePriceTargets(const ImbalanceEvent& imbalance) const {
     std::vector<PriceTarget> targets;
     
