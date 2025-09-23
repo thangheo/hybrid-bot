@@ -903,8 +903,8 @@ private:
         positionConfig.enforceStrictly = true;
         
         auto& exposureConfig = const_cast<ExposureLimitConfig&>(riskConfig_.getExposureLimitConfig());
-        exposureConfig.maxTotalExposure = 100.0;
-        exposureConfig.maxAssetExposure = 50.0;
+        exposureConfig.maxTotalExposure = 1000.0;
+        exposureConfig.maxAssetExposure = 200.0;
         exposureConfig.maxStrategyExposure = 750.0;
         exposureConfig.maxExchangeExposure = 800.0;
     }
