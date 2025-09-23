@@ -51,6 +51,21 @@ BinanceClient::~BinanceClient() {
 void BinanceClient::setApiKey(const std::string& key, const std::string& secret) {
     m_api_key = key;
     m_api_secret = secret;
+    // Attempt to sync server time to reduce timestamp/recvWindow errors
+    try {
+        // Query Binance server time
+        std::map<std::string, std::string> params;
+        std::string resp = sendPublicRequest("/api/v3/time", params);
+        auto root = nlohmann::json::parse(resp);
+        if (root.contains("serverTime")) {
+            long long serverTime = root["serverTime"].get<long long>();
+            long long local = getCurrentTimestamp();
+            clockOffsetMs_ = serverTime - local;
+            LOG_INFO("BinanceClient: synchronized clock offset {} ms", clockOffsetMs_);
+        }
+    } catch (const std::exception& e) {
+        LOG_WARN("BinanceClient: failed to sync server time: {}", e.what());
+    }
 }
 
 void BinanceClient::setBaseUrl(const std::string& url) {
@@ -311,8 +326,21 @@ std::string BinanceClient::sendSignedRequest(const std::string& endpoint,
     if (m_api_key.empty() || m_api_secret.empty()) {
         throw std::runtime_error("API key and secret must be set for signed requests");
     }
-    
-    std::string query_string = buildQueryString(params);
+    // Build a mutable copy so we can ensure timestamp and recvWindow are present
+    std::map<std::string, std::string> p = params;
+
+    // Ensure timestamp: use local time corrected by clockOffsetMs_
+    if (p.find("timestamp") == p.end()) {
+        long long ts = getCurrentTimestamp() + clockOffsetMs_;
+        p["timestamp"] = std::to_string(ts);
+    }
+
+    // Ensure recvWindow present
+    if (p.find("recvWindow") == p.end()) {
+        p["recvWindow"] = std::to_string(defaultRecvWindowMs_);
+    }
+
+    std::string query_string = buildQueryString(p);
     std::string signature = generateSignature(query_string);
     
     if (!query_string.empty()) {

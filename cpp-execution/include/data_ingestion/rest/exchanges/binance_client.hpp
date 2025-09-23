@@ -79,6 +79,9 @@ public:
     // Authentication & Setup
     void setApiKey(const std::string& key, const std::string& secret);
     void setBaseUrl(const std::string& url);
+    // Optional: adjust clock offset (in ms) and default recvWindow (ms)
+    void setClockOffsetMs(long long offset) { clockOffsetMs_ = offset; }
+    void setDefaultRecvWindowMs(int ms) { defaultRecvWindowMs_ = ms; }
 
     // Account & Balance
     std::map<std::string, double> getBalances();
@@ -114,6 +117,10 @@ private:
     std::string m_api_key;
     std::string m_api_secret;
     std::string m_base_url;
+    // Clock offset (server_time - local_time) in milliseconds. Use to correct timestamp.
+    long long clockOffsetMs_ = 0;
+    // Default recvWindow in milliseconds (can be tuned). Binance allows up to 60000.
+    int defaultRecvWindowMs_ = 5000;
     
     // Default URLs
     static const std::string MAINNET_URL;
