@@ -110,10 +110,14 @@
   * Configuration for LiquidityFlowMonitor
   */
  struct LiquidityFlowConfig {
-     int historySize = 1000;                // Size of history to maintain
-     double flowImbalanceThreshold = 0.6;   // Threshold for flow imbalance detection
-     core::ExchangeId exchangeId;             // Exchange ID
-    core::Symbol tradingPair;             // Trading pair
+        double significance_threshold = 0.5;
+        double execution_rate_factor = 0.2;
+        double modification_rate_factor = 0.5;
+        
+        int historySize = 1000;                // Size of history to maintain
+        double flowImbalanceThreshold = 0.6;   // Threshold for flow imbalance detection
+        core::ExchangeId exchangeId;             // Exchange ID
+        core::Symbol tradingPair;             // Trading pair
         double largeOrderThreshold = 5.0;     // Threshold for large orders
         int historyWindowSeconds = 60;       // Window size for historical analysis
         double largeOrderVolume = 0.0;       // Volume of large orders

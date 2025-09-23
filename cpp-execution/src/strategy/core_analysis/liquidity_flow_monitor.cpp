@@ -22,7 +22,7 @@
      : exchangeId_(exchangeId),
        trading_pair_(tradingPair),
        large_order_threshold_(params.getDouble("large_order_threshold", 5.0)),
-       history_window_seconds_(params.getInt("history_window_seconds", 60)),
+       history_window_seconds_(params.getInt("history_window_seconds", 30)),
        typical_order_size_(1.0),
        last_update_time_(std::chrono::system_clock::now()),
        last_sequence_number_(0) {
@@ -88,49 +88,7 @@ void LiquidityFlowMonitor::processOrderBookDelta(OrderBookDelta delta) {
     }
 }
 
-// void LiquidityFlowMonitor::processOrderBookSnapshots(
-//     const data_ingestion::OrderBook& prev_book,
-//     const data_ingestion::OrderBook& curr_book) {
-    
-//     std::lock_guard<std::mutex> lock(mutex_);
-    
-//     // Create a copy of the current order book using a shared pointer
-//     // to avoid issues with non-copyable mutex and atomic members
-//     auto curr_book_ptr = std::make_shared<data_ingestion::OrderBook>(
-//         curr_book.getExchangeId(), curr_book.getSymbol());
-    
-//     // Apply the current snapshot to our copy
-//     auto snapshot = curr_book.getSnapshot();
-//     curr_book_ptr->applySnapshot(
-//         curr_book.getBids(),
-//         curr_book.getAsks(),
-//         curr_book.getSequenceNumber(),
-//         curr_book.getTimestamp());
-    
-//     // Store the copied book in history
-//     order_book_history_.push_back(curr_book_ptr);
-    
-//     // Remove old books based on window size
-//     auto cutoff_time = std::chrono::system_clock::now() - 
-//                       std::chrono::seconds(history_window_seconds_);
-    
-//     while (!order_book_history_.empty() && 
-//            (*order_book_history_.front()).getTimestamp() < cutoff_time) {
-//         order_book_history_.pop_front();
-//     }
-    
-//     // Compute delta between the two snapshots
-//     auto delta = computeDelta(
-//         prev_book.getBids(),
-//         prev_book.getAsks(),
-//         curr_book.getBids(),
-//         curr_book.getAsks(),
-//         curr_book.getTimestamp(),
-//         curr_book.getSequenceNumber());
-    
-//     // Process the computed delta
-//     processOrderBookDelta(delta);
-// }
+
  LiquidityMetrics LiquidityFlowMonitor::getLiquidityMetrics() const {
      std::lock_guard<std::mutex> lock(mutex_);
      return current_metrics_;
@@ -430,7 +388,7 @@ std::vector<LiquidityEvent> LiquidityFlowMonitor::detectRapidLiquidityChanges(
         }
         
     double significance = latest_delta->getTotalAddedBidVolume() / (avg_bid_add_rate * threshold);
-        significance = std::min(1.0, significance - 0.5); // Normalize to [0, 1]
+        significance = std::min(1.0, significance - config_.significance_threshold); // Normalize to [0, 1]
         
         events.emplace_back(
             LiquidityEvent::Type::RAPID_LIQUIDITY_ADDITION,
@@ -679,12 +637,12 @@ void LiquidityFlowMonitor::updateLiquidityMetrics() {
     current_metrics_.bid_cancel_rate = total_bid_removes / time_window;
     
     // Estimate execution rate as a portion of removals
-    current_metrics_.bid_execution_rate = current_metrics_.bid_cancel_rate * 0.2; // Heuristic
+    current_metrics_.bid_execution_rate = current_metrics_.bid_cancel_rate * config_.execution_rate_factor; // Heuristic
     
     // Try to estimate modification rate (imperfect)
-    current_metrics_.bid_modification_rate = 
-        std::min(current_metrics_.bid_add_rate, current_metrics_.bid_cancel_rate) * 0.5; // Heuristic
-    
+    current_metrics_.bid_modification_rate =
+        std::min(current_metrics_.bid_add_rate, current_metrics_.bid_cancel_rate) * config_.modification_rate_factor; // Heuristic
+
     // Calculate bid toxicity (high cancel rate relative to additions)
     if (current_metrics_.bid_add_rate > 0) {
         current_metrics_.bid_toxicity = 
@@ -768,33 +726,50 @@ void LiquidityFlowMonitor::updateLiquidityMetrics() {
 }
 
 double LiquidityFlowMonitor::calculateTypicalOrderSize() const {
+    // Avoid unbounded temporary allocations. NOTE: This method does NOT acquire
+    // the mutex — callers that access shared state should hold `mutex_`.
     std::vector<double> order_sizes;
-    
-    // Collect order sizes from recent deltas
-    for (const auto& delta : delta_history_) {
+    const size_t kMinSamples = 10;
+    const size_t kMaxSamples = 1000; // cap number of samples to collect
+
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    order_sizes.reserve(std::min(kMaxSamples, delta_history_.size() * size_t(4)));
+
+    // Collect order sizes from recent deltas, newest-first until cap reached
+    for (auto it = delta_history_.rbegin(); it != delta_history_.rend() && order_sizes.size() < kMaxSamples; ++it) {
+        const auto& delta = *it;
         for (const auto& level : delta.added_bids) {
             order_sizes.push_back(level.quantity);
+            if (order_sizes.size() >= kMaxSamples) break;
         }
-        
+        if (order_sizes.size() >= kMaxSamples) break;
+
         for (const auto& level : delta.added_asks) {
             order_sizes.push_back(level.quantity);
+            if (order_sizes.size() >= kMaxSamples) break;
         }
     }
-    
+
     // If we don't have enough samples, return current value
-    if (order_sizes.size() < 10) {
+    if (order_sizes.size() < kMinSamples) {
         return typical_order_size_;
     }
-    
-    // Sort sizes to find median
-    std::sort(order_sizes.begin(), order_sizes.end());
-    
-    // Return median
-    if (order_sizes.size() % 2 == 0) {
-        return (order_sizes[order_sizes.size() / 2 - 1] + order_sizes[order_sizes.size() / 2]) / 2.0;
-    } else {
-        return order_sizes[order_sizes.size() / 2];
+
+    // Find median — use nth_element to avoid full sort for performance
+    size_t n = order_sizes.size();
+    size_t mid = n / 2;
+    std::nth_element(order_sizes.begin(), order_sizes.begin() + mid, order_sizes.end());
+    double median = order_sizes[mid];
+    if (n % 2 == 0) {
+        // need the lower median too
+        double lower;
+        auto it = std::max_element(order_sizes.begin(), order_sizes.begin() + mid);
+        lower = *it;
+        median = (lower + median) / 2.0;
     }
+
+    return median;
 }
 
 void LiquidityFlowMonitor::processOrderBookSnapshots(
@@ -978,52 +953,7 @@ double LiquidityFlowMonitor::getAverageSpread(std::chrono::seconds lookback_peri
     return count > 0 ? total_spread / count : 0.0;
 }
 
-// // Delta computation (simplified - only process essential changes)
-// data_ingestion::OrderBookDelta LiquidityFlowMonitor::computeDelta(
-//     const std::vector<PriceLevel>& prev_bids,
-//     const std::vector<PriceLevel>& prev_asks,
-//     const std::vector<PriceLevel>& curr_bids,
-//     const std::vector<PriceLevel>& curr_asks,
-//     core::Timestamp timestamp,
-//     uint64_t sequence_number) {
-    
-//     data_ingestion::OrderBookDelta delta;
-//     delta.timestamp = timestamp;
-//     delta.sequenceNumber = sequence_number;
-    
-//     // Simplified delta computation - only track significant changes
-//     // to reduce processing overhead on VPS
-    
-//     // Compare only top 5 levels to save CPU
-//     const size_t max_levels_to_compare = 5;
-    
-//     // Compare bids
-//     for (size_t i = 0; i < std::min({prev_bids.size(), curr_bids.size(), max_levels_to_compare}); ++i) {
-//         if (std::abs(prev_bids[i].quantity - curr_bids[i].quantity) > 0.001) {
-//             delta.added_bids.push_back(curr_bids[i]);
-//         }
-//     }
-    
-//     // Compare asks
-//     for (size_t i = 0; i < std::min({prev_asks.size(), curr_asks.size(), max_levels_to_compare}); ++i) {
-//         if (std::abs(prev_asks[i].quantity - curr_asks[i].quantity) > 0.001) {
-//             delta.added_asks.push_back(curr_asks[i]);
-//         }
-//     }
-    
-//     return delta;
-// }
 
-// void LiquidityFlowMonitor::processOrderBookDelta(const data_ingestion::OrderBookDelta& delta) {
-//     // Process delta for flow analysis
-//     // Keep this lightweight for VPS performance
-    
-//     if (delta.isEmpty()) return;
-    
-//     // Example: Update flow metrics
-//     // Implement your specific flow analysis logic here
-//     // But keep it memory-efficient!
-// }
 
 std::shared_ptr<LiquidityFlowMonitor> createLiquidityFlowMonitor(
     const core::ExchangeId& exchangeId, 

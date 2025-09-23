@@ -1014,8 +1014,14 @@ OrderBookMetrics OrderBookAnalyzerManager::getMetrics(const core::Symbol& symbol
     
     const std::string key = createKey(symbol.toString(), exchange);
     auto it = analyzers_.find(key);
-    
-    return (it != analyzers_.end()) ? it->second->getMetrics() : OrderBookMetrics{};
+    if (it == analyzers_.end()) return OrderBookMetrics{};
+
+    // Return a lightweight copy: clear heavy time-series payloads to avoid
+    // excessive allocations/copies in hot code paths. Callers that need full
+    // time-series should query the analyzer directly.
+    OrderBookMetrics metricsCopy = it->second->getMetrics();
+    metricsCopy.timeSeriesMetrics.clear();
+    return metricsCopy;
 }
 
 void OrderBookAnalyzerManager::cleanupInactiveAnalyzers(std::chrono::seconds inactiveThreshold) {
