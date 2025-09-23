@@ -118,6 +118,34 @@ bool PreTradeRiskFilter::initialize() {
         return false;
     }
 }
+// getAllowedPositionSize
+double PreTradeRiskFilter::getAllowedPositionSize(const TradingPair& tradingPair) const {
+    // Query position limit checker for max position size
+    double maxPosition = m_positionLimitChecker->getPositionLimit(tradingPair.base, "default_strategy");
+    
+    // Query exposure calculator for current exposure
+    TradingSignal tempSignal;
+    tempSignal.setId("temp_signal");
+    tempSignal.setTradingPair(tradingPair.toString());
+    tempSignal.setDirection(core::Direction::BUY);
+    tempSignal.setTargetSize(0.0);
+    tempSignal.setStrategyId(StrategyId("default_strategy"));
+    double currentExposure = m_exposureCalculator->getCurrentExposure(tempSignal).value_or(0.0);
+    
+    // Get max asset exposure from config
+    double maxAssetExposure = m_exposureCalculator->getExposureLimits().maxAssetExposure;
+    
+    // Calculate allowed size based on position and exposure limits
+    double allowedByPosition = maxPosition; // Assuming no current position for simplicity
+    double allowedByExposure = (maxAssetExposure > currentExposure) ? (maxAssetExposure - currentExposure) : 0.0;
+    
+    double allowedSize = std::min(allowedByPosition, allowedByExposure);
+    
+    LOG_DEBUG("Allowed position size for {}: byPosition={}, byExposure={}, final={}",
+              tradingPair.toString(), allowedByPosition, allowedByExposure, allowedSize);
+    
+    return allowedSize;
+}
 
 ValidationResult PreTradeRiskFilter::validateSignal(const TradingSignal& signal) {
     // Start timing the validation

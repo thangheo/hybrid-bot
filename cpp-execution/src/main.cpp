@@ -954,7 +954,7 @@ private:
         
         auto& exposureConfig = const_cast<ExposureLimitConfig&>(riskConfig_.getExposureLimitConfig());
         exposureConfig.maxTotalExposure = 1000.0;
-        exposureConfig.maxAssetExposure = 200.0;
+        exposureConfig.maxAssetExposure = 300.0;
         exposureConfig.maxStrategyExposure = 750.0;
         exposureConfig.maxExchangeExposure = 800.0;
     }
@@ -1331,8 +1331,12 @@ private:
                 report.setOrderId("ORDER_" + task.id);
                 report.setSymbol(task.symbol);
                 report.setSide(task.direction == core::Direction::BUY ? execution::models::OrderSide::BUY : execution::models::OrderSide::SELL);
-                report.setQuantity(task.targetSize);
-                report.setFilledQuantity(task.targetSize);
+                //targetSize is a scale from 0 to 1, we assume 1 means full position size
+                //we use exposure limits to determine actual size
+                double positionSize = riskManager_->getAllowedPositionSize(task.symbol);
+                // report.setPrice(response.execution_price);
+                report.setQuantity(positionSize * task.targetSize);
+                report.setFilledQuantity(positionSize * task.targetSize);
                 report.setStatus(execution::models::OrderState::FILLED);
                 if (riskManager_) {
                     riskManager_->processExecutionReport(report);

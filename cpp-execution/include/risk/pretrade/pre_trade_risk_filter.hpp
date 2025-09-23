@@ -51,6 +51,8 @@ public:
      * Destructor
      */
     ~PreTradeRiskFilter();
+    // getAllowedPositionSize
+    double getAllowedPositionSize(const TradingPair& tradingPair) const;
     /**
      * Initialize the filter and its components
      * @return true if initialization was successful, false otherwise

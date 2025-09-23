@@ -518,6 +518,10 @@ ExposureCalculator::ExposureCalculator(
 
 ExposureCalculator::~ExposureCalculator() = default;
 
+// getCurrentExposure
+std::optional<double> ExposureCalculator::getCurrentExposure(const TradingSignal& signal) const {
+    return impl_->calculateAssetExposure(getBaseAssetFromSignal(signal));
+}
 bool ExposureCalculator::initialize(const RiskConfig& config) {
     return impl_->initialize(config);
 }

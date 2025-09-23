@@ -49,7 +49,8 @@ public:
     );
 
     ~ExposureCalculator();
-
+    // getCurrentExposure
+    std::optional<double> getCurrentExposure(const TradingSignal& signal) const;
     // Non-copyable, movable
     ExposureCalculator(const ExposureCalculator&) = delete;
     ExposureCalculator& operator=(const ExposureCalculator&) = delete;
