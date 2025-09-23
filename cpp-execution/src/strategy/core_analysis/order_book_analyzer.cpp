@@ -178,7 +178,7 @@ void OrderBookAnalyzer::processOrderBook(const data_ingestion::OrderBook& snapsh
         //                                  preGroupBidCount, cachedBids_.size(), preGroupAskCount, cachedAsks_.size(),
         //                                  effectiveGroupingFactor, snapshot.getSymbol().toString(), snapshot.getExchangeId().toString());
         //     }
-        // }
+        }
 
         // STARTUP WARM-UP: skip publishing metrics until we have a minimum
         // amount of depth on both sides and non-zero volume. Use pre-group
