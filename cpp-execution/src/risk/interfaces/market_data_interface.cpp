@@ -242,12 +242,12 @@ std::optional<MarketData> MarketDataInterface::getMarketData(
                now - entry.lastUpdate).count();
            if (age <= cacheValidityDuration_.count() && entry.isValid) {
                // Hit
-               LOG_INFO("getMarketData: cache HIT for {} (exchange={}), age={}ms, ttl={}ms", cacheKey, exchange.toString(), age, cacheValidityDuration_.count());
+            //    LOG_INFO("getMarketData: cache HIT for {} (exchange={}), age={}ms, ttl={}ms", cacheKey, exchange.toString(), age, cacheValidityDuration_.count());
                return entry.data;  // Automatic conversion to std::optional
            } else {
                // Found but expired or invalid
-               LOG_INFO("getMarketData: cache EXPIRED/INVALID for {} (exchange={}), age={}ms, ttl={}ms, isValid={}",
-                        cacheKey, exchange.toString(), age, cacheValidityDuration_.count(), entry.isValid);
+            //    LOG_INFO("getMarketData: cache EXPIRED/INVALID for {} (exchange={}), age={}ms, ttl={}ms, isValid={}",
+            //             cacheKey, exchange.toString(), age, cacheValidityDuration_.count(), entry.isValid);
            }
        } else {
            // Not in cache
