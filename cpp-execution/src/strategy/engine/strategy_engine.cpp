@@ -228,9 +228,7 @@ void StrategyEngine::processQueuedSignals() {
      try {
             // Process the order book through the analyzer      
         orderBookAnalyzer_->processOrderBook(orderBook);
-        std::cout << std::format("Processed order book for {} on {}", 
-                             orderBook.getSymbol().toString(), 
-                             orderBook.getExchangeId().toString()) << std::endl;
+        
          // Get the metrics from the analyzer
          auto metrics = orderBookAnalyzer_->getMetrics(orderBook.getSymbol(), orderBook.getExchangeId());
          //print bids and asks and volumes       
@@ -266,14 +264,14 @@ void StrategyEngine::processQueuedSignals() {
             //                      orderBook.getSymbol().toString(), 
             //                      vpIt->second->calculatePointOfControl()) << std::endl;
          }
+        //  return true; // Return true if imbalance detected
          imbalanceDetector_->analyzeMetrics(metrics);
-         
          //print detected imbalances
          auto imbalances = imbalanceDetector_->getDetectedImbalances();
-        //  for (const auto& imb : imbalances) {
-        //      LOG_DEBUG("Detected imbalance: Type={} Strength={} Confidence={}",
-        //                static_cast<int>(imb.type), imb.strength, static_cast<int>(imb.confidence));
-        //  }
+         for (const auto& imb : imbalances) {
+             LOG_DEBUG("Detected imbalance: Type={} Strength={} Confidence={}",
+                       static_cast<int>(imb.type), imb.strength, static_cast<int>(imb.confidence));
+         }
          // Prepare data for locked section
          auto symbol = orderBook.getSymbol();
          ExchangeId exchangeId = orderBook.getExchangeId();
