@@ -64,6 +64,7 @@ file(GLOB MARKET_INTEL_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../../src/market_inte
 # Add the sources to the SOURCES list
 set(SOURCES
     zmq_server.cpp
+    zmq_manager.cpp
     zmq_client.cpp
     market_data_subscriber.cpp
 

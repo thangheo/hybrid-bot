@@ -10,6 +10,7 @@
 #include <iostream>
 #include <sstream>
 #include <random>
+#include "communication/zmq_manager.hpp"
 
 namespace trading {
 namespace communication {
@@ -276,21 +277,23 @@ std::string GenericZmqClient::getLastError() const {
 
 bool GenericZmqClient::initializeSockets() {
     try {
-        // Create ZeroMQ context
-        context_ = std::make_unique<zmq::context_t>(config_.io_threads);
-        
-        // Create subscriber socket
-        subscriber_socket_ = std::make_unique<zmq::socket_t>(*context_, ZMQ_SUB);
+        // Use shared context from ZmqManager to avoid per-component contexts
+    auto shared_ctx = trading::communication::ZmqManager::instance().getContext(config_.io_threads);
+    // Keep a shared_ptr reference so lifetime is managed by ZmqManager and users
+    context_ = shared_ctx;
+
+    // Create subscriber socket on shared context
+    subscriber_socket_ = std::make_unique<zmq::socket_t>(*context_, ZMQ_SUB);
         subscriber_socket_->set(zmq::sockopt::rcvtimeo, 100);  // 100ms timeout for non-blocking
         subscriber_socket_->connect(config_.server_pub_endpoint);
-        
+
         // Create request socket
-        request_socket_ = std::make_unique<zmq::socket_t>(*context_, ZMQ_REQ);
+    request_socket_ = std::make_unique<zmq::socket_t>(*context_, ZMQ_REQ);
         request_socket_->connect(config_.server_req_endpoint);
-        
+
         logInfo("ZMQ sockets initialized successfully");
         return true;
-        
+
     } catch (const zmq::error_t& e) {
         logError("GenericZmqClient Client error initializing sockets: " + std::string(e.what()));
         return false;
@@ -312,11 +315,8 @@ void GenericZmqClient::cleanup() {
         request_socket_.reset();
     }
     
-    // Close context
-    if (context_) {
-        context_->close();
-        context_.reset();
-    }
+    // Reset our shared_ptr reference to the shared context (manager owns actual lifecycle)
+    context_.reset();
     
     // Clear handlers
     {

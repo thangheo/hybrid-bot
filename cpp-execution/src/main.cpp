@@ -1137,12 +1137,11 @@ private:
                    
                     if (orderBook) {
                         orderBookUpdatesReceived_++;                      
-                        // print the level of depth of ob for debug
-                        // auto [bidDepth, askDepth] = orderBook->getDepthLevels();
-                        // std::cout << "OrderBook worker " << workerId << " processing update for "
-                        //           << update.exchangeId.toString() << ":" << update.tradingPair.toString()
-                        //           << " | Bids: " << bidDepth << " levels, Asks: " << askDepth << " levels"
-                        //           << std::endl;
+                        auto [bidDepth, askDepth] = orderBook->getDepthLevels();
+                        std::cout << "OrderBook worker " << workerId << " processing update for "
+                                  << update.exchangeId.toString() << ":" << update.tradingPair.toString()
+                                  << " | Bids: " << bidDepth << " levels, Asks: " << askDepth << " levels"
+                                  << std::endl;
                           // Generate intelligence (throttling inside function)
                         // generateMarketIntelligence(update, orderBook); //no need at this time
                         // Publish orderbook for risk asynchronously

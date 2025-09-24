@@ -7,6 +7,7 @@
 #include <unordered_map>
 #include "communication/zmq_config.hpp"
 #include "communication/zmq_client.hpp"
+#include "communication/zmq_manager.hpp"
 #include <iostream>
 
 using namespace trading::communication;
@@ -94,7 +95,20 @@ bool MarketDataInterface::initialize() {
         // Subscribe to orderbook topics
         zmqClient_->subscribe("orderbook.", 
             [this](const std::string& topic, const std::string& message, const std::unordered_map<std::string, std::string>& metadata) {
-                this->processSyntheticOrderBook(topic, message);
+                // Enqueue-only: push raw message to inbound queue and wake processing thread
+                totalReceived_.fetch_add(1, std::memory_order_relaxed);
+                MarketDataInterface::RawMessage raw{topic, message, std::chrono::steady_clock::now()};
+                {
+                    std::unique_lock<std::mutex> qlock(this->inboundQueueMutex_);
+                    if (this->inboundQueue_.size() >= this->inboundQueueMaxSize_) {
+                        // Drop the message to avoid unbounded growth
+                        this->totalDropped_.fetch_add(1, std::memory_order_relaxed);
+                    } else {
+                        this->inboundQueue_.push_back(std::move(raw));
+                        this->totalEnqueued_.fetch_add(1, std::memory_order_relaxed);
+                        this->inboundQueueCv_.notify_one();
+                    }
+                }
             });
 
         // Record the wildcard subscription so it can be reapplied on reconnect
@@ -108,10 +122,20 @@ bool MarketDataInterface::initialize() {
         
         // Start background reconnection/monitor thread
         try {
-            reconnectionThread_ = std::thread([this]() { this->connectionMonitorLoop(); });
+            // reconnectionThread_ = std::thread([this]() { this->connectionMonitorLoop(); });
             LOG_INFO("MarketDataInterface", "Started connection monitor thread");
         } catch (const std::exception& e) {
             LOG_ERROR("Failed to start connection monitor thread: {}", e.what());
+        }
+
+        // Start processing thread for inbound messages
+        try {
+            processingRunning_.store(true);
+            processingThread_ = std::thread([this]() { this->processQueueLoop(); });
+            LOG_INFO("MarketDataInterface", "Started market data processing thread");
+        } catch (const std::exception& e) {
+            LOG_ERROR("Failed to start processing thread: {}", e.what());
+            processingRunning_.store(false);
         }
 
         LOG_INFO("MarketDataInterface initialized successfully");
@@ -120,6 +144,33 @@ bool MarketDataInterface::initialize() {
     } catch (const std::exception& e) {
         LOG_ERROR("Failed to initialize MarketDataInterface: " + std::string(e.what()));
         return false;
+    }
+}
+
+// Process inbound queue: pop raw messages and call existing processing logic
+void MarketDataInterface::processQueueLoop() {
+    while (processingRunning_.load()) {
+        RawMessage item;
+        {
+            std::unique_lock<std::mutex> lock(inboundQueueMutex_);
+            if (inboundQueue_.empty()) {
+                // Wait until notified or check periodically to allow shutdown
+                inboundQueueCv_.wait_for(lock, std::chrono::milliseconds(500));
+                if (!processingRunning_.load()) break;
+                if (inboundQueue_.empty()) continue;
+            }
+            item = std::move(inboundQueue_.front());
+            inboundQueue_.pop_front();
+        }
+
+        try {
+            // Call existing processing function which does JSON parse, cache updates, callbacks
+            processSyntheticOrderBook(item.topic, item.message);
+            totalProcessed_.fetch_add(1, std::memory_order_relaxed);
+        } catch (const std::exception& e) {
+            errorStats_.dataErrors++;
+            LOG_ERROR("Error processing queued market data: {}", e.what());
+        }
     }
 }
 void MarketDataInterface::processSyntheticOrderBook(const std::string& topic, const std::string& message) {
@@ -181,16 +232,21 @@ void MarketDataInterface::processSyntheticOrderBook(const std::string& topic, co
         }
 
         // Notify registered callbacks about new market data
+        // Copy the callback list while holding the lock, then invoke
+        // callbacks outside the critical section to avoid deadlocks when
+        // callbacks call back into this interface.
+        std::vector<std::function<void(const MarketData&)>> callbacksCopy;
         {
             std::lock_guard<std::mutex> cbLock(callbackMutex_);
-            for (const auto& cb : marketDataCallbacks_) {
-                try {
-                    cb(data);
-                } catch (const std::exception& e) {
-                    LOG_ERROR("MarketData callback threw: {}", e.what());
-                } catch (...) {
-                    LOG_ERROR("MarketData callback threw unknown exception");
-                }
+            callbacksCopy = marketDataCallbacks_;
+        }
+        for (const auto& cb : callbacksCopy) {
+            try {
+                cb(data);
+            } catch (const std::exception& e) {
+                LOG_ERROR("MarketData callback threw: {}", e.what());
+            } catch (...) {
+                LOG_ERROR("MarketData callback threw unknown exception");
             }
         }
         //call riskManager_->updateMarketData(marketData);
@@ -576,10 +632,20 @@ void MarketDataInterface::updateMarketDataCache(
     }
     
     // Notify callbacks
+    // Copy callbacks under lock, then invoke outside the lock to avoid
+    // potential deadlocks if callbacks call back into this object.
+    std::vector<std::function<void(const MarketData&)>> callbacksCopy;
     {
         std::lock_guard<std::mutex> lock(callbackMutex_);
-        for (const auto& callback : marketDataCallbacks_) {
+        callbacksCopy = marketDataCallbacks_;
+    }
+    for (const auto& callback : callbacksCopy) {
+        try {
             callback(marketData);
+        } catch (const std::exception& e) {
+            LOG_ERROR("MarketData callback threw: {}", e.what());
+        } catch (...) {
+            LOG_ERROR("MarketData callback threw unknown exception");
         }
     }
 }
@@ -674,12 +740,16 @@ std::map<std::string, double> MarketDataInterface::getExchangeBalances(
 void MarketDataInterface::connectionMonitorLoop() {
     auto lastBalanceUpdate = std::chrono::steady_clock::now();
     const auto balanceUpdateInterval = std::chrono::seconds(60);
-    std::unique_lock<std::mutex> lk(reconnectionMutex_);
-    // sleep for 20 seconds
-    std::this_thread::sleep_for(std::chrono::seconds(60));
+    // Initial short sleep to stagger startup
+    std::this_thread::sleep_for(std::chrono::seconds(5));
+    int reconnect_attempt = 0;
     while (running_) {
-        // Wait for either a notification or timeout
-        reconnectionCv_.wait_for(lk, std::chrono::seconds(15));
+        // Wait with a unique_lock only while waiting on the condition variable.
+        {
+            std::unique_lock<std::mutex> lk(reconnectionMutex_);
+            // Wait for either a notification or timeout
+            reconnectionCv_.wait_for(lk, std::chrono::seconds(15));
+        }
 
         if (!running_) break;
 
@@ -692,6 +762,7 @@ void MarketDataInterface::connectionMonitorLoop() {
             LOG_INFO("Attempting to reconnect ZeroMQ client");
 
             try {
+                // Do not hold reconnectionMutex_ while performing network ops or calling into zmqClient_
                 // Attempt graceful disconnect if the client exists
                 if (zmqClient_) {
                     try { zmqClient_->disconnect(); } catch (...) {}
@@ -711,101 +782,107 @@ void MarketDataInterface::connectionMonitorLoop() {
                 }
 
                 // Try to start/connect
-                if (zmqClient_ && zmqClient_->start()) {
-                    needsReconnection_.store(false);
-                    lastConnectionCheck_ = std::chrono::steady_clock::now();
-                    LOG_INFO("Successfully reconnected ZeroMQ client");
-
-                    // Reapply tracked subscriptions so we actually receive messages again
-                    std::vector<std::string> toApply;
-                    {
-                        std::lock_guard<std::mutex> sLock(subscriptionMutex_);
-                        toApply.assign(subscribedTopics_.begin(), subscribedTopics_.end());
-                    }
-
-                    for (const auto& topic : toApply) {
-                        try {
-                            // Use a generic handler that dispatches by topic prefix
-                            zmqClient_->subscribe(topic,
-                                [this](const std::string& t, const std::string& msg, const std::unordered_map<std::string, std::string>& meta) {
-                                    if (t.find("orderbook") != std::string::npos) {
-                                        this->processSyntheticOrderBook(t, msg);
-                                    } else if (t.find("trade") != std::string::npos) {
-                                        this->processTradeUpdate(t, msg);
-                                    }
-                                }
-                            );
-                            LOG_INFO("Reapplied subscription for topic: {}", topic);
-                        } catch (const std::exception& e) {
-                            errorStats_.subscriptionErrors++;
-                            LOG_ERROR("Failed to reapply subscription for topic {}: {}", topic, e.what());
-                        }
-                    }
+                if (!checkConnection()) {
+                    handleDisconnection();
                 }
 
-                auto now = std::chrono::steady_clock::now();
-                if (now - lastBalanceUpdate > balanceUpdateInterval) {
+                // Check if we need to resubscribe / reconnect
+                if (needsReconnection_.load()) {
+                    LOG_INFO("Attempting to reconnect ZeroMQ client (attempt={})", reconnect_attempt + 1);
+
+                    // Attempt reconnect with exponential backoff
                     try {
-                        auto balances = m_binanceClient.getBalances();
-                        for (const auto& [asset, amount] : balances) {
-                            updateBalance(core::ExchangeId::binance(), asset, amount);
+                        // Attempt graceful disconnect if the client exists (don't hold mutex)
+                        if (zmqClient_) {
+                            try { zmqClient_->disconnect(); } catch (...) {}
                         }
-                        lastBalanceUpdate = now;
+
+                        // Ensure we have a client instance
+                        if (!zmqClient_) {
+                            communication::ZmqClientConfig zmqConfig;
+                            zmqConfig.server_pub_endpoint = zmqSubscriberEndpoint_;
+                            zmqConfig.server_req_endpoint = zmqPublisherEndpoint_;
+                            zmqConfig.auto_reconnect = true;
+                            zmqConfig.reconnect_interval = std::chrono::milliseconds(5000);
+                            zmqConfig.request_timeout = std::chrono::milliseconds(10000);
+                            zmqConfig.io_threads = 1;
+
+                            zmqClient_ = std::make_unique<communication::GenericZmqClient>(zmqConfig);
+                            LOG_INFO("Created ZeroMQ client for reconnection");
+                        }
+
+                        // Try to start/connect
+                        if (zmqClient_ && zmqClient_->start()) {
+                            needsReconnection_.store(false);
+                            reconnect_attempt = 0; // reset attempts on success
+                            lastConnectionCheck_ = std::chrono::steady_clock::now();
+                            LOG_INFO("Successfully reconnected ZeroMQ client");
+
+                            // Reapply tracked subscriptions so we actually receive messages again
+                            std::vector<std::string> toApply;
+                            {
+                                std::lock_guard<std::mutex> sLock(subscriptionMutex_);
+                                toApply.assign(subscribedTopics_.begin(), subscribedTopics_.end());
+                            }
+
+                            for (const auto& topic : toApply) {
+                                try {
+                                    zmqClient_->subscribe(topic,
+                                        [this](const std::string& t, const std::string& msg, const std::unordered_map<std::string, std::string>& meta) {
+                                            if (t.find("orderbook") != std::string::npos) {
+                                                this->processSyntheticOrderBook(t, msg);
+                                            } else if (t.find("trade") != std::string::npos) {
+                                                this->processTradeUpdate(t, msg);
+                                            }
+                                        }
+                                    );
+                                    LOG_INFO("Reapplied subscription for topic: {}", topic);
+                                } catch (const std::exception& e) {
+                                    errorStats_.subscriptionErrors++;
+                                    LOG_ERROR("Failed to reapply subscription for topic {}: {}", topic, e.what());
+                                }
+                            }
+                        } else {
+                            // Connection attempt failed — schedule next try with backoff
+                            reconnect_attempt++;
+                            auto delay = trading::communication::ZmqManager::instance().reconnectDelayMs(reconnect_attempt, std::chrono::milliseconds(500), 10);
+                            LOG_WARN("Reconnect attempt {} failed; sleeping for {} ms before retry", reconnect_attempt, delay.count());
+                            // Sleep while still allowing shutdown notifications
+                            std::unique_lock<std::mutex> lk(reconnectionMutex_);
+                            reconnectionCv_.wait_for(lk, delay);
+                        }
+
+                        auto now = std::chrono::steady_clock::now();
+                        if (now - lastBalanceUpdate > balanceUpdateInterval) {
+                            try {
+                                auto balances = m_binanceClient.getBalances();
+                                for (const auto& [asset, amount] : balances) {
+                                    updateBalance(core::ExchangeId::binance(), asset, amount);
+                                }
+                                lastBalanceUpdate = now;
+                            } catch (const std::exception& e) {
+                                LOG_ERROR("Failed to update Binance balances: {}", e.what());
+                            }
+                        }
+
                     } catch (const std::exception& e) {
-                        LOG_ERROR("Failed to update Binance balances: {}", e.what());
+                        errorStats_.connectionErrors++;
+                        LOG_ERROR("Reconnection failed: {}", e.what());
                     }
                 }
 
-            } catch (const std::exception& e) {
+                // Keep the cache pruned periodically so stale entries are removed
+                pruneMarketDataCache();
+            }
+            catch (const std::exception& e) {
                 errorStats_.connectionErrors++;
-                LOG_ERROR("Reconnection failed: {}", e.what());
-            }
-        }
-
-        pruneMarketDataCache();
-    }
-}
-
-bool MarketDataInterface::checkConnection() {
-    if (!zmqClient_ || !zmqClient_->isConnected()) {
-        return false;
-    }
-    
-    // Check if we're receiving data
-    auto now = std::chrono::steady_clock::now();
-    // If we just connected recently, allow a short grace period before declaring loss
-    const auto gracePeriod = std::chrono::seconds(5);
-    if (now - lastConnectionCheck_ < gracePeriod) {
-        return true;
-    }
-    // Prefer the ZMQ client's last_message_time if available (more reliable).
-    try {
-        const auto& stats = zmqClient_->getStats();
-        if (stats.last_message_time.time_since_epoch().count() > 0) {
-            auto age = std::chrono::duration_cast<std::chrono::seconds>(now - stats.last_message_time).count();
-            if (age < 30) return true;
-        }
-    } catch (...) {
-        // fall back to cache check below
-    }
-
-    // If no data for 30 seconds in cache, consider connection dead
-    bool hasRecentData = false;
-    {
-        std::shared_lock<std::shared_mutex> lock(cacheMutex_);
-        for (const auto& [key, entry] : marketDataCache_) {
-            auto dataAge = std::chrono::duration_cast<std::chrono::seconds>(
-                now - entry.lastUpdate
-            ).count();
-            if (dataAge < 30) {
-                hasRecentData = true;
-                break;
+                LOG_ERROR("Reconnection process failed: {}", e.what());
             }
         }
     }
-
-    return hasRecentData;
 }
+
+
 
 void MarketDataInterface::handleDisconnection() {
     LOG_WARN("Connection appears to be lost, scheduling reconnection");
@@ -815,6 +892,18 @@ void MarketDataInterface::handleDisconnection() {
     // Wake monitor thread so it can react immediately
     reconnectionCv_.notify_one();
 }
+
+bool MarketDataInterface::checkConnection() {
+    // Basic check: ensure zmq client reports connected status
+    try {
+        if (zmqClient_) {
+            return zmqClient_->isConnected();
+        }
+    } catch (...) {
+        // Treat exceptions as disconnected
+    }
+    return false;
+}
  
 // Update destructor
 MarketDataInterface::~MarketDataInterface() {
@@ -823,6 +912,16 @@ MarketDataInterface::~MarketDataInterface() {
     reconnectionCv_.notify_one();
     if (reconnectionThread_.joinable()) {
         reconnectionThread_.join();
+    }
+    // Stop processing thread
+    processingRunning_.store(false);
+    {
+        std::lock_guard<std::mutex> lock(inboundQueueMutex_);
+        // notify in case thread is waiting
+        inboundQueueCv_.notify_one();
+    }
+    if (processingThread_.joinable()) {
+        processingThread_.join();
     }
     
     // ... existing cleanup code ...
@@ -844,5 +943,6 @@ std::shared_ptr<DataInterface> MarketDataInterface::createDataInterface(const Ri
     }
     return instance;
 }
+    
 } // namespace risk
 } // namespace trading
