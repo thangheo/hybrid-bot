@@ -186,66 +186,128 @@ void MarketDataInterface::processQueueLoop() {
 }
 void MarketDataInterface::processSyntheticOrderBook(const std::string& topic, const std::string& message) {
     try {
-        //this is bs but we should check topic to see if it's synthetic orderbook
+        // Quick topic sanity: only handle orderbook topics
         if (topic.find("orderbook.") == std::string::npos) {
             return; // Not a synthetic orderbook message
         }
-        // //print the topic and message
-        // std::cout << "Processing synthetic orderbook message" << std::endl;
-        // std::cout << "Topic: " << topic << std::endl;
-        // std::cout << "Message: " << message << std::endl;
-        //check if message is valid json
-        if (message.empty() || message[0] != '{') {
-            LOG_ERROR("Invalid JSON message in processSyntheticOrderBook");
-            //print message and topic
-            std::cout << "Topic: " << topic << std::endl;
-            std::cout << "Message: " << message << std::endl;
+
+        if (message.empty()) {
+            LOG_ERROR("Invalid JSON message in processSyntheticOrderBook: empty payload");
             return;
         }
-        auto json_msg = nlohmann::json::parse(message); //this causes error if message is not json
-        std::string exchange = json_msg["exchange"];
-        std::string symbol = json_msg["symbol"];
-        // Parse bids/asks
-        auto bids = json_msg["bids"];
-        auto asks = json_msg["asks"];           
 
+        // Parse outer JSON safely
+        nlohmann::json json_msg;
+        try {
+            json_msg = nlohmann::json::parse(message);
+        } catch (const std::exception& e) {
+            LOG_ERROR("processSyntheticOrderBook: failed to parse outer JSON: {}", e.what());
+            return;
+        }
+
+        // If the useful payload is embedded as a JSON string in "data", parse it
+        if (json_msg.contains("data") && json_msg["data"].is_string()) {
+            try {
+                auto inner = json_msg["data"].get<std::string>();
+                if (!inner.empty() && inner.front() == '{') {
+                    json_msg = nlohmann::json::parse(inner);
+                }
+            } catch (const std::exception& e) {
+                LOG_WARN("processSyntheticOrderBook: failed to parse inner 'data' JSON: {}", e.what());
+                // continue using outer json_msg (may still contain useful keys)
+            }
+        }
+
+        // Extract exchange and symbol (prefer payload, fallback to topic)
+        std::string exchange;
+        std::string symbol;
+        if (json_msg.contains("exchange") && json_msg["exchange"].is_string())
+            exchange = json_msg["exchange"].get<std::string>();
+        if (json_msg.contains("symbol") && json_msg["symbol"].is_string())
+            symbol = json_msg["symbol"].get<std::string>();
+
+        if (exchange.empty() || symbol.empty()) {
+            // topic format expected: "orderbook.<EXCHANGE>.<SYMBOL>"
+            std::vector<std::string> parts;
+            size_t start = 0;
+            while (true) {
+                size_t pos = topic.find('.', start);
+                if (pos == std::string::npos) break;
+                parts.push_back(topic.substr(start, pos - start));
+                start = pos + 1;
+            }
+            // push last segment
+            if (start < topic.size()) parts.push_back(topic.substr(start));
+
+            if (parts.size() >= 3) {
+                if (exchange.empty()) exchange = parts[1];
+                if (symbol.empty()) {
+                    symbol = parts[2];
+                    // topic often uses '_' as separator (ETH_USDT) -> convert to 'ETH/USDT'
+                    std::replace(symbol.begin(), symbol.end(), '_', '/');
+                }
+            }
+        }
+
+        if (exchange.empty() || symbol.empty()) {
+            LOG_ERROR("processSyntheticOrderBook: missing exchange or symbol (topic={})", topic);
+            return;
+        }
+
+        // Build MarketData and safely extract best bid/ask
         MarketData data;
         data.exchangeId = core::ExchangeId::fromString(exchange);
         data.tradingPair = core::Symbol::fromString(symbol);
         data.timestamp = std::chrono::system_clock::now();
-        if (!bids.empty() && !asks.empty()) {
-            data.bid = bids[0][0]; // Best bid price
-            data.ask = asks[0][0]; // Best ask price
-            data.price = (data.bid + data.ask) / 2.0; // Mid price
-        }
-        //update cache directly here
-    std::string cacheKey = createCacheKey(data.exchangeId, data.tradingPair);
-        // Diagnostic log: record what we received and the cache key we're using
-        // LOG_INFO("processSyntheticOrderBook: cacheKey={}, exchange={}, tradingPair={}, bidsPresent={}, asksPresent={}, midPrice={}",
-        //          cacheKey,
-        //          data.exchangeId.toString(),
-        //          data.tradingPair.toString(),
-        //          !bids.empty(),
-        //          !asks.empty(),
-        //          data.price);
-        {
-            std::unique_lock<std::shared_mutex> lock(cacheMutex_);
-            marketDataCache_[cacheKey] = MarketDataCacheEntry{
-                data,
-                std::chrono::steady_clock::now(),
-                true
-            };
-        }
-        // Update price history for consumers that use it
-        {
-            std::unique_lock<std::shared_mutex> hlock(historyMutex_);
-            priceHistories_[cacheKey].addPrice(data.timestamp, data.price);
+
+        auto extractPriceFromLevel = [](const nlohmann::json& level) -> std::optional<double> {
+            try {
+                if (level.is_array() && level.size() >= 1) {
+                    if (level[0].is_string()) return std::stod(level[0].get<std::string>());
+                    if (level[0].is_number()) return level[0].get<double>();
+                }
+            } catch (...) {}
+            return std::nullopt;
+        };
+
+        std::optional<double> bestBid;
+        std::optional<double> bestAsk;
+
+        if (json_msg.contains("bids") && json_msg["bids"].is_array() && !json_msg["bids"].empty()) {
+            bestBid = extractPriceFromLevel(json_msg["bids"][0]);
+        } else if (json_msg.contains("b") && json_msg["b"].is_array() && !json_msg["b"].empty()) {
+            bestBid = extractPriceFromLevel(json_msg["b"][0]);
         }
 
-        // Notify registered callbacks about new market data
-        // Copy the callback list while holding the lock, then invoke
-        // callbacks outside the critical section to avoid deadlocks when
-        // callbacks call back into this interface.
+        if (json_msg.contains("asks") && json_msg["asks"].is_array() && !json_msg["asks"].empty()) {
+            bestAsk = extractPriceFromLevel(json_msg["asks"][0]);
+        } else if (json_msg.contains("a") && json_msg["a"].is_array() && !json_msg["a"].empty()) {
+            bestAsk = extractPriceFromLevel(json_msg["a"][0]);
+        }
+
+        if (bestBid.has_value()) data.bid = *bestBid;
+        if (bestAsk.has_value()) data.ask = *bestAsk;
+        if (bestBid.has_value() && bestAsk.has_value()) {
+            data.price = (data.bid + data.ask) / 2.0;
+        } else if (json_msg.contains("price") && json_msg["price"].is_number()) {
+            data.price = json_msg["price"].get<double>();
+        }
+
+        // Update cache key and write under locks (same pattern as before)
+        std::string cacheKey = createCacheKey(data.exchangeId, data.tradingPair);
+
+        {
+            std::unique_lock<std::shared_mutex> lock(cacheMutex_);
+            marketDataCache_[cacheKey] = MarketDataCacheEntry{data, std::chrono::steady_clock::now(), true};
+        }
+
+        {
+            std::unique_lock<std::shared_mutex> hlock(historyMutex_);
+            // Only add price if we have a non-zero price
+            if (data.price > 0.0) priceHistories_[cacheKey].addPrice(data.timestamp, data.price);
+        }
+
+        // Copy callbacks then invoke outside lock
         std::vector<std::function<void(const MarketData&)>> callbacksCopy;
         {
             std::lock_guard<std::mutex> cbLock(callbackMutex_);
@@ -260,20 +322,9 @@ void MarketDataInterface::processSyntheticOrderBook(const std::string& topic, co
                 LOG_ERROR("MarketData callback threw unknown exception");
             }
         }
-        //call riskManager_->updateMarketData(marketData);
-        // riskManager_->updateMarketData(data);
-
-        // For simplicity, we won't calculate volume, lastTradePrice, etc. here
-        // In a real implementation, you'd extract these from the message if available
-
-        
-        // ...convert to your internal types and update cache/state...
-        //this is the already process orderbook update, like this
-        // b'{"data":"{\\"asks\\":[[4518.98,0.1263],[4518.99,0.0096],[4519.0,0.0455],[4519.01,0.0036],[4519.02,1.1072],[4519.03,0.0467],[4519.04,0.0048],[4519.05,1.1012],[4519.06,0.0101],[4519.08,0.0676],[4519.12,0.'
-
 
     } catch (const std::exception& e) {
-        LOG_ERROR("Failed to process synthetic orderbook: " + std::string(e.what()));
+        LOG_ERROR("Failed to process synthetic orderbook: {}", e.what());
     }
 }
 
