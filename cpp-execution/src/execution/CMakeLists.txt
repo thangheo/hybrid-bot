@@ -18,6 +18,8 @@ file(GLOB_RECURSE EXECUTION_SOURCES
     "grpc/*.cpp"
     "models/*.cpp"
     "filter/*.cpp"
+    "preflight/*.cpp"
+    "risk/risk_config.cpp"
 )
 
 # Remove test files from library sources
@@ -44,6 +46,7 @@ target_link_libraries(execution
     PUBLIC
     common
     PRIVATE
+    # risk
     proto_lib
     ${Protobuf_LIBRARIES}
     ${gRPC_LIBRARIES}

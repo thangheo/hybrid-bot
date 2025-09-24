@@ -8,7 +8,7 @@
  * @date May 25, 2025
  */
 
-#include "risk_config.hpp"
+#include "risk/risk_config.hpp"
 #include <nlohmann/json.hpp>
 #include <fstream>
 #include <iostream>
@@ -470,22 +470,13 @@ void RiskConfig::loadOrderValidationConfig(const json& ov) {
     if (ov.contains("validatePriceRange")) {
         orderValidationConfig_.validatePriceRange = ov["validatePriceRange"].get<bool>();
     }
-    if (ov.contains("minOrderSizes") && ov["minOrderSizes"].is_object()) {
-        for (const auto& [exchangeIdStr, pairs] : ov["minOrderSizes"].items()) {
-            core::ExchangeId exchangeId = core::ExchangeId::fromString(exchangeIdStr);
-            if (pairs.is_object()) {
-                for (const auto& [symbolStr, minSize] : pairs.items()) {
-                    TradingPair pair(symbolStr);
-                    // Parse base/quote from symbol if needed
-                    // auto separatorPos = symbolStr.find("/");
-                    // if (separatorPos != std::string::npos) {
-                    //     pair.base = symbolStr.substr(0, separatorPos);
-                    //     pair.quote = symbolStr.substr(separatorPos + 1);
-                    // }
-                    orderValidationConfig_.minOrderSizes[exchangeId][pair] = minSize.get<double>();
-                }
-            }
-        }
+    // Prefer using a single minTradeValue (notional) instead of per-symbol min sizes
+    if (ov.contains("minTradeValue")) {
+        orderValidationConfig_.minTradeValue = ov["minTradeValue"].get<double>();
+    } else if (ov.contains("minOrderSizes")) {
+        // Keep backward compatibility: log a warning and ignore per-symbol sizes
+        std::cerr << "Warning: 'minOrderSizes' is deprecated. Please migrate to 'minTradeValue' in orderValidation. Using default minTradeValue="
+                  << orderValidationConfig_.minTradeValue << "\n";
     }
     if (ov.contains("maxPriceDeviationPercent")) {
         orderValidationConfig_.maxPriceDeviationPercent = ov["maxPriceDeviationPercent"].get<double>();

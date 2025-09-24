@@ -373,6 +373,10 @@ struct OrderValidationConfig {
     // ExchangeId -> (TradingPair -> minimum size)
     std::map<core::ExchangeId, std::map<TradingPair, double>> minOrderSizes;
     
+    // Minimum trade value (notional) in base currency or quote currency unit
+    // Prefer using a single minimum trade value instead of brittle per-pair sizes
+    double minTradeValue = 10.0;
+    
     // Price validation settings
     bool enablePriceValidation = true;
     bool requireMarketDataForPriceValidation = true;

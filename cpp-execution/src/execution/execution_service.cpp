@@ -12,6 +12,9 @@
  #include <nlohmann/json.hpp>
  #include <mutex>
  #include <iostream>
+#include "execution/preflight/preflight.hpp"
+#include "risk/risk_config.hpp"
+#include <mutex>
 
  using namespace trading::core;
  namespace trading {
@@ -337,6 +340,79 @@ ExecutionResponse ExecutionService::executeSignal(const TradingSignal& signal) {
     // Submit the order to the exchange
     // auto future_result = api_client->placeOrder(*exchange_order);
     execution::models::ExecutionReport executionReport;
+    
+    // === Execution preflight check ===
+    try {
+        // Fetch account balances from gateway or api_client
+        std::unordered_map<std::string, double> balances_map;
+        if (exchangeGateway_) {
+            auto fut = exchangeGateway_->getAccountBalances(exchangeId, false);
+            balances_map = fut.get();
+        } else if (api_client) {
+            auto fut = api_client->getAccountBalances();
+            auto m = fut.get();
+            balances_map = std::unordered_map<std::string, double>(m.begin(), m.end());
+        }
+
+        // Map to stub AccountBalances (quote: USDT, base: asset)
+        trading::execution::AccountBalances ab;
+        // Heuristic: symbol like "ETHUSDT" -> base=first part, quote=USDT
+        std::string sym = exchange_order->getTradingPair().toString();
+        std::string quote = "USDT";
+        if (sym.size() > 4 && sym.substr(sym.size()-4) == "USDT") quote = "USDT";
+        // base asset key extraction (very simple)
+        std::string base = sym.substr(0, sym.size() - quote.size());
+
+        if (balances_map.find(quote) != balances_map.end()) ab.quoteAvailable = balances_map[quote];
+        if (balances_map.find(base) != balances_map.end()) ab.baseAvailable = balances_map[base];
+
+        trading::execution::OrderRequest orq;
+        orq.symbol = exchange_order->getTradingPair().toString();
+        orq.price = exchange_order->getPrice();
+        orq.qty = exchange_order->getQuantity();
+        orq.side = (exchange_order->getSide() == models::OrderSide::BUY) ? trading::execution::OrderRequest::Side::BUY : trading::execution::OrderRequest::Side::SELL;
+
+        // Read min-notional from risk config (orderValidation.minTradeValue) once and cache it
+        static double cachedMinNotional = 0.0;
+        static std::mutex cachedMinNotionalMutex;
+        if (cachedMinNotional <= 0.0) {
+            std::lock_guard<std::mutex> g(cachedMinNotionalMutex);
+            if (cachedMinNotional <= 0.0) {
+                try {
+                    trading::risk::RiskConfig rc("config/risk_config.json");
+                    cachedMinNotional = rc.getOrderValidationConfig().minTradeValue;
+                    if (cachedMinNotional <= 0.0) cachedMinNotional = 10.0; // fallback
+                } catch (const std::exception& e) {
+                    std::cerr << "Warning: failed to load risk config for minTradeValue: " << e.what() << " - using default 10.0" << std::endl;
+                    cachedMinNotional = 10.0;
+                }
+            }
+        }
+
+        trading::execution::ExecutionPreflight preflight(cachedMinNotional);
+        auto pre = preflight.check(orq, ab);
+        if (!pre.allowed) {
+            // Update lifecycle tracker and return rejection
+            order_lifecycle_tracker_->updateOrderState(
+                exchange_order->getClientOrderId(),
+                models::OrderState::REJECTED,
+                exchange_order->getExchangeOrderId(),
+                std::string("Preflight failed: ") + pre.reason
+            );
+
+            return ExecutionResponse{
+                exchange_order->getClientOrderId(),
+                "",
+                false,
+                std::string("Preflight failed: ") + pre.reason,
+                std::chrono::system_clock::now(),
+                "REJECTED_PREFLIGHT"
+            };
+        }
+    } catch (const std::exception& e) {
+        // If balance fetch fails, proceed but log
+        std::cerr << "Warning: preflight balance fetch failed: " << e.what() << ". Continuing to submit order." << std::endl;
+    }
         
     if (exchangeGateway_) {
         // NEW: Use ExchangeGateway (with caching and rate limiting)
@@ -1041,8 +1117,72 @@ models::Order ExecutionService::createOrderFromSignal(const TradingSignal& signa
         market_condition.liquidity_score = getMetric("liquidity_score", 0.8);
         market_condition.market_impact_estimate = getMetric("market_impact_estimate", 0.005); //no such thing yet
         // if bidPrice is zero, set to price
-        if (market_condition.bidPrice <= 0.0) {
-            market_condition.bidPrice = params.price;
+        if (market_condition.bidPrice <= 0.0 || market_condition.askPrice <= 0.0) {
+            // Try to obtain cached price first (non-blocking fast path), then force refresh if necessary.
+            try {
+                double cached_price = 0.0;
+                if (exchangeGateway_) {
+                    try {
+                        auto fut_cached = exchangeGateway_->getCurrentPrice(order->getExchangeId(), order->getTradingPair(), false);
+                        cached_price = fut_cached.get();
+                    } catch (...) {
+                        // ignore cached fetch errors
+                        cached_price = 0.0;
+                    }
+                } else {
+                    auto client = getExchangeClient(order->getExchangeId());
+                    if (client) {
+                        try {
+                            auto fut_cached = client->getCurrentPrice(order->getTradingPair());
+                            cached_price = fut_cached.get();
+                        } catch (...) {
+                            cached_price = 0.0;
+                        }
+                    }
+                }
+
+                if (cached_price > 0.0) {
+                    // populate both sides conservatively
+                    if (market_condition.bidPrice <= 0.0) market_condition.bidPrice = cached_price;
+                    if (market_condition.askPrice <= 0.0) market_condition.askPrice = cached_price;
+                } else {
+                    // If no cached price, attempt a forced refresh (may block briefly)
+                    double refreshed_price = 0.0;
+                    if (exchangeGateway_) {
+                        try {
+                            auto fut = exchangeGateway_->getCurrentPrice(order->getExchangeId(), order->getTradingPair(), true);
+                            refreshed_price = fut.get();
+                        } catch (const std::exception& e) {
+                            std::cerr << "createOrderFromSignal: failed to refresh price (gateway): " << e.what() << std::endl;
+                        }
+                    } else {
+                        auto client = getExchangeClient(order->getExchangeId());
+                        if (client) {
+                            try {
+                                auto fut = client->getCurrentPrice(order->getTradingPair());
+                                refreshed_price = fut.get();
+                            } catch (const std::exception& e) {
+                                std::cerr << "createOrderFromSignal: failed to refresh price (client): " << e.what() << std::endl;
+                            }
+                        }
+                    }
+
+                    if (refreshed_price > 0.0) {
+                        if (market_condition.bidPrice <= 0.0) market_condition.bidPrice = refreshed_price;
+                        if (market_condition.askPrice <= 0.0) market_condition.askPrice = refreshed_price;
+                    }
+                }
+            } catch (const std::exception& e) {
+                std::cerr << "createOrderFromSignal: price lookup failed: " << e.what() << std::endl;
+            }
+
+            // If still missing, fall back to params.price if available
+            if (market_condition.bidPrice <= 0.0) {
+                market_condition.bidPrice = params.price;
+            }
+            if (market_condition.askPrice <= 0.0) {
+                market_condition.askPrice = params.price;
+            }
         }
         std::cout << "DEBUG: Market Condition - Bid Price: " << market_condition.bidPrice << std::endl;
         std::cout << "DEBUG: Market Condition - Ask Price: " << market_condition.askPrice << std::endl;

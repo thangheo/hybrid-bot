@@ -94,19 +94,10 @@
     "notionalValueLimit": 10000.0,
     "enforceAdditionalVerification": true
   },
-  "orderValidation": {
+    "orderValidation": {
     "validateMinOrderSize": true,
     "validatePriceRange": true,
-    "minOrderSizes": {
-      "BINANCE": {
-        "BTC/USDT": 0.001,
-        "ETH/USDT": 0.01
-      },
-      "COINBASE": {
-        "BTC/USD": 0.001,
-        "ETH/USD": 0.01
-      }
-    },
+    "minTradeValue": 10.0,
     "maxPriceDeviationPercent": 0.1,
     "enforceSymbolWhitelist": false,
     "symbolWhitelist": ["BTC/USDT", "ETH/USDT", "BTC/USD", "ETH/USD"]

@@ -402,6 +402,10 @@ void OrderBookAnalyzer::calculatePriceMetrics(
     currentMetrics_.metrics["emaMidPrice"] = emaMidPrice_;
     currentMetrics_.metrics["emaSpread"] = emaSpread_;
     currentMetrics_.metrics["averageSpreadPercent"] = emaSpread_ / currentMetrics_.midPrice * 100.0;
+    // print some debug info
+    std::cout << std::format("DBG: Price Metrics - midPrice: {}, spread: {}, spreadPercent: {}%\n",
+                             currentMetrics_.midPrice, currentMetrics_.spread, currentMetrics_.spreadPercent
+                                );
 }
 
 void OrderBookAnalyzer::calculateVolumeMetrics(

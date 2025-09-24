@@ -49,6 +49,8 @@ bool OrderValidator::initialize() {
                 m_minOrderSizes[exchangeId.toString()][symbolSize.first.toString()] = symbolSize.second;
             }
         }
+        // Global minimum trade value (notional)
+        m_minTradeValue = m_validationConfig.minTradeValue;
         
         LOG_INFO("Order validator initialized successfully with {} whitelisted symbols, {} exchanges with min sizes",
                 m_symbolWhitelist.size(), m_minOrderSizes.size());
@@ -215,6 +217,26 @@ bool OrderValidator::isOrderSizeValid(const core::ExchangeId& exchangeId,
         violation.actualValue = quantity;
         violations.push_back(violation);
         return false;
+    }
+
+    // Enforce minimum trade value (notional) if configured
+    if (m_minTradeValue > 0.0) {
+        try {
+            double marketPrice = getCurrentMarketPrice(tradingPair);
+            double notional = quantity * marketPrice;
+            if (notional < m_minTradeValue) {
+                RiskViolation violation;
+                violation.type = ViolationType::ORDER_SIZE_LIMIT;
+                violation.description = "Order notional value below configured minimum";
+                violation.limitValue = m_minTradeValue;
+                violation.actualValue = notional;
+                violations.push_back(violation);
+                return false;
+            }
+        } catch (const std::exception& ex) {
+            // If we cannot fetch market price, fall back to size-based validation only
+            LOG_WARN("Could not fetch market price for notional check: {}. Skipping notional validation.", ex.what());
+        }
     }
     
     // Check against maximum order size if configured
