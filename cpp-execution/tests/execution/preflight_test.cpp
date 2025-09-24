@@ -40,3 +40,9 @@ TEST(RiskStubTest, RejectsBelowMinNotional) {
     OrderRequest req{"ETHUSDT", OrderRequest::Side::BUY, 2000.0, 0.01}; // notional = 20
     EXPECT_FALSE(risk.allow(req));
 }
+
+// main
+int main(int argc, char **argv) {
+    ::testing::InitGoogleTest(&argc, argv);
+    return RUN_ALL_TESTS();
+}
