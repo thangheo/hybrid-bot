@@ -390,6 +390,8 @@ void OrderBookAnalyzer::calculatePriceMetrics(
     
     // Store in metrics map for easy access
     currentMetrics_.metrics["midPrice"] = currentMetrics_.midPrice;
+    currentMetrics_.metrics["bidPrice"] = bestBid;
+    currentMetrics_.metrics["askPrice"] = bestAsk;    
     currentMetrics_.metrics["spread"] = currentMetrics_.spread;
     currentMetrics_.metrics["spreadPercent"] = currentMetrics_.spreadPercent;
     currentMetrics_.metrics["bestBid"] = bestBid;

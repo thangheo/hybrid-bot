@@ -1025,13 +1025,17 @@ models::Order ExecutionService::createOrderFromSignal(const TradingSignal& signa
             return (it != signal.signalMetrics.end()) ? it->second : defaultValue;
         };
         
-        market_condition.bidPrice = getMetric("bidPrice", 50000.0);
+        market_condition.bidPrice = getMetric("bidPrice", 0.0);
         market_condition.askPrice = getMetric("askPrice", market_condition.bidPrice + 10.0);
         market_condition.spread = getMetric("spreadPercent", 1.0);
         market_condition.volatility = getMetric("volatility", 0.02);
         market_condition.volume = getMetric("bidVolume", 100.0) + getMetric("askVolume", 100.0);
         market_condition.liquidity_score = getMetric("liquidity_score", 0.8);
         market_condition.market_impact_estimate = getMetric("market_impact_estimate", 0.005); //no such thing yet
+        // if bidPrice is zero, set to price
+        if (market_condition.bidPrice <= 0.0) {
+            market_condition.bidPrice = params.price;
+        }
         std::cout << "DEBUG: Market Condition - Bid Price: " << market_condition.bidPrice << std::endl;
         std::cout << "DEBUG: Market Condition - Ask Price: " << market_condition.askPrice << std::endl;
         std::cout << "DEBUG: Market Condition - Spread: " << market_condition.spread << std::endl;
