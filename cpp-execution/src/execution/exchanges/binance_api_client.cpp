@@ -24,6 +24,12 @@ struct BinanceApiClient::BinanceImpl {
     //for testnet
     // std::string baseUrl = "https://testnet.binance.vision";
     bool connected = false;
+    // Cache symbol filters from exchangeInfo: symbol -> {stepSize, tickSize}
+    struct SymbolFilters {
+        double stepSize = 0.0; // lot size step for quantities
+        double tickSize = 0.0; // price tick for prices
+    };
+    std::unordered_map<std::string, SymbolFilters> symbolFilters;
     
     // Constructor
         BinanceImpl(const ExchangeCredentials& credentials) 
@@ -61,6 +67,34 @@ void BinanceApiClient::connect() {
         // No need to parse large JSON here; success of the request indicates connectivity
         (void)response;
         pImpl_->connected = true;
+
+        // Also fetch and cache exchangeInfo symbol filters to correctly format quantities/prices
+        try {
+            std::string info = makeApiRequest("/api/v3/exchangeInfo", "GET", {}, false);
+            Json::Value root;
+            Json::Reader reader;
+            if (reader.parse(info, root)) {
+                const Json::Value& symbolsJson = root["symbols"];
+                for (const auto& sym : symbolsJson) {
+                    if (!sym.isMember("symbol")) continue;
+                    std::string symbol = sym["symbol"].asString();
+                    BinanceApiClient::BinanceImpl::SymbolFilters filters;
+                    const Json::Value& filtersJson = sym["filters"];
+                    for (const auto& f : filtersJson) {
+                        std::string ftype = f["filterType"].asString();
+                        if (ftype == "LOT_SIZE") {
+                            filters.stepSize = std::stod(f["stepSize"].asString());
+                        } else if (ftype == "PRICE_FILTER") {
+                            filters.tickSize = std::stod(f["tickSize"].asString());
+                        }
+                    }
+                    pImpl_->symbolFilters[symbol] = filters;
+                }
+            }
+        } catch (const std::exception& ex) {
+            // Non-fatal: we can continue without filters, but log for debugging
+            std::cerr << "Warning: failed to fetch Binance exchangeInfo: " << ex.what() << std::endl;
+        }
     } catch (const std::exception& e) {
         throw std::runtime_error(std::string("Failed to connect to Binance: ") + e.what());
     }
@@ -158,10 +192,28 @@ std::future<models::ExecutionReport> BinanceApiClient::placeOrder(const models::
     params["symbol"] = trading::execution::util::normalizeSymbolForExchange(tradingPair.toString());
         params["side"] = translateOrderSide(side);
         params["type"] = translateOrderType(type);
-        params["quantity"] = std::to_string(quantity);
-        
+        // Format quantity and price according to symbol filters (if available)
+        std::string sym = trading::execution::util::normalizeSymbolForExchange(tradingPair.toString());
+        double step = 0.0;
+        double tick = 0.0;
+        auto it = pImpl_->symbolFilters.find(sym);
+        if (it != pImpl_->symbolFilters.end()) {
+            step = it->second.stepSize;
+            tick = it->second.tickSize;
+        }
+
+        if (step > 0.0) {
+            params["quantity"] = formatDoubleWithStep(roundDownToStep(quantity, step), step);
+        } else {
+            params["quantity"] = std::to_string(quantity);
+        }
+
         if (type != models::OrderType::MARKET) {
-            params["price"] = std::to_string(price);
+            if (tick > 0.0) {
+                params["price"] = formatDoubleWithStep(roundDownToStep(price, tick), tick);
+            } else {
+                params["price"] = std::to_string(price);
+            }
             params["timeInForce"] = translateTimeInForce(timeInForce);
         }
         
@@ -557,6 +609,39 @@ std::string BinanceApiClient::translateOrderSide(models::OrderSide side) const {
         case models::OrderSide::SELL: return "SELL";
         default: throw std::invalid_argument("Invalid order side");
     }
+}
+
+// Helper: round down value to nearest multiple of step (avoid exceeding allowed precision)
+double BinanceApiClient::roundDownToStep(double value, double step) const {
+    if (step <= 0.0) return value;
+    double inv = std::floor(1.0 / step + 1e-12);
+    // Determine number of decimals from step
+    int decimals = 0;
+    double tmp = step;
+    while (tmp < 1.0 - 1e-12 && decimals < 18) {
+        tmp *= 10.0;
+        decimals++;
+    }
+    double factor = std::pow(10.0, decimals);
+    double stepped = std::floor(value * factor) / factor;
+    return stepped;
+}
+
+// Helper: format double to string with decimals matching the step
+std::string BinanceApiClient::formatDoubleWithStep(double value, double step) const {
+    if (step <= 0.0) {
+        return std::to_string(value);
+    }
+    int decimals = 0;
+    double tmp = step;
+    while (tmp < 1.0 - 1e-12 && decimals < 18) {
+        tmp *= 10.0;
+        decimals++;
+    }
+    std::ostringstream ss;
+    ss.setf(std::ios::fixed);
+    ss << std::setprecision(decimals) << value;
+    return ss.str();
 }
 
 models::ExecutionReport BinanceApiClient::parseOrderResponse(const std::string& response) const {
