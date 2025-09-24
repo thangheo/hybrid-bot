@@ -48,6 +48,22 @@ namespace execution {
  * */
 class ExecutionService {
 public:
+    // How to handle cases where a LIMIT order is selected but no valid price is available
+    enum class LimitOrderHandling {
+        REVERT_TO_MARKET,    // Safely convert to MARKET (default)
+        REJECT_IF_NO_PRICE   // Reject / throw if LIMIT without a price
+    };
+
+    // Configure how LIMIT orders without prices should be handled
+    void setLimitOrderHandling(LimitOrderHandling handling) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        limit_order_handling_ = handling;
+    }
+
+    LimitOrderHandling getLimitOrderHandling() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return limit_order_handling_;
+    }
     /**
      * @brief NEW Constructor with ExchangeGateway
      * 
@@ -165,6 +181,8 @@ private:
     // EXISTING: Service state (unchanged)
     bool is_initialized_ = false;
     bool is_running_ = false;
+    // Policy for handling LIMIT orders without prices
+    LimitOrderHandling limit_order_handling_ = LimitOrderHandling::REVERT_TO_MARKET;
     mutable std::mutex mutex_;
     
     // EXISTING: Helper methods (unchanged)

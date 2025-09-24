@@ -1048,6 +1048,7 @@ private:
             fill_reconciliation,
             api_client_manager
             );
+            executionService_->setLimitOrderHandling(trading::execution::ExecutionService::LimitOrderHandling::REJECT_IF_NO_PRICE);
         } else {
             std::cout << "Exchange Gateway initialized and healthy." << std::endl;
             executionService_ = std::make_shared<ExecutionService>(
@@ -1059,6 +1060,7 @@ private:
             order_lifecycle_tracker,
             fill_reconciliation
             );
+            executionService_->setLimitOrderHandling(trading::execution::ExecutionService::LimitOrderHandling::REJECT_IF_NO_PRICE);
         }       
        
     }
