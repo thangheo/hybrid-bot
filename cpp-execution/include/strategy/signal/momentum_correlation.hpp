@@ -180,6 +180,19 @@ private:
      * @return Weighted prediction value
      */
     double calculateWeightedPrediction(const ImbalanceEvent& event) const;
+    // calculateTrendPersistence
+    double calculateTrendPersistence(const std::vector<double>& movements) const;
+    // calculateVolatilityIndex
+    double calculateVolatilityIndex() const;
+    // calculateLiquidityIndex
+    double calculateLiquidityIndex();
+    // calculateMomentumAcceleration
+    double calculateMomentumAcceleration(const std::vector<double>& movements) const;
+    // calculateMarketStress
+    double calculateMarketStress(const std::vector<double>& movements, double volatility) const;
+    void applyRegimeSmoothing(MarketRegime& detectedRegime);
+    // regimeToString
+    // std::string regimeToString(MarketRegime regime) const {
 };
 
 } // namespace strategy

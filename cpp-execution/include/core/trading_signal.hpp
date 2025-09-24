@@ -214,7 +214,12 @@ struct TradingSignal {
         // take name by value and move into the map to avoid an extra copy
         signalMetrics.insert_or_assign(std::move(name), value);
     }
-    
+    // metric with string value
+    void setMetric(std::string name, const std::string& value) {
+        // For string metrics, we can store a hash or length as a double representation
+        signalMetrics.insert_or_assign(std::move(name), static_cast<double>(value.length()));
+    }
+
     /**
      * Check if this is a buy signal
      */
