@@ -22,6 +22,7 @@
 
 #include <iostream>
 #include <cstdlib>
+#include <mutex>
 
 
 using namespace nlohmann;
@@ -39,9 +40,20 @@ static size_t WriteCallback(void* contents, size_t size, size_t nmemb, std::stri
     return size * nmemb;
 }
 
+namespace {
+    // Ensure libcurl is initialized exactly once per process. We register
+    // curl_global_cleanup via atexit so cleanup happens at program exit.
+    static std::once_flag curlInitFlag;
+
+    void ensureCurlInitialized() {
+        curl_global_init(CURL_GLOBAL_DEFAULT);
+        std::atexit([](){ curl_global_cleanup(); });
+    }
+}
+
 BinanceClient::BinanceClient() : m_base_url(MAINNET_URL) {
-    // Initialize libcurl globally
-    curl_global_init(CURL_GLOBAL_DEFAULT);
+    // Initialize libcurl globally once in a thread-safe manner
+    std::call_once(curlInitFlag, ensureCurlInitialized);
     // Attempt to read API credentials & testnet flag from environment so the
     // client can be used without an explicit call to setApiKey in some
     // deployment scenarios (e.g., containers or CI).
@@ -71,11 +83,10 @@ BinanceClient::BinanceClient() : m_base_url(MAINNET_URL) {
 }
 
 BinanceClient::~BinanceClient() {
-    // Cleanup libcurl globally
-    curl_global_cleanup();
 }
 
 void BinanceClient::setApiKey(const std::string& key, const std::string& secret) {
+    std::lock_guard<std::mutex> lk(apiMutex_);
     m_api_key = key;
     m_api_secret = secret;
     // Attempt to sync server time to reduce timestamp/recvWindow errors
@@ -350,15 +361,23 @@ OrderInfo BinanceClient::getOrderStatus(const std::string& symbol, const std::st
 
 std::string BinanceClient::sendSignedRequest(const std::string& endpoint, 
                                            const std::map<std::string, std::string>& params) {
-    if (m_api_key.empty() || m_api_secret.empty()) {
-        throw std::runtime_error("API key and secret must be set for signed requests");
+    {
+        std::lock_guard<std::mutex> lk(apiMutex_);
+        if (m_api_key.empty() || m_api_secret.empty()) {
+            throw std::runtime_error("API key and secret must be set for signed requests");
+        }
     }
     // Build a mutable copy so we can ensure timestamp and recvWindow are present
     std::map<std::string, std::string> p = params;
 
     // Ensure timestamp: use local time corrected by clockOffsetMs_
     if (p.find("timestamp") == p.end()) {
-        long long ts = getCurrentTimestamp() + clockOffsetMs_;
+        long long offset;
+        {
+            std::lock_guard<std::mutex> lk(apiMutex_);
+            offset = clockOffsetMs_;
+        }
+        long long ts = getCurrentTimestamp() + offset;
         p["timestamp"] = std::to_string(ts);
     }
 
@@ -378,7 +397,10 @@ std::string BinanceClient::sendSignedRequest(const std::string& endpoint,
     std::string url = m_base_url + endpoint + "?" + query_string;
     
     std::map<std::string, std::string> headers;
-    headers["X-MBX-APIKEY"] = m_api_key;
+    {
+        std::lock_guard<std::mutex> lk(apiMutex_);
+        headers["X-MBX-APIKEY"] = m_api_key;
+    }
     
     // Attempt the request, but if Binance returns code -1021 (timestamp outside recvWindow)
     // perform a server time sync and retry once with corrected timestamp.
