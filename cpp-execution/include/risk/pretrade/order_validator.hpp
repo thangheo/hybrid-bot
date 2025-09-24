@@ -131,6 +131,9 @@ private:
     mutable std::mutex m_minSizeMutex;
     std::unordered_map<std::string, std::unordered_map<std::string, double>> m_minOrderSizes;
     
+    // Global minimum trade value (notional) in base currency units (fallback/default)
+    double m_minTradeValue = 0.0;
+    
     // Helper methods
     bool validateOrderType(OrderType orderType, std::vector<RiskViolation>& violations);
     bool validateTimeInForce(const std::string& timeInForce, std::vector<RiskViolation>& violations);

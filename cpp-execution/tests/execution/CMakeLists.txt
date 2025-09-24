@@ -31,6 +31,7 @@ set(EXECUTION_TEST_SOURCES
     # order_state_integration_tests.cpp
     # fill_reconciliation_tests.cpp
     integration_test_order_pipeline.cpp
+    preflight_test.cpp
 )
 
 # Mock headers - don't need to be compiled, just included

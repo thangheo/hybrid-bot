@@ -35,6 +35,8 @@ struct OrderBookMetrics {
     
     // Price metrics
     double midPrice = 0.0;
+    double bidPrice = 0.0;
+    double askPrice = 0.0;
     double spread = 0.0;
     double spreadPercent = 0.0;
     
@@ -84,18 +86,20 @@ struct OrderBookMetrics {
     // Update metrics map with current values
     void updateMetricsMap() {
         metrics["midPrice"] = midPrice;
+        metrics["bidPrice"] = bidPrice;
+        metrics["askPrice"] = askPrice;
         metrics["spread"] = spread;
         metrics["spreadPercent"] = spreadPercent;
         
         // Map standard volume metrics to both original and expected names
-        metrics["totalBidVolume "] = totalBidVolume ;
+        metrics["totalBidVolume"] = totalBidVolume;
         metrics["totalAskVolume"] = totalAskVolume;
         metrics["bidVolume"] = totalBidVolume ;  // Additional mapping for compatibility
         metrics["askVolume"] = totalAskVolume;  // Additional mapping for compatibility
         metrics["bidAskVolumeRatio"] = bidAskVolumeRatio;
         
         // Imbalance metrics
-        metrics["volumeImbalance "] = volumeImbalance ;
+        metrics["volumeImbalance"] = volumeImbalance;
         metrics["weightedVolumeImbalance"] = weightedVolumeImbalance;
         metrics["depthImbalance"] = depthImbalance;
         metrics["pressureImbalance"] = pressureImbalance;
@@ -104,8 +108,8 @@ struct OrderBookMetrics {
         metrics["bidDensity"] = bidDensity;
         metrics["askDensity"] = askDensity;
         metrics["priceLevelImbalance"] = priceLevelImbalance;
-        metrics["bidLevelCount"] = bidVolumesByLevel.size();  // Derived from vector size
-        metrics["askLevelCount"] = askVolumesByLevel.size();  // Derived from vector size
+        metrics["bidLevelCount"] = static_cast<double>(bidVolumesByLevel.size());  // Derived from vector size
+        metrics["askLevelCount"] = static_cast<double>(askVolumesByLevel.size());  // Derived from vector size
         
         // Derived metrics
         metrics["marketDirectionalCoefficient"] = marketDirectionalCoefficient;
@@ -133,12 +137,15 @@ struct OrderBookMetrics {
         
         // Also update the corresponding class member if it exists
         if (name == "midPrice") midPrice = value;
+        // bidPrice and askPrice should store here
+        else if (name == "bidPrice") bidPrice = value;
+        else if (name == "askPrice") askPrice = value;
         else if (name == "spread") spread = value;
         else if (name == "spreadPercent") spreadPercent = value;
-        else if (name == "bidVolume" || name == "totalBidVolume ") totalBidVolume  = value;
+        else if (name == "bidVolume" || name == "totalBidVolume") totalBidVolume  = value;
         else if (name == "askVolume" || name == "totalAskVolume") totalAskVolume = value;
         else if (name == "bidAskVolumeRatio") bidAskVolumeRatio = value;
-        else if (name == "volumeImbalance ") volumeImbalance  = value;
+        else if (name == "volumeImbalance") volumeImbalance  = value;
         else if (name == "weightedVolumeImbalance") weightedVolumeImbalance = value;
         else if (name == "depthImbalance") depthImbalance = value;
         else if (name == "pressureImbalance") pressureImbalance = value;
@@ -155,10 +162,36 @@ struct OrderBookMetrics {
     
     // Get a specific metric by name
     double getMetric(const std::string& name, double defaultValue = 0.0) const {
+        // Prefer direct member values for known keys so callers get up-to-date values
+        if (name == "midPrice") return midPrice;
+        else if (name == "bidPrice") return bidPrice;
+        else if (name == "askPrice") return askPrice;
+        if (name == "spread") return spread;
+        if (name == "spreadPercent") return spreadPercent;
+        if (name == "totalBidVolume" || name == "bidVolume") return totalBidVolume;
+        if (name == "totalAskVolume" || name == "askVolume") return totalAskVolume;
+        if (name == "bidAskVolumeRatio") return bidAskVolumeRatio;
+        if (name == "volumeImbalance") return volumeImbalance;
+        if (name == "weightedVolumeImbalance") return weightedVolumeImbalance;
+        if (name == "depthImbalance") return depthImbalance;
+        if (name == "pressureImbalance") return pressureImbalance;
+        if (name == "bidDensity") return bidDensity;
+        if (name == "askDensity") return askDensity;
+        if (name == "priceLevelImbalance") return priceLevelImbalance;
+        if (name == "marketDirectionalCoefficient") return marketDirectionalCoefficient;
+        if (name == "liquidityProfileScore") return liquidityProfileScore;
+        if (name == "volatilityExpectation") return volatilityExpectation;
+        if (name == "realizedVolatility") return realizedVolatility;
+        if (name == "volatilityPerUnitTime") return volatilityPerUnitTime;
+        if (name == "liquidityPressure") return liquidityPressure;
+        if (name == "priceVelocity") return priceVelocity;
+        if (name == "volumeVelocity") return volumeVelocity;
+        if (name == "spreadVelocity") return spreadVelocity;
+        if (name == "bidLevelCount") return static_cast<double>(bidVolumesByLevel.size());
+        if (name == "askLevelCount") return static_cast<double>(askVolumesByLevel.size());
+
         auto it = metrics.find(name);
-        if (it != metrics.end()) {
-            return it->second;
-        }
+        if (it != metrics.end()) return it->second;
         return defaultValue;
     }
     
