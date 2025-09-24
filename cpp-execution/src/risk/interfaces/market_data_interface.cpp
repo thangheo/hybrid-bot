@@ -676,7 +676,7 @@ void MarketDataInterface::connectionMonitorLoop() {
     const auto balanceUpdateInterval = std::chrono::seconds(60);
     std::unique_lock<std::mutex> lk(reconnectionMutex_);
     // sleep for 20 seconds
-    std::this_thread::sleep_for(std::chrono::seconds(20));
+    std::this_thread::sleep_for(std::chrono::seconds(60));
     while (running_) {
         // Wait for either a notification or timeout
         reconnectionCv_.wait_for(lk, std::chrono::seconds(15));
