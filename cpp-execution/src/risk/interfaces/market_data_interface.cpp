@@ -106,6 +106,11 @@ bool MarketDataInterface::initialize() {
                     } else {
                         this->inboundQueue_.push_back(std::move(raw));
                         this->totalEnqueued_.fetch_add(1, std::memory_order_relaxed);
+                        // Diagnostic: log when queue is growing large
+                        size_t qsz = this->inboundQueue_.size();
+                        if (qsz % 1000 == 0 || qsz > 2000) {
+                            LOG_WARN("MarketDataInterface inbound queue size high: {}", qsz);
+                        }
                         this->inboundQueueCv_.notify_one();
                     }
                 }
@@ -122,7 +127,7 @@ bool MarketDataInterface::initialize() {
         
         // Start background reconnection/monitor thread
         try {
-            // reconnectionThread_ = std::thread([this]() { this->connectionMonitorLoop(); });
+            reconnectionThread_ = std::thread([this]() { this->connectionMonitorLoop(); });
             LOG_INFO("MarketDataInterface", "Started connection monitor thread");
         } catch (const std::exception& e) {
             LOG_ERROR("Failed to start connection monitor thread: {}", e.what());
@@ -165,8 +170,14 @@ void MarketDataInterface::processQueueLoop() {
 
         try {
             // Call existing processing function which does JSON parse, cache updates, callbacks
+            auto start = std::chrono::steady_clock::now();
             processSyntheticOrderBook(item.topic, item.message);
             totalProcessed_.fetch_add(1, std::memory_order_relaxed);
+            auto dur = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - start).count();
+            if (dur > 20) {
+                LOG_WARN("Slow processing of market message: {} ms (totalProcessed={})", dur, totalProcessed_.load());
+            }
         } catch (const std::exception& e) {
             errorStats_.dataErrors++;
             LOG_ERROR("Error processing queued market data: {}", e.what());

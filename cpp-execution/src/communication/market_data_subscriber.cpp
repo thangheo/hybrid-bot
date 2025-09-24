@@ -43,13 +43,15 @@ bool MarketDataSubscriber::start() {
         // subscriber_ must be owned by this class
         subscriber_ = std::make_unique<zmq::socket_t>(*context_, zmq::socket_type::sub);
         
-        // Connect to publisher
-        subscriber_->connect(publisherEndpoint_);
-        LOG_INFO("Connected to market data publisher: " + publisherEndpoint_);
-        
-        // Set high water mark to prevent message loss
-        int hwm = 10000;
-        subscriber_->set(zmq::sockopt::rcvhwm, hwm);
+    // Connect to publisher
+    subscriber_->connect(publisherEndpoint_);
+    LOG_INFO("Connected to market data publisher: " + publisherEndpoint_);
+
+    // Set high water mark to prevent message loss and a receive timeout
+    int hwm = 10000;
+    subscriber_->set(zmq::sockopt::rcvhwm, hwm);
+    // Use a modest receive timeout so the loop can check running_ periodically
+    subscriber_->set(zmq::sockopt::rcvtimeo, 1000); // 1000 ms
         
         running_ = true;
         
@@ -164,16 +166,17 @@ void MarketDataSubscriber::subscriptionLoop() {
         try {
             zmq::message_t topicMsg, dataMsg;
             
-            // Receive topic
-            auto result = subscriber_->recv(topicMsg, zmq::recv_flags::dontwait);
-            if (!result) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            // Receive topic (block until a topic or timeout)
+            auto topic_result = subscriber_->recv(topicMsg, zmq::recv_flags::none);
+            if (!topic_result) {
+                // no message available within timeout
                 continue;
             }
-            
-            // Receive data
-            result = subscriber_->recv(dataMsg, zmq::recv_flags::none);
-            if (!result) {
+
+            // Receive data (should be available immediately after topic)
+            auto data_result = subscriber_->recv(dataMsg, zmq::recv_flags::none);
+            if (!data_result) {
+                LOG_ERROR("Failed to receive data frame after topic frame");
                 continue;
             }
             

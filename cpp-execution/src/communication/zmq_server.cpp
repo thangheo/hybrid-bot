@@ -1099,6 +1099,12 @@ bool GenericZmqServer::processInternalMessage(const GenericMessage& message) {
         if (topic_result.has_value() && data_result.has_value()) {
             return true;
         }
+        // Increment diagnostic counters
+        stats_.send_failures++;
+        if ((topic_result && !data_result) || (!topic_result && data_result) || (!topic_result && !data_result)) {
+            // Heuristic: treat missing has_value as EAGAIN/backpressure
+            stats_.send_eagain_count++;
+        }
         logError("Failed to publish internal message: " + message.topic);
         return false;
     } catch (const zmq::error_t& e) {

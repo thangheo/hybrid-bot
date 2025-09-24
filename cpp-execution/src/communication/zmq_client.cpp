@@ -284,7 +284,8 @@ bool GenericZmqClient::initializeSockets() {
 
     // Create subscriber socket on shared context
     subscriber_socket_ = std::make_unique<zmq::socket_t>(*context_, ZMQ_SUB);
-        subscriber_socket_->set(zmq::sockopt::rcvtimeo, 100);  // 100ms timeout for non-blocking
+        // Use a reasonable receive timeout to avoid busy-waiting and partial-frame reads
+        subscriber_socket_->set(zmq::sockopt::rcvtimeo, 1000);  // 1000ms
         subscriber_socket_->connect(config_.server_pub_endpoint);
 
         // Create request socket
@@ -339,21 +340,28 @@ void GenericZmqClient::subscriberWorker() {
             
             zmq::message_t topic_msg;
             zmq::message_t data_msg;
-            
-            // Try to receive topic and data
-            if (subscriber_socket_->recv(topic_msg, zmq::recv_flags::dontwait) &&
-                subscriber_socket_->recv(data_msg, zmq::recv_flags::dontwait)) {
-                
-                std::string topic(static_cast<char*>(topic_msg.data()), topic_msg.size());
-                std::string data(static_cast<char*>(data_msg.data()), data_msg.size());
-                
-                handleMessage(topic, data);
-                
-                stats_.messages_received++;
-                stats_.last_message_time = std::chrono::steady_clock::now();
+
+            // Receive topic (block until a topic frame arrives or timeout)
+            auto topic_result = subscriber_socket_->recv(topic_msg, zmq::recv_flags::none);
+            if (!topic_result) {
+                // timeout or no message available
+                continue;
             }
-            
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+
+            // Receive data frame (should follow immediately)
+            auto data_result = subscriber_socket_->recv(data_msg, zmq::recv_flags::none);
+            if (!data_result) {
+                logError("Failed to receive data frame after topic frame");
+                continue;
+            }
+
+            std::string topic(static_cast<char*>(topic_msg.data()), topic_msg.size());
+            std::string data(static_cast<char*>(data_msg.data()), data_msg.size());
+
+            handleMessage(topic, data);
+
+            stats_.messages_received++;
+            stats_.last_message_time = std::chrono::steady_clock::now();
             
         } catch (const zmq::error_t& e) {
             if (e.num() != EAGAIN && e.num() != EINTR) {
