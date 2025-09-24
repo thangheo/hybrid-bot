@@ -1138,18 +1138,20 @@ private:
                     if (orderBook) {
                         orderBookUpdatesReceived_++;                      
                         auto [bidDepth, askDepth] = orderBook->getDepthLevels();
-                        std::cout << "OrderBook worker " << workerId << " processing update for "
-                                  << update.exchangeId.toString() << ":" << update.tradingPair.toString()
-                                  << " | Bids: " << bidDepth << " levels, Asks: " << askDepth << " levels"
-                                  << std::endl;
+                        // std::cout << "OrderBook worker " << workerId << " processing update for "
+                        //           << update.exchangeId.toString() << ":" << update.tradingPair.toString()
+                        //           << " | Bids: " << bidDepth << " levels, Asks: " << askDepth << " levels"
+                        //           << std::endl;
                           // Generate intelligence (throttling inside function)
                         // generateMarketIntelligence(update, orderBook); //no need at this time
                         // Publish orderbook for risk asynchronously
                         publishOrderBookForRisk(update);                 
                         // Send to strategy engine
+                        //thing got stuck here
                         if (strategyEngine_) {
                             strategyEngine_->processOrderBook(*orderBook);
                         }
+                        
                     }
                 } catch (const std::exception &e) {
                     std::cerr << "Orderbook worker " << workerId << " error: " << e.what() << std::endl;

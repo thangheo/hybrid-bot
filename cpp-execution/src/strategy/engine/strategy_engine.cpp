@@ -228,7 +228,9 @@ void StrategyEngine::processQueuedSignals() {
      try {
             // Process the order book through the analyzer      
         orderBookAnalyzer_->processOrderBook(orderBook);
-         
+        std::cout << std::format("Processed order book for {} on {}", 
+                             orderBook.getSymbol().toString(), 
+                             orderBook.getExchangeId().toString()) << std::endl;
          // Get the metrics from the analyzer
          auto metrics = orderBookAnalyzer_->getMetrics(orderBook.getSymbol(), orderBook.getExchangeId());
          //print bids and asks and volumes       
@@ -239,6 +241,7 @@ void StrategyEngine::processQueuedSignals() {
         if (!delta.isEmpty()) {
             liquidityMonitor_->processOrderBookDelta(std::move(delta));
         }
+
         //the below function was never been called which mean orderbook delta is always empty
         // liquidityMonitor_->processOrderBookDelta(std::move(delta)); //dont do this
         
@@ -263,7 +266,6 @@ void StrategyEngine::processQueuedSignals() {
             //                      orderBook.getSymbol().toString(), 
             //                      vpIt->second->calculatePointOfControl()) << std::endl;
          }
-         // Detect imbalances
          imbalanceDetector_->analyzeMetrics(metrics);
          
          //print detected imbalances
