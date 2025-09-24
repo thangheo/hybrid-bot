@@ -43,6 +43,15 @@ models::OrderPtr OrderGenerator::createOrder(const OrderGenerationParams& params
     order->setSide(processed_params.side);
     order->setType(processed_params.type);
     order->setQuantity(processed_params.quantity);
+    //check if price is 0 otherwise get from market data
+    if (processed_params.price <= 0) {
+        // For market orders, price is not set
+        if (processed_params.type == models::OrderType::MARKET) {
+            order->setPrice(0.0);
+        } else {
+            throw std::invalid_argument("Price must be set for non-market orders");
+        }
+    }
     
     // Set price if applicable (for limit orders)
     if (processed_params.price > 0 && 
