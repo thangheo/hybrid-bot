@@ -91,6 +91,7 @@
     // mutex and holding it here causes a deadlock when detect* functions attempt to acquire it.
     {
         std::lock_guard<std::mutex> lock(mutex_);
+        //
         // Store metrics history for time-series analysis
         for (const auto& metric : metrics.metrics) {
             metricHistory_[metric.first] = metric.second;
@@ -110,11 +111,38 @@
     }
 
     // Call detectors without holding the main mutex to avoid lock-order inversion / deadlocks.
-    bool volumeImbalance = detectVolumeImbalance(metrics);
-    bool priceLevelImbalance = detectPriceLevelImbalance(metrics);
-    bool liquidityFlowImbalance = detectLiquidityFlowImbalance(metrics);
-    bool abnormalSpread = detectAbnormalSpread(metrics);
-    bool marketDepthChange = detectMarketDepthChange(metrics);
+    // Instrumentation: measure each detector's duration to find blocking or slow operations.
+    auto detStart = std::chrono::steady_clock::now();
+    {
+        LOG_DEBUG("ImbalanceDetectionEngine::analyzeMetrics - running detectors for {}:{}",
+                  metrics.exchangeId.toString(), metrics.symbol.toString());
+    }
+
+    bool volumeImbalance = false;
+    bool priceLevelImbalance = false;
+    bool liquidityFlowImbalance = false;
+    bool abnormalSpread = false;
+    bool marketDepthChange = false;
+
+    // Helper lambda to run and time a detector
+    auto runDetector = [&](const std::string& name, auto&& fn) -> bool {
+        auto t0 = std::chrono::steady_clock::now();
+        bool result = fn();
+        auto t1 = std::chrono::steady_clock::now();
+        auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
+        if (ms > 50) {
+            LOG_WARN("Detector {} took {} ms for {}:{}", name, ms, metrics.exchangeId.toString(), metrics.symbol.toString());
+        } else {
+            LOG_DEBUG("Detector {} took {} ms for {}:{}", name, ms, metrics.exchangeId.toString(), metrics.symbol.toString());
+        }
+        return result;
+    };
+
+    volumeImbalance = runDetector("detectVolumeImbalance", [&]() { return detectVolumeImbalance(metrics); });
+    priceLevelImbalance = runDetector("detectPriceLevelImbalance", [&]() { return detectPriceLevelImbalance(metrics); });
+    liquidityFlowImbalance = runDetector("detectLiquidityFlowImbalance", [&]() { return detectLiquidityFlowImbalance(metrics); });
+    abnormalSpread = runDetector("detectAbnormalSpread", [&]() { return detectAbnormalSpread(metrics); });
+    marketDepthChange = runDetector("detectMarketDepthChange", [&]() { return detectMarketDepthChange(metrics); });
 
     // Update last snapshot after all detectors ran (keeps detectors comparing to the same previous snapshot)
     {
@@ -1433,7 +1461,10 @@ function determineDirection(metrics):
     // detectedImbalances_.push_back(event);
     
     // Option 2: Event bus only (better for decoupling)
+    LOG_DEBUG("Publishing ImbalanceDetectedEvent: type={} strength={:.3f} symbol={} exchange={}",
+              static_cast<int>(event.type), event.strength, event.symbol.toString(), event.exchangeId.toString());
     common::EventBus::getInstance().publish(events::ImbalanceDetectedEvent{event});
+    LOG_DEBUG("Published ImbalanceDetectedEvent id={} for {}:{}", event.eventId, event.exchangeId.toString(), event.symbol.toString());
 }
  void ImbalanceDetectionEngine::notifyImbalanceCallbacks(const ImbalanceEvent& event) {
     // Simply publish to event bus - no locks, no deadlocks
