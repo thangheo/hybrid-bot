@@ -11,6 +11,7 @@
 #include "common/logger.hpp"
 
 #include <chrono>
+#include <optional>
 
 namespace trading {
 namespace risk {
@@ -219,8 +220,37 @@ ValidationResult PreTradeRiskFilter::validateOrder(const OrderRequest& orderRequ
         return result;
     }
     
-    // Perform validation checks with normal or heightened thresholds
-    return performAllChecks(orderRequest);
+    // If the order is a limit order and price is zero, attempt to fill in a market price
+    OrderRequest mutableOrder = orderRequest; // make a local, mutable copy
+    if (mutableOrder.type == OrderType::LIMIT && mutableOrder.price == 0) {
+        double marketPrice = m_dataInterface->getCurrentPrice(
+            mutableOrder.tradingPair,
+            std::optional<std::string>(mutableOrder.exchangeId.toString())
+        );
+        if (marketPrice > 0) {
+            mutableOrder.price = marketPrice;
+            LOG_INFO("Order {}: Limit price was zero, set to market price {}", mutableOrder.clientOrderId, marketPrice);
+        } else {
+            ValidationResult result;
+            result.signalId = mutableOrder.clientOrderId;
+            result.approved = false;
+            result.timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count();
+
+            RiskViolation violation(
+                ViolationType::PRICE_DEVIATION,
+                "Limit price is zero and market price unavailable",
+                0.0,
+                mutableOrder.price
+            );
+            result.violations.push_back(violation);
+            LOG_WARN("Order {} rejected: limit price missing and market price unavailable", mutableOrder.clientOrderId);
+            return result;
+        }
+    }
+
+    // Perform validation checks with normal or heightened thresholds using the (possibly modified) order
+    return performAllChecks(mutableOrder);
 }
 
 bool PreTradeRiskFilter::updateRiskParameters(const RiskParameters& params) {
@@ -522,7 +552,21 @@ bool PreTradeRiskFilter::passesBasicValidation(const OrderRequest& orderRequest,
         violations.push_back(violation);
         return false;
     }
-    
+
+    // For limit orders, we do not modify the incoming OrderRequest here.
+    // Price defaulting (if desired) is handled earlier in validateOrder where a mutable
+    // copy of the OrderRequest can be populated from market data.
+    if (orderRequest.type == OrderType::LIMIT && orderRequest.price == 0) {
+        RiskViolation violation(
+            ViolationType::PRICE_DEVIATION,
+            "Limit price is zero",
+            0.0,
+            orderRequest.price
+        );
+        violations.push_back(violation);
+        return false;
+    }
+
     // Check price for limit orders
     if (orderRequest.type == OrderType::LIMIT && orderRequest.price <= 0) {
         RiskViolation violation(

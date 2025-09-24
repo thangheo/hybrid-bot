@@ -290,7 +290,12 @@ private:
         context.exchangeId = getExchangeIdFromSignal(signal);
         context.quantity = getQuantityFromSignal(signal);
         
-        context.price = getPrice(context.symbol);
+        // Prefer an explicit price carried with the signal (if set by the strategy)
+        context.price = signal.getPrice();
+        // If the signal did not supply a price, fall back to cached / data-interface price
+        if (context.price <= 0.0) {
+            context.price = getPrice(context.symbol);
+        }
         context.volatility = getVolatility(context.symbol);
 
         // Defensive fallback: try to derive base asset from symbol string if empty

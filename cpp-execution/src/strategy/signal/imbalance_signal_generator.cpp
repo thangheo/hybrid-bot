@@ -269,8 +269,6 @@ TradingSignal ImbalanceSignalGenerator::createSignalFromImbalance(const Imbalanc
 
      // Generate price targets
     signal.targets = generatePriceTargets(imbalance);
-     // calculate target size
-    signal.targetSize = calculateTargetSize(imbalance);
      signal.ttl = calculateSignalTTL(imbalance, std::abs(signal.targets[2].price - imbalance.getSupportingMetric("midPrice", 1.0)));
     //  signal.expirationTime = imbalance.detectionTime + std::chrono::duration_cast<core::Timestamp::duration>(signal.ttl);
      signal.expirationTime = imbalance.detectionTime + signal.ttl;
@@ -303,6 +301,8 @@ TradingSignal ImbalanceSignalGenerator::createSignalFromImbalance(const Imbalanc
     } else {
         std::cout << "No momentum correlation component set.\n";
     }
+     // calculate target size base on imbalance and signal strength and signal confidence and quality
+    signal.targetSize = calculateTargetSize(imbalance, signal.strength, signal.confidence, signal.quality);
 
      // Apply threshold adjustments if available
      if (thresholdManager_) {
@@ -422,9 +422,9 @@ SignalGeneratorConfig ImbalanceSignalGenerator::getConfig() const {
     return config_;
 }
 //function to calculate target size
-double ImbalanceSignalGenerator::calculateTargetSize(const ImbalanceEvent& imbalance) const {
+double ImbalanceSignalGenerator::calculateTargetSize(const ImbalanceEvent& imbalance, double strength, double confidence, double quality) const {
     // Base size on strength and confidence
-    double baseSize = imbalance.strength * (static_cast<double>(imbalance.confidence) / 100.0);
+    double baseSize = strength * (static_cast<double>(confidence) / 100.0);
     
     // Scale by type significance
     switch (imbalance.type) {
