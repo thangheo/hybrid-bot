@@ -11,6 +11,7 @@
 #include <core/market_types.hpp>
 // nlohmann json for JSON parsing
 #include <nlohmann/json.hpp>
+#include <mutex>
 
 using namespace trading::core;
 // Forward declarations
@@ -125,6 +126,8 @@ private:
     // Default URLs
     static const std::string MAINNET_URL;
     static const std::string TESTNET_URL;
+    // Protects m_api_key, m_api_secret, clockOffsetMs_, defaultRecvWindowMs_
+    mutable std::mutex apiMutex_;
 };
 
 
