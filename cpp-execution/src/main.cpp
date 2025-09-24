@@ -1287,15 +1287,15 @@ private:
 
                     execSignal.targetSize = finalQty; // now this is absolute size
                     
-                    // std::cout << "🛎️ Signal passed filtering: " << execSignal.id 
-                    //           << " for " << execSignal.symbol.toString() 
-                    //           << " Direction: " << (execSignal.direction == core::Direction::BUY ? "BUY" : "SELL")
-                    //           << " Strength: " << execSignal.strength 
-                    //           << " Confidence: " << execSignal.confidence 
-                    //           << " Quality: " << execSignal.quality 
-                    //           << " TargetSize: " << execSignal.targetSize 
-                    //           << " PTCA Recommendation: " << ptcaRecommendation
-                    //           << std::endl;
+                    std::cout << "🛎️ Signal passed filtering: " << execSignal.id 
+                              << " for " << execSignal.symbol.toString() 
+                              << " Direction: " << (execSignal.direction == core::Direction::BUY ? "BUY" : "SELL")
+                              << " Strength: " << execSignal.strength 
+                              << " Confidence: " << execSignal.confidence 
+                              << " Quality: " << execSignal.quality 
+                              << " TargetSize: " << execSignal.targetSize 
+                              << " PTCA Recommendation: " << ptcaRecommendation
+                              << std::endl;
                     // int targetPass = 0;
                     // for (const auto& target : execSignal.targets) {
                     //     if (target.type == trading::TARGET_PRICE) {
@@ -1353,7 +1353,7 @@ private:
             execution::TradingSignal task;
             {
                 std::unique_lock<std::mutex> lk(execQueueMutex_);
-                execQueueCv_.wait_for(lk, std::chrono::milliseconds(200), [this]() {
+                execQueueCv_.wait_for(lk, std::chrono::milliseconds(100), [this]() {
                     return !execQueue_.empty() || !execWorkersRunning_.load();
                 });
                 if (!execWorkersRunning_.load() && execQueue_.empty()) break;
@@ -1362,11 +1362,25 @@ private:
                 execQueue_.pop_front();
             }
             try {
-                std::this_thread::sleep_for(100ms); // simulate delay
+                std::this_thread::sleep_for(1ms); // simulate delay .why?
+                if (!executionService_) {
+                    std::cerr << "Execution service not initialized!" << std::endl;
+                    continue;
+                }
                 ExecutionResponse response = executionService_->executeSignal(task);
                 if (!response.success) {
                     std::cout << "❌ Execution failed for signal " << task.id 
                               << ": " << response.error_message << std::endl;
+                    // print all of data in this failed order/signal
+                    std::cout << "Signal details - Symbol: " << task.symbol.toString()
+                              << ", Direction: " << (task.direction == core::Direction::BUY ? "BUY" : (task.direction == core::Direction::SELL ? "SELL" : "NEUTRAL"))
+                              << ", Strength: " << task.strength
+                              << ", Confidence: " << task.confidence
+                              << ", Quality: " << task.quality
+                              << ", TargetSize: " << task.targetSize
+                              << ", StrategyId: " << task.strategyId
+                              << ", ExchangeId: " << task.exchangeId.toString()
+                              << std::endl;
                     continue;
                 }
                 execution::models::ExecutionReport report;

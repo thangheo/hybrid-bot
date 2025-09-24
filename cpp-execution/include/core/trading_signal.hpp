@@ -70,8 +70,8 @@ struct TradingSignal {
     core::Symbol symbol;                              // Trading pair symbol
     core::ExchangeId exchangeId;                      // Exchange identifier
     double targetSize;                                // Suggested position size (from execution)
-    std::vector<PriceTarget> targets;                 // Price targets
-    
+    std::vector<PriceTarget> targets;                 // Price targets /what the fuck is this?
+    double price;                                     // Price at which to execute the order
     // Strategy information
     StrategyId strategyId;                            // Strategy identifier
     ImbalanceType sourceType;                         // Type of imbalance that generated this signal
@@ -134,7 +134,10 @@ struct TradingSignal {
     TradingSignal& operator=(const TradingSignal& other) = default;
     TradingSignal(TradingSignal&& other) noexcept = default;
     TradingSignal& operator=(TradingSignal&& other) noexcept = default;
-
+    // getPrice
+    double getPrice() const { return price; }
+    // setPrice
+    void setPrice(double p) { price = p; }
     /**
      * Reserve internal containers to avoid repeated reallocations during bulk operations.
      * Call this before heavy push_back/emplace operations.
