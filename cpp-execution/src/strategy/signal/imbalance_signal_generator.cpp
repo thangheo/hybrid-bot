@@ -123,15 +123,24 @@ bool ImbalanceSignalGenerator::initialize(const SignalGeneratorConfig& config) {
 
 // Core processing methods
 int ImbalanceSignalGenerator::processImbalances(const std::vector<ImbalanceEvent>& imbalances) {
+    auto t0 = std::chrono::steady_clock::now();
     std::lock_guard<std::mutex> lock(mutex_);
     int signalsGenerated = 0;
-    
+
     for (const auto& imbalance : imbalances) {
         if (processImbalance(imbalance)) {
             signalsGenerated++;
         }
     }
-    
+
+    auto dur = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - t0).count();
+    if (dur > 5) {
+        LOG_WARN("ImbalanceSignalGenerator::processImbalances slow: {} ms for {} imbalances", dur, imbalances.size());
+    } else {
+        LOG_DEBUG("ImbalanceSignalGenerator::processImbalances took {} ms", dur);
+    }
+
     return signalsGenerated;
 }
 
@@ -175,7 +184,7 @@ std::vector<TradingSignal> ImbalanceSignalGenerator::generateSignals() {
 // Enhanced signal creation
 TradingSignal ImbalanceSignalGenerator::createSignalFromImbalance(const ImbalanceEvent& imbalance) {
     TradingSignal signal;
-    
+    auto t0 = std::chrono::steady_clock::now();
     // Basic signal properties
     signal.id = generateSignalId();
     signal.sourceEventId = imbalance.eventId;
@@ -255,6 +264,13 @@ TradingSignal ImbalanceSignalGenerator::createSignalFromImbalance(const Imbalanc
     auto regime = getCurrentMarketRegime(imbalance);
     signal.setMetric("marketRegime", static_cast<double>(regime));
     signal.setMetric("regimeName", marketRegimeToString(regime));
+    auto dur_us = std::chrono::duration_cast<std::chrono::microseconds>(
+        std::chrono::steady_clock::now() - t0).count();
+    if (dur_us > 2000) {
+        LOG_WARN("createSignalFromImbalance: signal id={} creation took {} us", signal.id, dur_us);
+    } else {
+        LOG_DEBUG("createSignalFromImbalance: took {} us", dur_us);
+    }
     
     return signal;
 }
@@ -839,33 +855,55 @@ core::SignalId ImbalanceSignalGenerator::generateSignalId() const {
     oss << std::hex << std::setfill('0') << std::setw(12) << us_count << "-";
     oss << std::setw(8) << signalCount_.load() << "-";
     
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_int_distribution<> distrib(0, 0xFFFF);
-    oss << std::setw(4) << distrib(gen);
+    // Use a thread-local PRNG seeded from a time-based seed to avoid
+    // per-call std::random_device usage which can block on some platforms.
+    static thread_local std::mt19937 rng(
+        static_cast<unsigned>(std::chrono::high_resolution_clock::now().time_since_epoch().count() ^ reinterpret_cast<uintptr_t>(&rng)));
+    std::uniform_int_distribution<uint32_t> distrib(0, 0xFFFF);
+    oss << std::setw(4) << distrib(rng);
     
     return core::SignalId(oss.str());
 }
 
 void ImbalanceSignalGenerator::notifySignalCallbacks(const TradingSignal& signal) {
-    // Publish to event bus for broader system notification
-    common::EventBus::getInstance().publish(events::SignalGeneratedEvent{signal});
-    
-    // Direct callback notifications (without lock to avoid deadlock)
-    std::map<size_t, SignalCallback> callbacksCopy;
+    // Copy callbacks without holding lock for long
+    std::vector<SignalCallback> callbacksToNotify;
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        callbacksCopy = callbacks_;
+        callbacksToNotify.reserve(callbacks_.size());
+        for (const auto& [id, callback] : callbacks_) {
+            callbacksToNotify.push_back(callback);
+        }
     }
     
-    for (const auto& [id, callback] : callbacksCopy) {
+    // Notify without any locks held
+    for (const auto& callback : callbacksToNotify) {
         try {
             callback(signal);
         } catch (const std::exception& e) {
-            LOG_ERROR("Signal callback {} failed: {}", id, e.what());
+            LOG_ERROR("Signal callback failed: {}", e.what());
         }
     }
 }
+// void ImbalanceSignalGenerator::notifySignalCallbacks(const TradingSignal& signal) {
+//     // Publish to event bus for broader system notification
+//     common::EventBus::getInstance().publish(events::SignalGeneratedEvent{signal});
+    
+//     // Direct callback notifications (without lock to avoid deadlock)
+//     std::map<size_t, SignalCallback> callbacksCopy;
+//     {
+//         std::lock_guard<std::mutex> lock(mutex_);
+//         callbacksCopy = callbacks_;
+//     }
+    
+//     for (const auto& [id, callback] : callbacksCopy) {
+//         try {
+//             callback(signal);
+//         } catch (const std::exception& e) {
+//             LOG_ERROR("Signal callback {} failed: {}", id, e.what());
+//         }
+//     }
+// }
 
 } // namespace strategy
 } // namespace trading
