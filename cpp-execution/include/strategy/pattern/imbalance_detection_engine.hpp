@@ -23,8 +23,18 @@
 #include <mutex>
 #include <functional>
 
+
+
 namespace trading {
 namespace strategy {
+    
+struct DetectorResult {
+    ImbalanceType type;
+    bool isImbalance = false;
+    double strength = 0.0;
+    Direction direction = Direction::BUY;
+    bool shouldEmitEvent = false; // true nếu cần gọi createImbalanceEvent
+};
 
 /**
  * @class ImbalanceDetectionEngine
@@ -120,6 +130,7 @@ public:
     virtual void updateParameters(const ParameterSet& params);
 
 private:
+
     // Additional private methods
     uint64_t generateEventId();
     double calculateImbalanceConfidence(ImbalanceType type, double strength, const OrderBookMetrics& metrics);
@@ -136,12 +147,12 @@ private:
     std::map<std::string, double> metricHistory_;
     
     // Detection algorithms for all supported imbalance types
-    bool detectVolumeImbalance(const OrderBookMetrics& metrics);
-    bool detectPriceLevelImbalance(const OrderBookMetrics& metrics);
-    bool detectLiquidityFlowImbalance(const OrderBookMetrics& metrics);
-    bool detectAbnormalSpread(const OrderBookMetrics& metrics);
-    bool detectMarketDepthChange(const OrderBookMetrics& metrics);
-    bool detectLargeOrderAppearance(const OrderBookMetrics& metrics);
+    DetectorResult detectVolumeImbalance(const OrderBookMetrics& metrics);
+    DetectorResult detectPriceLevelImbalance(const OrderBookMetrics& metrics);
+    DetectorResult detectLiquidityFlowImbalance(const OrderBookMetrics& metrics);
+    DetectorResult detectAbnormalSpread(const OrderBookMetrics& metrics);
+    DetectorResult detectMarketDepthChange(const OrderBookMetrics& metrics);
+    double detectLargeOrderAppearance(const OrderBookMetrics& metrics);
     bool detectLargeOrderDisappearance(const OrderBookMetrics& metrics);
     bool detectOrderFlowImbalance(const OrderBookMetrics& metrics);
     bool detectPriceLevelConcentration(const OrderBookMetrics& metrics);
@@ -154,13 +165,12 @@ private:
     bool detectHiddenLiquidityImbalance(const OrderBookMetrics& metrics);
     bool detectCustomImbalance(const OrderBookMetrics& metrics);
     bool checkVolumeConcentration(const OrderBookMetrics& metrics) ;
-
     bool detectSpreadPersistence(const OrderBookMetrics& metrics) ;
     bool detectDepthVolumeInconsistency(const OrderBookMetrics& metrics) ;
     bool detectVolatilitySuppression(const OrderBookMetrics& metrics) ;
-    // bool detectMarketImpact(const OrderBookMetrics& metrics) ;
     bool detectHiddenLiquidityPatterns(const OrderBookMetrics& metrics) ;
-    // bool detectOrderBookImbalance(const OrderBookMetrics& metrics) ;
+
+
     double calculateVariance(const std::vector<double>& data) ;
     // bool detectQuoteStuffing(const OrderBookMetrics& metrics) ;
     // bool

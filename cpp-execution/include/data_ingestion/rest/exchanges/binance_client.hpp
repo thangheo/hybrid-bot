@@ -80,9 +80,10 @@ public:
     // Authentication & Setup
     void setApiKey(const std::string& key, const std::string& secret);
     void setBaseUrl(const std::string& url);
-    // Optional: adjust clock offset (in ms) and default recvWindow (ms)
-    void setClockOffsetMs(long long offset) { clockOffsetMs_ = offset; }
-    void setDefaultRecvWindowMs(int ms) { defaultRecvWindowMs_ = ms; }
+    
+    // Thread-safe setters for configuration
+    void setClockOffsetMs(long long offset) { clockOffsetMs_.store(offset); }
+    void setDefaultRecvWindowMs(int ms) { defaultRecvWindowMs_.store(ms); }
 
     // Account & Balance
     std::map<std::string, double> getBalances();
@@ -105,30 +106,37 @@ public:
                                  const std::map<std::string, std::string>& params = {});
 
 private:
-    // Private helper methods
-    std::string generateSignature(const std::string& query_string) const;
+    // Helper methods
+    std::string generateSignature(const std::string& query_string, 
+                                 const std::string& api_secret) const;
+
     std::string buildQueryString(const std::map<std::string, std::string>& params) const;
     std::string makeHttpRequest(const std::string& url, const std::string& method = "GET", 
                                const std::string& body = "", 
                                const std::map<std::string, std::string>& headers = {}) const;
     long long getCurrentTimestamp() const;
     std::string urlEncode(const std::string& value) const;
+    
+    // New helper method for thread-safe server time sync
+    bool resyncServerTime();
 
     // Member variables
-    std::string m_api_key;
-    std::string m_api_secret;
-    std::string m_base_url;
-    // Clock offset (server_time - local_time) in milliseconds. Use to correct timestamp.
-    long long clockOffsetMs_ = 0;
-    // Default recvWindow in milliseconds (can be tuned). Binance allows up to 60000.
-    int defaultRecvWindowMs_ = 5000;
+    std::string m_api_key;          // Protected by apiMutex_
+    std::string m_api_secret;       // Protected by apiMutex_
+    std::string m_base_url;         // Thread-safe (set once during construction)
+    
+    // Thread-safe atomic variables
+    std::atomic<long long> clockOffsetMs_;      // Clock offset in milliseconds
+    std::atomic<int> defaultRecvWindowMs_;      // Default recvWindow in milliseconds
     
     // Default URLs
     static const std::string MAINNET_URL;
     static const std::string TESTNET_URL;
-    // Protects m_api_key, m_api_secret, clockOffsetMs_, defaultRecvWindowMs_
+    
+    // Mutex for protecting API credentials only
     mutable std::mutex apiMutex_;
 };
+
 
 
 } // namespace data_ingestion
