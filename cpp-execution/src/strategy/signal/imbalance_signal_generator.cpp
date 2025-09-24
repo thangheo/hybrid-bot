@@ -277,8 +277,9 @@ TradingSignal ImbalanceSignalGenerator::createSignalFromImbalance(const Imbalanc
     signal.setMetric("regimeName", marketRegimeToString(regime));
     auto dur_us = std::chrono::duration_cast<std::chrono::microseconds>(
         std::chrono::steady_clock::now() - t0).count();
+
     if (dur_us > 2000) {
-        LOG_WARN("createSignalFromImbalance: signal id={} creation took {} us", signal.id, dur_us);
+        LOG_DEBUG("createSignalFromImbalance: signal id={} creation took {} us", signal.id, dur_us);
     } else {
         LOG_DEBUG("createSignalFromImbalance: took {} us", dur_us);
     }
