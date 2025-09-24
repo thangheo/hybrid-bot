@@ -371,7 +371,12 @@ ValidationResult PreTradeRiskFilter::performAllChecks(const TradingSignal& signa
     // Check order validation
     if (!m_orderValidator->validateOrder(signal, result.violations)) {
         result.approved = false;
-        LOG_INFO("Signal {} rejected: failed order validation", signal.getSignalId());
+        //print detailed violations at debug level
+        for (const auto& v : result.violations) {
+            LOG_DEBUG("  Violation: type={} desc='{}' limit={} actual={}",
+                      toString(v.type), v.description, v.limitValue, v.actualValue);
+        }
+        // LOG_INFO("Signal {} rejected: failed order validation", signal.getSignalId());
     }
     
     // Check fat finger protection
@@ -440,7 +445,12 @@ ValidationResult PreTradeRiskFilter::performAllChecks(const OrderRequest& orderR
     // Check order validation
     if (!m_orderValidator->validateOrder(orderRequest, result.violations)) {
         result.approved = false;
-        LOG_INFO("Order {} rejected: failed order validation", orderRequest.clientOrderId);
+        // Print detailed violations at info level for orders
+        for (const auto& v : result.violations) {
+            LOG_INFO("  Violation: type={} desc='{}' limit={} actual={}'",
+                     toString(v.type), v.description, v.limitValue, v.actualValue);
+        }
+        // LOG_INFO("Order {} rejected: failed order validation", orderRequest.clientOrderId);
     }
     
     // Check fat finger protection
