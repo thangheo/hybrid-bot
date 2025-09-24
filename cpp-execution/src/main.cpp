@@ -1197,7 +1197,7 @@ private:
             // Wait for data
             std::unique_lock<std::mutex> lk(signalQueueMutex_);
 
-            signalQueueCv_.wait_for(lk, std::chrono::milliseconds(50), [this]() {
+            signalQueueCv_.wait_for(lk, std::chrono::milliseconds(100), [this]() {
                 return !signalQueue_.empty() || !signalWorkersRunning_.load();
             });
             if (!signalWorkersRunning_.load() && signalQueue_.empty()) break;

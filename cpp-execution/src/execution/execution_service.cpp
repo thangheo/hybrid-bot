@@ -11,6 +11,8 @@
  #include <sstream>
  #include <nlohmann/json.hpp>
  #include <mutex>
+#include <algorithm>
+#include <cctype>
  #include <iostream>
 #include "execution/preflight/preflight.hpp"
 #include "risk/risk_config.hpp"
@@ -363,8 +365,82 @@ ExecutionResponse ExecutionService::executeSignal(const TradingSignal& signal) {
         // base asset key extraction (very simple)
         std::string base = sym.substr(0, sym.size() - quote.size());
 
-        if (balances_map.find(quote) != balances_map.end()) ab.quoteAvailable = balances_map[quote];
-        if (balances_map.find(base) != balances_map.end()) ab.baseAvailable = balances_map[base];
+        // Helper to lookup balances with flexible key matching (case-insensitive)
+        auto get_balance = [&](const std::string &k) -> double {
+            if (k.empty()) return 0.0;
+            auto it = balances_map.find(k);
+            if (it != balances_map.end()) return it->second;
+            std::string ku = k; std::transform(ku.begin(), ku.end(), ku.begin(), ::toupper);
+            it = balances_map.find(ku);
+            if (it != balances_map.end()) return it->second;
+            std::string kl = k; std::transform(kl.begin(), kl.end(), kl.begin(), ::tolower);
+            it = balances_map.find(kl);
+            if (it != balances_map.end()) return it->second;
+            return 0.0;
+        };
+
+        ab.quoteAvailable = get_balance(quote);
+        ab.baseAvailable = get_balance(base);
+
+        // === Explicit balance guard: reject locally if insufficient funds are detected ===
+        try {
+            double tradingFee = 0.001; // 0.1% default for Binance spot
+            double qty = exchange_order->getQuantity();
+            double price = exchange_order->getPrice();
+
+            if (exchange_order->getSide() == models::OrderSide::BUY) {
+                double estimatedCost = qty * price;
+                double requiredQuote = estimatedCost * (1.0 + tradingFee) + 1e-9; // small buffer
+                if (ab.quoteAvailable + 1e-9 < requiredQuote) {
+                    std::ostringstream oss;
+                    oss << "Insufficient quote balance for BUY on " << sym << ", required=" << requiredQuote
+                        << ", available=" << ab.quoteAvailable;
+                    std::string reason = oss.str();
+
+                    order_lifecycle_tracker_->updateOrderState(
+                        exchange_order->getClientOrderId(),
+                        models::OrderState::REJECTED,
+                        exchange_order->getExchangeOrderId(),
+                        reason
+                    );
+
+                    return ExecutionResponse{
+                        exchange_order->getClientOrderId(),
+                        "",
+                        false,
+                        reason,
+                        std::chrono::system_clock::now(),
+                        "REJECTED_INSUFFICIENT_BALANCE"
+                    };
+                }
+            } else {
+                double requiredBase = qty;
+                if (ab.baseAvailable + 1e-9 < requiredBase) {
+                    std::ostringstream oss;
+                    oss << "Insufficient base asset balance for SELL on " << sym << ", required=" << requiredBase
+                        << ", available=" << ab.baseAvailable;
+                    std::string reason = oss.str();
+
+                    order_lifecycle_tracker_->updateOrderState(
+                        exchange_order->getClientOrderId(),
+                        models::OrderState::REJECTED,
+                        exchange_order->getExchangeOrderId(),
+                        reason
+                    );
+
+                    return ExecutionResponse{
+                        exchange_order->getClientOrderId(),
+                        "",
+                        false,
+                        reason,
+                        std::chrono::system_clock::now(),
+                        "REJECTED_INSUFFICIENT_BALANCE"
+                    };
+                }
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "Warning: explicit balance guard failed with error: " << e.what() << ". Continuing to preflight checks." << std::endl;
+        }
 
         trading::execution::OrderRequest orq;
         orq.symbol = exchange_order->getTradingPair().toString();
