@@ -196,7 +196,7 @@ TradingSignal ImbalanceSignalGenerator::createSignalFromImbalance(const Imbalanc
     signal.sourceType = imbalance.type;
     signal.symbol = imbalance.symbol;
     signal.exchangeId = imbalance.exchangeId;
-    signal.price = imbalance.getSupportingMetric("midPrice", 0.0);
+    
     signal.generationTime = std::chrono::system_clock::now();
     signal.confidence = trading::core::confidenceLevelToValue(imbalance.confidence);
     
@@ -244,7 +244,15 @@ TradingSignal ImbalanceSignalGenerator::createSignalFromImbalance(const Imbalanc
         double confidenceMultiplier = calculateConfidenceMultiplier(absCorrelation, alignmentCorrect);
         signal.confidence = std::clamp(signal.confidence * confidenceMultiplier, 0.0, 1.0);
     }
-    
+    //if direction is BUY then set price to best ask else if SELL set to best bid
+    if (imbalance.direction == core::Direction::BUY) {
+        signal.price = imbalance.getSupportingMetric("askPrice", 0.0);
+    } else if (imbalance.direction == core::Direction::SELL) {
+        signal.price = imbalance.getSupportingMetric("bidPrice", 0.0);
+    } else {
+        signal.price = imbalance.getSupportingMetric("midPrice", 0.0);
+    }
+    //if price is 0 then we should get from something else
     // Calculate comprehensive quality metrics
     auto qualityMetrics = calculateSignalQuality(signal, predictedMove, correlation);
     signal.quality = qualityMetrics.finalQuality;
