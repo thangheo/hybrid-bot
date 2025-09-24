@@ -294,7 +294,14 @@ private:
         context.price = signal.getPrice();
         // If the signal did not supply a price, fall back to cached / data-interface price
         if (context.price <= 0.0) {
-            context.price = getPrice(context.symbol);
+            //try with metric first
+            auto it = signal.signalMetrics.find("price");
+            if (it != signal.signalMetrics.end() && it->second > 0.0) {
+                context.price = it->second;
+            } else {
+                context.price = getPrice(context.symbol);
+                // context.price = std::max(context.price, 0);
+            }
         }
         context.volatility = getVolatility(context.symbol);
 
