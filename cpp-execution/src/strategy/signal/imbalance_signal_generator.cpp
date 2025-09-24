@@ -263,6 +263,8 @@ TradingSignal ImbalanceSignalGenerator::createSignalFromImbalance(const Imbalanc
      signal.sourceType = imbalance.type;
      signal.symbol = imbalance.symbol;
      signal.exchangeId = imbalance.exchangeId;
+     //set price from imbalance midPrice metric
+     signal.price = imbalance.getSupportingMetric("midPrice", 0.0);
     //  signal.expirationTime = imbalance.detectionTime + signal.ttl; // Set expiration time
 
      // Generate price targets

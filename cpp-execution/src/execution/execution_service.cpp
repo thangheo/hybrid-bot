@@ -973,9 +973,9 @@ models::Order ExecutionService::createOrderFromSignal(const TradingSignal& signa
         params.signal_strength = signal.getStrength();
         params.target_size = signal.getTargetSize();
         params.signal_ttl = signal.getTtl();
-        params.type = models::OrderType::MARKET;
+        params.type = models::OrderType::LIMIT; // Default to LIMIT; will be adjusted later
         params.time_in_force = models::TimeInForce::GTC;
-        params.price = 0.0;
+        params.price = signal.getPrice(); // Optional price from signal
 
         // Check if order_generator_ is valid
         if (!order_generator_) {

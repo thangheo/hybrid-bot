@@ -257,28 +257,7 @@ std::optional<MarketData> MarketDataInterface::getMarketData(
    // Cache miss or expired
    LOG_WARN("getMarketData: no valid market data for {} on {} (returning nullopt)", tradingPair.toString(), exchange.toString());
    return std::nullopt;  // Indicate no data available
-   // If not in cache or expired, try to get from order book normalizer
-//    try {
-//        auto orderBookUpdate = normalizer_->getOrderBook(exchange, tradingPair);
-//        // Convert to MarketData
-//        MarketData marketData = convertOrderBookToMarketData(orderBookUpdate);
-       
-//        // Update cache
-//        {
-//            std::unique_lock<std::shared_mutex> lock(cacheMutex_);
-//            marketDataCache_[cacheKey] = MarketDataCacheEntry{
-//                marketData,
-//                std::chrono::steady_clock::now(),
-//                true
-//            };
-//        }
-       
-//        return marketData;  // Automatic conversion to std::optional
-       
-//    } catch (const std::exception& e) {
-//        LOG_ERROR("Failed to get market data: " + std::string(e.what()));
-//        return std::nullopt;  // Proper way to indicate failure
-//    }
+
 }
 
 double MarketDataInterface::getCurrentPrice(
