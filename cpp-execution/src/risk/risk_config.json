@@ -97,16 +97,9 @@
   "orderValidation": {
     "validateMinOrderSize": true,
     "validatePriceRange": true,
-    "minOrderSizes": {
-      "binance": {
-        "BTC/USDT": 0.001,
-        "ETH/USDT": 0.01
-      },
-      "coinbase": {
-        "BTC/USD": 0.001,
-        "ETH/USD": 0.01
-      }
-    },
+    "minTradeValue": 10.0,
+    "maxTradeValue": 1000.0,
+
     "maxPriceDeviationPercent": 0.1,
     "enforceSymbolWhitelist": false,
     "symbolWhitelist": ["BTC/USDT", "ETH/USDT", "BTC/USD", "ETH/USD"]
