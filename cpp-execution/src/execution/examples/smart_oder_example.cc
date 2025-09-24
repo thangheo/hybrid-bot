@@ -30,8 +30,8 @@ void example() {
     
     // Get current market condition
     MarketCondition market = {
-        55000.0,  // bid_price
-        55010.0,  // ask_price
+        55000.0,  // bidPrice
+        55010.0,  // askPrice
         10.0,     // spread
         0.01,     // volatility
         100.0,    // volume

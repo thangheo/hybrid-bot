@@ -1296,18 +1296,15 @@ private:
                               << " TargetSize: " << execSignal.targetSize 
                               << " PTCA Recommendation: " << ptcaRecommendation
                               << std::endl;
-                    // int targetPass = 0;
-                    // for (const auto& target : execSignal.targets) {
-                    //     if (target.type == trading::TARGET_PRICE) {
-                    //         targetPass++;
-                    //     } else if (target.type == trading::TARGET_TIME) {
-                    //         // Ensure time target is within reasonable bounds
-                    //         auto now = std::chrono::steady_clock::now();
-                    //         if (target.timePoint > now && target.timePoint < now + std::chrono::hours(1)) {
-                    //             targetPass++;
-                    //         }
-                    //     }
-                    // }
+                    //check if price target percentage > 0.2%
+                    for (const auto& target : execSignal.targets) {
+                        if (target.percentage > 0.002) {
+                            std::cout << "  Target size: " << target.size
+                                      << " at " << target.price 
+                                      << " (" << target.percentage * 100 << "%)" 
+                                      << std::endl;
+                        }
+                    }                   
 
                     // Validate with risk manager
                     if (riskManager_) {
