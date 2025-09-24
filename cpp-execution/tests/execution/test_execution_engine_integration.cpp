@@ -58,6 +58,7 @@
              fill_reconciliation,
              api_client_manager
          );
+        execution_service->setLimitOrderHandling(ExecutionService::LimitOrderHandling::REJECT_IF_NO_PRICE);
          
          // Configure mock exchange client behavior
          setupMockExchangeClient();

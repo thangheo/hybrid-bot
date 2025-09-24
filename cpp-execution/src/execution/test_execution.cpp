@@ -150,6 +150,8 @@ public:
             fill_reconciliation,
             api_client_manager
         );
+        // Enforce strict handling: reject LIMIT orders that don't carry a price
+        execution_service_->setLimitOrderHandling(ExecutionService::LimitOrderHandling::REJECT_IF_NO_PRICE);
     }
      void runInteractiveMode() {
         std::cout << "\n=== Interactive Test Mode ===\n";

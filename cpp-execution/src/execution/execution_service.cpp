@@ -973,9 +973,17 @@ models::Order ExecutionService::createOrderFromSignal(const TradingSignal& signa
         params.signal_strength = signal.getStrength();
         params.target_size = signal.getTargetSize();
         params.signal_ttl = signal.getTtl();
-        params.type = models::OrderType::LIMIT; // Default to LIMIT; will be adjusted later
-        params.time_in_force = models::TimeInForce::GTC;
-        params.price = signal.signalMetrics.count("bidPrice") ? signal.signalMetrics.at("bidPrice") : signal.price; // Use signal price if bidPrice not available
+        // Default to MARKET; OrderTypeSelector will convert to LIMIT and provide a price when appropriate
+        params.type = models::OrderType::MARKET;
+        params.time_in_force = models::TimeInForce::IOC;
+        // Only populate params.price if the signal provided a positive price metric
+        if (signal.signalMetrics.count("bidPrice") && signal.signalMetrics.at("bidPrice") > 0.0) {
+            params.price = signal.signalMetrics.at("bidPrice");
+        } else if (signal.price > 0.0) {
+            params.price = signal.price;
+        } else {
+            params.price = 0.0; // no price provided by strategy/signal
+        }
         // Check if order_generator_ is valid
         if (!order_generator_) {
             throw std::runtime_error("Order generator is null");
@@ -1045,10 +1053,113 @@ models::Order ExecutionService::createOrderFromSignal(const TradingSignal& signa
         OrderTypeSelection selection = order_type_selector_->selectOrderType(order, market_condition);
 
         // Apply the selected order type and parameters
-        order->setType(selection.type);
-        if (selection.type == models::OrderType::LIMIT && selection.price > 0.0) {
-            order->setPrice(selection.price);
+        // If selector chose a LIMIT but didn't provide a valid price, handle according to policy
+        if (selection.type == models::OrderType::LIMIT && selection.price <= 0.0) {
+            if (limit_order_handling_ == LimitOrderHandling::REJECT_IF_NO_PRICE) {
+                std::ostringstream oss;
+                oss << "OrderTypeSelector selected LIMIT but returned no price for " << order->getTradingPair().toString();
+                std::string msg = oss.str();
+                std::cerr << "createOrderFromSignal: " << msg << std::endl;
+                throw std::invalid_argument(msg);
+            }
+
+            // Otherwise REVERT_TO_MARKET: attempt a forced price fetch (to handle cache misses),
+            // then try to derive a fallback price.
+            double fallback_price = 0.0;
+
+            // Try to refresh market price from ExchangeGateway or direct client to handle cache misses
+            try {
+                double refreshed_price = 0.0;
+                if (exchangeGateway_) {
+                    try {
+                        auto fut = exchangeGateway_->getCurrentPrice(order->getExchangeId(), order->getTradingPair(), true);
+                        refreshed_price = fut.get();
+                    } catch (const std::exception& e) {
+                        std::cerr << "createOrderFromSignal: failed to refresh price via ExchangeGateway: " << e.what() << std::endl;
+                    }
+                } else {
+                    auto client = getExchangeClient(order->getExchangeId());
+                    if (client) {
+                        try {
+                            auto fut = client->getCurrentPrice(order->getTradingPair());
+                            refreshed_price = fut.get();
+                        } catch (const std::exception& e) {
+                            std::cerr << "createOrderFromSignal: failed to refresh price via client: " << e.what() << std::endl;
+                        }
+                    }
+                }
+
+                if (refreshed_price > 0.0) {
+                    // Use refreshed price to improve fallback accuracy
+                    if (order->getSide() == models::OrderSide::BUY) {
+                        market_condition.askPrice = refreshed_price;
+                    } else {
+                        market_condition.bidPrice = refreshed_price;
+                    }
+                }
+            } catch (const std::exception& e) {
+                std::cerr << "createOrderFromSignal: exception while attempting price refresh: " << e.what() << std::endl;
+            }
+
+            // Now derive fallback price from possibly refreshed market condition
+            if (order->getSide() == models::OrderSide::BUY) {
+                // Prefer askPrice for buys (we will pay the ask or slightly above)
+                if (market_condition.askPrice > 0.0) fallback_price = market_condition.askPrice * 1.0;
+                else if (market_condition.bidPrice > 0.0) fallback_price = market_condition.bidPrice * 1.001;
+            } else {
+                // For sells prefer bidPrice (we'll sell at the bid or slightly below)
+                if (market_condition.bidPrice > 0.0) fallback_price = market_condition.bidPrice * 1.0;
+                else if (market_condition.askPrice > 0.0) fallback_price = market_condition.askPrice * 0.999;
+            }
+
+            if (fallback_price > 0.0) {
+                std::cerr << "createOrderFromSignal: OrderTypeSelector returned LIMIT without price; derived fallback price=" << fallback_price
+                          << " for " << order->getTradingPair().toString() << ". Proceeding as LIMIT." << std::endl;
+                order->setType(models::OrderType::LIMIT);
+                order->setPrice(fallback_price);
+            } else {
+                std::cerr << "createOrderFromSignal: OrderTypeSelector returned LIMIT without price and no market price available; reverting to MARKET for "
+                          << order->getTradingPair().toString() << "." << std::endl;
+                order->setType(models::OrderType::MARKET);
+                order->setPrice(0.0);
+            }
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            if (order->getSide() == models::OrderSide::BUY) {
+                if (market_condition.askPrice > 0.0) fallback_price = market_condition.askPrice * 1.0;
+                else if (market_condition.bidPrice > 0.0) fallback_price = market_condition.bidPrice * 1.001;
+            } else {
+                if (market_condition.bidPrice > 0.0) fallback_price = market_condition.bidPrice * 1.0;
+                else if (market_condition.askPrice > 0.0) fallback_price = market_condition.askPrice * 0.999;
+            }
+
+            if (fallback_price > 0.0) {
+                std::cerr << "createOrderFromSignal: OrderTypeSelector returned LIMIT without price; derived fallback price=" << fallback_price
+                          << " for " << order->getTradingPair().toString() << ". Proceeding as LIMIT." << std::endl;
+                order->setType(models::OrderType::LIMIT);
+                order->setPrice(fallback_price);
+            } else {
+                std::cerr << "createOrderFromSignal: OrderTypeSelector returned LIMIT without price and no market price available; reverting to MARKET for "
+                          << order->getTradingPair().toString() << "." << std::endl;
+                order->setType(models::OrderType::MARKET);
+                order->setPrice(0.0);
+            }
+        } else {
+            order->setType(selection.type);
+            if (selection.type == models::OrderType::LIMIT && selection.price > 0.0) {
+                order->setPrice(selection.price);
+            }
         }
+
         order->setTimeInForce(selection.time_in_force);
 
         return *order;
