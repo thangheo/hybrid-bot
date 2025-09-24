@@ -94,6 +94,11 @@ private:
 } // namespace common
 } // namespace trading
 
+// Stream operator for ExchangeId so logging/formatters can print it
+inline std::ostream& operator<<(std::ostream& os, const trading::common::ExchangeId& id) {
+    return os << id.toString();
+}
+
 // Hash specialization for std::unordered_map/set
 namespace std {
 template<>

@@ -221,6 +221,9 @@ private:
     // Callback management
     std::map<size_t, SignalCallback> callbacks_;
     size_t nextCallbackId_;
+    // Separate mutex for protecting callbacks to avoid deadlocks when
+    // notifySignalCallbacks is called while the main mutex_ is held.
+    mutable std::mutex callbacksMutex_;
     
     // Thread safety
     mutable std::mutex mutex_;

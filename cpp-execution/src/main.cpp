@@ -1288,15 +1288,15 @@ private:
 
                     execSignal.targetSize = finalQty; // now this is absolute size
                     
-                    std::cout << "🛎️ Signal passed filtering: " << execSignal.id 
-                              << " for " << execSignal.symbol.toString() 
-                              << " Direction: " << (execSignal.direction == core::Direction::BUY ? "BUY" : "SELL")
-                              << " Strength: " << execSignal.strength 
-                              << " Confidence: " << execSignal.confidence 
-                              << " Quality: " << execSignal.quality 
-                              << " TargetSize: " << execSignal.targetSize 
-                              << " PTCA Recommendation: " << ptcaRecommendation
-                              << std::endl;
+                    // std::cout << "🛎️ Signal passed filtering: " << execSignal.id 
+                    //           << " for " << execSignal.symbol.toString() 
+                    //           << " Direction: " << (execSignal.direction == core::Direction::BUY ? "BUY" : "SELL")
+                    //           << " Strength: " << execSignal.strength 
+                    //           << " Confidence: " << execSignal.confidence 
+                    //           << " Quality: " << execSignal.quality 
+                    //           << " TargetSize: " << execSignal.targetSize 
+                    //           << " PTCA Recommendation: " << ptcaRecommendation
+                    //           << std::endl;
                     //check if price target percentage > 0.2%
                     for (const auto& target : execSignal.targets) {
                         if (target.percentage > 0.002) {

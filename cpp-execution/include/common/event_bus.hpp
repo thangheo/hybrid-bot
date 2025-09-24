@@ -13,11 +13,13 @@
 #include <thread>
 #include <mutex>
 #include <condition_variable>
+#include <vector>
 #include <atomic>
 #include <memory>
 #include <unordered_map>
 #include <type_traits>
 #include <typeinfo>
+#include "common/logger.hpp"
 
 namespace trading {
 namespace common {
@@ -57,19 +59,26 @@ public:
         static_assert(std::is_base_of_v<Event, std::decay_t<EventType>>, 
                      "EventType must inherit from Event");
         
+        // Allocate the event on the heap and capture a shared_ptr in the queued lambda.
+        auto evtPtr = std::make_shared<std::decay_t<EventType>>(std::forward<EventType>(event));
+        const char* typeName = typeid(EventType).name();
+
         {
-            // Allocate the event on the heap and capture a shared_ptr in the queued lambda.
-            // This avoids copying large event objects (and nested TradingSignal) into the
-            // std::function capture, reducing heap churn.
-            auto evtPtr = std::make_shared<std::decay_t<EventType>>(std::forward<EventType>(event));
             std::lock_guard<std::mutex> lock(queueMutex_);
-            eventQueue_.push([evtPtr, this]() {
-                // Process the event - this runs in the worker thread
-                this->processEventInternal(*evtPtr);
-            });
+            // Drop policy: if queue is full, drop the event to avoid unbounded memory
+            // growth and blocking of the system. We track droppedEvents_ for observability.
+            if (eventQueue_.size() >= maxQueueSize_) {
+                ++droppedEvents_;
+                LOG_WARN("EventBus queue full (size={} >= max={}), dropping event type='{}' (dropped={})",
+                         eventQueue_.size(), maxQueueSize_, typeName, droppedEvents_.load());
+            } else {
+                // enqueue a type-erased processor that will forward to handler thread-pool
+                eventQueue_.push([evtPtr, this, typeName]() {
+                    this->processEventAny(evtPtr, typeName);
+                });
+                queueCondition_.notify_one();
+            }
         }
-        
-        queueCondition_.notify_one();
     }
     
     /**
@@ -122,22 +131,44 @@ public:
 private:
     // Event processing worker thread
     void workerThread();
+    // Handler thread-loop
+    void handlerThreadLoop();
+    // Type-erased processing for events
+    void processEventAny(const std::shared_ptr<Event>& evtPtr, const char* typeName);
     
     // Process a single event (calls all registered handlers)
     template<typename EventType>
     void processEventInternal(const EventType& event) {
-        std::lock_guard<std::mutex> lock(handlerMutex_);
-        
-        // Use typeid instead of getTypeName()
-        const char* typeName = typeid(EventType).name();
-        auto typeIt = handlers_.find(typeName);
-        if (typeIt != handlers_.end()) {
-            for (const auto& [id, handler] : typeIt->second) {
-                try {
-                    handler(event);
-                } catch (const std::exception& e) {
-                    // Log error but continue processing other handlers
+        // Copy the handlers under lock, then invoke them outside the lock.
+        // This prevents a slow/blocking handler from holding handlerMutex_
+        // and stalling other operations (reduces deadlock risk).
+        std::vector<std::function<void(const Event&)>> handlersToCall;
+        {
+            std::lock_guard<std::mutex> lock(handlerMutex_);
+            const char* typeName = typeid(EventType).name();
+            auto typeIt = handlers_.find(typeName);
+            if (typeIt != handlers_.end()) {
+                handlersToCall.reserve(typeIt->second.size());
+                for (const auto& [id, handler] : typeIt->second) {
+                    handlersToCall.push_back(handler);
                 }
+            }
+        }
+
+        // Debug: report number of handlers we're about to call for this event
+        if (!handlersToCall.empty()) {
+            LOG_DEBUG("EventBus: processing event type '{}' with {} handler(s)", typeid(EventType).name(), handlersToCall.size());
+        } else {
+            LOG_DEBUG("EventBus: processing event type '{}' with 0 handlers", typeid(EventType).name());
+        }
+
+        for (const auto &handler : handlersToCall) {
+            try {
+                handler(event);
+            } catch (const std::exception& e) {
+                LOG_ERROR("Exception in event handler: {}", e.what());
+            } catch (...) {
+                LOG_ERROR("Unknown exception in event handler");
             }
         }
     }
@@ -148,13 +179,31 @@ private:
     
     // Event queue
     std::queue<std::function<void()>> eventQueue_;
-    std::mutex queueMutex_;
+    mutable std::mutex queueMutex_;
     std::condition_variable queueCondition_;
+    // Maximum queue size before we start dropping events
+    size_t maxQueueSize_{1000};
+    // Dropped events counter
+    std::atomic<size_t> droppedEvents_{0};
+    
+    // Handler thread-pool members
+    std::vector<std::thread> handlerThreads_;
+    std::queue<std::function<void()>> handlerTaskQueue_;
+    std::mutex handlerQueueMutex_;
+    std::condition_variable handlerQueueCondition_;
     
     // Handler management
     std::unordered_map<std::string, std::unordered_map<size_t, std::function<void(const Event&)>>> handlers_;
     std::mutex handlerMutex_;
     size_t nextHandlerId_{1};
+
+public:
+    // Observability helpers
+    size_t getDroppedEvents() const { return droppedEvents_.load(); }
+    size_t getQueueSize() const {
+        std::lock_guard<std::mutex> lock(queueMutex_);
+        return eventQueue_.size();
+    }
 };
 
 } // namespace common

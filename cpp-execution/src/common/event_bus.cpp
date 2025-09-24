@@ -6,6 +6,9 @@
 #include "common/event_bus.hpp"
 #include "common/logger.hpp"
 #include <mutex>
+#include <functional>
+#include <vector>
+ #
 
 namespace trading {
 namespace common {
@@ -27,6 +30,11 @@ void EventBus::start() {
     
     running_ = true;
     workerThread_ = std::thread(&EventBus::workerThread, this);
+    // start handler thread-pool
+    size_t poolSize = std::max<size_t>(1, std::thread::hardware_concurrency() / 2);
+    for (size_t i = 0; i < poolSize; ++i) {
+        handlerThreads_.emplace_back([this]() { this->handlerThreadLoop(); });
+    }
     
     LOG_INFO("EventBus started");
 }
@@ -70,12 +78,16 @@ void EventBus::workerThread() {
             }
         }
         
-        // Process event outside the lock
+        // Enqueue processing task for handler threads (non-blocking)
         if (eventProcessor) {
             try {
-                eventProcessor();
+                {
+                    std::lock_guard<std::mutex> lock(handlerQueueMutex_);
+                    handlerTaskQueue_.push(std::move(eventProcessor));
+                }
+                handlerQueueCondition_.notify_one();
             } catch (const std::exception& e) {
-                LOG_ERROR("Exception processing event: {}", e.what());
+                LOG_ERROR("Exception enqueuing handler task: {}", e.what());
             }
         }
     }
@@ -94,6 +106,72 @@ EventBus& EventBus::getInstance() {
     });
     
     return instance;
+}
+
+// New methods for type-erased processing and handler thread-pool
+void EventBus::handlerThreadLoop() {
+    while (running_.load()) {
+        std::function<void()> task;
+        {
+            std::unique_lock<std::mutex> lock(handlerQueueMutex_);
+            handlerQueueCondition_.wait(lock, [this] {
+                return !handlerTaskQueue_.empty() || !running_.load();
+            });
+
+            if (!running_.load()) break;
+
+            if (!handlerTaskQueue_.empty()) {
+                task = std::move(handlerTaskQueue_.front());
+                handlerTaskQueue_.pop();
+            }
+        }
+
+        if (task) {
+            try {
+                task();
+            } catch (const std::exception& e) {
+                LOG_ERROR("Exception in handler task: {}", e.what());
+            } catch (...) {
+                LOG_ERROR("Unknown exception in handler task");
+            }
+        }
+    }
+}
+
+// Type-erased helper to process an event pointer; will call processEventInternal with proper type
+void EventBus::processEventAny(const std::shared_ptr<Event>& evtPtr, const char* typeName) {
+    // We don't have runtime RTTI to cast to the exact type here, so rely on handlers being
+    // registered under the same typeid name; processEventInternal is templated, but we can't
+    // instantiate it here. The queued lambda in publish captured typed pointer, so we instead
+    // forward the call to the existing processEventInternal via a std::invoke stored earlier.
+    // For simplicity, we will invoke a type-erased handler call stored in handlers_ map.
+
+    // Build a snapshot of handlers for this type and invoke them with the base Event reference.
+    std::vector<std::function<void(const Event&)>> handlersToCall;
+    {
+        std::lock_guard<std::mutex> lock(handlerMutex_);
+        auto it = handlers_.find(typeName);
+        if (it != handlers_.end()) {
+            for (const auto& [id, handler] : it->second) {
+                handlersToCall.push_back(handler);
+            }
+        }
+    }
+
+    if (handlersToCall.empty()) {
+        LOG_DEBUG("EventBus: no handlers for type '{}'", typeName);
+        return;
+    }
+
+    for (const auto& h : handlersToCall) {
+        try {
+            h(*evtPtr);
+        } catch (const std::exception& e) {
+            LOG_ERROR("Exception in event handler: {}", e.what());
+        } catch (...) {
+            LOG_ERROR("Unknown exception in event handler");
+        }
+    }
 }
 
 } // namespace common
