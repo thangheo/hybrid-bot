@@ -537,6 +537,9 @@ TradingSignal StrategyEngine::enhanceSignalWithEventContext(
     // Add correlation data from momentum correlator
     if (momentumCorrelator_) {
         double expectedPriceImpact = momentumCorrelator_->predictPriceMovement(sourceEvent);
+        //get current regime and set to metric
+        MarketRegime regime = momentumCorrelator_->detectMarketRegime();
+        enhancedSignal.setMetric("marketRegime", static_cast<int>(regime));
         enhancedSignal.expectedPriceImpact = expectedPriceImpact;
         
         // Add momentum correlation metrics
@@ -595,7 +598,6 @@ void StrategyEngine::processImbalanceEvents(const std::vector<ImbalanceEvent>& e
     if (events.empty()) return;
     
     std::lock_guard<std::recursive_mutex> lock(mutex_);
-    
     // Process all events at once for efficiency
     signalGenerator_->processImbalances(events);
     auto allSignals = signalGenerator_->generateSignals();

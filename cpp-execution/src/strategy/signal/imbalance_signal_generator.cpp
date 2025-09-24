@@ -108,7 +108,10 @@ bool ImbalanceSignalGenerator::initialize(const SignalGeneratorConfig& config) {
     // Clear state
     pendingImbalances_.clear();
     generatedSignals_.clear();
-    callbacks_.clear();
+    {
+        std::lock_guard<std::mutex> cbLock(callbacksMutex_);
+        callbacks_.clear();
+    }
     
     // Reset component pointers
     momentumCorrelation_ = nullptr;
@@ -697,18 +700,23 @@ MarketRegime ImbalanceSignalGenerator::getCurrentMarketRegime(const ImbalanceEve
     double volatility = imbalance.getSupportingMetric("volatility", 0.01);
     double trend = imbalance.getSupportingMetric("trendStrength", 0.0);
     double stress = imbalance.getSupportingMetric("stressIndicator", 0.0);
-    
-    if (stress > 0.7) {
-        return MarketRegime::STRESS;
-    } else if (volatility > 0.03) {
-        return MarketRegime::VOLATILE;
-    } else if (std::abs(trend) > 0.6) {
-        return MarketRegime::TRENDING;
-    } else if (volatility < 0.005 && std::abs(trend) < 0.2) {
-        return MarketRegime::RANGE_BOUND;
+    auto regime_number = imbalance.getSupportingMetric("marketRegime", static_cast<double>(MarketRegime::UNKNOWN));
+    if (regime_number >= static_cast<double>(MarketRegime::NORMAL) && regime_number <= static_cast<double>(MarketRegime::UNKNOWN)) {
+        return static_cast<MarketRegime>(static_cast<int>(regime_number));
     }
+
+    //this is bullshit
+    // if (stress > 0.7) {
+    //     return MarketRegime::STRESS;
+    // } else if (volatility > 0.03) {
+    //     return MarketRegime::VOLATILE;
+    // } else if (std::abs(trend) > 0.6) {
+    //     return MarketRegime::TRENDING;
+    // } else if (volatility < 0.005 && std::abs(trend) < 0.2) {
+    //     return MarketRegime::RANGE_BOUND;
+    // }
     
-    return MarketRegime::NORMAL;
+    return MarketRegime::UNKNOWN;
 }
 
 double ImbalanceSignalGenerator::getImbalanceTypeScaling(ImbalanceType type, MarketRegime regime) const {
@@ -787,7 +795,10 @@ std::string ImbalanceSignalGenerator::getState() const {
     oss << "    Pending Imbalances: " << pendingImbalances_.size() << "\n";
     oss << "    Generated Signals: " << generatedSignals_.size() << "\n";
     oss << "    Total Signals Generated: " << signalCount_ << "\n";
-    oss << "    Registered Callbacks: " << callbacks_.size() << "\n";
+    {
+        std::lock_guard<std::mutex> cbLock(callbacksMutex_);
+        oss << "    Registered Callbacks: " << callbacks_.size() << "\n";
+    }
     
     oss << "  Component Status:\n";
     oss << "    Momentum Correlation: " << (momentumCorrelation_ ? "Active" : "Inactive") << "\n";
@@ -822,14 +833,14 @@ void ImbalanceSignalGenerator::setSignalPerformanceTracker(std::shared_ptr<Signa
 
 // Callback management
 size_t ImbalanceSignalGenerator::registerSignalCallback(const SignalCallback& callback) {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::lock_guard<std::mutex> lock(callbacksMutex_);
     size_t id = nextCallbackId_++;
     callbacks_[id] = callback;
     return id;
 }
 
 bool ImbalanceSignalGenerator::unregisterSignalCallback(size_t callbackId) {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::lock_guard<std::mutex> lock(callbacksMutex_);
     return callbacks_.erase(callbackId) > 0;
 }
 
@@ -866,16 +877,17 @@ core::SignalId ImbalanceSignalGenerator::generateSignalId() const {
 }
 
 void ImbalanceSignalGenerator::notifySignalCallbacks(const TradingSignal& signal) {
-    // Copy callbacks without holding lock for long
+    // Copy callbacks under callbacksMutex_ only; avoid holding main mutex_ to
+    // prevent deadlocks if callbacks try to call back into this generator.
     std::vector<SignalCallback> callbacksToNotify;
     {
-        std::lock_guard<std::mutex> lock(mutex_);
+        std::lock_guard<std::mutex> lock(callbacksMutex_);
         callbacksToNotify.reserve(callbacks_.size());
         for (const auto& [id, callback] : callbacks_) {
             callbacksToNotify.push_back(callback);
         }
     }
-    
+
     // Notify without any locks held
     for (const auto& callback : callbacksToNotify) {
         try {

@@ -16,13 +16,86 @@
  #include <cmath>
  #include <iostream>
  #include <chrono>
+#include <future>
+#include <functional>
+#include <thread>
+#include <condition_variable>
+#include <queue>
+#include <atomic>
  #include <sstream>
 #include <logger.hpp>
  namespace trading {
  namespace strategy {
+
+// Internal simple thread-pool used to run detectors without creating a new
+// OS thread for each call. Kept internal to this translation unit.
+namespace {
+class SimpleThreadPool {
+public:
+    explicit SimpleThreadPool(size_t threads = std::max(1u, std::thread::hardware_concurrency())) {
+        stop_.store(false);
+        for (size_t i = 0; i < threads; ++i) {
+            workers_.emplace_back([this] {
+                while (true) {
+                    std::function<void()> task;
+                    {
+                        std::unique_lock<std::mutex> lk(mutex_);
+                        cv_.wait(lk, [this] { return stop_.load() || !tasks_.empty(); });
+                        if (stop_.load() && tasks_.empty()) return;
+                        task = std::move(tasks_.front());
+                        tasks_.pop();
+                    }
+                    try {
+                        task();
+                    } catch (...) {
+                        // swallow - detector exceptions are handled by their packaged_task
+                    }
+                }
+            });
+        }
+    }
+
+    ~SimpleThreadPool() {
+        stop();
+    }
+
+    void stop() {
+        bool expected = false;
+        if (!stop_.compare_exchange_strong(expected, true)) return;
+        cv_.notify_all();
+        for (auto &t : workers_) if (t.joinable()) t.join();
+    }
+
+    template<typename F>
+    auto submit(F f) -> std::future<decltype(f())> {
+        using R = decltype(f());
+        auto taskPtr = std::make_shared<std::packaged_task<R()>>(std::move(f));
+        std::future<R> fut = taskPtr->get_future();
+        {
+            std::lock_guard<std::mutex> lk(mutex_);
+            tasks_.emplace([taskPtr]() { (*taskPtr)(); });
+        }
+        cv_.notify_one();
+        return fut;
+    }
+
+private:
+    std::vector<std::thread> workers_;
+    std::queue<std::function<void()>> tasks_;
+    std::mutex mutex_;
+    std::condition_variable cv_;
+    std::atomic<bool> stop_;
+};
+
+SimpleThreadPool &getDetectorThreadPool() {
+    static SimpleThreadPool pool(std::max(1u, std::thread::hardware_concurrency()));
+    return pool;
+}
+} // namespace
+
  
  // Constructor
- ImbalanceDetectionEngine::ImbalanceDetectionEngine() : nextCallbackId_(0) {
+ImbalanceDetectionEngine::ImbalanceDetectionEngine() : nextCallbackId_(0) {
 
     //  VOLUME_IMBALANCE,              // Significant difference between bid and ask volume
     //  PRICE_LEVEL_IMBALANCE,         // Imbalance across multiple price levels
@@ -54,16 +127,127 @@
     imbalanceState_[ImbalanceType::MARKET_DEPTH_CHANGE] = false;
     imbalanceState_[ImbalanceType::TREND_CONTINUATION] = false;
     imbalanceState_[ImbalanceType::TREND_REVERSAL] = false;
+    // Honor environment flag for quick debugging toggles
+    const char* env = std::getenv("IMB_DETECT_PUBLISH_EVENTS");
+    if (env) {
+        std::string v(env);
+        for (auto &c: v) c = static_cast<char>(std::tolower(c));
+        if (v == "0" || v == "false") {
+            publishEvents_.store(false);
+            LOG_INFO("ImbalanceDetectionEngine: publishing disabled via IMB_DETECT_PUBLISH_EVENTS={}", v);
+        } else {
+            publishEvents_.store(true);
+            LOG_INFO("ImbalanceDetectionEngine: publishing enabled via IMB_DETECT_PUBLISH_EVENTS={}", v);
+        }
+    }
  }
- ImbalanceDetectionEngine::ImbalanceDetectionEngine(const ImbalanceDetectionConfig& config){
+ImbalanceDetectionEngine::ImbalanceDetectionEngine(const ImbalanceDetectionConfig& config){
     
      config_ = config;
+    // Allow quick runtime disable of publishing detected events for debugging
+    // Read environment variable IMB_DETECT_PUBLISH_EVENTS. If set to "0" or "false"
+    // then disable publishing by default.
+    const char* env = std::getenv("IMB_DETECT_PUBLISH_EVENTS");
+    if (env) {
+        std::string v(env);
+        for (auto &c: v) c = static_cast<char>(std::tolower(c));
+        if (v == "0" || v == "false") {
+            publishEvents_.store(false);
+            LOG_INFO("ImbalanceDetectionEngine: publishing disabled via IMB_DETECT_PUBLISH_EVENTS={}", v);
+        } else {
+            publishEvents_.store(true);
+            LOG_INFO("ImbalanceDetectionEngine: publishing enabled via IMB_DETECT_PUBLISH_EVENTS={}", v);
+        }
+    }
  }
+
+ImbalanceDetectionEngine::~ImbalanceDetectionEngine() {
+    // Stop detector worker if running
+    try {
+        {
+            std::lock_guard<std::mutex> lk(mutex_);
+            detectorWorkerRunning_.store(false);
+        }
+        detectorQueueCv_.notify_all();
+        if (detectorWorkerThread_.joinable()) detectorWorkerThread_.join();
+    } catch (...) {
+        // swallow in destructor
+    }
+}
+
+// Start the detector worker (call from initialization path if desired)
+void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
+    std::lock_guard<std::mutex> lk(mutex_);
+    if (detectorWorkerRunning_.load()) return;
+    detectorWorkerRunning_.store(true);
+    detectorWorkerThread_ = std::thread([this](){
+        while (detectorWorkerRunning_.load()) {
+            OrderBookMetrics m;
+            {
+                std::unique_lock<std::mutex> qlk(detectorQueueMutex_);
+                detectorQueueCv_.wait_for(qlk, std::chrono::milliseconds(100), [this]{
+                    return !detectorQueue_.empty() || !detectorWorkerRunning_.load();
+                });
+                if (!detectorQueue_.empty()) {
+                    m = std::move(detectorQueue_.front());
+                    detectorQueue_.pop_front();
+                } else {
+                    continue;
+                }
+            }
+            // Run detectors directly in the worker thread and time them to detect
+            // any slow detector. Running here avoids nested submission to the
+            // shared thread-pool which could cause starvation.
+            const auto DETECTOR_WARN_MS = 100; // warn threshold
+            std::vector<DetectorResult> results;
+            auto runDirect = [&](const char *name, const std::function<DetectorResult()> &fn) {
+                try {
+                    auto t0 = std::chrono::steady_clock::now();
+                    DetectorResult res = fn();
+                    auto dt = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count();
+                    if (dt > DETECTOR_WARN_MS) {
+                        LOG_WARN("Detector worker: '{}' took {} ms", name, dt);
+                    } else {
+                        LOG_DEBUG("Detector worker: '{}' took {} ms", name, dt);
+                    }
+                    return res;
+                } catch (const std::exception &ex) {
+                    LOG_WARN("Detector worker: '{}' threw: {}", name, ex.what());
+                } catch (...) {
+                    LOG_WARN("Detector worker: '{}' threw unknown exception", name);
+                }
+                return DetectorResult{};
+            };
+
+            results.emplace_back(runDirect("detectVolumeImbalance", [&]{ return detectVolumeImbalance(m); }));
+            results.emplace_back(runDirect("detectPriceLevelImbalance", [&]{ return detectPriceLevelImbalance(m); }));
+            results.emplace_back(runDirect("detectLiquidityFlowImbalance", [&]{ return detectLiquidityFlowImbalance(m); }));
+            results.emplace_back(runDirect("detectAbnormalSpread", [&]{ return detectAbnormalSpread(m); }));
+            results.emplace_back(runDirect("detectMarketDepthChange", [&]{ return detectMarketDepthChange(m); }));
+
+            // Commit shared state under single lock
+            {
+                std::lock_guard<std::mutex> lock(mutex_);
+                for (const auto &r : results) {
+                    imbalanceState_[r.type] = r.isImbalance;
+                }
+                lastMetrics_ = m;
+            }
+
+            // Emit events AFTER releasing mutex_
+            for (const auto &r : results) {
+                if (r.shouldEmitEvent) {
+                    createImbalanceEvent(r.type, r.strength, r.direction, m);
+                }
+            }
+        }
+    });
+}
+
 
  // Initialize the detection engine with configuration
  bool ImbalanceDetectionEngine::initialize(const ImbalanceDetectionConfig& config) {
-     std::lock_guard<std::mutex> lock(mutex_);
-     config_ = config;
+    config_ = config;
      
      // Initialize thresholds with defaults if not specified
      if (thresholds_.empty()) {
@@ -80,6 +264,14 @@
      
      // Clear any existing state
      clearImbalances();
+
+    // Start background detector worker so analyzeMetrics can offload work.
+    // Start after releasing any locks to avoid lock ordering issues.
+    try {
+        startDetectorWorker();
+    } catch (...) {
+        // ignore
+    }
      
      return true;
  }
@@ -101,13 +293,58 @@
         return false;
     }
 
+    // Helper: run a detector with a timeout to prevent it from blocking the caller thread
+    auto runDetectorWithTimeout = [&](const std::string &name,
+                                      const std::function<DetectorResult()> &fn,
+                                      std::chrono::milliseconds timeout) -> DetectorResult {
+        try {
+            auto fut = getDetectorThreadPool().submit(fn);
+            if (fut.wait_for(timeout) == std::future_status::ready) {
+                return fut.get();
+            } else {
+                LOG_WARN("ImbalanceDetectionEngine: detector '{}' timed out after {} ms", name, timeout.count());
+                return DetectorResult{};
+            }
+        } catch (const std::exception &ex) {
+            LOG_WARN("ImbalanceDetectionEngine: detector '{}' threw: {}", name, ex.what());
+            return DetectorResult{};
+        } catch (...) {
+            LOG_WARN("ImbalanceDetectionEngine: detector '{}' threw unknown exception", name);
+            return DetectorResult{};
+        }
+    };
+
+    // If detector worker is running, try to enqueue the metrics and return quickly.
+    {
+        std::lock_guard<std::mutex> qlk(detectorQueueMutex_);
+        if (detectorWorkerRunning_.load()) {
+            if (detectorQueue_.size() < detectorQueueMax_) {
+                detectorQueue_.push_back(metrics);
+                detectorQueueCv_.notify_one();
+                LOG_DEBUG("ImbalanceDetectionEngine: enqueued metrics for {}:{} (queue size={})", metrics.exchangeId, metrics.symbol, detectorQueue_.size());
+                return false; // enqueued for async processing
+            } else {
+                LOG_WARN("ImbalanceDetectionEngine: detector queue full (%zu), falling back to synchronous run", detectorQueue_.size());
+            }
+        }
+    }
+
+    // If detector worker is running, try to enqueue the metrics and return quickly.
+    {
+        std::lock_guard<std::mutex> ql(mutex_);
+        // Note: use the public detectorQueue_ only if worker was initialized elsewhere
+    }
+
     // Run detectors and collect results (detectors must NOT mutate shared state or call createImbalanceEvent)
     std::vector<DetectorResult> results;
-    results.emplace_back(detectVolumeImbalance(metrics));          // now returns DetectorResult
-    results.emplace_back(detectPriceLevelImbalance(metrics));
-    results.emplace_back(detectLiquidityFlowImbalance(metrics));
-    results.emplace_back(detectAbnormalSpread(metrics));
-    results.emplace_back(detectMarketDepthChange(metrics));
+    const auto DETECTOR_TIMEOUT = std::chrono::milliseconds(50);
+
+    // Wrap each detector so a blocking detector cannot stall the ZMQ receiver thread
+    results.emplace_back(runDetectorWithTimeout("detectVolumeImbalance", [&]{ return detectVolumeImbalance(metrics); }, DETECTOR_TIMEOUT));
+    // results.emplace_back(runDetectorWithTimeout("detectPriceLevelImbalance", [&]{ return detectPriceLevelImbalance(metrics); }, DETECTOR_TIMEOUT));
+    // results.emplace_back(runDetectorWithTimeout("detectLiquidityFlowImbalance", [&]{ return detectLiquidityFlowImbalance(metrics); }, DETECTOR_TIMEOUT));
+    // results.emplace_back(runDetectorWithTimeout("detectAbnormalSpread", [&]{ return detectAbnormalSpread(metrics); }, DETECTOR_TIMEOUT));
+    // results.emplace_back(runDetectorWithTimeout("detectMarketDepthChange", [&]{ return detectMarketDepthChange(metrics); }, DETECTOR_TIMEOUT));
 
     // Commit shared state under single lock
     {
@@ -443,12 +680,10 @@ DetectorResult ImbalanceDetectionEngine::detectVolumeImbalance(const OrderBookMe
             std::lock_guard<std::mutex> lock(lastVolumeMutex_);
             lastVolumeRatio_[key] = volumeRatio;
         }
-
-        // Update shared imbalance state under main mutex to avoid races
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            imbalanceState_[ImbalanceType::VOLUME_IMBALANCE] = isImbalance;
-        }
+        // NOTE: Do NOT update shared imbalanceState_ here because detectors
+        // are executed concurrently via the detector thread-pool. The
+        // caller (analyzeMetrics) will commit detector results under a
+        // single lock to avoid races and potential deadlocks.
 
         // Only generate event if we're newly imbalanced or change is significant
         if (isImbalance && (!currentlyImbalanced || ratioChange >= minChangeThreshold)) {
@@ -495,15 +730,15 @@ DetectorResult ImbalanceDetectionEngine::detectPriceLevelImbalance(const OrderBo
      // Calculate price level ratio
      double levelRatio = bidLevels / askLevels;
      
-     // Get threshold for price level imbalance
-     double threshold = thresholds_.getTypeThreshold(ImbalanceType::PRICE_LEVEL_IMBALANCE).activation_threshold;
-     
-     // Detect imbalance if ratio exceeds threshold or is below its inverse
-    //  bool isImbalance = (levelRatio >= threshold || levelRatio <= 1.0 / threshold);
+     // Get threshold for price level imbalance (copy under lock)
+     double threshold = 1.0;
+     {
+         std::lock_guard<std::mutex> lock(mutex_);
+         threshold = thresholds_.getTypeThreshold(ImbalanceType::PRICE_LEVEL_IMBALANCE).activation_threshold;
+     }
+
      // Detect imbalance if ratio exceeds threshold or is below its inverse
     bool isImbalance = (levelRatio > threshold || levelRatio < 1.0 / threshold);
-     // Update imbalance state
-     imbalanceState_[ImbalanceType::PRICE_LEVEL_IMBALANCE] = isImbalance;
      
      // If imbalance detected, create an event
      if (isImbalance) {
@@ -534,8 +769,6 @@ DetectorResult ImbalanceDetectionEngine::detectPriceLevelImbalance(const OrderBo
  }
 
 
-
-
 DetectorResult ImbalanceDetectionEngine::detectLiquidityFlowImbalance(const OrderBookMetrics& metrics) {
     DetectorResult r; r.type = ImbalanceType::LIQUIDITY_FLOW_IMBALANCE;
     // Check if required metrics are available
@@ -554,23 +787,23 @@ DetectorResult ImbalanceDetectionEngine::detectLiquidityFlowImbalance(const Orde
 
     // If no meaningful flow, no imbalance
     if (totalFlow < 1e-10) {
-        imbalanceState_[ImbalanceType::LIQUIDITY_FLOW_IMBALANCE] = false;
         return DetectorResult{};
     }
 
     // Flow imbalance ratio: 0 = balanced, 1 = one-sided
     double flowImbalance = std::abs(netFlow) / totalFlow;
 
-    // Threshold should be configured directly in [0,1]
-    double threshold = thresholds_
-        .getTypeThreshold(ImbalanceType::LIQUIDITY_FLOW_IMBALANCE)
-        .activation_threshold;
+    // Threshold should be configured directly in [0,1] (copy under lock)
+    double threshold = 0.5;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        threshold = thresholds_.getTypeThreshold(ImbalanceType::LIQUIDITY_FLOW_IMBALANCE).activation_threshold;
+    }
     threshold = std::clamp(threshold, 0.0, 1.0);
 
     bool isImbalance = (flowImbalance >= threshold);
 
-    // Update imbalance state
-    imbalanceState_[ImbalanceType::LIQUIDITY_FLOW_IMBALANCE] = isImbalance;
+    // Do not update shared imbalanceState_ here; analyzeMetrics will commit results.
 
     if (isImbalance) {
         double strength = flowImbalance;
@@ -619,14 +852,15 @@ DetectorResult ImbalanceDetectionEngine::detectLiquidityFlowImbalance(const Orde
      // Calculate spread ratio
      double spreadRatio = currentSpread / averageSpread;
      
-     // Get threshold for abnormal spread
-     double threshold = thresholds_.getTypeThreshold(ImbalanceType::ABNORMAL_SPREAD).activation_threshold;
-     
+     // Get threshold for abnormal spread (copy under lock)
+     double threshold = 1.0;
+     {
+         std::lock_guard<std::mutex> lock(mutex_);
+         threshold = thresholds_.getTypeThreshold(ImbalanceType::ABNORMAL_SPREAD).activation_threshold;
+     }
+
      // Detect imbalance if spread ratio exceeds threshold
      bool isImbalance = (spreadRatio >= threshold);
-     
-     // Update imbalance state
-     imbalanceState_[ImbalanceType::ABNORMAL_SPREAD] = isImbalance;
      
      // If imbalance detected, create an event
      if (isImbalance) {
@@ -680,12 +914,14 @@ DetectorResult ImbalanceDetectionEngine::detectLiquidityFlowImbalance(const Orde
  }
  
 DetectorResult ImbalanceDetectionEngine::detectMarketDepthChange(const OrderBookMetrics& metrics) {
-    // Expect analyzeMetrics to provide a previous snapshot in lastMetrics_
-    if (!lastMetrics_) {
-        return DetectorResult{}; // no previous snapshot to compare
+    // Copy previous snapshot under lock - detectors run concurrently
+    std::optional<OrderBookMetrics> prevOpt;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        prevOpt = lastMetrics_;
     }
-
-    const auto& prev = *lastMetrics_;
+    if (!prevOpt) return DetectorResult{};
+    const auto& prev = *prevOpt;
     bool depthChanged = false;
 
     // --- 1. Spread widening/narrowing ---
@@ -1464,14 +1700,30 @@ function determineDirection(metrics):
         event.supportingMetrics[metric.first] = metric.second;
     }
     
-    // Choose ONE method: either local storage OR event bus, not both
-    // Option 1: Local storage only (current caller pattern)
-    // detectedImbalances_.push_back(event);
-    
+    // // Log the event emission for diagnostics
+    // LOG_INFO("ImbalanceDetectionEngine: created ImbalanceEvent id={} type={} strength={} dir={} for {}:{} on thread {}",
+    //          event.eventId,
+    //          static_cast<int>(type),
+    //          event.strength,
+    //          static_cast<int>(direction),
+    //          event.exchangeId.toString(),
+    //          event.symbol.toString(),
+    //          std::this_thread::get_id());
+
+    // Publish to EventBus / callbacks unless publishing is disabled for debugging
+    if (!publishEvents_.load()) {
+        LOG_DEBUG("ImbalanceDetectionEngine: publishing disabled, skipping ImbalanceEvent id={}", event.eventId);
+        return;
+    }
+
     // Option 2: Event bus only (better for decoupling)
     common::EventBus::getInstance().publish(events::ImbalanceDetectedEvent{event});
 }
  void ImbalanceDetectionEngine::notifyImbalanceCallbacks(const ImbalanceEvent& event) {
+    if (!publishEvents_.load()) {
+        LOG_DEBUG("ImbalanceDetectionEngine: publishing disabled, skipping callback notify for eventId={}", event.eventId);
+        return;
+    }
     // Simply publish to event bus - no locks, no deadlocks
     common::EventBus::getInstance().publish(events::ImbalanceDetectedEvent{event});
 }

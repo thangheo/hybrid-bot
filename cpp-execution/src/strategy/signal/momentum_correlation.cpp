@@ -592,59 +592,6 @@ void MomentumCorrelation::updateHighestCorrelatedMetrics() {
      return absCorrelation > criticalValue;
  }
  
-//  void MomentumCorrelation::updateMarketRegime() {
-//      // We need enough data points for reliable regime detection
-//      if (data_points_.size() < params_.regime_detection_window) {
-//          current_regime_ = MarketRegime::NORMAL;
-//          return;
-//      }
-//     //  std::cout<<"Updating market regime based on recent data...\n";
-     
-//      // Snapshot recent price movements under lock
-//      std::vector<double> recentMovements;
-//      {
-//          std::lock_guard<std::mutex> lock(correlation_mutex_);
-//          size_t startIdx = std::max(0, static_cast<int>(data_points_.size() - params_.regime_detection_window));
-//          for (size_t i = startIdx; i < data_points_.size(); ++i) {
-//              recentMovements.push_back(data_points_[i].price_movement.percent_change);
-//          }
-//     }
-     
-//      // Calculate volatility (standard deviation of price movements)
-//      double mean = std::accumulate(recentMovements.begin(), recentMovements.end(), 0.0) / recentMovements.size();
-//      double variance = 0.0;
-     
-//      for (double movement : recentMovements) {
-//          variance += (movement - mean) * (movement - mean);
-//      }
-     
-//      variance /= recentMovements.size();
-//      double volatility = std::sqrt(variance);
-     
-//      // Calculate directional movement (absolute sum of price movements)
-//      double directionalMovement = std::abs(std::accumulate(recentMovements.begin(), recentMovements.end(), 0.0));
-     
-//      // Calculate oscillation (sum of absolute movements)
-//      double oscillation = 0.0;
-//      for (double movement : recentMovements) {
-//          oscillation += std::abs(movement);
-//      }
-     
-//      // Determine regime based on volatility and directional movement
-//      if (volatility > 0.003) { // High volatility threshold (0.3% per data point)
-//          current_regime_ = MarketRegime::HIGH_VOLATILITY;
-//      } else if (directionalMovement > 0.005 && oscillation > 0.01) { // Strong trend (0.5% total with oscillations)
-//          current_regime_ = MarketRegime::TRENDING;
-//      } else if (oscillation < 0.005) { // Low oscillation (less than 0.5% total movement)
-//          current_regime_ = MarketRegime::QUIET;
-//      } else if (directionalMovement < 0.002 && oscillation > 0.008) { // Range-bound (high oscillation, low net movement)
-//          current_regime_ = MarketRegime::RANGE_BOUND;
-//      } else {
-//          current_regime_ = MarketRegime::NORMAL;
-//      }
-   
-//  }
-
 
 void MomentumCorrelation::updateMarketRegime() {
     // We need enough data points for reliable regime detection

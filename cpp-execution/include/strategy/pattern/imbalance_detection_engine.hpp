@@ -22,6 +22,7 @@
 #include <string>
 #include <mutex>
 #include <functional>
+#include <deque>
 
 
 
@@ -54,7 +55,11 @@ public:
     /**
      * @brief Destructor
      */
-    virtual ~ImbalanceDetectionEngine() = default;
+    virtual ~ImbalanceDetectionEngine();
+    // Start the background detector worker (optional). If you call this, the
+    // engine will offload detectors to a worker thread instead of running them
+    // on the caller thread.
+    void startDetectorWorker(size_t threads = 0);
     
     /**
      * @brief Initialize the detection engine with configuration
@@ -192,6 +197,10 @@ private:
     std::map<size_t, ImbalanceCallback> callbacks_;
     size_t nextCallbackId_;
     void notifyImbalanceCallbacks(const ImbalanceEvent& event);
+    // Control whether detected events are published to the system (EventBus/callbacks)
+public:
+    void setPublishEvents(bool enable) { publishEvents_.store(enable); }
+    bool publishEventsEnabled() const { return publishEvents_.load(); }
     
     // Thread safety
     mutable std::mutex mutex_;
@@ -199,6 +208,16 @@ private:
     // and to allow per-instrument change gating in a multi-threaded environment.
     std::map<std::pair<core::ExchangeId, core::Symbol>, double> lastVolumeRatio_;
     mutable std::mutex lastVolumeMutex_;
+    // Background detector worker to offload expensive detection
+    std::thread detectorWorkerThread_;
+    mutable std::mutex detectorQueueMutex_;
+    std::condition_variable detectorQueueCv_;
+    std::deque<OrderBookMetrics> detectorQueue_;
+    std::atomic<bool> detectorWorkerRunning_{false};
+    size_t detectorQueueMax_ = 1024;
+
+    // When false, detected events are constructed but not published to EventBus
+    std::atomic<bool> publishEvents_{true};
 };
 
 // Type alias
