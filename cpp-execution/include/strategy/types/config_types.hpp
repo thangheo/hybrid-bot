@@ -45,7 +45,7 @@
      // Strategy identification
      std::string strategy_id;                     // Unique identifier for the strategy
      std::string version = "1.0";                 // Version of the strategy
-     
+     double densityChangeThreshold = 0.5;        // Threshold for density change detection
      // Core thresholds with defaults
      double volumeImbalanceThreshold = 0.7;       // Threshold for volume imbalance detection
      double priceLevelImbalanceThreshold = 0.6;   // Threshold for price level imbalance

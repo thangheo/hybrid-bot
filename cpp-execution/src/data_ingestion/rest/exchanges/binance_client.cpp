@@ -34,6 +34,7 @@ namespace data_ingestion {
 const std::string BinanceClient::MAINNET_URL = "https://api.binance.com";
 const std::string BinanceClient::TESTNET_URL = "https://testnet.binance.vision";
 
+
 // Callback function for libcurl to write response data
 static size_t WriteCallback(void* contents, size_t size, size_t nmemb, std::string* userp) {
     userp->append((char*)contents, size * nmemb);
@@ -51,7 +52,8 @@ namespace {
     }
 }
 
-BinanceClient::BinanceClient() : m_base_url(MAINNET_URL) {
+BinanceClient::BinanceClient() : m_base_url(MAINNET_URL) , clockOffsetMs_(0), defaultRecvWindowMs_(5000) {
+    std::call_once(curlInitFlag, ensureCurlInitialized);
     // Initialize libcurl globally once in a thread-safe manner
     std::call_once(curlInitFlag, ensureCurlInitialized);
     // Attempt to read API credentials & testnet flag from environment so the
@@ -84,27 +86,50 @@ BinanceClient::BinanceClient() : m_base_url(MAINNET_URL) {
 
 BinanceClient::~BinanceClient() {
 }
-
 void BinanceClient::setApiKey(const std::string& key, const std::string& secret) {
-    std::lock_guard<std::mutex> lk(apiMutex_);
-    m_api_key = key;
-    m_api_secret = secret;
-    // Attempt to sync server time to reduce timestamp/recvWindow errors
+    {
+        std::lock_guard<std::mutex> lk(apiMutex_);
+        m_api_key = key;
+        m_api_secret = secret;
+    }
+    
+    // Sync server time - do this OUTSIDE the lock to avoid deadlocks
     try {
-        // Query Binance server time
         std::map<std::string, std::string> params;
         std::string resp = sendPublicRequest("/api/v3/time", params);
         auto root = nlohmann::json::parse(resp);
         if (root.contains("serverTime")) {
             long long serverTime = root["serverTime"].get<long long>();
             long long local = getCurrentTimestamp();
-            clockOffsetMs_ = serverTime - local;
-            LOG_INFO("BinanceClient: synchronized clock offset {} ms", clockOffsetMs_);
+            // Use atomic operation for thread safety
+            clockOffsetMs_.store(serverTime - local);
+            LOG_INFO("BinanceClient: synchronized clock offset {} ms", clockOffsetMs_.load());
         }
     } catch (const std::exception& e) {
         LOG_WARN("BinanceClient: failed to sync server time: {}", e.what());
     }
 }
+
+// void BinanceClient::setApiKey(const std::string& key, const std::string& secret) {
+//     std::lock_guard<std::mutex> lk(apiMutex_);
+//     m_api_key = key;
+//     m_api_secret = secret;
+//     // Attempt to sync server time to reduce timestamp/recvWindow errors
+//     try {
+//         // Query Binance server time
+//         std::map<std::string, std::string> params;
+//         std::string resp = sendPublicRequest("/api/v3/time", params);
+//         auto root = nlohmann::json::parse(resp);
+//         if (root.contains("serverTime")) {
+//             long long serverTime = root["serverTime"].get<long long>();
+//             long long local = getCurrentTimestamp();
+//             clockOffsetMs_ = serverTime - local;
+//             LOG_INFO("BinanceClient: synchronized clock offset {} ms", clockOffsetMs_);
+//         }
+//     } catch (const std::exception& e) {
+//         LOG_WARN("BinanceClient: failed to sync server time: {}", e.what());
+//     }
+// }
 
 void BinanceClient::setBaseUrl(const std::string& url) {
     m_base_url = url;
@@ -361,33 +386,29 @@ OrderInfo BinanceClient::getOrderStatus(const std::string& symbol, const std::st
 
 std::string BinanceClient::sendSignedRequest(const std::string& endpoint, 
                                            const std::map<std::string, std::string>& params) {
+    // Get API credentials in a separate scope to minimize lock time
+    std::string api_key, api_secret;
     {
         std::lock_guard<std::mutex> lk(apiMutex_);
         if (m_api_key.empty() || m_api_secret.empty()) {
             throw std::runtime_error("API key and secret must be set for signed requests");
         }
+        api_key = m_api_key;
+        api_secret = m_api_secret;
     }
-    // Build a mutable copy so we can ensure timestamp and recvWindow are present
+    
+    // Build parameters with thread-safe timestamp
     std::map<std::string, std::string> p = params;
-
-    // Ensure timestamp: use local time corrected by clockOffsetMs_
     if (p.find("timestamp") == p.end()) {
-        long long offset;
-        {
-            std::lock_guard<std::mutex> lk(apiMutex_);
-            offset = clockOffsetMs_;
-        }
-        long long ts = getCurrentTimestamp() + offset;
+        long long ts = getCurrentTimestamp() + clockOffsetMs_.load();
         p["timestamp"] = std::to_string(ts);
     }
-
-    // Ensure recvWindow present
     if (p.find("recvWindow") == p.end()) {
-        p["recvWindow"] = std::to_string(defaultRecvWindowMs_);
+        p["recvWindow"] = std::to_string(defaultRecvWindowMs_.load());
     }
 
     std::string query_string = buildQueryString(p);
-    std::string signature = generateSignature(query_string);
+    std::string signature = generateSignature(query_string, api_secret);
     
     if (!query_string.empty()) {
         query_string += "&";
@@ -397,18 +418,12 @@ std::string BinanceClient::sendSignedRequest(const std::string& endpoint,
     std::string url = m_base_url + endpoint + "?" + query_string;
     
     std::map<std::string, std::string> headers;
-    {
-        std::lock_guard<std::mutex> lk(apiMutex_);
-        headers["X-MBX-APIKEY"] = m_api_key;
-    }
+    headers["X-MBX-APIKEY"] = api_key;
     
-    // Attempt the request, but if Binance returns code -1021 (timestamp outside recvWindow)
-    // perform a server time sync and retry once with corrected timestamp.
     try {
         return makeHttpRequest(url, "POST", "", headers);
     } catch (const std::exception& ex) {
         std::string err = ex.what();
-        // Try to extract JSON body from the error message ("HTTP error <code>: <body>")
         auto jsonPos = err.find('{');
         if (jsonPos != std::string::npos) {
             std::string body = err.substr(jsonPos);
@@ -418,39 +433,21 @@ std::string BinanceClient::sendSignedRequest(const std::string& endpoint,
                     int code = root["code"].get<int>();
                     if (code == -1021) {
                         LOG_WARN("BinanceClient: received -1021 Timestamp error, performing server time sync and retry");
-                        // Resync server time
-                        try {
-                            std::map<std::string, std::string> empty;
-                            std::string resp = sendPublicRequest("/api/v3/time", empty);
-                            auto rt = nlohmann::json::parse(resp);
-                            if (rt.contains("serverTime")) {
-                                long long serverTime = rt["serverTime"].get<long long>();
-                                long long local = getCurrentTimestamp();
-                                clockOffsetMs_ = serverTime - local;
-                                LOG_INFO("BinanceClient: resynced clock offset {} ms", clockOffsetMs_);
-                            }
-                        } catch (const std::exception& e2) {
-                            LOG_WARN("BinanceClient: server time resync failed: {}", e2.what());
-                        }
+                        
+                        // Resync server time WITHOUT holding any locks
+                        if (resyncServerTime()) {
+                            // Retry with corrected timestamp
+                            std::map<std::string, std::string> p2 = p;
+                            long long ts2 = getCurrentTimestamp() + clockOffsetMs_.load();
+                            p2["timestamp"] = std::to_string(ts2);
+                            
+                            std::string query_string2 = buildQueryString(p2);
+                            std::string signature2 = generateSignature(query_string2, api_secret);
+                            if (!query_string2.empty()) query_string2 += "&";
+                            query_string2 += "signature=" + signature2;
+                            std::string url2 = m_base_url + endpoint + "?" + query_string2;
 
-                        // Rebuild params with corrected timestamp and signature, then retry once
-                        std::map<std::string, std::string> p2 = p;
-                        long long ts2 = getCurrentTimestamp() + clockOffsetMs_;
-                        p2["timestamp"] = std::to_string(ts2);
-                        if (p2.find("recvWindow") == p2.end()) {
-                            p2["recvWindow"] = std::to_string(defaultRecvWindowMs_);
-                        }
-                        std::string query_string2 = buildQueryString(p2);
-                        std::string signature2 = generateSignature(query_string2);
-                        if (!query_string2.empty()) query_string2 += "&";
-                        query_string2 += "signature=" + signature2;
-                        std::string url2 = m_base_url + endpoint + "?" + query_string2;
-
-                        try {
                             return makeHttpRequest(url2, "POST", "", headers);
-                        } catch (const std::exception& ex2) {
-                            // propagate the second error
-                            throw;
                         }
                     }
                 }
@@ -458,10 +455,153 @@ std::string BinanceClient::sendSignedRequest(const std::string& endpoint,
                 // ignore parsing errors and rethrow original
             }
         }
-
-        // Not a recoverable -1021 or couldn't parse: rethrow original
         throw;
     }
+}
+
+
+
+// std::string BinanceClient::sendSignedRequest(const std::string& endpoint, 
+//                                            const std::map<std::string, std::string>& params) {
+//     {
+//         std::lock_guard<std::mutex> lk(apiMutex_);
+//         if (m_api_key.empty() || m_api_secret.empty()) {
+//             throw std::runtime_error("API key and secret must be set for signed requests");
+//         }
+//     }
+//     // Build a mutable copy so we can ensure timestamp and recvWindow are present
+//     std::map<std::string, std::string> p = params;
+
+//     // Ensure timestamp: use local time corrected by clockOffsetMs_
+//     if (p.find("timestamp") == p.end()) {
+//         long long offset;
+//         {
+//             std::lock_guard<std::mutex> lk(apiMutex_);
+//             offset = clockOffsetMs_;
+//         }
+//         long long ts = getCurrentTimestamp() + offset;
+//         p["timestamp"] = std::to_string(ts);
+//     }
+
+//     // Ensure recvWindow present
+//     if (p.find("recvWindow") == p.end()) {
+//         p["recvWindow"] = std::to_string(defaultRecvWindowMs_);
+//     }
+
+//     std::string query_string = buildQueryString(p);
+//     std::string signature = generateSignature(query_string);
+    
+//     if (!query_string.empty()) {
+//         query_string += "&";
+//     }
+//     query_string += "signature=" + signature;
+    
+//     std::string url = m_base_url + endpoint + "?" + query_string;
+    
+//     std::map<std::string, std::string> headers;
+//     {
+//         std::lock_guard<std::mutex> lk(apiMutex_);
+//         headers["X-MBX-APIKEY"] = m_api_key;
+//     }
+    
+//     // Attempt the request, but if Binance returns code -1021 (timestamp outside recvWindow)
+//     // perform a server time sync and retry once with corrected timestamp.
+//     try {
+//         return makeHttpRequest(url, "POST", "", headers);
+//     } catch (const std::exception& ex) {
+//         std::string err = ex.what();
+//         // Try to extract JSON body from the error message ("HTTP error <code>: <body>")
+//         auto jsonPos = err.find('{');
+//         if (jsonPos != std::string::npos) {
+//             std::string body = err.substr(jsonPos);
+//             try {
+//                 auto root = nlohmann::json::parse(body);
+//                 if (root.contains("code") && root["code"].is_number_integer()) {
+//                     int code = root["code"].get<int>();
+//                     if (code == -1021) {
+//                         LOG_WARN("BinanceClient: received -1021 Timestamp error, performing server time sync and retry");
+//                         // Resync server time
+//                         try {
+//                             std::map<std::string, std::string> empty;
+//                             std::string resp = sendPublicRequest("/api/v3/time", empty);
+//                             auto rt = nlohmann::json::parse(resp);
+//                             if (rt.contains("serverTime")) {
+//                                 long long serverTime = rt["serverTime"].get<long long>();
+//                                 long long local = getCurrentTimestamp();
+//                                 clockOffsetMs_ = serverTime - local;
+//                                 LOG_INFO("BinanceClient: resynced clock offset {} ms", clockOffsetMs_);
+//                             }
+//                         } catch (const std::exception& e2) {
+//                             LOG_WARN("BinanceClient: server time resync failed: {}", e2.what());
+//                         }
+
+//                         // Rebuild params with corrected timestamp and signature, then retry once
+//                         std::map<std::string, std::string> p2 = p;
+//                         long long ts2 = getCurrentTimestamp() + clockOffsetMs_;
+//                         p2["timestamp"] = std::to_string(ts2);
+//                         if (p2.find("recvWindow") == p2.end()) {
+//                             p2["recvWindow"] = std::to_string(defaultRecvWindowMs_);
+//                         }
+//                         std::string query_string2 = buildQueryString(p2);
+//                         std::string signature2 = generateSignature(query_string2);
+//                         if (!query_string2.empty()) query_string2 += "&";
+//                         query_string2 += "signature=" + signature2;
+//                         std::string url2 = m_base_url + endpoint + "?" + query_string2;
+
+//                         try {
+//                             return makeHttpRequest(url2, "POST", "", headers);
+//                         } catch (const std::exception& ex2) {
+//                             // propagate the second error
+//                             throw;
+//                         }
+//                     }
+//                 }
+//             } catch (const std::exception&) {
+//                 // ignore parsing errors and rethrow original
+//             }
+//         }
+
+//         // Not a recoverable -1021 or couldn't parse: rethrow original
+//         throw;
+//     }
+// }
+
+// Thread-safe signature generation with explicit secret parameter
+
+std::string BinanceClient::generateSignature(const std::string& query_string, 
+                                            const std::string& api_secret) const {
+    unsigned char hash[SHA256_DIGEST_LENGTH];
+    unsigned int hash_len = SHA256_DIGEST_LENGTH;
+    
+    HMAC(EVP_sha256(), 
+         api_secret.c_str(), api_secret.length(),
+         (unsigned char*)query_string.c_str(), query_string.length(),
+         hash, &hash_len);
+    
+    std::ostringstream oss;
+    for (int i = 0; i < hash_len; i++) {
+        oss << std::hex << std::setw(2) << std::setfill('0') << (int)hash[i];
+    }
+    
+    return oss.str();
+}
+
+bool BinanceClient::resyncServerTime() {
+    try {
+        std::map<std::string, std::string> empty;
+        std::string resp = sendPublicRequest("/api/v3/time", empty);
+        auto rt = nlohmann::json::parse(resp);
+        if (rt.contains("serverTime")) {
+            long long serverTime = rt["serverTime"].get<long long>();
+            long long local = getCurrentTimestamp();
+            clockOffsetMs_.store(serverTime - local);
+            LOG_INFO("BinanceClient: resynced clock offset {} ms", clockOffsetMs_.load());
+            return true;
+        }
+    } catch (const std::exception& e) {
+        LOG_WARN("BinanceClient: server time resync failed: {}", e.what());
+    }
+    return false;
 }
 
 std::string BinanceClient::sendPublicRequest(const std::string& endpoint, 
@@ -474,23 +614,6 @@ std::string BinanceClient::sendPublicRequest(const std::string& endpoint,
     }
     
     return makeHttpRequest(url);
-}
-
-std::string BinanceClient::generateSignature(const std::string& query_string) const {
-    unsigned char hash[SHA256_DIGEST_LENGTH];
-    unsigned int hash_len = SHA256_DIGEST_LENGTH;
-    
-    HMAC(EVP_sha256(), 
-         m_api_secret.c_str(), m_api_secret.length(),
-         (unsigned char*)query_string.c_str(), query_string.length(),
-         hash, &hash_len);
-    
-    std::ostringstream oss;
-    for (int i = 0; i < hash_len; i++) {
-        oss << std::hex << std::setw(2) << std::setfill('0') << (int)hash[i];
-    }
-    
-    return oss.str();
 }
 
 std::string BinanceClient::buildQueryString(const std::map<std::string, std::string>& params) const {
