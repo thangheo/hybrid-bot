@@ -145,7 +145,7 @@ public:
      * @param imbalance Imbalance event
      * @return Calculated target size
      */
-    double calculateTargetSize(const ImbalanceEvent& imbalance) const;
+    double calculateTargetSize(const ImbalanceEvent& imbalance, double strength, double confidence, double quality) const;
 private:
     // Configuration
     SignalGeneratorConfig config_;
