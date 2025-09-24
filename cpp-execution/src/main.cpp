@@ -1106,7 +1106,7 @@ private:
         while (orderbookWorkersRunning_.load()) {
             // Wait for data
             std::unique_lock<std::mutex> lk(orderbookQueueMutex_);
-            orderbookQueueCv_.wait_for(lk, std::chrono::milliseconds(200), [this]() {
+            orderbookQueueCv_.wait_for(lk, std::chrono::milliseconds(100), [this]() {
                 return !orderbookQueue_.empty() || !orderbookWorkersRunning_.load();
             });
 
@@ -1197,7 +1197,7 @@ private:
             // Wait for data
             std::unique_lock<std::mutex> lk(signalQueueMutex_);
 
-            signalQueueCv_.wait_for(lk, std::chrono::milliseconds(100), [this]() {
+            signalQueueCv_.wait_for(lk, std::chrono::milliseconds(50), [this]() {
                 return !signalQueue_.empty() || !signalWorkersRunning_.load();
             });
             if (!signalWorkersRunning_.load() && signalQueue_.empty()) break;
