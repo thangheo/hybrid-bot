@@ -655,15 +655,15 @@ def generate_simulated_data(num_points=1000, volatility=0.002):
         
         # Tạo các mức giá mua
         for i in range(1, depth+1):
-            bid_price = current_price * (1 - 0.0001 * i)
+            bidPrice = current_price * (1 - 0.0001 * i)
             volume = np.random.exponential(2.0) + 0.5
-            bids.append({"price": bid_price, "volume": volume})
+            bids.append({"price": bidPrice, "volume": volume})
         
         # Tạo các mức giá bán
         for i in range(1, depth+1):
-            ask_price = current_price * (1 + 0.0001 * i)
+            askPrice = current_price * (1 + 0.0001 * i)
             volume = np.random.exponential(2.0) + 0.5
-            asks.append({"price": ask_price, "volume": volume})
+            asks.append({"price": askPrice, "volume": volume})
         
         return {"bids": bids, "asks": asks}
     

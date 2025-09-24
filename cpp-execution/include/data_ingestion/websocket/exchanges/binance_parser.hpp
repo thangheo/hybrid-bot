@@ -41,8 +41,8 @@ public:
     bool parseTicker(const std::vector<uint8_t>& data,
                     std::string& symbol,
                     std::string& last_price,
-                    std::string& bid_price,
-                    std::string& ask_price,
+                    std::string& bidPrice,
+                    std::string& askPrice,
                     std::string& volume,
                     uint64_t& ticker_time);
     

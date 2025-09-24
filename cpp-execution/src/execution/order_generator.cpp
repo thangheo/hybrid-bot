@@ -82,6 +82,9 @@ models::OrderPtr OrderGenerator::createOrderFromSignal(const std::shared_ptr<Tra
     params.target_size = signal->getTargetSize();
     params.signal_ttl = signal->getTtl();
 
+    // Propagate any price carried with the signal (if the strategy provided one)
+    params.price = signal->getPrice();
+
     // Default to market order, will be refined by OrderTypeSelector
     params.type = models::OrderType::MARKET;
     

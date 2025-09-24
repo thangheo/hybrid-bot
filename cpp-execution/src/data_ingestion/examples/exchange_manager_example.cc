@@ -41,9 +41,9 @@ void onOrderBookUpdate(const OrderBookUpdate& update) {
         
         // Calculate spread
         double bid_price = update.bids[0].price;
-        double ask_price = update.asks[0].price;
-        double spread = ask_price - bid_price;
-        double spread_pct = (spread / ask_price) * 100;
+        double askPrice = update.asks[0].price;
+        double spread = askPrice - bid_price;
+        double spread_pct = (spread / askPrice) * 100;
         
         std::cout << "Spread: " << spread << " (" << std::fixed << std::setprecision(4) 
                   << spread_pct << "%)" << std::endl;

@@ -75,9 +75,9 @@ OrderTypeSelection OrderTypeSelector::defaultSelectionStrategy(
             // For buy orders: use price slightly above best bid to ensure quick fill
             // For sell orders: use price slightly below best ask to ensure quick fill
             if (order->getSide() == models::OrderSide::BUY) {
-                selection.price = condition.bid_price * (1.001); // 0.1% above bid
+                selection.price = condition.bidPrice * (1.001); // 0.1% above bid
             } else {
-                selection.price = condition.ask_price * (0.999); // 0.1% below ask
+                selection.price = condition.askPrice * (0.999); // 0.1% below ask
             }
             
             selection.time_in_force = models::TimeInForce::GTC;
@@ -107,11 +107,11 @@ OrderTypeSelection OrderTypeSelector::defaultSelectionStrategy(
             double current_price = order->getPrice();
             
             // Adjust price if needed based on current market conditions
-            if (order->getSide() == models::OrderSide::BUY && current_price < condition.bid_price) {
-                selection.price = condition.bid_price * (1.001); // 0.1% above bid
+            if (order->getSide() == models::OrderSide::BUY && current_price < condition.bidPrice) {
+                selection.price = condition.bidPrice * (1.001); // 0.1% above bid
                 selection.reason = "Adjusted limit buy price to increase fill probability";
-            } else if (order->getSide() == models::OrderSide::SELL && current_price > condition.ask_price) {
-                selection.price = condition.ask_price * (0.999); // 0.1% below ask
+            } else if (order->getSide() == models::OrderSide::SELL && current_price > condition.askPrice) {
+                selection.price = condition.askPrice * (0.999); // 0.1% below ask
                 selection.reason = "Adjusted limit sell price to increase fill probability";
             } else {
                 selection.price = current_price;

@@ -975,8 +975,7 @@ models::Order ExecutionService::createOrderFromSignal(const TradingSignal& signa
         params.signal_ttl = signal.getTtl();
         params.type = models::OrderType::LIMIT; // Default to LIMIT; will be adjusted later
         params.time_in_force = models::TimeInForce::GTC;
-        params.price = signal.getPrice(); // Optional price from signal
-
+        params.price = signal.signalMetrics.count("bidPrice") ? signal.signalMetrics.at("bidPrice") : signal.price; // Use signal price if bidPrice not available
         // Check if order_generator_ is valid
         if (!order_generator_) {
             throw std::runtime_error("Order generator is null");
@@ -1025,15 +1024,19 @@ models::Order ExecutionService::createOrderFromSignal(const TradingSignal& signa
             auto it = signal.signalMetrics.find(key);
             return (it != signal.signalMetrics.end()) ? it->second : defaultValue;
         };
-
-        market_condition.bid_price = getMetric("bid_price", 50000.0);
-        market_condition.ask_price = getMetric("ask_price", market_condition.bid_price + 10.0);
-        market_condition.spread = getMetric("spread", 10.0);
+        
+        market_condition.bidPrice = getMetric("bidPrice", 50000.0);
+        market_condition.askPrice = getMetric("askPrice", market_condition.bidPrice + 10.0);
+        market_condition.spread = getMetric("spreadPercent", 1.0);
         market_condition.volatility = getMetric("volatility", 0.02);
-        market_condition.volume = getMetric("volume", 100.0);
+        market_condition.volume = getMetric("bidVolume", 100.0) + getMetric("askVolume", 100.0);
         market_condition.liquidity_score = getMetric("liquidity_score", 0.8);
-        market_condition.market_impact_estimate = getMetric("market_impact_estimate", 0.005);
-
+        market_condition.market_impact_estimate = getMetric("market_impact_estimate", 0.005); //no such thing yet
+        std::cout << "DEBUG: Market Condition - Bid Price: " << market_condition.bidPrice << std::endl;
+        std::cout << "DEBUG: Market Condition - Ask Price: " << market_condition.askPrice << std::endl;
+        std::cout << "DEBUG: Market Condition - Spread: " << market_condition.spread << std::endl;
+        std::cout << "DEBUG: Market Condition - Volatility: " << market_condition.volatility << std::endl;
+        std::cout << "DEBUG: Market Condition - Volume: " << market_condition.volume << std::endl;
         // Select the most appropriate order type
         OrderTypeSelection selection = order_type_selector_->selectOrderType(order, market_condition);
 
@@ -1054,6 +1057,7 @@ models::Order ExecutionService::createOrderFromSignal(const TradingSignal& signa
         throw std::runtime_error("Unknown exception in createOrderFromSignal");
     }
 }
+
   bool ExecutionService::validateOrder(const models::Order& order) {
      // Basic validation checks
      if (order.getTradingPair().isEmpty()) {

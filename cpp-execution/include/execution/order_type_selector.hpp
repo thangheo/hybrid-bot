@@ -14,8 +14,8 @@ namespace execution {
  * Market condition information
  */
 struct MarketCondition {
-    double bid_price;
-    double ask_price;
+    double bidPrice;
+    double askPrice;
     double spread;
     double volatility;
     double volume;

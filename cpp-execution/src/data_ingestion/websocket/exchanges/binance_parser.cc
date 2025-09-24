@@ -175,7 +175,7 @@ bool BinanceParser::parseTicker(const std::vector<uint8_t>& data,
                                std::string& symbol,
                                std::string& last_price,
                                std::string& bid_price,
-                               std::string& ask_price,
+                               std::string& askPrice,
                                std::string& volume,
                                int64_t& ticker_time) {
     try {
@@ -197,7 +197,7 @@ bool BinanceParser::parseTicker(const std::vector<uint8_t>& data,
         }
         
         if (data_json.contains("a")) {
-            ask_price = data_json["a"];
+            askPrice = data_json["a"];
         }
         
         if (data_json.contains("v")) {
