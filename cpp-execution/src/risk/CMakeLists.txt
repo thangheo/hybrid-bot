@@ -15,7 +15,9 @@ file(GLOB_RECURSE RISK_SOURCES
 )
 find_package(fmt REQUIRED)
 # Define library
+
 add_library(risk STATIC ${RISK_SOURCES})
+set_target_properties(risk PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 # Include directories
 target_include_directories(risk
@@ -64,7 +66,7 @@ target_link_libraries(risk_demo PRIVATE
         fmt::fmt
         data_ingestion
         strategy
-        # execution
+        execution
         common
         nlohmann_json::nlohmann_json
         )
