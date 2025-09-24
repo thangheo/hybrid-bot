@@ -1026,7 +1026,7 @@ models::Order ExecutionService::createOrderFromSignal(const TradingSignal& signa
         };
         
         market_condition.bidPrice = getMetric("bidPrice", 0.0);
-        market_condition.askPrice = getMetric("askPrice", market_condition.bidPrice + 10.0);
+        market_condition.askPrice = getMetric("askPrice", 0.0);
         market_condition.spread = getMetric("spreadPercent", 1.0);
         market_condition.volatility = getMetric("volatility", 0.02);
         market_condition.volume = getMetric("bidVolume", 100.0) + getMetric("askVolume", 100.0);

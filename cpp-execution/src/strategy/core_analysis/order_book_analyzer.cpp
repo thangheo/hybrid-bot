@@ -392,6 +392,9 @@ void OrderBookAnalyzer::calculatePriceMetrics(
     currentMetrics_.metrics["midPrice"] = currentMetrics_.midPrice;
     currentMetrics_.metrics["bidPrice"] = bestBid;
     currentMetrics_.metrics["askPrice"] = bestAsk;    
+    // bidVolume and askVolume are set in volume metrics
+    currentMetrics_.metrics["bidVolume"] = currentMetrics_.totalBidVolume;
+    currentMetrics_.metrics["askVolume"] = currentMetrics_.totalAskVolume;
     currentMetrics_.metrics["spread"] = currentMetrics_.spread;
     currentMetrics_.metrics["spreadPercent"] = currentMetrics_.spreadPercent;
     currentMetrics_.metrics["bestBid"] = bestBid;
