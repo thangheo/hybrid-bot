@@ -56,7 +56,7 @@
 // Execution engine
 #include "execution/execution_service.hpp"
 #include "execution/trading_signal.hpp"
-
+#include "execution/filter/signal_dedup.hpp"
 // Core types
 #include "core/market_types.hpp"
 #include "core/direction.hpp"
@@ -1184,10 +1184,16 @@ private:
 
     void signalWorkerLoop(size_t workerId) {
         std::vector<strategy::TradingSignal> batch;
+        // signal_dedup set; // optional deduplication
+        trading::execution::SignalDeduplicator::Config cfg;
+        cfg.includeExchangeInKey = true;
+        trading::execution::SignalDeduplicator dedup(cfg);
+
         batch.reserve(signalBatchSize_);
         while (signalWorkersRunning_.load()) {
             // Wait for data
             std::unique_lock<std::mutex> lk(signalQueueMutex_);
+
             signalQueueCv_.wait_for(lk, std::chrono::milliseconds(100), [this]() {
                 return !signalQueue_.empty() || !signalWorkersRunning_.load();
             });
@@ -1241,6 +1247,10 @@ private:
                     execSignal.targets = signal.targets;
                     execSignal.exchangeId = signal.exchangeId;
 
+                    if (!dedup.shouldProcessSignal(execSignal)) {
+                        // Duplicate — skip processing, do NOT register the original with PTCA
+                        continue;
+                    }
                     // Now register the original signal with PTCA by moving it (no further use of `signal`)
                     ptcaManager_->registerSignal(std::move(signal));
 

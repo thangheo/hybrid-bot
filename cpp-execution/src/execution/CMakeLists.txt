@@ -17,6 +17,7 @@ file(GLOB_RECURSE EXECUTION_SOURCES
     "exchanges/*.cpp"
     "grpc/*.cpp"
     "models/*.cpp"
+    "filter/*.cpp"
 )
 
 # Remove test files from library sources
@@ -35,6 +36,7 @@ target_include_directories(execution
     ${Protobuf_INCLUDE_DIRS}
     ${gRPC_INCLUDE_DIRS}
     ${UUID_INCLUDE_DIRS}
+    
 )
 
 # Link libraries for the execution library
