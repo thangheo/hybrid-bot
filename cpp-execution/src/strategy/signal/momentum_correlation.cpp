@@ -11,6 +11,8 @@
 #include <numeric>
 #include <iostream>
 #include <mutex>
+#include <format>
+#include <common/logger.hpp>
  
  namespace trading {
  namespace strategy {
@@ -590,58 +592,276 @@ void MomentumCorrelation::updateHighestCorrelatedMetrics() {
      return absCorrelation > criticalValue;
  }
  
- void MomentumCorrelation::updateMarketRegime() {
-     // We need enough data points for reliable regime detection
-     if (data_points_.size() < params_.regime_detection_window) {
-         current_regime_ = MarketRegime::NORMAL;
-         return;
-     }
-    //  std::cout<<"Updating market regime based on recent data...\n";
+//  void MomentumCorrelation::updateMarketRegime() {
+//      // We need enough data points for reliable regime detection
+//      if (data_points_.size() < params_.regime_detection_window) {
+//          current_regime_ = MarketRegime::NORMAL;
+//          return;
+//      }
+//     //  std::cout<<"Updating market regime based on recent data...\n";
      
-     // Snapshot recent price movements under lock
-     std::vector<double> recentMovements;
-     {
-         std::lock_guard<std::mutex> lock(correlation_mutex_);
-         size_t startIdx = std::max(0, static_cast<int>(data_points_.size() - params_.regime_detection_window));
-         for (size_t i = startIdx; i < data_points_.size(); ++i) {
-             recentMovements.push_back(data_points_[i].price_movement.percent_change);
-         }
-    }
+//      // Snapshot recent price movements under lock
+//      std::vector<double> recentMovements;
+//      {
+//          std::lock_guard<std::mutex> lock(correlation_mutex_);
+//          size_t startIdx = std::max(0, static_cast<int>(data_points_.size() - params_.regime_detection_window));
+//          for (size_t i = startIdx; i < data_points_.size(); ++i) {
+//              recentMovements.push_back(data_points_[i].price_movement.percent_change);
+//          }
+//     }
      
-     // Calculate volatility (standard deviation of price movements)
-     double mean = std::accumulate(recentMovements.begin(), recentMovements.end(), 0.0) / recentMovements.size();
-     double variance = 0.0;
+//      // Calculate volatility (standard deviation of price movements)
+//      double mean = std::accumulate(recentMovements.begin(), recentMovements.end(), 0.0) / recentMovements.size();
+//      double variance = 0.0;
      
-     for (double movement : recentMovements) {
-         variance += (movement - mean) * (movement - mean);
-     }
+//      for (double movement : recentMovements) {
+//          variance += (movement - mean) * (movement - mean);
+//      }
      
-     variance /= recentMovements.size();
-     double volatility = std::sqrt(variance);
+//      variance /= recentMovements.size();
+//      double volatility = std::sqrt(variance);
      
-     // Calculate directional movement (absolute sum of price movements)
-     double directionalMovement = std::abs(std::accumulate(recentMovements.begin(), recentMovements.end(), 0.0));
+//      // Calculate directional movement (absolute sum of price movements)
+//      double directionalMovement = std::abs(std::accumulate(recentMovements.begin(), recentMovements.end(), 0.0));
      
-     // Calculate oscillation (sum of absolute movements)
-     double oscillation = 0.0;
-     for (double movement : recentMovements) {
-         oscillation += std::abs(movement);
-     }
+//      // Calculate oscillation (sum of absolute movements)
+//      double oscillation = 0.0;
+//      for (double movement : recentMovements) {
+//          oscillation += std::abs(movement);
+//      }
      
-     // Determine regime based on volatility and directional movement
-     if (volatility > 0.003) { // High volatility threshold (0.3% per data point)
-         current_regime_ = MarketRegime::HIGH_VOLATILITY;
-     } else if (directionalMovement > 0.005 && oscillation > 0.01) { // Strong trend (0.5% total with oscillations)
-         current_regime_ = MarketRegime::TRENDING;
-     } else if (oscillation < 0.005) { // Low oscillation (less than 0.5% total movement)
-         current_regime_ = MarketRegime::QUIET;
-     } else if (directionalMovement < 0.002 && oscillation > 0.008) { // Range-bound (high oscillation, low net movement)
-         current_regime_ = MarketRegime::RANGE_BOUND;
-     } else {
-         current_regime_ = MarketRegime::NORMAL;
-     }
+//      // Determine regime based on volatility and directional movement
+//      if (volatility > 0.003) { // High volatility threshold (0.3% per data point)
+//          current_regime_ = MarketRegime::HIGH_VOLATILITY;
+//      } else if (directionalMovement > 0.005 && oscillation > 0.01) { // Strong trend (0.5% total with oscillations)
+//          current_regime_ = MarketRegime::TRENDING;
+//      } else if (oscillation < 0.005) { // Low oscillation (less than 0.5% total movement)
+//          current_regime_ = MarketRegime::QUIET;
+//      } else if (directionalMovement < 0.002 && oscillation > 0.008) { // Range-bound (high oscillation, low net movement)
+//          current_regime_ = MarketRegime::RANGE_BOUND;
+//      } else {
+//          current_regime_ = MarketRegime::NORMAL;
+//      }
    
- }
+//  }
+
+
+void MomentumCorrelation::updateMarketRegime() {
+    // We need enough data points for reliable regime detection
+    if (data_points_.size() < params_.regime_detection_window) {
+        current_regime_ = MarketRegime::NORMAL;
+        return;
+    }
+    
+    // Snapshot recent price movements under lock
+    std::vector<double> recentMovements;
+    std::vector<double> recentVolumes; // If available
+    std::vector<double> recentSpreads; // If available
+    
+    {
+        std::lock_guard<std::mutex> lock(correlation_mutex_);
+        size_t startIdx = std::max(0, static_cast<int>(data_points_.size() - params_.regime_detection_window));
+        
+        for (size_t i = startIdx; i < data_points_.size(); ++i) {
+            recentMovements.push_back(data_points_[i].price_movement.percent_change);
+            // Add volume and spread data if available in your data structure
+            // recentVolumes.push_back(data_points_[i].volume_ratio);
+            // recentSpreads.push_back(data_points_[i].spread_ratio);
+        }
+    }
+    
+    // Enhanced statistical calculations
+    double mean = std::accumulate(recentMovements.begin(), recentMovements.end(), 0.0) / recentMovements.size();
+    
+    // Calculate volatility (standard deviation)
+    double variance = 0.0;
+    for (double movement : recentMovements) {
+        variance += (movement - mean) * (movement - mean);
+    }
+    variance /= recentMovements.size();
+    double volatility = std::sqrt(variance);
+    
+    // Calculate directional persistence (trend strength)
+    double cumulativeMove = std::accumulate(recentMovements.begin(), recentMovements.end(), 0.0);
+    double directionalMovement = std::abs(cumulativeMove);
+    
+    // Calculate oscillation (total absolute movement)
+    double oscillation = 0.0;
+    for (double movement : recentMovements) {
+        oscillation += std::abs(movement);
+    }
+    
+    // Calculate trend persistence (how often price moves in same direction)
+    double trendPersistence = calculateTrendPersistence(recentMovements);
+    
+    // Calculate recent momentum acceleration
+    double momentum = calculateMomentumAcceleration(recentMovements);
+    
+    // Enhanced market stress indicators
+    double stressIndicator = calculateMarketStress(recentMovements, volatility);
+    
+    // Activity level (based on movement frequency and magnitude)
+    double activityLevel = oscillation / recentMovements.size();
+    
+    // Enhanced regime determination with hierarchical logic
+    MarketRegime detectedRegime = MarketRegime::NORMAL;
+    
+    // 1. Check for market stress first (highest priority)
+    if (stressIndicator > 0.7) {
+        detectedRegime = MarketRegime::STRESS;
+    }
+    // 2. Check for high volatility conditions
+    else if (volatility > 0.004) { // 0.4% threshold
+        if (activityLevel < 0.002) {
+            // High vol but low activity - might be gapping/sparse trading
+            detectedRegime = MarketRegime::VOLATILE;
+        } else {
+            detectedRegime = MarketRegime::VOLATILE;
+        }
+    }
+    // 3. Check for trending conditions
+    else if (directionalMovement > 0.006 && trendPersistence > 0.6 && momentum > 0.3) {
+        detectedRegime = MarketRegime::TRENDING;
+    }
+    // 4. Check for range-bound conditions
+    else if (directionalMovement < 0.003 && oscillation > 0.008 && trendPersistence < 0.4) {
+        detectedRegime = MarketRegime::RANGE_BOUND;
+    }
+    // 5. Check for quiet/low activity conditions
+    else if (volatility < 0.001 && activityLevel < 0.002) {
+        detectedRegime = MarketRegime::QUIET;
+    }
+    // 6. Default to normal
+    else {
+        detectedRegime = MarketRegime::NORMAL;
+    }
+    
+    // Apply smoothing to prevent rapid regime switching
+    applyRegimeSmoothing(detectedRegime);
+    
+    // Debug logging (optional)
+    if (current_regime_ != detectedRegime) {
+        LOG_DEBUG("Market regime change: {} -> {} (vol={:.4f}, dir={:.4f}, osc={:.4f}, trend={:.2f}, stress={:.2f})",
+                  marketRegimeToString(current_regime_), marketRegimeToString(detectedRegime),
+                  volatility, directionalMovement, oscillation, trendPersistence, stressIndicator);
+    }
+}
+
+// Helper method to calculate trend persistence
+double MomentumCorrelation::calculateTrendPersistence(const std::vector<double>& movements) const {
+    if (movements.size() < 2) return 0.5;
+    
+    int sameDirectionCount = 0;
+    int totalTransitions = 0;
+    
+    for (size_t i = 1; i < movements.size(); ++i) {
+        if (std::abs(movements[i]) > 0.0001 && std::abs(movements[i-1]) > 0.0001) { // Ignore tiny movements
+            totalTransitions++;
+            if ((movements[i] > 0 && movements[i-1] > 0) || (movements[i] < 0 && movements[i-1] < 0)) {
+                sameDirectionCount++;
+            }
+        }
+    }
+    
+    return totalTransitions > 0 ? static_cast<double>(sameDirectionCount) / totalTransitions : 0.5;
+}
+
+// Helper method to calculate momentum acceleration
+double MomentumCorrelation::calculateMomentumAcceleration(const std::vector<double>& movements) const {
+    if (movements.size() < 3) return 0.0;
+    
+    // Calculate if recent movements are accelerating
+    size_t halfSize = movements.size() / 2;
+    double firstHalfMean = 0.0, secondHalfMean = 0.0;
+    
+    for (size_t i = 0; i < halfSize; ++i) {
+        firstHalfMean += std::abs(movements[i]);
+    }
+    firstHalfMean /= halfSize;
+    
+    for (size_t i = halfSize; i < movements.size(); ++i) {
+        secondHalfMean += std::abs(movements[i]);
+    }
+    secondHalfMean /= (movements.size() - halfSize);
+    
+    // Return normalized acceleration (-1 to 1)
+    double maxMean = std::max(firstHalfMean, secondHalfMean);
+    if (maxMean < 0.0001) return 0.0;
+    
+    return (secondHalfMean - firstHalfMean) / maxMean;
+}
+
+// Helper method to calculate market stress indicator
+double MomentumCorrelation::calculateMarketStress(const std::vector<double>& movements, double volatility) const {
+    if (movements.empty()) return 0.0;
+    
+    double stressScore = 0.0;
+    
+    // Factor 1: Extreme volatility (normalized to 0-1)
+    double volStress = std::min(1.0, volatility / 0.01); // 1% vol = max stress from volatility
+    stressScore += volStress * 0.4;
+    
+    // Factor 2: Extreme movements (count of movements > 2 standard deviations)
+    double stdDev = volatility;
+    int extremeMovements = 0;
+    for (double movement : movements) {
+        if (std::abs(movement) > 2.0 * stdDev) {
+            extremeMovements++;
+        }
+    }
+    double extremeStress = std::min(1.0, static_cast<double>(extremeMovements) / movements.size() * 10.0);
+    stressScore += extremeStress * 0.3;
+    
+    // Factor 3: Rapid direction changes (whipsaws)
+    int directionChanges = 0;
+    for (size_t i = 1; i < movements.size(); ++i) {
+        if ((movements[i] > 0 && movements[i-1] < 0) || (movements[i] < 0 && movements[i-1] > 0)) {
+            if (std::abs(movements[i]) > stdDev && std::abs(movements[i-1]) > stdDev) {
+                directionChanges++;
+            }
+        }
+    }
+    double whipsawStress = std::min(1.0, static_cast<double>(directionChanges) / movements.size() * 5.0);
+    stressScore += whipsawStress * 0.3;
+    
+    return std::clamp(stressScore, 0.0, 1.0);
+}
+
+// Helper method to apply regime smoothing
+void MomentumCorrelation::applyRegimeSmoothing(MarketRegime& detectedRegime) {
+    // Simple smoothing: require 2-3 consecutive detections before switching
+    static MarketRegime lastDetection = MarketRegime::NORMAL;
+    static int consecutiveCount = 0;
+    
+    if (detectedRegime == lastDetection) {
+        consecutiveCount++;
+    } else {
+        lastDetection = detectedRegime;
+        consecutiveCount = 1;
+    }
+    
+    // Different thresholds for different regime changes
+    int requiredConsecutive = 2; // Default
+    
+    // Require more evidence for stress regime
+    if (detectedRegime == MarketRegime::STRESS) {
+        requiredConsecutive = 3;
+    }
+    // Require less evidence when moving from stress back to normal
+    else if (current_regime_ == MarketRegime::STRESS && detectedRegime != MarketRegime::STRESS) {
+        requiredConsecutive = 1;
+    }
+    
+    // Only update if we have enough consecutive detections
+    if (consecutiveCount >= requiredConsecutive) {
+        current_regime_ = detectedRegime;
+    }
+    // If not enough evidence, keep current regime but update the working detection
+    else {
+        detectedRegime = current_regime_;
+    }
+}
+
 
 
 double MomentumCorrelation::calculateWeightedPrediction(const ImbalanceEvent& event) const {
@@ -728,11 +948,12 @@ double MomentumCorrelation::calculateWeightedPrediction(const ImbalanceEvent& ev
     // Apply market regime adjustments
     double regimeMultiplier = 1.0;
     switch (regimeSnapshot) {
-        case MarketRegime::HIGH_VOLATILITY: regimeMultiplier = 0.8; break;
+        case MarketRegime::VOLATILE: regimeMultiplier = 0.8; break;
         case MarketRegime::TRENDING:        regimeMultiplier = 1.2; break;
         case MarketRegime::RANGE_BOUND:     regimeMultiplier = 0.7; break;
         case MarketRegime::QUIET:           regimeMultiplier = 0.6; break;
-        case MarketRegime::NORMAL:
+        case MarketRegime::NORMAL:      regimeMultiplier = 1.0; break;
+        case MarketRegime::STRESS:         regimeMultiplier = 0.5; break;
         default:                            regimeMultiplier = 1.0; break;
     }
     prediction *= regimeMultiplier;

@@ -19,16 +19,28 @@
  namespace trading {
  namespace strategy {
  
- /**
-  * Enum for different market regimes identified by correlation analysis
-  */
- enum class MarketRegime {
-     NORMAL,           // Normal market conditions
-     TRENDING,         // Strong directional movement
-     RANGE_BOUND,      // Price oscillating within a range
-     HIGH_VOLATILITY,  // Elevated volatility
-     QUIET             // Low volatility and activity
- };
+//  enum class MarketRegime {
+//         STRESS ,// (highest priority) - market breakdown conditions
+//         VOLATILE ,// - high volatility conditions
+//         TRENDING,// - strong directional movement with persistence
+//         RANGE_BOUND,// - oscillating within bounds
+//         QUIET,//- low activity/volatility
+//         NORMAL//- default state
+//  };
+
+/**
+ * @brief Market regime types for adaptive signal generation
+ */
+    // NORMAL, VOLATILE, TRENDING, RANGE_BOUND, STRESS, UNKNOWN
+enum class MarketRegime {
+    NORMAL,         // Normal market conditions
+    VOLATILE,       // High volatility regime
+    TRENDING,       // Strong trending market
+    RANGE_BOUND,    // Sideways/consolidating market
+    STRESS,         // Market stress conditions
+    QUIET,          // Low activity/volatility
+    UNKNOWN         // Fallback/unknown regime
+};
  
  /**
   * Convert MarketRegime to string representation
@@ -38,8 +50,9 @@
          case MarketRegime::NORMAL: return "normal";
          case MarketRegime::TRENDING: return "trending";
          case MarketRegime::RANGE_BOUND: return "range_bound";
-         case MarketRegime::HIGH_VOLATILITY: return "high_volatility";
+         case MarketRegime::VOLATILE: return "volatility";
          case MarketRegime::QUIET: return "quiet";
+        case MarketRegime::STRESS: return "stress";
          default: return "unknown";
      }
  }
