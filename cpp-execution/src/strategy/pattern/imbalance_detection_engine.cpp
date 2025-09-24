@@ -734,7 +734,7 @@ DetectorResult ImbalanceDetectionEngine::detectMarketDepthChange(const OrderBook
         r.isImbalance = true;
         r.strength = 1.0; // Could be refined to a computed value
         r.direction = Direction::NEUTRAL; // Depth change is neutral
-        r.shouldEmitEvent = true;
+        r.shouldEmitEvent = false; // Currently not emitting events for depth changes
     }
     return r;
 }
