@@ -27,6 +27,7 @@
 #include <functional>
 #include <chrono>
 #include <thread>
+#include <condition_variable>
 #include <string>
 
 namespace trading {
@@ -230,6 +231,9 @@ private:
     std::atomic<bool> m_shouldStop{false};
     std::unique_ptr<std::thread> m_scheduledThread;
     std::chrono::system_clock::time_point m_nextScheduledTime;
+    // Added to allow interrupting the scheduled thread's sleep
+    mutable std::mutex m_stopMutex;
+    std::condition_variable m_stopCv;
     
     // Callbacks
     mutable std::mutex m_callbackMutex;

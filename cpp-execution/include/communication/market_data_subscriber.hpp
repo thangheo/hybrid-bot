@@ -48,6 +48,8 @@ public:
     using StatusCallback = std::function<void(const std::string&)>;
 
     explicit MarketDataSubscriber(const std::string& publisherEndpoint = "tcp://localhost:5555");
+    // Accept shared context from ZmqManager or tests
+    MarketDataSubscriber(const std::string& publisherEndpoint, std::shared_ptr<zmq::context_t> sharedContext);
     ~MarketDataSubscriber();
 
     // Lifecycle
@@ -75,7 +77,7 @@ private:
     void handleIntelligenceMessage(const std::string& topic, const std::string& data);
 
     std::string publisherEndpoint_;
-    std::unique_ptr<zmq::context_t> context_;
+    std::shared_ptr<zmq::context_t> context_;
     std::unique_ptr<zmq::socket_t> subscriber_;
     
     std::thread subscriptionThread_;

@@ -330,6 +330,11 @@ bool BalanceReconciliation::stopScheduledReconciliation() {
     
     m_shouldStop.store(true);
     m_isScheduledActive.store(false);
+    // Wake the scheduled thread if it's sleeping so it can exit promptly
+    {
+        std::lock_guard<std::mutex> lock(m_stopMutex);
+        m_stopCv.notify_one();
+    }
     
     return true;
 }
@@ -549,19 +554,20 @@ void BalanceReconciliation::updateStatistics(const ReconciliationResult& result)
 }
 
 void BalanceReconciliation::scheduledReconciliationLoop() {
+    std::unique_lock<std::mutex> lock(m_stopMutex);
     while (!m_shouldStop.load()) {
         auto now = std::chrono::system_clock::now();
-        
+
         if (now >= m_nextScheduledTime) {
             // Perform reconciliation
             reconcileAllPositions();
-            
+
             // Calculate next reconciliation time
             m_nextScheduledTime = calculateNextReconciliationTime();
         }
-        
-        // Sleep for a short interval to avoid busy waiting
-        std::this_thread::sleep_for(std::chrono::minutes(1)); //rebalance reicnilisljseflkasjflasdfjslkf is hours
+
+        // Wait for either stop notification or timeout (1 minute)
+        m_stopCv.wait_for(lock, std::chrono::minutes(1), [this]() { return m_shouldStop.load(); });
     }
 }
 

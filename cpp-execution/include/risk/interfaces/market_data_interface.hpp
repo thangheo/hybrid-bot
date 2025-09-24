@@ -17,6 +17,9 @@
 #include <atomic>
 #include <chrono>
 #include <deque>
+#include <condition_variable>
+#include <queue>
+#include <mutex>
 
 using namespace trading::communication;
 using namespace trading::core;
@@ -192,7 +195,7 @@ private:
     std::string zmqPublisherEndpoint_ = SERVER_REQUEST_ENDPOINT;
     // Default cache validity for market data. Config overrides this in constructor.
     // Made more reasonable default to avoid immediate expiration on each read.
-    std::chrono::milliseconds cacheValidityDuration_{2000};  // 1000ms (1s) cache validity
+    std::chrono::milliseconds cacheValidityDuration_{1000};  // 1000ms (1s) cache validity
     
     // State
     std::atomic<bool> initialized_{false};
@@ -211,6 +214,30 @@ private:
     void connectionMonitorLoop();
     bool checkConnection();
     void handleDisconnection();
+    
+    // Inbound message queue + processing thread to avoid doing heavy work inside ZMQ recv thread
+    struct RawMessage {
+        std::string topic;
+        std::string message;
+        std::chrono::steady_clock::time_point recv_time;
+    };
+
+    // Queue used by ZMQ callback (producer) and processing thread (consumer)
+    mutable std::mutex inboundQueueMutex_;
+    std::condition_variable inboundQueueCv_;
+    std::deque<RawMessage> inboundQueue_;
+    size_t inboundQueueMaxSize_ = 10000; // bounded queue size to avoid OOM
+    std::thread processingThread_;
+    std::atomic<bool> processingRunning_{false};
+
+    // Counters for instrumentation
+    std::atomic<uint64_t> totalReceived_{0};
+    std::atomic<uint64_t> totalEnqueued_{0};
+    std::atomic<uint64_t> totalProcessed_{0};
+    std::atomic<uint64_t> totalDropped_{0};
+
+    // Processing loop
+    void processQueueLoop();
     
     // Error tracking
     struct ErrorStats {

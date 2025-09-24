@@ -4,6 +4,7 @@
  */
 
 #include "communication/market_data_subscriber.hpp"
+#include "communication/zmq_manager.hpp"
 #include "common/logger.hpp"
 #include <iostream>
 #include <chrono>
@@ -20,6 +21,14 @@ MarketDataSubscriber::~MarketDataSubscriber() {
     stop();
 }
 
+MarketDataSubscriber::MarketDataSubscriber(const std::string& publisherEndpoint, std::shared_ptr<zmq::context_t> sharedContext)
+    : publisherEndpoint_(publisherEndpoint) {
+    if (sharedContext) {
+        context_ = sharedContext;
+    }
+    LOG_INFO("Created MarketDataSubscriber (shared context) for endpoint: " + publisherEndpoint);
+}
+
 bool MarketDataSubscriber::start() {
     if (running_.load()) {
         LOG_WARN("MarketDataSubscriber already running");
@@ -27,8 +36,11 @@ bool MarketDataSubscriber::start() {
     }
 
     try {
-        // Create ZeroMQ context and subscriber socket
-        context_ = std::make_unique<zmq::context_t>(1);
+        // Use provided shared context or create/get from ZmqManager
+        if (!context_) {
+            context_ = trading::communication::ZmqManager::instance().getContext(1);
+        }
+        // subscriber_ must be owned by this class
         subscriber_ = std::make_unique<zmq::socket_t>(*context_, zmq::socket_type::sub);
         
         // Connect to publisher
@@ -73,9 +85,9 @@ void MarketDataSubscriber::stop() {
             subscriptionThread_.join();
         }
         
-        // Cleanup
-        subscriber_.reset();
-        context_.reset();
+    // Cleanup - do not reset shared context_ if it came from manager (we hold a shared_ptr)
+    subscriber_.reset();
+    context_.reset();
         
         LOG_INFO("MarketDataSubscriber stopped");
         

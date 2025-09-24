@@ -7,6 +7,7 @@
  */
 
 #include "communication/zmq_server.hpp"
+#include "communication/zmq_manager.hpp"
 #include <iostream>
 #include <sstream>
 #include <iomanip>
@@ -148,22 +149,9 @@ void GenericZmqServer::stop() {
     logInfo("Stopping Generic ZMQ Server...");
     state_.store(ServerState::STOPPING);
     
-    // Signal context termination to wake up any blocking operations
-    if (intel_context_) {
-        try {
-            intel_context_->shutdown();
-        } catch (const zmq::error_t& e) {
-            logError("Error shutting down Intel context: " + std::string(e.what()));
-        }
-    }
-
-    if (internal_context_) {
-        try {
-            internal_context_->shutdown();
-        } catch (const zmq::error_t& e) {
-            logError("Error shutting down Internal context: " + std::string(e.what()));
-        }
-    }
+    // Note: contexts are managed by ZmqManager (shared). Do NOT shutdown or
+    // close the shared context here – closing it would affect other components
+    // that may be using the same context. Only sockets are closed below.
     
     
     // Notify all waiting threads
@@ -643,18 +631,19 @@ bool GenericZmqServer::initializeSockets() {
         logInfo("Internal endpoint: " + config_.internal_endpoint);
         logInfo("Request endpoint: " + config_.request_endpoint);
         
-        // Create ZeroMQ context with proper shutdown behavior
-        logInfo("Creating ZMQ context with " + std::to_string(config_.io_threads) + " IO threads");
-        intel_context_ = std::make_unique<zmq::context_t>(1);  // Single thread for intel
-        internal_context_ = std::make_unique<zmq::context_t>(config_.io_threads);
+    // Use a single shared context from ZmqManager to avoid multiple contexts
+    logInfo("Acquiring shared ZMQ context with " + std::to_string(config_.io_threads) + " IO threads");
+    auto shared_ctx = trading::communication::ZmqManager::instance().getContext(config_.io_threads);
+    // Store shared_ptr references so lifetime is shared with ZmqManager
+    intel_context_ = shared_ctx;
+    internal_context_ = shared_ctx;
 
-        // Set context options for safer shutdown
-        intel_context_->set(zmq::ctxopt::blocky, false);  // Non-blocking context termination
-        internal_context_->set(zmq::ctxopt::blocky, false);  // Non-blocking context termination
+    // Best-effort set
+    try { shared_ctx->set(zmq::ctxopt::blocky, false); } catch(...) {}
 
         // Create and configure intel publisher socket
         logInfo("Creating intel publisher socket...");
-        intel_publisher_socket_ = std::make_unique<zmq::socket_t>(*intel_context_, ZMQ_PUB);
+    intel_publisher_socket_ = std::make_unique<zmq::socket_t>(*intel_context_, ZMQ_PUB);
         
         logInfo("Setting intel socket options...");
         intel_publisher_socket_->set(zmq::sockopt::sndhwm, config_.intel_hwm);
@@ -670,12 +659,18 @@ bool GenericZmqServer::initializeSockets() {
             intel_publisher_socket_->set(zmq::sockopt::conflate, 1);
         }
         
-        intel_publisher_socket_->bind(config_.intel_endpoint);
-        logInfo("Intel publisher socket bound successfully to: " + config_.intel_endpoint);
+        // Before binding, check manager to avoid duplicate binds
+        if (!trading::communication::ZmqManager::instance().isEndpointBound(config_.intel_endpoint)) {
+            intel_publisher_socket_->bind(config_.intel_endpoint);
+            trading::communication::ZmqManager::instance().registerEndpoint(config_.intel_endpoint);
+            logInfo("Intel publisher socket bound successfully to: " + config_.intel_endpoint);
+        } else {
+            logError("Intel endpoint already bound elsewhere: " + config_.intel_endpoint);
+        }
        
         // Create and configure internal publisher socket
         logInfo("Creating internal publisher socket...");
-        internal_publisher_socket_ = std::make_unique<zmq::socket_t>(*internal_context_, ZMQ_PUB);
+    internal_publisher_socket_ = std::make_unique<zmq::socket_t>(*internal_context_, ZMQ_PUB);
         
         logInfo("Setting internal socket options...");
         internal_publisher_socket_->set(zmq::sockopt::sndhwm, config_.internal_hwm);
@@ -691,12 +686,17 @@ bool GenericZmqServer::initializeSockets() {
             internal_publisher_socket_->set(zmq::sockopt::conflate, 1);
         }
         
-        internal_publisher_socket_->bind(config_.internal_endpoint);
-        logInfo("Internal publisher socket bound successfully to: " + config_.internal_endpoint);
+        if (!trading::communication::ZmqManager::instance().isEndpointBound(config_.internal_endpoint)) {
+            internal_publisher_socket_->bind(config_.internal_endpoint);
+            trading::communication::ZmqManager::instance().registerEndpoint(config_.internal_endpoint);
+            logInfo("Internal publisher socket bound successfully to: " + config_.internal_endpoint);
+        } else {
+            logError("Internal endpoint already bound elsewhere: " + config_.internal_endpoint);
+        }
         
         // Create and configure request socket
         logInfo("Creating request socket...");
-        request_socket_ = std::make_unique<zmq::socket_t>(*internal_context_, ZMQ_ROUTER); // trading intent is from python
+    request_socket_ = std::make_unique<zmq::socket_t>(*internal_context_, ZMQ_ROUTER); // trading intent is from python
         
         logInfo("Setting request socket options...");
         request_socket_->set(zmq::sockopt::rcvhwm, config_.request_hwm);
@@ -706,8 +706,13 @@ bool GenericZmqServer::initializeSockets() {
         request_socket_->set(zmq::sockopt::sndtimeo, 1000);  // Send timeout
         request_socket_->set(zmq::sockopt::rcvbuf, 0);  // Receive buffer
         
-        request_socket_->bind(config_.request_endpoint);
-        logInfo("Request socket bound successfully to: " + config_.request_endpoint);
+        if (!trading::communication::ZmqManager::instance().isEndpointBound(config_.request_endpoint)) {
+            request_socket_->bind(config_.request_endpoint);
+            trading::communication::ZmqManager::instance().registerEndpoint(config_.request_endpoint);
+            logInfo("Request socket bound successfully to: " + config_.request_endpoint);
+        } else {
+            logError("Request endpoint already bound elsewhere: " + config_.request_endpoint);
+        }
         
         logInfo("All ZeroMQ sockets initialized successfully");
         return true;
@@ -737,6 +742,7 @@ void GenericZmqServer::cleanup() {
             logError("Error closing intel publisher socket: " + std::string(e.what()));
         }
         intel_publisher_socket_.reset();
+        trading::communication::ZmqManager::instance().unregisterEndpoint(config_.intel_endpoint);
     }
     
     if (internal_publisher_socket_) {
@@ -747,6 +753,7 @@ void GenericZmqServer::cleanup() {
             logError("Error closing internal publisher socket: " + std::string(e.what()));
         }
         internal_publisher_socket_.reset();
+        trading::communication::ZmqManager::instance().unregisterEndpoint(config_.internal_endpoint);
     }
     
     if (request_socket_) {
@@ -757,24 +764,12 @@ void GenericZmqServer::cleanup() {
             logError("Error closing request socket: " + std::string(e.what()));
         }
         request_socket_.reset();
+        trading::communication::ZmqManager::instance().unregisterEndpoint(config_.request_endpoint);
     }
     
-    // Close context
-    if (intel_context_) {
-        try {
-            intel_context_->close();
-        } catch (const zmq::error_t& e) {
-            logError("Error closing Intel ZMQ context: " + std::string(e.what()));
-        }
-    }
-
-    if (internal_context_) {
-        try {
-            internal_context_->close();
-        } catch (const zmq::error_t& e) {
-            logError("Error closing Internal ZMQ context: " + std::string(e.what()));
-        }
-    }
+    // Do NOT close the shared contexts - they are owned by ZmqManager.
+    // Just release our references so the manager retains ownership and
+    // can decide lifecycle globally.
     internal_context_.reset();
     intel_context_.reset();
     // Clear queues
@@ -1430,9 +1425,15 @@ bool GenericZmqServer::reconnectSocket(zmq::socket_t& socket, const std::string&
             request_socket_->set(zmq::sockopt::linger, 1000);
         }
         
-        socket.bind(endpoint);
-        logInfo("Socket reconnected to: " + endpoint);
-        return true;
+        // Attempt to bind via manager to avoid duplicate bind errors
+        if (trading::communication::ZmqManager::instance().registerEndpoint(endpoint)) {
+            socket.bind(endpoint);
+            logInfo("Socket reconnected to: " + endpoint);
+            return true;
+        } else {
+            logError("Socket reconnect failed - endpoint already bound: " + endpoint);
+            return false;
+        }
         
     } catch (const zmq::error_t& e) {
         logError("Failed to reconnect socket: " + std::string(e.what()));

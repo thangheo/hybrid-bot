@@ -151,7 +151,7 @@ private:
     ZmqClientConfig config_;
     
     // ZeroMQ components
-    std::unique_ptr<zmq::context_t> context_;
+    std::shared_ptr<zmq::context_t> context_;
     std::unique_ptr<zmq::socket_t> subscriber_socket_;
     std::unique_ptr<zmq::socket_t> request_socket_;
     
