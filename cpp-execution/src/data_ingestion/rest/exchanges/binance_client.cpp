@@ -21,6 +21,7 @@
 #include <stdexcept>
 
 #include <iostream>
+#include <cstdlib>
 
 
 using namespace nlohmann;
@@ -41,6 +42,32 @@ static size_t WriteCallback(void* contents, size_t size, size_t nmemb, std::stri
 BinanceClient::BinanceClient() : m_base_url(MAINNET_URL) {
     // Initialize libcurl globally
     curl_global_init(CURL_GLOBAL_DEFAULT);
+    // Attempt to read API credentials & testnet flag from environment so the
+    // client can be used without an explicit call to setApiKey in some
+    // deployment scenarios (e.g., containers or CI).
+    const char* env_key = std::getenv("BINANCE_API_KEY");
+    const char* env_secret = std::getenv("BINANCE_API_SECRET");
+    const char* env_testnet = std::getenv("BINANCE_TESTNET");
+
+    // If BINANCE_TESTNET is set to 1/true, switch to the testnet URL.
+    if (env_testnet) {
+        std::string val(env_testnet);
+        if (val == "1" || val == "true" || val == "TRUE" || val == "True") {
+            m_base_url = TESTNET_URL;
+            LOG_INFO("BinanceClient: using TESTNET URL {}", m_base_url);
+        }
+    }
+
+    if (env_key && env_secret) {
+        try {
+            setApiKey(std::string(env_key), std::string(env_secret));
+            LOG_INFO("BinanceClient: loaded API key/secret from environment");
+        } catch (const std::exception& e) {
+            LOG_WARN("BinanceClient: failed to set API key from environment: {}", e.what());
+        }
+    } else {
+        LOG_INFO("BinanceClient: BINANCE_API_KEY/BINANCE_API_SECRET not set; private endpoints require explicit credentials");
+    }
 }
 
 BinanceClient::~BinanceClient() {
