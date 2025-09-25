@@ -15,7 +15,11 @@
 #include "strategy/pattern/analyzer.hpp"
 #include "strategy/types.hpp"
 
+// Forward-declare Bayesian model to avoid pulling heavy Eigen headers into this public header
+namespace trading { namespace perception { class BayesianTradingModel; } }
+
 #include "data_ingestion/orderbook/order_book.hpp"
+#include "perception/bayesian_trading_adapter.hpp"
 #include <vector>
 #include <memory>
 #include <map>
@@ -31,7 +35,8 @@ namespace strategy {
     
 struct DetectorResult {
     ImbalanceType type;
-    bool isImbalance = false;
+    // bool isImbalance = false;
+    double imbalanceValue = 0.0; // e.g., volume ratio, spread change
     double strength = 0.0;
     Direction direction = Direction::BUY;
     bool shouldEmitEvent = false; // true nếu cần gọi createImbalanceEvent
@@ -135,7 +140,22 @@ public:
     virtual void updateParameters(const ParameterSet& params);
 
 private:
+    double calculateOrderCountDropRatio(const OrderBookMetrics& metrics);
+    double calculateMarketImpactDecayRatio(const OrderBookMetrics& metrics) ;
+    double calculateVolatilityDeclineRatio(const OrderBookMetrics& metrics) ;
+    double calculateFlowNormalizationRatio(const OrderBookMetrics& metrics) ;
+    double calculatePressureReliefRatio(const OrderBookMetrics& metrics);
+    double getCurrentVolumeConcentration(const OrderBookMetrics& metrics);
+    Direction determineDisappearanceDirection(const OrderBookMetrics& metrics);
+    double calculatePriceReversionRatio(const OrderBookMetrics& metrics) ;
+    double calculateLiquidityDropRatio(const OrderBookMetrics& metrics) ;
+    double calculateSpreadExpansionRatio(const OrderBookMetrics& metrics) ;
+    double calculateVolumeReductionRatio(const OrderBookMetrics& metrics) ;
+    double calculateDepthReductionRatio(const OrderBookMetrics& metrics) ;
 
+
+    Direction determineDirection(const OrderBookMetrics& metrics);
+    double getVolumeConcentrationStrength(const OrderBookMetrics& metrics);
     // Additional private methods
     uint64_t generateEventId();
     double calculateImbalanceConfidence(ImbalanceType type, double strength, const OrderBookMetrics& metrics);
@@ -144,6 +164,8 @@ private:
     // Configuration
     ImbalanceDetectionConfig config_;
     ThresholdSet thresholds_;
+    // Bayesian model to aggregate detector strengths into a single signal
+    std::shared_ptr<trading::perception::BayesianTradingModel> bayes_model_;
     // lastMetrics_
     std::optional<OrderBookMetrics> lastMetrics_;
     // Detection state
@@ -157,18 +179,18 @@ private:
     DetectorResult detectLiquidityFlowImbalance(const OrderBookMetrics& metrics);
     DetectorResult detectAbnormalSpread(const OrderBookMetrics& metrics);
     DetectorResult detectMarketDepthChange(const OrderBookMetrics& metrics);
-    double detectLargeOrderAppearance(const OrderBookMetrics& metrics);
-    bool detectLargeOrderDisappearance(const OrderBookMetrics& metrics);
-    bool detectOrderFlowImbalance(const OrderBookMetrics& metrics);
-    bool detectPriceLevelConcentration(const OrderBookMetrics& metrics);
-    bool detectLiquidityImbalance(const OrderBookMetrics& metrics);
-    bool detectTrendContinuation(const OrderBookMetrics& metrics);
-    bool detectTrendReversal(const OrderBookMetrics& metrics);
-    bool detectTradeImbalance(const OrderBookMetrics& metrics);
-    bool detectCancellationImbalance(const OrderBookMetrics& metrics);
-    bool detectPriceVolatilityImbalance(const OrderBookMetrics& metrics);
-    bool detectHiddenLiquidityImbalance(const OrderBookMetrics& metrics);
-    bool detectCustomImbalance(const OrderBookMetrics& metrics);
+    DetectorResult detectLargeOrderAppearance(const OrderBookMetrics& metrics);
+    DetectorResult detectLargeOrderDisappearance(const OrderBookMetrics& metrics);
+    DetectorResult detectOrderFlowImbalance(const OrderBookMetrics& metrics);
+    DetectorResult detectPriceLevelConcentration(const OrderBookMetrics& metrics);
+    DetectorResult detectLiquidityImbalance(const OrderBookMetrics& metrics);
+    DetectorResult detectTrendContinuation(const OrderBookMetrics& metrics);
+    DetectorResult detectTrendReversal(const OrderBookMetrics& metrics);
+    DetectorResult detectTradeImbalance(const OrderBookMetrics& metrics);
+    DetectorResult detectCancellationImbalance(const OrderBookMetrics& metrics);
+    DetectorResult detectPriceVolatilityImbalance(const OrderBookMetrics& metrics);
+    DetectorResult detectHiddenLiquidityImbalance(const OrderBookMetrics& metrics);
+    DetectorResult detectCustomImbalance(const OrderBookMetrics& metrics);
     bool checkVolumeConcentration(const OrderBookMetrics& metrics) ;
     bool detectSpreadPersistence(const OrderBookMetrics& metrics) ;
     bool detectDepthVolumeInconsistency(const OrderBookMetrics& metrics) ;
@@ -218,6 +240,25 @@ public:
 
     // When false, detected events are constructed but not published to EventBus
     std::atomic<bool> publishEvents_{true};
+
+    // Bayesian perception model for fusing detector outputs
+    // Adapter handle to a perception bayesian model (opaque, implemented in perception)
+    trading::perception::BayesHandle bayes_handle_ = nullptr;
+    // Buffer for pending training examples (features captured at prediction time)
+    struct PendingTraining {
+        core::Timestamp timestamp;
+        std::vector<double> features; // uses imbalanceValue ordering
+        double midPrice;
+    };
+    std::deque<PendingTraining> pendingTraining_;
+    mutable std::mutex pendingTrainingMutex_;
+
+    // Labeling configuration (milliseconds to wait before labelling a prediction)
+    std::chrono::milliseconds labelingDelay_{500};
+    size_t maxPendingTraining_ = 8192;
+
+    // Optional model persistence path (can be set via env BAYES_MODEL_PATH)
+    std::string bayesModelPath_;
 };
 
 // Type alias

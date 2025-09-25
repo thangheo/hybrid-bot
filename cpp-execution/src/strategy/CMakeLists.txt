@@ -11,6 +11,7 @@ file(GLOB_RECURSE STRATEGY_SOURCES
     # "signal/hawkes/*.cpp"
     "*.cpp"  # Include any cpp files in the strategy root directory
 )
+
 list(FILTER STRATEGY_SOURCES EXCLUDE REGEX "signal/hawkes/imbalance_signal_generator\\.cpp$")
 list(FILTER STRATEGY_SOURCES EXCLUDE REGEX "signal/hawkes/hawkes_predictor\\.cpp$")
 
@@ -38,6 +39,8 @@ target_link_libraries(strategy
         communication
         proto_lib
         data_ingestion
+        perception
+        # Eigen3::Eigen
         nlohmann_json::nlohmann_json
     PRIVATE
         Boost::system

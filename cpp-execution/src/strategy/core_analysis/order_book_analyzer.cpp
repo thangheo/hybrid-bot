@@ -174,7 +174,15 @@ void OrderBookAnalyzer::processOrderBook(const data_ingestion::OrderBook& snapsh
         updateTimeSeries();
         calculateDerivedMetrics();
         calculateTimeBasedMetrics();
+        // Calculate flow metrics
+        calculateFlowMetrics(previousBids_, previousAsks_, cachedBids_, cachedAsks_,
+                             std::chrono::duration<double>(snapshot.getTimestamp() - lastUpdateTime_).count());
+        // Store current bids/asks as previous for next update
+        previousBids_ = cachedBids_;
+        previousAsks_ = cachedAsks_;
 
+        // Update the metrics map for flexible access
+        currentMetrics_.updateMetricsMap();
         // Store a copy of the current metrics in history but strip heavy
         // time-series payload to avoid keeping large duplicated vectors
         // inside the history which can cause memory growth over time.
@@ -220,6 +228,34 @@ void OrderBookAnalyzer::processOrderBook(const data_ingestion::OrderBook& snapsh
     // Publish event outside of lock to prevent deadlocks
     common::EventBus::getInstance().publish(events::MetricsUpdatedEvent{metricsToNotify});
 }
+
+void OrderBookAnalyzer::calculateFlowMetrics(const std::vector<data_ingestion::PriceLevel>& previousBids,
+                                     const std::vector<data_ingestion::PriceLevel>& previousAsks,
+                                     const std::vector<data_ingestion::PriceLevel>& currentBids,
+                                     const std::vector<data_ingestion::PriceLevel>& currentAsks,
+                                     double timeDeltaSec) {
+    if (previousBids.empty() || previousAsks.empty() || currentBids.empty() || currentAsks.empty()) {
+        return;
+    }
+
+    // Calculate bid flow
+    double bidFlow = 0.0;
+    for (const auto& bid : currentBids) {
+        bidFlow += bid.quantity;
+    }
+    currentMetrics_.bidFlow = bidFlow;
+
+    // Calculate ask flow
+    double askFlow = 0.0;
+    for (const auto& ask : currentAsks) {
+        askFlow += ask.quantity;
+    }
+    currentMetrics_.askFlow = askFlow;
+
+    // Update the flow metrics
+    //currentMetrics_.updateMetricsMap();
+}
+
 
 OrderBookMetrics OrderBookAnalyzer::getMetrics() const {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -267,34 +303,7 @@ double OrderBookAnalyzer::getMetric(const std::string& metricName, int depth) co
     // Fall back to metrics map
     return currentMetrics_.getMetric(metricName, 0.0);
 }
-
-// double OrderBookAnalyzer::getMetric(const std::string& metricName, int depth) const {
-//     std::lock_guard<std::mutex> lock(mutex_);
-    
-//     // Handle depth-specific metrics
-//     if (metricName == "bidVolume" && depth > 0 && 
-//         depth <= static_cast<int>(currentMetrics_.bidVolumesByLevel.size())) {
-//         return currentMetrics_.bidVolumesByLevel[depth - 1];
-//     }
-    
-//     if (metricName == "askVolume" && depth > 0 && 
-//         depth <= static_cast<int>(currentMetrics_.askVolumesByLevel.size())) {
-//         return currentMetrics_.askVolumesByLevel[depth - 1];
-//     }
-    
-//     if (metricName == "cumulativeBidVolume" && depth > 0 && 
-//         depth <= static_cast<int>(currentMetrics_.cumulativeBidVolumes.size())) {
-//         return currentMetrics_.cumulativeBidVolumes[depth - 1];
-//     }
-    
-//     if (metricName == "cumulativeAskVolume" && depth > 0 && 
-//         depth <= static_cast<int>(currentMetrics_.cumulativeAskVolumes.size())) {
-//         return currentMetrics_.cumulativeAskVolumes[depth - 1];
-//     }
-    
-//     // For non-depth metrics, use the getMetric method from OrderBookMetrics
-//     return currentMetrics_.getMetric(metricName, 0.0);
-// }
+ 
 
 void OrderBookAnalyzer::registerMetricsCallback(MetricsCallback callback) {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -406,10 +415,9 @@ void OrderBookAnalyzer::calculatePriceMetrics(
     currentMetrics_.metrics["emaMidPrice"] = emaMidPrice_;
     currentMetrics_.metrics["emaSpread"] = emaSpread_;
     currentMetrics_.metrics["averageSpreadPercent"] = emaSpread_ / currentMetrics_.midPrice * 100.0;
-    // print some debug info
-    // std::cout << std::format("DBG: Price Metrics - midPrice: {}, spread: {}, spreadPercent: {}%\n",
-    //                          currentMetrics_.midPrice, currentMetrics_.spread, currentMetrics_.spreadPercent
-    //                             );
+
+    // Update the flow metrics
+    //currentMetrics_.updateMetricsMap();
 }
 
 void OrderBookAnalyzer::calculateVolumeMetrics(
@@ -457,6 +465,25 @@ void OrderBookAnalyzer::calculateVolumeMetrics(
     currentMetrics_.metrics["askVolume"] = currentMetrics_.totalAskVolume;
     currentMetrics_.metrics["bidLevelCount"] = static_cast<double>(bids.size());
     currentMetrics_.metrics["askLevelCount"] = static_cast<double>(asks.size());
+    currentMetrics_.metrics["bidAskVolumeRatio"] = currentMetrics_.bidAskVolumeRatio;
+    // Store level-specific volumes
+    for (size_t i = 0; i < currentMetrics_.bidVolumesByLevel.size(); ++i) {
+        currentMetrics_.metrics[std::format("bidVolumeLevel_{}", i)] = currentMetrics_.bidVolumesByLevel[i];
+    }
+    for (size_t i = 0; i < currentMetrics_.askVolumesByLevel.size(); ++i) {
+        currentMetrics_.metrics[std::format("askVolumeLevel_{}", i)] = currentMetrics_.askVolumesByLevel[i];
+    }
+    for (size_t i = 0; i < currentMetrics_.cumulativeBidVolumes.size(); ++i) {
+        currentMetrics_.metrics[std::format("cumulativeBidVolumeLevel_{}", i)] = currentMetrics_.cumulativeBidVolumes[i];
+    }
+    for (size_t i = 0; i < currentMetrics_.cumulativeAskVolumes.size(); ++i) {
+        currentMetrics_.metrics[std::format("cumulativeAskVolumeLevel_{}", i)] = currentMetrics_.cumulativeAskVolumes[i];
+    }
+
+    // Update the flow metrics
+    //currentMetrics_.updateMetricsMap();
+
+
 }
 
 void OrderBookAnalyzer::calculateLevelMetrics(
@@ -486,6 +513,11 @@ void OrderBookAnalyzer::calculateLevelMetrics(
     
     currentMetrics_.metrics["bidDensity"] = currentMetrics_.bidDensity;
     currentMetrics_.metrics["askDensity"] = currentMetrics_.askDensity;
+    currentMetrics_.metrics["priceLevelImbalance"] = currentMetrics_.priceLevelImbalance;
+
+    // Update the flow metrics
+    //currentMetrics_.updateMetricsMap();
+
 }
 
 void OrderBookAnalyzer::calculateImbalanceMetrics(
@@ -548,6 +580,11 @@ void OrderBookAnalyzer::calculateImbalanceMetrics(
     currentMetrics_.metrics["pressureImbalance"] = currentMetrics_.pressureImbalance;
     currentMetrics_.metrics["volatilityExpectation"] = currentMetrics_.volatilityExpectation;
     currentMetrics_.metrics["realizedVolatility"] = currentMetrics_.realizedVolatility;
+    currentMetrics_.metrics["liquidityProfileScore"] = currentMetrics_.liquidityProfileScore;
+    
+    // Update the flow metrics
+    //currentMetrics_.updateMetricsMap();
+
 }
 
 void OrderBookAnalyzer::updateTimeSeries() {
@@ -565,6 +602,10 @@ void OrderBookAnalyzer::updateTimeSeries() {
     currentMetrics_.timeSeriesMetrics["spread"] = historicalSpreads_;
     currentMetrics_.timeSeriesMetrics["volume"] = historicalVolumes_;
     currentMetrics_.timeSeriesMetrics["imbalance"] = historicalImbalances_;
+    currentMetrics_.timeSeriesMetrics["timestamp"] = historicalTimestamps_;
+
+    // Update the flow metrics
+    //currentMetrics_.updateMetricsMap();
 }
 
 void OrderBookAnalyzer::calculateDerivedMetrics() {
@@ -579,6 +620,8 @@ void OrderBookAnalyzer::calculateDerivedMetrics() {
     const double bidLiquidity = currentMetrics_.totalBidVolume * (1.0 + currentMetrics_.bidDensity);
     const double askLiquidity = currentMetrics_.totalAskVolume * (1.0 + currentMetrics_.askDensity);
     currentMetrics_.liquidityProfileScore = (bidLiquidity + askLiquidity) / 2.0;
+    // Update metrics map
+    //currentMetrics_.updateMetricsMap();
 }
 
 void OrderBookAnalyzer::calculateTimeBasedMetrics() {
@@ -602,6 +645,8 @@ void OrderBookAnalyzer::calculateTimeBasedMetrics() {
         const double prevTotalVolume = prevMetrics.totalBidVolume + prevMetrics.totalAskVolume;
         currentMetrics_.volumeVelocity = (currentTotalVolume - prevTotalVolume) / timeDiff;
     }
+    //currentMetrics_.updateMetricsMap();
+
 }
 // groupPriceLevelsInPlace  
 void OrderBookAnalyzer::groupPriceLevelsInPlace(

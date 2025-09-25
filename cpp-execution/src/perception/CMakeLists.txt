@@ -18,6 +18,7 @@ endif()
 # Define library
 add_library(perception
     bayesian_trading_model.cpp
+    bayesian_trading_adapter.cpp
 )
 
 # Include directories

@@ -39,11 +39,16 @@ struct OrderBookMetrics {
     double askPrice = 0.0;
     double spread = 0.0;
     double spreadPercent = 0.0;
+    // Flow metrics
+    double bidFlow = 0.0;
+    double askFlow = 0.0;
     
     // Volume metrics
     double totalBidVolume  = 0.0;
     double totalAskVolume = 0.0;
     double bidAskVolumeRatio = 1.0;
+    double totalVolume = 0.0; // totalBidVolume + totalAskVolume
+    
     
     // Depth metrics
     std::vector<double> bidVolumesByLevel;
@@ -90,14 +95,23 @@ struct OrderBookMetrics {
         metrics["askPrice"] = askPrice;
         metrics["spread"] = spread;
         metrics["spreadPercent"] = spreadPercent;
-        
+
+        // Map flow metrics
+        metrics["bidFlow"] = bidFlow;
+        metrics["askFlow"] = askFlow;
+        //
+
         // Map standard volume metrics to both original and expected names
         metrics["totalBidVolume"] = totalBidVolume;
         metrics["totalAskVolume"] = totalAskVolume;
         metrics["bidVolume"] = totalBidVolume ;  // Additional mapping for compatibility
         metrics["askVolume"] = totalAskVolume;  // Additional mapping for compatibility
         metrics["bidAskVolumeRatio"] = bidAskVolumeRatio;
+        metrics["totalVolume"] = totalVolume;
+        //bidVolumesByLevel and askVolumesByLevel are vectors, not single values
         
+        
+
         // Imbalance metrics
         metrics["volumeImbalance"] = volumeImbalance;
         metrics["weightedVolumeImbalance"] = weightedVolumeImbalance;
@@ -158,6 +172,13 @@ struct OrderBookMetrics {
         else if (name == "priceVelocity") priceVelocity = value;
         else if (name == "volumeVelocity") volumeVelocity = value;
         else if (name == "spreadVelocity") spreadVelocity = value;
+        else if (name == "realizedVolatility") realizedVolatility = value;
+        else if (name == "volatilityPerUnitTime") volatilityPerUnitTime = value;
+        else if (name == "liquidityPressure") liquidityPressure = value;
+        else if (name == "bidFlow") bidFlow = value;
+        else if (name == "askFlow") askFlow = value;
+        else if (name == "averageSpreadPercent") metrics["averageSpreadPercent"] = value;
+        else if (name == "volatility") volatilityExpectation = value; // Map to existing value
     }
     
     // Get a specific metric by name
@@ -189,6 +210,11 @@ struct OrderBookMetrics {
         if (name == "spreadVelocity") return spreadVelocity;
         if (name == "bidLevelCount") return static_cast<double>(bidVolumesByLevel.size());
         if (name == "askLevelCount") return static_cast<double>(askVolumesByLevel.size());
+        if (name == "bidFlow") return bidFlow;
+        if (name == "askFlow") return askFlow;
+        if (name == "averageSpreadPercent") { return metrics.at("averageSpreadPercent"); }
+        if (name == "volatility") return volatilityExpectation; // Map to existing value
+        // Fallback to metrics map for other keys
 
         auto it = metrics.find(name);
         if (it != metrics.end()) return it->second;
