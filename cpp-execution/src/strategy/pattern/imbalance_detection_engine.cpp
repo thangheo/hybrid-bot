@@ -177,6 +177,7 @@ ImbalanceDetectionEngine::~ImbalanceDetectionEngine() {
     }
     // Persist bayesian model if configured and destroy adapter handle
     try {
+        std::lock_guard<std::mutex> lk(bayesMutex_);
         if (bayes_handle_ && !bayesModelPath_.empty()) {
             try {
                 trading::perception::bayes_save(bayes_handle_, bayesModelPath_);
@@ -184,24 +185,29 @@ ImbalanceDetectionEngine::~ImbalanceDetectionEngine() {
             } catch (const std::exception &ex) {
                 LOG_WARN("ImbalanceDetectionEngine: failed to save bayes model {}: {}", bayesModelPath_, ex.what());
             } catch (...) {
-                LOG_WARN("ImbalanceDetectionEngine: unknown error while saving bayes model {}");
+                LOG_WARN("ImbalanceDetectionEngine: unknown error while saving bayes model {}", bayesModelPath_);
             }
+        }
+        if (bayes_handle_) {
+            try {
+                trading::perception::bayes_destroy(bayes_handle_);
+            } catch (...) {}
+            bayes_handle_ = nullptr;
+            bayesInitialized_.store(false);
+            LOG_DEBUG("ImbalanceDetectionEngine: destroyed bayes adapter handle");
         }
     } catch (...) {
         // swallow
     }
-    try {
-        if (bayes_handle_) {
-            trading::perception::bayes_destroy(bayes_handle_);
-            bayes_handle_ = nullptr;
-            LOG_DEBUG("ImbalanceDetectionEngine: destroyed bayes adapter handle");
-        }
-    } catch (...) {}
 }
 
 // Start the detector worker (call from initialization path if desired)
 void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
     std::lock_guard<std::mutex> lk(mutex_);
+    if (!bayesInitialized_.load()) {
+        LOG_WARN("ImbalanceDetectionEngine: startDetectorWorker called before bayes model initialized; refusing to start worker");
+        return;
+    }
     if (detectorWorkerRunning_.load()) return;
     detectorWorkerRunning_.store(true);
     detectorWorkerThread_ = std::thread([this](){
@@ -289,22 +295,14 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                 pendingTraining_.push_back(PendingTraining{m.timestamp, features, m.midPrice});
             }
 
-            // Ensure Bayesian model exists and attempt to load if path provided (use adapter handle)
-            if (!bayes_handle_) {
-                bayes_handle_ = trading::perception::bayes_create();
-                if (bayesModelPath_.empty()) {
-                    const char* p = std::getenv("BAYES_MODEL_PATH");
-                    if (p) bayesModelPath_ = std::string(p);
-                }
-                if (!bayesModelPath_.empty()) {
-                    try { trading::perception::bayes_load(bayes_handle_, bayesModelPath_); } catch(...){ }
-                }
-            }
-
             // Predict with Bayesian model and emit a single aggregated event if signal indicates trade
-            if (bayes_handle_) {
+            if (bayesInitialized_.load()) {
                 try {
-                    auto signal = trading::perception::bayes_predict(bayes_handle_, features);
+                    trading::perception::BayesSignal signal;
+                    {
+                        std::lock_guard<std::mutex> lk(bayesMutex_);
+                        if (bayes_handle_) signal = trading::perception::bayes_predict(bayes_handle_, features);
+                    }
                     if (signal.should_trade) {
                         Direction dir = (signal.direction > 0) ? Direction::BUY : Direction::SELL;
                         OrderBookMetrics mcopy = m;
@@ -341,15 +339,23 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                 // update model outside lock
                 for (auto &pair : toTrain) {
                     try {
-                        trading::perception::bayes_update(bayes_handle_, pair.first, pair.second);
-                        //save model after each update to avoid losing data
-                        if (!bayesModelPath_.empty()) {
-                            try {
-                                trading::perception::bayes_save(bayes_handle_, bayesModelPath_);
-                            } catch (const std::exception &ex) {
-                                LOG_WARN("Bayes save threw: {}", ex.what());
-                            } catch (...) {
-                                LOG_WARN("Bayes save threw unknown");
+                        std::lock_guard<std::mutex> lk(bayesMutex_);
+                        if (bayes_handle_) {
+
+                            trading::perception::bayes_update(bayes_handle_, pair.first, pair.second);
+                            // save model after each update to avoid losing data
+                            if (!bayesModelPath_.empty()) {
+                                try {
+                                    //only save if time passs more than 1hour 
+                                    if (std::chrono::steady_clock::now() - lastSaveTime_ > std::chrono::hours(1)) {
+                                        trading::perception::bayes_save(bayes_handle_, bayesModelPath_);
+                                        lastSaveTime_ = std::chrono::steady_clock::now();
+                                    }
+                                } catch (const std::exception &ex) {
+                                    LOG_WARN("Bayes save threw: {}", ex.what());
+                                } catch (...) {
+                                    LOG_WARN("Bayes save threw unknown");
+                                }
                             }
                         }
                     } catch (const std::exception &ex) {
@@ -388,13 +394,10 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
 
     // Configure bayes model path from config or environment
     if (!config_.bayesModelPath.empty()) bayesModelPath_ = config_.bayesModelPath;
-    // else just check environment. This is the most stupid way to handle this stupid path
-    //noone give a flying fuck about the fucking path whatever the fuck it is. dont complicated uncessessary shit.
-    // let my fucking brain forcus on important stuff
-    // if (bayesModelPath_.empty()) {
-    //     const char* p = "models/bayesian/imbalance_bayes_model_v1.bin"; // noone give a fucking about this ok?
-    //     if (p) bayesModelPath_ = std::string(p);
-    // }
+    if (bayesModelPath_.empty()) {
+        const char* p = "models/bayesian/imbalance_bayes_model_v1.bin"; // noone give a fucking about this ok?
+        if (p) bayesModelPath_ = std::string(p);
+    }
 
     // Optional labeling delay from config (in ms)
     if (config_.labelingDelayMs > 0) labelingDelay_ = std::chrono::milliseconds(config_.labelingDelayMs);
@@ -402,6 +405,7 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
 
     // Create and load Bayesian model adapter handle upfront so load errors surface at init
     try {
+        std::lock_guard<std::mutex> lk(bayesMutex_);
         if (!bayes_handle_) {
             bayes_handle_ = trading::perception::bayes_create();
             LOG_DEBUG("ImbalanceDetectionEngine: created bayes adapter handle");
@@ -419,6 +423,7 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                 LOG_WARN("ImbalanceDetectionEngine: unknown error while loading bayes model {}", bayesModelPath_);
             }
         }
+        bayesInitialized_.store(true);
     } catch (const std::exception &ex) {
         LOG_WARN("ImbalanceDetectionEngine: failed to create bayes adapter: {}", ex.what());
     } catch (...) {
@@ -426,12 +431,11 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
     }
 
     // Start background detector worker so analyzeMetrics can offload work.
-    // Start after releasing any locks to avoid lock ordering issues.
-    // try {
-    //     startDetectorWorker(); //already have metric_analyzer u idiot this is dupplcate. should call everytime we receive new ob metrics
-    // } catch (...) {
-    //     // ignore
-    // }
+    try {
+        startDetectorWorker(); 
+    } catch (...) {
+        // ignore
+    }
      
      return true;
  }
