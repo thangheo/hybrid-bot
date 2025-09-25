@@ -342,6 +342,16 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                 for (auto &pair : toTrain) {
                     try {
                         trading::perception::bayes_update(bayes_handle_, pair.first, pair.second);
+                        //save model after each update to avoid losing data
+                        if (!bayesModelPath_.empty()) {
+                            try {
+                                trading::perception::bayes_save(bayes_handle_, bayesModelPath_);
+                            } catch (const std::exception &ex) {
+                                LOG_WARN("Bayes save threw: {}", ex.what());
+                            } catch (...) {
+                                LOG_WARN("Bayes save threw unknown");
+                            }
+                        }
                     } catch (const std::exception &ex) {
                         LOG_WARN("Bayes update threw: {}", ex.what());
                     } catch (...) {
