@@ -14,7 +14,6 @@
 #include <ranges>
 #include <optional>
 #include <format> 
-#include <fmt/core.h>
 namespace trading::risk {
 
 DrawdownMonitor::DrawdownMonitor(const RiskConfig& config) {
@@ -420,7 +419,7 @@ bool DrawdownMonitor::resetPortfolioHighWaterMark(std::optional<double> value) {
     portfolioDrawdown_.criticalThresholdBreached.store(false);
     portfolioDrawdown_.breachCount.store(0);
     
-    // LOG_INFO(fmt::format("DrawdownMonitor: Reset portfolio high water mark to {}", newHwm));
+    // LOG_INFO(std::format("DrawdownMonitor: Reset portfolio high water mark to {}", newHwm));
 }
 
 std::map<std::string, double> DrawdownMonitor::getPerformanceStatistics() const {
@@ -561,7 +560,7 @@ DrawdownEvent DrawdownMonitor::createDrawdownEvent(
     
     const auto now = core::now();
     const std::string severity = isCritical ? "critical" : "warning";
-    const std::string description = fmt::format(
+    const std::string description = std::format(
         "Drawdown {} threshold breached for {}: {:.2f}%",
         severity, strategyId, drawdownPercent * 100.0);
     return DrawdownEvent(
@@ -582,7 +581,7 @@ void DrawdownMonitor::notifyCallbacks(const DrawdownEvent& event) {
         try {
             callback(event);
         } catch (const std::exception& e) {
-            LOG_ERROR(fmt::format("DrawdownMonitor: Callback error: {}", e.what()));
+            LOG_ERROR(std::format("DrawdownMonitor: Callback error: {}", e.what()));
         }
     }
 }
@@ -593,7 +592,7 @@ void DrawdownMonitor::notifyEmergencyCallbacks(const std::string& strategyId, do
         try {
             callback(strategyId, drawdown);
         } catch (const std::exception& e) {
-            LOG_ERROR(fmt::format("DrawdownMonitor: Emergency callback error: {}", e.what()));
+            LOG_ERROR(std::format("DrawdownMonitor: Emergency callback error: {}", e.what()));
         }
     }
 }
@@ -604,7 +603,7 @@ void DrawdownMonitor::notifyMetricsCallbacks(const std::string& strategyId, cons
         try {
             callback(strategyId, info);
         } catch (const std::exception& e) {
-            LOG_ERROR(fmt::format("DrawdownMonitor: Metrics callback error: {}", e.what()));
+            LOG_ERROR(std::format("DrawdownMonitor: Metrics callback error: {}", e.what()));
         }
     }
 }
@@ -623,7 +622,7 @@ void DrawdownMonitor::performMaintenance() {
         lastMaintenanceNanos_.store(core::now().time_since_epoch().count());
         
     } catch (const std::exception& e) {
-        LOG_ERROR(fmt::format("DrawdownMonitor: Maintenance error: {}", e.what()));
+        LOG_ERROR(std::format("DrawdownMonitor: Maintenance error: {}", e.what()));
     }
 }
 void DrawdownMonitor::pruneHistory() {
@@ -664,7 +663,7 @@ void DrawdownMonitor::validateStrategies() {
     std::unique_lock lock(strategyMutex_);
     for (auto it = strategyTrackers_.begin(); it != strategyTrackers_.end();) {
         if (it->second->getLastActivity() < cutoffTime) {
-            LOG_INFO(fmt::format("DrawdownMonitor: Removing inactive strategy: {}", it->first));
+            LOG_INFO(std::format("DrawdownMonitor: Removing inactive strategy: {}", it->first));
         } else {
             ++it;
         }

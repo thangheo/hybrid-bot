@@ -61,6 +61,9 @@
 #include "core/market_types.hpp"
 #include "core/direction.hpp"
 #include "core/types.hpp"
+//protobuf message for internal orderbook
+#include "internal_orderbook.pb.h"
+// #include "../generated/cpp/internal_oderbook.grpc.pb.h"
 
 // zmq clients
 #include "communication/zmq_config.hpp"
@@ -606,58 +609,137 @@ public:
                           << update.exchangeId.toString() << ":" << update.tradingPair.toString() << std::endl;
                 return;
             }
-            
-            // Create JSON message for orderbook (compatible with risk module)
-            nlohmann::json orderBookMsg;
-            orderBookMsg["exchange"] = update.exchangeId.toString();
-            orderBookMsg["symbol"] = update.tradingPair.toString();
-            orderBookMsg["sequence"] = update.sequenceNumber;
-            orderBookMsg["timestamp"] = std::chrono::duration_cast<std::chrono::milliseconds>(
-                update.exchangeTimestamp.time_since_epoch()).count();
-                        
-            // Best bid/ask
-            orderBookMsg["bid"] = !update.bids.empty() ? update.bids[0].price : 0.0;
-            orderBookMsg["ask"] = !update.asks.empty() ? update.asks[0].price : 0.0;
-                        
-            // Mid price
-            orderBookMsg["price"] = (!update.bids.empty() && !update.asks.empty())
-                ? (update.bids[0].price + update.asks[0].price) / 2.0 : 0.0;
+            if(0)//no longer use json
+            {
 
-            // Volume at top 5 levels
-            double bidVolume = 0.0, askVolume = 0.0;
-            for (int i = 0; i < std::min(5, (int)update.bids.size()); ++i) bidVolume += update.bids[i].quantity;
-            for (int i = 0; i < std::min(5, (int)update.asks.size()); ++i) askVolume += update.asks[i].quantity;
-            orderBookMsg["volume"] = bidVolume + askVolume;
+                
+                // Create JSON message for orderbook (compatible with risk module)
+                nlohmann::json orderBookMsg;
+                orderBookMsg["exchange"] = update.exchangeId.toString();
+                orderBookMsg["symbol"] = update.tradingPair.toString();
+                orderBookMsg["sequence"] = update.sequenceNumber;
+                orderBookMsg["timestamp"] = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    update.exchangeTimestamp.time_since_epoch()).count();
+                            
+                // Best bid/ask
+                orderBookMsg["bid"] = !update.bids.empty() ? update.bids[0].price : 0.0;
+                orderBookMsg["ask"] = !update.asks.empty() ? update.asks[0].price : 0.0;
+                            
+                // Mid price
+                orderBookMsg["price"] = (!update.bids.empty() && !update.asks.empty())
+                    ? (update.bids[0].price + update.asks[0].price) / 2.0 : 0.0;
 
-            // Add bids/asks arrays
-            orderBookMsg["bids"] = nlohmann::json::array();
-            for (const auto& bid : update.bids) orderBookMsg["bids"].push_back({bid.price, bid.quantity});
-            orderBookMsg["asks"] = nlohmann::json::array();
-            for (const auto& ask : update.asks) orderBookMsg["asks"].push_back({ask.price, ask.quantity});
+                // Volume at top 5 levels
+                double bidVolume = 0.0, askVolume = 0.0;
+                for (int i = 0; i < std::min(5, (int)update.bids.size()); ++i) bidVolume += update.bids[i].quantity;
+                for (int i = 0; i < std::min(5, (int)update.asks.size()); ++i) askVolume += update.asks[i].quantity;
+                orderBookMsg["volume"] = bidVolume + askVolume;
 
-            // Placeholders for 24h stats and last trade
-            orderBookMsg["lastTradePrice"] = orderBookMsg["price"];
-            orderBookMsg["lastTradeQuantity"] = 0.0;
-            orderBookMsg["open24h"] = orderBookMsg["price"];
-            orderBookMsg["high24h"] = orderBookMsg["price"];
-            orderBookMsg["low24h"] = orderBookMsg["price"];
-            orderBookMsg["volumeQuote24h"] = 0.0;
-            orderBookMsg["priceChange24h"] = 0.0;
-            orderBookMsg["priceChangePercent24h"] = 0.0;
-            // Optionally: orderBookMsg["extra"] = nlohmann::json::object();
+                // Add bids/asks arrays
+                orderBookMsg["bids"] = nlohmann::json::array();
+                for (const auto& bid : update.bids) orderBookMsg["bids"].push_back({bid.price, bid.quantity});
+                orderBookMsg["asks"] = nlohmann::json::array();
+                for (const auto& ask : update.asks) orderBookMsg["asks"].push_back({ask.price, ask.quantity});
 
-            std::string jsonStr = orderBookMsg.dump();
-            std::string topic = "orderbook." + update.exchangeId.toString() + "." + update.tradingPair.toString();
-            // Move the JSON string into publishAsync to avoid an extra copy.
-            zmq_server_->publishAsync(topic, std::move(jsonStr), MessagePriority::HIGH);
-            orderBookUpdatesReceived_.fetch_add(1);
-            //print debug info for every 5000th
-            static std::atomic<int> publishCount{0};
-            int count = publishCount.fetch_add(1);
-            if (count < 5 || count % 5000 == 0) {
-                std::cout << "📢 Published orderbook #" << count
-                          << " for " << update.exchangeId.toString()
-                          << ":" << update.tradingPair.toString() << std::endl;
+                // Placeholders for 24h stats and last trade
+                orderBookMsg["lastTradePrice"] = orderBookMsg["price"];
+                orderBookMsg["lastTradeQuantity"] = 0.0;
+                orderBookMsg["open24h"] = orderBookMsg["price"];
+                orderBookMsg["high24h"] = orderBookMsg["price"];
+                orderBookMsg["low24h"] = orderBookMsg["price"];
+                orderBookMsg["volumeQuote24h"] = 0.0;
+                orderBookMsg["priceChange24h"] = 0.0;
+                orderBookMsg["priceChangePercent24h"] = 0.0;
+                // Optionally: orderBookMsg["extra"] = nlohmann::json::object();
+
+                std::string jsonStr = orderBookMsg.dump();
+                std::string topic = "orderbook." + update.exchangeId.toString() + "." + update.tradingPair.toString();
+                // Move the JSON string into publishAsync to avoid an extra copy.
+                zmq_server_->publishAsync(topic, std::move(jsonStr), MessagePriority::HIGH);
+                orderBookUpdatesReceived_.fetch_add(1);
+                //print debug info for every 5000th
+                static std::atomic<int> publishCount{0};
+                int count = publishCount.fetch_add(1);
+                if (count < 5 || count % 5000 == 0) {
+                    std::cout << "📢 Published orderbook #" << count
+                            << " for " << update.exchangeId.toString()
+                            << ":" << update.tradingPair.toString() << std::endl;
+                }
+            }
+            else
+            {
+                try {
+                    // Use protobuf for orderbook publishing
+                    orderbook::OrderbookMessage obMsg;
+                    auto* data = obMsg.mutable_data();
+                    data->set_exchange(update.exchangeId.toString());
+                    data->set_symbol(update.tradingPair.toString());
+                    data->set_sequence(update.sequenceNumber);
+                    data->set_timestamp(std::chrono::duration_cast<std::chrono::milliseconds>(
+                        update.exchangeTimestamp.time_since_epoch()).count());
+                    
+                    // Best bid/ask
+                    data->set_bid(!update.bids.empty() ? update.bids[0].price : 0.0);
+                    data->set_ask(!update.asks.empty() ? update.asks[0].price : 0.0);
+                    
+                    // Mid price
+                    data->set_price((!update.bids.empty() && !update.asks.empty())
+                        ? (update.bids[0].price + update.asks[0].price) / 2.0 : 0.0);
+                    
+                    // Volume at top 5 levels
+                    double bidVolume = 0.0, askVolume = 0.0;
+                    for (int i = 0; i < std::min(5, (int)update.bids.size()); ++i) bidVolume += update.bids[i].quantity;
+                    for (int i = 0; i < std::min(5, (int)update.asks.size()); ++i) askVolume += update.asks[i].quantity;
+                    data->set_volume(bidVolume + askVolume);
+                    
+                    // Add bids/asks
+                    for (const auto& bid : update.bids) {
+                        auto* level = data->add_bids();
+                        level->set_price(bid.price);
+                        level->set_quantity(bid.quantity);
+                    }
+                    for (const auto& ask : update.asks) {
+                        auto* level = data->add_asks();
+                        level->set_price(ask.price);
+                        level->set_quantity(ask.quantity);
+                    }
+                    
+                    // Placeholders for 24h stats and last trade
+                    data->set_lasttradeprice(data->price());
+                    data->set_lasttradequantity(0.0);
+                    data->set_open24h(data->price());
+                    data->set_high24h(data->price());
+                    data->set_low24h(data->price());
+                    data->set_volumequote24h(0.0);
+                    data->set_pricechange24h(0.0);
+                    data->set_pricechangepercent24h(0.0);
+                    
+                    // Populate metadata
+                    auto* metadata = obMsg.mutable_metadata();
+                    metadata->set_correlation_id(""); // Empty for now, can generate UUID if needed
+                    metadata->set_priority("HIGH");
+                    auto now = std::chrono::system_clock::now();
+                    metadata->set_timestamp(std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
+                        now.time_since_epoch()).count()));
+                    
+                    std::string serializedOb;
+                    if (!obMsg.SerializeToString(&serializedOb)) {
+                        std::cerr << "Failed to serialize OrderBook protobuf" << std::endl;
+                        return;
+                    }
+                    std::string topic = "orderbook." + update.exchangeId.toString() + "." + update.tradingPair.toString();
+                    zmq_server_->publishAsync(topic, std::move(serializedOb), MessagePriority::HIGH);
+                    orderBookUpdatesReceived_.fetch_add(1);
+                    //print debug info for every 5000th
+                    static std::atomic<int> publishCount{0};
+                    int count = publishCount.fetch_add(1);
+                    if (count < 5 || count % 5000 == 0) {
+                        std::cout << "📢 Published orderbook #" << count << std::endl;
+                    }
+                }
+                catch (const std::exception& e) {
+                    std::cerr << "Error serializing orderbook protobuf: " << e.what() << std::endl;
+                }  
             }
         } catch (const std::exception& e) {
             std::cerr << "Error publishing orderbook for risk: " << e.what() << std::endl;
@@ -1301,7 +1383,7 @@ private:
                     //           << std::endl;
                     //check if price target percentage > 0.2%
                     for (const auto& target : execSignal.targets) {
-                        if (target.percentage > 0.002) {
+                        if (target.percentage > 0.2) {
                             std::cout << "  Target size: " << target.size
                                       << " at " << target.price 
                                       << " (" << target.percentage * 100 << "%)" 

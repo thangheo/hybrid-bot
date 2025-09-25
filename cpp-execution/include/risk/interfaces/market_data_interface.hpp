@@ -165,7 +165,9 @@ private:
     // Binance REST client for balance and order history
     data_ingestion::BinanceClient m_binanceClient;
 
-    void processSyntheticOrderBook(const std::string& topic, const std::string& message);
+    void processSyntheticOrderBook_json(const std::string& topic, const std::string& message);
+    void processSyntheticOrderBook_protobuf(const std::string& topic, const std::string& message); //use protobuf
+    
     VolatilityCalculator volatilityCalculator_;
     // Helper methods
     std::string createCacheKey(const core::ExchangeId& exchangeId, const core::Symbol& tradingPair) const;
