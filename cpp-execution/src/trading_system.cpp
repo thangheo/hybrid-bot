@@ -143,8 +143,7 @@ bool Trading_system::initialize() {
         std::cerr << "Failed to initialize strategy engine" << std::endl;
         return false;
     }
-    //5. Initialize PTCA manager
-    ptcaManager_->start();        
+      
     lastPriceUpdate_ = std::chrono::steady_clock::now();
     // 6. Setup component connections
     setupComponentConnections();
@@ -209,9 +208,7 @@ bool Trading_system::start() {
 
         // Start signal worker pool
         startSignalWorkerPool();
-        
-        // 3. Start PTCA manager
-        ptcaManager_->start();        
+         
         lastPriceUpdate_ = std::chrono::steady_clock::now();
         // Start exec worker pool
         startExecWorkerPool();
@@ -249,17 +246,7 @@ void Trading_system::shutdown() {
         std::cout << "\n=== SHUTTING DOWN TRADING SYSTEM ===" << std::endl;
         
         running_ = false;
-        
-        if (ptcaManager_) {
-            std::cout << "Saving final PTCA model..." << std::endl;
-            ptcaManager_->saveModel("final_model.json");
-            
-            reportPTCAStats();
-            
-            ptcaManager_->stop();
-            ptcaManager_.reset();
-        }
-        
+             
         // Stop data ingestion FIRST and wait for cleanup
         if (dataIngestionService_) {
             std::cout << "Stopping data ingestion service..." << std::endl;
@@ -306,22 +293,6 @@ void Trading_system::shutdown() {
         std::cout << "System shutdown complete" << std::endl;
     }
 } 
-void Trading_system::evaluatePTCADecision(const core::Symbol& symbol) {
-    // Get current signals for the symbol
-    std::vector<strategy::TradingSignal> currentSignals = getCurrentSignalsForSymbol(symbol);
-    
-    if (!currentSignals.empty()) {
-        auto decision = ptcaManager_->generateTradingDecision(symbol, currentSignals);
-        
-        std::cout << "PTCA Decision for " << symbol.toString() << ":" << std::endl;
-        std::cout << "  Direction: " << core::directionToString(decision.recommendedDirection) << std::endl;
-        std::cout << "  Confidence: " << decision.confidence << std::endl;
-        std::cout << "  Expected Outcome: " << decision.expectedOutcome << std::endl;
-        std::cout << "  Reasoning: " << decision.reasoning << std::endl;
-        
-    }
-}
-    
 // Helper method to get current signals for a symbol (you'll need to implement this)
 std::vector<strategy::TradingSignal> Trading_system::getCurrentSignalsForSymbol(const core::Symbol& symbol) {
     // This should return current active signals for the given symbol
@@ -329,20 +300,6 @@ std::vector<strategy::TradingSignal> Trading_system::getCurrentSignalsForSymbol(
     std::vector<strategy::TradingSignal> signals;
     // Your implementation here...
     return signals;
-}
-void Trading_system::reportPTCAStats() {
-    auto stats = ptcaManager_->getStats();
-    
-    std::cout << "=== PTCA Learning Statistics ===" << std::endl;
-    std::cout << "Total signals tracked: " << stats.totalSignalsTracked << std::endl;
-    std::cout << "Signals with outcomes: " << stats.signalsWithOutcomes << std::endl;
-    std::cout << "Executed signals: " << stats.executedSignals << std::endl;
-    std::cout << "Average signal P&L: " << (stats.averageSignalPnL * 100) << "%" << std::endl;
-    std::cout << "Learning accuracy: " << (stats.learningAccuracy * 100) << "%" << std::endl;
-    std::cout << "Currently tracked: " << stats.currentlyTrackedSignals << std::endl;
-    std::cout << "PTCA events learned: " << stats.ptcaStats.totalEvents << std::endl;
-    std::cout << "PTCA timesteps: " << stats.ptcaStats.totalTimesteps << std::endl;
-    std::cout << "=================================" << std::endl;
 }
 
 void Trading_system::printStatus() {
@@ -746,7 +703,7 @@ void Trading_system::setupConfigurations() {
     // createDataIngestionConfig();
     createStrategyConfig();
     createRiskConfig();                
-    createPTCAConfig();
+    // createPTCAConfig();
 }
     
 void Trading_system::createStrategyConfig() {
@@ -761,7 +718,7 @@ void Trading_system::createStrategyConfig() {
 }
 
 void Trading_system::onMarketPriceUpdate(const core::Symbol& symbol, double price) {
-    ptcaManager_->updateMarketPrice(symbol, price);
+    // ptcaManager_->updateMarketPrice(symbol, price);
 }
     // Add this to your Trading_system class:
 void Trading_system::setupPTCAConnections() {
@@ -781,37 +738,38 @@ void Trading_system::onExecutionResponse(const execution::ExecutionResponse& res
 
     ordersExecuted_++;
     
-    // Register with PTCA if needed
-    if (ptcaManager_) {
-        // Convert ExecutionResponse to ExecutionReport format if needed
-        // ptcaManager_->registerExecution(response.client_order_id, response.order_status);
-    }
+    // // Register with PTCA if needed
+    // if (ptcaManager_) {
+    //     // Convert ExecutionResponse to ExecutionReport format if needed
+    //     // ptcaManager_->registerExecution(response.client_order_id, response.order_status);
+    // }
 }
 
 
 //create ptca config
-void Trading_system::createPTCAConfig() {
-    trading::learning::PTCAIntegrationConfig ptcaConfig;        
-    // Configure PTCA for your trading environment
-    ptcaConfig.outcomeEvaluationDelay = std::chrono::minutes(2);  // Evaluate outcomes after 2 minutes
-    ptcaConfig.signalTrackingWindow = std::chrono::minutes(15);   // Track signals for 15 minutes
-    ptcaConfig.minimumPnLThreshold = 0.0005;                     // 0.05% minimum P&L to learn from
-    ptcaConfig.priceMovementThreshold = 0.003;                   // 0.3% price movement significance
-    ptcaConfig.pnlSuccessThreshold = 0.008;                      // 0.8% P&L success threshold
-    ptcaConfig.strongOutcomeThreshold = 0.02;                    // 2% strong outcome threshold
+// void Trading_system::createPTCAConfig() {
+//     trading::learning::PTCAIntegrationConfig ptcaConfig;        
+//     // Configure PTCA for your trading environment
+//     ptcaConfig.outcomeEvaluationDelay = std::chrono::minutes(2);  // Evaluate outcomes after 2 minutes
+//     ptcaConfig.signalTrackingWindow = std::chrono::minutes(15);   // Track signals for 15 minutes
+//     ptcaConfig.minimumPnLThreshold = 0.0005;                     // 0.05% minimum P&L to learn from
+//     ptcaConfig.priceMovementThreshold = 0.003;                   // 0.3% price movement significance
+//     ptcaConfig.pnlSuccessThreshold = 0.008;                      // 0.8% P&L success threshold
+//     ptcaConfig.strongOutcomeThreshold = 0.02;                    // 2% strong outcome threshold
     
-    // Set up model persistence
-    ptcaConfig.modelSaveDirectory = "models/ptca/";
-    ptcaConfig.modelSaveInterval = std::chrono::minutes(20);
-    ptcaConfig.enableContinuousLearning = true;
-    ptcaConfig.enableDetailedLogging = true;
+//     // Set up model persistence
+//     ptcaConfig.modelSaveDirectory = "models/ptca/";
+//     ptcaConfig.modelSaveInterval = std::chrono::minutes(20);
+//     ptcaConfig.enableContinuousLearning = true;
+//     ptcaConfig.enableDetailedLogging = true;
     
-    // Performance limits
-    ptcaConfig.maxSignalsToTrack = 500;  // Limit memory usage
+//     // Performance limits
+//     ptcaConfig.maxSignalsToTrack = 500;  // Limit memory usage
     
-    ptcaManager_ = std::make_unique<trading::learning::PTCAIntegrationManager>(ptcaConfig);
+//     ptcaManager_ = std::make_unique<trading::learning::PTCAIntegrationManager>(ptcaConfig);
 
-}
+// }
+
 void Trading_system::createRiskConfig() {
     // Setup risk configuration (similar to risk demo)
     // load config from file
@@ -1133,26 +1091,11 @@ void Trading_system::signalWorkerLoop(size_t workerId) {
                 //if signal is neutral, skip
                 if (signal.direction == core::Direction::NEUTRAL) continue;
                 signalsGenerated_++;
-                // Get PTCA recommendation first (needs signal alive)
-                double ptcaRecommendation = ptcaManager_->getSignalRecommendation(signal);
-                auto decision = ptcaManager_->generateTradingDecision(signal.symbol, std::vector<strategy::TradingSignal>{signal});
-                // if (decision.recommendedDirection == core::Direction::NEUTRAL) {
-                //         std::cout << "PTCA suggests HOLD for signal " << signal.id 
-                //                   << " on " << signal.symbol.toString() << std::endl;
-                //     continue; // Skip further processing
-                // }
+             
                 // std::cout << "PTCA recommendation for signal " << signal.id 
                 //           << ": " << ptcaRecommendation << std::endl;
                 double adjustedStrength = signal.strength;
-                if (ptcaRecommendation > 0.2) {
-                    // std::cout << "Boosting strength for signal " << signal.id 
-                    //           << " from " << signal.strength 
-                    //           << " to " << std::min(1.0, signal.strength * (1.0 + ptcaRecommendation * 0.3))
-                    //           << " based on PTCA recommendation of " << ptcaRecommendation << std::endl;
-                    adjustedStrength = std::min(1.0, signal.strength * (1.0 + ptcaRecommendation * 0.3));
-                } else if (ptcaRecommendation < -0.1) {
-                    adjustedStrength = signal.strength * (1.0 + ptcaRecommendation * 0.2);
-                }
+              
 
                 // convert and validate
                 execution::TradingSignal execSignal;
@@ -1173,8 +1116,6 @@ void Trading_system::signalWorkerLoop(size_t workerId) {
                     // Duplicate — skip processing, do NOT register the original with PTCA
                     continue;
                 }
-                // Now register the original signal with PTCA by moving it (no further use of `signal`)
-                ptcaManager_->registerSignal(std::move(signal));
 
                 // Basic filtering
                 if (execSignal.direction == core::Direction::BUY) {

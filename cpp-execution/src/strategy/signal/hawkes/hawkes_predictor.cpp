@@ -364,7 +364,7 @@ double HawkesPredictor::calculatePersistence(
 
 HawkesEventType HawkesPredictor::mapSignalToEventType(const TradingSignal& signal) const {
     // Use signal metrics to determine event type
-    const auto& metrics = signal.signal_metrics;
+    const auto& metrics = signal.signalMetrics;
 
     // Check for specific metric indicators
     if (metrics.find("volumeImbalance ") != metrics.end()) {

@@ -1,0 +1,176 @@
+#pragma once
+
+#include <Eigen/Dense>
+#include <vector>
+#include <string>
+#include <memory>
+#include <fstream>
+#include <iostream>
+#include <cmath>
+#include <algorithm>
+#include <mutex>
+#include <jsoncpp/json/json.h>
+
+/**
+ * BayesianTradingModel - Online Bayesian Learning for Trading Signals
+ * 
+ * Features:
+ * - Multi-feature Bayesian regression with uncertainty quantification
+ * - Online feature normalization (running mean/std)
+ * - Flexible trading decisions: threshold-based or expected value
+ * - Position sizing based on prediction confidence
+ * - Thread-safe operations
+ * - Model persistence (save/load)
+ */
+namespace trading {
+namespace perception {
+
+class BayesianTradingModel {
+public:
+    struct TradingSignal {
+        double probability;      // P(price_up) ∈ [0,1]
+        double expected_value;   // Expected value of trade
+        double position_size;    // Recommended position size [0,1]
+        double uncertainty;      // Model uncertainty (trace of covariance)
+        bool should_trade;       // Final trading decision
+        int direction;          // 1=BUY, -1=SELL, 0=HOLD
+    };
+
+    struct ModelConfig {
+        double initial_sigma = 1.0;        // Initial weight uncertainty
+        double beta = 1.0;                 // Bayesian update strength
+        double min_probability = 0.6;      // Threshold for trading decision
+        double base_position_size = 0.1;   // Base position size
+        double uncertainty_penalty = 0.5;  // Reduce size when uncertain
+        bool use_expected_value = true;    // Use EV instead of threshold
+        double payoff_long = 1.0;          // Expected payoff for long position
+        double payoff_short = 1.0;         // Expected payoff for short position
+    };
+
+private:
+    // Model parameters
+    Eigen::VectorXd mu_;              // Mean weights
+    Eigen::MatrixXd sigma_;           // Covariance matrix
+    Eigen::MatrixXd sigma_inv_;       // Inverse covariance (for efficiency)
+    
+    // Feature normalization
+    Eigen::VectorXd feature_mean_;    // Running mean
+    Eigen::VectorXd feature_std_;     // Running std
+    Eigen::VectorXd feature_m2_;      // For Welford's online variance
+    
+    // Configuration and state
+    ModelConfig config_;
+    int num_features_;
+    int num_updates_;
+    bool is_initialized_;
+    
+    // Thread safety
+    mutable std::mutex model_mutex_;
+    
+    // Helper methods
+    void initialize_model(int num_features);
+    void update_feature_stats(const Eigen::VectorXd& features);
+    Eigen::VectorXd normalize_features(const Eigen::VectorXd& features) const;
+    void update_bayesian_weights(const Eigen::VectorXd& normalized_features, int label);
+    double sigmoid(double x) const;
+    void update_sigma_inverse();
+
+public:
+    /**
+     * Constructor
+     */
+    BayesianTradingModel();
+    explicit BayesianTradingModel(const ModelConfig& config);
+    
+    /**
+     * Destructor
+     */
+    ~BayesianTradingModel() = default;
+    
+    /**
+     * Predict trading signal from raw features
+     * @param features Raw feature vector (will be normalized internally)
+     * @return Complete trading signal with probability, EV, position size
+     */
+    TradingSignal predict(const std::vector<double>& features);
+    
+    /**
+     * Update model with new observation
+     * @param features Raw feature vector
+     * @param label 1 if price went up, 0 if price went down
+     */
+    void update(const std::vector<double>& features, int label);
+    
+    /**
+     * Get current model weights and uncertainty
+     * @return pair of (mean_weights, diagonal_uncertainty)
+     */
+    std::pair<std::vector<double>, std::vector<double>> get_weights() const;
+    
+    /**
+     * Get model statistics
+     */
+    struct ModelStats {
+        int num_features;
+        int num_updates;
+        double total_uncertainty;
+        std::vector<double> feature_means;
+        std::vector<double> feature_stds;
+        std::vector<double> weight_means;
+        std::vector<double> weight_uncertainties;
+    };
+    ModelStats get_stats() const;
+    
+    /**
+     * Configuration management
+     */
+    void set_config(const ModelConfig& config);
+    ModelConfig get_config() const;
+    
+    /**
+     * Model persistence
+     */
+    bool save_model(const std::string& filepath) const;
+    bool load_model(const std::string& filepath);
+    
+    /**
+     * Reset model to initial state
+     */
+    void reset();
+    
+    /**
+     * Check if model is ready for predictions
+     */
+    bool is_ready() const;
+    
+    /**
+     * Print model summary
+     */
+    void print_summary() const;
+};
+
+/**
+ * Utility functions for model evaluation
+ */
+namespace BayesianTradingUtils {
+    /**
+     * Calculate Sharpe ratio from prediction history
+     */
+    double calculate_sharpe_ratio(const std::vector<double>& returns);
+    
+    /**
+     * Calculate prediction accuracy
+     */
+    double calculate_accuracy(const std::vector<int>& predictions, 
+                             const std::vector<int>& actual);
+    
+    /**
+     * Calculate information ratio
+     */
+    double calculate_information_ratio(const std::vector<double>& returns,
+                                     const std::vector<double>& benchmark);
+}
+
+
+} // namespace perception
+} // namespace trading
