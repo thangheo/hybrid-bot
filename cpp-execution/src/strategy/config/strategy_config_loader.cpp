@@ -269,7 +269,10 @@ ImbalanceDetectionConfig parseImbalanceDetectionConfig(const json& componentJson
         if (params.contains("detectionWindowMs")) config.detectionWindowMs = params["detectionWindowMs"].get<int>();
         if (params.contains("maxHistorySize")) config.maxHistorySize = params["maxHistorySize"].get<int>();
         if (params.contains("global_sensitivity")) config.global_sensitivity = params["global_sensitivity"].get<double>();
-        
+        //Bayesian model path
+        if (params.contains("bayesModelPath")) config.bayesModelPath = params["bayesModelPath"].get<std::string>();
+        // Labeling delay in milliseconds for online training buffer
+        if (params.contains("labelingDelayMs")) config.labelingDelayMs = params["labelingDelayMs"].get<int>();
         // Parse thresholds map
         if (params.contains("thresholds") && params["thresholds"].is_object()) {
             for (auto it = params["thresholds"].begin(); it != params["thresholds"].end(); ++it) {

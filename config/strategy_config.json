@@ -252,7 +252,9 @@
           "price_level_imbalance": 0.25,
           "liquidityPressure": 0.4,
           "order_flow": 0.3
-        }
+        },
+        "bayesModelPath": "models/bayesian/imbalance_bayes_model_v1.bin",
+        "labelingDelayMs": 1500
       }
     },
     "liquidityMonitor": {

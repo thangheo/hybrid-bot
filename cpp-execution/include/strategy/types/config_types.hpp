@@ -42,6 +42,7 @@
   * Configuration for ImbalanceDetection
   */
  struct ImbalanceDetectionConfig {
+    // Labeling delay in milliseconds for online training buffer
      // Strategy identification
      std::string strategy_id;                     // Unique identifier for the strategy
      std::string version = "1.0";                 // Version of the strategy
@@ -76,7 +77,7 @@
      std::map<std::string, double> parameters;    // General parameters for the strategy
      std::map<std::string, std::string> string_parameters; // String parameters
     // Bayesian model persistence path (optional)
-    std::string bayesModelPath;
+    std::string bayesModelPath = "models/bayesian/imbalance_bayes_model_v1.bin";
     // Labeling delay in milliseconds for online training buffer
     int labelingDelayMs = 500;
      
