@@ -1097,144 +1097,15 @@ void GenericZmqServer::sendErrorResponse(zmq::message_t& identity, const std::st
 
 std::string GenericZmqServer::serializeWithMetadata(const std::string& data,
                                                    const std::unordered_map<std::string, std::string>& metadata) const {
-    // Helper: check if buffer is valid UTF-8
-    auto isValidUtf8 = [](const std::string& s) {
-        const unsigned char* bytes = reinterpret_cast<const unsigned char*>(s.c_str());
-        size_t len = s.size();
-        size_t i = 0;
-        while (i < len) {
-            unsigned char c = bytes[i];
-            if (c <= 0x7F) { // ASCII
-                i++;
-            } else if ((c >> 5) == 0x6) { // 110xxxxx 10xxxxxx
-                if (i + 1 >= len) return false;
-                if ((bytes[i+1] >> 6) != 0x2) return false;
-                i += 2;
-            } else if ((c >> 4) == 0xE) { // 1110xxxx 10xxxxxx 10xxxxxx
-                if (i + 2 >= len) return false;
-                if ((bytes[i+1] >> 6) != 0x2 || (bytes[i+2] >> 6) != 0x2) return false;
-                i += 3;
-            } else if ((c >> 3) == 0x1E) { // 11110xxx 10xxxxxx 10xxxxxx 10xxxxxx
-                if (i + 3 >= len) return false;
-                if ((bytes[i+1] >> 6) != 0x2 || (bytes[i+2] >> 6) != 0x2 || (bytes[i+3] >> 6) != 0x2) return false;
-                i += 4;
-            } else {
-                return false;
-            }
-        }
-        return true;
-    };
-
-    // Basic base64 encode/decode helpers
-    auto base64_encode = [](const std::string &in) {
-        static const char* b64_chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-        std::string out;
-        int val=0, valb=-6;
-        for (unsigned char c : in) {
-            val = (val<<8) + c;
-            valb += 8;
-            while (valb>=0) {
-                out.push_back(b64_chars[(val>>valb)&0x3F]);
-                valb-=6;
-            }
-        }
-        if (valb>-6) out.push_back(b64_chars[((val<<8)>>(valb+8))&0x3F]);
-        while (out.size()%4) out.push_back('=');
-        return out;
-    };
-
-    auto base64_decode = [](const std::string &in) {
-        static const std::vector<int> T = [](){
-            std::vector<int> t(256, -1);
-            for (int i=0;i<64;i++) t[static_cast<unsigned char>(std::string("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/")[i])] = i;
-            return t; }();
-        std::string out;
-        std::vector<int> val(4,0);
-        int valb= -8;
-        for (unsigned char c : in) {
-            if (T[c] == -1) break;
-            valb += 6;
-            int v = T[c];
-            if (valb >= 0) {
-                out.push_back(char((v << (valb%8)) & 0xFF));
-            }
-        }
-        // fallback: use a simpler decode (robustness over performance)
-        std::string ret;
-        std::vector<int> state(256, -1);
-        for (int i=0;i<64;i++) state[(unsigned char)std::string("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/")[i]] = i;
-        int val2=0, valb2=-8;
-        for (unsigned char c : in) {
-            if (state[c] == -1) break;
-            val2 = (val2<<6) + state[c];
-            valb2 += 6;
-            if (valb2>=0) {
-                ret.push_back(char((val2>>valb2)&0xFF));
-                valb2-=8;
-            }
-        }
-        return ret;
-    };
-
-    nlohmann::json message;
-    std::unordered_map<std::string, std::string> meta = metadata; // copy so we can mutate
-    if (isValidUtf8(data)) {
-        message["data"] = data;
-    } else {
-        message["data"] = base64_encode(data);
-        meta["data_encoding"] = "base64";
-    }
-    message["metadata"] = meta;
-    std::string result = message.dump();
-    message.clear(); // Explicitly clear to free memory
-    return result;
+    // Return raw data without JSON wrapping
+    return data;
 }
 
 // 1. FIX: JSON parsing with proper exception safety
 std::pair<std::string, std::unordered_map<std::string, std::string>>
 GenericZmqServer::deserializeWithMetadata(const std::string& serialized_data) const {
-    try {
-        // Reserve memory to avoid reallocation during parsing
-        std::string data;
-        data.reserve(serialized_data.size());
-        
-        // Parse with explicit error handling
-        nlohmann::json message;
-        try {
-            message = nlohmann::json::parse(serialized_data);
-        } catch (const nlohmann::json::parse_error& e) {
-            // Fallback: treat as raw data to prevent parser leak
-            return {serialized_data, {}};
-        }
-        
-        data = message.value("data", "");
-        std::unordered_map<std::string, std::string> metadata;
-        
-        if (message.contains("metadata") && message["metadata"].is_object()) {
-            // Reserve space to prevent rehashing
-            metadata.reserve(message["metadata"].size());
-            for (const auto& [key, value] : message["metadata"].items()) {
-                if (value.is_string()) {
-                    metadata.emplace(key, value.get<std::string>());
-                }
-            }
-        }
-        
-        // Clear message explicitly to free JSON memory
-        message.clear();
-        
-        // Handle base64 decoding with memory safety
-        auto it = metadata.find("data_encoding");
-        if (it != metadata.end() && it->second == "base64") {
-            std::string decoded = base64_decode_safe(data);
-            return {std::move(decoded), std::move(metadata)};
-        }
-        
-        return {std::move(data), std::move(metadata)};
-        
-    } catch (const std::exception&) {
-        return {serialized_data, {}};
-    }
+    // Return raw data without JSON parsing
+    return {serialized_data, {}};
 }
 
 // 2. FIX: Memory-safe base64 decode
