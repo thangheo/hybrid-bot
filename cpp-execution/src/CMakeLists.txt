@@ -50,6 +50,7 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../bin)
 set(SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../src/main.cpp 
             ${CMAKE_CURRENT_SOURCE_DIR}/../src/market_intelligence/adaptive_intelligence.cpp
             ${CMAKE_CURRENT_SOURCE_DIR}/../src/communication/zmq_server.cpp
+            ${CMAKE_CURRENT_SOURCE_DIR}/../src/trading_system.cpp
             # ${CMAKE_CURRENT_SOURCE_DIR}/../generated/cpp/internal_orderbook.pb.cc
             )
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../generated/cpp/)
@@ -74,13 +75,13 @@ target_link_libraries(semi_hft
 )
 
 
-# ZeroMQ pub/sub test executable
-add_executable(test_zeromq_pubsub 
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/test_zeromq_pubsub.cpp
-)
-target_link_libraries(test_zeromq_pubsub
-    PRIVATE
-        common
-        communication
-        Threads::Threads
-)
+# # ZeroMQ pub/sub test executable
+# add_executable(test_zeromq_pubsub 
+#     ${CMAKE_CURRENT_SOURCE_DIR}/../src/test_zeromq_pubsub.cpp
+# )
+# target_link_libraries(test_zeromq_pubsub
+#     PRIVATE
+#         common
+#         communication
+#         Threads::Threads
+# )
