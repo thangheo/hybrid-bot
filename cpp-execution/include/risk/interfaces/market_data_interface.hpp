@@ -72,6 +72,13 @@ struct PriceHistory {
 
     void addPrice(Timestamp timestamp, double price);
     std::vector<std::pair<Timestamp, double>> getRecentPrices(int count) const;
+    void removeOlderThan(const Timestamp& cutoff) {
+    while (!prices.empty() && prices.front().first < cutoff) {
+        prices.pop_front();
+    }
+}
+ 
+
     
     // Single calculateVolatility method with default parameter
     // double calculateVolatility(const std::string& timeframe, 
@@ -154,7 +161,7 @@ public:
 
 private:
     void pruneMarketDataCache();
-
+    void performPeriodicCleanup();
     // Binance REST client for balance and order history
     data_ingestion::BinanceClient m_binanceClient;
 
