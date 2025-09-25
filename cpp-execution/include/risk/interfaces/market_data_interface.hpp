@@ -205,7 +205,7 @@ private:
     std::string zmqPublisherEndpoint_ = SERVER_REQUEST_ENDPOINT;
     // Default cache validity for market data. Config overrides this in constructor.
     // Made more reasonable default to avoid immediate expiration on each read.
-    std::chrono::milliseconds cacheValidityDuration_{1000};  // 1000ms (1s) cache validity
+    std::chrono::milliseconds cacheValidityDuration_{2000};  // 2000ms (2s) cache validity
     
     // State
     std::atomic<bool> initialized_{false};
