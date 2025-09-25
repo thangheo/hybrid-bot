@@ -166,6 +166,7 @@ private:
     ThresholdSet thresholds_;
     // Bayesian model to aggregate detector strengths into a single signal
     std::shared_ptr<trading::perception::BayesianTradingModel> bayes_model_;
+    std::chrono::steady_clock::time_point lastSaveTime_;
     // lastMetrics_
     std::optional<OrderBookMetrics> lastMetrics_;
     // Detection state
@@ -244,6 +245,10 @@ public:
     // Bayesian perception model for fusing detector outputs
     // Adapter handle to a perception bayesian model (opaque, implemented in perception)
     trading::perception::BayesHandle bayes_handle_ = nullptr;
+    // Mutex to protect bayes_handle_ and related operations
+    mutable std::mutex bayesMutex_;
+    // True after initialize() successfully created/allocated the bayes handle
+    std::atomic<bool> bayesInitialized_{false};
     // Buffer for pending training examples (features captured at prediction time)
     struct PendingTraining {
         core::Timestamp timestamp;
