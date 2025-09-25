@@ -102,19 +102,7 @@ bool DataIngestionService::start(const std::vector<Symbol>& symbols, int depth) 
         if (!publisher_->isRunning()) {
             publisher_->start();
         }
-        //  for (const auto& symbol : symbols) {
-        //     std::vector<PriceLevel> empty_bids;
-        //     std::vector<PriceLevel> empty_asks;
-            
-        //     reconstructor_->processSnapshot(
-        //         ExchangeId::binance(), 
-        //         symbol,
-        //         empty_bids,
-        //         empty_asks,
-        //         0,
-        //         std::chrono::system_clock::now()
-        //     );
-        // }
+       
 
         // 2. Start exchange connections first (order books will be created when real data arrives)
         // 3. Start exchange connections
