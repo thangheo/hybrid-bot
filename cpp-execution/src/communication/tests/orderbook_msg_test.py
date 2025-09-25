@@ -42,7 +42,7 @@ def main():
     parser = argparse.ArgumentParser(description='Orderbook protobuf message subscriber')
     parser.add_argument('--uri', default='tcp://localhost:5557', help='ZMQ endpoint')
     parser.add_argument('--topic-prefix', default='orderbook.', help='Topic prefix to subscribe to')
-    parser.add_argument('--print-every', type=int, default=10, help='Print every N messages')
+    parser.add_argument('--print-every', type=int, default=1000, help='Print every N messages')
     parser.add_argument('--timeout', type=int, default=30, help='Timeout in seconds')
 
     args = parser.parse_args()
@@ -87,8 +87,9 @@ def main():
                     if msg.ParseFromString(protobuf_data):
                         successful_parses += 1
 
-                        # Print sample messages
+                        # Print sample messages every 1000 count
                         if total_msgs % args.print_every == 0:
+                            
                             print_orderbook_sample(msg, topic, total_msgs)
                     else:
                         errors += 1

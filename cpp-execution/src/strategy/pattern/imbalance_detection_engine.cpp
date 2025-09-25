@@ -378,13 +378,17 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
 
     // Configure bayes model path from config or environment
     if (!config_.bayesModelPath.empty()) bayesModelPath_ = config_.bayesModelPath;
-    if (bayesModelPath_.empty()) {
-        const char* p = std::getenv("BAYES_MODEL_PATH");
-        if (p) bayesModelPath_ = std::string(p);
-    }
+    // else just check environment. This is the most stupid way to handle this stupid path
+    //noone give a flying fuck about the fucking path whatever the fuck it is. dont complicated uncessessary shit.
+    // let my fucking brain forcus on important stuff
+    // if (bayesModelPath_.empty()) {
+    //     const char* p = "models/bayesian/imbalance_bayes_model_v1.bin"; // noone give a fucking about this ok?
+    //     if (p) bayesModelPath_ = std::string(p);
+    // }
 
     // Optional labeling delay from config (in ms)
     if (config_.labelingDelayMs > 0) labelingDelay_ = std::chrono::milliseconds(config_.labelingDelayMs);
+    
 
     // Create and load Bayesian model adapter handle upfront so load errors surface at init
     try {
@@ -2096,115 +2100,6 @@ double ImbalanceDetectionEngine::calculateVariance(const std::vector<double>& da
      return strength;
  }
  
- //this function need to be rewrite carefully and follow below logic
- /**
-
-function determineDirection(metrics):
-
-    scoreBuy = 0
-    scoreSell = 0
-
-    # --- Volume imbalance ---
-    if has(bidVolume, askVolume):
-        ratio = (bidVolume - askVolume) / (bidVolume + askVolume)
-        if ratio > +0.2: scoreBuy += 1
-        if ratio < -0.2: scoreSell += 1
-
-    # --- Price level imbalance ---
-    if has(bidLevels, askLevels):
-        ratio = (bidLevels - askLevels) / (bidLevels + askLevels)
-        if ratio > +0.3: scoreBuy += 1
-        if ratio < -0.3: scoreSell += 1
-
-    # --- Liquidity removal ---
-    if has(liquidityRemovalSide):
-        if liquidityRemovalSide == "bid": scoreSell += 2
-        if liquidityRemovalSide == "ask": scoreBuy += 2
-
-    # --- Order flow imbalance (submissions) ---
-    if has(bidOrdersSubmitted, askOrdersSubmitted):
-        ratio = (bidOrdersSubmitted - askOrdersSubmitted) / (total)
-        if ratio > +0.2: scoreBuy += 1
-        if ratio < -0.2: scoreSell += 1
-
-    # --- Large order appearance/disappearance ---
-    if has(largeBidOrderAppeared): scoreBuy += 1
-    if has(largeAskOrderAppeared): scoreSell += 1
-    if has(largeBidOrderRemoved):  scoreSell += 1
-    if has(largeAskOrderRemoved):  scoreBuy += 1
-
-    # --- Price level concentration ---
-    if has(concentratedBidLevels): scoreBuy += 1
-    if has(concentratedAskLevels): scoreSell += 1
-
-    # --- Spread changes ---
-    if has(spreadChange):
-        if spreadChange < 0: scoreBuy += 1   # tighter spread bullish
-        if spreadChange > 0: scoreSell += 1  # wider spread bearish
-
-    if has(spread) and spread > ABNORMAL_THRESHOLD:
-        if bidVolume > askVolume * 1.5: scoreBuy += 1
-        else: scoreSell += 1
-
-    # --- Market depth change ---
-    if has(bidDepthChange, askDepthChange):
-        diff = bidDepthChange - askDepthChange
-        if diff > +THRESH: scoreBuy += 1
-        if diff < -THRESH: scoreSell += 1
-
-    # --- Liquidity flow imbalance ---
-    if has(bidFlow, askFlow):
-        ratio = (bidFlow - askFlow) / (bidFlow + askFlow)
-        if ratio > +0.1: scoreBuy += 2
-        if ratio < -0.1: scoreSell += 2
-
-    # --- Trend signals ---
-    if has(trendStrength):
-        if trendStrength > TREND_THRESHOLD: scoreBuy += 1
-        if trendStrength < -TREND_THRESHOLD: scoreSell += 1
-
-    if has(prevTrendStrength, trendStrength):
-        if prevTrendStrength > 0 and trendStrength < -TREND_THRESHOLD:
-            scoreSell += 2
-        if prevTrendStrength < 0 and trendStrength > +TREND_THRESHOLD:
-            scoreBuy += 2
-
-    # --- Trade imbalance (executed trades) ---
-    if has(marketBuyVolume, marketSellVolume):
-        ratio = (marketBuyVolume - marketSellVolume) / (total)
-        if ratio > +0.2: scoreBuy += 2
-        if ratio < -0.2: scoreSell += 2
-
-    # --- Cancellation imbalance ---
-    if has(bidCancellations, askCancellations):
-        ratio = (bidCancels - askCancels) / (total)
-        if ratio > +0.2: scoreSell += 1    # buyers pulling liquidity
-        if ratio < -0.2: scoreBuy += 1     # sellers pulling liquidity
-
-    # --- Price volatility imbalance ---
-    if has(volatility):
-        if volatility > VOLATILITY_THRESHOLD:
-            if lastMoveUp: scoreBuy += 1
-            else: scoreSell += 1
-
-    # --- Hidden liquidity imbalance (icebergs) ---
-    if has(icebergOnBid): scoreBuy += 2
-    if has(icebergOnAsk): scoreSell += 2
-
-    # --- Custom ---
-    if has(customSignal):
-        if customSignal > 0: scoreBuy += 1
-        if customSignal < 0: scoreSell += 1
-
-    # --- Final decision ---
-    if scoreBuy > scoreSell and scoreBuy >= MIN_CONFIDENCE:
-        return BUY
-    if scoreSell > scoreBuy and scoreSell >= MIN_CONFIDENCE:
-        return SELL
-    return NEUTRAL
-
-  * 
-  */
 
  // Determine imbalance direction based on type and metrics
  Direction ImbalanceDetectionEngine::determineImbalanceDirection(ImbalanceType type, const OrderBookMetrics& metrics) {
