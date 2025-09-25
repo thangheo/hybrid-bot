@@ -1,4 +1,4 @@
-// exchanges/binance_api_client.cpp
+// exchanges/binance_api_client.cpp - OPTIMIZED VERSION
 #include "execution/exchanges/binance_api_client.hpp"
 #include "execution/models/order.hpp"
 #include "execution/models/execution_report.hpp"
@@ -24,24 +24,58 @@ struct BinanceApiClient::BinanceImpl {
     //for testnet
     // std::string baseUrl = "https://testnet.binance.vision";
     bool connected = false;
-    // Cache symbol filters from exchangeInfo: symbol -> {stepSize, tickSize}
+    
+    // OPTIMIZATION 1: Cache symbol filters with better memory management
     struct SymbolFilters {
         double stepSize = 0.0; // lot size step for quantities
         double tickSize = 0.0; // price tick for prices
     };
     std::unordered_map<std::string, SymbolFilters> symbolFilters;
     
+    // OPTIMIZATION 2: Reuse JSON components to avoid repeated allocations
+    mutable Json::StreamWriterBuilder writerBuilder;
+    mutable Json::CharReaderBuilder readerBuilder;
+    mutable std::unique_ptr<Json::CharReader> jsonReader;
+    
     // Constructor
-        BinanceImpl(const ExchangeCredentials& credentials) 
-                : apiKey(credentials.apiKey), 
-                    apiSecret(credentials.apiSecret) {
-                // CURL global init is handled by the outer class once
-        }
+    BinanceImpl(const ExchangeCredentials& credentials) 
+            : apiKey(credentials.apiKey), 
+                apiSecret(credentials.apiSecret) {
+        // CURL global init is handled by the outer class once
+        
+        // OPTIMIZATION 3: Configure JSON reader/writer for minimal memory usage
+        readerBuilder["collectComments"] = false;
+        readerBuilder["allowComments"] = false;
+        readerBuilder["strictRoot"] = true;
+        readerBuilder["allowDroppedNullPlaceholders"] = false;
+        readerBuilder["allowNumericKeys"] = false;
+        readerBuilder["allowSingleQuotes"] = false;
+        readerBuilder["stackLimit"] = 1000;  // Limit recursion depth
+        readerBuilder["failIfExtra"] = false;
+        readerBuilder["rejectDupKeys"] = false;
+        readerBuilder["allowSpecialFloats"] = false;
+        
+        jsonReader = std::unique_ptr<Json::CharReader>(readerBuilder.newCharReader());
+        
+        writerBuilder["commentStyle"] = "None";
+        writerBuilder["indentation"] = "";  // No pretty printing
+        writerBuilder["enableYAMLCompatibility"] = false;
+        writerBuilder["dropNullPlaceholders"] = true;
+        writerBuilder["useSpecialFloats"] = false;
+        writerBuilder["precision"] = 17;
+    }
     
     // CURL callback for writing response
     static size_t WriteCallback(void* contents, size_t size, size_t nmemb, std::string* userp) {
         userp->append((char*)contents, size * nmemb);
         return size * nmemb;
+    }
+    
+    // OPTIMIZATION 4: Helper method for efficient JSON parsing
+    bool parseJsonResponse(const std::string& response, Json::Value& root, std::string& errors) const {
+        const char* begin = response.c_str();
+        const char* end = begin + response.length();
+        return jsonReader->parse(begin, end, &root, &errors);
     }
 };
 
@@ -68,28 +102,41 @@ void BinanceApiClient::connect() {
         (void)response;
         pImpl_->connected = true;
 
-        // Also fetch and cache exchangeInfo symbol filters to correctly format quantities/prices
+        // OPTIMIZATION 5: Fetch and cache exchangeInfo more efficiently
         try {
             std::string info = makeApiRequest("/api/v3/exchangeInfo", "GET", {}, false);
             Json::Value root;
-            Json::Reader reader;
-            if (reader.parse(info, root)) {
+            std::string errors;
+            
+            if (pImpl_->parseJsonResponse(info, root, errors)) {
+                // OPTIMIZATION 6: Reserve space for symbols to avoid reallocations
                 const Json::Value& symbolsJson = root["symbols"];
-                for (const auto& sym : symbolsJson) {
-                    if (!sym.isMember("symbol")) continue;
-                    std::string symbol = sym["symbol"].asString();
-                    BinanceApiClient::BinanceImpl::SymbolFilters filters;
-                    const Json::Value& filtersJson = sym["filters"];
-                    for (const auto& f : filtersJson) {
-                        std::string ftype = f["filterType"].asString();
-                        if (ftype == "LOT_SIZE") {
-                            filters.stepSize = std::stod(f["stepSize"].asString());
-                        } else if (ftype == "PRICE_FILTER") {
-                            filters.tickSize = std::stod(f["tickSize"].asString());
+                if (symbolsJson.isArray()) {
+                    pImpl_->symbolFilters.reserve(symbolsJson.size());
+                    
+                    for (const auto& sym : symbolsJson) {
+                        if (!sym.isMember("symbol")) continue;
+                        std::string symbol = sym["symbol"].asString();
+                        BinanceApiClient::BinanceImpl::SymbolFilters filters;
+                        
+                        const Json::Value& filtersJson = sym["filters"];
+                        if (filtersJson.isArray()) {
+                            for (const auto& f : filtersJson) {
+                                const std::string& ftype = f["filterType"].asString();
+                                if (ftype == "LOT_SIZE") {
+                                    filters.stepSize = std::stod(f["stepSize"].asString());
+                                } else if (ftype == "PRICE_FILTER") {
+                                    filters.tickSize = std::stod(f["tickSize"].asString());
+                                }
+                            }
                         }
+                        
+                        // OPTIMIZATION 7: Use emplace for better performance
+                        pImpl_->symbolFilters.emplace(std::move(symbol), filters);
                     }
-                    pImpl_->symbolFilters[symbol] = filters;
                 }
+            } else {
+                std::cerr << "Warning: JSON parsing errors in exchangeInfo: " << errors << std::endl;
             }
         } catch (const std::exception& ex) {
             // Non-fatal: we can continue without filters, but log for debugging
@@ -99,6 +146,7 @@ void BinanceApiClient::connect() {
         throw std::runtime_error(std::string("Failed to connect to Binance: ") + e.what());
     }
 }
+
 bool BinanceApiClient::checkConnection() const {
     if (!pImpl_->connected) {
         return false;
@@ -122,6 +170,8 @@ bool BinanceApiClient::checkConnection() const {
 
 void BinanceApiClient::disconnect() {
     pImpl_->connected = false;
+    // OPTIMIZATION 8: Clear cached data to free memory
+    pImpl_->symbolFilters.clear();
 }
 
 bool BinanceApiClient::isConnected() const {
@@ -137,26 +187,40 @@ std::vector<std::string> BinanceApiClient::getSupportedSymbols() const {
         throw std::runtime_error("Not connected to Binance");
     }
     
-    // Get exchange info to retrieve supported symbols
+    // OPTIMIZATION 9: Use cached symbol filters if available
+    if (!pImpl_->symbolFilters.empty()) {
+        std::vector<std::string> symbols;
+        symbols.reserve(pImpl_->symbolFilters.size());
+        for (const auto& [symbol, filters] : pImpl_->symbolFilters) {
+            symbols.push_back(symbol);
+        }
+        return symbols;
+    }
+    
+    // Fallback to API call if cache is empty
     std::map<std::string, std::string> params;
     std::string response = makeApiRequest("/api/v3/exchangeInfo", "GET", params, false);
     
     Json::Value root;
-    Json::Reader reader;
-    if (!reader.parse(response, root)) {
-        throw std::runtime_error("Failed to parse Binance exchange info");
+    std::string errors;
+    if (!pImpl_->parseJsonResponse(response, root, errors)) {
+        throw std::runtime_error("Failed to parse Binance exchange info: " + errors);
     }
     
     std::vector<std::string> symbols;
     const Json::Value& symbolsJson = root["symbols"];
-    for (const auto& symbolJson : symbolsJson) {
-        if (symbolJson["status"].asString() == "TRADING") {
-            symbols.push_back(symbolJson["symbol"].asString());
+    if (symbolsJson.isArray()) {
+        symbols.reserve(symbolsJson.size());
+        for (const auto& symbolJson : symbolsJson) {
+            if (symbolJson["status"].asString() == "TRADING") {
+                symbols.emplace_back(symbolJson["symbol"].asString());
+            }
         }
     }
     
     return symbols;
 }
+
 //placeOrder
 std::future<models::ExecutionReport> BinanceApiClient::placeOrder(const models::Order& order) {
     // Extract all the necessary data from the order before the async call
@@ -189,9 +253,10 @@ std::future<models::ExecutionReport> BinanceApiClient::placeOrder(const models::
         
         // Prepare parameters
         std::map<std::string, std::string> params;
-    params["symbol"] = trading::execution::util::normalizeSymbolForExchange(tradingPair.toString());
+        params["symbol"] = trading::execution::util::normalizeSymbolForExchange(tradingPair.toString());
         params["side"] = translateOrderSide(side);
         params["type"] = translateOrderType(type);
+        
         // Format quantity and price according to symbol filters (if available)
         std::string sym = trading::execution::util::normalizeSymbolForExchange(tradingPair.toString());
         double step = 0.0;
@@ -240,6 +305,7 @@ std::future<models::ExecutionReport> BinanceApiClient::placeOrder(const models::
         return parseOrderResponse(response);
     });
 }
+
 std::future<models::ExecutionReport> BinanceApiClient::cancelOrder(const std::string& orderId, const core::Symbol& symbol) {
     // Capture the parameters by value since they're already simple types
     return std::async(std::launch::async, [this, orderId, symbol]() {
@@ -252,7 +318,7 @@ std::future<models::ExecutionReport> BinanceApiClient::cancelOrder(const std::st
         
         // Prepare parameters
         std::map<std::string, std::string> params;
-    params["symbol"] = trading::execution::util::normalizeSymbolForExchange(symbol.toString());
+        params["symbol"] = trading::execution::util::normalizeSymbolForExchange(symbol.toString());
         
         // Check if orderId is a client order ID or exchange order ID
         if (orderId.find("CLIENT:") == 0) {
@@ -290,7 +356,7 @@ std::future<models::ExecutionReport> BinanceApiClient::getOrderStatus(const std:
         
         // Prepare parameters
         std::map<std::string, std::string> params;
-    params["symbol"] = trading::execution::util::normalizeSymbolForExchange(symbol.toString());
+        params["symbol"] = trading::execution::util::normalizeSymbolForExchange(symbol.toString());
         
         // Check if orderId is a client order ID or exchange order ID
         if (orderId.find("CLIENT:") == 0) {
@@ -336,22 +402,27 @@ std::future<std::map<std::string, double>> BinanceApiClient::getAccountBalances(
         // Send request
         std::string response = makeApiRequest("/api/v3/account", "GET", params, true);
         
-        // Parse response
+        // OPTIMIZATION 10: More efficient JSON parsing for balances
         Json::Value root;
-        Json::Reader reader;
-        if (!reader.parse(response, root)) {
-            throw std::runtime_error("Failed to parse Binance account information");
+        std::string errors;
+        if (!pImpl_->parseJsonResponse(response, root, errors)) {
+            throw std::runtime_error("Failed to parse Binance account information: " + errors);
         }
         
         std::map<std::string, double> balances;
         const Json::Value& balancesJson = root["balances"];
-        for (const auto& balanceJson : balancesJson) {
-            std::string asset = balanceJson["asset"].asString();
-            double free = std::stod(balanceJson["free"].asString());
-            double locked = std::stod(balanceJson["locked"].asString());
-            
-            // Sum free and locked amounts
-            balances[asset] = free + locked;
+        if (balancesJson.isArray()) {
+            for (const auto& balanceJson : balancesJson) {
+                std::string asset = balanceJson["asset"].asString();
+                double free = std::stod(balanceJson["free"].asString());
+                double locked = std::stod(balanceJson["locked"].asString());
+                
+                // Only store non-zero balances to save memory
+                double total = free + locked;
+                if (total > 0.0) {
+                    balances.emplace(std::move(asset), total);
+                }
+            }
         }
         
         return balances;
@@ -369,16 +440,16 @@ std::future<double> BinanceApiClient::getCurrentPrice(const core::Symbol& symbol
         
         // Prepare parameters
         std::map<std::string, std::string> params;
-    params["symbol"] = trading::execution::util::normalizeSymbolForExchange(symbol.toString());
+        params["symbol"] = trading::execution::util::normalizeSymbolForExchange(symbol.toString());
         
         // Send request
         std::string response = makeApiRequest("/api/v3/ticker/price", "GET", params, false);
         
         // Parse response
         Json::Value root;
-        Json::Reader reader;
-        if (!reader.parse(response, root)) {
-            throw std::runtime_error("Failed to parse Binance price information");
+        std::string errors;
+        if (!pImpl_->parseJsonResponse(response, root, errors)) {
+            throw std::runtime_error("Failed to parse Binance price information: " + errors);
         }
         
         return std::stod(root["price"].asString());
@@ -409,11 +480,11 @@ std::string BinanceApiClient::getHealthStatus() {
     
     return response;
 }
+
 // getExchangeStatuses
 std::unordered_map<std::string, std::string> BinanceApiClient::getExchangeStatuses() const {
     // Check if connected    
     if (!isConnected()) {
-        // const_cast<BinanceApiClient*>(this)->connect();
         throw std::runtime_error("Not connected to Binance");        
     }
     
@@ -426,30 +497,29 @@ std::unordered_map<std::string, std::string> BinanceApiClient::getExchangeStatus
     std::string response = makeApiRequest("/sapi/v1/exchangeStatus", "GET", params, false);
     
     Json::Value root;
-    Json::Reader reader;
-    if (!reader.parse(response, root)) {
-        throw std::runtime_error("Failed to parse Binance exchange status information");
+    std::string errors;
+    if (!pImpl_->parseJsonResponse(response, root, errors)) {
+        throw std::runtime_error("Failed to parse Binance exchange status information: " + errors);
     }
     
     std::unordered_map<std::string, std::string> statuses;
     const Json::Value& symbolsJson = root["symbols"];
-    for (const auto& symbolJson : symbolsJson) {
-        std::string symbol = symbolJson["symbol"].asString();
-        std::string status = symbolJson["status"].asString();
-        statuses[symbol] = status;
+    if (symbolsJson.isArray()) {
+        statuses.reserve(symbolsJson.size());
+        for (const auto& symbolJson : symbolsJson) {
+            std::string symbol = symbolJson["symbol"].asString();
+            std::string status = symbolJson["status"].asString();
+            statuses.emplace(std::move(symbol), std::move(status));
+        }
     }
     
     return statuses;
 }
-// std::string BinanceApiClient::makeApiRequest(const std::string& endpoint, const std::string& method, 
-//                                            const std::map<std::string, std::string>& params, bool isPrivate) const {
+
 std::string BinanceApiClient::makeApiRequest(std::string endpoint, std::string method,
         const std::map<std::string, std::string>& params, bool isPrivate) const {
-        std::string url = pImpl_->baseUrl + endpoint;
-        std::string queryString;
-         
-    // std::string url = pImpl_->baseUrl + endpoint;
-    // std::string queryString;
+    std::string url = pImpl_->baseUrl + endpoint;
+    std::string queryString;
     
     // Build query string
     for (const auto& [key, value] : params) {
@@ -485,8 +555,10 @@ std::string BinanceApiClient::makeApiRequest(std::string endpoint, std::string m
         }
     }
     
-    // Set response callback
+    // OPTIMIZATION 11: Reserve response buffer capacity to avoid reallocations
     std::string responseBuffer;
+    responseBuffer.reserve(8192);  // Reserve 8KB initially
+    
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, BinanceImpl::WriteCallback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &responseBuffer);
     
@@ -646,9 +718,9 @@ std::string BinanceApiClient::formatDoubleWithStep(double value, double step) co
 
 models::ExecutionReport BinanceApiClient::parseOrderResponse(const std::string& response) const {
     Json::Value root;
-    Json::Reader reader;
-    if (!reader.parse(response, root)) {
-        throw std::runtime_error("Failed to parse Binance order response");
+    std::string errors;
+    if (!pImpl_->parseJsonResponse(response, root, errors)) {
+        throw std::runtime_error("Failed to parse Binance order response: " + errors);
     }
     
     models::ExecutionReport report;
@@ -708,7 +780,7 @@ models::ExecutionReport BinanceApiClient::parseOrderResponse(const std::string& 
         report.setPrice(std::stod(root["price"].asString()));
     }
     
-    // Parse fills if present
+    // OPTIMIZATION 12: More efficient fills parsing
     if (root.isMember("fills") && root["fills"].isArray()) {
         const Json::Value& fills = root["fills"];
         for (const auto& fill : fills) {
@@ -724,7 +796,7 @@ models::ExecutionReport BinanceApiClient::parseOrderResponse(const std::string& 
             auto ms = std::chrono::milliseconds(std::stoll(fill["time"].asString()));
             f.timestamp = std::chrono::system_clock::time_point(ms);
             
-            report.addFill(f);
+            report.addFill(std::move(f));  // Use move semantics
         }
     }
     

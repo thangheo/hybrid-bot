@@ -89,28 +89,23 @@
      
      // Process new trades
      for (const auto& trade : trades) {
-         processTrade(trade.price, trade.quantity, trade.is_buy, trade.timestamp);
-     }
-     
-     // Update from order book - convert data_ingestion::PriceLevel to core::PriceLevel
-     auto data_bids = orderbook.getBids();
-     auto data_asks = orderbook.getAsks();
-     
-     // Convert price levels using the utility functions
-     auto core_bids = utils::convertPriceLevels(data_bids);
-     auto core_asks = utils::convertPriceLevels(data_asks);
-     
-     updateFromOrderBook(core_bids, core_asks);
+        // Process trade
+        processTrade(trade.price, trade.quantity, trade.is_buy, trade.timestamp);        
+        // Store trade
+        recent_trades_.emplace_back(
+            trade.price, trade.quantity, trade.is_buy, trade.timestamp);
+    }
+    while (recent_trades_.size() > MAX_RECENT_TRADES) {
+        recent_trades_.pop_front();
+    }
+    updateFromOrderBook(
+        utils::convertPriceLevels(orderbook.getBids()),
+        utils::convertPriceLevels(orderbook.getAsks())
+    );
      
      // Update timestamp for profile
      current_profile_.end_time = std::chrono::system_clock::now();
-     
-     // Store trades for historical analysis
-     for (const auto& trade : trades) {
-         recent_trades_.emplace_back(
-             trade.price, trade.quantity, trade.is_buy, trade.timestamp);
-     }
-     
+          
      // Remove old trades based on timeframe
      auto cutoff_time = std::chrono::system_clock::now() - 
                        std::chrono::minutes(time_frame_minutes_);
@@ -125,17 +120,7 @@
      
      // Update last update time
      last_update_time_ = orderbook.getTimestamp();
-    //  std::cout << "Volume profile updated for " << trading_pair_ << " on " << exchangeId_.toString() << std::endl;
-     //print volume      std::vector<VolumeData> volume_data;
-        // for (size_t i = 0; i < current_profile_.price_ranges.size(); ++i) {
-        //     const auto& range = current_profile_.price_ranges[i];
-        //     const auto& data = current_profile_.volume_data[i];
-        //     std::cout << "Range: [" << range.lower_bound << ", " << range.upper_bound << 
-        //                 "] Total Volume: " << data.total_volume << 
-        //                 " Buy Volume: " << data.buy_volume << 
-        //                 " Sell Volume: " << data.sell_volume << 
-        //                 " VWAP: " << data.vwap << std::endl;
-        // }
+   
  }
  
  void VolumeProfileAnalyzer::updateMultiTimeframeProfiles(

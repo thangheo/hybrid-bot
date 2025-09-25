@@ -23,6 +23,7 @@
  namespace trading {
  namespace strategy {
  
+
  /**
   * Represents a price range for volume aggregation
   */
@@ -288,6 +289,8 @@
      VolumeProfile current_profile_;
      std::map<std::string, VolumeProfile> timeframe_profiles_;
      
+     const size_t MAX_RECENT_TRADES = 10000;
+
      // Historical trade data
      std::deque<std::tuple<double, double, bool, core::Timestamp>> recent_trades_;
      
