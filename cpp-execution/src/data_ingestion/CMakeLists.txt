@@ -3,8 +3,6 @@
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
-# find fmt
-find_package(fmt REQUIRED)
 find_package(Protobuf REQUIRED)
 find_package(CURL REQUIRED)
 # find_package(readerwriterqueue REQUIRED)
@@ -64,9 +62,7 @@ target_link_libraries(data_ingestion
         CURL::libcurl
     PRIVATE
         ${Protobuf_LIBRARIES}
-        ${gRPC_LIBRARIES}
-        fmt::fmt
-        
+        ${gRPC_LIBRARIES}        
         # readerwriterqueue
 )
 # Add websocket directory for specific build rules if needed

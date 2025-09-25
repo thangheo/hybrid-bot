@@ -13,8 +13,14 @@ file(GLOB_RECURSE RISK_SOURCES
     "service/*.cpp"
     "utils/*.cpp"
 )
-find_package(fmt REQUIRED)
-# Define library
+# find protobuf
+find_package(Protobuf REQUIRED)
+if(NOT Protobuf_FOUND)
+    message(FATAL_ERROR "Protobuf not found")
+endif()
+message(STATUS "Using protobuf ${Protobuf_VERSION}")
+message(STATUS "Protobuf include dirs: ${Protobuf_INCLUDE_DIRS}")
+message(STATUS "Protobuf libraries: ${Protobuf_LIBRARIES}")
 
 add_library(risk STATIC ${RISK_SOURCES})
 set_target_properties(risk PROPERTIES POSITION_INDEPENDENT_CODE ON)
@@ -25,6 +31,7 @@ target_include_directories(risk
         ${CMAKE_SOURCE_DIR}/include
     PRIVATE
         ${CMAKE_SOURCE_DIR}/include/risk
+        ${CMAKE_SOURCE_DIR}/../generated/include
 )
 
 # Link libraries
@@ -36,7 +43,8 @@ target_link_libraries(risk
         strategy
         data_ingestion
         nlohmann_json::nlohmann_json
-        fmt::fmt
+        protobuf::libprotobuf
+        gRPC::grpc++
 )
 
 # Add compiler-specific flags
@@ -63,17 +71,16 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../../bin)
 add_executable(risk_demo risk_demo.cpp)
 target_link_libraries(risk_demo PRIVATE 
         risk
-        fmt::fmt
         data_ingestion
         strategy
         execution
         common
         nlohmann_json::nlohmann_json
+        protobuf::libprotobuf
         )
 
 # Add format library for std::format (if using GCC < 13)
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS "13.0")
-    find_package(fmt REQUIRED)
-    target_link_libraries(risk PRIVATE fmt::fmt)
+    target_link_libraries(risk PRIVATE )
     target_compile_definitions(risk PRIVATE USE_FMT_FORMAT)
 endif()

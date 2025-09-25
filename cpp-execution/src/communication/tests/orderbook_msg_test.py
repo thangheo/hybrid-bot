@@ -1,85 +1,74 @@
 #!/usr/bin/env python3
-"""
-Simple ZMQ subscriber for topics starting with 'orderbook.' on port 5557.
-Counts messages and prints occasional example messages so the screen doesn't flood.
 
-Usage:
-  python orderbook_msg_test.py
-  python orderbook_msg_test.py --uri tcp://localhost:5557 --print-every 200 --stats-interval 1
-"""
 import time
-import zmq
-import argparse
-
+import internal_orderbook_pb2 as orderbook_pb2
 
 def main():
-    p = argparse.ArgumentParser()
-    p.add_argument('--uri', default='tcp://localhost:5557', help='ZMQ endpoint to connect to')
-    p.add_argument('--topic-prefix', default='orderbook.', help='Topic prefix to subscribe to')
-    p.add_argument('--stats-interval', type=float, default=1.0, help='Seconds between printed stats')
-    p.add_argument('--print-every', type=int, default=100, help='Print one full message every N messages')
-    args = p.parse_args()
-
-    ctx = zmq.Context()
-    sock = ctx.socket(zmq.SUB)
-    sock.setsockopt(zmq.SUBSCRIBE, args.topic_prefix.encode())
-    sock.connect(args.uri)
-
-    print(f"Subscribed to '{args.topic_prefix}*' on {args.uri}")
-
-    total = 0
-    last_total = 0
-    last_time = time.time()
-
-    try:
-        while True:
-            # blocking receive; message format may be [topic, payload] or single frame
-            parts = sock.recv_multipart()
-            total += 1
-
-            # occasionally print one message to keep the screen alive
-            if total % args.print_every == 0:
-                try:
-                    if len(parts) == 1:
-                        topic = b''
-                        payload = parts[0]
-                    else:
-                        topic = parts[0]
-                        payload = parts[1]
-                    topic_s = topic.decode(errors='replace') if topic else '<no-topic>'
-                    # print short payload preview
-                    payload_preview = repr(payload[:200])
-                    payload_full = repr(payload)
-                    if len(payload) > 200:
-                        payload_preview += '...'
-                    # print(f"SAMPLE #{total}: topic={topic_s} len={len(payload)} payload_preview={payload_preview}")
-                    print(f"SAMPLE #{total}: topic={topic_s} len={len(payload)} payload={payload_full}")
-                except Exception as e:
-                    print('Error printing sample message:', e)
-
-            # print per-interval stats (messages per second)
-            now = time.time()
-            if now - last_time >= args.stats_interval:
-                interval = now - last_time
-                delta = total - last_total
-                mps = delta / interval if interval > 0 else 0.0
-                # print a short single-line status
-                print(f"stats: total={total} mps_recent={mps:.2f}")
-                last_time = now
-                last_total = total
-
-    except KeyboardInterrupt:
-        print('\nInterrupted by user')
-    finally:
-        try:
-            sock.close()
-        except Exception:
-            pass
-        try:
-            ctx.term()
-        except Exception:
-            pass
-
+    print("Starting protobuf message generator...")
+    
+    counter = 0
+    
+    while True:
+        counter += 1
+        
+        # Create protobuf message
+        msg = orderbook_pb2.OrderbookMessage()
+        
+        # Fill the data
+        msg.data.exchange = "BINANCE"
+        msg.data.symbol = "BTC/USDT"
+        msg.data.bid = 45000.50
+        msg.data.ask = 45001.50
+        msg.data.price = 45001.00
+        msg.data.volume = 1234.56
+        msg.data.high24h = 45500.00
+        msg.data.low24h = 44500.00
+        msg.data.sequence = counter
+        msg.data.timestamp = int(time.time() * 1000)
+        
+        # Add some bid levels
+        for i in range(3):
+            bid = msg.data.bids.add()
+            bid.price = 45000.50 - (i * 0.10)
+            bid.quantity = 1.0 + i
+        
+        # Add some ask levels
+        for i in range(3):
+            ask = msg.data.asks.add()
+            ask.price = 45001.50 + (i * 0.10)
+            ask.quantity = 1.0 + i
+        
+        # Add metadata
+        msg.metadata.correlation_id = f"msg_{counter}"
+        msg.metadata.priority = "HIGH"
+        msg.metadata.timestamp = str(int(time.time() * 1000))
+        
+        # Print the message
+        print(f"=== MESSAGE #{counter} ===")
+        print(f"Exchange: {msg.data.exchange}")
+        print(f"Symbol: {msg.data.symbol}")
+        print(f"Price: {msg.data.price}")
+        print(f"Bid: {msg.data.bid}")
+        print(f"Ask: {msg.data.ask}")
+        print(f"Volume: {msg.data.volume}")
+        print(f"High24h: {msg.data.high24h}")
+        print(f"Low24h: {msg.data.low24h}")
+        print(f"Sequence: {msg.data.sequence}")
+        print(f"Timestamp: {msg.data.timestamp}")
+        
+        print("Bids:")
+        for i, bid in enumerate(msg.data.bids):
+            print(f"  [{i}] {bid.price} @ {bid.quantity}")
+        
+        print("Asks:")
+        for i, ask in enumerate(msg.data.asks):
+            print(f"  [{i}] {ask.price} @ {ask.quantity}")
+        
+        print(f"Metadata: {msg.metadata.correlation_id}, {msg.metadata.priority}")
+        print("-" * 40)
+        
+        # Wait 1 second
+        time.sleep(1)
 
 if __name__ == '__main__':
     main()

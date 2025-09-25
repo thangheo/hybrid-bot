@@ -24,7 +24,6 @@
 #include <boost/crc.hpp>
 #include <boost/functional/hash.hpp>
 #include "common/logger.hpp"
-#include <fmt/format.h>
 
 namespace trading {
 namespace data_ingestion {

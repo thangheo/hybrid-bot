@@ -50,7 +50,9 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../bin)
 set(SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../src/main.cpp 
             ${CMAKE_CURRENT_SOURCE_DIR}/../src/market_intelligence/adaptive_intelligence.cpp
             ${CMAKE_CURRENT_SOURCE_DIR}/../src/communication/zmq_server.cpp
+            # ${CMAKE_CURRENT_SOURCE_DIR}/../generated/cpp/internal_orderbook.pb.cc
             )
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../generated/cpp/)
 add_executable(semi_hft ${SOURCES})
 target_link_libraries(semi_hft
     PRIVATE

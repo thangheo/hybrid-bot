@@ -5,14 +5,52 @@
 #include <algorithm>
 #include <numeric>
 #include <unordered_map>
+#include <array>
 #include "communication/zmq_config.hpp"
 #include "communication/zmq_client.hpp"
 #include "communication/zmq_manager.hpp"
 #include <iostream>
+//protobuf
+#include "internal_orderbook.pb.h"
+#include <google/protobuf/message.h>
+#include <google/protobuf/io/coded_stream.h>
+#include <google/protobuf/io/zero_copy_stream_impl.h>
+
 
 using namespace trading::communication;
 namespace trading {
 namespace risk {
+
+// Helper function for base64 decoding
+static std::string base64_decode(const std::string& input) {
+    if (input.empty()) return {};
+    
+    static const std::array<int, 256> decode_table = []() {
+        std::array<int, 256> table;
+        table.fill(-1);
+        const std::string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        for (size_t i = 0; i < chars.size(); ++i) {
+            table[static_cast<unsigned char>(chars[i])] = static_cast<int>(i);
+        }
+        return table;
+    }();
+    
+    std::string result;
+    result.reserve((input.size() * 3) / 4);
+    
+    int val = 0, valb = -8;
+    for (unsigned char c : input) {
+        if (decode_table[c] == -1) break;
+        val = (val << 6) + decode_table[c];
+        valb += 6;
+        if (valb >= 0) {
+            result.push_back(static_cast<char>((val >> valb) & 0xFF));
+            valb -= 8;
+        }
+    }
+    
+    return result;
+}
 
 // PriceHistory implementation
 void PriceHistory::addPrice(Timestamp timestamp, double price) {
@@ -172,7 +210,7 @@ void MarketDataInterface::processQueueLoop() {
         try {
             // Call existing processing function which does JSON parse, cache updates, callbacks
             auto start = std::chrono::steady_clock::now();
-            processSyntheticOrderBook(item.topic, item.message);
+            processSyntheticOrderBook_protobuf(item.topic, item.message);
             totalProcessed_.fetch_add(1, std::memory_order_relaxed);
             auto dur = std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::steady_clock::now() - start).count();
@@ -186,8 +224,7 @@ void MarketDataInterface::processQueueLoop() {
     }
 }
 
-
-void MarketDataInterface::processSyntheticOrderBook(const std::string& topic, const std::string& message) {
+void MarketDataInterface::processSyntheticOrderBook_json(const std::string& topic, const std::string& message) {
     // Early memory pressure check
     static std::atomic<size_t> activeProcessingCount{0};
     const size_t MAX_CONCURRENT_PROCESSING = 50; // Adjust based on your system
@@ -462,8 +499,277 @@ void MarketDataInterface::processSyntheticOrderBook(const std::string& topic, co
         LOG_ERROR("Unknown exception in processSyntheticOrderBook");
     }
 }
+void MarketDataInterface::processSyntheticOrderBook_protobuf(const std::string& topic, const std::string& message) {
+    // Early memory pressure check
+    static std::atomic<size_t> activeProcessingCount{0};
+    const size_t MAX_CONCURRENT_PROCESSING = 50;
+    
+    if (activeProcessingCount.load() >= MAX_CONCURRENT_PROCESSING) {
+        errorStats_.dataErrors++;
+        LOG_WARN("Dropping message due to high memory pressure (active processing: {})", 
+                activeProcessingCount.load());
+        return;
+    }
+    
+    // RAII counter for active processing
+    struct ProcessingGuard {
+        std::atomic<size_t>& counter;
+        ProcessingGuard(std::atomic<size_t>& c) : counter(c) { counter++; }
+        ~ProcessingGuard() { counter--; }
+    };
+    ProcessingGuard guard(activeProcessingCount);
+    
+    try {
+        // Check message size
+        if (message.size() > maxMessageSize_) {
+            errorStats_.dataErrors++;
+            LOG_WARN("Dropping oversized protobuf message (size={} bytes) for topic={}", 
+                    message.size(), topic);
+            return;
+        }
+        
+        // Quick topic validation
+        if (topic.size() < 10 || topic.compare(0, 10, "orderbook.") != 0) {
+            return; // Not a synthetic orderbook message
+        }
 
-// Additional helper function for periodic memory cleanup
+        if (message.empty()) {
+            LOG_ERROR("Empty protobuf message for topic: {}", topic);
+            errorStats_.dataErrors++;
+            return;
+        }
+
+        // Parse protobuf directly - much simpler now!
+        orderbook::OrderbookMessage orderbook_msg;
+        
+        try {
+            // Use CodedInputStream for better memory control and performance
+            google::protobuf::io::ArrayInputStream array_input(
+                message.data(), 
+                static_cast<int>(message.size())
+            );
+            google::protobuf::io::CodedInputStream coded_input(&array_input);
+            
+            // Set limits to prevent excessive memory usage
+            coded_input.SetTotalBytesLimit(maxMessageSize_);
+            
+            if (!orderbook_msg.ParseFromCodedStream(&coded_input)) {
+                LOG_ERROR("Failed to parse protobuf message for topic: {} (size: {} bytes)", 
+                         topic, message.size());
+                
+                // Debug: show hex dump of first 32 bytes
+                std::stringstream hex_dump;
+                for (size_t i = 0; i < std::min(size_t(32), message.size()); ++i) {
+                    hex_dump << std::hex << std::setw(2) << std::setfill('0') 
+                            << static_cast<unsigned char>(message[i]) << " ";
+                }
+                LOG_DEBUG("Protobuf hex dump (first 32 bytes): {}", hex_dump.str());
+                
+                errorStats_.dataErrors++;
+                return;
+            }
+            
+        } catch (const google::protobuf::FatalException& e) {
+            LOG_ERROR("Protobuf fatal exception for topic {}: {}", topic, e.what());
+            errorStats_.dataErrors++;
+            return;
+        } catch (const std::bad_alloc& e) {
+            errorStats_.dataErrors++;
+            LOG_ERROR("OOM while parsing protobuf (size={}) for topic {}: {}", 
+                     message.size(), topic, e.what());
+            return;
+        } catch (const std::exception& e) {
+            LOG_ERROR("Exception parsing protobuf for topic {}: {}", topic, e.what());
+            errorStats_.dataErrors++;
+            return;
+        }
+
+        // Verify we have the main data
+        if (!orderbook_msg.has_data()) {
+            LOG_ERROR("Protobuf message missing data field for topic: {}", topic);
+            errorStats_.dataErrors++;
+            return;
+        }
+
+        const auto& data = orderbook_msg.data();
+
+        // Extract exchange and symbol from protobuf
+        std::string exchange = data.exchange();
+        std::string symbol = data.symbol();
+        
+        // Fallback to topic parsing if protobuf fields are empty
+        if (exchange.empty() || symbol.empty()) {
+            std::string_view topic_view(topic);
+            auto first_dot = topic_view.find('.', 10); // Skip "orderbook."
+            if (first_dot != std::string_view::npos) {
+                auto second_dot = topic_view.find('.', first_dot + 1);
+                if (second_dot != std::string_view::npos) {
+                    if (exchange.empty()) {
+                        exchange = std::string(topic_view.substr(first_dot + 1, second_dot - first_dot - 1));
+                    }
+                    if (symbol.empty()) {
+                        symbol = std::string(topic_view.substr(second_dot + 1));
+                        // Convert '_' to '/' for symbol format
+                        std::replace(symbol.begin(), symbol.end(), '_', '/');
+                    }
+                }
+            }
+        }
+
+        if (exchange.empty() || symbol.empty()) {
+            LOG_ERROR("Missing exchange or symbol (topic={}, exchange='{}', symbol='{}')", 
+                     topic, exchange, symbol);
+            errorStats_.dataErrors++;
+            return;
+        }
+
+        // Create MarketData object
+        MarketData marketData;
+        marketData.exchangeId = core::ExchangeId::fromString(exchange);
+        marketData.tradingPair = core::Symbol::fromString(symbol);
+        marketData.timestamp = std::chrono::system_clock::now();
+
+        // Extract pricing data from protobuf
+        std::optional<double> bestBid;
+        std::optional<double> bestAsk;
+
+        // Check bids array first, then fallback to single bid field
+        if (data.bids_size() > 0) {
+            const auto& first_bid = data.bids(0);
+            bestBid = first_bid.price();
+        } else if (data.bid() != 0.0) {
+            bestBid = data.bid();
+        }
+
+        // Check asks array first, then fallback to single ask field
+        if (data.asks_size() > 0) {
+            const auto& first_ask = data.asks(0);
+            bestAsk = first_ask.price();
+        } else if (data.ask() != 0.0) {
+            bestAsk = data.ask();
+        }
+
+        // Set bid/ask on market data
+        if (bestBid.has_value()) {
+            marketData.bid = *bestBid;
+        }
+        if (bestAsk.has_value()) {
+            marketData.ask = *bestAsk;
+        }
+        
+        // Calculate mid price or use provided price
+        if (bestBid.has_value() && bestAsk.has_value()) {
+            marketData.price = (marketData.bid + marketData.ask) / 2.0;
+        } else if (data.price() != 0.0) {
+            marketData.price = data.price();
+        } else {
+            LOG_WARN("No price data available for {}.{}", exchange, symbol);
+        }
+
+        // Set additional market data fields
+        marketData.volume = data.volume();
+        marketData.high24h = data.high24h();
+        marketData.low24h = data.low24h();
+        
+        // Optional: Store sequence number if your MarketData supports it
+        // marketData.sequence = data.sequence();
+
+        // Create cache key
+        std::string cacheKey = createCacheKey(marketData.exchangeId, marketData.tradingPair);
+
+        // Update cache atomically
+        {
+            std::unique_lock<std::shared_mutex> lock(cacheMutex_);
+            marketDataCache_[cacheKey] = MarketDataCacheEntry{
+                std::move(marketData), std::chrono::steady_clock::now(), true
+            };
+        }
+
+        // Update price history with memory management
+        if (marketData.price > 0.0) {
+            std::unique_lock<std::shared_mutex> hlock(historyMutex_);
+            try {
+                auto& history = priceHistories_[cacheKey];
+                history.addPrice(marketData.timestamp, marketData.price);
+
+                // Trim history if it gets too large
+                static size_t max_history_size = history.maxSize;
+                auto recent_overflow_check = history.getRecentPrices(static_cast<int>(max_history_size + 1));
+                if (recent_overflow_check.size() > max_history_size) {
+                    size_t target = static_cast<size_t>(max_history_size * 0.8);
+                    auto trimmed = history.getRecentPrices(static_cast<int>(target));
+                    PriceHistory newHist;
+                    for (const auto& p : trimmed) {
+                        newHist.addPrice(p.first, p.second);
+                    }
+                    priceHistories_[cacheKey] = std::move(newHist);
+                }
+            } catch (const std::bad_alloc& e) {
+                errorStats_.dataErrors++;
+                LOG_ERROR("OOM while updating price history: {}", e.what());
+            } catch (const std::exception& e) {
+                errorStats_.dataErrors++;
+                LOG_ERROR("Exception while updating price history: {}", e.what());
+            }
+        }
+
+        // Trigger callbacks safely
+        std::vector<std::function<void(const MarketData&)>> callbacksCopy;
+        {
+            std::lock_guard<std::mutex> cbLock(callbackMutex_);
+            callbacksCopy = marketDataCallbacks_;
+        }
+
+        for (const auto& callback : callbacksCopy) {
+            try {
+                callback(marketData);
+            } catch (const std::bad_alloc& e) {
+                errorStats_.dataErrors++;
+                LOG_ERROR("Callback OOM: {}", e.what());
+                break; // Stop processing callbacks on OOM
+            } catch (const std::exception& e) {
+                LOG_ERROR("Callback exception: {}", e.what());
+            } catch (...) {
+                LOG_ERROR("Unknown callback exception");
+            }
+        }
+
+        // Optional: Log successful processing at debug level
+        LOG_DEBUG("Successfully processed orderbook for {}.{} (price={}, bid={}, ask={})", 
+                 exchange, symbol, marketData.price, 
+                 marketData.bid, marketData.ask);
+
+    } catch (const std::bad_alloc& e) {
+        errorStats_.dataErrors++;
+        LOG_ERROR("Critical OOM in processSyntheticOrderBook_protobuf: {}", e.what());
+        
+        // Emergency cache cleanup
+        try {
+            std::unique_lock<std::shared_mutex> lock(cacheMutex_, std::defer_lock);
+            if (lock.try_lock()) {
+                if (marketDataCache_.size() > 100) {
+                    auto cutoff = std::chrono::steady_clock::now() - std::chrono::minutes(5);
+                    for (auto it = marketDataCache_.begin(); it != marketDataCache_.end();) {
+                        if (it->second.lastUpdate < cutoff) {
+                            it = marketDataCache_.erase(it);
+                        } else {
+                            ++it;
+                        }
+                    }
+                }
+            }
+        } catch (...) {
+            LOG_ERROR("Emergency cleanup failed during OOM recovery");
+        }
+    } catch (const std::exception& e) {
+        errorStats_.dataErrors++;
+        LOG_ERROR("Exception in processSyntheticOrderBook_protobuf: {}", e.what());
+    } catch (...) {
+        errorStats_.dataErrors++;
+        LOG_ERROR("Unknown exception in processSyntheticOrderBook_protobuf");
+    }
+}
+
 void MarketDataInterface::performPeriodicCleanup() {
     try {
         auto now = std::chrono::steady_clock::now();
@@ -752,7 +1058,7 @@ bool MarketDataInterface::subscribeMarketData(
     MessageHandler handler = [this](const std::string& topic, const std::string& message,
                                   const std::unordered_map<std::string, std::string>& metadata) {
         if (topic.find("orderbook") != std::string::npos) {
-            processSyntheticOrderBook(topic, message);
+            processSyntheticOrderBook_protobuf(topic, message);
         } else if (topic.find("trade") != std::string::npos) {
             processTradeUpdate(topic, message);
         }
@@ -1062,7 +1368,7 @@ void MarketDataInterface::connectionMonitorLoop() {
                                     zmqClient_->subscribe(topic,
                                         [this](const std::string& t, const std::string& msg, const std::unordered_map<std::string, std::string>& meta) {
                                             if (t.find("orderbook") != std::string::npos) {
-                                                this->processSyntheticOrderBook(t, msg);
+                                                this->processSyntheticOrderBook_protobuf(t, msg);
                                             } else if (t.find("trade") != std::string::npos) {
                                                 this->processTradeUpdate(t, msg);
                                             }

@@ -1,6 +1,7 @@
 set(PROTO_FILES
     market_data.proto
     order_book.proto
+    internal_orderbook.proto
     execution_service.proto
     common.proto
     trading_messages.proto

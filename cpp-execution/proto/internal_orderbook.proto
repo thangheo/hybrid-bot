@@ -1,0 +1,45 @@
+syntax = "proto3";
+
+package orderbook;
+
+// Price level entry for bid/ask
+message PriceLevel {
+  double price = 1;
+  double quantity = 2;
+}
+
+// Main orderbook data structure
+message OrderbookData {
+  double ask = 1;                           // Best ask price
+  repeated PriceLevel asks = 2;             // Ask levels array
+  double bid = 3;                           // Best bid price
+  repeated PriceLevel bids = 4;             // Bid levels array
+  string exchange = 5;                      // Exchange name (e.g., "BINANCE")
+  double high24h = 6;                       // 24h high price
+  double lastTradePrice = 7;                // Last trade price
+  double lastTradeQuantity = 8;             // Last trade quantity
+  double low24h = 9;                        // 24h low price
+  double open24h = 10;                      // 24h open price
+  double price = 11;                        // Current price
+  double priceChange24h = 12;               // 24h price change
+  double priceChangePercent24h = 13;        // 24h price change percentage
+  uint64 sequence = 14;                     // Sequence number
+  string symbol = 15;                       // Trading pair symbol (e.g., "XRP/USDT")
+  uint64 timestamp = 16;                    // Timestamp
+  double volume = 17;                       // Volume
+  double volumeQuote24h = 18;               // 24h quote volume
+  
+}
+
+// Metadata for the message
+message Metadata {
+  string correlation_id = 1;                // Correlation ID
+  string priority = 2;                      // Message priority
+  string timestamp = 3;                     // Metadata timestamp
+}
+
+// Top-level message structure matching your payload
+message OrderbookMessage {
+  OrderbookData data = 1;                   // The main orderbook data
+  Metadata metadata = 2;                    // Message metadata
+}
