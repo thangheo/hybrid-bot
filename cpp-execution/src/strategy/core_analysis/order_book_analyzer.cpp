@@ -181,14 +181,18 @@ void OrderBookAnalyzer::processOrderBook(const data_ingestion::OrderBook& snapsh
         OrderBookMetrics historyEntry = currentMetrics_;
         historyEntry.timeSeriesMetrics.clear();
         metricsHistory_.push_back(std::move(historyEntry));
+        
+        // Properly prune metrics history to prevent unbounded growth
         while (metricsHistory_.size() > MAX_HISTORY_SIZE) {
             metricsHistory_.pop_front();
         }
 
-        // Thêm cleanup định kỳ
+        // Periodic cleanup and memory optimization
         static size_t cleanup_counter = 0;
         if (++cleanup_counter % 1000 == 0) {
             metricsHistory_.shrink_to_fit();
+            // Also cleanup other historical vectors
+            trimHistoricalData(MAX_HISTORY_SIZE);
         }
         //print some debug info
         static size_t debug_counter = 0;
@@ -547,16 +551,14 @@ void OrderBookAnalyzer::calculateImbalanceMetrics(
 }
 
 void OrderBookAnalyzer::updateTimeSeries() {
-    constexpr size_t MAX_HISTORY = 100;
-    
     // Add new data points
     historicalMidPrices_.push_back(currentMetrics_.midPrice);
     historicalSpreads_.push_back(currentMetrics_.spread);
     historicalVolumes_.push_back(currentMetrics_.totalBidVolume + currentMetrics_.totalAskVolume);
     historicalImbalances_.push_back(currentMetrics_.volumeImbalance);
     
-    // Trim to maintain size limit
-    trimHistoricalData(MAX_HISTORY);
+    // Trim to maintain size limit using the same constant as metricsHistory_
+    trimHistoricalData(MAX_HISTORY_SIZE);
     
     // Update time series in metrics for external access
     currentMetrics_.timeSeriesMetrics["midPrice"] = historicalMidPrices_;
@@ -901,7 +903,9 @@ void OrderBookAnalyzer::initializeHistoricalData(size_t capacity) {
 void OrderBookAnalyzer::trimHistoricalData(size_t maxSize) {
     auto trimVector = [maxSize](std::vector<double>& vec) {
         if (vec.size() > maxSize) {
-            vec.erase(vec.begin());
+            // Remove excess elements from the front to maintain chronological order
+            size_t excess = vec.size() - maxSize;
+            vec.erase(vec.begin(), vec.begin() + excess);
         }
     };
     
@@ -911,6 +915,7 @@ void OrderBookAnalyzer::trimHistoricalData(size_t maxSize) {
     trimVector(historicalImbalances_);
     trimVector(priceHistory_);
     trimVector(historicalTimestamps_);
+    
 }
 
 // OrderBookAnalyzerManager Implementation
