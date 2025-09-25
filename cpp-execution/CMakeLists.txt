@@ -33,6 +33,14 @@ find_package(cppzmq REQUIRED)
 find_package(Boost REQUIRED COMPONENTS system program_options filesystem thread)
 find_package(nlohmann_json REQUIRED)
 find_package(OpenSSL REQUIRED)
+find_package(Eigen3 REQUIRED)
+
+# Find jsoncpp
+pkg_check_modules(JSONCPP jsoncpp)
+if(NOT JSONCPP_FOUND)
+    find_package(jsoncpp REQUIRED)
+    set(JSONCPP_LIBRARIES jsoncpp_lib)
+endif()
 
 # Find Protobuf and gRPC
 find_package(Protobuf)

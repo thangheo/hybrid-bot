@@ -24,7 +24,18 @@ For cppzmq, it's a header-only library. Our project already includes it in `incl
 ```bash
 sudo apt install -y libcppzmq-dev
 ```
+```
+json cpp
+sudo apt update
+sudo apt install libjsoncpp-dev
 
+```
+```
+<!-- eigen header lib -->
+sudo apt update
+sudo apt install libeigen3-dev
+
+```
 ## Boost Libraries
 
 Install Boost development libraries:

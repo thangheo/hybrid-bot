@@ -48,15 +48,7 @@ int main(int argc, char* argv[]) {
             return 1;
         }
         // PTCA: Set up periodic statistics reporting
-        std::thread statsThread([E8Instance = E8Instance.get()]() {
-            while (true) {
-                // Report every 10 minutes
-                std::this_thread::sleep_for(std::chrono::minutes(10));
-                if (E8Instance) {
-                    E8Instance->reportPTCAStats();
-                }
-            }
-        });
+      
         // Start system
         if (!E8Instance->start()) {
             std::cerr << "Failed to start trading system" << std::endl;
@@ -68,9 +60,6 @@ int main(int argc, char* argv[]) {
         E8Instance->shutdown();
         E8Instance.reset();
         
-        if (statsThread.joinable()) {
-            statsThread.detach(); // Let it finish naturally
-        }
     } catch (const std::exception& e) {
         std::cerr << "Demo failed with exception: " << e.what() << std::endl;
         if (E8Instance) {

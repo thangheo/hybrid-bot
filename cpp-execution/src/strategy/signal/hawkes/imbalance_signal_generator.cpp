@@ -62,6 +62,7 @@ ImbalanceSignalGenerator::ImbalanceSignalGenerator(const SignalGenerationConfig&
  * Process detected imbalances and add to signal generation queue
  * Thread-safe
  */
+
 void ImbalanceSignalGenerator::processImbalances(const std::vector<ImbalanceEvent>& imbalances) {
     std::lock_guard<std::mutex> lock(imbalancesMutex_);
     pendingImbalances_.insert(pendingImbalances_.end(), imbalances.begin(), imbalances.end());
@@ -87,6 +88,7 @@ std::vector<TradingSignal> ImbalanceSignalGenerator::generateSignals() {
  * Configure signal generation parameters
  * Thread-safe
  */
+
 void ImbalanceSignalGenerator::configureSignalParameters(const SignalGenerationConfig& config){
     std::lock_guard<std::mutex> lock(configMutex_);
     if (config.isValid()) {

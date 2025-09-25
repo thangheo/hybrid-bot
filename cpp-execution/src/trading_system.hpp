@@ -42,9 +42,9 @@
 #include "strategy/engine/strategy_engine.hpp"
 #include "strategy/config/strategy_config_loader.hpp"
 //ptca
-#include "learning/ptca_integration_manager.hpp"
-#include "learning/pavlovian_credit_assignment.hpp"
-#include "risk/interfaces/market_data_interface.hpp"
+// #include "learning/ptca_integration_manager.hpp"
+// #include "learning/pavlovian_credit_assignment.hpp"
+// #include "risk/interfaces/market_data_interface.hpp"
 
 // Risk management
 #include "risk/risk_manager.hpp"
@@ -99,7 +99,7 @@ public:
         
     // Helper method to get current signals for a symbol (you'll need to implement this)
     std::vector<strategy::TradingSignal> getCurrentSignalsForSymbol(const core::Symbol& symbol) ;
-    void reportPTCAStats() ;
+    // void reportPTCAStats() ;
 
 
     void printStatus();
@@ -149,7 +149,7 @@ private:
     // marketDataInterface_
     std::shared_ptr<trading::risk::MarketDataInterface> marketDataInterface_;
     // PTCA: Add PTCA-related members
-    std::unique_ptr<trading::learning::PTCAIntegrationManager> ptcaManager_;
+    // std::unique_ptr<trading::learning::PTCAIntegrationManager> ptcaManager_;
     std::chrono::time_point<std::chrono::steady_clock> lastPriceUpdate_;
     // std::unique_ptr<DataInterface> m_dataInterface;
     
@@ -213,7 +213,7 @@ private:
     void onExecutionResponse(const execution::ExecutionResponse& response) ;
     
     //create ptca config
-    void createPTCAConfig() ;
+    // void createPTCAConfig() ;
     void createRiskConfig();
     
     void setupStatistics();

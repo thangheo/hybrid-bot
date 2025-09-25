@@ -4,10 +4,12 @@
 
 Trong trading system dựa trên orderbook, signals thường sinh ra từ metrics như:
 
-* Imbalance (cung cầu)
-* Spread
-* Volume delta
-* Depth liquidity
+* Imbalance score
+* Spread score
+* Volume delta score
+* Depth liquidity score 
+range [0-1]
+.....
 
 Thông thường, hệ thống dùng **thresholds cứng**:
 
@@ -138,7 +140,7 @@ $$
 2. Thay threshold → score liên tục.
 3. Update trọng số bằng online gradient descent (nhẹ) hoặc Bayesian update (advanced, có uncertainty).
 4. Dùng xác suất & expected value để quyết định trade.
-5. Nếu muốn advanced hơn nữa → chuyển sang reinforcement learning, optimize reward = PnL trực tiếp.
+5. Nếu muốn advanced hơn nữa → chuyển sang reinforcement learning, optimize reward = PnL trực tiếp. (No need if too complicated)
 
 ---
 

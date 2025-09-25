@@ -905,26 +905,7 @@ void ImbalanceSignalGenerator::notifySignalCallbacks(const TradingSignal& signal
             LOG_ERROR("Signal callback failed: {}", e.what());
         }
     }
-}
-// void ImbalanceSignalGenerator::notifySignalCallbacks(const TradingSignal& signal) {
-//     // Publish to event bus for broader system notification
-//     common::EventBus::getInstance().publish(events::SignalGeneratedEvent{signal});
-    
-//     // Direct callback notifications (without lock to avoid deadlock)
-//     std::map<size_t, SignalCallback> callbacksCopy;
-//     {
-//         std::lock_guard<std::mutex> lock(mutex_);
-//         callbacksCopy = callbacks_;
-//     }
-    
-//     for (const auto& [id, callback] : callbacksCopy) {
-//         try {
-//             callback(signal);
-//         } catch (const std::exception& e) {
-//             LOG_ERROR("Signal callback {} failed: {}", id, e.what());
-//         }
-//     }
-// }
+} 
 
 } // namespace strategy
 } // namespace trading

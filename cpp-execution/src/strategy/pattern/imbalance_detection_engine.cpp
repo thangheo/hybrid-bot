@@ -341,10 +341,10 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
 
     // Wrap each detector so a blocking detector cannot stall the ZMQ receiver thread
     results.emplace_back(runDetectorWithTimeout("detectVolumeImbalance", [&]{ return detectVolumeImbalance(metrics); }, DETECTOR_TIMEOUT));
-    // results.emplace_back(runDetectorWithTimeout("detectPriceLevelImbalance", [&]{ return detectPriceLevelImbalance(metrics); }, DETECTOR_TIMEOUT));
-    // results.emplace_back(runDetectorWithTimeout("detectLiquidityFlowImbalance", [&]{ return detectLiquidityFlowImbalance(metrics); }, DETECTOR_TIMEOUT));
-    // results.emplace_back(runDetectorWithTimeout("detectAbnormalSpread", [&]{ return detectAbnormalSpread(metrics); }, DETECTOR_TIMEOUT));
-    // results.emplace_back(runDetectorWithTimeout("detectMarketDepthChange", [&]{ return detectMarketDepthChange(metrics); }, DETECTOR_TIMEOUT));
+    results.emplace_back(runDetectorWithTimeout("detectPriceLevelImbalance", [&]{ return detectPriceLevelImbalance(metrics); }, DETECTOR_TIMEOUT));
+    results.emplace_back(runDetectorWithTimeout("detectLiquidityFlowImbalance", [&]{ return detectLiquidityFlowImbalance(metrics); }, DETECTOR_TIMEOUT));
+    results.emplace_back(runDetectorWithTimeout("detectAbnormalSpread", [&]{ return detectAbnormalSpread(metrics); }, DETECTOR_TIMEOUT));
+    results.emplace_back(runDetectorWithTimeout("detectMarketDepthChange", [&]{ return detectMarketDepthChange(metrics); }, DETECTOR_TIMEOUT));
 
     // Commit shared state under single lock
     {
@@ -355,7 +355,8 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
         lastMetrics_ = metrics;
     }
 
-    // Emit events AFTER releasing mutex_
+    // Emit events AFTER releasing mutex_ // this is a bad implementation, should collect all events and decide later in a perception module
+    //create event for each detector is a terrible idea, such a waste of resource
     bool any = false;
     for (const auto &r : results) {
         if (r.isImbalance) any = true;
