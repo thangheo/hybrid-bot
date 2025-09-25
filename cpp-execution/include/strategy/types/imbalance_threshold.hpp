@@ -25,7 +25,7 @@
      double max_threshold;          // Maximum threshold for detection
      double activation_threshold;   // Threshold to activate the signal  
  
-     ImbalanceThreshold(double min = 0.0, double max = 1.0, double activation = 0.5)
+     ImbalanceThreshold(double min = 0.0, double max = 1.0, double activation = 0.2)
          : min_threshold(min), max_threshold(max), activation_threshold(activation) {}
  };
  

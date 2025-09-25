@@ -134,6 +134,12 @@ public:
     const std::vector<double>& getHistoricalImbalances() const { return historicalImbalances_; }
 
 protected:
+        // calculateFlowMetrics
+    virtual void calculateFlowMetrics(const std::vector<data_ingestion::PriceLevel>& previousBids,
+                                     const std::vector<data_ingestion::PriceLevel>& previousAsks,
+                                     const std::vector<data_ingestion::PriceLevel>& currentBids,
+                                     const std::vector<data_ingestion::PriceLevel>& currentAsks,
+                                     double timeDeltaSec);
     // Core calculation methods
     virtual void calculatePriceMetrics(const std::vector<data_ingestion::PriceLevel>& bids,
                                      const std::vector<data_ingestion::PriceLevel>& asks);
@@ -178,6 +184,8 @@ protected:
 private:
     mutable std::vector<PriceLevel> cachedBids_;
     mutable std::vector<PriceLevel> cachedAsks_;
+    mutable std::vector<PriceLevel> previousBids_;
+    mutable std::vector<PriceLevel> previousAsks_;
     // Configuration
     core::ExchangeId exchangeId_;
     core::Symbol tradingPair_;

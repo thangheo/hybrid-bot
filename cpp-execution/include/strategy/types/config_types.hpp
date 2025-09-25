@@ -75,6 +75,10 @@
      std::map<std::string, double> thresholds;    // Thresholds for different imbalance types   
      std::map<std::string, double> parameters;    // General parameters for the strategy
      std::map<std::string, std::string> string_parameters; // String parameters
+    // Bayesian model persistence path (optional)
+    std::string bayesModelPath;
+    // Labeling delay in milliseconds for online training buffer
+    int labelingDelayMs = 500;
      
      ImbalanceDetectionConfig() = default;
      
