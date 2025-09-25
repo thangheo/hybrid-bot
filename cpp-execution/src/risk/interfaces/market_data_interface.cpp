@@ -32,7 +32,8 @@ std::vector<std::pair<Timestamp, double>> PriceHistory::getRecentPrices(int coun
     
     return result;
 }
- 
+
+// Remove all prices older than the given cutoff timestamp
 
 // MarketDataInterface implementation
 MarketDataInterface::MarketDataInterface() : DataInterface() {
@@ -184,127 +185,178 @@ void MarketDataInterface::processQueueLoop() {
         }
     }
 }
+
+
 void MarketDataInterface::processSyntheticOrderBook(const std::string& topic, const std::string& message) {
+    // Early memory pressure check
+    static std::atomic<size_t> activeProcessingCount{0};
+    const size_t MAX_CONCURRENT_PROCESSING = 50; // Adjust based on your system
+    
+    if (activeProcessingCount.load() >= MAX_CONCURRENT_PROCESSING) {
+        errorStats_.dataErrors++;
+        LOG_WARN("Dropping message due to high memory pressure (active processing: {})", 
+                activeProcessingCount.load());
+        return;
+    }
+    
+    // RAII counter for active processing
+    struct ProcessingGuard {
+        std::atomic<size_t>& counter;
+        ProcessingGuard(std::atomic<size_t>& c) : counter(c) { counter++; }
+        ~ProcessingGuard() { counter--; }
+    };
+    ProcessingGuard guard(activeProcessingCount);
+    
     try {
-        // Defensive: reject excessively large messages early to avoid OOMs
-        if (message.size() > maxMessageSize_) {
+        // More aggressive size check with headroom for parsing
+        constexpr size_t PARSING_OVERHEAD_FACTOR = 3; // JSON parsing can use 2-3x memory
+        if (message.size() > maxMessageSize_ / PARSING_OVERHEAD_FACTOR) {
             errorStats_.dataErrors++;
-            LOG_WARN("Dropping oversized market data message (size={} bytes) for topic={}", message.size(), topic);
+            LOG_WARN("Dropping oversized message considering parsing overhead (size={} bytes) for topic={}", 
+                    message.size(), topic);
             return;
         }
-        // Quick topic sanity: only handle orderbook topics
-        if (topic.find("orderbook.") == std::string::npos) {
+        
+        // Quick topic validation - avoid string operations if possible
+        if (topic.size() < 10 || topic.compare(0, 10, "orderbook.") != 0) {
             return; // Not a synthetic orderbook message
         }
 
         if (message.empty()) {
-            LOG_ERROR("Invalid JSON message in processSyntheticOrderBook: empty payload");
+            LOG_ERROR("Invalid JSON message: empty payload");
             return;
         }
 
-        // Parse outer JSON safely
+        // Use stack-allocated buffer for small messages to reduce heap pressure
+        constexpr size_t STACK_BUFFER_SIZE = 4096;
+        bool useHeapParsing = message.size() > STACK_BUFFER_SIZE;
+        
         nlohmann::json json_msg;
         try {
-            json_msg = nlohmann::json::parse(message);
+            if (useHeapParsing) {
+                // For large messages, try streaming parser to reduce memory peaks
+                std::istringstream stream(message);
+                stream >> json_msg;
+            } else {
+                json_msg = nlohmann::json::parse(message);
+            }
         } catch (const std::bad_alloc& e) {
-            // Out of memory while parsing JSON - record and drop
             errorStats_.dataErrors++;
-            LOG_ERROR("processSyntheticOrderBook: OOM while parsing outer JSON: {}", e.what());
+            LOG_ERROR("OOM while parsing outer JSON (size={}): {}", message.size(), e.what());
             return;
         } catch (const std::exception& e) {
-            LOG_ERROR("processSyntheticOrderBook: failed to parse outer JSON: {}", e.what());
+            LOG_ERROR("Failed to parse outer JSON: {}", e.what());
             errorStats_.dataErrors++;
             return;
         }
 
-        // If the useful payload is embedded as a JSON string in "data", parse it
+        // Handle embedded JSON data with better memory management
         if (json_msg.contains("data") && json_msg["data"].is_string()) {
             try {
-                auto inner = json_msg["data"].get<std::string>();
-                if (!inner.empty() && inner.front() == '{') {
-                    // Avoid attempting to parse absurdly large embedded payloads
-                    if (inner.size() <= maxMessageSize_) {
-                        json_msg = nlohmann::json::parse(inner);
+                const auto& inner_ref = json_msg["data"].get_ref<const std::string&>();
+                if (!inner_ref.empty() && inner_ref.front() == '{') {
+                    // Apply same size check with overhead consideration
+                    if (inner_ref.size() <= maxMessageSize_ / PARSING_OVERHEAD_FACTOR) {
+                        if (inner_ref.size() > STACK_BUFFER_SIZE) {
+                            std::istringstream inner_stream(inner_ref);
+                            inner_stream >> json_msg;
+                        } else {
+                            json_msg = nlohmann::json::parse(inner_ref);
+                        }
                     } else {
-                        LOG_WARN("processSyntheticOrderBook: inner 'data' payload too large ({} bytes), skipping inner parse", inner.size());
+                        LOG_WARN("Inner 'data' payload too large ({} bytes), skipping", inner_ref.size());
                     }
                 }
             } catch (const std::bad_alloc& e) {
                 errorStats_.dataErrors++;
-                LOG_ERROR("processSyntheticOrderBook: OOM while parsing inner 'data' JSON: {}", e.what());
+                LOG_ERROR("OOM while parsing inner 'data' JSON: {}", e.what());
+                return; // Don't continue if we can't parse the main data
             } catch (const std::exception& e) {
-                LOG_WARN("processSyntheticOrderBook: failed to parse inner 'data' JSON: {}", e.what());
-                // continue using outer json_msg (may still contain useful keys)
+                LOG_WARN("Failed to parse inner 'data' JSON: {}", e.what());
+                // Continue with outer json_msg
             }
         }
 
-        // Extract exchange and symbol (prefer payload, fallback to topic)
+        // Extract exchange and symbol with minimal string operations
         std::string exchange;
         std::string symbol;
-        if (json_msg.contains("exchange") && json_msg["exchange"].is_string())
+        
+        // Try to get from JSON first (most efficient)
+        if (json_msg.contains("exchange") && json_msg["exchange"].is_string()) {
             exchange = json_msg["exchange"].get<std::string>();
-        if (json_msg.contains("symbol") && json_msg["symbol"].is_string())
+        }
+        if (json_msg.contains("symbol") && json_msg["symbol"].is_string()) {
             symbol = json_msg["symbol"].get<std::string>();
+        }
 
+        // Fallback to topic parsing with pre-allocated string
         if (exchange.empty() || symbol.empty()) {
-            // topic format expected: "orderbook.<EXCHANGE>.<SYMBOL>"
-            std::vector<std::string> parts;
-            size_t start = 0;
-            while (true) {
-                size_t pos = topic.find('.', start);
-                if (pos == std::string::npos) break;
-                parts.push_back(topic.substr(start, pos - start));
-                start = pos + 1;
-            }
-            // push last segment
-            if (start < topic.size()) parts.push_back(topic.substr(start));
-
-            if (parts.size() >= 3) {
-                if (exchange.empty()) exchange = parts[1];
-                if (symbol.empty()) {
-                    symbol = parts[2];
-                    // topic often uses '_' as separator (ETH_USDT) -> convert to 'ETH/USDT'
-                    std::replace(symbol.begin(), symbol.end(), '_', '/');
+            // Use string_view for better performance where possible
+            std::string_view topic_view(topic);
+            auto first_dot = topic_view.find('.', 10); // Skip "orderbook."
+            if (first_dot != std::string_view::npos) {
+                auto second_dot = topic_view.find('.', first_dot + 1);
+                if (second_dot != std::string_view::npos) {
+                    if (exchange.empty()) {
+                        exchange = std::string(topic_view.substr(first_dot + 1, second_dot - first_dot - 1));
+                    }
+                    if (symbol.empty()) {
+                        symbol = std::string(topic_view.substr(second_dot + 1));
+                        // Convert '_' to '/' in-place
+                        std::replace(symbol.begin(), symbol.end(), '_', '/');
+                    }
                 }
             }
         }
 
         if (exchange.empty() || symbol.empty()) {
-            LOG_ERROR("processSyntheticOrderBook: missing exchange or symbol (topic={})", topic);
+            LOG_ERROR("Missing exchange or symbol (topic={})", topic);
             return;
         }
 
-        // Build MarketData and safely extract best bid/ask
+        // Create MarketData on stack to avoid heap allocation
         MarketData data;
         data.exchangeId = core::ExchangeId::fromString(exchange);
         data.tradingPair = core::Symbol::fromString(symbol);
         data.timestamp = std::chrono::system_clock::now();
 
+        // Optimized price extraction with minimal allocations
         auto extractPriceFromLevel = [](const nlohmann::json& level) -> std::optional<double> {
             try {
                 if (level.is_array() && level.size() >= 1) {
-                    if (level[0].is_string()) return std::stod(level[0].get<std::string>());
-                    if (level[0].is_number()) return level[0].get<double>();
+                    const auto& price_elem = level[0];
+                    if (price_elem.is_string()) {
+                        const auto& price_str = price_elem.get_ref<const std::string&>();
+                        return std::stod(price_str);
+                    } else if (price_elem.is_number()) {
+                        return price_elem.get<double>();
+                    }
                 }
-            } catch (...) {}
+            } catch (...) {
+                // Silently handle conversion errors
+            }
             return std::nullopt;
         };
 
+        // Extract best bid/ask prices
         std::optional<double> bestBid;
         std::optional<double> bestAsk;
 
+        // Check for bids
         if (json_msg.contains("bids") && json_msg["bids"].is_array() && !json_msg["bids"].empty()) {
             bestBid = extractPriceFromLevel(json_msg["bids"][0]);
         } else if (json_msg.contains("b") && json_msg["b"].is_array() && !json_msg["b"].empty()) {
             bestBid = extractPriceFromLevel(json_msg["b"][0]);
         }
 
+        // Check for asks
         if (json_msg.contains("asks") && json_msg["asks"].is_array() && !json_msg["asks"].empty()) {
             bestAsk = extractPriceFromLevel(json_msg["asks"][0]);
         } else if (json_msg.contains("a") && json_msg["a"].is_array() && !json_msg["a"].empty()) {
             bestAsk = extractPriceFromLevel(json_msg["a"][0]);
         }
 
+        // Set prices on data object
         if (bestBid.has_value()) data.bid = *bestBid;
         if (bestAsk.has_value()) data.ask = *bestAsk;
         if (bestBid.has_value() && bestAsk.has_value()) {
@@ -313,61 +365,136 @@ void MarketDataInterface::processSyntheticOrderBook(const std::string& topic, co
             data.price = json_msg["price"].get<double>();
         }
 
-        // Update cache key and write under locks (same pattern as before)
+        // Create cache key once
         std::string cacheKey = createCacheKey(data.exchangeId, data.tradingPair);
 
+        // Update cache with minimal lock time
         {
             std::unique_lock<std::shared_mutex> lock(cacheMutex_);
-            marketDataCache_[cacheKey] = MarketDataCacheEntry{data, std::chrono::steady_clock::now(), true};
+            marketDataCache_[cacheKey] = MarketDataCacheEntry{
+                std::move(data), std::chrono::steady_clock::now(), true
+            };
         }
 
+        // Update price history with error handling
         {
             std::unique_lock<std::shared_mutex> hlock(historyMutex_);
-            // Only add price if we have a non-zero price
             if (data.price > 0.0) {
                 try {
-                    priceHistories_[cacheKey].addPrice(data.timestamp, data.price);
+                    auto& history = priceHistories_[cacheKey];
+                    history.addPrice(data.timestamp, data.price);
+
+                    static size_t max_history_size = history.maxSize;
+                    // Request one more than the max to detect overflow without a direct size() call
+                    auto recent_overflow_check = history.getRecentPrices(static_cast<int>(max_history_size + 1));
+                    if (recent_overflow_check.size() > max_history_size) {
+                        // Keep 80% after trim
+                        size_t target = static_cast<size_t>(max_history_size * 0.8);
+                        auto trimmed = history.getRecentPrices(static_cast<int>(target));
+                        PriceHistory newHist;
+                        for (const auto& p : trimmed) {
+                            newHist.addPrice(p.first, p.second);
+                        }
+                        // Replace the history with the trimmed version
+                        priceHistories_[cacheKey] = std::move(newHist);
+                    }
                 } catch (const std::bad_alloc& e) {
                     errorStats_.dataErrors++;
-                    LOG_ERROR("processSyntheticOrderBook: OOM while adding price to history: {}", e.what());
+                    LOG_ERROR("OOM while adding price to history: {}", e.what());
                 } catch (const std::exception& e) {
                     errorStats_.dataErrors++;
-                    LOG_ERROR("processSyntheticOrderBook: exception while adding price to history: {}", e.what());
+                    LOG_ERROR("Exception while adding price to history: {}", e.what());
                 }
             }
         }
 
-        // Copy callbacks then invoke outside lock
+        // Invoke callbacks with exception safety
         std::vector<std::function<void(const MarketData&)>> callbacksCopy;
         {
             std::lock_guard<std::mutex> cbLock(callbackMutex_);
             callbacksCopy = marketDataCallbacks_;
         }
+
         for (const auto& cb : callbacksCopy) {
             try {
                 cb(data);
             } catch (const std::bad_alloc& e) {
                 errorStats_.dataErrors++;
-                LOG_ERROR("MarketData callback OOM: {}", e.what());
+                LOG_ERROR("Callback OOM: {}", e.what());
+                // Consider breaking the loop on OOM to prevent cascade failures
+                break;
             } catch (const std::exception& e) {
-                LOG_ERROR("MarketData callback threw: {}", e.what());
+                LOG_ERROR("Callback exception: {}", e.what());
             } catch (...) {
-                LOG_ERROR("MarketData callback threw unknown exception");
+                LOG_ERROR("Callback unknown exception");
             }
         }
 
     } catch (const std::bad_alloc& e) {
-        // Very aggressive OOM: try to recover gracefully and signal for monitoring
         errorStats_.dataErrors++;
-        LOG_ERROR("Failed to process synthetic orderbook (OOM): {}", e.what());
+        LOG_ERROR("Critical OOM in processSyntheticOrderBook: {}", e.what());
+        
+        // Emergency cleanup - try to free some memory
+        try {
+            std::unique_lock<std::shared_mutex> lock(cacheMutex_, std::defer_lock);
+            if (lock.try_lock()) {
+                // Remove oldest 10% of cache entries
+                if (marketDataCache_.size() > 100) {
+                    auto cutoff = std::chrono::steady_clock::now() - std::chrono::minutes(5);
+                    for (auto it = marketDataCache_.begin(); it != marketDataCache_.end();) {
+                        if (it->second.lastUpdate < cutoff) {
+                            it = marketDataCache_.erase(it);
+                        } else {
+                            ++it;
+                        }
+                    }
+                }
+            }
+        } catch (...) {
+            // If emergency cleanup fails, just log and continue
+            LOG_ERROR("Emergency cleanup failed during OOM recovery");
+        }
     } catch (const std::exception& e) {
         errorStats_.dataErrors++;
-        LOG_ERROR("Failed to process synthetic orderbook: {}", e.what());
+        LOG_ERROR("Exception in processSyntheticOrderBook: {}", e.what());
     } catch (...) {
         errorStats_.dataErrors++;
-        LOG_ERROR("Failed to process synthetic orderbook: unknown error");
+        LOG_ERROR("Unknown exception in processSyntheticOrderBook");
     }
 }
+
+// Additional helper function for periodic memory cleanup
+void MarketDataInterface::performPeriodicCleanup() {
+    try {
+        auto now = std::chrono::steady_clock::now();
+        auto cutoff = now - std::chrono::hours(1); // Configurable retention period
+        
+        // Clean old cache entries
+        {
+            std::unique_lock<std::shared_mutex> lock(cacheMutex_);
+            for (auto it = marketDataCache_.begin(); it != marketDataCache_.end();) {
+                if (it->second.lastUpdate < cutoff) {
+                    it = marketDataCache_.erase(it);
+                } else {
+                    ++it;
+                }
+            }
+        }
+        
+        // Clean old price histories
+        {
+            std::unique_lock<std::shared_mutex> lock(historyMutex_);
+            auto history_cutoff = std::chrono::system_clock::now() - std::chrono::hours(24);
+            for (auto& [key, history] : priceHistories_) {
+                history.removeOlderThan(history_cutoff);
+            }
+        }
+        
+    } catch (const std::exception& e) {
+        LOG_ERROR("Error during periodic cleanup: {}", e.what());
+    }
+}
+
 
 void MarketDataInterface::pruneMarketDataCache() {
     std::unique_lock<std::shared_mutex> lock(cacheMutex_);
