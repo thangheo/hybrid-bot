@@ -49,7 +49,11 @@ def main():
                     topic_s = topic.decode(errors='replace') if topic else '<no-topic>'
                     # print short payload preview
                     payload_preview = repr(payload[:200])
-                    print(f"SAMPLE #{total}: topic={topic_s} len={len(payload)} payload_preview={payload_preview}")
+                    payload_full = repr(payload)
+                    if len(payload) > 200:
+                        payload_preview += '...'
+                    # print(f"SAMPLE #{total}: topic={topic_s} len={len(payload)} payload_preview={payload_preview}")
+                    print(f"SAMPLE #{total}: topic={topic_s} len={len(payload)} payload={payload_full}")
                 except Exception as e:
                     print('Error printing sample message:', e)
 

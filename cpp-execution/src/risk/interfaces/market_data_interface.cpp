@@ -186,6 +186,12 @@ void MarketDataInterface::processQueueLoop() {
 }
 void MarketDataInterface::processSyntheticOrderBook(const std::string& topic, const std::string& message) {
     try {
+        // Defensive: reject excessively large messages early to avoid OOMs
+        if (message.size() > maxMessageSize_) {
+            errorStats_.dataErrors++;
+            LOG_WARN("Dropping oversized market data message (size={} bytes) for topic={}", message.size(), topic);
+            return;
+        }
         // Quick topic sanity: only handle orderbook topics
         if (topic.find("orderbook.") == std::string::npos) {
             return; // Not a synthetic orderbook message
@@ -200,8 +206,14 @@ void MarketDataInterface::processSyntheticOrderBook(const std::string& topic, co
         nlohmann::json json_msg;
         try {
             json_msg = nlohmann::json::parse(message);
+        } catch (const std::bad_alloc& e) {
+            // Out of memory while parsing JSON - record and drop
+            errorStats_.dataErrors++;
+            LOG_ERROR("processSyntheticOrderBook: OOM while parsing outer JSON: {}", e.what());
+            return;
         } catch (const std::exception& e) {
             LOG_ERROR("processSyntheticOrderBook: failed to parse outer JSON: {}", e.what());
+            errorStats_.dataErrors++;
             return;
         }
 
@@ -210,8 +222,16 @@ void MarketDataInterface::processSyntheticOrderBook(const std::string& topic, co
             try {
                 auto inner = json_msg["data"].get<std::string>();
                 if (!inner.empty() && inner.front() == '{') {
-                    json_msg = nlohmann::json::parse(inner);
+                    // Avoid attempting to parse absurdly large embedded payloads
+                    if (inner.size() <= maxMessageSize_) {
+                        json_msg = nlohmann::json::parse(inner);
+                    } else {
+                        LOG_WARN("processSyntheticOrderBook: inner 'data' payload too large ({} bytes), skipping inner parse", inner.size());
+                    }
                 }
+            } catch (const std::bad_alloc& e) {
+                errorStats_.dataErrors++;
+                LOG_ERROR("processSyntheticOrderBook: OOM while parsing inner 'data' JSON: {}", e.what());
             } catch (const std::exception& e) {
                 LOG_WARN("processSyntheticOrderBook: failed to parse inner 'data' JSON: {}", e.what());
                 // continue using outer json_msg (may still contain useful keys)
@@ -304,7 +324,17 @@ void MarketDataInterface::processSyntheticOrderBook(const std::string& topic, co
         {
             std::unique_lock<std::shared_mutex> hlock(historyMutex_);
             // Only add price if we have a non-zero price
-            if (data.price > 0.0) priceHistories_[cacheKey].addPrice(data.timestamp, data.price);
+            if (data.price > 0.0) {
+                try {
+                    priceHistories_[cacheKey].addPrice(data.timestamp, data.price);
+                } catch (const std::bad_alloc& e) {
+                    errorStats_.dataErrors++;
+                    LOG_ERROR("processSyntheticOrderBook: OOM while adding price to history: {}", e.what());
+                } catch (const std::exception& e) {
+                    errorStats_.dataErrors++;
+                    LOG_ERROR("processSyntheticOrderBook: exception while adding price to history: {}", e.what());
+                }
+            }
         }
 
         // Copy callbacks then invoke outside lock
@@ -316,6 +346,9 @@ void MarketDataInterface::processSyntheticOrderBook(const std::string& topic, co
         for (const auto& cb : callbacksCopy) {
             try {
                 cb(data);
+            } catch (const std::bad_alloc& e) {
+                errorStats_.dataErrors++;
+                LOG_ERROR("MarketData callback OOM: {}", e.what());
             } catch (const std::exception& e) {
                 LOG_ERROR("MarketData callback threw: {}", e.what());
             } catch (...) {
@@ -323,8 +356,16 @@ void MarketDataInterface::processSyntheticOrderBook(const std::string& topic, co
             }
         }
 
+    } catch (const std::bad_alloc& e) {
+        // Very aggressive OOM: try to recover gracefully and signal for monitoring
+        errorStats_.dataErrors++;
+        LOG_ERROR("Failed to process synthetic orderbook (OOM): {}", e.what());
     } catch (const std::exception& e) {
+        errorStats_.dataErrors++;
         LOG_ERROR("Failed to process synthetic orderbook: {}", e.what());
+    } catch (...) {
+        errorStats_.dataErrors++;
+        LOG_ERROR("Failed to process synthetic orderbook: unknown error");
     }
 }
 
@@ -431,6 +472,8 @@ double VolatilityCalculator::calculateEWMAVolatility(
     
     if (prices.size() < 2) return 0.0;
     
+    // Protect access to ewmaStates map
+    std::lock_guard<std::mutex> g(ewmaMutex_);
     auto& state = ewmaStates[key];
     
     // Calculate returns

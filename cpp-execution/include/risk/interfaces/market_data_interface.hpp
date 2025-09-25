@@ -37,6 +37,9 @@ struct VolatilityCalculator {
     };
     
     std::unordered_map<std::string, EWMAState> ewmaStates;
+    // Protect access to ewmaStates since volatility calculations may be
+    // called from multiple threads (processing thread + external callers).
+    mutable std::mutex ewmaMutex_; 
     
     double calculateEWMAVolatility(const std::deque<std::pair<Timestamp, double>>& prices, 
                                    const std::string& key);
@@ -227,6 +230,10 @@ private:
     std::condition_variable inboundQueueCv_;
     std::deque<RawMessage> inboundQueue_;
     size_t inboundQueueMaxSize_ = 10000; // bounded queue size to avoid OOM
+    // Maximum allowed incoming message size to avoid parsing extremely large
+    // messages that could exhaust memory or lead to pathological behavior.
+    // Set to 256KB by default; can be tuned if needed.
+    size_t maxMessageSize_ = 256 * 1024;
     std::thread processingThread_;
     std::atomic<bool> processingRunning_{false};
 
