@@ -102,7 +102,7 @@ void BayesianTradingModel::update_bayesian_weights(const Eigen::VectorXd& normal
         update_sigma_inverse();
     }
 }
-
+//signmoid or logistic function
 double BayesianTradingModel::sigmoid(double x) const {
     // Numerical stable sigmoid
     if (x > 500) return 1.0;

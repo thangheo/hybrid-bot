@@ -45,6 +45,8 @@ void bayes_update(BayesHandle h, const std::vector<double>& features, int label)
     if (!h) return;
     try {
         reinterpret_cast<Impl*>(h)->model.update(features, label);
+        //save model after each update to avoid losing data
+        // reinterpret_cast<Impl*>(h)->model.save_model("models/bayesian/imbalance_bayes_model_v1.bin");
     } catch (...) {}
 }
 
