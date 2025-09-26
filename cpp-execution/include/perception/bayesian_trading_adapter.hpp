@@ -25,6 +25,10 @@ void bayes_destroy(BayesHandle h);
 bool bayes_load(BayesHandle h, const std::string &path);
 bool bayes_save(BayesHandle h, const std::string &path);
 
+// Introspection helpers
+bool bayes_is_ready(BayesHandle h);
+int  bayes_get_num_updates(BayesHandle h);
+
 // Predict/Update
 BayesSignal bayes_predict(BayesHandle h, const std::vector<double>& features);
 void bayes_update(BayesHandle h, const std::vector<double>& features, int label);

@@ -391,24 +391,45 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
 
                             trading::perception::bayes_update(bayes_handle_, pair.first, pair.second);
                             // Save model according to configured policy: save-after-N-updates (if >0)
-                            // otherwise interval-based save (if interval > 0)
+                            // otherwise interval-based save (if interval > 0). Additionally,
+                            // require model to have some updates (requireModelReadyUpdates_) before persisting
                             if (!bayesModelPath_.empty()) {
                                 try {
                                     bool doSave = false;
-                                    // Save-after-N policy (priority)
-                                    if (config_.bayesSaveAfterUpdates > 0) {
-                                        // decrement runtime counter and trigger save when it reaches zero
-                                        if (--bayesSaveAfterUpdates_ <= 0) {
-                                            doSave = true;
-                                            bayesSaveAfterUpdates_ = config_.bayesSaveAfterUpdates; // reset
+
+                                    // Check model has seen enough updates before allowing any save
+                                    int modelUpdates = trading::perception::bayes_get_num_updates(bayes_handle_);
+                                    if (modelUpdates < requireModelReadyUpdates_) {
+                                        // Not ready to persist yet
+                                        LOG_DEBUG("ImbalanceDetectionEngine: bayes model has {} updates (< required {}), skipping save check", modelUpdates, requireModelReadyUpdates_);
+                                    } else {
+                                        // Save-after-N policy (priority)
+                                        if (config_.bayesSaveAfterUpdates > 0) {
+                                            if (--bayesSaveAfterUpdates_ <= 0) {
+                                                doSave = true;
+                                                bayesSaveAfterUpdates_ = config_.bayesSaveAfterUpdates; // reset
+                                            }
+                                        } else if (config_.bayesSaveIntervalMs > 0 && bayesSaveInterval_.count() > 0) {
+                                            // Enforce minimum debounce interval between saves
+                                            auto now = std::chrono::steady_clock::now();
+                                            if (now - lastSaveTime_ > std::max(bayesSaveInterval_, bayesMinSaveInterval_)) {
+                                                doSave = true;
+                                            }
                                         }
-                                    } else if (config_.bayesSaveIntervalMs > 0 && bayesSaveInterval_.count() > 0) {
-                                        if (std::chrono::steady_clock::now() - lastSaveTime_ > bayesSaveInterval_) doSave = true;
                                     }
+
                                     if (doSave) {
-                                        trading::perception::bayes_save(bayes_handle_, bayesModelPath_);
-                                        lastSaveTime_ = std::chrono::steady_clock::now();
-                                        LOG_INFO("ImbalanceDetectionEngine: bayes model checkpoint saved to {}", bayesModelPath_);
+                                        // Perform atomic save via adapter
+                                        if (trading::perception::bayes_save(bayes_handle_, bayesModelPath_)) {
+                                            lastSaveTime_ = std::chrono::steady_clock::now();
+                                            updatesSinceLastSave_ = 0;
+                                            LOG_INFO("ImbalanceDetectionEngine: bayes model checkpoint saved to {}", bayesModelPath_);
+                                        } else {
+                                            LOG_WARN("ImbalanceDetectionEngine: bayes_save failed for {}", bayesModelPath_);
+                                        }
+                                    } else {
+                                        // Track that we processed an update since last save
+                                        updatesSinceLastSave_++;
                                     }
                                 } catch (const std::exception &ex) {
                                     LOG_WARN("Bayes save threw: {}", ex.what());
@@ -437,17 +458,24 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
      
      // Initialize thresholds with defaults if not specified
      if (thresholds_.empty()) {
-         // Set default thresholds if none provided
-         thresholds_.setThreshold("volumeImbalance ", 2.0); // Volume imbalance threshold
-         thresholds_.setThreshold("emaVolumeImbalance", 1.5); // EMA volume imbalance threshold
-         thresholds_.setThreshold("priceLevelImbalance", 1.5); // Price level imbalance threshold
-         thresholds_.setThreshold("liquidity_flow_imbalance", 3.0); // Liquidity flow imbalance threshold
-         thresholds_.setThreshold("liquidity_removal", 1.5); // Liquidity removal threshold
-         thresholds_.setThreshold("priceLevelImbalance", 1.5); // Price level imbalance threshold
-         thresholds_.setThreshold("abnormal_spread", 2.5); // Abnormal spread threshold
-        thresholds_.setThreshold("liquidity_flow_imbalance", 3.0); // Liquidity flow imbalance threshold
+        thresholds_.setThreshold("volumeImbalance", 1.2);        // Was 2.0 → now 20% imbalance triggers
+        thresholds_.setThreshold("emaVolumeImbalance", 1.1);     // Was 1.5 → EMA smoother, so lower
+        thresholds_.setThreshold("priceLevelImbalance", 1.2);    // Was 1.5 → make it more sensitive
+        thresholds_.setThreshold("liquidity_flow_imbalance", 1.5); // Was 3.0 → too extreme before
+        thresholds_.setThreshold("liquidity_removal", 1.2);      // Was 1.5 → detect smaller removals
+        thresholds_.setThreshold("abnormal_spread", 1.8);        // Was 2.5 → flag earlier widening
+        thresholds_.setThreshold("marketDepthChange", 0.3);      // 30% change in depth
+        thresholds_.setThreshold("largeOrderThreshold", 0.02);   // 2% of top level volume
+        thresholds_.setThreshold("orderFlowImbalance", 0.6);     // 60% of orders on one side
+        thresholds_.setThreshold("priceLevelConcentration", 0.5); // 50% of volume at one level
+        thresholds_.setThreshold("liquidityImbalance", 0.6);     // 60% of liquidity on one side
+        thresholds_.setThreshold("trendContinuation", 0.4);      // 40% price move in trend direction
+        thresholds_.setThreshold("trendReversal", 0.4);          // 40% price move against trend
+        thresholds_.setThreshold("tradeImbalance", 0.6);         // 60% of trades on one side
+        thresholds_.setThreshold("cancellationImbalance", 0.6);  // 60% of cancellations on one side
+        thresholds_.setThreshold("priceVolatilityImbalance", 0.3);// 30% price volatility change
      }
-     
+             
      // Clear any existing state
      clearImbalances();
 
@@ -470,6 +498,16 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
     if (config_.bayesSaveAfterUpdates > 0) {
         bayesSaveAfterUpdates_ = config_.bayesSaveAfterUpdates;
         LOG_INFO("ImbalanceDetectionEngine: bayes will save after every {} model updates", bayesSaveAfterUpdates_);
+    }
+    // Require model to have this many updates before allowing persistence
+    if (config_.requireModelReadyUpdates > 0) {
+        requireModelReadyUpdates_ = config_.requireModelReadyUpdates;
+        LOG_INFO("ImbalanceDetectionEngine: requireModelReadyUpdates set to {}", requireModelReadyUpdates_);
+    }
+    // Minimum debounce interval between saves
+    if (config_.bayesMinSaveIntervalMs > 0) {
+        bayesMinSaveInterval_ = std::chrono::milliseconds(config_.bayesMinSaveIntervalMs);
+        LOG_INFO("ImbalanceDetectionEngine: bayes min save interval set to {} ms", config_.bayesMinSaveIntervalMs);
     }
 
     // Optional labeling delay from config (in ms)

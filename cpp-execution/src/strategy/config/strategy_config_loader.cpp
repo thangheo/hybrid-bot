@@ -275,6 +275,10 @@ ImbalanceDetectionConfig parseImbalanceDetectionConfig(const json& componentJson
     if (params.contains("bayesSaveIntervalMs")) config.bayesSaveIntervalMs = params["bayesSaveIntervalMs"].get<int>();
     // Optional save-after-N-updates policy (0 disables)
     if (params.contains("bayesSaveAfterUpdates")) config.bayesSaveAfterUpdates = params["bayesSaveAfterUpdates"].get<int>();
+    // Optional: require model to have seen some updates before saving
+    if (params.contains("requireModelReadyUpdates")) config.requireModelReadyUpdates = params["requireModelReadyUpdates"].get<int>();
+    // Optional: minimum debounce interval between saves (ms)
+    if (params.contains("bayesMinSaveIntervalMs")) config.bayesMinSaveIntervalMs = params["bayesMinSaveIntervalMs"].get<int>();
         // Labeling delay in milliseconds for online training buffer
         if (params.contains("labelingDelayMs")) config.labelingDelayMs = params["labelingDelayMs"].get<int>();
         // Parse thresholds map

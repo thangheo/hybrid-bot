@@ -268,6 +268,12 @@ public:
     int bayesSaveAfterUpdates_ = 0;
     // Configured save interval (ms) for periodic saves
     std::chrono::milliseconds bayesSaveInterval_{60 * 60 * 1000};
+    // Require model to have at least this many updates before saving (protect against saving untrained model)
+    int requireModelReadyUpdates_ = 100;
+    // Minimum interval between saves (debounce)
+    std::chrono::milliseconds bayesMinSaveInterval_{30000};
+    // Runtime counter for updates since last save
+    int updatesSinceLastSave_ = 0;
 };
 
 // Type alias
