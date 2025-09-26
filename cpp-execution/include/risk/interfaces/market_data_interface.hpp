@@ -2,6 +2,7 @@
 
 #include "risk/interfaces/data_interface.hpp"
 #include "communication/zmq_client.hpp"
+#include "communication/shm.hpp"
 // later we should include abstract class for rest client interface
 //now use binance client directly
 #include "data_ingestion/rest/exchanges/binance_client.hpp"
@@ -159,7 +160,10 @@ public:
         zmqClient_ = std::move(zmqClient);
     };
 
+    void processQueueLoop() ;
+    void printStatistics() ;
 private:
+    void sharedMemoryReaderLoop();
     void pruneMarketDataCache();
     void performPeriodicCleanup();
     // Binance REST client for balance and order history
@@ -228,36 +232,36 @@ private:
     void handleDisconnection();
     
     // Inbound message queue + processing thread to avoid doing heavy work inside ZMQ recv thread
-    struct RawMessage {
-        std::string topic;
-        std::string message;
-        std::chrono::steady_clock::time_point recv_time;
-    };
+    // struct RawMessage {
+    //     std::string topic;
+    //     std::string message;
+    //     std::chrono::steady_clock::time_point recv_time;
+    // };
 
     // Queue used by ZMQ callback (producer) and processing thread (consumer)
-    mutable std::mutex inboundQueueMutex_;
-    std::condition_variable inboundQueueCv_;
-    std::deque<RawMessage> inboundQueue_;
-    size_t inboundQueueMaxSize_ = 10000; // bounded queue size to avoid OOM
+    // mutable std::mutex inboundQueueMutex_;
+    // std::condition_variable inboundQueueCv_;
+    // std::deque<RawMessage> inboundQueue_;
+    // size_t inboundQueueMaxSize_ = 10000; // bounded queue size to avoid OOM
     // Maximum allowed incoming message size to avoid parsing extremely large
     // messages that could exhaust memory or lead to pathological behavior.
     // Set to 256KB by default; can be tuned if needed.
-    size_t maxMessageSize_ = 256 * 1024;
+    // size_t maxMessageSize_ = 256 * 1024;
     // Processing thread pool for inbound messages (replace single thread)
-    std::vector<std::thread> processingThreads_;
+    // std::vector<std::thread> processingThreads_;
     // Number of processing threads to run; small number to parallelize parsing without
     // overwhelming CPU or causing excessive contention. Can be tuned in config.
-    size_t processingThreadCount_ = 2;
-    std::atomic<bool> processingRunning_{false};
+    // size_t processingThreadCount_ = 2;
+    // std::atomic<bool> processingRunning_{false};
 
     // Counters for instrumentation
-    std::atomic<uint64_t> totalReceived_{0};
-    std::atomic<uint64_t> totalEnqueued_{0};
-    std::atomic<uint64_t> totalProcessed_{0};
-    std::atomic<uint64_t> totalDropped_{0};
+    // std::atomic<uint64_t> totalReceived_{0};
+    // std::atomic<uint64_t> totalEnqueued_{0};
+    // std::atomic<uint64_t> totalProcessed_{0};
+    // std::atomic<uint64_t> totalDropped_{0};
 
     // Processing loop
-    void processQueueLoop();
+    // void processQueueLoop();
     
     // Error tracking
     struct ErrorStats {
@@ -267,6 +271,36 @@ private:
         std::chrono::steady_clock::time_point lastError;
     };
     ErrorStats errorStats_;
+    //shm
+    std::unique_ptr<SharedMemorySubscriber> shm_subscriber_;
+    
+    // Keep existing queue system but feed from shared memory instead of ZMQ
+    struct RawMessage {
+        std::string topic;
+        std::string message;
+        std::chrono::steady_clock::time_point received_time;
+    };
+    
+    // Existing queue system (unchanged)
+    std::deque<RawMessage> inboundQueue_;
+    std::mutex inboundQueueMutex_;
+    std::condition_variable inboundQueueCv_;
+    size_t inboundQueueMaxSize_ = 10000;
+    
+    // Threading
+    std::atomic<bool> processingRunning_{false};
+    std::atomic<bool> readerRunning_{false};
+    std::vector<std::thread> processingThreads_;
+    std::thread readerThread_;
+    size_t processingThreadCount_ = 4;
+    
+    // Statistics (existing)
+    std::atomic<uint64_t> totalReceived_{0};
+    std::atomic<uint64_t> totalEnqueued_{0};
+    std::atomic<uint64_t> totalProcessed_{0};
+    std::atomic<uint64_t> totalDropped_{0};
+    
+    size_t maxMessageSize_ = 1024 * 1024; // 1MB max message size
 };
 
 } // namespace risk
