@@ -168,8 +168,16 @@ bool MarketDataInterface::initialize() {
 
 // Process inbound queue: pop raw messages and call existing processing logic
 void MarketDataInterface::processQueueLoop() {
+    // Process inbound messages in small batches to reduce mutex contention and
+    // improve throughput. We still process each message individually, but we
+    // drain several messages out of the inbound queue while holding the lock
+    // only once per batch.
+    const size_t BATCH_SIZE = 32; // tunable
     while (processingRunning_.load()) {
-        RawMessage item;
+        std::vector<RawMessage> batch;
+        batch.reserve(BATCH_SIZE);
+        size_t batchBytes = 0;
+
         {
             std::unique_lock<std::mutex> lock(inboundQueueMutex_);
             if (inboundQueue_.empty()) {
@@ -178,23 +186,39 @@ void MarketDataInterface::processQueueLoop() {
                 if (!processingRunning_.load()) break;
                 if (inboundQueue_.empty()) continue;
             }
-            item = std::move(inboundQueue_.front());
-            inboundQueue_.pop_front();
+
+            // Drain up to BATCH_SIZE messages or until we hit a reasonable byte cap
+            const size_t MAX_BATCH_BYTES = maxMessageSize_ * 16; // avoid huge batch memory
+            while (!inboundQueue_.empty() && batch.size() < BATCH_SIZE) {
+                const auto &front = inboundQueue_.front();
+                if (batchBytes + front.message.size() > MAX_BATCH_BYTES && !batch.empty()) {
+                    // if adding this message would blow the byte cap and we already
+                    // have at least one message, stop filling the batch so we can
+                    // process what we already collected.
+                    break;
+                }
+                batch.push_back(std::move(inboundQueue_.front()));
+                batchBytes += batch.back().message.size();
+                inboundQueue_.pop_front();
+            }
         }
 
-        try {
-            // Call existing processing function which does JSON parse, cache updates, callbacks
-            auto start = std::chrono::steady_clock::now();
-            processSyntheticOrderBook_protobuf(item.topic, item.message);
-            totalProcessed_.fetch_add(1, std::memory_order_relaxed);
-            auto dur = std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::steady_clock::now() - start).count();
-            if (dur > 20) {
-                LOG_WARN("Slow processing of market message: {} ms (totalProcessed={})", dur, totalProcessed_.load());
+        // Process drained batch
+        for (auto &item : batch) {
+            try {
+                // Call existing processing function which does protobuf parse, cache updates, callbacks
+                auto start = std::chrono::steady_clock::now();
+                processSyntheticOrderBook_protobuf(item.topic, item.message);
+                totalProcessed_.fetch_add(1, std::memory_order_relaxed);
+                auto dur = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now() - start).count();
+                if (dur > 20) {
+                    LOG_WARN("Slow processing of market message: {} ms (totalProcessed={})", dur, totalProcessed_.load());
+                }
+            } catch (const std::exception& e) {
+                errorStats_.dataErrors++;
+                LOG_ERROR("Error processing queued market data: {}", e.what());
             }
-        } catch (const std::exception& e) {
-            errorStats_.dataErrors++;
-            LOG_ERROR("Error processing queued market data: {}", e.what());
         }
     }
 }

@@ -85,7 +85,11 @@
     // Set to 0 to disable interval-based saves.
     int bayesSaveIntervalMs = 60 * 60 * 1000; // 1 hour
     // Persistence tuning: save after N updates. Set to 0 to disable.
-    int bayesSaveAfterUpdates = 20;
+    int bayesSaveAfterUpdates = 2000;         // Save after 2000 updates
+    // Require this many model updates before allowing persistent saves (to avoid saving untrained models)
+    int requireModelReadyUpdates = 100;       // do not save until model has >= 100 updates
+    // Minimum milliseconds between saves (debounce)
+    int bayesMinSaveIntervalMs = 30000;       // 30 seconds debounce between saves
      
      ImbalanceDetectionConfig() = default;
      

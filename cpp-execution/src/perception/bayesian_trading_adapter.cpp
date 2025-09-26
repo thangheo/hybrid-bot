@@ -51,6 +51,24 @@ bool bayes_save(BayesHandle h, const std::string &path) {
     }
 }
 
+bool bayes_is_ready(BayesHandle h) {
+    if (!h) return false;
+    try {
+        return reinterpret_cast<Impl*>(h)->model.is_ready();
+    } catch (...) {
+        return false;
+    }
+}
+
+int bayes_get_num_updates(BayesHandle h) {
+    if (!h) return 0;
+    try {
+        return reinterpret_cast<Impl*>(h)->model.get_stats().num_updates;
+    } catch (...) {
+        return 0;
+    }
+}
+
 BayesSignal bayes_predict(BayesHandle h, const std::vector<double>& features) {
     BayesSignal s;
     if (!h) return s;
