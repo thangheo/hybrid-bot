@@ -267,13 +267,18 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
             results.emplace_back(runDirect("detectMarketDepthChange", [&]{ return detectMarketDepthChange(m); }));
             results.emplace_back(runDirect("detectLargeOrderAppearance", [&]{ return detectLargeOrderAppearance(m); }));
             results.emplace_back(runDirect("detectLargeOrderDisappearance", [&]{ return detectLargeOrderDisappearance(m); }));
-            // results.emplace_back(runDirect("detectLiquidityRemoval", [&]{ return detectLiquidityRemoval(m); }));
+            results.emplace_back(runDirect("detectHiddenLiquidityImbalance", [&]{ return detectHiddenLiquidityImbalance(m); }));
             results.emplace_back(runDirect("detectOrderFlowImbalance", [&]{ return detectOrderFlowImbalance(m); }));
             results.emplace_back(runDirect("detectPriceLevelConcentration", [&]{ return detectPriceLevelConcentration(m); }));
             results.emplace_back(runDirect("detectLiquidityImbalance", [&]{ return detectLiquidityImbalance(m); }));
             results.emplace_back(runDirect("detectTrendContinuation", [&]{ return detectTrendContinuation(m); }));
             results.emplace_back(runDirect("detectTrendReversal", [&]{ return detectTrendReversal(m); }));
-            // Add other detectors as needed
+            results.emplace_back(runDirect("detectTradeImbalance", [&]{ return detectTradeImbalance(m); }));
+            results.emplace_back(runDirect("detectCancellationImbalance", [&]{ return detectCancellationImbalance(m); }));
+            results.emplace_back(runDirect("detectPriceVolatilityImbalance", [&]{ return detectPriceVolatilityImbalance(m); }));
+            // results.emplace_back(runDirect("detectCustomImbalance", [&]{ return detectCustomImbalance(m); }));
+        
+            // Add other detectors as neede
 
             // Commit shared state under single lock
             {
@@ -291,7 +296,8 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
             for (const auto &r : results) {
                 double v = 0.0;
                 if (std::isfinite(r.strength) && r.strength > 0.0) {
-                    v = std::clamp(r.strength, 0.0, 1.0);
+                    // v = std::clamp(r.strength, 0.0, 1.0);
+                    // no need to clapm , there is normalize function is bayesian model
                 } else if (std::isfinite(r.imbalanceValue)) {
                     // map raw ratio-ish values into [0,1] using strength calc with default threshold
                     v = calculateImbalanceStrength(r.imbalanceValue, 1.0);
@@ -354,13 +360,25 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                         if (bayes_handle_) {
 
                             trading::perception::bayes_update(bayes_handle_, pair.first, pair.second);
-                            // save model after each update to avoid losing data
+                            // Save model according to configured policy: save-after-N-updates (if >0)
+                            // otherwise interval-based save (if interval > 0)
                             if (!bayesModelPath_.empty()) {
                                 try {
-                                    //only save if time passs more than 1hour 
-                                    if (std::chrono::steady_clock::now() - lastSaveTime_ > std::chrono::hours(1)) {
+                                    bool doSave = false;
+                                    // Save-after-N policy (priority)
+                                    if (config_.bayesSaveAfterUpdates > 0) {
+                                        // decrement runtime counter and trigger save when it reaches zero
+                                        if (--bayesSaveAfterUpdates_ <= 0) {
+                                            doSave = true;
+                                            bayesSaveAfterUpdates_ = config_.bayesSaveAfterUpdates; // reset
+                                        }
+                                    } else if (config_.bayesSaveIntervalMs > 0 && bayesSaveInterval_.count() > 0) {
+                                        if (std::chrono::steady_clock::now() - lastSaveTime_ > bayesSaveInterval_) doSave = true;
+                                    }
+                                    if (doSave) {
                                         trading::perception::bayes_save(bayes_handle_, bayesModelPath_);
                                         lastSaveTime_ = std::chrono::steady_clock::now();
+                                        LOG_INFO("ImbalanceDetectionEngine: bayes model checkpoint saved to {}", bayesModelPath_);
                                     }
                                 } catch (const std::exception &ex) {
                                     LOG_WARN("Bayes save threw: {}", ex.what());
@@ -412,6 +430,16 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
     } else {
         bayesModelPath_.clear();
         LOG_INFO("ImbalanceDetectionEngine: bayes persistence disabled (no model path configured)");
+    }
+
+    // Configure optional save policies from config
+    if (config_.bayesSaveIntervalMs > 0) {
+        bayesSaveInterval_ = std::chrono::milliseconds(config_.bayesSaveIntervalMs);
+        LOG_INFO("ImbalanceDetectionEngine: bayes save interval set to {} ms", config_.bayesSaveIntervalMs);
+    }
+    if (config_.bayesSaveAfterUpdates > 0) {
+        bayesSaveAfterUpdates_ = config_.bayesSaveAfterUpdates;
+        LOG_INFO("ImbalanceDetectionEngine: bayes will save after every {} model updates", bayesSaveAfterUpdates_);
     }
 
     // Optional labeling delay from config (in ms)
@@ -1039,151 +1067,6 @@ DetectorResult ImbalanceDetectionEngine::detectMarketDepthChange(const OrderBook
     return result;
 }
 
-// DetectorResult ImbalanceDetectionEngine::detectMarketDepthChange(const OrderBookMetrics& metrics) {
-//     // Copy previous snapshot under lock - detectors run concurrently
-//     std::optional<OrderBookMetrics> prevOpt;
-//     {
-//         std::lock_guard<std::mutex> lock(mutex_);
-//         prevOpt = lastMetrics_;
-//     }
-//     if (!prevOpt) return DetectorResult{};
-//     const auto& prev = *prevOpt;
-//     bool depthChanged = false;
-
-//     // --- 1. Spread widening/narrowing ---
-//     double spreadDiff = std::abs(metrics.spread - prev.spread);
-//     if (spreadDiff > config_.spreadChangeThreshold) {
-//         depthChanged = true;
-//     }
-
-//     // --- 2. Volume imbalance shift ---
-//     double imbalanceDiff = std::abs(metrics.volumeImbalance - prev.volumeImbalance);
-//     if (imbalanceDiff > config_.volumeImbalanceThreshold) {
-//         depthChanged = true;
-//     }
-
-//     // --- 3. Depth distribution change ---
-//     auto checkVectorChange = [&](const std::vector<double>& cur,
-//                                  const std::vector<double>& old,
-//                                  double threshold) -> bool {
-//         size_t n = std::min(cur.size(), old.size());
-//         for (size_t i = 0; i < n; i++) {
-//             if (std::abs(cur[i] - old[i]) > threshold) {
-//                 return true;
-//             }
-//         }
-//         return false;
-//     };
-
-//     if (checkVectorChange(metrics.bidVolumesByLevel, prev.bidVolumesByLevel, config_.levelVolumeChangeThreshold) ||
-//         checkVectorChange(metrics.askVolumesByLevel, prev.askVolumesByLevel, config_.levelVolumeChangeThreshold)) {
-//         depthChanged = true;
-//     }
-
-//     // --- 4. Liquidity pressure or density shifts ---
-//     double pressureDiff = std::abs(metrics.liquidityPressure - prev.liquidityPressure);
-//     if (pressureDiff > config_.liquidityPressureThreshold) {
-//         depthChanged = true;
-//     }
-//     double densityDiff = std::abs(metrics.bidDensity - prev.bidDensity) + std::abs(metrics.askDensity - prev.askDensity);
-//     if (densityDiff > config_.densityChangeThreshold) {
-//         depthChanged = true;
-//     }
-//     // If any significant change detected, create an event
-//     DetectorResult r;
-//     r.type = ImbalanceType::MARKET_DEPTH_CHANGE;
-//     if (depthChanged) {
-//         r.isImbalance = true;
-//         r.strength = 1.0; // Could be refined to a computed value
-//         r.direction = Direction::NEUTRAL; // Depth change is neutral
-//         r.shouldEmitEvent = false; // Currently not emitting events for depth changes
-//     }
-//     return r;
-// }
-
-// double ImbalanceDetectionEngine::detectLargeOrderAppearance(const OrderBookMetrics& metrics) {
-//     // Configuration thresholds - these should be configurable parameters
-//     static const double VOLUME_IMBALANCE_THRESHOLD = 0.3;        // 30% imbalance
-//     static const double WEIGHTED_IMBALANCE_THRESHOLD = 0.25;     // 25% weighted imbalance
-//     static const double DEPTH_IMBALANCE_THRESHOLD = 0.4;         // 40% depth imbalance
-//     static const double PRESSURE_IMBALANCE_THRESHOLD = 0.35;     // 35% pressure imbalance
-//     static const double BID_ASK_RATIO_THRESHOLD_HIGH = 2.0;      // 2:1 ratio or higher
-//     static const double BID_ASK_RATIO_THRESHOLD_LOW = 0.5;       // 1:2 ratio or lower
-//     static const double DENSITY_RATIO_THRESHOLD = 1.5;          // 50% difference in density
-//     static const double MARKET_DIRECTIONAL_THRESHOLD = 0.6;     // Strong directional signal
-//     static const double LIQUIDITY_PRESSURE_THRESHOLD = 0.4;     // High liquidity pressure
-    
-//     // Counter for detection signals
-//     int detectionSignals = 0;
-//     const int REQUIRED_SIGNALS = 3;  // Need at least 3 signals for confirmation
-    
-//     // 1. Check volume imbalance - indicates large orders affecting volume distribution
-//     double absVolumeImbalance = std::abs(metrics.volumeImbalance);
-//     if (absVolumeImbalance > VOLUME_IMBALANCE_THRESHOLD) {
-//         detectionSignals++;
-//     }
-    
-//     // 2. Check weighted volume imbalance - price-weighted indicator is more sensitive
-//     double absWeightedImbalance = std::abs(metrics.weightedVolumeImbalance);
-//     if (absWeightedImbalance > WEIGHTED_IMBALANCE_THRESHOLD) {
-//         detectionSignals++;
-//     }
-    
-//     // 3. Check depth imbalance - large orders create depth asymmetries
-//     double absDepthImbalance = std::abs(metrics.depthImbalance);
-//     if (absDepthImbalance > DEPTH_IMBALANCE_THRESHOLD) {
-//         detectionSignals++;
-//     }
-    
-//     // 4. Check pressure imbalance - combined pressure indicator
-//     double absPressureImbalance = std::abs(metrics.pressureImbalance);
-//     if (absPressureImbalance > PRESSURE_IMBALANCE_THRESHOLD) {
-//         detectionSignals++;
-//     }
-    
-//     // 5. Check bid-ask volume ratio for extreme values
-//     if (metrics.bidAskVolumeRatio > BID_ASK_RATIO_THRESHOLD_HIGH || 
-//         metrics.bidAskVolumeRatio < BID_ASK_RATIO_THRESHOLD_LOW) {
-//         detectionSignals++;
-//     }
-    
-//     // 6. Check density imbalance - large orders create density asymmetries
-//     if (metrics.bidDensity > 0 && metrics.askDensity > 0) {
-//         double densityRatio = std::max(metrics.bidDensity / metrics.askDensity, 
-//                                      metrics.askDensity / metrics.bidDensity);
-//         if (densityRatio > DENSITY_RATIO_THRESHOLD) {
-//             detectionSignals++;
-//         }
-//     }
-    
-//     // 7. Check market directional coefficient - strong directional bias
-//     double absMarketDirectional = std::abs(metrics.marketDirectionalCoefficient);
-//     if (absMarketDirectional > MARKET_DIRECTIONAL_THRESHOLD) {
-//         detectionSignals++;
-//     }
-    
-//     // 8. Check liquidity pressure - high pressure indicates large order impact
-//     double absLiquidityPressure = std::abs(metrics.liquidityPressure);
-//     if (absLiquidityPressure > LIQUIDITY_PRESSURE_THRESHOLD) {
-//         detectionSignals++;
-//     }
-    
-//     // 9. Check for significant level-by-level volume concentration
-//     bool hasConcentratedVolume = checkVolumeConcentration(metrics);
-//     if (hasConcentratedVolume) {
-//         detectionSignals++;
-//     }
-    
-//     // 10. Additional check using custom metrics if available
-//     double bidFlow = metrics.getMetric("bidFlow", 0.0);
-//     double askFlow = metrics.getMetric("askFlow", 0.0);
-//     if (std::abs(bidFlow - askFlow) > 0.5) {  // Significant flow imbalance
-//         detectionSignals++;
-//     }
-    
-//     // Return true if we have enough confirming signals
-//     return detectionSignals >= REQUIRED_SIGNALS;
-// }
 
 DetectorResult ImbalanceDetectionEngine::detectLargeOrderAppearance(const OrderBookMetrics& metrics) {
     // Configuration thresholds - should be configurable parameters
@@ -1738,35 +1621,399 @@ Direction ImbalanceDetectionEngine::determineDisappearanceDirection(const OrderB
     return (bidSideRelief > askSideRelief) ? Direction::SELL : Direction::BUY;
 }
 
+DetectorResult ImbalanceDetectionEngine::detectOrderFlowImbalance(const OrderBookMetrics& metrics) {
+    DetectorResult result;
+    result.type = ImbalanceType::ORDER_FLOW_IMBALANCE;
+    
+    // Calculate flow imbalance ratio
+    double totalFlow = std::abs(metrics.bidFlow) + std::abs(metrics.askFlow);
+    if (totalFlow < 1e-9) {
+        return result; // No meaningful flow
+    }
+    
+    double flowImbalanceRatio = (metrics.bidFlow - metrics.askFlow) / totalFlow;
+    result.imbalanceValue = std::abs(flowImbalanceRatio);
+    
+    // Check against threshold
+    double threshold = thresholds_.orderFlowImbalance;
+    if (result.imbalanceValue > threshold) {
+        result.strength = calculateImbalanceStrength(result.imbalanceValue, threshold);
+        result.direction = flowImbalanceRatio > 0 ? Direction::BUY : Direction::SELL;
+        result.shouldEmitEvent = true;
+        
+        // Enhanced strength calculation based on flow velocity
+        if (lastMetrics_.has_value()) {
+            double flowAcceleration = std::abs(totalFlow - (std::abs(lastMetrics_->bidFlow) + std::abs(lastMetrics_->askFlow)));
+            result.strength *= (1.0 + flowAcceleration * 0.1); // Boost for accelerating flow
+        }
+    }
+    
+    return result;
+}
 
-DetectorResult ImbalanceDetectionEngine::detectOrderFlowImbalance(const OrderBookMetrics& metrics){
-    return DetectorResult{};
-}
-DetectorResult ImbalanceDetectionEngine::detectPriceLevelConcentration(const OrderBookMetrics& metrics){
-    return DetectorResult{};
-}
-DetectorResult ImbalanceDetectionEngine::detectLiquidityImbalance(const OrderBookMetrics& metrics){
-    return DetectorResult{};
-}
-DetectorResult ImbalanceDetectionEngine::detectTrendContinuation(const OrderBookMetrics& metrics){
-    return DetectorResult{};
-}
-DetectorResult ImbalanceDetectionEngine::detectTrendReversal(const OrderBookMetrics& metrics){
-    return DetectorResult{};
-}
-DetectorResult ImbalanceDetectionEngine::detectTradeImbalance(const OrderBookMetrics& metrics)   {
-    return DetectorResult{};
-}
-DetectorResult ImbalanceDetectionEngine::detectCancellationImbalance(const OrderBookMetrics& metrics){
-    return DetectorResult{};
-}
-DetectorResult ImbalanceDetectionEngine::detectPriceVolatilityImbalance(const OrderBookMetrics& metrics){
-    return DetectorResult{};
+DetectorResult ImbalanceDetectionEngine::detectPriceLevelConcentration(const OrderBookMetrics& metrics) {
+    DetectorResult result;
+    result.type = ImbalanceType::PRICE_LEVEL_CONCENTRATION;
+    
+    // Calculate concentration on both sides
+    double bidConcentration = 0.0;
+    double askConcentration = 0.0;
+    
+    // Calculate Herfindahl-Hirschman Index (HHI) for concentration
+    if (!metrics.bidVolumesByLevel.empty()) {
+        double totalBidVolume = metrics.totalBidVolume;
+        if (totalBidVolume > 0) {
+            for (double volume : metrics.bidVolumesByLevel) {
+                double share = volume / totalBidVolume;
+                bidConcentration += share * share;
+            }
+        }
+    }
+    
+    if (!metrics.askVolumesByLevel.empty()) {
+        double totalAskVolume = metrics.totalAskVolume;
+        if (totalAskVolume > 0) {
+            for (double volume : metrics.askVolumesByLevel) {
+                double share = volume / totalAskVolume;
+                askConcentration += share * share;
+            }
+        }
+    }
+    
+    // Use maximum concentration as the imbalance value
+    result.imbalanceValue = std::max(bidConcentration, askConcentration);
+    
+    double threshold = thresholds_.priceLevelConcentration;
+    if (result.imbalanceValue > threshold) {
+        result.strength = calculateImbalanceStrength(result.imbalanceValue, threshold);
+        result.direction = bidConcentration > askConcentration ? Direction::BUY : Direction::SELL;
+        result.shouldEmitEvent = true;
+        
+        // Additional check for top-level dominance
+        if (!metrics.bidVolumesByLevel.empty() && !metrics.askVolumesByLevel.empty()) {
+            double topBidShare = metrics.bidVolumesByLevel[0] / metrics.totalBidVolume;
+            double topAskShare = metrics.askVolumesByLevel[0] / metrics.totalAskVolume;
+            if (std::max(topBidShare, topAskShare) > 0.7) {
+                result.strength *= 1.5; // Boost for extreme concentration
+            }
+        }
+    }
+    
+    return result;
 }
 
-DetectorResult ImbalanceDetectionEngine::detectCustomImbalance(const OrderBookMetrics& metrics){
-    return DetectorResult{};
+DetectorResult ImbalanceDetectionEngine::detectLiquidityImbalance(const OrderBookMetrics& metrics) {
+    DetectorResult result;
+    result.type = ImbalanceType::LIQUIDITY_IMBALANCE;
+    
+    // Calculate liquidity imbalance using multiple factors
+    double volumeImbalance = std::abs(metrics.bidAskVolumeRatio - 1.0);
+    double depthImbalance = std::abs(metrics.depthImbalance);
+    double pressureImbalance = std::abs(metrics.pressureImbalance);
+    
+    // Composite liquidity imbalance score
+    result.imbalanceValue = (volumeImbalance * 0.4 + depthImbalance * 0.3 + pressureImbalance * 0.3);
+    
+    double threshold = thresholds_.liquidityImbalance;
+    if (result.imbalanceValue > threshold) {
+        result.strength = calculateImbalanceStrength(result.imbalanceValue, threshold);
+        
+        // Determine direction based on which side has more liquidity
+        if (metrics.totalBidVolume > metrics.totalAskVolume) {
+            result.direction = Direction::SELL; // More bids suggests selling pressure coming
+        } else {
+            result.direction = Direction::BUY; // More asks suggests buying pressure coming
+        }
+        
+        result.shouldEmitEvent = true;
+        
+        // Enhance strength based on liquidity pressure
+        if (metrics.liquidityPressure > 0.5) {
+            result.strength *= (1.0 + metrics.liquidityPressure * 0.3);
+        }
+    }
+    
+    return result;
 }
+
+DetectorResult ImbalanceDetectionEngine::detectTrendContinuation(const OrderBookMetrics& metrics) {
+    DetectorResult result;
+    result.type = ImbalanceType::TREND_CONTINUATION;
+    
+    if (!lastMetrics_.has_value()) {
+        return result; // Need historical data for trend analysis
+    }
+    
+    // Calculate price momentum
+    double priceChange = metrics.midPrice - lastMetrics_->midPrice;
+    double priceMomentum = priceChange / lastMetrics_->midPrice;
+    
+    // Calculate volume momentum
+    double volumeChange = metrics.totalVolume - lastMetrics_->totalVolume;
+    double volumeMomentum = volumeChange / std::max(lastMetrics_->totalVolume, 1.0);
+    
+    // Calculate order flow momentum
+    double currentNetFlow = metrics.bidFlow - metrics.askFlow;
+    double lastNetFlow = lastMetrics_->bidFlow - lastMetrics_->askFlow;
+    bool flowAligned = (currentNetFlow > 0 && lastNetFlow > 0) || (currentNetFlow < 0 && lastNetFlow < 0);
+    
+    // Trend continuation signal
+    result.imbalanceValue = std::abs(priceMomentum) * (flowAligned ? 1.5 : 1.0);
+    if (volumeMomentum > 0.1) {
+        result.imbalanceValue *= (1.0 + volumeMomentum * 0.5); // Volume confirmation
+    }
+    
+    double threshold = thresholds_.trendContinuation;
+    if (result.imbalanceValue > threshold && flowAligned) {
+        result.strength = calculateImbalanceStrength(result.imbalanceValue, threshold);
+        result.direction = priceChange > 0 ? Direction::BUY : Direction::SELL;
+        result.shouldEmitEvent = true;
+        
+        // Additional confirmation from market directional coefficient
+        if (std::abs(metrics.marketDirectionalCoefficient) > 0.6) {
+            result.strength *= 1.3; // Strong directional confirmation
+        }
+    }
+    
+    return result;
+}
+
+DetectorResult ImbalanceDetectionEngine::detectTrendReversal(const OrderBookMetrics& metrics) {
+    DetectorResult result;
+    result.type = ImbalanceType::TREND_REVERSAL;
+    
+    if (!lastMetrics_.has_value()) {
+        return result; // Need historical data for reversal analysis
+    }
+    
+    // Calculate price momentum
+    double priceChange = metrics.midPrice - lastMetrics_->midPrice;
+    double priceMomentum = priceChange / lastMetrics_->midPrice;
+    
+    // Calculate order flow divergence
+    double currentNetFlow = metrics.bidFlow - metrics.askFlow;
+    double lastNetFlow = lastMetrics_->bidFlow - lastMetrics_->askFlow;
+    
+    // Look for flow divergence from price movement
+    bool bearishDivergence = (priceChange > 0 && currentNetFlow < lastNetFlow && currentNetFlow < 0);
+    bool bullishDivergence = (priceChange < 0 && currentNetFlow > lastNetFlow && currentNetFlow > 0);
+    
+    if (!bearishDivergence && !bullishDivergence) {
+        return result; // No divergence detected
+    }
+    
+    // Calculate divergence strength
+    double flowDivergence = std::abs(currentNetFlow - lastNetFlow) / std::max(std::abs(lastNetFlow), 1.0);
+    result.imbalanceValue = flowDivergence * std::abs(priceMomentum) * 10.0;
+    
+    double threshold = thresholds_.trendReversal;
+    if (result.imbalanceValue > threshold) {
+        result.strength = calculateImbalanceStrength(result.imbalanceValue, threshold);
+        result.direction = bearishDivergence ? Direction::SELL : Direction::BUY;
+        result.shouldEmitEvent = true;
+        
+        // Enhance strength based on volatility expectation
+        if (metrics.volatilityExpectation > 1.2 * lastMetrics_->volatilityExpectation) {
+            result.strength *= 1.4; // Volatility spike suggests strong reversal
+        }
+        
+        // Additional confirmation from spread behavior
+        if (metrics.spread > 1.5 * lastMetrics_->spread) {
+            result.strength *= 1.2; // Widening spread supports reversal thesis
+        }
+    }
+    
+    return result;
+}
+
+DetectorResult ImbalanceDetectionEngine::detectTradeImbalance(const OrderBookMetrics& metrics) {
+    DetectorResult result;
+    result.type = ImbalanceType::TRADE_IMBALANCE;
+    
+    // Calculate trade-based imbalance using volume velocity and flow
+    double tradeIntensity = std::abs(metrics.volumeVelocity);
+    double netFlow = metrics.bidFlow - metrics.askFlow;
+    double totalFlow = std::abs(metrics.bidFlow) + std::abs(metrics.askFlow);
+    
+    if (totalFlow < 1e-9) {
+        return result; // No meaningful trading activity
+    }
+    
+    // Trade imbalance combines flow imbalance with trade intensity
+    double flowImbalanceRatio = netFlow / totalFlow;
+    result.imbalanceValue = std::abs(flowImbalanceRatio) * (1.0 + tradeIntensity * 0.1);
+    
+    double threshold = thresholds_.tradeImbalance;
+    if (result.imbalanceValue > threshold) {
+        result.strength = calculateImbalanceStrength(result.imbalanceValue, threshold);
+        result.direction = flowImbalanceRatio > 0 ? Direction::BUY : Direction::SELL;
+        result.shouldEmitEvent = true;
+        
+        // Boost strength for sustained trade imbalance
+        if (lastMetrics_.has_value()) {
+            double lastNetFlow = lastMetrics_->bidFlow - lastMetrics_->askFlow;
+            double lastTotalFlow = std::abs(lastMetrics_->bidFlow) + std::abs(lastMetrics_->askFlow);
+            if (lastTotalFlow > 1e-9) {
+                double lastFlowImbalance = lastNetFlow / lastTotalFlow;
+                // Same direction flow in consecutive periods
+                if ((flowImbalanceRatio > 0 && lastFlowImbalance > 0) || 
+                    (flowImbalanceRatio < 0 && lastFlowImbalance < 0)) {
+                    result.strength *= 1.3; // Sustained imbalance
+                }
+            }
+        }
+    }
+    
+    return result;
+}
+
+DetectorResult ImbalanceDetectionEngine::detectCancellationImbalance(const OrderBookMetrics& metrics) {
+    DetectorResult result;
+    result.type = ImbalanceType::CANCELLATION_IMBALANCE;
+    
+    if (!lastMetrics_.has_value()) {
+        return result; // Need historical data to detect cancellations
+    }
+    
+    // Detect cancellations by looking for sudden volume drops without corresponding trades
+    double bidVolumeChange = metrics.totalBidVolume - lastMetrics_->totalBidVolume;
+    double askVolumeChange = metrics.totalAskVolume - lastMetrics_->totalAskVolume;
+    
+    // If volume drops significantly more on one side, it suggests cancellations
+    double bidCancellationSignal = bidVolumeChange < 0 ? std::abs(bidVolumeChange) : 0.0;
+    double askCancellationSignal = askVolumeChange < 0 ? std::abs(askVolumeChange) : 0.0;
+    
+    double totalCancellationSignal = bidCancellationSignal + askCancellationSignal;
+    double netCancellationImbalance = bidCancellationSignal - askCancellationSignal;
+    
+    if (totalCancellationSignal < 1e-9) {
+        return result; // No significant cancellation activity
+    }
+    
+    result.imbalanceValue = std::abs(netCancellationImbalance) / totalCancellationSignal;
+    
+    double threshold = thresholds_.cancellationImbalance;
+    if (result.imbalanceValue > threshold && totalCancellationSignal > 0.01 * lastMetrics_->totalVolume) {
+        result.strength = calculateImbalanceStrength(result.imbalanceValue, threshold);
+        result.direction = bidCancellationSignal > askCancellationSignal ? Direction::SELL : Direction::BUY;
+        result.shouldEmitEvent = true;
+        
+        // Enhance strength based on the magnitude of cancellations relative to total volume
+        double cancellationRate = totalCancellationSignal / lastMetrics_->totalVolume;
+        if (cancellationRate > 0.1) {
+            result.strength *= (1.0 + cancellationRate * 2.0); // Significant cancellation activity
+        }
+        
+        // Additional boost if cancellations coincide with spread widening
+        if (metrics.spread > 1.2 * lastMetrics_->spread) {
+            result.strength *= 1.25; // Liquidity withdrawal pattern
+        }
+    }
+    
+    return result;
+}
+
+DetectorResult ImbalanceDetectionEngine::detectPriceVolatilityImbalance(const OrderBookMetrics& metrics) {
+    DetectorResult result;
+    result.type = ImbalanceType::PRICE_VOLATILITY_IMBALANCE;
+    
+    // Calculate volatility-based imbalance
+    double volatilityRatio = metrics.realizedVolatility > 0 ? 
+        metrics.volatilityExpectation / metrics.realizedVolatility : 1.0;
+    
+    double priceVelocity = std::abs(metrics.priceVelocity);
+    double spreadExpansion = lastMetrics_.has_value() ? 
+        metrics.spread / std::max(lastMetrics_->spread, 1e-9) : 1.0;
+    
+    // Volatility imbalance indicates mismatch between expected and realized volatility
+    result.imbalanceValue = std::abs(volatilityRatio - 1.0) * (1.0 + priceVelocity * 0.5) * spreadExpansion;
+    
+    double threshold = thresholds_.priceVolatilityImbalance;
+    if (result.imbalanceValue > threshold) {
+        result.strength = calculateImbalanceStrength(result.imbalanceValue, threshold);
+        
+        // Direction based on price velocity and volatility relationship
+        if (priceVelocity > 0.001) {
+            result.direction = metrics.priceVelocity > 0 ? Direction::BUY : Direction::SELL;
+        } else {
+            // Use volatility expectation vs realized as direction hint
+            result.direction = volatilityRatio > 1.0 ? Direction::BUY : Direction::SELL;
+        }
+        
+        result.shouldEmitEvent = true;
+        
+        // Enhance strength for extreme volatility mismatches
+        if (std::abs(volatilityRatio - 1.0) > 0.5) {
+            result.strength *= 1.4; // Significant volatility mismatch
+        }
+        
+        // Additional boost for high volatility per unit time
+        if (metrics.volatilityPerUnitTime > 1.0) {
+            result.strength *= (1.0 + metrics.volatilityPerUnitTime * 0.2);
+        }
+    }
+    
+    return result;
+}
+
+// DetectorResult ImbalanceDetectionEngine::detectCustomImbalance(const OrderBookMetrics& metrics) {
+//     DetectorResult result;
+//     result.type = ImbalanceType::CUSTOM_IMBALANCE;
+    
+//     // Custom imbalance detection based on proprietary signals
+//     // This can be customized based on specific trading strategies
+    
+//     // Example: Composite signal combining multiple factors
+//     double liquidityProfileScore = metrics.liquidityProfileScore;
+//     double marketDirectionalCoeff = std::abs(metrics.marketDirectionalCoefficient);
+//     double pressureImbalance = std::abs(metrics.pressureImbalance);
+//     double densityImbalance = std::abs(metrics.bidDensity - metrics.askDensity) / 
+//         std::max(metrics.bidDensity + metrics.askDensity, 1.0);
+    
+//     // Weighted composite score
+//     result.imbalanceValue = (liquidityProfileScore * 0.3 + 
+//                             marketDirectionalCoeff * 0.25 + 
+//                             pressureImbalance * 0.25 + 
+//                             densityImbalance * 0.2);
+    
+//     double threshold = thresholds_.customImbalance;
+//     if (result.imbalanceValue > threshold) {
+//         result.strength = calculateImbalanceStrength(result.imbalanceValue, threshold);
+        
+//         // Direction based on the strongest component signal
+//         if (metrics.marketDirectionalCoefficient > 0.1) {
+//             result.direction = Direction::BUY;
+//         } else if (metrics.marketDirectionalCoefficient < -0.1) {
+//             result.direction = Direction::SELL;
+//         } else {
+//             // Use density imbalance as fallback
+//             result.direction = metrics.bidDensity > metrics.askDensity ? Direction::SELL : Direction::BUY;
+//         }
+        
+//         result.shouldEmitEvent = true;
+        
+//         // Custom enhancement logic
+//         if (lastMetrics_.has_value()) {
+//             // Look for acceleration in the composite signal
+//             double lastCustomValue = (lastMetrics_->liquidityProfileScore * 0.3 + 
+//                                     std::abs(lastMetrics_->marketDirectionalCoefficient) * 0.25 + 
+//                                     std::abs(lastMetrics_->pressureImbalance) * 0.25);
+            
+//             if (result.imbalanceValue > 1.2 * lastCustomValue) {
+//                 result.strength *= 1.3; // Accelerating custom signal
+//             }
+//         }
+        
+//         // Volume confirmation
+//         if (metrics.totalVolume > 1.5 * (metrics.totalBidVolume + metrics.totalAskVolume) / 2.0) {
+//             result.strength *= 1.2; // Volume surge confirmation
+//         }
+//     }
+    
+//     return result;
+// }
+
+
 DetectorResult ImbalanceDetectionEngine::detectHiddenLiquidityImbalance(const OrderBookMetrics& metrics) {
     // Configuration thresholds for hidden liquidity detection
     static const double VELOCITY_ANOMALY_THRESHOLD = 0.5;          // Significant velocity changes
