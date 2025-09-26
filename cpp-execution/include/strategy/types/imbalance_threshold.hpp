@@ -39,7 +39,7 @@
      double priceVolatilityImbalance = 0.6;
      ///just set it low because we will learn it online
      double priceVolatilityImbalanceMin = 0.3;
-        double priceVolatilityImbalanceMax = 0.9;   
+    double priceVolatilityImbalanceMax = 0.9;   
     double spreadPersistence = 0.5;
     double depthVolumeInconsistency = 0.4;
     double volatilitySuppression = 0.5;
