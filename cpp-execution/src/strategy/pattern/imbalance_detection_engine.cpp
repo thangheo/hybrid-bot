@@ -320,13 +320,27 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                         std::lock_guard<std::mutex> lk(bayesMutex_);
                         if (bayes_handle_) signal = trading::perception::bayes_predict(bayes_handle_, features);
                     }
-                    if (signal.should_trade) {
+                    if (signal.should_trade && signal.probability > 0.55) {  // Add confidence threshold
                         Direction dir = (signal.direction > 0) ? Direction::BUY : Direction::SELL;
                         OrderBookMetrics mcopy = m;
+                        
+                        // Add more signal metadata
                         mcopy.metrics["bayes_probability"] = signal.probability;
-                        // Use model probability as the event strength (0..1)
-                        createImbalanceEvent(ImbalanceType::CUSTOM, signal.probability, dir, mcopy);
+                        mcopy.metrics["bayes_expected_value"] = signal.expected_value;
+                        mcopy.metrics["bayes_position_size"] = signal.position_size;
+                        mcopy.metrics["bayes_uncertainty"] = signal.uncertainty;
+                        
+                        // Use position_size as event strength instead of just probability
+                        double event_strength = signal.position_size;  // Already incorporates confidence
+                        createImbalanceEvent(ImbalanceType::CUSTOM, event_strength, dir, mcopy);
                     }
+                    // if (signal.should_trade) {
+                    //     Direction dir = (signal.direction > 0) ? Direction::BUY : Direction::SELL;
+                    //     OrderBookMetrics mcopy = m;
+                    //     mcopy.metrics["bayes_probability"] = signal.probability;
+                    //     // Use model probability as the event strength (0..1)
+                    //     createImbalanceEvent(ImbalanceType::CUSTOM, signal.probability, dir, mcopy);
+                    // }
                 } catch (const std::exception &ex) {
                     LOG_WARN("Bayes predict threw: {}", ex.what());
                 } catch (...) {
@@ -340,17 +354,33 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                 {
                     std::lock_guard<std::mutex> pl(pendingTrainingMutex_);
                     auto now = m.timestamp;
+                    // OPTION 1: Symmetric thresholds
                     while (!pendingTraining_.empty()) {
                         const auto &pt = pendingTraining_.front();
-                        // if sample is older than labelingDelay_
+                        
                         if (now - pt.timestamp >= labelingDelay_) {
-                            // determine label by comparing current midPrice and stored midPrice
                             double priceNow = m.midPrice;
                             double priceThen = pt.midPrice;
-                            int label = (priceNow > priceThen) ? 1 : 0;
+                            double priceChangePct = (priceNow - priceThen) / priceThen;
+                            
+                            int label;
+                            const double THRESHOLD = 0.15/100;  // 0.15% symmetric threshold
+                            
+                            if (priceChangePct > THRESHOLD) {
+                                label = 1;  // Price up
+                            } else if (priceChangePct < -THRESHOLD) {
+                                label = 0;  // Price down  
+                            } else {
+                                // Skip neutral moves - don't train on noise
+                                pendingTraining_.pop_front();
+                                continue;
+                            }
+                            
                             toTrain.emplace_back(pt.features, label);
                             pendingTraining_.pop_front();
-                        } else break;
+                        } else {
+                            break;
+                        }
                     }
                 }
                 // update model outside lock
@@ -466,7 +496,11 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                 LOG_WARN("ImbalanceDetectionEngine: unknown error while loading bayes model {}", bayesModelPath_);
             }
         }
-        bayesInitialized_.store(true);
+    bayesInitialized_.store(true);
+    // Initialize lastSaveTime_ to now to avoid treating an uninitialized
+    // time_point as long-ago and triggering an immediate interval save.
+    lastSaveTime_ = std::chrono::steady_clock::now();
+    LOG_DEBUG("ImbalanceDetectionEngine: bayes lastSaveTime initialized");
     } catch (const std::exception &ex) {
         LOG_WARN("ImbalanceDetectionEngine: failed to create bayes adapter: {}", ex.what());
     } catch (...) {
