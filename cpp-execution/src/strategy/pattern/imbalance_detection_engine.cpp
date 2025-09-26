@@ -463,7 +463,7 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
         thresholds_.setThreshold("priceLevelImbalance", 1.2);    // Was 1.5 → make it more sensitive
         thresholds_.setThreshold("liquidity_flow_imbalance", 1.5); // Was 3.0 → too extreme before
         thresholds_.setThreshold("liquidity_removal", 1.2);      // Was 1.5 → detect smaller removals
-        thresholds_.setThreshold("abnormal_spread", 1.8);        // Was 2.5 → flag earlier widening
+        thresholds_.setThreshold("abnormal_spread", 1.4);        // Was 2.5 → flag earlier widening
         thresholds_.setThreshold("marketDepthChange", 0.3);      // 30% change in depth
         thresholds_.setThreshold("largeOrderThreshold", 0.02);   // 2% of top level volume
         thresholds_.setThreshold("orderFlowImbalance", 0.6);     // 60% of orders on one side
@@ -793,6 +793,136 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
             thresholds_.setTypeThreshold(ImbalanceType::ABNORMAL_SPREAD, imbalanceThreshold);
         }
     }
+    // liquidity_removal
+    if (params.numeric_params.find("liquidity_removal_threshold") != params.numeric_params.end()) {
+        double threshold = params.getDouble("liquidity_removal_threshold", 1.5);
+        thresholds_.setThreshold("liquidity_removal", threshold);
+        
+        // If thresholds_ also has a map for ImbalanceType enum
+        if (thresholds_.type_thresholds.find(ImbalanceType::LIQUIDITY_REMOVAL) != thresholds_.type_thresholds.end()) {
+            ImbalanceThreshold imbalanceThreshold = thresholds_.getTypeThreshold(ImbalanceType::LIQUIDITY_REMOVAL);
+            imbalanceThreshold.activation_threshold = threshold;
+            thresholds_.setTypeThreshold(ImbalanceType::LIQUIDITY_REMOVAL, imbalanceThreshold);
+        }
+    }
+    // /marketDepthChange
+    if (params.numeric_params.find("market_depth_change_threshold") != params.numeric_params.end()) {
+        double threshold = params.getDouble("market_depth_change_threshold", 0.3);
+        thresholds_.setThreshold("marketDepthChange", threshold);
+        
+        // If thresholds_ also has a map for ImbalanceType enum
+        if (thresholds_.type_thresholds.find(ImbalanceType::MARKET_DEPTH_CHANGE) != thresholds_.type_thresholds.end()) {
+            ImbalanceThreshold imbalanceThreshold = thresholds_.getTypeThreshold(ImbalanceType::MARKET_DEPTH_CHANGE);
+            imbalanceThreshold.activation_threshold = threshold;
+            thresholds_.setTypeThreshold(ImbalanceType::MARKET_DEPTH_CHANGE, imbalanceThreshold);
+        }
+    }
+    // largeOrderThreshold
+    if (params.numeric_params.find("large_order_threshold") != params.numeric_params.end()) {
+        double threshold = params.getDouble("large_order_threshold", 0.02);
+        thresholds_.setThreshold("largeOrderThreshold", threshold);
+        // If thresholds_ also has a map for ImbalanceType enum
+        if (thresholds_.type_thresholds.find(ImbalanceType::LARGE_ORDER_APPEARANCE) != thresholds_.type_thresholds.end()) {
+            ImbalanceThreshold imbalanceThreshold = thresholds_.getTypeThreshold(ImbalanceType::LARGE_ORDER_APPEARANCE);
+            imbalanceThreshold.activation_threshold = threshold;
+            thresholds_.setTypeThreshold(ImbalanceType::LARGE_ORDER_APPEARANCE, imbalanceThreshold);
+        }
+        if (thresholds_.type_thresholds.find(ImbalanceType::LARGE_ORDER_DISAPPEARANCE) != thresholds_.type_thresholds.end()) {
+            ImbalanceThreshold imbalanceThreshold = thresholds_.getTypeThreshold(ImbalanceType::LARGE_ORDER_DISAPPEARANCE);
+            imbalanceThreshold.activation_threshold = threshold;
+            thresholds_.setTypeThreshold(ImbalanceType::LARGE_ORDER_DISAPPEARANCE, imbalanceThreshold);
+        }
+    }
+    // orderFlowImbalance
+    if (params.numeric_params.find("order_flow_imbalance_threshold") != params.numeric_params.end()) {
+        double threshold = params.getDouble("order_flow_imbalance_threshold", 0.6);
+        thresholds_.setThreshold("orderFlowImbalance", threshold);
+        
+        // If thresholds_ also has a map for ImbalanceType enum
+        if (thresholds_.type_thresholds.find(ImbalanceType::ORDER_FLOW_IMBALANCE) != thresholds_.type_thresholds.end()) {
+            ImbalanceThreshold imbalanceThreshold = thresholds_.getTypeThreshold(ImbalanceType::ORDER_FLOW_IMBALANCE);
+            imbalanceThreshold.activation_threshold = threshold;
+            thresholds_.setTypeThreshold(ImbalanceType::ORDER_FLOW_IMBALANCE, imbalanceThreshold);
+        }
+    }
+    // priceLevelConcentration
+    if (params.numeric_params.find("price_level_concentration_threshold") != params.numeric_params.end()) {
+        double threshold = params.getDouble("price_level_concentration_threshold", 0.5);
+        thresholds_.setThreshold("priceLevelConcentration", threshold); 
+        // If thresholds_ also has a map for ImbalanceType enum
+        if (thresholds_.type_thresholds.find(ImbalanceType::PRICE_LEVEL_CONCENTRATION) != thresholds_.type_thresholds.end()) {
+            ImbalanceThreshold imbalanceThreshold = thresholds_.getTypeThreshold(ImbalanceType::PRICE_LEVEL_CONCENTRATION);
+            imbalanceThreshold.activation_threshold = threshold;
+            thresholds_.setTypeThreshold(ImbalanceType::PRICE_LEVEL_CONCENTRATION, imbalanceThreshold);
+        }
+    }
+    // liquidityImbalance
+    if (params.numeric_params.find("liquidity_imbalance_threshold") != params.numeric_params.end()) {
+        double threshold = params.getDouble("liquidity_imbalance_threshold", 0.6);
+        thresholds_.setThreshold("liquidityImbalance", threshold);
+        // If thresholds_ also has a map for ImbalanceType enum
+        if (thresholds_.type_thresholds.find(ImbalanceType::LIQUIDITY_IMBALANCE) != thresholds_.type_thresholds.end()) {
+            ImbalanceThreshold imbalanceThreshold = thresholds_.getTypeThreshold(ImbalanceType::LIQUIDITY_IMBALANCE);
+            imbalanceThreshold.activation_threshold = threshold;
+            thresholds_.setTypeThreshold(ImbalanceType::LIQUIDITY_IMBALANCE, imbalanceThreshold);
+        }
+    }
+    // trendContinuation
+    if (params.numeric_params.find("trend_continuation_threshold") != params.numeric_params.end()) {
+        double threshold = params.getDouble("trend_continuation_threshold", 0.4);
+        thresholds_.setThreshold("trendContinuation", threshold);
+        // If thresholds_ also has a map for ImbalanceType enum
+        if (thresholds_.type_thresholds.find(ImbalanceType::TREND_CONTINUATION) != thresholds_.type_thresholds.end()) {
+            ImbalanceThreshold imbalanceThreshold = thresholds_.getTypeThreshold(ImbalanceType::TREND_CONTINUATION);
+            imbalanceThreshold.activation_threshold = threshold;
+            thresholds_.setTypeThreshold(ImbalanceType::TREND_CONTINUATION, imbalanceThreshold);
+        }
+    }
+    // trendReversal
+    if (params.numeric_params.find("trend_reversal_threshold") != params.numeric_params.end()) {
+        double threshold = params.getDouble("trend_reversal_threshold", 0.4);
+        thresholds_.setThreshold("trendReversal", threshold);
+        // If thresholds_ also has a map for ImbalanceType enum
+        if (thresholds_.type_thresholds.find(ImbalanceType::TREND_REVERSAL) != thresholds_.type_thresholds.end()) {
+            ImbalanceThreshold imbalanceThreshold = thresholds_.getTypeThreshold(ImbalanceType::TREND_REVERSAL);
+            imbalanceThreshold.activation_threshold = threshold;
+            thresholds_.setTypeThreshold(ImbalanceType::TREND_REVERSAL, imbalanceThreshold);
+        }
+    }
+    // tradeImbalance
+    if (params.numeric_params.find("trade_imbalance_threshold") != params.numeric_params.end()) {
+        double threshold = params.getDouble("trade_imbalance_threshold", 0.6);
+        thresholds_.setThreshold("tradeImbalance", threshold);
+        // If thresholds_ also has a map for ImbalanceType enum
+        if (thresholds_.type_thresholds.find(ImbalanceType::TRADE_IMBALANCE) != thresholds_.type_thresholds.end()) {
+            ImbalanceThreshold imbalanceThreshold = thresholds_.getTypeThreshold(ImbalanceType::TRADE_IMBALANCE);
+            imbalanceThreshold.activation_threshold = threshold;
+            thresholds_.setTypeThreshold(ImbalanceType::TRADE_IMBALANCE, imbalanceThreshold);
+        }
+    }
+    // cancellationImbalance
+    if (params.numeric_params.find("cancellation_imbalance_threshold") != params.numeric_params.end()) {
+        double threshold = params.getDouble("cancellation_imbalance_threshold", 0.6);
+        thresholds_.setThreshold("cancellationImbalance", threshold);
+        // If thresholds_ also has a map for ImbalanceType enum
+        if (thresholds_.type_thresholds.find(ImbalanceType::CANCELLATION_IMBALANCE) != thresholds_.type_thresholds.end()) {
+            ImbalanceThreshold imbalanceThreshold = thresholds_.getTypeThreshold(ImbalanceType::CANCELLATION_IMBALANCE);
+            imbalanceThreshold.activation_threshold = threshold;
+            thresholds_.setTypeThreshold(ImbalanceType::CANCELLATION_IMBALANCE, imbalanceThreshold);
+        }
+    }
+    // priceVolatilityImbalance
+    if (params.numeric_params.find("price_volatility_imbalance_threshold") != params.numeric_params.end()) {
+        double threshold = params.getDouble("price_volatility_imbalance_threshold", 0.3);
+        thresholds_.setThreshold("priceVolatilityImbalance", threshold);
+        // If thresholds_ also has a map for ImbalanceType enum
+        if (thresholds_.type_thresholds.find(ImbalanceType::PRICE_VOLATILITY_IMBALANCE) != thresholds_.type_thresholds.end()) {
+            ImbalanceThreshold imbalanceThreshold = thresholds_.getTypeThreshold(ImbalanceType::PRICE_VOLATILITY_IMBALANCE);
+            imbalanceThreshold.activation_threshold = threshold;
+            thresholds_.setTypeThreshold(ImbalanceType::PRICE_VOLATILITY_IMBALANCE, imbalanceThreshold);
+        }
+    }
+    
     
     // Update global sensitivity if provided
     if (params.numeric_params.find("global_sensitivity") != params.numeric_params.end()) {
