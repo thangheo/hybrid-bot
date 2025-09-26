@@ -145,7 +145,7 @@ private:
 
     //market intel
     std::atomic<uint64_t> messagesProcessed_{0};
-    std::atomic<uint64_t> intelligenceGenerated_{0};
+    // std::atomic<uint64_t> InternalMsg{0};
     // marketDataInterface_
     std::shared_ptr<trading::risk::MarketDataInterface> marketDataInterface_;
     // PTCA: Add PTCA-related members

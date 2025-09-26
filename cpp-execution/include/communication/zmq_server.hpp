@@ -256,6 +256,8 @@ public:
      */
     void sendHeartbeat();
 
+    // dropMessages
+    void dropMessages(const std::string& topic, size_t num_messages);
 private:
 
     // =============================================================================
