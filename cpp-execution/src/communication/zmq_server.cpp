@@ -1066,27 +1066,60 @@ bool GenericZmqServer::processInternalMessage(const GenericMessage& message) {
         // logInfo("Processing message for topic: " + message.topic);
         // Diagnostic: measure send time to detect blocking/backpressure
         auto send_start = std::chrono::steady_clock::now();
-        auto topic_result = internal_publisher_socket_->send(topic_msg, zmq::send_flags::sndmore| zmq::send_flags::dontwait);
-        auto data_result = internal_publisher_socket_->send(data_msg, zmq::send_flags::dontwait);
-        auto send_end = std::chrono::steady_clock::now();
-        auto duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(send_end - send_start).count();
+            // Try non-blocking send with a small retry loop for transient backpressure.
+            const int kMaxRetries = 3;
+            int attempts = 0;
+            bool topic_ok = false;
+            bool data_ok = false;
+            for (; attempts < kMaxRetries; ++attempts) {
+                try {
+                    auto topic_result = internal_publisher_socket_->send(topic_msg, zmq::send_flags::sndmore | zmq::send_flags::dontwait);
+                    if (topic_result.has_value()) topic_ok = true;
+                    else stats_.send_eagain_count++;
 
-        if (duration_ms > 50) {
-            stats_.send_blocking_events++;
-            logError(std::string("Slow internal send detected (ms): ") + std::to_string(duration_ms) + " topic=" + message.topic);
-        } else if (logging_enabled_) {
-            // logInfo("Sent internal message (send_ms=" + std::to_string(duration_ms) + ")");
-        }
-        if (topic_result.has_value() && data_result.has_value()) {
-            return true;
-        }
-        // Treat missing has_value() as EAGAIN/backpressure (non-blocking)
-        if (!topic_result.has_value() || !data_result.has_value()) {
-            stats_.send_eagain_count++;
-            // Do not increment connection-level failures for EAGAIN
-            if (logging_enabled_) logInfo("EAGAIN on internal send for topic: " + message.topic);
+                    auto data_result = internal_publisher_socket_->send(data_msg, zmq::send_flags::dontwait);
+                    if (data_result.has_value()) data_ok = true;
+                    else stats_.send_eagain_count++;
+
+                    if (topic_ok && data_ok) {
+                        break; // success
+                    }
+                } catch (const zmq::error_t& e) {
+                    if (e.num() == EAGAIN) {
+                        stats_.send_eagain_count++;
+                    } else {
+                        // non-recoverable error for this send
+                        stats_.send_failures++;
+                        logError(std::string("ZMQ error during internal send attempt: ") + e.what());
+                        return false;
+                    }
+                }
+
+                // If we will retry, record a blocking event and sleep a tiny amount to yield
+                if (attempts + 1 < kMaxRetries) {
+                    stats_.send_blocking_events++;
+                    std::this_thread::sleep_for(std::chrono::microseconds(200));
+                }
+            }
+
+            auto send_end = std::chrono::steady_clock::now();
+            auto duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(send_end - send_start).count();
+
+            // Warn if sending took unusually long
+            if (duration_ms > 50) {
+                stats_.send_blocking_events++;
+                logError(std::string("Slow internal send detected (ms): ") + std::to_string(duration_ms) + " topic=" + message.topic);
+            } else if (logging_enabled_) {
+                // logInfo("Sent internal message (send_ms=" + std::to_string(duration_ms) + ")");
+            }
+
+            if (topic_ok && data_ok) {
+                return true;
+            }
+
+            // All retries exhausted - treat as backpressure drop
+            if (logging_enabled_) logInfo("EAGAIN on internal send for topic: " + message.topic + " after attempts=" + std::to_string(attempts));
             return false;
-        }
         // Fallback - unexpected failure
         stats_.send_failures++;
         logError("Failed to publish internal message (unexpected): " + message.topic);

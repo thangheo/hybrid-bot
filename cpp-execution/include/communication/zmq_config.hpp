@@ -47,7 +47,7 @@ struct ZmqServerConfig {
     int internal_hwm = 10000;                       // High for fast consumers
     int internal_linger = 1000;
     bool internal_immediate = true;
-    bool internal_conflate = true;                 // Keep all messages
+    bool internal_conflate = false;                 // Do NOT conflate internal orderbook messages by default
     
     // Request-Reply configuration
     std::string request_endpoint = "tcp://*:5556";
@@ -58,12 +58,12 @@ struct ZmqServerConfig {
     // Threading configuration
     int io_threads = 2;
     int intel_publisher_threads = 1;                // Low for intel
-    int internal_publisher_threads = 1;             // Higher for internal
+    int internal_publisher_threads = 2;             // Increase to 2 for better internal throughput
     int request_handler_threads = 1;
     
     // Queue configuration
     size_t max_intel_queue_size = 200;                // Small for intel
-    size_t max_internal_queue_size = 10000;         // Large for internal
+    size_t max_internal_queue_size = 50000;         // Increase internal queue capacity to handle bursts
     
     // Rate limiting
     int max_intel_publish_rate = 30;                 // 60 messages per minute
