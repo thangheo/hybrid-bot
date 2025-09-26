@@ -570,46 +570,7 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
         }
     }
 
-    // If detector worker is running, try to enqueue the metrics and return quickly.
-    // {
-    //     std::lock_guard<std::mutex> ql(mutex_);
-    //     // Note: use the public detectorQueue_ only if worker was initialized elsewhere
-    // }
-
-    // Run detectors and collect results (detectors must NOT mutate shared state or call createImbalanceEvent)
-    // std::vector<DetectorResult> results;
-    // const auto DETECTOR_TIMEOUT = std::chrono::milliseconds(50);
-
-    // Wrap each detector so a blocking detector cannot stall the ZMQ receiver thread
-    // results.emplace_back(runDetectorWithTimeout("detectVolumeImbalance", [&]{ return detectVolumeImbalance(metrics); }, DETECTOR_TIMEOUT));
-    // results.emplace_back(runDetectorWithTimeout("detectPriceLevelImbalance", [&]{ return detectPriceLevelImbalance(metrics); }, DETECTOR_TIMEOUT));
-    // results.emplace_back(runDetectorWithTimeout("detectLiquidityFlowImbalance", [&]{ return detectLiquidityFlowImbalance(metrics); }, DETECTOR_TIMEOUT));
-    // results.emplace_back(runDetectorWithTimeout("detectAbnormalSpread", [&]{ return detectAbnormalSpread(metrics); }, DETECTOR_TIMEOUT));
-    // results.emplace_back(runDetectorWithTimeout("detectMarketDepthChange", [&]{ return detectMarketDepthChange(metrics); }, DETECTOR_TIMEOUT));
-    // detectVolumeImbalance(metrics);
-    // detectPriceLevelImbalance(metrics);
-    // detectLiquidityFlowImbalance(metrics);
-    // detectAbnormalSpread(metrics);
-    // detectMarketDepthChange(metrics);
-
-    // Commit shared state under single lock
-    // {
-    //     std::lock_guard<std::mutex> lock(mutex_);
-    //     for (const auto &r : results) {
-    //         imbalanceState_[r.type] = r.shouldEmitEvent;
-    //     }
-    //     lastMetrics_ = metrics;
-    // }
-
-    //create event for each detector is a terrible idea, such a waste of resource
-    bool any = false;
-    // for (const auto &r : results) {
-    //     if (r.isImbalance) any = true;
-    //     if (r.shouldEmitEvent) {
-    //         createImbalanceEvent(r.type, r.strength, r.direction, metrics);
-    //     }
-    // }
-    return any;
+    return false;
 }
 
  
