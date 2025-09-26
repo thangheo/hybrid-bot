@@ -36,6 +36,7 @@ struct ServerStatistics {
     std::atomic<uint64_t> connection_errors{0};
     std::atomic<uint64_t> send_failures{0};
     std::atomic<uint64_t> send_eagain_count{0};
+    std::atomic<uint64_t> send_blocking_events{0};
     std::chrono::steady_clock::time_point start_time;
 
     ServerStatistics() : start_time(std::chrono::steady_clock::now()) {}
@@ -50,6 +51,9 @@ struct ServerStatistics {
         bytes_received = 0;
         queue_overflows = 0;
         connection_errors = 0;
+        send_failures = 0;
+        send_eagain_count = 0;
+        send_blocking_events = 0;
         start_time = std::chrono::steady_clock::now();
     }
 };

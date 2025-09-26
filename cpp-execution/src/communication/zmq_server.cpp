@@ -283,7 +283,7 @@ bool GenericZmqServer::publishAsync(const std::string& topic, std::string data,
     GenericMessage message(std::move(safe_topic), std::move(data), priority);
     message.correlation_id = correlation_id;
 
-    logInfo("Async Publishing message: " + topic + " with priority " + std::to_string(static_cast<int>(priority)));
+    // logInfo("Async Publishing message: " + topic + " with priority " + std::to_string(static_cast<int>(priority)));
 
     if (topic == "MARKET_INTEL") {
         return pushToIntelQueue(std::move(message), correlation_id);
@@ -544,7 +544,9 @@ bool GenericZmqServer::initializeSockets() {
     intel_publisher_socket_ = std::make_unique<zmq::socket_t>(*intel_context_, ZMQ_PUB);
         
         logInfo("Setting intel socket options...");
-        intel_publisher_socket_->set(zmq::sockopt::sndhwm, config_.intel_hwm);
+    // Increase HWM for high-frequency orderbook publishing to reduce backpressure
+    // but still prefer non-blocking sends and dropping when necessary.
+    intel_publisher_socket_->set(zmq::sockopt::sndhwm, std::max<int>(config_.intel_hwm, 10000));
         intel_publisher_socket_->set(zmq::sockopt::linger, 0);  // Immediate close
         intel_publisher_socket_->set(zmq::sockopt::sndtimeo, 1000);  // Send timeout
         intel_publisher_socket_->set(zmq::sockopt::sndbuf, 0);  // OS buffer size 0 to drop messages when HWM is reached
@@ -553,13 +555,15 @@ bool GenericZmqServer::initializeSockets() {
             intel_publisher_socket_->set(zmq::sockopt::immediate, 1);
         }
         
-        if (config_.intel_conflate) {
-            intel_publisher_socket_->set(zmq::sockopt::conflate, 1);
-        }
+        // Enable conflate for intel socket by default to keep only the latest
+        // update if downstream can't keep up (saves bandwidth and CPU).
+        try {
+            intel_publisher_socket_->set(zmq::sockopt::conflate, config_.intel_conflate ? 1 : 1);
+        } catch (...) {}
         
         // Before binding, check manager to avoid duplicate binds
         if (!trading::communication::ZmqManager::instance().isEndpointBound(config_.intel_endpoint)) {
-            intel_publisher_socket_->bind(config_.intel_endpoint);
+                intel_publisher_socket_->bind(config_.intel_endpoint);
             trading::communication::ZmqManager::instance().registerEndpoint(config_.intel_endpoint);
             logInfo("Intel publisher socket bound successfully to: " + config_.intel_endpoint);
         } else {
@@ -571,7 +575,7 @@ bool GenericZmqServer::initializeSockets() {
     internal_publisher_socket_ = std::make_unique<zmq::socket_t>(*internal_context_, ZMQ_PUB);
         
         logInfo("Setting internal socket options...");
-        internal_publisher_socket_->set(zmq::sockopt::sndhwm, config_.internal_hwm);
+    internal_publisher_socket_->set(zmq::sockopt::sndhwm, config_.internal_hwm);
         internal_publisher_socket_->set(zmq::sockopt::linger, 0);  // Immediate close
         internal_publisher_socket_->set(zmq::sockopt::sndtimeo, 1000);  // Send timeout
         internal_publisher_socket_->set(zmq::sockopt::sndbuf, 0);  // OS buffer size 0 to drop messages when HWM is reached
@@ -706,7 +710,7 @@ void GenericZmqServer::intelPublisherWorker() {
             std::unique_lock<std::mutex> lock(intel_queue_mutex_);
 
             // Wait for messages or shutdown signal (timed wait to avoid missed notifications)
-            logInfo("Intel worker: About to wait for messages");
+            // logInfo("Intel worker: About to wait for messages");
             intel_queue_cv_.wait_for(lock, std::chrono::seconds(1), [this]() {
                 return !intel_priority_queue_.empty() || state_.load() != ServerState::RUNNING;
             });
@@ -875,6 +879,9 @@ void GenericZmqServer::monitoringWorker() {
                 logInfo("Messages Dropped: " + std::to_string(stats_.messages_dropped.load()));
                 logInfo("Requests Processed: " + std::to_string(stats_.requests_processed.load()));
                 logInfo("Requests Failed: " + std::to_string(stats_.requests_failed.load()));
+        logInfo("Send failures: " + std::to_string(stats_.send_failures.load()));
+        logInfo("Send EAGAIN count: " + std::to_string(stats_.send_eagain_count.load()));
+        logInfo("Send blocking events: " + std::to_string(stats_.send_blocking_events.load()));
                 logInfo("Queue Size: " + std::to_string(getQueueSize("intel")) + " (intel), " +
                         std::to_string(getQueueSize("internal")) + " (internal)");
                 logInfo("Queue Utilization: " + std::to_string(getQueueUtilization("intel")) + "% (intel), " +
@@ -935,11 +942,42 @@ bool GenericZmqServer::processIntelMessage(const GenericMessage& message) {
 
         std::lock_guard<std::mutex> send_guard(intel_send_mutex_);
 
-        // Send multipart: topic then data. Use blocking sends (no dontwait) to avoid partial sends.
-        intel_publisher_socket_->send(topic_msg, zmq::send_flags::sndmore);
-        intel_publisher_socket_->send(data_msg, zmq::send_flags::none);
+        // Non-blocking send with instrumentation (same approach as internal sends)
+        auto send_start = std::chrono::steady_clock::now();
+        try {
+            auto topic_result = intel_publisher_socket_->send(topic_msg, zmq::send_flags::sndmore | zmq::send_flags::dontwait);
+            if (!topic_result.has_value()) {
+                stats_.send_eagain_count++;
+                if (logging_enabled_) logError("EAGAIN on intel topic send for: " + topic);
+                return false;
+            }
+            auto data_result = intel_publisher_socket_->send(data_msg, zmq::send_flags::dontwait);
+            if (!data_result.has_value()) {
+                stats_.send_eagain_count++;
+                if (logging_enabled_) logError("EAGAIN on intel data send for: " + topic);
+                return false;
+            }
+        } catch (const zmq::error_t& e) {
+            if (e.num() == EAGAIN) {
+                stats_.send_eagain_count++;
+            } else {
+                stats_.send_failures++;
+                stats_.connection_errors++;
+                logError(std::string("ZMQ error processing intel message: ") + e.what());
+            }
+            return false;
+        }
 
-        logInfo("Sent MARKET_INTEL message: " + topic);
+        auto send_end = std::chrono::steady_clock::now();
+        auto duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(send_end - send_start).count();
+        const int kWarnMs = 5; // smaller threshold (ms) to catch slow sends
+        if (duration_ms > kWarnMs) {
+            stats_.send_blocking_events++;
+            if (logging_enabled_) logInfo(std::string("Slow intel send (ms): ") + std::to_string(duration_ms) + " topic=" + topic);
+        } else if (logging_enabled_) {
+            logInfo("Sent MARKET_INTEL message: " + topic + " (send_ms=" + std::to_string(duration_ms) + ")");
+        }
+
         return true;
     } catch (const zmq::error_t& e) {
         logError("ZMQ error processing message: " + std::string(e.what()));
@@ -981,10 +1019,20 @@ bool GenericZmqServer::processInternalMessage(const GenericMessage& message) {
             logError("Empty topic or data in processMessage");
             return false;
         }        
-        logInfo("Processing message for topic: " + message.topic);
-        auto topic_result = internal_publisher_socket_->send(topic_msg, zmq::send_flags::sndmore);
-        auto data_result = internal_publisher_socket_->send(data_msg, zmq::send_flags::none);
-        logInfo("Sent internal message");
+        // logInfo("Processing message for topic: " + message.topic);
+        // Diagnostic: measure send time to detect blocking/backpressure
+        auto send_start = std::chrono::steady_clock::now();
+        auto topic_result = internal_publisher_socket_->send(topic_msg, zmq::send_flags::sndmore| zmq::send_flags::dontwait);
+        auto data_result = internal_publisher_socket_->send(data_msg, zmq::send_flags::dontwait);
+        auto send_end = std::chrono::steady_clock::now();
+        auto duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(send_end - send_start).count();
+
+        if (duration_ms > 50) {
+            stats_.send_blocking_events++;
+            logError(std::string("Slow internal send detected (ms): ") + std::to_string(duration_ms) + " topic=" + message.topic);
+        } else if (logging_enabled_) {
+            // logInfo("Sent internal message (send_ms=" + std::to_string(duration_ms) + ")");
+        }
         if (topic_result.has_value() && data_result.has_value()) {
             return true;
         }
