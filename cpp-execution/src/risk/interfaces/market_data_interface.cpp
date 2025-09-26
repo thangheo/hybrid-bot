@@ -620,13 +620,6 @@ void MarketDataInterface::processSyntheticOrderBook_protobuf(const std::string& 
             // }
         }
 
-        if (exchange.empty() || symbol.empty()) {
-            LOG_ERROR("Missing exchange or symbol (topic={}, exchange='{}', symbol='{}')", 
-                     topic, exchange, symbol);
-            errorStats_.dataErrors++;
-            return;
-        }
-
         // Create MarketData object
         MarketData marketData;
         marketData.exchangeId = core::ExchangeId::fromString(exchange);
