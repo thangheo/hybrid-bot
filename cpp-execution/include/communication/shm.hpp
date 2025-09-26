@@ -11,6 +11,7 @@
 #include <memory>
 #include <stdexcept>
 #include <chrono>
+#include <iostream>
 
 // High-performance lock-free ring buffer for protobuf messages
 struct MessageHeader {
@@ -232,15 +233,15 @@ public:
     };
     
     SharedMemorySubscriber(const std::string& name) : shm_name_(name), last_read_pos_(0) {
-        // Open existing shared memory
-        fd_ = shm_open(shm_name_.c_str(), O_RDONLY, 0666);
+        // Open existing shared memory (need read-write so subscriber can update stats counters)
+        fd_ = shm_open(shm_name_.c_str(), O_RDWR, 0666);
         if (fd_ == -1) {
             throw std::runtime_error("Failed to open shared memory: " + shm_name_);
         }
         
-        // Map memory (read-only)
+        // Map memory (read-write) - subscriber updates shared counters (messages_received etc.)
         buffer_ = static_cast<SharedRingBuffer*>(
-            mmap(nullptr, sizeof(SharedRingBuffer), PROT_READ, MAP_SHARED, fd_, 0)
+            mmap(nullptr, sizeof(SharedRingBuffer), PROT_READ | PROT_WRITE, MAP_SHARED, fd_, 0)
         );
         
         if (buffer_ == MAP_FAILED) {
@@ -262,13 +263,30 @@ public:
     }
     
     bool readMessage(Message& msg) {
-        if (!buffer_) return false;
-        
-        uint64_t current_write = buffer_->write_pos.load(std::memory_order_acquire);
-        
+        if (!buffer_) {
+            std::cerr << "SharedMemorySubscriber::readMessage: buffer_ == nullptr" << std::endl;
+            return false;
+        }
+
+        uint64_t current_write = 0;
+        try {
+            current_write = buffer_->write_pos.load(std::memory_order_acquire);
+        } catch (...) {
+            std::cerr << "SharedMemorySubscriber::readMessage: failed to read write_pos" << std::endl;
+            return false;
+        }
+
         // Check if there's new data
         if (last_read_pos_ >= current_write) {
             return false; // No new messages
+        }
+
+        // Sanity: if the gap is larger than buffer size, assume we missed too many messages and resync
+        uint64_t gap = current_write - last_read_pos_;
+        if (gap > SharedRingBuffer::BUFFER_SIZE) {
+            std::cerr << "SharedMemorySubscriber::readMessage: detected gap > BUFFER_SIZE (gap=" << gap << ") - resyncing to write_pos" << std::endl;
+            last_read_pos_ = current_write;
+            return false;
         }
         
         size_t buffer_pos = last_read_pos_ % SharedRingBuffer::BUFFER_SIZE;
@@ -287,9 +305,15 @@ public:
             buffer_pos += SharedRingBuffer::HEADER_SIZE;
         }
         
-        // Validate message size
+        // Validate message size and topic length
         if (header.size > SharedRingBuffer::MAX_MESSAGE_SIZE) {
+            std::cerr << "SharedMemorySubscriber::readMessage: header.size too large (" << header.size << ") - skipping" << std::endl;
             // Corrupted header, skip to next message boundary
+            last_read_pos_ = current_write;
+            return false;
+        }
+        if (header.topic_len > sizeof(header.topic_data)) {
+            std::cerr << "SharedMemorySubscriber::readMessage: header.topic_len too large (" << header.topic_len << ") - skipping" << std::endl;
             last_read_pos_ = current_write;
             return false;
         }
@@ -308,6 +332,7 @@ public:
         // Verify checksum
         uint32_t computed_checksum = calculateChecksum(message_data.data(), message_data.size());
         if (computed_checksum != header.checksum) {
+            std::cerr << "SharedMemorySubscriber::readMessage: checksum mismatch (computed=" << computed_checksum << ", header=" << header.checksum << ") - skipping" << std::endl;
             // Corrupted message, skip
             last_read_pos_ += SharedRingBuffer::HEADER_SIZE + header.size;
             return false;
@@ -328,21 +353,28 @@ public:
     // Non-blocking read with timeout
     bool readMessageWithTimeout(Message& msg, std::chrono::milliseconds timeout = std::chrono::milliseconds(100)) {
         auto start = std::chrono::steady_clock::now();
-        
+
+        if (!buffer_) return false;
+
         while (std::chrono::steady_clock::now() - start < timeout) {
             if (readMessage(msg)) {
                 return true;
             }
-            
-            // Check if producer is still active
-            if (!buffer_->producer_active.load(std::memory_order_acquire)) {
+
+            // Check if producer is still active (guard buffer_ access)
+            try {
+                if (!buffer_->producer_active.load(std::memory_order_acquire)) {
+                    return false;
+                }
+            } catch (...) {
+                // If we cannot read producer_active, bail out
                 return false;
             }
-            
+
             // Small sleep to avoid busy waiting
             std::this_thread::sleep_for(std::chrono::microseconds(50));
         }
-        
+
         return false;
     }
     

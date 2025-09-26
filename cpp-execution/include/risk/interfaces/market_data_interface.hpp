@@ -101,7 +101,13 @@ public:
      * Destructor
      */
     ~MarketDataInterface() override;
-    
+    // getInstance
+    //is this 
+    static std::shared_ptr<MarketDataInterface> getInstance(const RiskConfig& config) {
+        static std::shared_ptr<MarketDataInterface> instance(new MarketDataInterface(config));
+        return instance;
+    }
+    void shutdown() ;
     // DataInterface implementation
     bool initialize() override;
     
@@ -271,8 +277,9 @@ private:
         std::chrono::steady_clock::time_point lastError;
     };
     ErrorStats errorStats_;
-    //shm
-    std::unique_ptr<SharedMemorySubscriber> shm_subscriber_;
+    // Shared memory subscriber - use shared_ptr and atomic operations when accessing
+    // so reader thread can safely hold a local reference while main thread resets it.
+    std::shared_ptr<SharedMemorySubscriber> shm_subscriber_;
     
     // Keep existing queue system but feed from shared memory instead of ZMQ
     struct RawMessage {

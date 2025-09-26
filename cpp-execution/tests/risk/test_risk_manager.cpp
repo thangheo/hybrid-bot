@@ -165,7 +165,7 @@
          manager->m_postTradeMonitor.reset(mockPostTradeMonitor);
          manager->m_strategyInterface.reset(mockStrategyInterface);
          manager->m_executionInterface.reset(mockExecutionInterface);
-         manager->m_dataInterface.reset(mockDataInterface);
+    manager->m_dataInterface = std::shared_ptr<DataInterface>(mockDataInterface);
          */
          
          return manager;

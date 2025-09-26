@@ -195,7 +195,7 @@ private:
     
     // Interfaces to external systems
     std::unique_ptr<StrategyInterface> m_strategyInterface;
-    std::unique_ptr<DataInterface> m_dataInterface;
+    std::shared_ptr<DataInterface> m_dataInterface;
     // m_executionInterface
     std::shared_ptr<ExecutionInterface> m_executionInterface;
     
