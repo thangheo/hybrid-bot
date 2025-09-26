@@ -30,6 +30,8 @@
 #include "common/logger.hpp"
 #include "communication/zmq_server.hpp"
 #include "common/exchange_types.hpp"
+//share memory
+#include "communication/shm.hpp"
 // Data ingestion
 #include "data_ingestion/data_ingestion_service.hpp"
 //zmq server for market intellgence
@@ -95,8 +97,11 @@ public:
     // Or run without time limit:
     void runIndefinitely() ;
     void shutdown();
-    void evaluatePTCADecision(const core::Symbol& symbol);
-        
+    // Initialize shared memory publisher instead of ZMQ
+    bool initializeSharedMemory() ;
+    void publishOrderBookForRisk(const OrderBookUpdate& update) ;
+    void printSharedMemoryStats() ;
+
     // Helper method to get current signals for a symbol (you'll need to implement this)
     std::vector<strategy::TradingSignal> getCurrentSignalsForSymbol(const core::Symbol& symbol) ;
     // void reportPTCAStats() ;
@@ -108,12 +113,17 @@ public:
     void generateMarketIntelligence(const OrderBookUpdate& update, std::shared_ptr<OrderBook> orderBook) ;
 
     // ✅ NEW: Publish orderbook data for risk module
-    void publishOrderBookForRisk(const OrderBookUpdate& update);
+    // void publishOrderBookForRisk(const OrderBookUpdate& update);
 
     // ✅ Simple health check like full_bridge.cpp
     bool checkSystemHealth() ;
 
 private:
+    //shm
+    std::unique_ptr<SharedMemoryPublisher> shm_publisher_;
+    std::atomic<uint64_t> orderBookUpdatesReceived_{0};
+    
+
     // Orderbook processing queue and worker pool
     std::deque<OrderBookUpdate> orderbookQueue_;
     std::mutex orderbookQueueMutex_;
@@ -188,7 +198,7 @@ private:
     std::vector<std::thread> monitoringThreads_;
     
     // Statistics
-    std::atomic<size_t> orderBookUpdatesReceived_{0};
+    // std::atomic<size_t> orderBookUpdatesReceived_{0};
     std::atomic<size_t> signalsGenerated_{0};
     std::atomic<size_t> signalsValidated_{0};
     std::atomic<size_t> signalsApproved_{0};
