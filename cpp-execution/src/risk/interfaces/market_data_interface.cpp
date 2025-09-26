@@ -20,38 +20,7 @@
 using namespace trading::communication;
 namespace trading {
 namespace risk {
-
-// Helper function for base64 decoding
-static std::string base64_decode(const std::string& input) {
-    if (input.empty()) return {};
-    
-    static const std::array<int, 256> decode_table = []() {
-        std::array<int, 256> table;
-        table.fill(-1);
-        const std::string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-        for (size_t i = 0; i < chars.size(); ++i) {
-            table[static_cast<unsigned char>(chars[i])] = static_cast<int>(i);
-        }
-        return table;
-    }();
-    
-    std::string result;
-    result.reserve((input.size() * 3) / 4);
-    
-    int val = 0, valb = -8;
-    for (unsigned char c : input) {
-        if (decode_table[c] == -1) break;
-        val = (val << 6) + decode_table[c];
-        valb += 6;
-        if (valb >= 0) {
-            result.push_back(static_cast<char>((val >> valb) & 0xFF));
-            valb -= 8;
-        }
-    }
-    
-    return result;
-}
-
+ 
 // PriceHistory implementation
 void PriceHistory::addPrice(Timestamp timestamp, double price) {
     prices.push_back({timestamp, price});
@@ -172,13 +141,19 @@ bool MarketDataInterface::initialize() {
             LOG_ERROR("Failed to start connection monitor thread: {}", e.what());
         }
 
-        // Start processing thread for inbound messages
+        // Start processing thread pool for inbound messages
         try {
             processingRunning_.store(true);
-            processingThread_ = std::thread([this]() { this->processQueueLoop(); });
-            LOG_INFO("MarketDataInterface", "Started market data processing thread");
+            processingThreads_.reserve(processingThreadCount_);
+            for (size_t i = 0; i < processingThreadCount_; ++i) {
+                processingThreads_.emplace_back([this, i]() {
+                    // Optionally set thread name or log
+                    this->processQueueLoop();
+                });
+            }
+            LOG_INFO("MarketDataInterface", "Started market data processing thread pool (size={})", processingThreadCount_);
         } catch (const std::exception& e) {
-            LOG_ERROR("Failed to start processing thread: {}", e.what());
+            LOG_ERROR("Failed to start processing threads: {}", e.what());
             processingRunning_.store(false);
         }
 
@@ -1451,16 +1426,17 @@ MarketDataInterface::~MarketDataInterface() {
     if (reconnectionThread_.joinable()) {
         reconnectionThread_.join();
     }
-    // Stop processing thread
+    // Stop processing threads
     processingRunning_.store(false);
     {
         std::lock_guard<std::mutex> lock(inboundQueueMutex_);
-        // notify in case thread is waiting
-        inboundQueueCv_.notify_one();
+        // notify all in case threads are waiting
+        inboundQueueCv_.notify_all();
     }
-    if (processingThread_.joinable()) {
-        processingThread_.join();
+    for (auto &t : processingThreads_) {
+        if (t.joinable()) t.join();
     }
+    processingThreads_.clear();
     
     // ... existing cleanup code ...
     if (zmqClient_) {

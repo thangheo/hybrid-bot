@@ -243,7 +243,11 @@ private:
     // messages that could exhaust memory or lead to pathological behavior.
     // Set to 256KB by default; can be tuned if needed.
     size_t maxMessageSize_ = 256 * 1024;
-    std::thread processingThread_;
+    // Processing thread pool for inbound messages (replace single thread)
+    std::vector<std::thread> processingThreads_;
+    // Number of processing threads to run; small number to parallelize parsing without
+    // overwhelming CPU or causing excessive contention. Can be tuned in config.
+    size_t processingThreadCount_ = 2;
     std::atomic<bool> processingRunning_{false};
 
     // Counters for instrumentation
