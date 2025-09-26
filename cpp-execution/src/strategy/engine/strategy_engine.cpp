@@ -63,6 +63,16 @@ using namespace trading::core;
         // we should use factory method to create order book analyzer manager with depth parameter for all pairs
         
         imbalanceDetector_ = std::make_shared<ImbalanceDetectionEngine>(config_.imbalanceDetectionConfig);
+        // Ensure the detector is initialized so it creates/loads the bayes model and starts its worker
+        try {
+            if (!imbalanceDetector_->initialize(config_.imbalanceDetectionConfig)) {
+                LOG_WARN("StrategyEngine: imbalanceDetector initialize() returned false");
+            }
+        } catch (const std::exception &ex) {
+            LOG_WARN("StrategyEngine: exception while initializing imbalanceDetector: {}", ex.what());
+        } catch (...) {
+            LOG_WARN("StrategyEngine: unknown exception while initializing imbalanceDetector");
+        }
         liquidityMonitor_ = std::make_shared<LiquidityFlowMonitor>(config_.liquidityFlowConfig);
         // volumeProfileAnalyzer_ = std::make_shared<VolumeProfileAnalyzer>(config_.volumeProfileConfig);
      
