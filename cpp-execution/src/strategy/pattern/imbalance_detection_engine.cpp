@@ -260,22 +260,22 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                 return DetectorResult{};
             };
 
-            results.emplace_back(runDirect("detectVolumeImbalance", [&]{ return detectVolumeImbalance(m); }));
-            results.emplace_back(runDirect("detectPriceLevelImbalance", [&]{ return detectPriceLevelImbalance(m); }));
-            results.emplace_back(runDirect("detectLiquidityFlowImbalance", [&]{ return detectLiquidityFlowImbalance(m); }));
-            results.emplace_back(runDirect("detectAbnormalSpread", [&]{ return detectAbnormalSpread(m); }));
-            results.emplace_back(runDirect("detectMarketDepthChange", [&]{ return detectMarketDepthChange(m); }));
-            results.emplace_back(runDirect("detectLargeOrderAppearance", [&]{ return detectLargeOrderAppearance(m); }));
-            results.emplace_back(runDirect("detectLargeOrderDisappearance", [&]{ return detectLargeOrderDisappearance(m); }));
-            results.emplace_back(runDirect("detectHiddenLiquidityImbalance", [&]{ return detectHiddenLiquidityImbalance(m); }));
-            results.emplace_back(runDirect("detectOrderFlowImbalance", [&]{ return detectOrderFlowImbalance(m); }));
-            results.emplace_back(runDirect("detectPriceLevelConcentration", [&]{ return detectPriceLevelConcentration(m); }));
-            results.emplace_back(runDirect("detectLiquidityImbalance", [&]{ return detectLiquidityImbalance(m); }));
-            results.emplace_back(runDirect("detectTrendContinuation", [&]{ return detectTrendContinuation(m); }));
-            results.emplace_back(runDirect("detectTrendReversal", [&]{ return detectTrendReversal(m); }));
-            results.emplace_back(runDirect("detectTradeImbalance", [&]{ return detectTradeImbalance(m); }));
-            results.emplace_back(runDirect("detectCancellationImbalance", [&]{ return detectCancellationImbalance(m); }));
-            results.emplace_back(runDirect("detectPriceVolatilityImbalance", [&]{ return detectPriceVolatilityImbalance(m); }));
+            results.emplace_back(runDirect("detectVolumeImbalance", [&]{ return detectVolumeImbalance(m); })); //0    
+            results.emplace_back(runDirect("detectPriceLevelImbalance", [&]{ return detectPriceLevelImbalance(m); }));   //1
+            results.emplace_back(runDirect("detectLiquidityFlowImbalance", [&]{ return detectLiquidityFlowImbalance(m); })); //2
+            results.emplace_back(runDirect("detectAbnormalSpread", [&]{ return detectAbnormalSpread(m); })); //3
+            results.emplace_back(runDirect("detectMarketDepthChange", [&]{ return detectMarketDepthChange(m); })); //4
+            results.emplace_back(runDirect("detectLargeOrderAppearance", [&]{ return detectLargeOrderAppearance(m); })); //5
+            results.emplace_back(runDirect("detectLargeOrderDisappearance", [&]{ return detectLargeOrderDisappearance(m); })); //6
+            results.emplace_back(runDirect("detectHiddenLiquidityImbalance", [&]{ return detectHiddenLiquidityImbalance(m); })); //7
+            results.emplace_back(runDirect("detectOrderFlowImbalance", [&]{ return detectOrderFlowImbalance(m); })); //8
+            results.emplace_back(runDirect("detectPriceLevelConcentration", [&]{ return detectPriceLevelConcentration(m); })); //9
+            results.emplace_back(runDirect("detectLiquidityImbalance", [&]{ return detectLiquidityImbalance(m); }));  //10
+            results.emplace_back(runDirect("detectTrendContinuation", [&]{ return detectTrendContinuation(m); })); //11
+            results.emplace_back(runDirect("detectTrendReversal", [&]{ return detectTrendReversal(m); }));  //12
+            results.emplace_back(runDirect("detectTradeImbalance", [&]{ return detectTradeImbalance(m); })); //13   
+            results.emplace_back(runDirect("detectCancellationImbalance", [&]{ return detectCancellationImbalance(m); }));  //14
+            results.emplace_back(runDirect("detectPriceVolatilityImbalance", [&]{ return detectPriceVolatilityImbalance(m); })); //15
             // results.emplace_back(runDirect("detectCustomImbalance", [&]{ return detectCustomImbalance(m); }));
         
             // Add other detectors as neede
@@ -801,12 +801,12 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
 }
  // PRIVATE METHODS
 
-double ImbalanceDetectionEngine::calculateImbalanceStrength(double volumeRatio, double threshold) {
+double ImbalanceDetectionEngine::calculateImbalanceStrength(double ratio, double threshold) {
     double strength;
-    if (volumeRatio > threshold) {
-        strength = (volumeRatio - threshold) / threshold;
-    } else if (volumeRatio < 1.0 / threshold) {
-        strength = (1.0/threshold - volumeRatio) / (1.0/threshold);
+    if (ratio > threshold) {
+        strength = (ratio - threshold) / threshold;
+    } else if (ratio < 1.0 / threshold) {
+        strength = (1.0/threshold - ratio) / (1.0/threshold);
     } else {
         strength = 0.0;
     }
@@ -1989,63 +1989,6 @@ DetectorResult ImbalanceDetectionEngine::detectPriceVolatilityImbalance(const Or
     return result;
 }
 
-// DetectorResult ImbalanceDetectionEngine::detectCustomImbalance(const OrderBookMetrics& metrics) {
-//     DetectorResult result;
-//     result.type = ImbalanceType::CUSTOM_IMBALANCE;
-    
-//     // Custom imbalance detection based on proprietary signals
-//     // This can be customized based on specific trading strategies
-    
-//     // Example: Composite signal combining multiple factors
-//     double liquidityProfileScore = metrics.liquidityProfileScore;
-//     double marketDirectionalCoeff = std::abs(metrics.marketDirectionalCoefficient);
-//     double pressureImbalance = std::abs(metrics.pressureImbalance);
-//     double densityImbalance = std::abs(metrics.bidDensity - metrics.askDensity) / 
-//         std::max(metrics.bidDensity + metrics.askDensity, 1.0);
-    
-//     // Weighted composite score
-//     result.imbalanceValue = (liquidityProfileScore * 0.3 + 
-//                             marketDirectionalCoeff * 0.25 + 
-//                             pressureImbalance * 0.25 + 
-//                             densityImbalance * 0.2);
-    
-//     double threshold = thresholds_.customImbalance;
-//     if (result.imbalanceValue > threshold) {
-//         result.strength = calculateImbalanceStrength(result.imbalanceValue, threshold);
-        
-//         // Direction based on the strongest component signal
-//         if (metrics.marketDirectionalCoefficient > 0.1) {
-//             result.direction = Direction::BUY;
-//         } else if (metrics.marketDirectionalCoefficient < -0.1) {
-//             result.direction = Direction::SELL;
-//         } else {
-//             // Use density imbalance as fallback
-//             result.direction = metrics.bidDensity > metrics.askDensity ? Direction::SELL : Direction::BUY;
-//         }
-        
-//         result.shouldEmitEvent = true;
-        
-//         // Custom enhancement logic
-//         if (lastMetrics_.has_value()) {
-//             // Look for acceleration in the composite signal
-//             double lastCustomValue = (lastMetrics_->liquidityProfileScore * 0.3 + 
-//                                     std::abs(lastMetrics_->marketDirectionalCoefficient) * 0.25 + 
-//                                     std::abs(lastMetrics_->pressureImbalance) * 0.25);
-            
-//             if (result.imbalanceValue > 1.2 * lastCustomValue) {
-//                 result.strength *= 1.3; // Accelerating custom signal
-//             }
-//         }
-        
-//         // Volume confirmation
-//         if (metrics.totalVolume > 1.5 * (metrics.totalBidVolume + metrics.totalAskVolume) / 2.0) {
-//             result.strength *= 1.2; // Volume surge confirmation
-//         }
-//     }
-    
-//     return result;
-// }
-
 
 DetectorResult ImbalanceDetectionEngine::detectHiddenLiquidityImbalance(const OrderBookMetrics& metrics) {
     // Configuration thresholds for hidden liquidity detection
@@ -2402,6 +2345,65 @@ double ImbalanceDetectionEngine::calculateVariance(const std::vector<double>& da
              }
              break;
          }
+
+        // VOLUME_IMBALANCE,              // bid vs ask volume
+        // PRICE_LEVEL_IMBALANCE,         // level count imbalance
+        // LIQUIDITY_REMOVAL,             // sudden removal
+        // ORDER_FLOW_IMBALANCE,          // order submissions imbalance
+        // LARGE_ORDER_APPEARANCE,        // big orders enter
+        // LARGE_ORDER_DISAPPEARANCE,     // big orders vanish
+        // PRICE_LEVEL_CONCENTRATION,     // volume concentrated at specific price
+        // BID_ASK_SPREAD_CHANGE,         // spread change
+        // MARKET_DEPTH_CHANGE,           // depth change
+        // LIQUIDITY_FLOW_IMBALANCE,      // liquidity flow imbalance
+        // ABNORMAL_SPREAD,               // spread abnormal
+        // LIQUIDITY_IMBALANCE,           // general liquidity imbalance
+        // TREND_CONTINUATION,            // price trend continuation
+        // TREND_REVERSAL,                // price trend reversal
+        // TRADE_IMBALANCE,               // aggressive trades imbalance
+        // CANCELLATION_IMBALANCE,        // one-sided cancellations
+        // PRICE_VOLATILITY_IMBALANCE,    // volatility surge
+        // HIDDEN_LIQUIDITY_IMBALANCE,    // iceberg / hidden liquidity
+        case ImbalanceType::MARKET_DEPTH_CHANGE:
+            strength = std::abs(metrics.metrics.at("depthChange"));
+            break;
+        case ImbalanceType::LIQUIDITY_IMBALANCE:
+            strength = std::abs(metrics.metrics.at("liquidityImbalance"));
+            break;
+        case ImbalanceType::ORDER_FLOW_IMBALANCE:
+            strength = std::abs(metrics.metrics.at("orderFlowImbalance"));
+            break;
+        case ImbalanceType::LARGE_ORDER_APPEARANCE:
+            strength = std::abs(metrics.metrics.at("largeOrderImpact"));
+            break;
+        case ImbalanceType::LARGE_ORDER_DISAPPEARANCE:
+            strength = std::abs(metrics.metrics.at("largeOrderImpact"));
+            break;
+        case ImbalanceType::PRICE_LEVEL_CONCENTRATION:
+            strength = std::abs(metrics.metrics.at("priceLevelConcentration"));
+            break;
+        case ImbalanceType::BID_ASK_SPREAD_CHANGE:
+            strength = std::abs(metrics.metrics.at("spreadChange"));
+            break;
+        case ImbalanceType::TREND_CONTINUATION:
+            strength = std::abs(metrics.metrics.at("trendStrength"));
+            break;
+        case ImbalanceType::TREND_REVERSAL:
+            strength = std::abs(metrics.metrics.at("trendStrength"));
+            break;
+        case ImbalanceType::TRADE_IMBALANCE:
+            strength = std::abs(metrics.metrics.at("tradeImbalanceRatio"));
+            break;
+        case ImbalanceType::CANCELLATION_IMBALANCE:
+            strength = std::abs(metrics.metrics.at("cancellationImbalanceRatio"));
+            break;
+        case ImbalanceType::PRICE_VOLATILITY_IMBALANCE:
+            strength = std::abs(metrics.metrics.at("volatilityImbalanceRatio"));
+            break;
+        // case ImbalanceType::CUSTOM:
+        //     strength = std::abs(metrics.metrics.at("customSignal"));
+        //     break;  
+        
          default:
              break;
      }
