@@ -35,21 +35,24 @@ std::string formatString(const std::string& format, Args&&... args) {
 }
 
 PostTradeMonitor::PostTradeMonitor(const RiskConfig& config) : config_(config) {
-    // Create interfaces using factory functions
+    // For backwards compatibility we will attempt to create interfaces if none
+    // are injected. This ctor should be used sparingly in favor of the
+    // dependency-injecting overload below to avoid duplicate MarketDataInterface
+    // instances.
     auto dataInterface = createDataInterface();
     auto executionInterface = createExecutionInterface(config);
-    
+
     // Convert unique_ptr to shared_ptr for sharing among components
     dataInterface_ = std::shared_ptr<DataInterface>(dataInterface.release());
     executionInterface_ = std::shared_ptr<ExecutionInterface>(executionInterface.release());
-    
+
     // Initialize shared dependencies with actual interfaces
     positionTracker_ = std::make_shared<PositionTracker>(config, dataInterface_);
-    
+
     // Initialize components with correct constructor arguments
     stopLossManager_ = std::make_unique<StopLossManager>(config, positionTracker_, dataInterface_, executionInterface_);
     drawdownMonitor_ = std::make_unique<DrawdownMonitor>(config);  // Only pass config
-    
+
     // Extract post-trade monitor configuration
     monitorConfig_.healthCheckIntervalSeconds = std::chrono::seconds(5);
     monitorConfig_.metricsUpdateIntervalSeconds = std::chrono::seconds(10);
@@ -57,38 +60,69 @@ PostTradeMonitor::PostTradeMonitor(const RiskConfig& config) : config_(config) {
     monitorConfig_.autoModeTransitions = true;
     monitorConfig_.enableBackgroundMonitoring = true;
     monitorConfig_.enableRealTimeAlerts = true;
-    
+
     // Initialize system health
     systemHealth_.mode.store(RiskManagerMode::NORMAL);
     systemHealth_.tradingAllowed.store(true);
 }
 PostTradeMonitor::PostTradeMonitor(const RiskConfig& config, PortfolioManager* portfolioManager) 
     : config_(config), portfolioManager_(portfolioManager) {
-    
-    // Create interfaces using factory functions
+    // Backwards compatible ctor - prefer the DI ctor below.
     auto dataInterface = createDataInterface();
     auto executionInterface = createExecutionInterface(config);
-    
-    // Convert unique_ptr to shared_ptr for sharing among components
+
     dataInterface_ = std::shared_ptr<DataInterface>(dataInterface.release());
     executionInterface_ = std::shared_ptr<ExecutionInterface>(executionInterface.release());
-    
-    // Initialize shared dependencies with actual interfaces
+
     positionTracker_ = std::make_shared<PositionTracker>(config, dataInterface_);
-    
-    // Initialize components with correct constructor arguments
     stopLossManager_ = std::make_unique<StopLossManager>(config, positionTracker_, dataInterface_, executionInterface_);
-    drawdownMonitor_ = std::make_unique<DrawdownMonitor>(config);  
-    
-    // Extract post-trade monitor configuration
+    drawdownMonitor_ = std::make_unique<DrawdownMonitor>(config);
+
     monitorConfig_.healthCheckIntervalSeconds = std::chrono::seconds(5);
     monitorConfig_.metricsUpdateIntervalSeconds = std::chrono::seconds(10);
     monitorConfig_.reconciliationIntervalMinutes = config.getBalanceReconciliationConfig().reconciliationFrequency;
     monitorConfig_.autoModeTransitions = true;
     monitorConfig_.enableBackgroundMonitoring = true;
     monitorConfig_.enableRealTimeAlerts = true;
-    
-    // Initialize system health
+
+    systemHealth_.mode.store(RiskManagerMode::NORMAL);
+    systemHealth_.tradingAllowed.store(true);
+}
+
+// New constructor that accepts injected shared interfaces to avoid creating
+// duplicate DataInterface/MarketDataInterface instances. If injected pointers
+// are null, the constructor will fall back to creating instances (but log a
+// warning so callers can be corrected).
+PostTradeMonitor::PostTradeMonitor(const RiskConfig& config,
+                                   PortfolioManager* portfolioManager,
+                                   std::shared_ptr<DataInterface> dataInterface,
+                                   std::shared_ptr<ExecutionInterface> executionInterface)
+    : config_(config), portfolioManager_(portfolioManager), dataInterface_(std::move(dataInterface)), executionInterface_(std::move(executionInterface)) {
+
+    if (!dataInterface_) {
+        LOG_WARN("PostTradeMonitor: no DataInterface provided, creating one internally (this may cause duplicate MarketDataInterface instances). Provide a shared DataInterface to avoid this.");
+        auto ai = createDataInterface();
+        dataInterface_ = std::shared_ptr<DataInterface>(ai.release());
+    }
+
+    if (!executionInterface_) {
+        LOG_WARN("PostTradeMonitor: no ExecutionInterface provided, creating one internally");
+        auto ei = createExecutionInterface(config_);
+        executionInterface_ = std::shared_ptr<ExecutionInterface>(ei.release());
+    }
+
+    // Initialize shared dependencies with actual interfaces
+    positionTracker_ = std::make_shared<PositionTracker>(config_, dataInterface_);
+    stopLossManager_ = std::make_unique<StopLossManager>(config_, positionTracker_, dataInterface_, executionInterface_);
+    drawdownMonitor_ = std::make_unique<DrawdownMonitor>(config_);
+
+    monitorConfig_.healthCheckIntervalSeconds = std::chrono::seconds(5);
+    monitorConfig_.metricsUpdateIntervalSeconds = std::chrono::seconds(10);
+    monitorConfig_.reconciliationIntervalMinutes = config_.getBalanceReconciliationConfig().reconciliationFrequency;
+    monitorConfig_.autoModeTransitions = true;
+    monitorConfig_.enableBackgroundMonitoring = true;
+    monitorConfig_.enableRealTimeAlerts = true;
+
     systemHealth_.mode.store(RiskManagerMode::NORMAL);
     systemHealth_.tradingAllowed.store(true);
 }

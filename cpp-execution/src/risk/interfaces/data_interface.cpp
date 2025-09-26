@@ -33,6 +33,8 @@ public:
         try {
             // Create the new market data interface
             marketDataInterface_ = std::make_unique<MarketDataInterface>();
+            //should we use singleton pattern here?
+
             LOG_INFO("DataInterfaceImpl created with MarketDataInterface wrapper");
         } catch (const std::exception& e) {
             LOG_ERROR("Failed to create MarketDataInterface: " + std::string(e.what()));

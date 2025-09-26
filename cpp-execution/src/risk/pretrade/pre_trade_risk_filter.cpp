@@ -44,6 +44,14 @@ PreTradeRiskFilter::PreTradeRiskFilter(const RiskConfig& config)
 {
     // Components will be initialized in initialize()
 }
+PreTradeRiskFilter::PreTradeRiskFilter(const RiskConfig& config, std::shared_ptr<DataInterface> dataInterface)
+    : m_config(config)
+    , m_activeMode(RiskManagerMode::NORMAL)
+    , m_dataInterface(std::move(dataInterface))
+{
+    // Components will be initialized in initialize()
+}
+
 //isHealthy
 bool PreTradeRiskFilter::isHealthy() const {
     return m_positionLimitChecker && m_positionLimitChecker->isHealthy() &&
@@ -51,6 +59,7 @@ bool PreTradeRiskFilter::isHealthy() const {
               m_orderValidator && m_orderValidator->isHealthy() &&
               m_fatFingerProtection && m_fatFingerProtection->isHealthy();
 }
+
 
 // PreTradeRiskFilter::PreTradeRiskFilter(const RiskConfig& config, const PortfolioManager& portfolioManager)
 //     : m_config(config)
@@ -71,10 +80,15 @@ bool PreTradeRiskFilter::initialize() {
         // TODO: Accept DataInterface from RiskManager constructor
         m_positionTracker = std::make_shared<PositionTracker>(m_config, nullptr);
         // m_dataInterface = std::make_shared<DataInterface>();
-        m_dataInterface = std::make_unique<MarketDataInterface>(m_config);
+        // m_dataInterface = std::make_unique<MarketDataInterface>(m_config);
+        // use singleton pattern to create data interface
+        // m_dataInterface = MarketDataInterface::getInstance(m_config);
+        if (!m_dataInterface) {
+            LOG_ERROR("Failed to create MarketDataInterface");
+            return false;
+        }
 
-        // m_dataInterface = std::shared_ptr<DataInterface>(dataInterface.release());
-
+        
         // Initialize position tracker and data interface
         if (!m_positionTracker->initialize()) {
             LOG_ERROR("Failed to initialize position tracker");

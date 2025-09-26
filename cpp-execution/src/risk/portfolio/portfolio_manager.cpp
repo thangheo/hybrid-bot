@@ -24,17 +24,24 @@ PortfolioManager::PortfolioManager(const RiskConfig& config)
     , m_portfolioValue(0.0) {
 }
 
+PortfolioManager::PortfolioManager(const RiskConfig& config,
+                                   std::shared_ptr<DataInterface> dataInterface)
+    : m_config(config)
+    , m_portfolioValue(0.0) {
+    // Use the provided data interface in sub-components
+    if (!dataInterface) {
+        throw std::invalid_argument("DataInterface cannot be null");
+    }
+    
+    m_dataInterface = std::move(dataInterface);
+}
+
+
+//this overlap with risk_manager.cpp
 bool PortfolioManager::initialize() {
     try {
-        // Create shared interfaces for sub-components using factory function
-        auto dataInterface = createDataInterface();
-        if (!dataInterface->initialize()) {
-            std::cerr << "Failed to initialize DataInterface" << std::endl;
-            return false;
-        }
+        // Create shared interfaces for sub-components using factory function      
         
-        // Convert unique_ptr to shared_ptr for sharing among components
-        std::shared_ptr<DataInterface> sharedDataInterface(dataInterface.release());
        
         // Create execution interface using factory function
         auto executionInterface = createExecutionInterface(m_config);
@@ -47,7 +54,7 @@ bool PortfolioManager::initialize() {
         std::shared_ptr<ExecutionInterface> sharedExecutionInterface(executionInterface.release());
         
         // Initialize position tracker
-        m_positionTracker = std::make_shared<PositionTracker>(m_config, sharedDataInterface);
+        m_positionTracker = std::make_shared<PositionTracker>(m_config, m_dataInterface);
         if (!m_positionTracker->initialize()) {
             std::cerr << "Failed to initialize PositionTracker" << std::endl;
             return false;
@@ -55,7 +62,7 @@ bool PortfolioManager::initialize() {
         
         // Initialize collateral manager
         m_collateralManager = std::make_shared<CollateralManager>(
-            m_config, m_positionTracker, sharedExecutionInterface, sharedDataInterface);
+            m_config, m_positionTracker, sharedExecutionInterface, m_dataInterface);
         if (!m_collateralManager->initialize()) {
             std::cerr << "Failed to initialize CollateralManager" << std::endl;
             return false;
@@ -63,7 +70,7 @@ bool PortfolioManager::initialize() {
         
         // Initialize rebalancing engine
         m_rebalancingEngine = std::make_shared<RebalancingEngine>(
-            m_config, m_positionTracker, sharedExecutionInterface, sharedDataInterface);
+            m_config, m_positionTracker, sharedExecutionInterface, m_dataInterface);
         if (!m_rebalancingEngine->initialize()) {
             std::cerr << "Failed to initialize RebalancingEngine" << std::endl;
             return false;

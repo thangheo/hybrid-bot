@@ -237,111 +237,6 @@ bool Trading_system::initializeSharedMemory() {
     }
 }
 
-// void Trading_system::publishOrderBookForRisk(const OrderBookUpdate& update) {
-//     try {
-//         // Check if update is valid
-//         if (update.bids.empty() && update.asks.empty()) {
-//             std::cerr << "Warning: Orderbook update is empty for "
-//                         << update.exchangeId.toString() << ":" << update.tradingPair.toString() << std::endl;
-//             return;
-//         }
-        
-//         if (!shm_publisher_) {
-//             std::cerr << "Shared memory publisher not initialized" << std::endl;
-//             return;
-//         }
-        
-//         // Use protobuf for orderbook serialization (same as before)
-//         try {
-//             orderbook::OrderbookMessage obMsg;
-//             auto* data = obMsg.mutable_data();
-//             data->set_exchange(update.exchangeId.toString());
-//             data->set_symbol(update.tradingPair.toString());
-//             data->set_sequence(update.sequenceNumber);
-//             data->set_timestamp(std::chrono::duration_cast<std::chrono::milliseconds>(
-//                 update.exchangeTimestamp.time_since_epoch()).count());
-            
-//             // Best bid/ask
-//             data->set_bid(!update.bids.empty() ? update.bids[0].price : 0.0);
-//             data->set_ask(!update.asks.empty() ? update.asks[0].price : 0.0);
-            
-//             // Mid price
-//             data->set_price((!update.bids.empty() && !update.asks.empty())
-//                 ? (update.bids[0].price + update.asks[0].price) / 2.0 : 0.0);
-            
-//             // Volume at top 5 levels
-//             double bidVolume = 0.0, askVolume = 0.0;
-//             for (int i = 0; i < std::min(5, (int)update.bids.size()); ++i) bidVolume += update.bids[i].quantity;
-//             for (int i = 0; i < std::min(5, (int)update.asks.size()); ++i) askVolume += update.asks[i].quantity;
-//             data->set_volume(bidVolume + askVolume);
-            
-//             // Add bids/asks
-//             for (const auto& bid : update.bids) {
-//                 auto* level = data->add_bids();
-//                 level->set_price(bid.price);
-//                 level->set_quantity(bid.quantity);
-//             }
-//             for (const auto& ask : update.asks) {
-//                 auto* level = data->add_asks();
-//                 level->set_price(ask.price);
-//                 level->set_quantity(ask.quantity);
-//             }
-            
-//             // Placeholders for 24h stats and last trade
-//             data->set_lasttradeprice(data->price());
-//             data->set_lasttradequantity(0.0);
-//             data->set_open24h(data->price());
-//             data->set_high24h(data->price());
-//             data->set_low24h(data->price());
-//             data->set_volumequote24h(0.0);
-//             data->set_pricechange24h(0.0);
-//             data->set_pricechangepercent24h(0.0);
-            
-//             // Populate metadata
-//             auto* metadata = obMsg.mutable_metadata();
-//             metadata->set_correlation_id("");
-//             metadata->set_priority("HIGH");
-//             auto now = std::chrono::system_clock::now();
-//             metadata->set_timestamp(std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
-//                 now.time_since_epoch()).count()));
-            
-//             std::string serializedOb;
-//             if (!obMsg.SerializeToString(&serializedOb)) {
-//                 std::cerr << "Failed to serialize OrderBook protobuf" << std::endl;
-//                 return;
-//             }
-            
-//             std::string topic = "orderbook." + update.exchangeId.toString() + "." + update.tradingPair.toString();
-            
-//             // 🚀 SHARED MEMORY PUBLISH - Much faster than ZMQ!
-//             bool success = shm_publisher_->publish(topic, serializedOb);
-            
-//             if (success) {
-//                 orderBookUpdatesReceived_.fetch_add(1);
-                
-//                 // Debug info for every 5000th message
-//                 static std::atomic<int> publishCount{0};
-//                 int count = publishCount.fetch_add(1);
-//                 if (count < 5 || count % 5000 == 0) {
-//                     auto stats = shm_publisher_->getStats();
-//                     std::cout << "📢 Published orderbook #" << count 
-//                                 << " (buffer utilization: " << std::fixed << std::setprecision(1) 
-//                                 << (stats.buffer_utilization * 100) << "%"
-//                                 << ", dropped: " << stats.messages_dropped << ")" << std::endl;
-//                 }
-//             } else {
-//                 std::cerr << "Failed to publish to shared memory (buffer full?)" << std::endl;
-//             }
-//         }
-//         catch (const std::exception& e) {
-//             std::cerr << "Error serializing orderbook protobuf: " << e.what() << std::endl;
-//         }  
-        
-//     } catch (const std::exception& e) {
-//         std::cerr << "Error publishing orderbook for risk: " << e.what() << std::endl;
-//     }
-// }
-
 // Get publishing statistics
 void Trading_system::printSharedMemoryStats() {
     if (shm_publisher_) {
@@ -602,95 +497,6 @@ void Trading_system::generateMarketIntelligence(const OrderBookUpdate& update, s
     }
 }
 
-// ✅ NEW: Publish orderbook data for risk module
-void Trading_system::publishOrderBookForRisk(const OrderBookUpdate& update) {
-    try {
-        // Check if zmqServer has orderbook publishing capability and update is valid
-        if (update.bids.empty() && update.asks.empty()  ) {
-            std::cerr << "Warning: Orderbook update is empty for "
-                        << update.exchangeId.toString() << ":" << update.tradingPair.toString() << std::endl;
-            return;
-        }
-        
-        //use protobuf-no json
-        try {
-            // Use protobuf for orderbook publishing
-            orderbook::OrderbookMessage obMsg;
-            auto* data = obMsg.mutable_data();
-            data->set_exchange(update.exchangeId.toString());
-            data->set_symbol(update.tradingPair.toString());
-            data->set_sequence(update.sequenceNumber);
-            data->set_timestamp(std::chrono::duration_cast<std::chrono::milliseconds>(
-                update.exchangeTimestamp.time_since_epoch()).count());
-            
-            // Best bid/ask
-            data->set_bid(!update.bids.empty() ? update.bids[0].price : 0.0);
-            data->set_ask(!update.asks.empty() ? update.asks[0].price : 0.0);
-            
-            // Mid price
-            data->set_price((!update.bids.empty() && !update.asks.empty())
-                ? (update.bids[0].price + update.asks[0].price) / 2.0 : 0.0);
-            
-            // Volume at top 5 levels
-            double bidVolume = 0.0, askVolume = 0.0;
-            for (int i = 0; i < std::min(5, (int)update.bids.size()); ++i) bidVolume += update.bids[i].quantity;
-            for (int i = 0; i < std::min(5, (int)update.asks.size()); ++i) askVolume += update.asks[i].quantity;
-            data->set_volume(bidVolume + askVolume);
-            
-            // Add bids/asks
-            for (const auto& bid : update.bids) {
-                auto* level = data->add_bids();
-                level->set_price(bid.price);
-                level->set_quantity(bid.quantity);
-            }
-            for (const auto& ask : update.asks) {
-                auto* level = data->add_asks();
-                level->set_price(ask.price);
-                level->set_quantity(ask.quantity);
-            }
-            
-            // Placeholders for 24h stats and last trade
-            data->set_lasttradeprice(data->price());
-            data->set_lasttradequantity(0.0);
-            data->set_open24h(data->price());
-            data->set_high24h(data->price());
-            data->set_low24h(data->price());
-            data->set_volumequote24h(0.0);
-            data->set_pricechange24h(0.0);
-            data->set_pricechangepercent24h(0.0);
-            
-            // Populate metadata
-            auto* metadata = obMsg.mutable_metadata();
-            metadata->set_correlation_id(""); // Empty for now, can generate UUID if needed
-            metadata->set_priority("HIGH");
-            auto now = std::chrono::system_clock::now();
-            metadata->set_timestamp(std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
-                now.time_since_epoch()).count()));
-            
-            std::string serializedOb;
-            if (!obMsg.SerializeToString(&serializedOb)) {
-                std::cerr << "Failed to serialize OrderBook protobuf" << std::endl;
-                return;
-            }
-            std::string topic = "orderbook." + update.exchangeId.toString() + "." + update.tradingPair.toString();
-            zmq_server_->publishAsync(topic, std::move(serializedOb), MessagePriority::HIGH);
-            orderBookUpdatesReceived_.fetch_add(1);
-            // internal_
-            //print debug info for every 5000th
-            static std::atomic<int> publishCount{0};
-            int count = publishCount.fetch_add(1);
-            if (count < 5 || count % 5000 == 0) {
-                std::cout << "📢 Published orderbook #" << count << std::endl;
-            }
-        }
-        catch (const std::exception& e) {
-            std::cerr << "Error serializing orderbook protobuf: " << e.what() << std::endl;
-        }  
-        
-    } catch (const std::exception& e) {
-        std::cerr << "Error publishing orderbook for risk: " << e.what() << std::endl;
-    }
-} 
 
 // ✅ Simple health check like full_bridge.cpp
 bool Trading_system::checkSystemHealth() {
@@ -1105,6 +911,113 @@ void Trading_system::orderbookWorkerLoop(size_t workerId) {
         }
     }
 }
+
+// ✅ MODIFIED: Publish orderbook data using shared memory instead of ZMQ
+void Trading_system::publishOrderBookForRisk(const OrderBookUpdate& update) {
+    try {
+        // Check if update is valid
+        if (update.bids.empty() && update.asks.empty()) {
+            std::cerr << "Warning: Orderbook update is empty for "
+                        << update.exchangeId.toString() << ":" << update.tradingPair.toString() << std::endl;
+            return;
+        }
+        
+        if (!shm_publisher_) {
+            std::cerr << "Shared memory publisher not initialized" << std::endl;
+            return;
+        }
+        
+        // Use protobuf for orderbook serialization (same as before)
+        try {
+            orderbook::OrderbookMessage obMsg;
+            auto* data = obMsg.mutable_data();
+            data->set_exchange(update.exchangeId.toString());
+            data->set_symbol(update.tradingPair.toString());
+            data->set_sequence(update.sequenceNumber);
+            data->set_timestamp(std::chrono::duration_cast<std::chrono::milliseconds>(
+                update.exchangeTimestamp.time_since_epoch()).count());
+            
+            // Best bid/ask
+            data->set_bid(!update.bids.empty() ? update.bids[0].price : 0.0);
+            data->set_ask(!update.asks.empty() ? update.asks[0].price : 0.0);
+            
+            // Mid price
+            data->set_price((!update.bids.empty() && !update.asks.empty())
+                ? (update.bids[0].price + update.asks[0].price) / 2.0 : 0.0);
+            
+            // Volume at top 5 levels
+            double bidVolume = 0.0, askVolume = 0.0;
+            for (int i = 0; i < std::min(5, (int)update.bids.size()); ++i) bidVolume += update.bids[i].quantity;
+            for (int i = 0; i < std::min(5, (int)update.asks.size()); ++i) askVolume += update.asks[i].quantity;
+            data->set_volume(bidVolume + askVolume);
+            
+            // Add bids/asks
+            for (const auto& bid : update.bids) {
+                auto* level = data->add_bids();
+                level->set_price(bid.price);
+                level->set_quantity(bid.quantity);
+            }
+            for (const auto& ask : update.asks) {
+                auto* level = data->add_asks();
+                level->set_price(ask.price);
+                level->set_quantity(ask.quantity);
+            }
+            
+            // Placeholders for 24h stats and last trade
+            data->set_lasttradeprice(data->price());
+            data->set_lasttradequantity(0.0);
+            data->set_open24h(data->price());
+            data->set_high24h(data->price());
+            data->set_low24h(data->price());
+            data->set_volumequote24h(0.0);
+            data->set_pricechange24h(0.0);
+            data->set_pricechangepercent24h(0.0);
+            
+            // Populate metadata
+            auto* metadata = obMsg.mutable_metadata();
+            metadata->set_correlation_id("");
+            metadata->set_priority("HIGH");
+            auto now = std::chrono::system_clock::now();
+            metadata->set_timestamp(std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
+                now.time_since_epoch()).count()));
+            
+            std::string serializedOb;
+            if (!obMsg.SerializeToString(&serializedOb)) {
+                std::cerr << "Failed to serialize OrderBook protobuf" << std::endl;
+                return;
+            }
+            
+            std::string topic = "orderbook." + update.exchangeId.toString() + "." + update.tradingPair.toString();
+            
+            // 🚀 SHARED MEMORY PUBLISH - Much faster than ZMQ!
+            bool success = shm_publisher_->publish(topic, serializedOb);
+            
+            if (success) {
+                orderBookUpdatesReceived_.fetch_add(1);
+                
+                // Debug info for every 5000th message
+                static std::atomic<int> publishCount{0};
+                int count = publishCount.fetch_add(1);
+                if (count < 5 || count % 5000 == 0) {
+                    auto stats = shm_publisher_->getStats();
+                    std::cout << "📢 Published orderbook #" << count 
+                                << " (buffer utilization: " << std::fixed << std::setprecision(1) 
+                                << (stats.buffer_utilization * 100) << "%"
+                                << ", dropped: " << stats.messages_dropped << ")" << std::endl;
+                }
+            } else {
+                std::cerr << "Failed to publish to shared memory (buffer full?)" << std::endl;
+            }
+        }
+        catch (const std::exception& e) {
+            std::cerr << "Error serializing orderbook protobuf: " << e.what() << std::endl;
+        }  
+        
+    } catch (const std::exception& e) {
+        std::cerr << "Error publishing orderbook for risk: " << e.what() << std::endl;
+    }
+}
+ 
 // Signal worker pool control
 void Trading_system::startSignalWorkerPool() {
     if (signalWorkersRunning_.exchange(true)) return;

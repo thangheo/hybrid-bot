@@ -215,6 +215,12 @@ public:
     explicit PostTradeMonitor(const RiskConfig& config);
     // Update the constructor declaration
     PostTradeMonitor(const RiskConfig& config, PortfolioManager* portfolioManager = nullptr);
+    // New ctor that allows dependency injection of shared interfaces to avoid
+    // creating duplicate DataInterface/MarketDataInterface instances.
+    PostTradeMonitor(const RiskConfig& config,
+                     PortfolioManager* portfolioManager,
+                     std::shared_ptr<DataInterface> dataInterface,
+                     std::shared_ptr<ExecutionInterface> executionInterface = nullptr);
     /**
      * Destructor ensures proper cleanup
      */
