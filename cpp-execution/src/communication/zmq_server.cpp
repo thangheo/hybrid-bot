@@ -510,6 +510,51 @@ void GenericZmqServer::sendHeartbeat() {
     
     publishSync("system.heartbeat", heartbeat.dump(), MessagePriority::HIGH, "heartbeat");
 }
+// dropMessages
+void GenericZmqServer::dropMessages(const std::string& topic, size_t num_messages) {
+    if (state_.load() != ServerState::RUNNING) {
+        logError("Cannot drop messages - server not running");
+        return;
+    }
+
+    if (topic == "MARKET_INTEL") {
+        std::lock_guard<std::mutex> lock(intel_queue_mutex_);
+        size_t dropped = 0;
+        // Rebuild the queue preserving order but dropping up to num_messages matching the topic
+        std::queue<GenericMessage> temp_queue;
+        while (!intel_priority_queue_.empty()) {
+            GenericMessage msg = std::move(intel_priority_queue_.front());
+            intel_priority_queue_.pop();
+            if (dropped < num_messages && msg.topic == topic) {
+                dropped++;
+                stats_.messages_dropped++;
+                continue; // Drop this message
+            }
+            temp_queue.push(std::move(msg));
+        }
+        // Swap back the rebuilt queue
+        intel_priority_queue_.swap(temp_queue);
+        logInfo("Dropped " + std::to_string(dropped) + " messages from topic: " + topic);
+        intel_queue_cv_.notify_all();
+    } else {
+        std::lock_guard<std::mutex> lock(internal_queue_mutex_);
+        size_t dropped = 0;
+        std::queue<GenericMessage> temp_queue;
+        while (!internal_priority_queue_.empty()) {
+            GenericMessage msg = std::move(internal_priority_queue_.front());
+            internal_priority_queue_.pop();
+            if (dropped < num_messages && msg.topic == topic) {
+                dropped++;
+                stats_.messages_dropped++;
+                continue; // Drop this message
+            }
+            temp_queue.push(std::move(msg));
+        }
+        internal_priority_queue_.swap(temp_queue);
+        logInfo("Dropped " + std::to_string(dropped) + " messages from topic: " + topic);
+        internal_queue_cv_.notify_all();
+    }
+}
 
 // =============================================================================
 // PRIVATE METHODS - INITIALIZATION
@@ -1008,10 +1053,8 @@ bool GenericZmqServer::processInternalMessage(const GenericMessage& message) {
         metadata["correlation_id"] = message.correlation_id;
         metadata["priority"] = std::to_string(static_cast<int>(message.priority));
         metadata["timestamp"] = std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
-            message.timestamp.time_since_epoch()).count());
+        message.timestamp.time_since_epoch()).count());
 
-        // Serialize data with metadata - this is fukcing stupid for protobuf
-        // std::string serialized_data = serializeWithMetadata(message.data, metadata);
         zmq::message_t data_msg(message.data.size());
         memcpy(data_msg.data(), message.data.c_str(), message.data.size());
 

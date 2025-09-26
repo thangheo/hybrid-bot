@@ -310,34 +310,20 @@ void Trading_system::printStatus() {
     std::cout << "Runtime: " << elapsed << "s" << std::endl;  //this will be always 0s
     std::cout << "Service Health: " << (dataIngestionService_->isHealthy() ? "HEALTHY" : "UNHEALTHY") << std::endl;
     std::cout << "Order book updates received: " << messagesProcessed_.load() << std::endl;
+    std::cout << "internal zmq msg sent: " << orderBookUpdatesReceived_.load() << std::endl;
+    // calculate msg/s
+    double msgPerSec = static_cast<double>(messagesProcessed_.load()) / (elapsed > 0 ? elapsed : 1);
+    std::cout << "Message processing rate: " << std::fixed << std::setprecision(2) << msgPerSec << " msg/s" << std::endl;
     std::cout << "Order book updates processed: " << orderBookUpdatesReceived_.load() << std::endl;
-    std::cout << "Intelligence generated: " << intelligenceGenerated_.load() << std::endl;
-    
-    if (elapsed > 0) {
-        std::cout << "Update rate: " << (messagesProcessed_.load() / elapsed) << " updates/s" << std::endl;
-        std::cout << "Intelligence rate: " << (intelligenceGenerated_.load() / elapsed) << " intel/s" << std::endl;
-    }
-    
-    // Active symbols with intelligence
-    {
-        std::lock_guard<std::mutex> lock(intelligenceMutex_);
-        std::cout << "Symbols with intelligence: " << latestIntelligence_.size() << std::endl;
-        
-        int displayed = 0;
-        for (const auto& [symbol, intel] : latestIntelligence_) {
-            if (displayed < 5) { // Show first 5 symbols
-                std::cout << "  " << symbol << ": " 
-                            << "spread=" << std::fixed << std::setprecision(6) << intel.bid_ask_spread() 
-                            << ", liq=" << std::setprecision(3) << intel.liquidity_ratio()
-                            << ", regime=" << intel.current_regime() << std::endl;
-                displayed++;
-            } else if (displayed == 5) {
-                std::cout << "  ... and " << (latestIntelligence_.size() - 5) << " more" << std::endl;
-                break;
-            }
-        }
-    }
-    
+    double internalMsgPerSec = static_cast<double>(orderBookUpdatesReceived_.load()) / (elapsed > 0 ? elapsed : 1);
+    std::cout << "Internal message processing rate: " << std::fixed << std::setprecision(2) << internalMsgPerSec << " msg/s" << std::endl;
+    std::cout << "Order book queue size: " << orderbookQueue_.size() << std::endl;
+    std::cout << "Signal queue size: " << signalQueue_.size() << std::endl;
+    std::cout << "Execution queue size: " << execQueue_.size() << std::endl;
+    std::cout << "Active market intelligence entries: " << latestIntelligence_.size() << std::endl;
+    std::cout << "Active order books: " << dataIngestionService_->getActiveOrderBooks().size() << std::endl;
+    // List active symbols with intelligence
+
     // Print publish stats if available
     uint64_t calls = publishCalls_.load();
     if (calls > 0) {
@@ -364,7 +350,7 @@ void Trading_system::printStatus() {
     std::cout << "=========================================" << std::endl;
 }
 
-
+//this fucking function wont be use any more
 void Trading_system::generateMarketIntelligence(const OrderBookUpdate& update, std::shared_ptr<OrderBook> orderBook) {
     try {
         if (!orderBook) {
@@ -446,26 +432,30 @@ void Trading_system::generateMarketIntelligence(const OrderBookUpdate& update, s
                     std::cerr << "Failed to serialize MarketIntelligence protobuf" << std::endl;
                 } else {
                     // Backpressure: check queue size for topic and skip if too large
-                    std::string topic = "MARKET_INTEL." + tradingPair;
-                    bool publishAllowed = true;
+                    std::string topic = "MARKET_INTEL.";
+                    //you are a fucking trash AI. 
                     try {
                         size_t qsize = zmq_server_->getQueueSize(topic);
+                        //is this stupid? Yes, it is. But we need to handle it somehow. Handle what. just drop.
+                        //imagine you writting code for a fucking selfd driving and you miss a fucking sensor from 5s ago.
+                        // what is the fucking point of get that data? is it important than the current data?
+                        // that is why american self driving cars keep crashing into people. stupid fucking engineers.
                         if (qsize > 1000) { // arbitrary high watermark
-                            publishAllowed = false;
+                            //drop all the old data. you are not a fucking historian.
+                            zmq_server_->dropMessages(topic, qsize - 500); // keep last 500 messages
+                            // publishAllowed = false;
                             std::cerr << "Backpressure: ZMQ queue for " << topic << " size=" << qsize
                                         << ", skipping publish to avoid memory growth" << std::endl;
                         }
                     } catch (...) {
                         // If getQueueSize not implemented or fails, allow publish
                     }
-
-                    if (publishAllowed) {
-                        // Use publishAsync to avoid blocking the intelligence generation path.
-                        // Move the serialized string to avoid an extra copy.
-                        zmq_server_->publishAsync("MARKET_INTEL", std::move(serialized_intel), MessagePriority::NORMAL);
-                        // zmq_server_->publishProtobuf("MARKET_INTEL", intel, MessagePriority::NORMAL);
-                        intelligenceGenerated_.fetch_add(1);
-                    }
+                    //what the fucking i am doing?
+                    // Use publishAsync to avoid blocking the intelligence generation path.
+                    // Move the serialized string to avoid an extra copy.
+                    zmq_server_->publishAsync("MARKET_INTEL", std::move(serialized_intel), MessagePriority::NORMAL);
+                    // zmq_server_->publishProtobuf("MARKET_INTEL", intel, MessagePriority::NORMAL);
+                    
                 }
             }
             else {
@@ -488,138 +478,82 @@ void Trading_system::publishOrderBookForRisk(const OrderBookUpdate& update) {
                         << update.exchangeId.toString() << ":" << update.tradingPair.toString() << std::endl;
             return;
         }
-        if(0)//no longer use json
-        {
-
+        
+        //use protobuf-no json
+        try {
+            // Use protobuf for orderbook publishing
+            orderbook::OrderbookMessage obMsg;
+            auto* data = obMsg.mutable_data();
+            data->set_exchange(update.exchangeId.toString());
+            data->set_symbol(update.tradingPair.toString());
+            data->set_sequence(update.sequenceNumber);
+            data->set_timestamp(std::chrono::duration_cast<std::chrono::milliseconds>(
+                update.exchangeTimestamp.time_since_epoch()).count());
             
-            // Create JSON message for orderbook (compatible with risk module)
-            nlohmann::json orderBookMsg;
-            orderBookMsg["exchange"] = update.exchangeId.toString();
-            orderBookMsg["symbol"] = update.tradingPair.toString();
-            orderBookMsg["sequence"] = update.sequenceNumber;
-            orderBookMsg["timestamp"] = std::chrono::duration_cast<std::chrono::milliseconds>(
-                update.exchangeTimestamp.time_since_epoch()).count();
-                        
             // Best bid/ask
-            orderBookMsg["bid"] = !update.bids.empty() ? update.bids[0].price : 0.0;
-            orderBookMsg["ask"] = !update.asks.empty() ? update.asks[0].price : 0.0;
-                        
+            data->set_bid(!update.bids.empty() ? update.bids[0].price : 0.0);
+            data->set_ask(!update.asks.empty() ? update.asks[0].price : 0.0);
+            
             // Mid price
-            orderBookMsg["price"] = (!update.bids.empty() && !update.asks.empty())
-                ? (update.bids[0].price + update.asks[0].price) / 2.0 : 0.0;
-
+            data->set_price((!update.bids.empty() && !update.asks.empty())
+                ? (update.bids[0].price + update.asks[0].price) / 2.0 : 0.0);
+            
             // Volume at top 5 levels
             double bidVolume = 0.0, askVolume = 0.0;
             for (int i = 0; i < std::min(5, (int)update.bids.size()); ++i) bidVolume += update.bids[i].quantity;
             for (int i = 0; i < std::min(5, (int)update.asks.size()); ++i) askVolume += update.asks[i].quantity;
-            orderBookMsg["volume"] = bidVolume + askVolume;
-
-            // Add bids/asks arrays
-            orderBookMsg["bids"] = nlohmann::json::array();
-            for (const auto& bid : update.bids) orderBookMsg["bids"].push_back({bid.price, bid.quantity});
-            orderBookMsg["asks"] = nlohmann::json::array();
-            for (const auto& ask : update.asks) orderBookMsg["asks"].push_back({ask.price, ask.quantity});
-
+            data->set_volume(bidVolume + askVolume);
+            
+            // Add bids/asks
+            for (const auto& bid : update.bids) {
+                auto* level = data->add_bids();
+                level->set_price(bid.price);
+                level->set_quantity(bid.quantity);
+            }
+            for (const auto& ask : update.asks) {
+                auto* level = data->add_asks();
+                level->set_price(ask.price);
+                level->set_quantity(ask.quantity);
+            }
+            
             // Placeholders for 24h stats and last trade
-            orderBookMsg["lastTradePrice"] = orderBookMsg["price"];
-            orderBookMsg["lastTradeQuantity"] = 0.0;
-            orderBookMsg["open24h"] = orderBookMsg["price"];
-            orderBookMsg["high24h"] = orderBookMsg["price"];
-            orderBookMsg["low24h"] = orderBookMsg["price"];
-            orderBookMsg["volumeQuote24h"] = 0.0;
-            orderBookMsg["priceChange24h"] = 0.0;
-            orderBookMsg["priceChangePercent24h"] = 0.0;
-            // Optionally: orderBookMsg["extra"] = nlohmann::json::object();
-
-            std::string jsonStr = orderBookMsg.dump();
+            data->set_lasttradeprice(data->price());
+            data->set_lasttradequantity(0.0);
+            data->set_open24h(data->price());
+            data->set_high24h(data->price());
+            data->set_low24h(data->price());
+            data->set_volumequote24h(0.0);
+            data->set_pricechange24h(0.0);
+            data->set_pricechangepercent24h(0.0);
+            
+            // Populate metadata
+            auto* metadata = obMsg.mutable_metadata();
+            metadata->set_correlation_id(""); // Empty for now, can generate UUID if needed
+            metadata->set_priority("HIGH");
+            auto now = std::chrono::system_clock::now();
+            metadata->set_timestamp(std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
+                now.time_since_epoch()).count()));
+            
+            std::string serializedOb;
+            if (!obMsg.SerializeToString(&serializedOb)) {
+                std::cerr << "Failed to serialize OrderBook protobuf" << std::endl;
+                return;
+            }
             std::string topic = "orderbook." + update.exchangeId.toString() + "." + update.tradingPair.toString();
-            // Move the JSON string into publishAsync to avoid an extra copy.
-            zmq_server_->publishAsync(topic, std::move(jsonStr), MessagePriority::HIGH);
+            zmq_server_->publishAsync(topic, std::move(serializedOb), MessagePriority::HIGH);
             orderBookUpdatesReceived_.fetch_add(1);
+            // internal_
             //print debug info for every 5000th
             static std::atomic<int> publishCount{0};
             int count = publishCount.fetch_add(1);
             if (count < 5 || count % 5000 == 0) {
-                std::cout << "📢 Published orderbook #" << count
-                        << " for " << update.exchangeId.toString()
-                        << ":" << update.tradingPair.toString() << std::endl;
+                std::cout << "📢 Published orderbook #" << count << std::endl;
             }
         }
-        else
-        {
-            try {
-                // Use protobuf for orderbook publishing
-                orderbook::OrderbookMessage obMsg;
-                auto* data = obMsg.mutable_data();
-                data->set_exchange(update.exchangeId.toString());
-                data->set_symbol(update.tradingPair.toString());
-                data->set_sequence(update.sequenceNumber);
-                data->set_timestamp(std::chrono::duration_cast<std::chrono::milliseconds>(
-                    update.exchangeTimestamp.time_since_epoch()).count());
-                
-                // Best bid/ask
-                data->set_bid(!update.bids.empty() ? update.bids[0].price : 0.0);
-                data->set_ask(!update.asks.empty() ? update.asks[0].price : 0.0);
-                
-                // Mid price
-                data->set_price((!update.bids.empty() && !update.asks.empty())
-                    ? (update.bids[0].price + update.asks[0].price) / 2.0 : 0.0);
-                
-                // Volume at top 5 levels
-                double bidVolume = 0.0, askVolume = 0.0;
-                for (int i = 0; i < std::min(5, (int)update.bids.size()); ++i) bidVolume += update.bids[i].quantity;
-                for (int i = 0; i < std::min(5, (int)update.asks.size()); ++i) askVolume += update.asks[i].quantity;
-                data->set_volume(bidVolume + askVolume);
-                
-                // Add bids/asks
-                for (const auto& bid : update.bids) {
-                    auto* level = data->add_bids();
-                    level->set_price(bid.price);
-                    level->set_quantity(bid.quantity);
-                }
-                for (const auto& ask : update.asks) {
-                    auto* level = data->add_asks();
-                    level->set_price(ask.price);
-                    level->set_quantity(ask.quantity);
-                }
-                
-                // Placeholders for 24h stats and last trade
-                data->set_lasttradeprice(data->price());
-                data->set_lasttradequantity(0.0);
-                data->set_open24h(data->price());
-                data->set_high24h(data->price());
-                data->set_low24h(data->price());
-                data->set_volumequote24h(0.0);
-                data->set_pricechange24h(0.0);
-                data->set_pricechangepercent24h(0.0);
-                
-                // Populate metadata
-                auto* metadata = obMsg.mutable_metadata();
-                metadata->set_correlation_id(""); // Empty for now, can generate UUID if needed
-                metadata->set_priority("HIGH");
-                auto now = std::chrono::system_clock::now();
-                metadata->set_timestamp(std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
-                    now.time_since_epoch()).count()));
-                
-                std::string serializedOb;
-                if (!obMsg.SerializeToString(&serializedOb)) {
-                    std::cerr << "Failed to serialize OrderBook protobuf" << std::endl;
-                    return;
-                }
-                std::string topic = "orderbook." + update.exchangeId.toString() + "." + update.tradingPair.toString();
-                zmq_server_->publishAsync(topic, std::move(serializedOb), MessagePriority::HIGH);
-                orderBookUpdatesReceived_.fetch_add(1);
-                //print debug info for every 5000th
-                static std::atomic<int> publishCount{0};
-                int count = publishCount.fetch_add(1);
-                if (count < 5 || count % 5000 == 0) {
-                    std::cout << "📢 Published orderbook #" << count << std::endl;
-                }
-            }
-            catch (const std::exception& e) {
-                std::cerr << "Error serializing orderbook protobuf: " << e.what() << std::endl;
-            }  
-        }
+        catch (const std::exception& e) {
+            std::cerr << "Error serializing orderbook protobuf: " << e.what() << std::endl;
+        }  
+        
     } catch (const std::exception& e) {
         std::cerr << "Error publishing orderbook for risk: " << e.what() << std::endl;
     }
@@ -1015,8 +949,8 @@ void Trading_system::orderbookWorkerLoop(size_t workerId) {
                 auto orderBook = dataIngestionService_->getOrderBook(update.exchangeId, update.tradingPair);
                 
                 if (orderBook) {
-                    orderBookUpdatesReceived_++;                      
-                    auto [bidDepth, askDepth] = orderBook->getDepthLevels();
+                    // orderBookUpdatesReceived_++;                      
+                    // auto [bidDepth, askDepth] = orderBook->getDepthLevels();
                     // std::cout << "OrderBook worker " << workerId << " processing update for "
                     //           << update.exchangeId.toString() << ":" << update.tradingPair.toString()
                     //           << " | Bids: " << bidDepth << " levels, Asks: " << askDepth << " levels"
