@@ -341,22 +341,64 @@ void GenericZmqClient::subscriberWorker() {
             zmq::message_t topic_msg;
             zmq::message_t data_msg;
 
-            // Receive topic (block until a topic frame arrives or timeout)
-            auto topic_result = subscriber_socket_->recv(topic_msg, zmq::recv_flags::none);
-            if (!topic_result) {
+            // Receive first frame (may be topic OR entire single-frame message)
+            auto first_result = subscriber_socket_->recv(topic_msg, zmq::recv_flags::none);
+            if (!first_result) {
                 // timeout or no message available
                 continue;
             }
 
-            // Receive data frame (should follow immediately)
-            auto data_result = subscriber_socket_->recv(data_msg, zmq::recv_flags::none);
-            if (!data_result) {
-                logError("Failed to receive data frame after topic frame");
-                continue;
+            // Check if there are more frames for this multipart message
+            bool more = false;
+            try {
+                more = static_cast<bool>(subscriber_socket_->get(zmq::sockopt::rcvmore));
+            } catch (const zmq::error_t&) {
+                // Older cppzmq/backends may throw; fall back to assuming single-frame
+                more = false;
             }
 
-            std::string topic(static_cast<char*>(topic_msg.data()), topic_msg.size());
-            std::string data(static_cast<char*>(data_msg.data()), data_msg.size());
+            std::string topic;
+            std::string data;
+
+            if (more) {
+                // Standard multipart: topic frame followed by data frame
+                auto data_result = subscriber_socket_->recv(data_msg, zmq::recv_flags::none);
+                if (!data_result) {
+                    logError("Failed to receive data frame after topic frame");
+                    continue;
+                }
+                topic.assign(static_cast<char*>(topic_msg.data()), topic_msg.size());
+                data.assign(static_cast<char*>(data_msg.data()), data_msg.size());
+            } else {
+                // Single-frame message. Try to split by first space (common "topic payload" format).
+                std::string combined(static_cast<char*>(topic_msg.data()), topic_msg.size());
+                auto pos = combined.find(' ');
+                if (pos != std::string::npos) {
+                    topic = combined.substr(0, pos);
+                    data = combined.substr(pos + 1);
+                } else {
+                    // No separator found. Treat as payload-only (no topic).
+                    topic.clear();
+                    data = std::move(combined);
+                }
+            }
+
+            // If topic appears to be non-printable (binary protobuf landed in topic frame),
+            // treat it as empty and move the bytes into data to avoid garbled logs and
+            // incorrect handler lookups.
+            auto is_printable = [](const std::string &s) {
+                for (unsigned char c : s) {
+                    if (c == '\n' || c == '\r' || c == '\t') continue;
+                    if (c < 0x20 || c > 0x7E) return false;
+                }
+                return !s.empty();
+            };
+
+            if (!topic.empty() && !is_printable(topic)) {
+                // Move topic bytes into data (prepend to existing data) and clear topic
+                data = std::string(static_cast<char*>(topic_msg.data()), topic_msg.size()) + data;
+                topic.clear();
+            }
 
             handleMessage(topic, data);
 

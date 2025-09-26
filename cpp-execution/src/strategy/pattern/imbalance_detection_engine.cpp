@@ -23,6 +23,7 @@
 #include <queue>
 #include <atomic>
  #include <sstream>
+#include <filesystem>
 #include <logger.hpp>
 #include "perception/bayesian_trading_adapter.hpp"
 
@@ -180,6 +181,14 @@ ImbalanceDetectionEngine::~ImbalanceDetectionEngine() {
         std::lock_guard<std::mutex> lk(bayesMutex_);
         if (bayes_handle_ && !bayesModelPath_.empty()) {
             try {
+                // Ensure parent directory exists
+                try {
+                    std::filesystem::path fp(bayesModelPath_);
+                    if (fp.has_parent_path()) std::filesystem::create_directories(fp.parent_path());
+                } catch (const std::exception &ex) {
+                    LOG_WARN("ImbalanceDetectionEngine: failed to create model directory for {}: {}", bayesModelPath_, ex.what());
+                }
+
                 trading::perception::bayes_save(bayes_handle_, bayesModelPath_);
                 LOG_INFO("ImbalanceDetectionEngine: saved bayes model to {}", bayesModelPath_);
             } catch (const std::exception &ex) {
@@ -203,6 +212,7 @@ ImbalanceDetectionEngine::~ImbalanceDetectionEngine() {
 
 // Start the detector worker (call from initialization path if desired)
 void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
+
     std::lock_guard<std::mutex> lk(mutex_);
     if (!bayesInitialized_.load()) {
         LOG_WARN("ImbalanceDetectionEngine: startDetectorWorker called before bayes model initialized; refusing to start worker");
@@ -212,6 +222,7 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
     detectorWorkerRunning_.store(true);
     detectorWorkerThread_ = std::thread([this](){
         while (detectorWorkerRunning_.load()) {
+            
             OrderBookMetrics m;
             {
                 std::unique_lock<std::mutex> qlk(detectorQueueMutex_);
@@ -392,11 +403,15 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
      // Clear any existing state
      clearImbalances();
 
-    // Configure bayes model path from config or environment
-    if (!config_.bayesModelPath.empty()) bayesModelPath_ = config_.bayesModelPath;
-    if (bayesModelPath_.empty()) {
-        const char* p = "models/bayesian/imbalance_bayes_model_v1.bin"; // noone give a fucking about this ok?
-        if (p) bayesModelPath_ = std::string(p);
+    // Configure bayes model path from config. Persistence is opt-in: if the
+    // config does not provide a path we leave bayesModelPath_ empty and
+    // therefore disable model load/save.
+    if (!config_.bayesModelPath.empty()) {
+        bayesModelPath_ = config_.bayesModelPath;
+        LOG_INFO("ImbalanceDetectionEngine: bayes persistence enabled, model path={}", bayesModelPath_);
+    } else {
+        bayesModelPath_.clear();
+        LOG_INFO("ImbalanceDetectionEngine: bayes persistence disabled (no model path configured)");
     }
 
     // Optional labeling delay from config (in ms)
@@ -2223,14 +2238,14 @@ double ImbalanceDetectionEngine::calculateVariance(const std::vector<double>& da
     }
     
     // // Log the event emission for diagnostics
-    LOG_INFO("ImbalanceDetectionEngine: created ImbalanceEvent id={} type={} strength={} dir={} for {}:{} on thread {}",
-             event.eventId,
-             static_cast<int>(type),
-             event.strength,
-             static_cast<int>(direction),
-             event.exchangeId.toString(),
-             event.symbol.toString(),
-             std::this_thread::get_id());
+    // LOG_INFO("ImbalanceDetectionEngine: created ImbalanceEvent id={} type={} strength={} dir={} for {}:{} on thread {}",
+    //          event.eventId,
+    //          static_cast<int>(type),
+    //          event.strength,
+    //          static_cast<int>(direction),
+    //          event.exchangeId.toString(),
+    //          event.symbol.toString(),
+    //          std::this_thread::get_id());
 
     // Publish to EventBus / callbacks unless publishing is disabled for debugging
     if (!publishEvents_.load()) {

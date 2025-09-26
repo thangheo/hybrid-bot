@@ -1,5 +1,8 @@
 #include "perception/bayesian_trading_adapter.hpp"
 #include "perception/bayesian_trading_model.hpp"
+#include <filesystem>
+#include <chrono>
+#include <string>
 
 namespace trading {
 namespace perception {
@@ -22,7 +25,30 @@ bool bayes_load(BayesHandle h, const std::string &path) {
 
 bool bayes_save(BayesHandle h, const std::string &path) {
     if (!h) return false;
-    return reinterpret_cast<Impl*>(h)->model.save_model(path);
+    try {
+        std::filesystem::path fp(path);
+        if (fp.has_parent_path()) {
+            std::filesystem::create_directories(fp.parent_path());
+        }
+        // Unique temp file (timestamp suffix) to avoid clobbering concurrent saves
+        auto now = std::chrono::steady_clock::now().time_since_epoch().count();
+        std::string tmpSuffix = ".tmp." + std::to_string(now);
+        std::filesystem::path tmp = fp;
+        tmp += tmpSuffix; // append suffix to filename
+
+        // Save to temp file first
+        if (!reinterpret_cast<Impl*>(h)->model.save_model(tmp.string())) {
+            // save failed
+            try { if (std::filesystem::exists(tmp)) std::filesystem::remove(tmp); } catch(...){}
+            return false;
+        }
+
+        // Atomically rename temp -> final
+        std::filesystem::rename(tmp, fp);
+        return true;
+    } catch (...) {
+        return false;
+    }
 }
 
 BayesSignal bayes_predict(BayesHandle h, const std::vector<double>& features) {
@@ -45,8 +71,7 @@ void bayes_update(BayesHandle h, const std::vector<double>& features, int label)
     if (!h) return;
     try {
         reinterpret_cast<Impl*>(h)->model.update(features, label);
-        //save model after each update to avoid losing data
-        // reinterpret_cast<Impl*>(h)->model.save_model("models/bayesian/imbalance_bayes_model_v1.bin");
+        // Intentionally do not auto-save here; the engine controls when to persist
     } catch (...) {}
 }
 

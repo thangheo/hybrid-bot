@@ -983,7 +983,7 @@ void Trading_system::orderbookWorkerLoop(size_t workerId) {
     while (orderbookWorkersRunning_.load()) {
         // Wait for data
         std::unique_lock<std::mutex> lk(orderbookQueueMutex_);
-        orderbookQueueCv_.wait_for(lk, std::chrono::milliseconds(100), [this]() {
+        orderbookQueueCv_.wait_for(lk, std::chrono::milliseconds(50), [this]() {
             return !orderbookQueue_.empty() || !orderbookWorkersRunning_.load();
         });
 
@@ -1007,10 +1007,10 @@ void Trading_system::orderbookWorkerLoop(size_t workerId) {
         for (const auto &update : batch) {
             try {
                 // PTCA quick update
-                if (!update.bids.empty() && !update.asks.empty()) {
-                    double midPrice = (update.bids[0].price + update.asks[0].price) / 2.0;
-                    onMarketPriceUpdate(update.tradingPair, midPrice);
-                }
+                // if (!update.bids.empty() && !update.asks.empty()) {
+                //     double midPrice = (update.bids[0].price + update.asks[0].price) / 2.0;
+                //     onMarketPriceUpdate(update.tradingPair, midPrice);
+                // }
 
                 auto orderBook = dataIngestionService_->getOrderBook(update.exchangeId, update.tradingPair);
                 
