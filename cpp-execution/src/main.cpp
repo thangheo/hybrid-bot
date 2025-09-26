@@ -38,7 +38,7 @@ int main(int argc, char* argv[]) {
         trading::common::Logger::initialize("TradingApp", trading::common::LogLevel::INFO);
     }
     try {
-        std::cout << "🚀 STARTING FULL TRADING SYSTEM INTEGRATION DEMO 🚀" << std::endl;
+        std::cout << "🚀 STARTING FULL TRADING SYSTEM 🚀" << std::endl;
         std::cout << "=====================================================" << std::endl;        
         E8Instance = std::make_unique<Trading_system>();
         
