@@ -47,7 +47,7 @@ struct ZmqServerConfig {
     int internal_hwm = 10000;                       // High for fast consumers
     int internal_linger = 1000;
     bool internal_immediate = true;
-    bool internal_conflate = false;                 // Keep all messages
+    bool internal_conflate = true;                 // Keep all messages
     
     // Request-Reply configuration
     std::string request_endpoint = "tcp://*:5556";
