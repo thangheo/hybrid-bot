@@ -284,6 +284,10 @@ bool GenericZmqClient::initializeSockets() {
 
     // Create subscriber socket on shared context
     subscriber_socket_ = std::make_unique<zmq::socket_t>(*context_, ZMQ_SUB);
+        // Optionally enable conflate on subscriber to keep only the latest message
+        try {
+            if (config_.subscriber_conflate) subscriber_socket_->set(zmq::sockopt::conflate, 1);
+        } catch (...) {}
         // Use a reasonable receive timeout to avoid busy-waiting and partial-frame reads
         subscriber_socket_->set(zmq::sockopt::rcvtimeo, 1000);  // 1000ms
         subscriber_socket_->connect(config_.server_pub_endpoint);

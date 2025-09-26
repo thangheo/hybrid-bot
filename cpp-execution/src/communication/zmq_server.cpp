@@ -558,7 +558,8 @@ bool GenericZmqServer::initializeSockets() {
         // Enable conflate for intel socket by default to keep only the latest
         // update if downstream can't keep up (saves bandwidth and CPU).
         try {
-            intel_publisher_socket_->set(zmq::sockopt::conflate, config_.intel_conflate ? 1 : 1);
+            // Respect the configuration flag for conflate (keep only latest when enabled)
+            intel_publisher_socket_->set(zmq::sockopt::conflate, config_.intel_conflate ? 1 : 0);
         } catch (...) {}
         
         // Before binding, check manager to avoid duplicate binds
@@ -1036,13 +1037,16 @@ bool GenericZmqServer::processInternalMessage(const GenericMessage& message) {
         if (topic_result.has_value() && data_result.has_value()) {
             return true;
         }
-        // Increment diagnostic counters
-        stats_.send_failures++;
-        if ((topic_result && !data_result) || (!topic_result && data_result) || (!topic_result && !data_result)) {
-            // Heuristic: treat missing has_value as EAGAIN/backpressure
+        // Treat missing has_value() as EAGAIN/backpressure (non-blocking)
+        if (!topic_result.has_value() || !data_result.has_value()) {
             stats_.send_eagain_count++;
+            // Do not increment connection-level failures for EAGAIN
+            if (logging_enabled_) logInfo("EAGAIN on internal send for topic: " + message.topic);
+            return false;
         }
-        logError("Failed to publish internal message: " + message.topic);
+        // Fallback - unexpected failure
+        stats_.send_failures++;
+        logError("Failed to publish internal message (unexpected): " + message.topic);
         return false;
     } catch (const zmq::error_t& e) {
         logError("ZMQ error processing message: " + std::string(e.what()));
