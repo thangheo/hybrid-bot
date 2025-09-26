@@ -264,6 +264,10 @@ public:
 
     // Optional model persistence path (can be set via env BAYES_MODEL_PATH)
     std::string bayesModelPath_;
+    // Save-after-updates counter (decremented on each bayes_update)
+    int bayesSaveAfterUpdates_ = 0;
+    // Configured save interval (ms) for periodic saves
+    std::chrono::milliseconds bayesSaveInterval_{60 * 60 * 1000};
 };
 
 // Type alias

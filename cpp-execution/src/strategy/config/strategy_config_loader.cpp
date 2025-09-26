@@ -271,6 +271,10 @@ ImbalanceDetectionConfig parseImbalanceDetectionConfig(const json& componentJson
         if (params.contains("global_sensitivity")) config.global_sensitivity = params["global_sensitivity"].get<double>();
         //Bayesian model path
         if (params.contains("bayesModelPath")) config.bayesModelPath = params["bayesModelPath"].get<std::string>();
+    // Optional save interval in milliseconds (overrides default 1h if provided)
+    if (params.contains("bayesSaveIntervalMs")) config.bayesSaveIntervalMs = params["bayesSaveIntervalMs"].get<int>();
+    // Optional save-after-N-updates policy (0 disables)
+    if (params.contains("bayesSaveAfterUpdates")) config.bayesSaveAfterUpdates = params["bayesSaveAfterUpdates"].get<int>();
         // Labeling delay in milliseconds for online training buffer
         if (params.contains("labelingDelayMs")) config.labelingDelayMs = params["labelingDelayMs"].get<int>();
         // Parse thresholds map

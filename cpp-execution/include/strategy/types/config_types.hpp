@@ -77,9 +77,15 @@
      std::map<std::string, double> parameters;    // General parameters for the strategy
      std::map<std::string, std::string> string_parameters; // String parameters
     // Bayesian model persistence path (optional)
-    std::string bayesModelPath = "models/bayesian/imbalance_bayes_model_v1.bin";
+    // If empty, persistence is disabled. Set via configuration to enable.
+    std::string bayesModelPath = "";
     // Labeling delay in milliseconds for online training buffer
     int labelingDelayMs = 500;
+    // Persistence tuning: interval (ms) between automatic saves (default 1h)
+    // Set to 0 to disable interval-based saves.
+    int bayesSaveIntervalMs = 60 * 60 * 1000; // 1 hour
+    // Persistence tuning: save after N updates. Set to 0 to disable.
+    int bayesSaveAfterUpdates = 0;
      
      ImbalanceDetectionConfig() = default;
      
