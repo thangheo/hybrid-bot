@@ -85,7 +85,7 @@
     // Set to 0 to disable interval-based saves.
     int bayesSaveIntervalMs = 60 * 60 * 1000; // 1 hour
     // Persistence tuning: save after N updates. Set to 0 to disable.
-    int bayesSaveAfterUpdates = 0;
+    int bayesSaveAfterUpdates = 20;
      
      ImbalanceDetectionConfig() = default;
      

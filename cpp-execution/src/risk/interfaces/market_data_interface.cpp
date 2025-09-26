@@ -574,21 +574,26 @@ void MarketDataInterface::processSyntheticOrderBook_protobuf(const std::string& 
         
         // Fallback to topic parsing if protobuf fields are empty
         if (exchange.empty() || symbol.empty()) {
-            std::string_view topic_view(topic);
-            auto first_dot = topic_view.find('.', 10); // Skip "orderbook."
-            if (first_dot != std::string_view::npos) {
-                auto second_dot = topic_view.find('.', first_dot + 1);
-                if (second_dot != std::string_view::npos) {
-                    if (exchange.empty()) {
-                        exchange = std::string(topic_view.substr(first_dot + 1, second_dot - first_dot - 1));
-                    }
-                    if (symbol.empty()) {
-                        symbol = std::string(topic_view.substr(second_dot + 1));
-                        // Convert '_' to '/' for symbol format
-                        std::replace(symbol.begin(), symbol.end(), '_', '/');
-                    }
-                }
-            }
+            //just fucking return idiot, stop wasting time and energy on stupid shit
+            LOG_ERROR("Missing exchange or symbol (topic={}, exchange='{}', symbol='{}')", 
+                     topic, exchange, symbol);
+            errorStats_.dataErrors++;
+            return;
+            // std::string_view topic_view(topic);
+            // auto first_dot = topic_view.find('.', 10); // Skip "orderbook."
+            // if (first_dot != std::string_view::npos) {
+            //     auto second_dot = topic_view.find('.', first_dot + 1);
+            //     if (second_dot != std::string_view::npos) {
+            //         if (exchange.empty()) {
+            //             exchange = std::string(topic_view.substr(first_dot + 1, second_dot - first_dot - 1));
+            //         }
+            //         if (symbol.empty()) {
+            //             symbol = std::string(topic_view.substr(second_dot + 1));
+            //             // Convert '_' to '/' for symbol format
+            //             std::replace(symbol.begin(), symbol.end(), '_', '/');
+            //         }
+            //     }
+            // }
         }
 
         if (exchange.empty() || symbol.empty()) {
@@ -1284,6 +1289,7 @@ void MarketDataInterface::connectionMonitorLoop() {
                 // Ensure we have a client instance
                 if (!zmqClient_) {
                     communication::ZmqClientConfig zmqConfig;
+                    zmqConfig.subscriber_conflate = true; // Keep only latest messages
                     zmqConfig.server_pub_endpoint = zmqSubscriberEndpoint_;
                     zmqConfig.server_req_endpoint = zmqPublisherEndpoint_;
                     zmqConfig.auto_reconnect = true;

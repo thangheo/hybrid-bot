@@ -121,6 +121,7 @@ struct ZmqClientConfig {
     std::chrono::milliseconds request_timeout{30000};  // 30 seconds
     int io_threads = 1;
     bool auto_reconnect = true;
+    bool subscriber_conflate = false; // If true, subscriber socket keeps only latest message
     std::chrono::milliseconds reconnect_interval{5000};  // 5 seconds
     
     bool validate() const {
