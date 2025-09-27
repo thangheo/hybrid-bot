@@ -338,47 +338,64 @@ void GenericZmqClient::subscriberWorker() {
             
             std::string topic;
             std::string data;
-            
-            // Receive multipart messages (topic + data)
-            zmq::message_t topic_frame;
-            zmq::message_t data_frame;
-            
-            // Receive topic frame
-            auto topic_result = subscriber_socket_->recv(topic_frame, zmq::recv_flags::none);
-            if (!topic_result.has_value()) {
-                continue; // Timeout or no message
+
+            // Use C API zmq_msg_t to receive frames to avoid cppzmq message_t size assertion
+            zmq_msg_t topic_msg;
+            zmq_msg_init(&topic_msg);
+            int topic_rc = zmq_msg_recv(&topic_msg, subscriber_socket_->handle(), 0);
+            if (topic_rc == -1) {
+                zmq_msg_close(&topic_msg);
+                // timeout or error
+                if (zmq_errno() == EAGAIN) continue;
+                logError(std::string("zmq_msg_recv(topic) failed: ") + zmq_strerror(zmq_errno()));
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                continue;
             }
-            
+
             // Check for more frames
             bool has_more = false;
             try {
                 has_more = subscriber_socket_->get(zmq::sockopt::rcvmore);
             } catch (const zmq::error_t& e) {
                 logError("Error checking for more frames: " + std::string(e.what()));
+                zmq_msg_close(&topic_msg);
                 continue;
             }
-            
+
             if (has_more) {
-                // Proper multipart message
-                auto data_result = subscriber_socket_->recv(data_frame, zmq::recv_flags::none);
-                if (!data_result.has_value()) {
-                    logError("Failed to receive data frame after topic frame");
+                zmq_msg_t data_msg;
+                zmq_msg_init(&data_msg);
+                int data_rc = zmq_msg_recv(&data_msg, subscriber_socket_->handle(), 0);
+                if (data_rc == -1) {
+                    logError(std::string("zmq_msg_recv(data) failed: ") + zmq_strerror(zmq_errno()));
+                    zmq_msg_close(&topic_msg);
+                    zmq_msg_close(&data_msg);
                     continue;
                 }
-                
-                topic.assign(static_cast<char*>(topic_frame.data()), topic_frame.size());
-                data.assign(static_cast<char*>(data_frame.data()), data_frame.size());
-                
+
+                // extract topic and data
+                auto topic_ptr = static_cast<char*>(zmq_msg_data(&topic_msg));
+                size_t topic_len = zmq_msg_size(&topic_msg);
+                auto data_ptr = static_cast<char*>(zmq_msg_data(&data_msg));
+                size_t data_len = zmq_msg_size(&data_msg);
+
+                topic.assign(topic_ptr, topic_len);
+                data.assign(data_ptr, data_len);
+
+                zmq_msg_close(&topic_msg);
+                zmq_msg_close(&data_msg);
             } else {
-                // Single frame message - try to parse as "topic data" format
-                std::string combined(static_cast<char*>(topic_frame.data()), topic_frame.size());
+                // Single frame message - extract and split
+                auto topic_ptr = static_cast<char*>(zmq_msg_data(&topic_msg));
+                size_t topic_len = zmq_msg_size(&topic_msg);
+                std::string combined(topic_ptr, topic_len);
+                zmq_msg_close(&topic_msg);
+
                 auto space_pos = combined.find(' ');
-                
                 if (space_pos != std::string::npos && space_pos > 0) {
                     topic = combined.substr(0, space_pos);
                     data = combined.substr(space_pos + 1);
                 } else {
-                    // No space found - treat entire message as data with empty topic
                     topic.clear();
                     data = std::move(combined);
                 }

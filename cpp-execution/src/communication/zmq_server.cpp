@@ -331,17 +331,37 @@ bool GenericZmqServer::processIntelMessage(const GenericMessage& message) {
             }
         }
 
-        // CRITICAL FIX: Create messages as COPIES to avoid corruption
+        // CRITICAL FIX: Defensive allocation/copy to avoid OOM or heap corruption
+        constexpr size_t kMaxMessageBytes = 512 * 1024; // 512KB safety cap
+        if (message.data.size() > kMaxMessageBytes) {
+            stats_.messages_dropped++;
+            logError("Dropping intel message due to oversized payload: " + clean_topic + " size=" + std::to_string(message.data.size()));
+            return false;
+        }
+
         zmq::message_t topic_msg;
         zmq::message_t data_msg;
-        
-        // Build topic message
-        topic_msg.rebuild(clean_topic.size());
-        std::memcpy(topic_msg.data(), clean_topic.data(), clean_topic.size());
-        
-        // Build data message  
-        data_msg.rebuild(message.data.size());
-        std::memcpy(data_msg.data(), message.data.data(), message.data.size());
+        try {
+            // Build topic message
+            topic_msg.rebuild(clean_topic.size());
+            std::memcpy(topic_msg.data(), clean_topic.data(), clean_topic.size());
+
+            // Build data message
+            data_msg.rebuild(message.data.size());
+            std::memcpy(data_msg.data(), message.data.data(), message.data.size());
+        } catch (const std::bad_alloc& e) {
+            stats_.send_failures++;
+            logError(std::string("OOM while allocating zmq frames for intel message: ") + e.what());
+            return false;
+        } catch (const zmq::error_t& e) {
+            stats_.send_failures++;
+            logError(std::string("ZMQ error while preparing frames for intel message: ") + e.what());
+            return false;
+        } catch (const std::exception& e) {
+            stats_.send_failures++;
+            logError(std::string("Exception while preparing frames for intel message: ") + e.what());
+            return false;
+        }
 
         // CRITICAL FIX: Use mutex to ensure atomic multipart send
         std::lock_guard<std::mutex> send_guard(intel_send_mutex_);
@@ -440,15 +460,35 @@ bool GenericZmqServer::processInternalMessage(const GenericMessage& message) {
             return false;
         }
 
-        // Create message frames as copies
+        // Defensive allocation/copy
+        constexpr size_t kMaxInternalMessageBytes = 512 * 1024; // 512KB cap
+        if (message.data.size() > kMaxInternalMessageBytes) {
+            stats_.messages_dropped++;
+            logError("Dropping internal message due to oversized payload: " + clean_topic + " size=" + std::to_string(message.data.size()));
+            return false;
+        }
+
         zmq::message_t topic_msg;
         zmq::message_t data_msg;
-        
-        topic_msg.rebuild(clean_topic.size());
-        std::memcpy(topic_msg.data(), clean_topic.data(), clean_topic.size());
-        
-        data_msg.rebuild(message.data.size());
-        std::memcpy(data_msg.data(), message.data.data(), message.data.size());
+        try {
+            topic_msg.rebuild(clean_topic.size());
+            std::memcpy(topic_msg.data(), clean_topic.data(), clean_topic.size());
+
+            data_msg.rebuild(message.data.size());
+            std::memcpy(data_msg.data(), message.data.data(), message.data.size());
+        } catch (const std::bad_alloc& e) {
+            stats_.send_failures++;
+            logError(std::string("OOM while allocating zmq frames for internal message: ") + e.what());
+            return false;
+        } catch (const zmq::error_t& e) {
+            stats_.send_failures++;
+            logError(std::string("ZMQ error while preparing frames for internal message: ") + e.what());
+            return false;
+        } catch (const std::exception& e) {
+            stats_.send_failures++;
+            logError(std::string("Exception while preparing frames for internal message: ") + e.what());
+            return false;
+        }
 
         auto send_start = std::chrono::steady_clock::now();
         
