@@ -99,6 +99,7 @@ public:
     void shutdown();
     // Initialize shared memory publisher instead of ZMQ
     bool initializeSharedMemory() ;
+    bool stopSharedMemory() ;
     void publishOrderBookForRisk(const OrderBookUpdate& update) ;
     void printSharedMemoryStats() ;
 

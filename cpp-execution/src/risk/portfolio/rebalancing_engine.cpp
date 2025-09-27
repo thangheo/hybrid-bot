@@ -94,7 +94,16 @@ void RebalancingEngine::stopRebalancing() {
          return false;
      }
  }
- 
+ bool RebalancingEngine::shutdown() {
+     try {
+         stopRebalancing();
+         return true;
+     } catch (const std::exception& e) {
+         std::cerr << "Error during RebalancingEngine shutdown: " << e.what() << std::endl;
+         return false;
+     }
+ }
+
  bool RebalancingEngine::isRebalancingNeeded() const {
      try {
          std::lock_guard<std::mutex> lock(m_allocationMutex);

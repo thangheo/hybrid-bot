@@ -100,6 +100,32 @@ bool PortfolioManager::initialize() {
         return false;
     }
 }
+bool PortfolioManager::shutdown() {
+    try {
+        // Shutdown rebalancing engine
+        if (m_rebalancingEngine) {
+            m_rebalancingEngine->shutdown();
+            std::cout << "RebalancingEngine shut down successfully" << std::endl;
+        }
+        
+        // Shutdown collateral manager
+        if (m_collateralManager) {
+            m_collateralManager->shutdown();
+            std::cout << "CollateralManager shut down successfully" << std::endl;
+        }
+        
+        // Shutdown position tracker
+        if (m_positionTracker) {
+            m_positionTracker->shutdown();
+            std::cout << "PositionTracker shut down successfully" << std::endl;
+        }
+        
+        return true;
+    } catch (const std::exception& e) {
+        std::cerr << "Error during PortfolioManager shutdown: " << e.what() << std::endl;
+        return false;
+    }
+}
 
 bool PortfolioManager::isHealthy() const{   
     // Check if all sub-components are initialized and healthy

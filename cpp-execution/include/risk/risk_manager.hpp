@@ -87,7 +87,10 @@ public:
      * @return true if initialization was successful, false otherwise
      */
     bool initialize();
-    
+    /**
+     * Shutdown the risk manager and its subsystems
+     */
+    bool shutdown();
     /**
      * Validate a trading signal before it becomes an order
      * @param signal The trading signal to validate

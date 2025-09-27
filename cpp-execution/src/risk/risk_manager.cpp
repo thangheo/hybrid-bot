@@ -249,6 +249,50 @@ bool RiskManager::initialize() {
         return false;
     }
 }
+bool RiskManager::shutdown() {
+    try {
+        // Shutdown risk service first to stop incoming validations
+        if (m_riskService) {
+            m_riskService->stop();
+            LOG_INFO("RiskManager", "RiskService stopped successfully");
+        }
+        
+        // Shutdown post-trade monitor
+        if (m_postTradeMonitor) {
+            m_postTradeMonitor->shutdown();
+            LOG_INFO("RiskManager", "PostTradeMonitor shut down successfully");
+        }
+        
+        // Shutdown portfolio manager
+        if (m_portfolioManager) {
+            m_portfolioManager->shutdown();
+            LOG_INFO("RiskManager", "PortfolioManager shut down successfully");
+        }
+        
+        // Shutdown collateral manager
+        if (m_collateralManager) {
+            m_collateralManager->shutdown();
+            LOG_INFO("RiskManager", "CollateralManager shut down successfully");
+        }
+        
+        // Shutdown pre-trade filter
+        if (m_preTradeFilter) {
+            m_preTradeFilter->shutdown();
+            LOG_INFO("RiskManager", "PreTradeRiskFilter shut down successfully");
+        }
+        
+        // Shutdown data interface last to ensure all components finish using it
+        if (m_dataInterface) {
+            m_dataInterface->shutdown();
+            LOG_INFO("RiskManager", "DataInterface shut down successfully");
+        }
+        
+        return true;
+    } catch (const std::exception& e) {
+        std::cerr << "Exception during RiskManager shutdown: " << e.what() << std::endl;
+        return false;
+    }
+}
 
 ValidationResult RiskManager::validateSignal(const TradingSignal& signal) {
     // First check if the system is in a valid state for trading

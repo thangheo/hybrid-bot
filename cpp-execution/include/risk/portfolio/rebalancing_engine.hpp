@@ -78,7 +78,7 @@ public:
      * @return true if initialization was successful, false otherwise
      */
     bool initialize();
-    
+    bool shutdown();
     /**
      * Check if rebalancing is needed
      * @return true if rebalancing is needed, false otherwise

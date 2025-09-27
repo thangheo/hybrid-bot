@@ -24,7 +24,7 @@ struct MessageHeader {
 };
 
 struct SharedRingBuffer {
-    static constexpr size_t BUFFER_SIZE = 64 * 1024 * 1024; // 64MB ring buffer
+    static constexpr size_t BUFFER_SIZE = 128 * 1024 * 1024; // 128MB ring buffer
     static constexpr size_t MAX_MESSAGE_SIZE = 1024 * 1024;  // 1MB max message
     static constexpr size_t HEADER_SIZE = sizeof(MessageHeader);
     
@@ -135,6 +135,13 @@ public:
             shm_unlink(shm_name_.c_str());
         }
     }
+    bool shutdown() {
+        if (is_creator_ && buffer_) {
+            buffer_->producer_active.store(false, std::memory_order_release);
+            return true;
+        }
+        return false;
+    }
     
     bool publish(const std::string& topic, const std::string& message) {
         if (!buffer_ || message.size() > SharedRingBuffer::MAX_MESSAGE_SIZE) {
@@ -143,15 +150,43 @@ public:
         
         size_t total_size = SharedRingBuffer::HEADER_SIZE + message.size();
         
-        // Check if we have space (with retry for a short time)
+        // Check if we have space (with retry and a mild backoff). If consumer lags too far
+        // we may forcibly advance read_pos to free space (dropping oldest messages).
         auto start_time = std::chrono::steady_clock::now();
+        const auto publish_timeout = std::chrono::milliseconds(5);
+        const size_t SAFETY_MARGIN = 1024; // 1KB safety margin
         while (!buffer_->canWrite(total_size)) {
             auto elapsed = std::chrono::steady_clock::now() - start_time;
-            if (elapsed > std::chrono::milliseconds(1)) { // 1ms timeout
-                buffer_->messages_dropped.fetch_add(1, std::memory_order_relaxed);
-                return false;
+            if (elapsed > publish_timeout) {
+                // Try to free up space by advancing read_pos (drop oldest messages) as a last resort.
+                try {
+                    size_t used = buffer_->getUsedSpace();
+                    // Compute how many bytes we need to free to fit the new message (include header)
+                    size_t needed_total = total_size + SAFETY_MARGIN;
+                    if (used + needed_total > SharedRingBuffer::BUFFER_SIZE) {
+                        size_t bytes_to_free = (used + needed_total) - SharedRingBuffer::BUFFER_SIZE;
+                        uint64_t current_read = buffer_->read_pos.load(std::memory_order_acquire);
+                        uint64_t new_read = current_read + bytes_to_free;
+                        buffer_->read_pos.store(new_read, std::memory_order_release);
+                        buffer_->messages_dropped.fetch_add(1, std::memory_order_relaxed);
+                        std::cerr << "SharedMemoryPublisher::publish: forced advance read_pos by " << bytes_to_free << " bytes to free space" << std::endl;
+                        // After forcing read_pos, check again quickly
+                        if (!buffer_->canWrite(total_size)) {
+                            // Still can't write — fail
+                            buffer_->messages_dropped.fetch_add(1, std::memory_order_relaxed);
+                            return false;
+                        }
+                        break;
+                    } else {
+                        // Somehow there should be space soon — give one more short wait
+                        std::this_thread::sleep_for(std::chrono::microseconds(100));
+                    }
+                } catch (...) {
+                    buffer_->messages_dropped.fetch_add(1, std::memory_order_relaxed);
+                    return false;
+                }
             }
-            std::this_thread::sleep_for(std::chrono::microseconds(10));
+            std::this_thread::sleep_for(std::chrono::microseconds(50));
         }
         
         // Get write position
@@ -261,7 +296,18 @@ public:
             close(fd_);
         }
     }
-    
+    bool shutdown() {
+        if (buffer_) {
+            munmap(buffer_, sizeof(SharedRingBuffer));
+            buffer_ = nullptr;
+        }
+        if (fd_ != -1) {
+            close(fd_);
+            fd_ = -1;
+        }
+        return true;
+    }
+
     bool readMessage(Message& msg) {
         if (!buffer_) {
             std::cerr << "SharedMemorySubscriber::readMessage: buffer_ == nullptr" << std::endl;
