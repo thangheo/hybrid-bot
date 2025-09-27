@@ -292,7 +292,248 @@ bool GenericZmqServer::publishAsync(const std::string& topic, std::string data,
     }
 }
 
+bool GenericZmqServer::processIntelMessage(const GenericMessage& message) {
+    if (!intel_publisher_socket_) {
+        logError("Intel publisher socket not available");
+        return false;
+    }
 
+    try {
+        // Validate inputs first
+        if (message.topic.empty() || message.data.empty()) {
+            logError("Empty topic or data in processIntelMessage");
+            return false;
+        }
+
+        // Sanitize topic but keep original validation
+        std::string clean_topic = sanitizeTopic(message.topic);
+        if (clean_topic.empty()) {
+            logError("Topic sanitization resulted in empty topic: " + message.topic);
+            return false;
+        }
+
+        // For protobuf data, validate it's actually binary (not accidentally text)
+        if (clean_topic.find("orderbook.") == 0) {
+            // Quick check: protobuf should contain non-printable bytes
+            bool looks_like_protobuf = false;
+            for (size_t i = 0; i < std::min<size_t>(20, message.data.size()); ++i) {
+                unsigned char c = static_cast<unsigned char>(message.data[i]);
+                if (c < 0x20 || c > 0x7E) {
+                    looks_like_protobuf = true;
+                    break;
+                }
+            }
+            
+            if (!looks_like_protobuf && message.data.size() > 50) {
+                logError("Data for orderbook topic looks like text, not protobuf: " + clean_topic + 
+                        " (preview: " + message.data.substr(0, 50) + ")");
+                return false;
+            }
+        }
+
+        // CRITICAL FIX: Create messages as COPIES to avoid corruption
+        zmq::message_t topic_msg;
+        zmq::message_t data_msg;
+        
+        // Build topic message
+        topic_msg.rebuild(clean_topic.size());
+        std::memcpy(topic_msg.data(), clean_topic.data(), clean_topic.size());
+        
+        // Build data message  
+        data_msg.rebuild(message.data.size());
+        std::memcpy(data_msg.data(), message.data.data(), message.data.size());
+
+        // CRITICAL FIX: Use mutex to ensure atomic multipart send
+        std::lock_guard<std::mutex> send_guard(intel_send_mutex_);
+
+        auto send_start = std::chrono::steady_clock::now();
+        
+        try {
+            // Send topic frame with SNDMORE flag
+            auto topic_result = intel_publisher_socket_->send(topic_msg, 
+                zmq::send_flags::sndmore | zmq::send_flags::dontwait);
+            
+            if (!topic_result.has_value()) {
+                stats_.send_eagain_count++;
+                logError("EAGAIN on intel topic send for: " + clean_topic);
+                return false;
+            }
+            
+            // Send data frame (final frame, no SNDMORE)
+            auto data_result = intel_publisher_socket_->send(data_msg, 
+                zmq::send_flags::dontwait);
+            
+            if (!data_result.has_value()) {
+                stats_.send_eagain_count++;
+                logError("EAGAIN on intel data send for: " + clean_topic);
+                
+                // CRITICAL: If data send fails after topic succeeds, we have a partial message
+                // Try to flush or reset the socket state
+                try {
+                    zmq::message_t dummy;
+                    intel_publisher_socket_->send(dummy, zmq::send_flags::dontwait);
+                } catch (...) {
+                    // Ignore errors in recovery attempt
+                }
+                
+                return false;
+            }
+            
+        } catch (const zmq::error_t& e) {
+            if (e.num() == EAGAIN) {
+                stats_.send_eagain_count++;
+                logError("ZMQ EAGAIN during intel multipart send for: " + clean_topic);
+            } else {
+                stats_.send_failures++;
+                stats_.connection_errors++;
+                logError(std::string("ZMQ error processing intel message: ") + e.what() + 
+                        " (errno: " + std::to_string(e.num()) + ") for topic: " + clean_topic);
+            }
+            return false;
+        }
+
+        auto send_end = std::chrono::steady_clock::now();
+        auto duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(send_end - send_start).count();
+        
+        // Log performance issues
+        const int kWarnMs = 5;
+        if (duration_ms > kWarnMs) {
+            stats_.send_blocking_events++;
+            logInfo(std::string("Slow intel send (ms): ") + std::to_string(duration_ms) + 
+                   " topic=" + clean_topic + " data_size=" + std::to_string(message.data.size()));
+        }
+
+        // Success logging (reduce frequency)
+        static thread_local int success_count = 0;
+        if (++success_count % 1000 == 0) {
+            logInfo("Intel messages sent successfully: " + std::to_string(success_count) + 
+                   " (latest: " + clean_topic + ")");
+        }
+
+        return true;
+        
+    } catch (const std::exception& e) {
+        stats_.send_failures++;
+        logError("Exception in processIntelMessage: " + std::string(e.what()) + 
+                " for topic: " + message.topic);
+        return false;
+    }
+}
+
+// FIXED: processInternalMessage with same improvements
+bool GenericZmqServer::processInternalMessage(const GenericMessage& message) {
+    if (!internal_publisher_socket_) {
+        logError("Internal publisher socket not available");
+        return false;
+    }
+
+    try {
+        // Validate inputs
+        if (message.topic.empty() || message.data.empty()) {
+            logError("Empty topic or data in processInternalMessage");
+            return false;
+        }
+
+        std::string clean_topic = sanitizeTopic(message.topic);
+        if (clean_topic.empty()) {
+            logError("Topic sanitization failed: " + message.topic);
+            return false;
+        }
+
+        // Create message frames as copies
+        zmq::message_t topic_msg;
+        zmq::message_t data_msg;
+        
+        topic_msg.rebuild(clean_topic.size());
+        std::memcpy(topic_msg.data(), clean_topic.data(), clean_topic.size());
+        
+        data_msg.rebuild(message.data.size());
+        std::memcpy(data_msg.data(), message.data.data(), message.data.size());
+
+        auto send_start = std::chrono::steady_clock::now();
+        
+        // Retry logic for internal messages (more tolerance for backpressure)
+        const int kMaxRetries = 3;
+        bool success = false;
+        
+        for (int attempt = 0; attempt < kMaxRetries && !success; ++attempt) {
+            try {
+                // Note: No mutex needed for internal socket if it's only used by one thread
+                auto topic_result = internal_publisher_socket_->send(topic_msg, 
+                    zmq::send_flags::sndmore | zmq::send_flags::dontwait);
+                
+                if (!topic_result.has_value()) {
+                    stats_.send_eagain_count++;
+                    if (attempt + 1 < kMaxRetries) {
+                        std::this_thread::sleep_for(std::chrono::microseconds(100));
+                        continue;
+                    }
+                    logError("EAGAIN on internal topic send after retries: " + clean_topic);
+                    return false;
+                }
+                
+                auto data_result = internal_publisher_socket_->send(data_msg, 
+                    zmq::send_flags::dontwait);
+                
+                if (!data_result.has_value()) {
+                    stats_.send_eagain_count++;
+                    if (attempt + 1 < kMaxRetries) {
+                        // Try to send empty frame to complete the multipart message
+                        try {
+                            zmq::message_t dummy;
+                            internal_publisher_socket_->send(dummy, zmq::send_flags::dontwait);
+                        } catch (...) {}
+                        std::this_thread::sleep_for(std::chrono::microseconds(100));
+                        continue;
+                    }
+                    logError("EAGAIN on internal data send after retries: " + clean_topic);
+                    return false;
+                }
+                
+                success = true;
+                
+            } catch (const zmq::error_t& e) {
+                if (e.num() == EAGAIN) {
+                    stats_.send_eagain_count++;
+                    if (attempt + 1 < kMaxRetries) {
+                        stats_.send_blocking_events++;
+                        std::this_thread::sleep_for(std::chrono::microseconds(200));
+                        continue;
+                    }
+                } else {
+                    stats_.send_failures++;
+                    logError(std::string("ZMQ error in internal send: ") + e.what() + 
+                            " for topic: " + clean_topic);
+                    return false;
+                }
+            }
+        }
+
+        if (!success) {
+            logError("Failed to send internal message after all retries: " + clean_topic);
+            return false;
+        }
+
+        auto send_end = std::chrono::steady_clock::now();
+        auto duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(send_end - send_start).count();
+
+        if (duration_ms > 50) {
+            stats_.send_blocking_events++;
+            logError(std::string("Very slow internal send (ms): ") + std::to_string(duration_ms) + 
+                    " topic=" + clean_topic);
+        }
+
+        return true;
+        
+    } catch (const std::exception& e) {
+        stats_.send_failures++;
+        logError("Exception in processInternalMessage: " + std::string(e.what()) + 
+                " for topic: " + message.topic);
+        return false;
+    }
+}
+
+// FIXED: publishSync method with better error handling
 bool GenericZmqServer::publishSync(const std::string& topic, const std::string& data,
                                   MessagePriority priority, const std::string& correlation_id) {
     if (state_.load() != ServerState::RUNNING || !intel_publisher_socket_ || !internal_publisher_socket_) {
@@ -302,21 +543,26 @@ bool GenericZmqServer::publishSync(const std::string& topic, const std::string& 
 
     // Pre-validate
     if (!isValidTopic(topic) || !isTopicAllowed(topic)) {
-        return topic.empty() ? false : true; // Silent succeed for filtered
+        logError("Invalid or filtered topic: " + topic);
+        return false;
+    }
+
+    if (data.empty()) {
+        logError("Empty data for topic: " + topic);
+        return false;
     }
 
     try {
-        // Reuse static buffers (thread-local for thread safety)
+        // Create metadata
         static thread_local std::string serialized_buffer;
         static thread_local std::unordered_map<std::string, std::string> metadata_buffer;
         
-        // Clear and reuse
         metadata_buffer.clear();
         metadata_buffer["correlation_id"] = correlation_id.empty() ? 
             GenericMessage::generateCorrelationId() : correlation_id;
         metadata_buffer["priority"] = std::to_string(static_cast<int>(priority));
         
-        // Cache timestamp (update less frequently)
+        // Cache timestamp
         static thread_local auto last_ts_update = std::chrono::steady_clock::now();
         static thread_local std::string cached_timestamp;
         auto now = std::chrono::steady_clock::now();
@@ -327,46 +573,53 @@ bool GenericZmqServer::publishSync(const std::string& topic, const std::string& 
         }
         metadata_buffer["timestamp"] = cached_timestamp;
 
-        // Serialize to reused buffer
-        serialized_buffer.clear();
-        serialized_buffer = serializeWithMetadata(data, metadata_buffer);
+        // For sync publishing, we'll use raw data without additional serialization
+        // to avoid the serializeWithMetadata overhead
+        std::string clean_topic = sanitizeTopic(topic);
+        
+        // Create message frames
+        zmq::message_t topic_msg(clean_topic.size());
+        std::memcpy(topic_msg.data(), clean_topic.data(), clean_topic.size());
+        
+        zmq::message_t data_msg(data.size());
+        std::memcpy(data_msg.data(), data.data(), data.size());
 
-        // Create messages with move semantics
-        zmq::message_t topic_msg(topic.data(), topic.size());
-        zmq::message_t data_msg(serialized_buffer.data(), serialized_buffer.size());
-
-        // Send with non-blocking for better performance
-        if (topic.empty() || data.empty()) {
-            logError("Empty topic or data in sync publish");
-            return false;
+        bool send_success = false;
+        
+        if (topic == "MARKET_INTEL" && intel_publisher_socket_) {
+            std::lock_guard<std::mutex> lock(intel_send_mutex_);
+            
+            auto topic_result = intel_publisher_socket_->send(topic_msg, 
+                zmq::send_flags::sndmore | zmq::send_flags::dontwait);
+            auto data_result = intel_publisher_socket_->send(data_msg, 
+                zmq::send_flags::dontwait);
+            
+            send_success = topic_result.has_value() && data_result.has_value();
+            
+        } else if (internal_publisher_socket_) {
+            auto topic_result = internal_publisher_socket_->send(topic_msg, 
+                zmq::send_flags::sndmore | zmq::send_flags::dontwait);
+            auto data_result = internal_publisher_socket_->send(data_msg, 
+                zmq::send_flags::dontwait);
+            
+            send_success = topic_result.has_value() && data_result.has_value();
         }
-        if (topic == "MARKET_INTEL") {
-            // High-frequency market intelligence goes to dedicated socket
-            auto topic_result = intel_publisher_socket_->send(topic_msg, zmq::send_flags::sndmore | zmq::send_flags::dontwait);
-            auto data_result = intel_publisher_socket_->send(data_msg, zmq::send_flags::dontwait);
-            if (topic_result.has_value() && data_result.has_value()) {
-                // Batch stats updates
-                stats_.messages_published++;
-                stats_.bytes_sent += topic.size() + serialized_buffer.size();
-                return true;
-            }
-            return false;
-        }
-        auto topic_result = internal_publisher_socket_->send(topic_msg, zmq::send_flags::sndmore | zmq::send_flags::dontwait);
-        auto data_result = internal_publisher_socket_->send(data_msg, zmq::send_flags::dontwait);
 
-        if (topic_result.has_value() && data_result.has_value()) {
-            // Batch stats updates
+        if (send_success) {
             stats_.messages_published++;
-            stats_.bytes_sent += topic.size() + serialized_buffer.size();
+            stats_.bytes_sent += clean_topic.size() + data.size();
             return true;
         }
+        
         return false;
 
     } catch (const zmq::error_t& e) {
-        if (e.num() != EAGAIN) { // Don't log EAGAIN (queue full)
-            logError("ZMQ error: " + std::string(e.what()));
+        if (e.num() != EAGAIN) {
+            logError("ZMQ error in publishSync: " + std::string(e.what()) + " for topic: " + topic);
         }
+        return false;
+    } catch (const std::exception& e) {
+        logError("Exception in publishSync: " + std::string(e.what()) + " for topic: " + topic);
         return false;
     }
 }
@@ -963,176 +1216,176 @@ void GenericZmqServer::heartbeatWorker() {
     logInfo("Heartbeat worker thread stopped");
 }
 
-bool GenericZmqServer::processIntelMessage(const GenericMessage& message) {
-    if (!intel_publisher_socket_) {
-        logError("Intel publisher socket not available");
-        return false;
-    }
+// bool GenericZmqServer::processIntelMessage(const GenericMessage& message) {
+//     if (!intel_publisher_socket_) {
+//         logError("Intel publisher socket not available");
+//         return false;
+//     }
 
-    try {
-        // DO NOT lock the intel_queue_mutex_ here — the worker already popped and unlocked.
-        // Use a dedicated send mutex to serialize multipart sends so topic+data don't interleave.
-        if (message.data.empty()) {
-            logError("Empty data in processIntelMessage");
-            return false;
-        }
+//     try {
+//         // DO NOT lock the intel_queue_mutex_ here — the worker already popped and unlocked.
+//         // Use a dedicated send mutex to serialize multipart sends so topic+data don't interleave.
+//         if (message.data.empty()) {
+//             logError("Empty data in processIntelMessage");
+//             return false;
+//         }
 
-        std::string topic = sanitizeTopic(message.topic);
-        if (topic.empty() || message.data.empty()) {
-            logError("Empty topic or data in processIntelMessage");
-            return false;
-        }
+//         std::string topic = sanitizeTopic(message.topic);
+//         if (topic.empty() || message.data.empty()) {
+//             logError("Empty topic or data in processIntelMessage");
+//             return false;
+//         }
 
-        zmq::message_t topic_msg(topic.data(), topic.size());
-        zmq::message_t data_msg(message.data.data(), message.data.size());
+//         zmq::message_t topic_msg(topic.data(), topic.size());
+//         zmq::message_t data_msg(message.data.data(), message.data.size());
 
-        std::lock_guard<std::mutex> send_guard(intel_send_mutex_);
+//         std::lock_guard<std::mutex> send_guard(intel_send_mutex_);
 
-        // Non-blocking send with instrumentation (same approach as internal sends)
-        auto send_start = std::chrono::steady_clock::now();
-        try {
-            auto topic_result = intel_publisher_socket_->send(topic_msg, zmq::send_flags::sndmore | zmq::send_flags::dontwait);
-            if (!topic_result.has_value()) {
-                stats_.send_eagain_count++;
-                if (logging_enabled_) logError("EAGAIN on intel topic send for: " + topic);
-                return false;
-            }
-            auto data_result = intel_publisher_socket_->send(data_msg, zmq::send_flags::dontwait);
-            if (!data_result.has_value()) {
-                stats_.send_eagain_count++;
-                if (logging_enabled_) logError("EAGAIN on intel data send for: " + topic);
-                return false;
-            }
-        } catch (const zmq::error_t& e) {
-            if (e.num() == EAGAIN) {
-                stats_.send_eagain_count++;
-            } else {
-                stats_.send_failures++;
-                stats_.connection_errors++;
-                logError(std::string("ZMQ error processing intel message: ") + e.what());
-            }
-            return false;
-        }
+//         // Non-blocking send with instrumentation (same approach as internal sends)
+//         auto send_start = std::chrono::steady_clock::now();
+//         try {
+//             auto topic_result = intel_publisher_socket_->send(topic_msg, zmq::send_flags::sndmore | zmq::send_flags::dontwait);
+//             if (!topic_result.has_value()) {
+//                 stats_.send_eagain_count++;
+//                 if (logging_enabled_) logError("EAGAIN on intel topic send for: " + topic);
+//                 return false;
+//             }
+//             auto data_result = intel_publisher_socket_->send(data_msg, zmq::send_flags::dontwait);
+//             if (!data_result.has_value()) {
+//                 stats_.send_eagain_count++;
+//                 if (logging_enabled_) logError("EAGAIN on intel data send for: " + topic);
+//                 return false;
+//             }
+//         } catch (const zmq::error_t& e) {
+//             if (e.num() == EAGAIN) {
+//                 stats_.send_eagain_count++;
+//             } else {
+//                 stats_.send_failures++;
+//                 stats_.connection_errors++;
+//                 logError(std::string("ZMQ error processing intel message: ") + e.what());
+//             }
+//             return false;
+//         }
 
-        auto send_end = std::chrono::steady_clock::now();
-        auto duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(send_end - send_start).count();
-        const int kWarnMs = 5; // smaller threshold (ms) to catch slow sends
-        if (duration_ms > kWarnMs) {
-            stats_.send_blocking_events++;
-            if (logging_enabled_) logInfo(std::string("Slow intel send (ms): ") + std::to_string(duration_ms) + " topic=" + topic);
-        } else if (logging_enabled_) {
-            logInfo("Sent MARKET_INTEL message: " + topic + " (send_ms=" + std::to_string(duration_ms) + ")");
-        }
+//         auto send_end = std::chrono::steady_clock::now();
+//         auto duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(send_end - send_start).count();
+//         const int kWarnMs = 5; // smaller threshold (ms) to catch slow sends
+//         if (duration_ms > kWarnMs) {
+//             stats_.send_blocking_events++;
+//             if (logging_enabled_) logInfo(std::string("Slow intel send (ms): ") + std::to_string(duration_ms) + " topic=" + topic);
+//         } else if (logging_enabled_) {
+//             logInfo("Sent MARKET_INTEL message: " + topic + " (send_ms=" + std::to_string(duration_ms) + ")");
+//         }
 
-        return true;
-    } catch (const zmq::error_t& e) {
-        logError("ZMQ error processing message: " + std::string(e.what()));
-        stats_.connection_errors++;
-        return false;
-    } catch (const std::exception& e) {
-        logError("Error processing message: " + std::string(e.what()));
-        return false;
-    }
-}
+//         return true;
+//     } catch (const zmq::error_t& e) {
+//         logError("ZMQ error processing message: " + std::string(e.what()));
+//         stats_.connection_errors++;
+//         return false;
+//     } catch (const std::exception& e) {
+//         logError("Error processing message: " + std::string(e.what()));
+//         return false;
+//     }
+// }
 
-bool GenericZmqServer::processInternalMessage(const GenericMessage& message) {
-    if (!internal_publisher_socket_) {
-        logError("Internal publisher socket not available");
-        return false;
-    }
+// bool GenericZmqServer::processInternalMessage(const GenericMessage& message) {
+//     if (!internal_publisher_socket_) {
+//         logError("Internal publisher socket not available");
+//         return false;
+//     }
 
-    try {
-        // Create topic message
-        //sanitize topic
-        std::string topic = sanitizeTopic(message.topic);   
-        zmq::message_t topic_msg(topic.size());
-        memcpy(topic_msg.data(), topic.c_str(), topic.size());
+//     try {
+//         // Create topic message
+//         //sanitize topic
+//         std::string topic = sanitizeTopic(message.topic);   
+//         zmq::message_t topic_msg(topic.size());
+//         memcpy(topic_msg.data(), topic.c_str(), topic.size());
 
-        // Create metadata
-        std::unordered_map<std::string, std::string> metadata;
-        metadata["correlation_id"] = message.correlation_id;
-        metadata["priority"] = std::to_string(static_cast<int>(message.priority));
-        metadata["timestamp"] = std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
-        message.timestamp.time_since_epoch()).count());
+//         // Create metadata
+//         std::unordered_map<std::string, std::string> metadata;
+//         metadata["correlation_id"] = message.correlation_id;
+//         metadata["priority"] = std::to_string(static_cast<int>(message.priority));
+//         metadata["timestamp"] = std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
+//         message.timestamp.time_since_epoch()).count());
 
-        zmq::message_t data_msg(message.data.size());
-        memcpy(data_msg.data(), message.data.c_str(), message.data.size());
+//         zmq::message_t data_msg(message.data.size());
+//         memcpy(data_msg.data(), message.data.c_str(), message.data.size());
 
-        // Send messages
-        if (message.topic.empty() || message.data.empty()) {
-            logError("Empty topic or data in processMessage");
-            return false;
-        }        
-        // logInfo("Processing message for topic: " + message.topic);
-        // Diagnostic: measure send time to detect blocking/backpressure
-        auto send_start = std::chrono::steady_clock::now();
-            // Try non-blocking send with a small retry loop for transient backpressure.
-            const int kMaxRetries = 3;
-            int attempts = 0;
-            bool topic_ok = false;
-            bool data_ok = false;
-            for (; attempts < kMaxRetries; ++attempts) {
-                try {
-                    auto topic_result = internal_publisher_socket_->send(topic_msg, zmq::send_flags::sndmore | zmq::send_flags::dontwait);
-                    if (topic_result.has_value()) topic_ok = true;
-                    else stats_.send_eagain_count++;
+//         // Send messages
+//         if (message.topic.empty() || message.data.empty()) {
+//             logError("Empty topic or data in processMessage");
+//             return false;
+//         }        
+//         // logInfo("Processing message for topic: " + message.topic);
+//         // Diagnostic: measure send time to detect blocking/backpressure
+//         auto send_start = std::chrono::steady_clock::now();
+//             // Try non-blocking send with a small retry loop for transient backpressure.
+//             const int kMaxRetries = 3;
+//             int attempts = 0;
+//             bool topic_ok = false;
+//             bool data_ok = false;
+//             for (; attempts < kMaxRetries; ++attempts) {
+//                 try {
+//                     auto topic_result = internal_publisher_socket_->send(topic_msg, zmq::send_flags::sndmore | zmq::send_flags::dontwait);
+//                     if (topic_result.has_value()) topic_ok = true;
+//                     else stats_.send_eagain_count++;
 
-                    auto data_result = internal_publisher_socket_->send(data_msg, zmq::send_flags::dontwait);
-                    if (data_result.has_value()) data_ok = true;
-                    else stats_.send_eagain_count++;
+//                     auto data_result = internal_publisher_socket_->send(data_msg, zmq::send_flags::dontwait);
+//                     if (data_result.has_value()) data_ok = true;
+//                     else stats_.send_eagain_count++;
 
-                    if (topic_ok && data_ok) {
-                        break; // success
-                    }
-                } catch (const zmq::error_t& e) {
-                    if (e.num() == EAGAIN) {
-                        stats_.send_eagain_count++;
-                    } else {
-                        // non-recoverable error for this send
-                        stats_.send_failures++;
-                        logError(std::string("ZMQ error during internal send attempt: ") + e.what());
-                        return false;
-                    }
-                }
+//                     if (topic_ok && data_ok) {
+//                         break; // success
+//                     }
+//                 } catch (const zmq::error_t& e) {
+//                     if (e.num() == EAGAIN) {
+//                         stats_.send_eagain_count++;
+//                     } else {
+//                         // non-recoverable error for this send
+//                         stats_.send_failures++;
+//                         logError(std::string("ZMQ error during internal send attempt: ") + e.what());
+//                         return false;
+//                     }
+//                 }
 
-                // If we will retry, record a blocking event and sleep a tiny amount to yield
-                if (attempts + 1 < kMaxRetries) {
-                    stats_.send_blocking_events++;
-                    std::this_thread::sleep_for(std::chrono::microseconds(200));
-                }
-            }
+//                 // If we will retry, record a blocking event and sleep a tiny amount to yield
+//                 if (attempts + 1 < kMaxRetries) {
+//                     stats_.send_blocking_events++;
+//                     std::this_thread::sleep_for(std::chrono::microseconds(200));
+//                 }
+//             }
 
-            auto send_end = std::chrono::steady_clock::now();
-            auto duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(send_end - send_start).count();
+//             auto send_end = std::chrono::steady_clock::now();
+//             auto duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(send_end - send_start).count();
 
-            // Warn if sending took unusually long
-            if (duration_ms > 50) {
-                stats_.send_blocking_events++;
-                logError(std::string("Slow internal send detected (ms): ") + std::to_string(duration_ms) + " topic=" + message.topic);
-            } else if (logging_enabled_) {
-                // logInfo("Sent internal message (send_ms=" + std::to_string(duration_ms) + ")");
-            }
+//             // Warn if sending took unusually long
+//             if (duration_ms > 50) {
+//                 stats_.send_blocking_events++;
+//                 logError(std::string("Slow internal send detected (ms): ") + std::to_string(duration_ms) + " topic=" + message.topic);
+//             } else if (logging_enabled_) {
+//                 // logInfo("Sent internal message (send_ms=" + std::to_string(duration_ms) + ")");
+//             }
 
-            if (topic_ok && data_ok) {
-                return true;
-            }
+//             if (topic_ok && data_ok) {
+//                 return true;
+//             }
 
-            // All retries exhausted - treat as backpressure drop
-            if (logging_enabled_) logInfo("EAGAIN on internal send for topic: " + message.topic + " after attempts=" + std::to_string(attempts));
-            return false;
-        // Fallback - unexpected failure
-        stats_.send_failures++;
-        logError("Failed to publish internal message (unexpected): " + message.topic);
-        return false;
-    } catch (const zmq::error_t& e) {
-        logError("ZMQ error processing message: " + std::string(e.what()));
-        stats_.connection_errors++;
-        return false;
-    } catch (const std::exception& e) {
-        logError("Error processing message: " + std::string(e.what()));
-        return false;
-    }
-}
+//             // All retries exhausted - treat as backpressure drop
+//             if (logging_enabled_) logInfo("EAGAIN on internal send for topic: " + message.topic + " after attempts=" + std::to_string(attempts));
+//             return false;
+//         // Fallback - unexpected failure
+//         stats_.send_failures++;
+//         logError("Failed to publish internal message (unexpected): " + message.topic);
+//         return false;
+//     } catch (const zmq::error_t& e) {
+//         logError("ZMQ error processing message: " + std::string(e.what()));
+//         stats_.connection_errors++;
+//         return false;
+//     } catch (const std::exception& e) {
+//         logError("Error processing message: " + std::string(e.what()));
+//         return false;
+//     }
+// }
  
 void GenericZmqServer::handleRequest(zmq::message_t& identity, zmq::message_t& request) {
     try {
