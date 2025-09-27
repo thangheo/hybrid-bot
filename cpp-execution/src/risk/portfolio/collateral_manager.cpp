@@ -60,6 +60,17 @@ bool CollateralManager::initialize() {
         return false;
     }
 }
+bool CollateralManager::shutdown() {
+    try {
+        // Perform any necessary cleanup
+        // Currently, there are no persistent connections or threads to clean up
+        
+        return true;
+    } catch (const std::exception& e) {
+        std::cerr << "Exception during CollateralManager shutdown: " << e.what() << std::endl;
+        return false;
+    }
+}
 
 bool CollateralManager::checkCollateralRequirements(const OrderRequest& orderRequest, 
                                                   std::vector<RiskViolation>& violations) {

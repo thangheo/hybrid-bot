@@ -164,11 +164,6 @@ bool Trading_system::start() {
         running_ = true;
         systemHealthy_ = true;
         startTime_ = std::chrono::steady_clock::now();
-
-        // if (!zmq_server_->start()) {
-        //     std::cerr << "Failed to start internal ZMQ server: " << zmq_server_->getLastError() << std::endl;
-        //     return -1;
-        // }
         
         if (!zmq_server_->start()) {
             std::cerr << "Failed to start internal ZMQ server: " << zmq_server_->getLastError() << std::endl;
@@ -236,7 +231,15 @@ bool Trading_system::initializeSharedMemory() {
         return false;
     }
 }
-
+bool Trading_system::stopSharedMemory() {
+    if (shm_publisher_) {
+        shm_publisher_->shutdown();
+        shm_publisher_.reset();
+        std::cout << "✅ Shared memory publisher stopped" << std::endl;
+        return true;
+    }
+    return false;
+}
 // Get publishing statistics
 void Trading_system::printSharedMemoryStats() {
     if (shm_publisher_) {
@@ -274,7 +277,23 @@ void Trading_system::shutdown() {
         std::cout << "\n=== SHUTTING DOWN TRADING SYSTEM ===" << std::endl;
         
         running_ = false;
-             
+        //stop in reverse order of startup
+        if (executionService_) {
+            std::cout << "Stopping execution service..." << std::endl;
+            executionService_->shutdown();
+        }
+
+        // Stop worker pools
+        stopOrderbookWorkerPool();
+        stopSignalWorkerPool();
+        stopExecWorkerPool();
+
+        // Stop other services
+        if (strategyEngine_) {
+            std::cout << "Stopping strategy engine..." << std::endl;
+            strategyEngine_->stop();
+        }
+
         // Stop data ingestion FIRST and wait for cleanup
         if (dataIngestionService_) {
             std::cout << "Stopping data ingestion service..." << std::endl;
@@ -283,36 +302,16 @@ void Trading_system::shutdown() {
             // Give WebSocket connections time to close gracefully
             std::this_thread::sleep_for(std::chrono::milliseconds(1000));
         }
-
-        // Stop worker pool
-        stopOrderbookWorkerPool();
-        stopSignalWorkerPool();
-        stopExecWorkerPool();
-        
-        // Stop other services
-        if (strategyEngine_) {
-            std::cout << "Stopping strategy engine..." << std::endl;
-            strategyEngine_->stop();
-        }
-        
         // Stop services in reverse order
         if (zmq_server_) {
             zmq_server_->stop();
         }
-        // if (riskManager_) {
-        //     std::cout << "Stopping risk manager..." << std::endl;
-        //     // riskManager_->
-        //     riskManager_.reset();
-        // }
-        // if (executionService_) {
-        //     std::cout << "Stopping execution service..." << std::endl;
-        //     executionService_->stop();
-        //     executionService_.reset();
-        // }
-            
-        // // Clear data ingestion service pointer after shutdown
-        // std::cout << "Clearing data ingestion service..." << std::endl;
-        // dataIngestionService_.reset();
+        if (riskManager_) {
+            std::cout << "Stopping risk manager..." << std::endl;
+            riskManager_->shutdown();
+            riskManager_.reset();
+        }  
+        
         
         // Stop event bus last
         std::cout << "Stopping event bus..." << std::endl;

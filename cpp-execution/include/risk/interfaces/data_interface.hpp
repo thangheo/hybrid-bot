@@ -102,6 +102,10 @@ public:
      */
     virtual double getVolatility(const core::Symbol& tradingPair, const std::string& timeframe, const std::optional<std::string>& exchangeId = std::nullopt) = 0;
     
+    // shutdown
+    virtual void shutdown() {
+        // Default implementation does nothing
+    }
     /**
      * Get order history for a trading pair
      * 

@@ -47,6 +47,7 @@ public:
      * @return true if initialization was successful, false otherwise
      */
     bool initialize();
+    bool shutdown();
     // isHealthy
     bool isHealthy() const;
     /**

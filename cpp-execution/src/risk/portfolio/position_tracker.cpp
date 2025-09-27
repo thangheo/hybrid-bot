@@ -175,6 +175,21 @@ bool PositionTracker::initialize() {
         return false;
     }
 }
+
+bool PositionTracker::shutdown() {
+    try {
+        // If DataInterface has a shutdown method, call it
+        if (m_dataInterface) {
+            m_dataInterface->shutdown();
+            LOG_INFO("PositionTracker", "DataInterface shut down successfully");
+        }
+        return true;
+    } catch (const std::exception& e) {
+        std::cerr << "Exception during PositionTracker shutdown: " << e.what() << std::endl;
+        return false;
+    }
+}
+
 // // reconcilePositions
 // bool PositionTracker::reconcilePositions() {
 //     try {

@@ -85,7 +85,7 @@ public:
      * @return true if initialization was successful, false otherwise
      */
     bool initialize();
-    
+    bool shutdown();
     /**
      * Check collateral requirements for a proposed order
      * @param orderRequest The order request

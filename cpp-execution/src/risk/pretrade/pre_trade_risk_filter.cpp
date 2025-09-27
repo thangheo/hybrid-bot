@@ -133,6 +133,41 @@ bool PreTradeRiskFilter::initialize() {
         return false;
     }
 }
+
+bool PreTradeRiskFilter::shutdown() {
+    LOG_INFO("Shutting down PreTradeRiskFilter components...");
+
+    if (m_positionLimitChecker) {
+        m_positionLimitChecker.reset();
+        LOG_INFO("PositionLimitChecker shut down");
+    }
+    if (m_exposureCalculator) {
+        m_exposureCalculator.reset();
+        LOG_INFO("ExposureCalculator shut down");
+    }
+    if (m_orderValidator) {
+        m_orderValidator.reset();
+        LOG_INFO("OrderValidator shut down");
+    }
+    if (m_fatFingerProtection) {
+        m_fatFingerProtection.reset();
+        LOG_INFO("FatFingerProtection shut down");
+    }
+    if (m_positionTracker) {
+        m_positionTracker->shutdown();
+        m_positionTracker.reset();
+        LOG_INFO("PositionTracker shut down");
+    }
+    if (m_dataInterface) {
+        m_dataInterface->shutdown();
+        m_dataInterface.reset();
+        LOG_INFO("DataInterface shut down");
+    }
+
+    LOG_INFO("PreTradeRiskFilter shutdown complete");
+    return true;
+}
+
 // getAllowedPositionSize
 double PreTradeRiskFilter::getAllowedPositionSize(const TradingPair& tradingPair) const {
     // Query position limit checker for max position size

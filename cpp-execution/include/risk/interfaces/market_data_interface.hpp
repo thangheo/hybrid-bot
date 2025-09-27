@@ -107,7 +107,7 @@ public:
         static std::shared_ptr<MarketDataInterface> instance(new MarketDataInterface(config));
         return instance;
     }
-    void shutdown() ;
+    void shutdown() override;
     // DataInterface implementation
     bool initialize() override;
     
@@ -299,7 +299,7 @@ private:
     std::atomic<bool> readerRunning_{false};
     std::vector<std::thread> processingThreads_;
     std::thread readerThread_;
-    size_t processingThreadCount_ = 4;
+    size_t processingThreadCount_ = 8;
     
     // Statistics (existing)
     std::atomic<uint64_t> totalReceived_{0};
