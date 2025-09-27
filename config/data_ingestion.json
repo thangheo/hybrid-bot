@@ -1,7 +1,7 @@
 {
   "publisher": {
     "market_intel_endpoint": "tcp://*:5555",
-    "orderbook_endpoint": "tcp://*:5557",
+    "orderbook_endpoint": "inproc://orderbook",
     "trading_intent_endpoint": "tcp://*:5556",
     "publisher_type": "zeromq",
     "buffer_size": 10000,

@@ -10,12 +10,13 @@
 
 //define endpoint constants for easy reference
 constexpr const char* INTEL_ENDPOINT = "tcp://*:5560";
-constexpr const char* INTERNAL_ENDPOINT = "tcp://*:5557";
+constexpr const char* INTERNAL_ENDPOINT = "inproc://orderbook";
 constexpr const char* REQUEST_ENDPOINT = "tcp://*:5556";
 // for client
 constexpr const char* SERVER_INTEL_ENDPOINT = "tcp://localhost:5560";
-constexpr const char* SERVER_INTERNAL_ENDPOINT = "tcp://localhost:5557";
-constexpr const char* SERVER_REQUEST_ENDPOINT = "tcp://localhost:5556";
+// no more tcp for internal, use inproc later. fuck you cunt terrorist
+constexpr const char* SERVER_INTERNAL_ENDPOINT = "inproc://orderbook";
+constexpr const char* SERVER_REQUEST_ENDPOINT = "ipc:///tmp/request";
 //risk
 constexpr const char* SERVER_RISK_PUBLISH_ENDPOINT = "tcp://localhost:5558";
 
@@ -43,7 +44,7 @@ struct ZmqServerConfig {
     bool intel_conflate = true;                     // Only keep latest message
     
     // Internal Publisher configuration (for orderbook - high frequency, JSON)
-    std::string internal_endpoint = "tcp://*:5557";
+    std::string internal_endpoint = "inproc://orderbook";
     int internal_hwm = 10000;                       // High for fast consumers
     int internal_linger = 1000;
     bool internal_immediate = true;

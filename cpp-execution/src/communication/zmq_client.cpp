@@ -388,20 +388,45 @@ void GenericZmqClient::subscriberWorker() {
             }
 
             // If topic appears to be non-printable (binary protobuf landed in topic frame),
-            // treat it as empty and move the bytes into data to avoid garbled logs and
-            // incorrect handler lookups.
+            // try to recover a textual topic embedded at the start of the bytes. If we
+            // cannot find a textual topic, move the bytes into the data payload but keep
+            // a hex-dump for debugging.
             auto is_printable = [](const std::string &s) {
+                if (s.empty()) return false;
                 for (unsigned char c : s) {
-                    if (c == '\n' || c == '\r' || c == '\t') continue;
+                    // allow common whitespace that may appear in topics
+                    if (c == '\n' || c == '\r' || c == '\t') return false;
                     if (c < 0x20 || c > 0x7E) return false;
                 }
-                return !s.empty();
+                return true;
             };
 
             if (!topic.empty() && !is_printable(topic)) {
-                // Move topic bytes into data (prepend to existing data) and clear topic
-                data = std::string(static_cast<char*>(topic_msg.data()), topic_msg.size()) + data;
-                topic.clear();
+                // Attempt to recover a textual topic if it exists at the start of the
+                // combined bytes (e.g., when multipart frames landed in unexpected order)
+                std::string raw_topic_bytes(static_cast<char*>(topic_msg.data()), topic_msg.size());
+                std::string combined = raw_topic_bytes + data;
+
+                // Look for a likely ASCII topic prefix like "orderbook." at the start
+                auto pos = combined.find("orderbook.");
+                if (pos == 0) {
+                    // Extract until first whitespace or null byte
+                    size_t end = combined.find_first_of(" \0\n\r\t");
+                    if (end == std::string::npos) end = combined.size();
+                    topic = combined.substr(0, end);
+                    data = combined.substr(end + (end < combined.size() ? 1 : 0));
+                } else {
+                    // No textual topic found — prepend bytes to data and clear topic.
+                    data = std::move(combined);
+                    // Keep topic empty but log a short hex dump for diagnostics
+                    std::stringstream hex_dump;
+                    for (size_t i = 0; i < std::min<size_t>(32, raw_topic_bytes.size()); ++i) {
+                        hex_dump << std::hex << std::setw(2) << std::setfill('0')
+                                 << (static_cast<int>(static_cast<unsigned char>(raw_topic_bytes[i])) & 0xff) << " ";
+                    }
+                    logError(std::string("Received non-printable topic frame, moved into data (hex dump): ") + hex_dump.str());
+                    topic.clear();
+                }
             }
 
             handleMessage(topic, data);

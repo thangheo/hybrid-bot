@@ -50,7 +50,7 @@ using PositionUpdateCallback = std::function<void(const Position&, const std::st
  * PositionTracker maintains current positions across exchanges.
  * It tracks position changes in real-time and provides position data to other components.
  */
-class PositionTracker {
+class PositionTracker : public std::enable_shared_from_this<PositionTracker> {
 public:
     /**
      * Constructor

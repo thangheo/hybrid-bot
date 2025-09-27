@@ -31,7 +31,7 @@
 #include "communication/zmq_server.hpp"
 #include "common/exchange_types.hpp"
 //share memory
-#include "communication/shm.hpp"
+// #include "communication/shm.hpp"
 // Data ingestion
 #include "data_ingestion/data_ingestion_service.hpp"
 //zmq server for market intellgence
@@ -98,8 +98,7 @@ public:
     void runIndefinitely() ;
     void shutdown();
     // Initialize shared memory publisher instead of ZMQ
-    bool initializeSharedMemory() ;
-    bool stopSharedMemory() ;
+    // bool initializeSharedMemory() ;
     void publishOrderBookForRisk(const OrderBookUpdate& update) ;
     void printSharedMemoryStats() ;
 
@@ -121,7 +120,6 @@ public:
 
 private:
     //shm
-    std::unique_ptr<SharedMemoryPublisher> shm_publisher_;
     std::atomic<uint64_t> orderBookUpdatesReceived_{0};
     
 
