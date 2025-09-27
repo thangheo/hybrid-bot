@@ -145,11 +145,13 @@ public:
      * Enable/disable logging
      */
     void setLoggingEnabled(bool enabled) { logging_enabled_ = enabled; }
-
+    bool isPrintableText(const std::string& data) const ;
+    std::string bytesToHex(const std::string& bytes) const;
+    bool isValidTopicString(const std::string& topic) const;
 private:
     // Configuration
     ZmqClientConfig config_;
-    
+    // bool logging_enabled_{false};
     // ZeroMQ components
     std::shared_ptr<zmq::context_t> context_;
     std::unique_ptr<zmq::socket_t> subscriber_socket_;
@@ -204,6 +206,7 @@ std::string GenericZmqClient::sendJsonRequest(const std::string& request_type, c
     
     return sendRequest(request_type, data.dump(), metadata);
 }
+
 
 } // namespace communication
 } // namespace trading
