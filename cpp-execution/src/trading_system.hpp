@@ -28,14 +28,13 @@
 #include "common/event_bus.hpp"
 #include "common/trading_events.hpp"
 #include "common/logger.hpp"
-#include "communication/zmq_server.hpp"
+#include "communication/zmq_server_client.hpp"
 #include "common/exchange_types.hpp"
 //share memory
 // #include "communication/shm.hpp"
 // Data ingestion
 #include "data_ingestion/data_ingestion_service.hpp"
 //zmq server for market intellgence
-// #include "communication/zmq_server.hpp"
 #include "market_intelligence/adaptive_intelligence.hpp"
 #include "../../generated/cpp/proto/trading_messages.pb.h"
 #include <nlohmann/json.hpp>
@@ -68,8 +67,6 @@
 #include "internal_orderbook.pb.h"
 // #include "../generated/cpp/internal_oderbook.grpc.pb.h"
 
-// zmq clients
-#include "communication/zmq_config.hpp"
 
 using namespace trading;
 using namespace std::chrono_literals;
@@ -110,7 +107,7 @@ public:
     void printStatus();
     
 
-    void generateMarketIntelligence(const OrderBookUpdate& update, std::shared_ptr<OrderBook> orderBook) ;
+    // void generateMarketIntelligence(const OrderBookUpdate& update, std::shared_ptr<OrderBook> orderBook) ;
 
     // ✅ NEW: Publish orderbook data for risk module
     // void publishOrderBookForRisk(const OrderBookUpdate& update);

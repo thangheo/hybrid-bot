@@ -29,8 +29,8 @@ std::vector<PriceLevel> createPriceLevels(const std::vector<std::pair<double, do
     std::vector<PriceLevel> levels;
     for (const auto& [price, quantity] : prices_quantities) {
         PriceLevel level;
-        level.setPrice(price);
-        level.setQuantity(quantity);
+        level.price = price;       // level.price = price
+        level.quantity = quantity; // level.quantity = quantity
         levels.push_back(level);
     }
     return levels;

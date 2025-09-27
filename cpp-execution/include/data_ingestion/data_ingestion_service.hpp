@@ -4,10 +4,10 @@
 #include "data_ingestion/exchange_manager.hpp"
 #include "data_ingestion/orderbook/reconstructor.hpp"
 #include "data_ingestion/orderbook/order_book_manager.hpp"
-#include "communication/zmq_server.hpp"
+#include "communication/zmq_server_client.hpp"
 #include "data_ingestion/config/config.hpp"
 #include "data_ingestion/normalization/order_book_normalizer.hpp"
-#include "communication/zmq_server.hpp"
+#include "communication/zmq_server_client.hpp"
 #include "common/event_bus.hpp"
 #include <memory>
 #include <atomic>

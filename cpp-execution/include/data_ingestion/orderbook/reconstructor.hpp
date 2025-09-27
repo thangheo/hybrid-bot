@@ -19,7 +19,7 @@
 
 #include "core/market_types.hpp"
 #include "data_ingestion/orderbook/order_book.hpp"
-#include "communication/zmq_server.hpp"
+#include "communication/zmq_server_client.hpp"
 #include "data_ingestion/orderbook/order_book_types.hpp"
 #include "data_ingestion/orderbook/order_book_manager.hpp"
 #include "strategy/core_analysis/liquidity_flow_monitor.hpp"

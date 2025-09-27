@@ -22,9 +22,10 @@
 #include <nlohmann/json.hpp>
 #include <common/types.hpp>
 #include <chrono>
-#include <communication/zmq_config.hpp>
+#include <communication/zmq_server_client.hpp>
 using namespace trading;
 using namespace trading::common;
+using namespace trading::communication;
 using namespace trading::risk;
 using namespace nlohmann;
 namespace nlohmann {
@@ -527,11 +528,12 @@ public:
     // marketDataRequestEndpoint
     std::string marketDataRequestEndpoint = SERVER_REQUEST_ENDPOINT;
     std::string marketDataPublishEndpoint = SERVER_RISK_PUBLISH_ENDPOINT;
-    std::string marketDataTopic = "market_data";
-    std::string zmqSubscriberEndpoint = SERVER_INTEL_ENDPOINT;
+    std::string marketDataTopic = MARKET_DATA_TOPIC;
+    // zmqSubscriberEndpoint
+    std::string zmqSubscriberEndpoint = SERVER_INTERNAL_ENDPOINT;
 
     // zmqPublisherEndpoint
-    std::string zmqPublisherEndpoint = "tcp://localhost:5563";
+    std::string zmqPublisherEndpoint = SERVER_REQUEST_ENDPOINT;
     // cache validity duration in milliseconds (default increased to 1000ms to avoid
     // immediate expirations during fast lookups). Can be overridden via config.
     int marketDataCacheDurationMs = 1000;

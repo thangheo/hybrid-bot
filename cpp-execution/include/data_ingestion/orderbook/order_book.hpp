@@ -27,6 +27,10 @@
 #include <functional>
 #include <deque>
 
+// Forward-declare LiquidityFlowMonitor from the strategy namespace to avoid
+// a circular include (liquidity_flow_monitor.hpp includes order_book.hpp).
+namespace trading { namespace strategy { class LiquidityFlowMonitor; } }
+
 namespace trading {
 namespace data_ingestion {
 
@@ -38,10 +42,10 @@ struct OrderBookDelta {
     core::Symbol tradingPair;
     core::Timestamp timestamp;
     uint64_t sequenceNumber;
-    std::vector<PriceLevel> added_bids = {};
-    std::vector<PriceLevel> removed_bids = {};
-    std::vector<PriceLevel> added_asks = {};
-    std::vector<PriceLevel> removed_asks= {};
+    std::vector<PriceLevel> added_bids;
+    std::vector<PriceLevel> removed_bids;
+    std::vector<PriceLevel> added_asks;
+    std::vector<PriceLevel> removed_asks;
     
     // Calculate total added and removed volume
     double getTotalAddedBidVolume() const;
@@ -178,11 +182,11 @@ public:
     std::string calculateChecksum() const;
     
     // FIXED: Add back the missing setLiquidityFlowMonitor function
-    void setLiquidityFlowMonitor(std::shared_ptr<strategy::LiquidityFlowMonitor> monitor) {
+    void setLiquidityFlowMonitor(std::shared_ptr<::trading::strategy::LiquidityFlowMonitor> monitor) {
         liquidityFlowMonitor_ = monitor;
     }
     
-    std::shared_ptr<strategy::LiquidityFlowMonitor> getLiquidityFlowMonitor() const {
+    std::shared_ptr<::trading::strategy::LiquidityFlowMonitor> getLiquidityFlowMonitor() const {
         return liquidityFlowMonitor_;
     }
     
@@ -209,7 +213,7 @@ private:
     OrderBookConfig config_;
     
     // FIXED: Add back the missing liquidityFlowMonitor
-    std::shared_ptr<strategy::LiquidityFlowMonitor> liquidityFlowMonitor_;
+    std::shared_ptr<::trading::strategy::LiquidityFlowMonitor> liquidityFlowMonitor_;
     
     // Core order book data
     ExchangeId exchangeId_;

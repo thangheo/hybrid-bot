@@ -1,7 +1,7 @@
 // include/common/orderbook_cache_service.hpp
 #pragma once
 #include "data_ingestion/orderbook/order_book.hpp"
-#include "communication/zmq_server.hpp"
+#include "communication/zmq_server_client.hpp"
 #include <unordered_map>
 #include <memory>
 #include <shared_mutex>

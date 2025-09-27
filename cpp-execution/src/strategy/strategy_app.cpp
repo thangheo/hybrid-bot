@@ -8,7 +8,7 @@
 #include "common/logger.hpp"
 #include "common/event_bus.hpp"
 #include "common/trading_events.hpp"
-#include "communication/zmq_client.hpp"
+#include "communication/zmq_server_client.hpp"
 #include "data_ingestion/orderbook/order_book.hpp"
 #include <iostream>
 #include <fstream>
@@ -131,8 +131,8 @@ public:
     }
     
     bool start(const std::vector<core::Symbol>& symbols) {
-        if (!zmqClient_->start()) {
-            LOG_ERROR("Failed to start ZeroMQ client");
+        if (!zmqClient_->connect()) {
+            LOG_ERROR("Failed to connect ZeroMQ client");
             return false;
         }
         
