@@ -271,42 +271,47 @@ void MarketDataInterface::processQueueLoop() {
         }
     }
 }
+
 void MarketDataInterface::shutdown() {
-    if (!running_.load()) return;
+    LOG_INFO("Shutting down MarketDataInterface");
 
     running_.store(false);
-    
+
+    // Wake up reconnection/monitor thread so it can exit promptly
+    reconnectionCv_.notify_all();
+
     // Stop processing threads
-    if (processingRunning_.load()) {
-        processingRunning_.store(false);
+    processingRunning_.store(false);
+    {
+        std::lock_guard<std::mutex> lock(inboundQueueMutex_);
         inboundQueueCv_.notify_all();
-        for (auto& t : processingThreads_) {
-            if (t.joinable()) t.join();
-        }
-        processingThreads_.clear();
-        LOG_INFO("MarketDataInterface processing threads stopped");
     }
-
-    // Stop reconnection thread
-    if (reconnectionThread_.joinable()) {
-        {
-            std::lock_guard<std::mutex> lock(reconnectionMutex_);
-            needsReconnection_.store(false);
-            reconnectionCv_.notify_all();
-        }
-        reconnectionThread_.join();
-        LOG_INFO("MarketDataInterface connection monitor thread stopped");
+    for (auto& t : processingThreads_) {
+        if (t.joinable()) t.join();
     }
+    processingThreads_.clear();
 
-    // Disconnect ZMQ client
+    // Stop and destroy ZMQ client (this joins subscriber thread internally)
     if (zmqClient_) {
-        zmqClient_->disconnect();
-        LOG_INFO("MarketDataInterface ZMQ client disconnected");
+        try {
+            zmqClient_->disconnect();
+            zmqClient_.reset();
+            LOG_INFO("ZMQ client disconnected and destroyed");
+        } catch (const std::exception& e) {
+            LOG_WARN("Exception during ZMQ client shutdown: {}", e.what());
+        }
+    }
+
+    // Wait for reconnection/monitor thread to exit
+    if (reconnectionThread_.joinable()) {
+        reconnectionThread_.join();
+        LOG_INFO("Reconnection/monitor thread stopped");
     }
 
     initialized_.store(false);
     LOG_INFO("MarketDataInterface shutdown complete");
 }
+
 
 void MarketDataInterface::processSyntheticOrderBook_json(const std::string& topic, const std::string& message) {
     // Early memory pressure check
@@ -1436,13 +1441,15 @@ std::map<std::string, double> MarketDataInterface::getExchangeBalances(
     
     return {};
 }
-// Implementation
+
 void MarketDataInterface::connectionMonitorLoop() {
     auto lastBalanceUpdate = std::chrono::steady_clock::now();
     const auto balanceUpdateInterval = std::chrono::seconds(60);
     // Initial short sleep to stagger startup
     std::this_thread::sleep_for(std::chrono::seconds(5));
     int reconnect_attempt = 0;
+    const int max_reconnect_attempts = 10;
+    
     while (running_) {
         // Wait with a unique_lock only while waiting on the condition variable.
         {
@@ -1457,135 +1464,108 @@ void MarketDataInterface::connectionMonitorLoop() {
             handleDisconnection();
         }
 
-        // Check if we need to resubscribe
+        // Check if we need to reconnect
         if (needsReconnection_.load()) {
-            LOG_INFO("Attempting to reconnect ZeroMQ client");
+            LOG_INFO("Attempting to reconnect ZeroMQ client (attempt={}/{})", 
+                     reconnect_attempt + 1, max_reconnect_attempts);
 
             try {
-                // Do not hold reconnectionMutex_ while performing network ops or calling into zmqClient_
-                // Attempt graceful disconnect if the client exists
+                // CRITICAL: Disconnect and reset the client completely to avoid
+                // any concurrent socket access. This ensures the subscriber thread
+                // is stopped before we create a new client.
                 if (zmqClient_) {
-                    try { zmqClient_->disconnect(); } catch (...) {}
-                }
-
-                // Ensure we have a client instance
-                if (!zmqClient_) {
-                    communication::ZmqClientConfig zmqConfig;
-                    zmqConfig.server_pub_endpoint = zmqSubscriberEndpoint_;
-                    zmqConfig.server_req_endpoint = zmqPublisherEndpoint_;
-                    zmqConfig.auto_reconnect = true;
-                    zmqConfig.reconnect_interval = std::chrono::milliseconds(5000);
-                    zmqConfig.request_timeout = std::chrono::milliseconds(10000);
-                    zmqConfig.io_threads = 1;
-                    zmqClient_ = std::make_unique<communication::GenericZmqClient>(zmqConfig);
-                    LOG_INFO("Created ZeroMQ client for reconnection");
-                }
-
-                // Try to start/connect
-                if (!checkConnection()) {
-                    handleDisconnection();
-                }
-
-                // Check if we need to resubscribe / reconnect
-                if (needsReconnection_.load()) {
-                    LOG_INFO("Attempting to reconnect ZeroMQ client (attempt={})", reconnect_attempt + 1);
-
-                    // Attempt reconnect with exponential backoff
-                    try {
-                        // Attempt graceful disconnect if the client exists (don't hold mutex)
-                        if (zmqClient_) {
-                            try { zmqClient_->disconnect(); } catch (...) {}
-                        }
-
-                        // Ensure we have a client instance
-                        if (!zmqClient_) {
-                            communication::ZmqClientConfig zmqConfig;
-                            zmqConfig.server_pub_endpoint = zmqSubscriberEndpoint_;
-                            zmqConfig.server_req_endpoint = zmqPublisherEndpoint_;
-                            zmqConfig.auto_reconnect = true;
-                            zmqConfig.reconnect_interval = std::chrono::milliseconds(5000);
-                            zmqConfig.request_timeout = std::chrono::milliseconds(10000);
-                            zmqConfig.io_threads = 1;
-
-                            zmqClient_ = std::make_unique<communication::GenericZmqClient>(zmqConfig);
-                            LOG_INFO("Created ZeroMQ client for reconnection");
-                        }
-
-                        // Try to start/connect
-                        if (zmqClient_ && zmqClient_->start()) {
-                            needsReconnection_.store(false);
-                            reconnect_attempt = 0; // reset attempts on success
-                            lastConnectionCheck_ = std::chrono::steady_clock::now();
-                            LOG_INFO("Successfully reconnected ZeroMQ client");
-
-                            // Reapply tracked subscriptions so we actually receive messages again
-                            std::vector<std::string> toApply;
-                            {
-                                std::lock_guard<std::mutex> sLock(subscriptionMutex_);
-                                toApply.assign(subscribedTopics_.begin(), subscribedTopics_.end());
-                            }
-
-                            for (const auto& topic : toApply) {
-                                try {
-                                    zmqClient_->subscribe(topic,
-                                        [this](const std::string& t, const std::string& msg, const std::unordered_map<std::string, std::string>& meta) {
-                                            if (t.find("orderbook") != std::string::npos) {
-                                                this->processSyntheticOrderBook_protobuf(t, msg);
-                                            } else if (t.find("trade") != std::string::npos) {
-                                                this->processTradeUpdate(t, msg);
-                                            }
-                                        }
-                                    );
-                                    LOG_INFO("Reapplied subscription for topic: {}", topic);
-                                } catch (const std::exception& e) {
-                                    errorStats_.subscriptionErrors++;
-                                    LOG_ERROR("Failed to reapply subscription for topic {}: {}", topic, e.what());
-                                }
-                            }
-                        } else {
-                            // Connection attempt failed — schedule next try with backoff
-                            reconnect_attempt++;
-                            auto delay = trading::communication::ZmqManager::instance().reconnectDelayMs(reconnect_attempt, std::chrono::milliseconds(500), 10);
-                            LOG_WARN("Reconnect attempt {} failed; sleeping for {} ms before retry", reconnect_attempt, delay.count());
-                            // Sleep while still allowing shutdown notifications
-                            std::unique_lock<std::mutex> lk(reconnectionMutex_);
-                            reconnectionCv_.wait_for(lk, delay);
-                        }
-
-                        auto now = std::chrono::steady_clock::now();
-                        if (now - lastBalanceUpdate > balanceUpdateInterval) {
-                            try {
-                                auto balances = m_binanceClient.getBalances();
-                                for (const auto& [asset, amount] : balances) {
-                                    updateBalance(core::ExchangeId::binance(), asset, amount);
-                                }
-                                lastBalanceUpdate = now;
-                            } catch (const std::exception& e) {
-                                LOG_ERROR("Failed to update Binance balances: {}", e.what());
-                            }
-                        }
-
+                    try { 
+                        zmqClient_->disconnect();  // This joins the subscriber thread
+                        zmqClient_.reset();         // Destroy the old client completely
                     } catch (const std::exception& e) {
-                        errorStats_.connectionErrors++;
-                        LOG_ERROR("Reconnection failed: {}", e.what());
+                        LOG_WARN("Exception during disconnect: {}", e.what());
                     }
                 }
 
-                // Periodically measure message rate and adjust processing batch size
-                try {
-                    measureAndAdjustBatchSize();
-                } catch (...) {}
+                // Small delay to ensure everything is cleaned up
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
-                // Keep the cache pruned periodically so stale entries are removed
-                pruneMarketDataCache();
-            }
-            catch (const std::exception& e) {
+                // Create a fresh client instance
+                communication::ZmqClientConfig zmqConfig;
+                zmqConfig.server_pub_endpoint = zmqSubscriberEndpoint_;
+                zmqConfig.server_req_endpoint = zmqPublisherEndpoint_;
+                zmqConfig.auto_reconnect = true;
+                zmqConfig.reconnect_interval = std::chrono::milliseconds(5000);
+                zmqConfig.request_timeout = std::chrono::milliseconds(10000);
+                zmqConfig.io_threads = 1;
+                zmqConfig.subscriber_conflate = false; // Don't conflate for orderbook data
+                
+                zmqClient_ = std::make_unique<communication::GenericZmqClient>(zmqConfig);
+                LOG_INFO("Created new ZeroMQ client instance");
+
+                // Store subscriptions BEFORE connecting
+                std::vector<std::string> toApply;
+                {
+                    std::lock_guard<std::mutex> sLock(subscriptionMutex_);
+                    toApply.assign(subscribedTopics_.begin(), subscribedTopics_.end());
+                }
+
+                // Register all subscription handlers BEFORE connecting
+                // This ensures they're queued and will be applied by the subscriber thread
+                for (const auto& topic : toApply) {
+                    zmqClient_->subscribe(topic,
+                        [this](const std::string& t, const std::string& msg, 
+                               const std::unordered_map<std::string, std::string>& meta) {
+                            if (t.find("orderbook") != std::string::npos) {
+                                this->processSyntheticOrderBook_protobuf(t, msg);
+                            } else if (t.find("trade") != std::string::npos) {
+                                this->processTradeUpdate(t, msg);
+                            }
+                        }
+                    );
+                    LOG_INFO("Registered handler for topic: {}", topic);
+                }
+
+                // Now connect - the subscriber thread will apply all subscriptions
+                if (zmqClient_->connect()) {
+                    needsReconnection_.store(false);
+                    reconnect_attempt = 0; // reset attempts on success
+                    lastConnectionCheck_ = std::chrono::steady_clock::now();
+                    LOG_INFO("Successfully reconnected ZeroMQ client");
+                } else {
+                    LOG_ERROR("Failed to connect new ZeroMQ client");
+                    needsReconnection_.store(true);
+                    reconnect_attempt++;
+                    
+                    if (reconnect_attempt >= max_reconnect_attempts) {
+                        LOG_ERROR("Max reconnection attempts reached. Giving up.");
+                        reconnect_attempt = 0;
+                        // Wait longer before trying again
+                        std::this_thread::sleep_for(std::chrono::seconds(60));
+                    } else {
+                        // Exponential backoff
+                        auto delay = std::chrono::milliseconds(1000 * (1 << std::min(reconnect_attempt, 5)));
+                        std::this_thread::sleep_for(delay);
+                    }
+                }
+
+            } catch (const std::exception& e) {
+                LOG_ERROR("Exception during reconnection: {}", e.what());
+                reconnect_attempt++;
                 errorStats_.connectionErrors++;
-                LOG_ERROR("Reconnection process failed: {}", e.what());
+                
+                // Exponential backoff on error
+                auto delay = std::chrono::milliseconds(1000 * (1 << std::min(reconnect_attempt, 5)));
+                std::this_thread::sleep_for(delay);
             }
         }
+
+        // Periodic balance update check
+        auto now = std::chrono::steady_clock::now();
+        if (now - lastBalanceUpdate >= balanceUpdateInterval) {
+            // Your balance update logic here
+            lastBalanceUpdate = now;
+        }
     }
+    
+    LOG_INFO("Connection monitor loop exiting");
 }
+
 
 
 

@@ -663,55 +663,54 @@ bool GenericZmqServer::processIntelMessage(const GenericMessage& message) {
 //         return false;
 //     }
 // }
-
 bool GenericZmqServer::processInternalMessage(const GenericMessage& message) {
     if (!internal_publisher_socket_) {
         logError("Internal publisher socket not available");
         return false;
     }
-
+    
     try {
         // Validate inputs
         if (message.topic.empty() || message.data.empty()) {
             logError("Empty topic or data in processInternalMessage");
             return false;
         }
-
+        
         std::string clean_topic = sanitizeTopic(message.topic);
         if (clean_topic.empty()) {
             logError("Topic sanitization failed: " + message.topic);
             return false;
         }
-
-        // Create single frame with topic|data format
+        
+        // Prepare the data once
         std::string frame_data = clean_topic + "|" + message.data;
         
         constexpr size_t kMaxInternalMessageBytes = 512 * 1024;
         if (frame_data.size() > kMaxInternalMessageBytes) {
             stats_.messages_dropped++;
-            logError("Dropping internal message due to oversized payload: " + clean_topic + 
+            logError("Dropping internal message due to oversized payload: " + clean_topic +
                     " size=" + std::to_string(frame_data.size()));
             return false;
         }
-
-        zmq::message_t frame_msg;
-        try {
-            frame_msg.rebuild(frame_data.size());
-            std::memcpy(frame_msg.data(), frame_data.data(), frame_data.size());
-        } catch (const std::bad_alloc& e) {
-            stats_.send_failures++;
-            logError(std::string("OOM while allocating zmq frame for internal message: ") + e.what());
-            return false;
-        }
-
-        auto send_start = std::chrono::steady_clock::now();
         
+        auto send_start = std::chrono::steady_clock::now();
         const int kMaxRetries = 3;
         bool success = false;
         
         for (int attempt = 0; attempt < kMaxRetries && !success; ++attempt) {
             try {
-                // Send single frame (no SNDMORE flag)
+                // CREATE A NEW MESSAGE FOR EACH ATTEMPT!
+                zmq::message_t frame_msg;
+                try {
+                    frame_msg.rebuild(frame_data.size());
+                    std::memcpy(frame_msg.data(), frame_data.data(), frame_data.size());
+                } catch (const std::bad_alloc& e) {
+                    stats_.send_failures++;
+                    logError(std::string("OOM while allocating zmq frame: ") + e.what());
+                    return false;
+                }
+                
+                // Now send the fresh message
                 auto result = internal_publisher_socket_->send(frame_msg, zmq::send_flags::dontwait);
                 
                 if (!result.has_value()) {
@@ -736,32 +735,32 @@ bool GenericZmqServer::processInternalMessage(const GenericMessage& message) {
                     }
                 } else {
                     stats_.send_failures++;
-                    logError(std::string("ZMQ error in internal send: ") + e.what() + 
+                    logError(std::string("ZMQ error in internal send: ") + e.what() +
                             " for topic: " + clean_topic);
                     return false;
                 }
             }
         }
-
+        
         if (!success) {
             logError("Failed to send internal message after all retries: " + clean_topic);
             return false;
         }
-
+        
         auto send_end = std::chrono::steady_clock::now();
         auto duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(send_end - send_start).count();
-
+        
         if (duration_ms > 50) {
             stats_.send_blocking_events++;
-            logError(std::string("Very slow internal send (ms): ") + std::to_string(duration_ms) + 
+            logError(std::string("Very slow internal send (ms): ") + std::to_string(duration_ms) +
                     " topic=" + clean_topic);
         }
-
+        
         return true;
         
     } catch (const std::exception& e) {
         stats_.send_failures++;
-        logError("Exception in processInternalMessage: " + std::string(e.what()) + 
+        logError("Exception in processInternalMessage: " + std::string(e.what()) +
                 " for topic: " + message.topic);
         return false;
     }
