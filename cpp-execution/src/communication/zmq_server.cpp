@@ -440,229 +440,7 @@ bool GenericZmqServer::processIntelMessage(const GenericMessage& message) {
     }
 }
 
-// // FIXED: processInternalMessage with same improvements
-// bool GenericZmqServer::processInternalMessage(const GenericMessage& message) {
-//     if (!internal_publisher_socket_) {
-//         logError("Internal publisher socket not available");
-//         return false;
-//     }
 
-//     try {
-//         // Validate inputs
-//         if (message.topic.empty() || message.data.empty()) {
-//             logError("Empty topic or data in processInternalMessage");
-//             return false;
-//         }
-
-//         std::string clean_topic = sanitizeTopic(message.topic);
-//         if (clean_topic.empty()) {
-//             logError("Topic sanitization failed: " + message.topic);
-//             return false;
-//         }
-
-//         // Defensive allocation/copy
-//         constexpr size_t kMaxInternalMessageBytes = 512 * 1024; // 512KB cap
-//         if (message.data.size() > kMaxInternalMessageBytes) {
-//             stats_.messages_dropped++;
-//             logError("Dropping internal message due to oversized payload: " + clean_topic + " size=" + std::to_string(message.data.size()));
-//             return false;
-//         }
-
-//         zmq::message_t topic_msg;
-//         zmq::message_t data_msg;
-//         try {
-//             topic_msg.rebuild(clean_topic.size());
-//             std::memcpy(topic_msg.data(), clean_topic.data(), clean_topic.size());
-
-//             data_msg.rebuild(message.data.size());
-//             std::memcpy(data_msg.data(), message.data.data(), message.data.size());
-//         } catch (const std::bad_alloc& e) {
-//             stats_.send_failures++;
-//             logError(std::string("OOM while allocating zmq frames for internal message: ") + e.what());
-//             return false;
-//         } catch (const zmq::error_t& e) {
-//             stats_.send_failures++;
-//             logError(std::string("ZMQ error while preparing frames for internal message: ") + e.what());
-//             return false;
-//         } catch (const std::exception& e) {
-//             stats_.send_failures++;
-//             logError(std::string("Exception while preparing frames for internal message: ") + e.what());
-//             return false;
-//         }
-
-//         auto send_start = std::chrono::steady_clock::now();
-        
-//         // Retry logic for internal messages (more tolerance for backpressure)
-//         const int kMaxRetries = 3;
-//         bool success = false;
-        
-//         for (int attempt = 0; attempt < kMaxRetries && !success; ++attempt) {
-//             try {
-//                 // Note: No mutex needed for internal socket if it's only used by one thread
-//                 auto topic_result = internal_publisher_socket_->send(topic_msg, 
-//                     zmq::send_flags::sndmore | zmq::send_flags::dontwait);
-                
-//                 if (!topic_result.has_value()) {
-//                     stats_.send_eagain_count++;
-//                     if (attempt + 1 < kMaxRetries) {
-//                         std::this_thread::sleep_for(std::chrono::microseconds(100));
-//                         continue;
-//                     }
-//                     logError("EAGAIN on internal topic send after retries: " + clean_topic);
-//                     return false;
-//                 }
-                
-//                 auto data_result = internal_publisher_socket_->send(data_msg, 
-//                     zmq::send_flags::dontwait);
-                
-//                 if (!data_result.has_value()) {
-//                     stats_.send_eagain_count++;
-//                     if (attempt + 1 < kMaxRetries) {
-//                         // Try to send empty frame to complete the multipart message
-//                         try {
-//                             zmq::message_t dummy;
-//                             internal_publisher_socket_->send(dummy, zmq::send_flags::dontwait);
-//                         } catch (...) {}
-//                         std::this_thread::sleep_for(std::chrono::microseconds(100));
-//                         continue;
-//                     }
-//                     logError("EAGAIN on internal data send after retries: " + clean_topic);
-//                     return false;
-//                 }
-                
-//                 success = true;
-                
-//             } catch (const zmq::error_t& e) {
-//                 if (e.num() == EAGAIN) {
-//                     stats_.send_eagain_count++;
-//                     if (attempt + 1 < kMaxRetries) {
-//                         stats_.send_blocking_events++;
-//                         std::this_thread::sleep_for(std::chrono::microseconds(200));
-//                         continue;
-//                     }
-//                 } else {
-//                     stats_.send_failures++;
-//                     logError(std::string("ZMQ error in internal send: ") + e.what() + 
-//                             " for topic: " + clean_topic);
-//                     return false;
-//                 }
-//             }
-//         }
-
-//         if (!success) {
-//             logError("Failed to send internal message after all retries: " + clean_topic);
-//             return false;
-//         }
-
-//         auto send_end = std::chrono::steady_clock::now();
-//         auto duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(send_end - send_start).count();
-
-//         if (duration_ms > 50) {
-//             stats_.send_blocking_events++;
-//             logError(std::string("Very slow internal send (ms): ") + std::to_string(duration_ms) + 
-//                     " topic=" + clean_topic);
-//         }
-
-//         return true;
-        
-//     } catch (const std::exception& e) {
-//         stats_.send_failures++;
-//         logError("Exception in processInternalMessage: " + std::string(e.what()) + 
-//                 " for topic: " + message.topic);
-//         return false;
-//     }
-// }
-
-// // FIXED: publishSync method with better error handling
-// bool GenericZmqServer::publishSync(const std::string& topic, const std::string& data,
-//                                   MessagePriority priority, const std::string& correlation_id) {
-//     if (state_.load() != ServerState::RUNNING || !intel_publisher_socket_ || !internal_publisher_socket_) {
-//         logError("Cannot publish sync - server not running or socket not available");
-//         return false;
-//     }
-
-//     // Pre-validate
-//     if (!isValidTopic(topic) || !isTopicAllowed(topic)) {
-//         logError("Invalid or filtered topic: " + topic);
-//         return false;
-//     }
-
-//     if (data.empty()) {
-//         logError("Empty data for topic: " + topic);
-//         return false;
-//     }
-
-//     try {
-//         // Create metadata
-//         static thread_local std::string serialized_buffer;
-//         static thread_local std::unordered_map<std::string, std::string> metadata_buffer;
-        
-//         metadata_buffer.clear();
-//         metadata_buffer["correlation_id"] = correlation_id.empty() ? 
-//             GenericMessage::generateCorrelationId() : correlation_id;
-//         metadata_buffer["priority"] = std::to_string(static_cast<int>(priority));
-        
-//         // Cache timestamp
-//         static thread_local auto last_ts_update = std::chrono::steady_clock::now();
-//         static thread_local std::string cached_timestamp;
-//         auto now = std::chrono::steady_clock::now();
-//         if (std::chrono::duration_cast<std::chrono::milliseconds>(now - last_ts_update).count() > 100) {
-//             cached_timestamp = std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
-//                 now.time_since_epoch()).count());
-//             last_ts_update = now;
-//         }
-//         metadata_buffer["timestamp"] = cached_timestamp;
-
-//         // For sync publishing, we'll use raw data without additional serialization
-//         // to avoid the serializeWithMetadata overhead
-//         std::string clean_topic = sanitizeTopic(topic);
-        
-//         // Create message frames
-//         zmq::message_t topic_msg(clean_topic.size());
-//         std::memcpy(topic_msg.data(), clean_topic.data(), clean_topic.size());
-        
-//         zmq::message_t data_msg(data.size());
-//         std::memcpy(data_msg.data(), data.data(), data.size());
-
-//         bool send_success = false;
-        
-//         if (topic == "MARKET_INTEL" && intel_publisher_socket_) {
-//             std::lock_guard<std::mutex> lock(intel_send_mutex_);
-            
-//             auto topic_result = intel_publisher_socket_->send(topic_msg, 
-//                 zmq::send_flags::sndmore | zmq::send_flags::dontwait);
-//             auto data_result = intel_publisher_socket_->send(data_msg, 
-//                 zmq::send_flags::dontwait);
-            
-//             send_success = topic_result.has_value() && data_result.has_value();
-            
-//         } else if (internal_publisher_socket_) {
-//             auto topic_result = internal_publisher_socket_->send(topic_msg, 
-//                 zmq::send_flags::sndmore | zmq::send_flags::dontwait);
-//             auto data_result = internal_publisher_socket_->send(data_msg, 
-//                 zmq::send_flags::dontwait);
-            
-//             send_success = topic_result.has_value() && data_result.has_value();
-//         }
-
-//         if (send_success) {
-//             stats_.messages_published++;
-//             stats_.bytes_sent += clean_topic.size() + data.size();
-//             return true;
-//         }
-        
-//         return false;
-
-//     } catch (const zmq::error_t& e) {
-//         if (e.num() != EAGAIN) {
-//             logError("ZMQ error in publishSync: " + std::string(e.what()) + " for topic: " + topic);
-//         }
-//         return false;
-//     } catch (const std::exception& e) {
-//         logError("Exception in publishSync: " + std::string(e.what()) + " for topic: " + topic);
-//         return false;
-//     }
-// }
 bool GenericZmqServer::processInternalMessage(const GenericMessage& message) {
     if (!internal_publisher_socket_) {
         logError("Internal publisher socket not available");
@@ -700,18 +478,22 @@ bool GenericZmqServer::processInternalMessage(const GenericMessage& message) {
         for (int attempt = 0; attempt < kMaxRetries && !success; ++attempt) {
             try {
                 // CREATE A NEW MESSAGE FOR EACH ATTEMPT!
-                zmq::message_t frame_msg;
-                try {
-                    frame_msg.rebuild(frame_data.size());
-                    std::memcpy(frame_msg.data(), frame_data.data(), frame_data.size());
-                } catch (const std::bad_alloc& e) {
-                    stats_.send_failures++;
-                    logError(std::string("OOM while allocating zmq frame: ") + e.what());
-                    return false;
-                }
+                // zmq::message_t frame_msg;
+                // try {
+                //     frame_msg.rebuild(frame_data.size());
+                //     std::memcpy(frame_msg.data(), frame_data.data(), frame_data.size());
+                // } catch (const std::bad_alloc& e) {
+                //     stats_.send_failures++;
+                //     logError(std::string("OOM while allocating zmq frame: ") + e.what());
+                //     return false;
+                // }
+                auto frame_msg = std::make_unique<zmq::message_t>(frame_data.size());
+                std::memcpy(frame_msg->data(), frame_data.data(), frame_data.size());
+                
+                auto result = internal_publisher_socket_->send(*frame_msg, zmq::send_flags::dontwait);
                 
                 // Now send the fresh message
-                auto result = internal_publisher_socket_->send(frame_msg, zmq::send_flags::dontwait);
+                // auto result = internal_publisher_socket_->send(frame_msg, zmq::send_flags::dontwait);
                 
                 if (!result.has_value()) {
                     stats_.send_eagain_count++;

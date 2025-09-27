@@ -7,6 +7,7 @@ Trading_system::Trading_system() : running_(false), systemHealthy_(true) {
     setupStatistics();
     // Initialize adaptive intelligence
     adaptiveIntel_ = std::make_unique<trading::intelligence::AdaptiveMarketIntelligence>();
+    
     ZmqServerConfig serverConfig;
     //use default config for now
     zmq_server_ = std::make_shared<GenericZmqServer>(serverConfig);
