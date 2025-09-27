@@ -346,7 +346,16 @@ void GenericZmqClient::subscriberWorker() {
             zmq::message_t data_msg;
 
             // Receive first frame (may be topic OR entire single-frame message)
-            auto first_result = subscriber_socket_->recv(topic_msg, zmq::recv_flags::none);
+            // Use the pointer-based recv overload to avoid potential assertion
+            // in some cppzmq/libzmq combinations where sizes can mismatch.
+            bool first_result = false;
+            try {
+                first_result = subscriber_socket_->recv(&topic_msg, 0);
+            } catch (const zmq::error_t& e) {
+                logError(std::string("ZMQ error receiving first frame: ") + e.what());
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                continue;
+            }
             if (!first_result) {
                 // timeout or no message available
                 continue;
@@ -366,9 +375,15 @@ void GenericZmqClient::subscriberWorker() {
 
             if (more) {
                 // Standard multipart: topic frame followed by data frame
-                auto data_result = subscriber_socket_->recv(data_msg, zmq::recv_flags::none);
+                bool data_result = false;
+                try {
+                    data_result = subscriber_socket_->recv(&data_msg, 0);
+                } catch (const zmq::error_t& e) {
+                    logError(std::string("ZMQ error receiving data frame: ") + e.what());
+                    continue;
+                }
                 if (!data_result) {
-                    logError("Failed to receive data frame after topic frame");
+                    logError("Failed to receive data frame after topic frame (timeout)");
                     continue;
                 }
                 topic.assign(static_cast<char*>(topic_msg.data()), topic_msg.size());

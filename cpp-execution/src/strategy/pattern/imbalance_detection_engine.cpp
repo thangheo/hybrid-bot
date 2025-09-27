@@ -423,7 +423,6 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                                         if (trading::perception::bayes_save(bayes_handle_, bayesModelPath_)) {
                                             lastSaveTime_ = std::chrono::steady_clock::now();
                                             updatesSinceLastSave_ = 0;
-                                            doSave = false;
                                             LOG_INFO("ImbalanceDetectionEngine: bayes model checkpoint saved to {}", bayesModelPath_);
                                         } else {
                                             LOG_WARN("ImbalanceDetectionEngine: bayes_save failed for {}", bayesModelPath_);
