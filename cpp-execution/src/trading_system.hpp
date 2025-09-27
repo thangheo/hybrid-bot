@@ -129,9 +129,9 @@ private:
     std::condition_variable orderbookQueueCv_;
     std::vector<std::thread> orderbookWorkers_;
     std::atomic<bool> orderbookWorkersRunning_{false};
-    size_t orderbookQueueLimit_ = 2000; // hard cap
-    size_t orderbookBatchSize_ = 20; // number of updates per batch
-    size_t orderbookWorkerCount_ = 1; // start with 1 worker (tune for VPS)
+    size_t orderbookQueueLimit_ = 20000; // hard cap (increased to handle bursts)
+    size_t orderbookBatchSize_ = 100; // number of updates per batch (larger batches)
+    size_t orderbookWorkerCount_ = 4; // increased worker count for faster consumption on upgraded VPS
 
     // Signal processing queue and worker pool
     std::deque<strategy::TradingSignal> signalQueue_;
