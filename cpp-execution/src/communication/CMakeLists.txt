@@ -66,6 +66,7 @@ set(SOURCES
     zmq_server.cpp
     zmq_manager.cpp
     zmq_client.cpp
+    zmq_utils.cpp
     market_data_subscriber.cpp
 
     # full_bridge.cpp

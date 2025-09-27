@@ -6,7 +6,7 @@
  */
 
 #include "interfaces/strategy_interface.hpp"
-#include <communication/zmq_client.hpp>
+#include <communication/zmq_server_client.hpp>
 #include <nlohmann/json.hpp>
 #include <sstream>
 #include <chrono>
@@ -159,13 +159,13 @@ public:
         try {
             // Configure ZeroMQ clients
             communication::ZmqClientConfig requestConfig;
-            requestConfig.server_pub_endpoint = requestEndpoint_;
+            // requestConfig.server_pub_endpoint = requestEndpoint_;
             
             communication::ZmqClientConfig subscriptionConfig;
-            subscriptionConfig.server_req_endpoint = publishEndpoint_;
-            subscriptionConfig.reconnect_interval = std::chrono::milliseconds(1000);
-            subscriptionConfig.auto_reconnect = true;
-            subscriptionConfig.request_timeout = std::chrono::milliseconds(5000);
+            // subscriptionConfig.server_req_endpoint = publishEndpoint_;
+            // subscriptionConfig.reconnect_interval = std::chrono::milliseconds(1000);
+            // subscriptionConfig.auto_reconnect = true;
+            // subscriptionConfig.request_timeout = std::chrono::milliseconds(5000);
             
             // Initialize request client
             requestClient_ = std::make_unique<communication::GenericZmqClient>(requestConfig);

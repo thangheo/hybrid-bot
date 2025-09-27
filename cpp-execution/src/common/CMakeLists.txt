@@ -5,7 +5,7 @@ add_library(common
     exchange_types.cpp
     logger.cpp
     event_bus.cpp
-    orderbook_cache_service.cpp
+    # orderbook_cache_service.cpp
 )
 
 # Include directories
@@ -43,6 +43,7 @@ target_include_directories(test_cache_app PRIVATE
 )
 target_link_libraries(test_cache_app PRIVATE
     common              # Your common library with OrderBookCacheService
+    communication       # communication provides topic utilities used by data_ingestion
     data_ingestion      # Your data ingestion library with OrderBook
     ${ZMQ_LIBRARIES}
     pthread

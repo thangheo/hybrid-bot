@@ -30,6 +30,9 @@
 namespace trading {
 namespace strategy {
 
+using trading::data_ingestion::PriceLevel;
+
+
 /**
  * Callback type for metric updates
  */

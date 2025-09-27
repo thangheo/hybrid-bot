@@ -1,7 +1,7 @@
 #pragma once
 
 #include "risk/interfaces/data_interface.hpp"
-#include "communication/zmq_client.hpp"
+#include "communication/zmq_server_client.hpp"
 // later we should include abstract class for rest client interface
 //now use binance client directly
 #include "data_ingestion/rest/exchanges/binance_client.hpp"

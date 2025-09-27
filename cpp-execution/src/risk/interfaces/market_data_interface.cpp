@@ -6,8 +6,7 @@
 #include <numeric>
 #include <unordered_map>
 #include <array>
-#include "communication/zmq_config.hpp"
-#include "communication/zmq_client.hpp"
+#include "communication/zmq_server_client.hpp"
 #include "communication/zmq_manager.hpp"
 #include <iostream>
 //protobuf
@@ -106,13 +105,13 @@ bool MarketDataInterface::initialize() {
         if(!zmqClient_){
             // Initialize ZeroMQ client
             ZmqClientConfig zmqConfig;
-            zmqConfig.server_pub_endpoint = zmqSubscriberEndpoint_;
-            zmqConfig.server_req_endpoint = zmqPublisherEndpoint_;
-            zmqConfig.auto_reconnect = true;
-            zmqConfig.reconnect_interval = std::chrono::milliseconds(5000);
-            zmqConfig.request_timeout = std::chrono::milliseconds(10000);
-            zmqConfig.io_threads = 2;
-            zmqConfig.subscriber_conflate = true;
+            // zmqConfig.server_pub_endpoint = zmqSubscriberEndpoint_;
+            // zmqConfig.server_req_endpoint = zmqPublisherEndpoint_;
+            // zmqConfig.auto_reconnect = true;
+            // zmqConfig.reconnect_interval = std::chrono::milliseconds(5000);
+            // zmqConfig.request_timeout = std::chrono::milliseconds(10000);
+            // zmqConfig.io_threads = 2;
+            // zmqConfig.subscriber_conflate = true;
             // zmqConfig.
 
             //only create if not already set via setter
@@ -1487,13 +1486,13 @@ void MarketDataInterface::connectionMonitorLoop() {
 
                 // Create a fresh client instance
                 communication::ZmqClientConfig zmqConfig;
-                zmqConfig.server_pub_endpoint = zmqSubscriberEndpoint_;
-                zmqConfig.server_req_endpoint = zmqPublisherEndpoint_;
-                zmqConfig.auto_reconnect = true;
-                zmqConfig.reconnect_interval = std::chrono::milliseconds(5000);
-                zmqConfig.request_timeout = std::chrono::milliseconds(10000);
-                zmqConfig.io_threads = 1;
-                zmqConfig.subscriber_conflate = false; // Don't conflate for orderbook data
+                // zmqConfig.server_pub_endpoint = zmqSubscriberEndpoint_;
+                // zmqConfig.server_req_endpoint = zmqPublisherEndpoint_;
+                // zmqConfig.auto_reconnect = true;
+                // zmqConfig.reconnect_interval = std::chrono::milliseconds(5000);
+                // zmqConfig.request_timeout = std::chrono::milliseconds(10000);
+                // zmqConfig.io_threads = 1;
+                // zmqConfig.subscriber_conflate = false; // Don't conflate for orderbook data
                 
                 zmqClient_ = std::make_unique<communication::GenericZmqClient>(zmqConfig);
                 LOG_INFO("Created new ZeroMQ client instance");

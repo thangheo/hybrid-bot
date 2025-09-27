@@ -4,7 +4,7 @@
  */
 
 #include "data_ingestion/data_ingestion_service.hpp"
-#include "communication/zmq_server.hpp"
+#include "communication/zmq_server_client.hpp"
 #include "market_intelligence/adaptive_intelligence.hpp"
 #include "../../generated/cpp/proto/trading_messages.pb.h"
 #include <nlohmann/json.hpp>
@@ -58,7 +58,9 @@ public:
         dataService_ = std::make_unique<DataIngestionService>("data_ingestion.json");
         
         // Initialize ZMQ communication
-        zmqServer_ = std::make_unique<GenericZmqServer>();
+        //config
+        ZmqServerConfig zmqConfig;
+        zmqServer_ = std::make_unique<GenericZmqServer>(zmqConfig);
         
         setupCallbacks();
     }

@@ -9,7 +9,7 @@
 #include <stdexcept>
 #include <iostream>
 #include <nlohmann/json.hpp>
-#include "communication/zmq_config.hpp"
+#include "communication/zmq_server_client.hpp"
 
 using namespace trading::communication;
 
@@ -91,37 +91,37 @@ bool Configuration::loadFromJson(const std::string& jsonString) {
 
 void Configuration::loadPublisherConfig(const nlohmann::json& pubJson) {
 
-    publisherConfig_.intel_endpoint = pubJson.value("market_intel_endpoint", INTEL_ENDPOINT);
-    publisherConfig_.internal_endpoint = pubJson.value("orderbook_endpoint", INTERNAL_ENDPOINT);
-    publisherConfig_.request_endpoint = pubJson.value("trading_intent_endpoint", REQUEST_ENDPOINT);
-    // publisherConfig_. = pubJson.value("publisher_type", "zeromq");
-    // publisherConfig_.bufferSize = pubJson.value("buffer_size", 10000);
-    publisherConfig_.max_intel_queue_size = pubJson.value("market_intel_max_queue_size", 10);
-    publisherConfig_.max_internal_queue_size = pubJson.value("orderbook_max_queue_size", 1000);
-    // publisherConfig_.re = pubJson.value("trading_intent_max_queue_size", 10);
-    publisherConfig_.max_intel_publish_rate = pubJson.value("intel_max_publish_rate", 50);
-    publisherConfig_.max_internal_publish_rate = pubJson.value("internal_max_publish_rate", 5000);
-    // publisherConfig_.req = pubJson.value("trading_intent_max_publish_rate", 1000);
-    publisherConfig_.intel_publish_interval = std::chrono::milliseconds(pubJson.value("intel_publish_interval_ms", 15000));
-    publisherConfig_.internal_publish_interval = std::chrono::milliseconds(pubJson.value("internal_publish_interval_ms", 10));
-    // publisherConfig_.req = std::chrono::milliseconds(pubJson.value("trading_intent_publish_interval_ms", 1000));
-    publisherConfig_.queue_timeout = std::chrono::milliseconds(pubJson.value("queue_timeout_ms", 100));
-    publisherConfig_.intel_hwm = pubJson.value("intel_zmq_hwm", 10000);
-    publisherConfig_.internal_hwm = pubJson.value("internal_zmq_hwm", 10000);
-    publisherConfig_.request_hwm = pubJson.value("trading_intent_zmq_hwm", 10000);
-    publisherConfig_.intel_linger = pubJson.value("intel_zmq_linger_ms", 1000);
-    publisherConfig_.internal_linger = pubJson.value("internal_zmq_linger_ms", 1000);
-    publisherConfig_.request_linger = pubJson.value("trading_intent_zmq_linger_ms", 1000);
-    publisherConfig_.intel_immediate = pubJson.value("intel_immediate", true);
-    publisherConfig_.internal_immediate = pubJson.value("internal_immediate", true);
-    publisherConfig_.request_hwm = pubJson.value("request_hwm", 1000);
-    publisherConfig_.request_timeout_ms = pubJson.value("request_timeout_ms", 30000);
-    publisherConfig_.intel_publisher_threads = pubJson.value("publisher_threads", 2);
-    publisherConfig_.request_handler_threads = pubJson.value("request_handler_threads", 4);
-    publisherConfig_.io_threads = pubJson.value("io_threads", 2);
-    publisherConfig_.enable_monitoring = pubJson.value("enable_monitoring", true);
-    publisherConfig_.stats_interval = std::chrono::seconds(pubJson.value("stats_interval_seconds", 60));
-    publisherConfig_.enable_heartbeat = pubJson.value("enable_heartbeat", true);
+    // publisherConfig_.intel_endpoint = pubJson.value("market_intel_endpoint", INTEL_ENDPOINT);
+    // publisherConfig_.internal_endpoint = pubJson.value("orderbook_endpoint", INTERNAL_ENDPOINT);
+    // publisherConfig_.request_endpoint = pubJson.value("trading_intent_endpoint", REQUEST_ENDPOINT);
+    // // publisherConfig_. = pubJson.value("publisher_type", "zeromq");
+    // // publisherConfig_.bufferSize = pubJson.value("buffer_size", 10000);
+    // publisherConfig_.max_intel_queue_size = pubJson.value("market_intel_max_queue_size", 10);
+    // publisherConfig_.max_internal_queue_size = pubJson.value("orderbook_max_queue_size", 1000);
+    // // publisherConfig_.re = pubJson.value("trading_intent_max_queue_size", 10);
+    // publisherConfig_.max_intel_publish_rate = pubJson.value("intel_max_publish_rate", 50);
+    // publisherConfig_.max_internal_publish_rate = pubJson.value("internal_max_publish_rate", 5000);
+    // // publisherConfig_.req = pubJson.value("trading_intent_max_publish_rate", 1000);
+    // publisherConfig_.intel_publish_interval = std::chrono::milliseconds(pubJson.value("intel_publish_interval_ms", 15000));
+    // publisherConfig_.internal_publish_interval = std::chrono::milliseconds(pubJson.value("internal_publish_interval_ms", 10));
+    // // publisherConfig_.req = std::chrono::milliseconds(pubJson.value("trading_intent_publish_interval_ms", 1000));
+    // publisherConfig_.queue_timeout = std::chrono::milliseconds(pubJson.value("queue_timeout_ms", 100));
+    // publisherConfig_.intel_hwm = pubJson.value("intel_zmq_hwm", 10000);
+    // publisherConfig_.internal_hwm = pubJson.value("internal_zmq_hwm", 10000);
+    // publisherConfig_.request_hwm = pubJson.value("trading_intent_zmq_hwm", 10000);
+    // publisherConfig_.intel_linger = pubJson.value("intel_zmq_linger_ms", 1000);
+    // publisherConfig_.internal_linger = pubJson.value("internal_zmq_linger_ms", 1000);
+    // publisherConfig_.request_linger = pubJson.value("trading_intent_zmq_linger_ms", 1000);
+    // publisherConfig_.intel_immediate = pubJson.value("intel_immediate", true);
+    // publisherConfig_.internal_immediate = pubJson.value("internal_immediate", true);
+    // publisherConfig_.request_hwm = pubJson.value("request_hwm", 1000);
+    // publisherConfig_.request_timeout_ms = pubJson.value("request_timeout_ms", 30000);
+    // publisherConfig_.intel_publisher_threads = pubJson.value("publisher_threads", 2);
+    // publisherConfig_.request_handler_threads = pubJson.value("request_handler_threads", 4);
+    // publisherConfig_.io_threads = pubJson.value("io_threads", 2);
+    // publisherConfig_.enable_monitoring = pubJson.value("enable_monitoring", true);
+    // publisherConfig_.stats_interval = std::chrono::seconds(pubJson.value("stats_interval_seconds", 60));
+    // publisherConfig_.enable_heartbeat = pubJson.value("enable_heartbeat", true);
     
 }
 
