@@ -19,8 +19,10 @@
 #include <unordered_map>
 #include <memory>
 #include <future>
+#include <vector>
 #include <chrono>
 #include <mutex>
+#include <deque>
 #include <nlohmann/json.hpp>
 #include "communication/zmq_config.hpp"
 
@@ -175,6 +177,12 @@ private:
     std::thread subscriber_thread_;
     std::unordered_map<std::string, MessageHandler> message_handlers_;
     mutable std::mutex handlers_mutex_;
+    // Pending subscription commands (applied by subscriber thread to avoid
+    // using the same zmq socket from multiple threads which is undefined
+    // behaviour). Each entry is <subscribe_flag, topic> where subscribe_flag
+    // == true means subscribe, false means unsubscribe.
+    std::deque<std::pair<bool, std::string>> pending_subscriptions_;
+    mutable std::mutex pending_sub_mutex_;
     
     // Statistics and monitoring
     mutable ClientStats stats_;

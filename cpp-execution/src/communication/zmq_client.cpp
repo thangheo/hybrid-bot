@@ -11,6 +11,7 @@
 #include <sstream>
 #include <random>
 #include <iomanip>
+#include <deque>
 #include "communication/zmq_manager.hpp"
 
 namespace trading {
@@ -50,18 +51,13 @@ bool GenericZmqClient::connect() {
             return false;
         }
         
-        // Apply any pending subscriptions to the newly-created socket
+        // Queue all existing subscriptions for the subscriber thread to apply
         {
             std::lock_guard<std::mutex> lock(handlers_mutex_);
-            if (subscriber_socket_) {
-                for (const auto& [topic, handler] : message_handlers_) {
-                    try {
-                        subscriber_socket_->set(zmq::sockopt::subscribe, topic);
-                        logInfo("Applied pending subscription for topic: " + topic);
-                    } catch (const std::exception& e) {
-                        logError("Failed to apply pending subscription for topic '" + topic + "': " + e.what());
-                    }
-                }
+            std::lock_guard<std::mutex> sub_lock(pending_sub_mutex_);
+            for (const auto& [topic, handler] : message_handlers_) {
+                pending_subscriptions_.emplace_back(true, topic);
+                logInfo("Queued subscription for topic: " + topic);
             }
         }
 
@@ -117,23 +113,13 @@ bool GenericZmqClient::subscribe(const std::string& topic, MessageHandler handle
         message_handlers_[topic] = std::move(handler);
     }
 
-    // If already connected, apply the subscription to the socket immediately
-    if (connected_.load() && subscriber_socket_) {
-        try {
-            subscriber_socket_->set(zmq::sockopt::subscribe, topic);
-            logInfo("Subscribed to topic: " + topic);
-            return true;
-        } catch (const zmq::error_t& e) {
-            logError("ZMQ error subscribing to topic '" + topic + "': " + std::string(e.what()));
-            return false;
-        } catch (const std::exception& e) {
-            logError("Error subscribing to topic '" + topic + "': " + std::string(e.what()));
-            return false;
-        }
+    // Queue subscription command for subscriber thread to apply
+    {
+        std::lock_guard<std::mutex> lk(pending_sub_mutex_);
+        pending_subscriptions_.emplace_back(true, topic);
     }
-
-    // Not connected yet - subscription stored and will be applied on connect()
-    logInfo("Stored subscription for topic (pending connect): " + topic);
+    
+    logInfo("Queued subscribe command for topic: " + topic);
     return true;
 }
 
@@ -144,22 +130,13 @@ bool GenericZmqClient::unsubscribe(const std::string& topic) {
         message_handlers_.erase(topic);
     }
 
-    // If connected, also remove subscription filter from socket
-    if (connected_.load() && subscriber_socket_) {
-        try {
-            subscriber_socket_->set(zmq::sockopt::unsubscribe, topic);
-            logInfo("Unsubscribed from topic: " + topic);
-            return true;
-        } catch (const zmq::error_t& e) {
-            logError("ZMQ error unsubscribing from topic '" + topic + "': " + std::string(e.what()));
-            return false;
-        } catch (const std::exception& e) {
-            logError("Error unsubscribing from topic '" + topic + "': " + std::string(e.what()));
-            return false;
-        }
+    // Queue unsubscribe command for subscriber thread
+    {
+        std::lock_guard<std::mutex> lk(pending_sub_mutex_);
+        pending_subscriptions_.emplace_back(false, topic);
     }
-
-    logInfo("Removed pending subscription for topic: " + topic);
+    
+    logInfo("Queued unsubscribe command for topic: " + topic);
     return true;
 }
 
@@ -177,15 +154,10 @@ bool GenericZmqClient::subscribeMultiple(const std::vector<std::string>& topics,
 
 void GenericZmqClient::unsubscribeAll() {
     std::lock_guard<std::mutex> lock(handlers_mutex_);
+    std::lock_guard<std::mutex> sub_lock(pending_sub_mutex_);
     
     for (const auto& [topic, handler] : message_handlers_) {
-        try {
-            if (subscriber_socket_) {
-                subscriber_socket_->set(zmq::sockopt::unsubscribe, topic);
-            }
-        } catch (const std::exception& e) {
-            logError("Error unsubscribing from topic '" + topic + "': " + std::string(e.what()));
-        }
+        pending_subscriptions_.emplace_back(false, topic);
     }
     
     message_handlers_.clear();
@@ -303,6 +275,12 @@ bool GenericZmqClient::initializeSockets() {
 }
 
 void GenericZmqClient::cleanup() {
+    // Clear pending subscriptions
+    {
+        std::lock_guard<std::mutex> lk(pending_sub_mutex_);
+        pending_subscriptions_.clear();
+    }
+    
     // Close sockets
     if (subscriber_socket_) {
         subscriber_socket_->close();
@@ -335,47 +313,85 @@ void GenericZmqClient::subscriberWorker() {
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
                 continue;
             }
+
+            // Apply any pending subscription/unsubscribe commands queued by
+            // other threads. Doing this here ensures only the subscriber
+            // thread calls socket->set(), avoiding concurrent socket use.
+            {
+                std::deque<std::pair<bool, std::string>> to_apply;
+                {
+                    std::lock_guard<std::mutex> lk(pending_sub_mutex_);
+                    to_apply.swap(pending_subscriptions_);
+                }
+
+                for (const auto &cmd : to_apply) {
+                    try {
+                        if (cmd.first) {
+                            subscriber_socket_->set(zmq::sockopt::subscribe, cmd.second);
+                            logInfo("Applied subscribe for topic: " + cmd.second);
+                        } else {
+                            subscriber_socket_->set(zmq::sockopt::unsubscribe, cmd.second);
+                            logInfo("Applied unsubscribe for topic: " + cmd.second);
+                        }
+                    } catch (const std::exception &e) {
+                        logError(std::string("Failed to apply subscription command for topic '") + cmd.second + "': " + e.what());
+                    }
+                }
+            }
             
             std::string topic;
             std::string data;
-            
-            // Receive single frame message
-            zmq_msg_t frame_msg;
-            zmq_msg_init(&frame_msg);
-            
-            int rc = zmq_msg_recv(&frame_msg, subscriber_socket_->handle(), 0);
-            
-            if (rc == -1) {
-                zmq_msg_close(&frame_msg);
-                // timeout or error
-                if (zmq_errno() == EAGAIN) continue;
-                logError(std::string("zmq_msg_recv failed: ") + zmq_strerror(zmq_errno()));
-                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+            // Use cppzmq API to receive frames safely. Many publishers send multipart
+            // messages (topic frame then data frame). We try to receive the first
+            // frame (topic or data) and then, if there is more, receive the next.
+            zmq::message_t firstMsg;
+            auto recv_res = subscriber_socket_->recv(firstMsg, zmq::recv_flags::none);
+            if (!recv_res.has_value()) {
+                // no message available within timeout or interrupted
                 continue;
             }
-            
-            // Extract frame data
-            auto frame_ptr = static_cast<char*>(zmq_msg_data(&frame_msg));
-            size_t frame_len = zmq_msg_size(&frame_msg);
-            std::string frame_data(frame_ptr, frame_len);
-            zmq_msg_close(&frame_msg);
-            
-            // Parse topic|data format
-            size_t delimiter_pos = frame_data.find('|');
-            if (delimiter_pos != std::string::npos) {
-                topic = frame_data.substr(0, delimiter_pos);
-                data = frame_data.substr(delimiter_pos + 1);
+
+            // See if there is another part (data). Some publishers send topic+data.
+            bool has_more = false;
+            try {
+                has_more = subscriber_socket_->get(zmq::sockopt::rcvmore);
+            } catch (const zmq::error_t& /*e*/) {
+                // If socket state cannot be queried, assume no more and proceed
+                has_more = false;
+            }
+
+            std::string firstStr(static_cast<char*>(firstMsg.data()), firstMsg.size());
+
+            if (has_more) {
+                zmq::message_t secondMsg;
+                auto recv_res2 = subscriber_socket_->recv(secondMsg, zmq::recv_flags::none);
+                if (!recv_res2.has_value()) {
+                    // Unexpected: second frame missing, treat first as data
+                    topic.clear();
+                    data = std::move(firstStr);
+                } else {
+                    // First is the topic, second is the data
+                    topic = std::move(firstStr);
+                    data.assign(static_cast<char*>(secondMsg.data()), secondMsg.size());
+                }
             } else {
-                // Fallback: if no delimiter found, treat entire frame as data
-                topic.clear();
-                data = std::move(frame_data);
+                // Single-frame message: we try to parse topic|data convention
+                size_t delimiter_pos = firstStr.find('|');
+                if (delimiter_pos != std::string::npos) {
+                    topic = firstStr.substr(0, delimiter_pos);
+                    data = firstStr.substr(delimiter_pos + 1);
+                } else {
+                    topic.clear();
+                    data = std::move(firstStr);
+                }
             }
             
             // Basic validation
             if (data.empty()) {
                 continue; // Skip empty messages
             }
-            
+
             // Process the message
             handleMessage(topic, data);
             stats_.messages_received++;
