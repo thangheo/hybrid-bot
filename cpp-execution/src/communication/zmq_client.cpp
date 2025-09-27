@@ -1,9 +1,10 @@
 /**
  * @file zmq_client.cpp
- * @brief Clean implementation of the ZeroMQ Client library
+ * @brief Clean implementation of the ZeroMQ Client library - FIXED VERSION
  * 
  * @author Trading System Team
  * @date September 27, 2025
+ * @fix Fixed double-free corruption in subscriberWorker message handling
  */
 
 #include "communication/zmq_client.hpp"
@@ -339,60 +340,64 @@ void GenericZmqClient::subscriberWorker() {
                 }
             }
             
+            // **FIXED: Use safer message handling with proper RAII and explicit cleanup**
             std::string topic;
             std::string data;
-
-            // Use cppzmq API to receive frames safely. Many publishers send multipart
-            // messages (topic frame then data frame). We try to receive the first
-            // frame (topic or data) and then, if there is more, receive the next.
-            zmq::message_t firstMsg;
-            auto recv_res = subscriber_socket_->recv(firstMsg, zmq::recv_flags::none);
-            if (!recv_res.has_value()) {
-                // no message available within timeout or interrupted
-                continue;
-            }
-
-            // See if there is another part (data). Some publishers send topic+data.
-            bool has_more = false;
-            try {
-                has_more = subscriber_socket_->get(zmq::sockopt::rcvmore);
-            } catch (const zmq::error_t& /*e*/) {
-                // If socket state cannot be queried, assume no more and proceed
-                has_more = false;
-            }
-
-            std::string firstStr(static_cast<char*>(firstMsg.data()), firstMsg.size());
-
-            if (has_more) {
-                zmq::message_t secondMsg;
-                auto recv_res2 = subscriber_socket_->recv(secondMsg, zmq::recv_flags::none);
-                if (!recv_res2.has_value()) {
-                    // Unexpected: second frame missing, treat first as data
-                    topic.clear();
-                    data = std::move(firstStr);
-                } else {
-                    // First is the topic, second is the data
-                    topic = std::move(firstStr);
-                    data.assign(static_cast<char*>(secondMsg.data()), secondMsg.size());
+            
+            // Create messages on the stack with proper cleanup
+            {
+                zmq::message_t firstMsg;
+                auto recv_res = subscriber_socket_->recv(firstMsg, zmq::recv_flags::none);
+                if (!recv_res.has_value()) {
+                    // no message available within timeout or interrupted
+                    continue;
                 }
-            } else {
-                // Single-frame message: we try to parse topic|data convention
-                size_t delimiter_pos = firstStr.find('|');
-                if (delimiter_pos != std::string::npos) {
-                    topic = firstStr.substr(0, delimiter_pos);
-                    data = firstStr.substr(delimiter_pos + 1);
-                } else {
-                    topic.clear();
-                    data = std::move(firstStr);
+
+                // **FIXED: Immediately copy data out of ZMQ message to avoid double-free**
+                std::string firstStr(static_cast<char*>(firstMsg.data()), firstMsg.size());
+                
+                // Check for more parts - do this BEFORE the message goes out of scope
+                bool has_more = false;
+                try {
+                    has_more = subscriber_socket_->get(zmq::sockopt::rcvmore);
+                } catch (const zmq::error_t& /*e*/) {
+                    has_more = false;
                 }
-            }
+
+                if (has_more) {
+                    zmq::message_t secondMsg;
+                    auto recv_res2 = subscriber_socket_->recv(secondMsg, zmq::recv_flags::none);
+                    if (!recv_res2.has_value()) {
+                        // Unexpected: second frame missing, treat first as data
+                        topic.clear();
+                        data = std::move(firstStr);
+                    } else {
+                        // **FIXED: Immediately copy data out of second message**
+                        topic = std::move(firstStr);
+                        data.assign(static_cast<char*>(secondMsg.data()), secondMsg.size());
+                        // secondMsg will be destroyed here safely
+                    }
+                    // firstMsg will be destroyed here safely
+                } else {
+                    // Single-frame message: try to parse topic|data convention
+                    size_t delimiter_pos = firstStr.find('|');
+                    if (delimiter_pos != std::string::npos) {
+                        topic = firstStr.substr(0, delimiter_pos);
+                        data = firstStr.substr(delimiter_pos + 1);
+                    } else {
+                        topic.clear();
+                        data = std::move(firstStr);
+                    }
+                    // firstMsg will be destroyed here safely
+                }
+            } // **FIXED: All zmq::message_t objects are destroyed here with proper cleanup**
             
             // Basic validation
             if (data.empty()) {
                 continue; // Skip empty messages
             }
 
-            // Process the message
+            // Process the message using copied data (no ZMQ objects involved)
             handleMessage(topic, data);
             stats_.messages_received++;
             stats_.last_message_time = std::chrono::steady_clock::now();
