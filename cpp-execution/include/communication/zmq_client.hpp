@@ -1,12 +1,12 @@
 /**
  * @file zmq_client.hpp
- * @brief Client library for interacting with the Generic ZeroMQ Server
+ * @brief Clean ZeroMQ Client library for trading system communications
  * 
  * This client provides both subscriber and request-reply functionality
- * to interact with the GenericZmqServer.
+ * with robust message handling and proper multipart message support.
  * 
  * @author Trading System Team
- * @date September 17, 2025
+ * @date September 27, 2025
  */
 
 #pragma once
@@ -20,12 +20,12 @@
 #include <memory>
 #include <future>
 #include <chrono>
+#include <mutex>
 #include <nlohmann/json.hpp>
 #include "communication/zmq_config.hpp"
 
 namespace trading {
 namespace communication {
-
 
 /**
  * Message handler callback type for subscriptions
@@ -35,7 +35,19 @@ using MessageHandler = std::function<void(const std::string& topic,
                                         const std::unordered_map<std::string, std::string>& metadata)>;
 
 /**
- * Generic ZeroMQ Client for trading system communications
+ * Client statistics for monitoring
+ */
+struct ClientStats {
+    std::atomic<uint64_t> messages_received{0};
+    std::atomic<uint64_t> requests_sent{0};
+    std::atomic<uint64_t> requests_failed{0};
+    std::atomic<uint64_t> connection_attempts{0};
+    std::chrono::steady_clock::time_point last_message_time;
+    std::chrono::steady_clock::time_point connection_time;
+};
+
+/**
+ * Clean ZeroMQ Client for trading system communications
  */
 class GenericZmqClient {
 public:
@@ -53,12 +65,15 @@ public:
     GenericZmqClient(const GenericZmqClient&) = delete;
     GenericZmqClient& operator=(const GenericZmqClient&) = delete;
     
+    // =============================================================================
+    // CONNECTION MANAGEMENT
+    // =============================================================================
+    
     /**
      * Connect to the ZMQ server
      */
     bool connect();
-    bool start() { return connect(); }  // Alias for connect()
-    bool stop() { disconnect(); return true; }  // Alias for disconnect()
+    
     /**
      * Disconnect from the ZMQ server
      */
@@ -68,6 +83,10 @@ public:
      * Check if client is connected
      */
     bool isConnected() const { return connected_.load(); }
+    
+    // Convenience aliases
+    bool start() { return connect(); }
+    bool stop() { disconnect(); return true; }
     
     // =============================================================================
     // SUBSCRIPTION INTERFACE
@@ -125,15 +144,6 @@ public:
     /**
      * Get connection statistics
      */
-    struct ClientStats {
-        std::atomic<uint64_t> messages_received{0};
-        std::atomic<uint64_t> requests_sent{0};
-        std::atomic<uint64_t> requests_failed{0};
-        std::atomic<uint64_t> reconnection_attempts{0};
-        std::chrono::steady_clock::time_point last_message_time;
-        std::chrono::steady_clock::time_point connection_time;
-    };
-    
     const ClientStats& getStats() const { return stats_; }
     
     /**
@@ -145,13 +155,12 @@ public:
      * Enable/disable logging
      */
     void setLoggingEnabled(bool enabled) { logging_enabled_ = enabled; }
-    bool isPrintableText(const std::string& data) const ;
-    std::string bytesToHex(const std::string& bytes) const;
-    bool isValidTopicString(const std::string& topic) const;
+    bool isLoggingEnabled() const { return logging_enabled_.load(); }
+
 private:
     // Configuration
     ZmqClientConfig config_;
-    // bool logging_enabled_{false};
+    
     // ZeroMQ components
     std::shared_ptr<zmq::context_t> context_;
     std::unique_ptr<zmq::socket_t> subscriber_socket_;
@@ -160,6 +169,7 @@ private:
     // Connection state
     std::atomic<bool> connected_{false};
     std::atomic<bool> running_{false};
+    std::atomic<bool> logging_enabled_{true};
     
     // Subscriber thread and handlers
     std::thread subscriber_thread_;
@@ -170,18 +180,25 @@ private:
     mutable ClientStats stats_;
     mutable std::mutex error_mutex_;
     std::string last_error_;
-    std::atomic<bool> logging_enabled_{true};
     
-    // Private methods
+    // =============================================================================
+    // PRIVATE METHODS
+    // =============================================================================
+    
     bool initializeSockets();
     void cleanup();
     void subscriberWorker();
-    void handleMessage(const std::string& topic, const std::string& raw_data);
+    void handleMessage(const std::string& topic, const std::string& data);
+    
+    // Message handling
     std::pair<std::string, std::unordered_map<std::string, std::string>> 
     parseMessage(const std::string& raw_data) const;
+    
     std::string createRequestMessage(const std::string& request_type,
                                    const std::string& data,
                                    const std::unordered_map<std::string, std::string>& metadata) const;
+    
+    // Logging and utilities
     void logError(const std::string& error_msg);
     void logInfo(const std::string& info_msg);
     std::string generateRequestId() const;
@@ -206,7 +223,6 @@ std::string GenericZmqClient::sendJsonRequest(const std::string& request_type, c
     
     return sendRequest(request_type, data.dump(), metadata);
 }
-
 
 } // namespace communication
 } // namespace trading
