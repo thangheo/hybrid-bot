@@ -195,8 +195,10 @@ bool Trading_system::start() {
             std::cerr << "Failed to start data ingestion service" << std::endl;
             return false;
         }
-        // Start orderbook worker pool after data ingestion starts
-        startOrderbookWorkerPool();
+    // Start orderbook worker pool after data ingestion starts
+    startOrderbookWorkerPool();
+    // Start dedicated strategy orderbook worker pool (decoupled)
+    startStrategyOrderbookWorkerPool();
         
         // 2. Start strategy engine
         if (!strategyEngine_->start()) {
@@ -249,10 +251,12 @@ void Trading_system::shutdown() {
             std::cout << "Stopping strategy engine..." << std::endl;
             strategyEngine_->stop();
         }
-        // Stop worker pool
-        stopOrderbookWorkerPool();
-        stopSignalWorkerPool();
-        stopExecWorkerPool();
+    // Stop worker pools
+    stopOrderbookWorkerPool();
+    // Stop strategy-specific orderbook processing pool
+    stopStrategyOrderbookWorkerPool();
+    stopSignalWorkerPool();
+    stopExecWorkerPool();
 
         // Stop data ingestion FIRST and wait for cleanup
         if (dataIngestionService_) {
@@ -940,6 +944,27 @@ void Trading_system::stopOrderbookWorkerPool() {
     std::cout << "Orderbook worker pool stopped and memory cleared" << std::endl;
 }
 
+void Trading_system::startStrategyOrderbookWorkerPool() {
+    if (strategyOrderbookWorkersRunning_.exchange(true)) return;
+    strategyOrderbookWorkers_.clear();
+    for (size_t i = 0; i < strategyOrderbookWorkerCount_; ++i) {
+        strategyOrderbookWorkers_.emplace_back([this, i]() { this->strategyOrderbookWorkerLoop(i); });
+    }
+    std::cout << "Started " << strategyOrderbookWorkers_.size() << " strategy orderbook worker(s)" << std::endl;
+}
+
+void Trading_system::stopStrategyOrderbookWorkerPool() {
+    if (!strategyOrderbookWorkersRunning_.exchange(false)) return;
+    strategyOrderbookQueueCv_.notify_all();
+    for (auto &t : strategyOrderbookWorkers_) if (t.joinable()) t.join();
+    strategyOrderbookWorkers_.clear();
+    {
+        std::lock_guard<std::mutex> lk(strategyOrderbookQueueMutex_);
+        strategyOrderbookQueue_.clear();
+    }
+    std::cout << "Strategy orderbook worker pool stopped" << std::endl;
+}
+
 void Trading_system::orderbookWorkerLoop(size_t workerId) {
     std::vector<OrderBookUpdate> batch;
     batch.reserve(orderbookBatchSize_);
@@ -989,10 +1014,21 @@ void Trading_system::orderbookWorkerLoop(size_t workerId) {
                     // generateMarketIntelligence(update, orderBook); //no need at this time
                     // Publish orderbook for risk asynchronously
                     publishOrderBookForRisk(update);                 
-                    // Send to strategy engine
-                    //thing got stuck here
-                    if (strategyEngine_) {
-                        strategyEngine_->processOrderBook(*orderBook);
+                    // Enqueue a shared ptr to the orderBook for strategy processing
+                    try {
+                        std::shared_ptr<OrderBook> ob_ptr = orderBook;
+                        std::unique_lock<std::mutex> slk(strategyOrderbookQueueMutex_);
+                        if (strategyOrderbookQueue_.size() < strategyOrderbookQueueLimit_) {
+                            strategyOrderbookQueue_.push_back(ob_ptr);
+                        } else {
+                            // Drop oldest if full
+                            strategyOrderbookQueue_.pop_front();
+                            strategyOrderbookQueue_.push_back(ob_ptr);
+                        }
+                        slk.unlock();
+                        strategyOrderbookQueueCv_.notify_one();
+                    } catch (const std::exception &e) {
+                        std::cerr << "Failed to enqueue orderbook for strategy: " << e.what() << std::endl;
                     }
                     
                 }
@@ -1001,6 +1037,39 @@ void Trading_system::orderbookWorkerLoop(size_t workerId) {
             }
         }
     }
+}
+
+void Trading_system::strategyOrderbookWorkerLoop(size_t workerId) {
+    std::vector<std::shared_ptr<OrderBook>> batch;
+    batch.reserve(strategyOrderbookBatchSize_);
+    std::cout << "Strategy orderbook worker " << workerId << " started" << std::endl;
+    while (strategyOrderbookWorkersRunning_.load()) {
+        std::unique_lock<std::mutex> lk(strategyOrderbookQueueMutex_);
+        strategyOrderbookQueueCv_.wait_for(lk, std::chrono::milliseconds(100), [this]() {
+            return !strategyOrderbookQueue_.empty() || !strategyOrderbookWorkersRunning_.load();
+        });
+        if (!strategyOrderbookWorkersRunning_.load() && strategyOrderbookQueue_.empty()) break;
+
+        batch.clear();
+        for (size_t i = 0; i < strategyOrderbookBatchSize_ && !strategyOrderbookQueue_.empty(); ++i) {
+            batch.push_back(std::move(strategyOrderbookQueue_.front()));
+            strategyOrderbookQueue_.pop_front();
+        }
+        lk.unlock();
+
+        if (batch.empty()) continue;
+
+        for (const auto &ob_ptr : batch) {
+            try {
+                if (strategyEngine_ && ob_ptr) {
+                    strategyEngine_->processOrderBook(*ob_ptr);
+                }
+            } catch (const std::exception &e) {
+                std::cerr << "Strategy orderbook worker " << workerId << " error: " << e.what() << std::endl;
+            }
+        }
+    }
+    std::cout << "Strategy orderbook worker " << workerId << " stopped" << std::endl;
 }
 // Signal worker pool control
 void Trading_system::startSignalWorkerPool() {

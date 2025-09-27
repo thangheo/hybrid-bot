@@ -143,6 +143,16 @@ private:
     size_t signalBatchSize_ = 16; // number of signals per batch
     size_t signalWorkerCount_ = 1; // number of workers for signals
 
+    // Strategy-specific orderbook processing queue (decouples strategy work from orderbook workers)
+    std::deque<std::shared_ptr<OrderBook>> strategyOrderbookQueue_;
+    std::mutex strategyOrderbookQueueMutex_;
+    std::condition_variable strategyOrderbookQueueCv_;
+    std::vector<std::thread> strategyOrderbookWorkers_;
+    std::atomic<bool> strategyOrderbookWorkersRunning_{false};
+    size_t strategyOrderbookQueueLimit_ = 20000;
+    size_t strategyOrderbookBatchSize_ = 16;
+    size_t strategyOrderbookWorkerCount_ = 2;
+
     // Execution task queue and worker pool (avoid spawning detached threads)
     std::deque<execution::TradingSignal> execQueue_;
     std::mutex execQueueMutex_;
@@ -233,6 +243,10 @@ private:
     void stopOrderbookWorkerPool() ;
 
     void orderbookWorkerLoop(size_t workerId) ;
+    // Strategy-specific orderbook processing queue (separate from orderbook workers)
+    void startStrategyOrderbookWorkerPool();
+    void stopStrategyOrderbookWorkerPool();
+    void strategyOrderbookWorkerLoop(size_t workerId);
     // Signal worker pool control
     void startSignalWorkerPool();
 
