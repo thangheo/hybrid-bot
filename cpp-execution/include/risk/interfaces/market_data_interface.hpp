@@ -246,7 +246,7 @@ private:
     size_t maxMessageSize_ = 256 * 1024;
     std::vector<std::thread> processingThreads_;
     std::atomic<bool> processingRunning_{false};
-    size_t processingThreadCount_ = 4; // Default, can be set via config or setter
+    size_t processingThreadCount_ = 8; // Default, can be set via config or setter
 
     // Counters for instrumentation
     std::atomic<uint64_t> totalReceived_{0};
