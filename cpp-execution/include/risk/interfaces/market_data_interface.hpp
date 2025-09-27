@@ -161,6 +161,8 @@ public:
     //shutdown
     void shutdown() override;
 private:
+    //function to calculate message rate and adjust batch size
+    // int adaptiveBatchSize(int messageRatePerSecond);
     void pruneMarketDataCache();
     void performPeriodicCleanup();
     // Binance REST client for balance and order history
@@ -238,8 +240,16 @@ private:
     // Queue used by ZMQ callback (producer) and processing thread (consumer)
     mutable std::mutex inboundQueueMutex_;
     std::condition_variable inboundQueueCv_;
-    std::deque<RawMessage> inboundQueue_;
+    std::deque<RawMessage> inboundQueue_; // legacy single-message queue (kept for compatibility)
+    // Conflation map + key queue: keep only the latest update per symbol/topic to avoid queue blowup
+    // Key is the full topic string (or other unique symbol/topic identifier)
+    mutable std::unordered_map<std::string, RawMessage> inboundConflationMap_;
+    mutable std::deque<std::string> inboundConflationKeyQueue_; // order of arrival of unique keys
     size_t inboundQueueMaxSize_ = 10000; // bounded queue size to avoid OOM
+    // When conflation is enabled, this limit applies to unique keys in the conflation map
+    bool enableConflation_ = true;
+    // Number of messages to batch-drain from the queue per processing loop
+    size_t processingBatchSize_ = 64;
     // Maximum allowed incoming message size to avoid parsing extremely large
     // messages that could exhaust memory or lead to pathological behavior.
     // Set to 256KB by default; can be tuned if needed.
@@ -253,6 +263,20 @@ private:
     std::atomic<uint64_t> totalEnqueued_{0};
     std::atomic<uint64_t> totalProcessed_{0};
     std::atomic<uint64_t> totalDropped_{0};
+
+    // Message rate measurement snapshots used for adaptive batching
+    std::atomic<uint64_t> lastTotalReceivedSnapshot_{0};
+    std::chrono::steady_clock::time_point lastRateCheckTime_ = std::chrono::steady_clock::now();
+
+    // Adaptive batch sizing limits and smoothing
+    size_t maxProcessingBatchSize_ = 1024; // hard cap
+    size_t minProcessingBatchSize_ = 1;    // lower bound
+    double batchSizeSmoothingAlpha_ = 0.75; // smoothing factor for exponential smoothing (0..1)
+
+    // Measure incoming message rate and adjust processingBatchSize_
+    void measureAndAdjustBatchSize();
+    // Compute a recommended batch size for a given per-second message rate
+    size_t adaptiveBatchSize(size_t messageRatePerSecond) const;
 
     // Processing loop
     void processQueueLoop();

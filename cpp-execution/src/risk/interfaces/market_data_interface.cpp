@@ -111,7 +111,9 @@ bool MarketDataInterface::initialize() {
             zmqConfig.auto_reconnect = true;
             zmqConfig.reconnect_interval = std::chrono::milliseconds(5000);
             zmqConfig.request_timeout = std::chrono::milliseconds(10000);
-            zmqConfig.io_threads = 1;
+            zmqConfig.io_threads = 2;
+            zmqConfig.subscriber_conflate = true;
+            // zmqConfig.
 
             //only create if not already set via setter
             
@@ -134,23 +136,46 @@ bool MarketDataInterface::initialize() {
         // Subscribe to orderbook topics
         zmqClient_->subscribe("orderbook.", 
             [this](const std::string& topic, const std::string& message, const std::unordered_map<std::string, std::string>& metadata) {
-                // Enqueue-only: push raw message to inbound queue and wake processing thread
+                // Enqueue-only: push raw message to inbound queue or conflation map and wake processing thread
                 totalReceived_.fetch_add(1, std::memory_order_relaxed);
                 MarketDataInterface::RawMessage raw{topic, message, std::chrono::steady_clock::now()};
                 {
                     std::unique_lock<std::mutex> qlock(this->inboundQueueMutex_);
-                    if (this->inboundQueue_.size() >= this->inboundQueueMaxSize_) {
-                        // Drop the message to avoid unbounded growth
-                        this->totalDropped_.fetch_add(1, std::memory_order_relaxed);
-                    } else {
-                        this->inboundQueue_.push_back(std::move(raw));
-                        this->totalEnqueued_.fetch_add(1, std::memory_order_relaxed);
-                        // Diagnostic: log when queue is growing large
-                        size_t qsz = this->inboundQueue_.size();
-                        if (qsz % 1000 == 0 || qsz > 2000) {
-                            LOG_WARN("MarketDataInterface inbound queue size high: {}", qsz);
+                    if (enableConflation_) {
+                        // Keep only the latest message per topic to avoid queue blowup
+                        auto it = this->inboundConflationMap_.find(topic);
+                        if (it != this->inboundConflationMap_.end()) {
+                            // Replace existing entry (in-place update)
+                            it->second = std::move(raw);
+                            // Count as received but not additional enqueue
+                            this->totalDropped_.fetch_add(1, std::memory_order_relaxed); // logically dropped old
+                        } else {
+                            // New key
+                            this->inboundConflationMap_.emplace(topic, std::move(raw));
+                            this->inboundConflationKeyQueue_.push_back(topic);
+                            this->totalEnqueued_.fetch_add(1, std::memory_order_relaxed);
+                        }
+                        // Diagnostic: log when map grows large
+                        size_t msz = this->inboundConflationMap_.size();
+                        if (msz % 1000 == 0 || msz > 2000) {
+                            LOG_WARN("MarketDataInterface conflation map size high: {}", msz);
                         }
                         this->inboundQueueCv_.notify_one();
+                    } else {
+                        // Legacy behavior: simple deque
+                        if (this->inboundQueue_.size() >= this->inboundQueueMaxSize_) {
+                            // Drop the message to avoid unbounded growth
+                            this->totalDropped_.fetch_add(1, std::memory_order_relaxed);
+                        } else {
+                            this->inboundQueue_.push_back(std::move(raw));
+                            this->totalEnqueued_.fetch_add(1, std::memory_order_relaxed);
+                            // Diagnostic: log when queue is growing large
+                            size_t qsz = this->inboundQueue_.size();
+                            if (qsz % 1000 == 0 || qsz > 2000) {
+                                LOG_WARN("MarketDataInterface inbound queue size high: {}", qsz);
+                            }
+                            this->inboundQueueCv_.notify_one();
+                        }
                     }
                 }
             });
@@ -197,32 +222,52 @@ bool MarketDataInterface::initialize() {
 // Process inbound queue: pop raw messages and call existing processing logic
 void MarketDataInterface::processQueueLoop() {
     while (processingRunning_.load()) {
-        RawMessage item;
+        // Batch processing: drain up to processingBatchSize_ unique keys/messages
+        std::vector<RawMessage> batch;
         {
             std::unique_lock<std::mutex> lock(inboundQueueMutex_);
-            if (inboundQueue_.empty()) {
-                // Wait until notified or check periodically to allow shutdown
+            // Wait until notified or check periodically to allow shutdown
+            if (inboundConflationMap_.empty() && inboundQueue_.empty()) {
                 inboundQueueCv_.wait_for(lock, std::chrono::milliseconds(500));
                 if (!processingRunning_.load()) break;
-                if (inboundQueue_.empty()) continue;
+                if (inboundConflationMap_.empty() && inboundQueue_.empty()) continue;
             }
-            item = std::move(inboundQueue_.front());
-            inboundQueue_.pop_front();
+
+            if (enableConflation_ && !inboundConflationKeyQueue_.empty()) {
+                size_t to_take = std::min(processingBatchSize_, inboundConflationKeyQueue_.size());
+                for (size_t i = 0; i < to_take; ++i) {
+                    const std::string key = std::move(inboundConflationKeyQueue_.front());
+                    inboundConflationKeyQueue_.pop_front();
+                    auto it = inboundConflationMap_.find(key);
+                    if (it != inboundConflationMap_.end()) {
+                        batch.push_back(std::move(it->second));
+                        inboundConflationMap_.erase(it);
+                    }
+                }
+            } else if (!inboundQueue_.empty()) {
+                // Legacy single-message deque fallback
+                size_t to_take = std::min(processingBatchSize_, inboundQueue_.size());
+                for (size_t i = 0; i < to_take; ++i) {
+                    batch.push_back(std::move(inboundQueue_.front()));
+                    inboundQueue_.pop_front();
+                }
+            }
         }
 
-        try {
-            // Call existing processing function which does JSON parse, cache updates, callbacks
-            auto start = std::chrono::steady_clock::now();
-            processSyntheticOrderBook_protobuf(item.topic, item.message);
-            totalProcessed_.fetch_add(1, std::memory_order_relaxed);
-            auto dur = std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::steady_clock::now() - start).count();
-            if (dur > 20) {
-                LOG_WARN("Slow processing of market message: {} ms (totalProcessed={})", dur, totalProcessed_.load());
+        for (auto& item : batch) {
+            try {
+                auto start = std::chrono::steady_clock::now();
+                processSyntheticOrderBook_protobuf(item.topic, item.message);
+                totalProcessed_.fetch_add(1, std::memory_order_relaxed);
+                auto dur = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now() - start).count();
+                if (dur > 20) {
+                    LOG_WARN("Slow processing of market message: {} ms (totalProcessed={})", dur, totalProcessed_.load());
+                }
+            } catch (const std::exception& e) {
+                errorStats_.dataErrors++;
+                LOG_ERROR("Error processing queued market data: {}", e.what());
             }
-        } catch (const std::exception& e) {
-            errorStats_.dataErrors++;
-            LOG_ERROR("Error processing queued market data: {}", e.what());
         }
     }
 }
@@ -875,6 +920,62 @@ void MarketDataInterface::pruneMarketDataCache() {
     }
 }
 
+//function to calculate adaptive batch size based on message rate
+// Compute a recommended batch size for a given incoming message rate (messages/sec)
+// Heuristic: try to keep per-thread work around target_work_ms (processing latency budget)
+// If message rate is high, increase batch size up to maxProcessingBatchSize_.
+size_t MarketDataInterface::adaptiveBatchSize(size_t messageRatePerSecond) const {
+    if (messageRatePerSecond == 0) return minProcessingBatchSize_;
+    // target per-batch processing time (ms) per thread; we want each batch to take a few ms
+    const double targetBatchMs = 10.0; // aim for ~10ms of work per batch
+    // assume average processing time per message ~0.2ms (empirical); clamp below
+    const double avgPerMessageMs = 0.2;
+    double desiredBatch = targetBatchMs / avgPerMessageMs;
+    // scale with message rate: if rate is very high, it's better to process larger batches
+    // but cap to avoid starvation
+    size_t batch = static_cast<size_t>(std::max<double>(1.0, desiredBatch));
+    if (batch > maxProcessingBatchSize_) batch = maxProcessingBatchSize_;
+    return batch;
+}
+
+// Measure incoming rate using totalReceived_ snapshots and adjust processingBatchSize_
+void MarketDataInterface::measureAndAdjustBatchSize() {
+    try {
+        auto now = std::chrono::steady_clock::now();
+        uint64_t prev = lastTotalReceivedSnapshot_.load(std::memory_order_relaxed);
+        uint64_t current = totalReceived_.load(std::memory_order_relaxed);
+        double elapsed_s = std::chrono::duration_cast<std::chrono::duration<double>>(now - lastRateCheckTime_).count();
+        if (elapsed_s <= 0.0) return;
+        uint64_t delta = (current >= prev) ? (current - prev) : 0;
+        size_t rate = static_cast<size_t>(std::round(delta / elapsed_s));
+
+        // Compute target batch size using heuristic
+        size_t recommended = adaptiveBatchSize(rate);
+
+        // Smooth adjustments using exponential smoothing to avoid oscillation
+        double currentBatch = static_cast<double>(processingBatchSize_);
+        double alpha = batchSizeSmoothingAlpha_; // closer to 1 -> slower changes
+        double smoothed = alpha * currentBatch + (1.0 - alpha) * static_cast<double>(recommended);
+        size_t newBatch = static_cast<size_t>(std::max<double>(1.0, std::round(smoothed)));
+
+        // enforce bounds
+        if (newBatch > maxProcessingBatchSize_) newBatch = maxProcessingBatchSize_;
+        if (newBatch < minProcessingBatchSize_) newBatch = minProcessingBatchSize_;
+
+        if (newBatch != processingBatchSize_) {
+            LOG_INFO("Adjusting processingBatchSize_ from {} to {} based on rate {} msg/s (delta={})",
+                     processingBatchSize_, newBatch, rate, delta);
+            processingBatchSize_ = newBatch;
+        }
+
+        lastTotalReceivedSnapshot_.store(current, std::memory_order_relaxed);
+        // update timestamp for next measurement
+        lastRateCheckTime_ = now;
+    } catch (const std::exception& e) {
+        LOG_WARN("measureAndAdjustBatchSize failed: {}", e.what());
+    }
+}
+
 std::optional<MarketData> MarketDataInterface::getMarketData(
    const core::Symbol& tradingPair,
    const std::optional<std::string>& exchangeId) {
@@ -1469,6 +1570,11 @@ void MarketDataInterface::connectionMonitorLoop() {
                         LOG_ERROR("Reconnection failed: {}", e.what());
                     }
                 }
+
+                // Periodically measure message rate and adjust processing batch size
+                try {
+                    measureAndAdjustBatchSize();
+                } catch (...) {}
 
                 // Keep the cache pruned periodically so stale entries are removed
                 pruneMarketDataCache();
