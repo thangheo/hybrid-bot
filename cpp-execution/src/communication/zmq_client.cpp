@@ -338,67 +338,37 @@ void GenericZmqClient::subscriberWorker() {
             
             std::string topic;
             std::string data;
-
-            // Use C API zmq_msg_t to receive frames to avoid cppzmq message_t size assertion
-            zmq_msg_t topic_msg;
-            zmq_msg_init(&topic_msg);
-            int topic_rc = zmq_msg_recv(&topic_msg, subscriber_socket_->handle(), 0);
-            if (topic_rc == -1) {
-                zmq_msg_close(&topic_msg);
+            
+            // Receive single frame message
+            zmq_msg_t frame_msg;
+            zmq_msg_init(&frame_msg);
+            
+            int rc = zmq_msg_recv(&frame_msg, subscriber_socket_->handle(), 0);
+            
+            if (rc == -1) {
+                zmq_msg_close(&frame_msg);
                 // timeout or error
                 if (zmq_errno() == EAGAIN) continue;
-                logError(std::string("zmq_msg_recv(topic) failed: ") + zmq_strerror(zmq_errno()));
+                logError(std::string("zmq_msg_recv failed: ") + zmq_strerror(zmq_errno()));
                 std::this_thread::sleep_for(std::chrono::milliseconds(10));
                 continue;
             }
-
-            // Check for more frames
-            bool has_more = false;
-            try {
-                has_more = subscriber_socket_->get(zmq::sockopt::rcvmore);
-            } catch (const zmq::error_t& e) {
-                logError("Error checking for more frames: " + std::string(e.what()));
-                zmq_msg_close(&topic_msg);
-                continue;
-            }
-
-            if (has_more) {
-                zmq_msg_t data_msg;
-                zmq_msg_init(&data_msg);
-                int data_rc = zmq_msg_recv(&data_msg, subscriber_socket_->handle(), 0);
-                if (data_rc == -1) {
-                    logError(std::string("zmq_msg_recv(data) failed: ") + zmq_strerror(zmq_errno()));
-                    zmq_msg_close(&topic_msg);
-                    zmq_msg_close(&data_msg);
-                    continue;
-                }
-
-                // extract topic and data
-                auto topic_ptr = static_cast<char*>(zmq_msg_data(&topic_msg));
-                size_t topic_len = zmq_msg_size(&topic_msg);
-                auto data_ptr = static_cast<char*>(zmq_msg_data(&data_msg));
-                size_t data_len = zmq_msg_size(&data_msg);
-
-                topic.assign(topic_ptr, topic_len);
-                data.assign(data_ptr, data_len);
-
-                zmq_msg_close(&topic_msg);
-                zmq_msg_close(&data_msg);
+            
+            // Extract frame data
+            auto frame_ptr = static_cast<char*>(zmq_msg_data(&frame_msg));
+            size_t frame_len = zmq_msg_size(&frame_msg);
+            std::string frame_data(frame_ptr, frame_len);
+            zmq_msg_close(&frame_msg);
+            
+            // Parse topic|data format
+            size_t delimiter_pos = frame_data.find('|');
+            if (delimiter_pos != std::string::npos) {
+                topic = frame_data.substr(0, delimiter_pos);
+                data = frame_data.substr(delimiter_pos + 1);
             } else {
-                // Single frame message - extract and split
-                auto topic_ptr = static_cast<char*>(zmq_msg_data(&topic_msg));
-                size_t topic_len = zmq_msg_size(&topic_msg);
-                std::string combined(topic_ptr, topic_len);
-                zmq_msg_close(&topic_msg);
-
-                auto space_pos = combined.find(' ');
-                if (space_pos != std::string::npos && space_pos > 0) {
-                    topic = combined.substr(0, space_pos);
-                    data = combined.substr(space_pos + 1);
-                } else {
-                    topic.clear();
-                    data = std::move(combined);
-                }
+                // Fallback: if no delimiter found, treat entire frame as data
+                topic.clear();
+                data = std::move(frame_data);
             }
             
             // Basic validation
@@ -408,7 +378,6 @@ void GenericZmqClient::subscriberWorker() {
             
             // Process the message
             handleMessage(topic, data);
-            
             stats_.messages_received++;
             stats_.last_message_time = std::chrono::steady_clock::now();
             
