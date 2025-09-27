@@ -1063,7 +1063,7 @@ void GenericZmqServer::intelPublisherWorker() {
 
                 bool ok = false;
                 try {
-                    logInfo("Processing Intel message: " + message.topic);
+                    // logInfo("Processing Intel message: " + message.topic);
                     ok = processIntelMessage(message);
                 } catch (const std::exception& e) {
                     logError("Error processing message: " + std::string(e.what()));

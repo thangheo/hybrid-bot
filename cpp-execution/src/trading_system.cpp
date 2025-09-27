@@ -986,7 +986,7 @@ void Trading_system::orderbookWorkerLoop(size_t workerId) {
                     //           << " | Bids: " << bidDepth << " levels, Asks: " << askDepth << " levels"
                     //           << std::endl;
                         // Generate intelligence (throttling inside function)
-                    generateMarketIntelligence(update, orderBook); //no need at this time
+                    // generateMarketIntelligence(update, orderBook); //no need at this time
                     // Publish orderbook for risk asynchronously
                     publishOrderBookForRisk(update);                 
                     // Send to strategy engine
