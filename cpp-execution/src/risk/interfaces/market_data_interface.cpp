@@ -605,15 +605,19 @@ void MarketDataInterface::processSyntheticOrderBook_protobuf(const std::string& 
             if (!orderbook_msg.ParseFromCodedStream(&coded_input)) {
                 LOG_ERROR("Failed to parse protobuf message for topic: {} (size: {} bytes)", 
                          topic, message.size());
-                
-                // Debug: show hex dump of first 32 bytes
-                std::stringstream hex_dump;
-                for (size_t i = 0; i < std::min(size_t(32), message.size()); ++i) {
-                    hex_dump << std::hex << std::setw(2) << std::setfill('0') 
-                            << static_cast<unsigned char>(message[i]) << " ";
+
+                // If message is small (likely malformed), log a hex dump to help diagnosis
+                if (message.size() <= 128) {
+                    std::stringstream hex_dump;
+                    hex_dump << std::hex << std::setfill('0');
+                    for (size_t i = 0; i < std::min<size_t>(message.size(), 64); ++i) {
+                        hex_dump << std::setw(2) << (static_cast<int>(static_cast<unsigned char>(message[i])) & 0xff) << " ";
+                    }
+                    LOG_ERROR("Protobuf small-payload hex dump ({} bytes): {}", message.size(), hex_dump.str());
+                } else {
+                    LOG_DEBUG("Protobuf parse failure for large payload (size={})", message.size());
                 }
-                LOG_DEBUG("Protobuf hex dump (first 32 bytes): {}", hex_dump.str());
-                
+
                 errorStats_.dataErrors++;
                 return;
             }
