@@ -40,7 +40,7 @@ def print_orderbook_sample(msg, topic, msg_num):
 
 def main():
     parser = argparse.ArgumentParser(description='Orderbook protobuf message subscriber')
-    parser.add_argument('--uri', default='tcp://localhost:5557', help='ZMQ endpoint')
+    parser.add_argument('--uri', default='inproc://orderbook', help='ZMQ endpoint')
     parser.add_argument('--topic-prefix', default='orderbook.', help='Topic prefix to subscribe to')
     parser.add_argument('--print-every', type=int, default=1000, help='Print every N messages')
     parser.add_argument('--timeout', type=int, default=30, help='Timeout in seconds')

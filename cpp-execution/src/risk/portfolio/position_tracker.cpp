@@ -161,9 +161,19 @@ bool PositionTracker::initialize() {
         // }
         
         // Register for market data updates if supported
+        // Register a callback that captures a weak_ptr to avoid calling into
+        // a PositionTracker that has been destroyed. This prevents use-after-free
+        // when MarketDataInterface invokes callbacks from worker threads.
+        std::weak_ptr<PositionTracker> weak_self = shared_from_this();
         m_dataInterface->registerMarketDataCallback(
-            [this](const MarketData& marketData) {
-                this->updateMarketData(marketData);
+            [weak_self](const MarketData& marketData) {
+                if (auto self = weak_self.lock()) {
+                    try {
+                        self->updateMarketData(marketData);
+                    } catch (...) {
+                        // swallow exceptions from callback to avoid crashing caller
+                    }
+                }
             }
         );
         
@@ -569,7 +579,8 @@ double PositionTracker::getCurrentPrice(const TradingPair& tradingPair) const {
     // If not in cache, try to get from data interface
     if (m_dataInterface) {
         try {
-            auto marketData = m_dataInterface->getMarketData(tradingPair.toString());
+            core::Symbol sym(tradingPair.toString());
+            auto marketData = m_dataInterface->getMarketData(sym);
             if (marketData.has_value()) {
                 // Update cache
                 std::lock_guard<std::mutex> lock(m_marketDataMutex);

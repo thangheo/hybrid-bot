@@ -20,7 +20,38 @@
 using namespace trading::communication;
 namespace trading {
 namespace risk {
- 
+
+// Helper function for base64 decoding
+static std::string base64_decode(const std::string& input) {
+    if (input.empty()) return {};
+    
+    static const std::array<int, 256> decode_table = []() {
+        std::array<int, 256> table;
+        table.fill(-1);
+        const std::string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        for (size_t i = 0; i < chars.size(); ++i) {
+            table[static_cast<unsigned char>(chars[i])] = static_cast<int>(i);
+        }
+        return table;
+    }();
+    
+    std::string result;
+    result.reserve((input.size() * 3) / 4);
+    
+    int val = 0, valb = -8;
+    for (unsigned char c : input) {
+        if (decode_table[c] == -1) break;
+        val = (val << 6) + decode_table[c];
+        valb += 6;
+        if (valb >= 0) {
+            result.push_back(static_cast<char>((val >> valb) & 0xFF));
+            valb -= 8;
+        }
+    }
+    
+    return result;
+}
+
 // PriceHistory implementation
 void PriceHistory::addPrice(Timestamp timestamp, double price) {
     prices.push_back({timestamp, price});
@@ -72,49 +103,83 @@ bool MarketDataInterface::initialize() {
     }
     
     try {
-       
-    // Initialize shared memory subscriber instead of ZMQ client
-    shm_subscriber_ = std::make_shared<SharedMemorySubscriber>("/trading_orderbook_shm");
-    std::cout << "✅ Shared memory subscriber initialized" << std::endl;
-        
-        // Start reader thread to feed from shared memory into existing queue system
-        readerRunning_.store(true);
-        readerThread_ = std::thread([this]() { this->sharedMemoryReaderLoop(); });
-        std::cout << "✅ Started shared memory reader thread" << std::endl;
-        
-        // Start existing processing thread pool (unchanged)
-        processingRunning_.store(true);
-        processingThreads_.reserve(processingThreadCount_);
-        for (size_t i = 0; i < processingThreadCount_; ++i) {
-            processingThreads_.emplace_back([this, i]() {
-                this->processQueueLoop(); // Your existing processing logic
-            });
+        if(!zmqClient_){
+            // Initialize ZeroMQ client
+            ZmqClientConfig zmqConfig;
+            zmqConfig.server_pub_endpoint = zmqSubscriberEndpoint_;
+            zmqConfig.server_req_endpoint = zmqPublisherEndpoint_;
+            zmqConfig.auto_reconnect = true;
+            zmqConfig.reconnect_interval = std::chrono::milliseconds(5000);
+            zmqConfig.request_timeout = std::chrono::milliseconds(10000);
+            zmqConfig.io_threads = 1;
+
+            //only create if not already set via setter
+            
+            zmqClient_ = std::make_unique<GenericZmqClient>(zmqConfig);
         }
-        std::cout << "✅ Started processing thread pool (size=" << processingThreadCount_ << ")" << std::endl;
-            
-            
+        // Start ZeroMQ client BEFORE subscribing so subscriptions succeed
+        if (!zmqClient_->connect()) {
+            LOG_ERROR("Failed to connect ZeroMQ client");
+            return false;
+        }
+        // Record the time of successful connect
+        lastConnectionCheck_ = std::chrono::steady_clock::now();
+
+        RequestHandler requestHandler = 
+            [this](const std::string& request_data, 
+                   const std::unordered_map<std::string, std::string>& metadata) -> std::string {
+            // Handle incoming requests if needed
+            return "ACK"; // Simple acknowledgment for now
+        };
+        // Subscribe to orderbook topics
+        zmqClient_->subscribe("orderbook.", 
+            [this](const std::string& topic, const std::string& message, const std::unordered_map<std::string, std::string>& metadata) {
+                // Enqueue-only: push raw message to inbound queue and wake processing thread
+                totalReceived_.fetch_add(1, std::memory_order_relaxed);
+                MarketDataInterface::RawMessage raw{topic, message, std::chrono::steady_clock::now()};
+                {
+                    std::unique_lock<std::mutex> qlock(this->inboundQueueMutex_);
+                    if (this->inboundQueue_.size() >= this->inboundQueueMaxSize_) {
+                        // Drop the message to avoid unbounded growth
+                        this->totalDropped_.fetch_add(1, std::memory_order_relaxed);
+                    } else {
+                        this->inboundQueue_.push_back(std::move(raw));
+                        this->totalEnqueued_.fetch_add(1, std::memory_order_relaxed);
+                        // Diagnostic: log when queue is growing large
+                        size_t qsz = this->inboundQueue_.size();
+                        if (qsz % 1000 == 0 || qsz > 2000) {
+                            LOG_WARN("MarketDataInterface inbound queue size high: {}", qsz);
+                        }
+                        this->inboundQueueCv_.notify_one();
+                    }
+                }
+            });
+
+        // Record the wildcard subscription so it can be reapplied on reconnect
+        {
+            std::lock_guard<std::mutex> sLock(subscriptionMutex_);
+            subscribedTopics_.insert("orderbook.");
+        }
+        
         initialized_.store(true);
         running_.store(true);
         
         // Start background reconnection/monitor thread
         try {
-            // reconnectionThread_ = std::thread([this]() { this->connectionMonitorLoop(); });
+            reconnectionThread_ = std::thread([this]() { this->connectionMonitorLoop(); });
             LOG_INFO("MarketDataInterface", "Started connection monitor thread");
         } catch (const std::exception& e) {
             LOG_ERROR("Failed to start connection monitor thread: {}", e.what());
         }
 
-        // Start processing thread pool for inbound messages
+        // Start multiple processing threads for inbound messages
         try {
             processingRunning_.store(true);
-            processingThreads_.reserve(processingThreadCount_);
+            processingThreads_.clear();
             for (size_t i = 0; i < processingThreadCount_; ++i) {
-                processingThreads_.emplace_back([this, i]() {
-                    // Optionally set thread name or log
-                    this->processQueueLoop();
-                });
+                processingThreads_.emplace_back([this]() { this->processQueueLoop(); });
             }
-            LOG_INFO("MarketDataInterface", "Started market data processing thread pool (size={})", processingThreadCount_);
+            LOG_INFO("MarketDataInterface", "Started {} market data processing threads", processingThreadCount_);
         } catch (const std::exception& e) {
             LOG_ERROR("Failed to start processing threads: {}", e.what());
             processingRunning_.store(false);
@@ -129,6 +194,74 @@ bool MarketDataInterface::initialize() {
     }
 }
 
+// Process inbound queue: pop raw messages and call existing processing logic
+void MarketDataInterface::processQueueLoop() {
+    while (processingRunning_.load()) {
+        RawMessage item;
+        {
+            std::unique_lock<std::mutex> lock(inboundQueueMutex_);
+            if (inboundQueue_.empty()) {
+                // Wait until notified or check periodically to allow shutdown
+                inboundQueueCv_.wait_for(lock, std::chrono::milliseconds(500));
+                if (!processingRunning_.load()) break;
+                if (inboundQueue_.empty()) continue;
+            }
+            item = std::move(inboundQueue_.front());
+            inboundQueue_.pop_front();
+        }
+
+        try {
+            // Call existing processing function which does JSON parse, cache updates, callbacks
+            auto start = std::chrono::steady_clock::now();
+            processSyntheticOrderBook_protobuf(item.topic, item.message);
+            totalProcessed_.fetch_add(1, std::memory_order_relaxed);
+            auto dur = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - start).count();
+            if (dur > 20) {
+                LOG_WARN("Slow processing of market message: {} ms (totalProcessed={})", dur, totalProcessed_.load());
+            }
+        } catch (const std::exception& e) {
+            errorStats_.dataErrors++;
+            LOG_ERROR("Error processing queued market data: {}", e.what());
+        }
+    }
+}
+void MarketDataInterface::shutdown() {
+    if (!running_.load()) return;
+
+    running_.store(false);
+    
+    // Stop processing threads
+    if (processingRunning_.load()) {
+        processingRunning_.store(false);
+        inboundQueueCv_.notify_all();
+        for (auto& t : processingThreads_) {
+            if (t.joinable()) t.join();
+        }
+        processingThreads_.clear();
+        LOG_INFO("MarketDataInterface processing threads stopped");
+    }
+
+    // Stop reconnection thread
+    if (reconnectionThread_.joinable()) {
+        {
+            std::lock_guard<std::mutex> lock(reconnectionMutex_);
+            needsReconnection_.store(false);
+            reconnectionCv_.notify_all();
+        }
+        reconnectionThread_.join();
+        LOG_INFO("MarketDataInterface connection monitor thread stopped");
+    }
+
+    // Disconnect ZMQ client
+    if (zmqClient_) {
+        zmqClient_->disconnect();
+        LOG_INFO("MarketDataInterface ZMQ client disconnected");
+    }
+
+    initialized_.store(false);
+    LOG_INFO("MarketDataInterface shutdown complete");
+}
 
 void MarketDataInterface::processSyntheticOrderBook_json(const std::string& topic, const std::string& message) {
     // Early memory pressure check
@@ -311,11 +444,21 @@ void MarketDataInterface::processSyntheticOrderBook_json(const std::string& topi
         // Create cache key once
         std::string cacheKey = createCacheKey(data.exchangeId, data.tradingPair);
 
-        // Update cache with minimal lock time
+        // If we don't have a valid price yet, try fallbacks and mark as invalid in cache
+        bool validPrice = (data.price > 0.0);
+        if (!validPrice) {
+            // try last trade price if provided
+            if (data.lastTradePrice > 0.0) {
+                data.price = data.lastTradePrice;
+                validPrice = true;
+            }
+        }
+
+        // Update cache with minimal lock time; set isValid based on price availability
         {
             std::unique_lock<std::shared_mutex> lock(cacheMutex_);
             marketDataCache_[cacheKey] = MarketDataCacheEntry{
-                std::move(data), std::chrono::steady_clock::now(), true
+                std::move(data), std::chrono::steady_clock::now(), validPrice
             };
         }
 
@@ -505,12 +648,28 @@ void MarketDataInterface::processSyntheticOrderBook_protobuf(const std::string& 
         
         // Fallback to topic parsing if protobuf fields are empty
         if (exchange.empty() || symbol.empty()) {
-            //just fucking return idiot, stop wasting time and energy on stupid shit
+            std::string_view topic_view(topic);
+            auto first_dot = topic_view.find('.', 10); // Skip "orderbook."
+            if (first_dot != std::string_view::npos) {
+                auto second_dot = topic_view.find('.', first_dot + 1);
+                if (second_dot != std::string_view::npos) {
+                    if (exchange.empty()) {
+                        exchange = std::string(topic_view.substr(first_dot + 1, second_dot - first_dot - 1));
+                    }
+                    if (symbol.empty()) {
+                        symbol = std::string(topic_view.substr(second_dot + 1));
+                        // Convert '_' to '/' for symbol format
+                        std::replace(symbol.begin(), symbol.end(), '_', '/');
+                    }
+                }
+            }
+        }
+
+        if (exchange.empty() || symbol.empty()) {
             LOG_ERROR("Missing exchange or symbol (topic={}, exchange='{}', symbol='{}')", 
                      topic, exchange, symbol);
             errorStats_.dataErrors++;
             return;
-           
         }
 
         // Create MarketData object
@@ -567,11 +726,18 @@ void MarketDataInterface::processSyntheticOrderBook_protobuf(const std::string& 
         // Create cache key
         std::string cacheKey = createCacheKey(marketData.exchangeId, marketData.tradingPair);
 
-        // Update cache atomically
+        // Determine validity of this entry based on price
+        bool validEntry = marketData.price > 0.0;
+        if (!validEntry && marketData.lastTradePrice > 0.0) {
+            marketData.price = marketData.lastTradePrice;
+            validEntry = true;
+        }
+
+        // Update cache atomically and mark validity
         {
             std::unique_lock<std::shared_mutex> lock(cacheMutex_);
             marketDataCache_[cacheKey] = MarketDataCacheEntry{
-                std::move(marketData), std::chrono::steady_clock::now(), true
+                std::move(marketData), std::chrono::steady_clock::now(), validEntry
             };
         }
 
@@ -928,6 +1094,7 @@ void MarketDataInterface::registerMarketDataCallback(
     std::lock_guard<std::mutex> lock(callbackMutex_);
     marketDataCallbacks_.push_back(callback);
 }
+}
 
 bool MarketDataInterface::subscribeMarketData(
     const core::Symbol& tradingPair, 
@@ -968,7 +1135,6 @@ bool MarketDataInterface::subscribeMarketData(
     
     return success;
 }
-
 bool MarketDataInterface::isConnected() const {
     return initialized_.load() && running_.load() && 
            zmqClient_ && zmqClient_->isConnected();
@@ -1200,7 +1366,6 @@ void MarketDataInterface::connectionMonitorLoop() {
                 // Ensure we have a client instance
                 if (!zmqClient_) {
                     communication::ZmqClientConfig zmqConfig;
-                    zmqConfig.subscriber_conflate = true; // Keep only latest messages
                     zmqConfig.server_pub_endpoint = zmqSubscriberEndpoint_;
                     zmqConfig.server_req_endpoint = zmqPublisherEndpoint_;
                     zmqConfig.auto_reconnect = true;
@@ -1337,194 +1502,33 @@ bool MarketDataInterface::checkConnection() {
  
 // Update destructor
 MarketDataInterface::~MarketDataInterface() {
-    shutdown();
-}
-void MarketDataInterface::shutdown() {
-    std::cout << "🛑 Shutting down MarketDataInterface..." << std::endl;
-    
-    // Stop reader thread
-    readerRunning_.store(false);
-    if (readerThread_.joinable()) {
-        readerThread_.join();
-        std::cout << "✅ Shared memory reader thread stopped" << std::endl;
+    running_ = false;
+    // Wake monitor thread so it can exit promptly
+    reconnectionCv_.notify_one();
+    if (reconnectionThread_.joinable()) {
+        reconnectionThread_.join();
     }
-    
     // Stop processing threads
     processingRunning_.store(false);
-    inboundQueueCv_.notify_all();
-    
+    {
+        std::lock_guard<std::mutex> lock(inboundQueueMutex_);
+        // notify in case thread is waiting
+        inboundQueueCv_.notify_all();
+    }
     for (auto& t : processingThreads_) {
-        if (t.joinable()) {
-            t.join();
-        }
+        if (t.joinable()) t.join();
     }
     processingThreads_.clear();
-    std::cout << "✅ Processing threads stopped" << std::endl;
-     running_ = false;
+    
+    // ... existing cleanup code ...
+    if (zmqClient_) {
+        zmqClient_->stop();
+    }
+    zmqClient_.reset();
     // normalizer_.reset();
     marketDataCache_.clear();
     priceHistories_.clear();
     orderHistoryCache_.clear();
-    // Reset shared memory subscriber after threads stopped to avoid race/use-after-free.
-    try {
-        std::shared_ptr<SharedMemorySubscriber> local = std::atomic_exchange(&shm_subscriber_, std::shared_ptr<SharedMemorySubscriber>());
-        if (local) {
-            std::cout << "✅ SharedMemorySubscriber reset" << std::endl;
-        }
-    } catch (...) {
-        // ignore
-    }
-    printStatistics();
-}
-void MarketDataInterface::sharedMemoryReaderLoop() {
-    std::cout << "📖 Shared memory reader loop started" << std::endl;
-    
-    SharedMemorySubscriber::Message shmMessage;
-    auto lastStatsTime = std::chrono::steady_clock::now();
-    uint64_t messagesInLastPeriod = 0;
-    
-    while (readerRunning_.load()) {
-        try {
-            // Make a local copy to ensure subscriber stays alive during ops
-            std::shared_ptr<SharedMemorySubscriber> local_sub = shm_subscriber_;
-            if (!local_sub) {
-                std::cout << "🔒 SharedMemorySubscriber == nullptr, stopping reader loop" << std::endl;
-                break;
-            }
-            bool ok = false;
-
-            // Try to read message from shared memory with timeout
-            if (local_sub->readMessageWithTimeout(shmMessage, std::chrono::milliseconds(100))) {
-                totalReceived_.fetch_add(1, std::memory_order_relaxed);
-                messagesInLastPeriod++;
-                
-                // Filter for orderbook topics (same logic as ZMQ version)
-                if (shmMessage.topic.size() >= 10 && shmMessage.topic.compare(0, 10, "orderbook.") == 0) {
-                    
-                    // Create RawMessage and enqueue (same logic as ZMQ version)
-                    RawMessage raw{
-                        std::move(shmMessage.topic), 
-                        std::move(shmMessage.data), 
-                        std::chrono::steady_clock::now()
-                    };
-                    
-                    // Enqueue with same logic as original ZMQ version
-                    {
-                        std::unique_lock<std::mutex> qlock(inboundQueueMutex_);
-                        if (inboundQueue_.size() >= inboundQueueMaxSize_) {
-                            // Drop message to avoid unbounded growth
-                            totalDropped_.fetch_add(1, std::memory_order_relaxed);
-                        } else {
-                            inboundQueue_.push_back(std::move(raw));
-                            totalEnqueued_.fetch_add(1, std::memory_order_relaxed);
-                            
-                            // Diagnostic: log when queue is growing large
-                            size_t qsz = inboundQueue_.size();
-                            if (qsz % 1000 == 0 || qsz > 2000) {
-                                std::cout << "⚠️ MarketDataInterface inbound queue size high: " << qsz << std::endl;
-                            }
-                            inboundQueueCv_.notify_one();
-                        }
-                    }
-                }
-            } else {
-                // Timeout or no messages - check if producer is still active
-                if (!local_sub->isProducerActive()) {
-                    std::cout << "📡 Producer inactive, stopping reader" << std::endl;
-                    break;
-                }
-            }
-            
-            // Periodic stats (every 10 seconds)
-            auto now = std::chrono::steady_clock::now();
-            if (now - lastStatsTime >= std::chrono::seconds(10)) {
-                double messagesPerSecond = messagesInLastPeriod / 10.0;
-                auto shmStats = local_sub->getStats();
-                
-                std::cout << "📊 Shared Memory Reader: " 
-                            << messagesPerSecond << " msg/s, "
-                            << "buffer: " << std::fixed << std::setprecision(1) 
-                            << (shmStats.buffer_utilization * 100) << "%" << std::endl;
-                
-                lastStatsTime = now;
-                messagesInLastPeriod = 0;
-            }
-            
-        } catch (const std::exception& e) {
-            std::cerr << "❌ Error in shared memory reader loop: " << e.what() << std::endl;
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        }
-    }
-    
-    std::cout << "📖 Shared memory reader loop finished" << std::endl;
-}
-void MarketDataInterface::processQueueLoop() {
-    const size_t BATCH_SIZE = 32;
-    while (processingRunning_.load()) {
-        std::vector<RawMessage> batch;
-        batch.reserve(BATCH_SIZE);
-        size_t batchBytes = 0;
-        
-        {
-            std::unique_lock<std::mutex> lock(inboundQueueMutex_);
-            if (inboundQueue_.empty()) {
-                inboundQueueCv_.wait_for(lock, std::chrono::milliseconds(500));
-                if (!processingRunning_.load()) break;
-                if (inboundQueue_.empty()) continue;
-            }
-            
-            const size_t MAX_BATCH_BYTES = maxMessageSize_ * 16;
-            while (!inboundQueue_.empty() && batch.size() < BATCH_SIZE) {
-                const auto &front = inboundQueue_.front();
-                if (batchBytes + front.message.size() > MAX_BATCH_BYTES && !batch.empty()) {
-                    break;
-                }
-                batch.push_back(std::move(inboundQueue_.front()));
-                batchBytes += batch.back().message.size();
-                inboundQueue_.pop_front();
-            }
-        }
-        
-        // Process drained batch (unchanged)
-        for (auto &item : batch) {
-            try {
-                auto start = std::chrono::steady_clock::now();
-                processSyntheticOrderBook_protobuf(item.topic, item.message); // Your existing method!
-                totalProcessed_.fetch_add(1, std::memory_order_relaxed);
-                auto dur = std::chrono::duration_cast<std::chrono::milliseconds>(
-                    std::chrono::steady_clock::now() - start).count();
-                if (dur > 20) {
-                    std::cout << "⚠️ Slow processing of market message: " << dur << " ms (totalProcessed=" << totalProcessed_.load() << ")" << std::endl;
-                }
-            } catch (const std::exception& e) {
-                errorStats_.dataErrors++;
-                std::cerr << "❌ Error processing queued market data: " << e.what() << std::endl;
-            }
-        }
-    }
-}
-
-void MarketDataInterface::printStatistics() {
-    std::cout << "\n📈 MarketDataInterface Statistics:" << std::endl;
-    std::cout << "   Total received: " << totalReceived_.load() << std::endl;
-    std::cout << "   Total enqueued: " << totalEnqueued_.load() << std::endl;
-    std::cout << "   Total processed: " << totalProcessed_.load() << std::endl;
-    std::cout << "   Total dropped: " << totalDropped_.load() << std::endl;
-    std::cout << "   Data errors: " << errorStats_.dataErrors.load() << std::endl;
-    
-    // Use a local copy to avoid race with shutdown resetting the shared_ptr
-    std::shared_ptr<SharedMemorySubscriber> local_sub = shm_subscriber_;
-    if (local_sub) {
-        auto stats = local_sub->getStats();
-        std::cout << "   Buffer utilization: " << std::fixed << std::setprecision(2) 
-                    << (stats.buffer_utilization * 100) << "%" << std::endl;
-        std::cout << "   SHM messages received: " << stats.messages_received << std::endl;
-    }
-    
-    double processRate = totalProcessed_.load() > 0 ? 
-        (double)totalEnqueued_.load() / totalProcessed_.load() : 0;
-    std::cout << "   Processing efficiency: " << std::fixed << std::setprecision(2) 
-                << (processRate * 100) << "%" << std::endl;
 }
 // createDataInterface
 std::shared_ptr<DataInterface> MarketDataInterface::createDataInterface(const RiskConfig& config) {
@@ -1537,4 +1541,3 @@ std::shared_ptr<DataInterface> MarketDataInterface::createDataInterface(const Ri
 }
     
 } // namespace risk
-} // namespace trading
