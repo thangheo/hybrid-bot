@@ -530,7 +530,7 @@ public:
     std::string marketDataPublishEndpoint = SERVER_RISK_PUBLISH_ENDPOINT;
     std::string marketDataTopic = MARKET_DATA_TOPIC;
     // zmqSubscriberEndpoint
-    std::string zmqSubscriberEndpoint = SERVER_INTERNAL_ENDPOINT;
+    std::string zmqSubscriberEndpoint = SERVER_PUBLISER_ENDPOINT;
 
     // zmqPublisherEndpoint
     std::string zmqPublisherEndpoint = SERVER_REQUEST_ENDPOINT;

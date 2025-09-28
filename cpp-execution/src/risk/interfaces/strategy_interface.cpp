@@ -131,13 +131,13 @@ public:
         // Load configuration
         // In a real implementation, this would be loaded from a config file
         requestEndpoint_ = SERVER_REQUEST_ENDPOINT;
-        publishEndpoint_ = SERVER_INTERNAL_ENDPOINT;
+        publishEndpoint_ = SERVER_PUBLISER_ENDPOINT;
         strategyEventsTopic_ = "strategy_events";
     }
     StrategyInterfaceImpl(const RiskConfig& config) : StrategyInterface(config) {
         // Load configuration from RiskConfig
         requestEndpoint_ = SERVER_REQUEST_ENDPOINT;
-        publishEndpoint_ = SERVER_INTERNAL_ENDPOINT;
+        publishEndpoint_ = SERVER_PUBLISER_ENDPOINT;
         strategyEventsTopic_ = "strategy_events";
 
         // requestEndpoint_ = config.strategyRequestEndpoint;

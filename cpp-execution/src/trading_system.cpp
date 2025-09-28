@@ -22,14 +22,14 @@ Trading_system::Trading_system() : running_(false), systemHealthy_(true) {
     
     ZmqClientConfig clientConfig;
     //no long use socket but use inproc
-    // clientConfig.server_pub_endpoint = SERVER_INTERNAL_ENDPOINT; // internal endpoint for orderbook
+    // clientConfig.server_pub_endpoint = SERVER_PUBLISER_ENDPOINT; // internal endpoint for orderbook
     // clientConfig.server_req_endpoint = SERVER_REQUEST_ENDPOINT; // request endpoint for risk
     // clientConfig.auto_reconnect = true;
     // clientConfig.request_timeout = std::chrono::milliseconds(30000); // 30 seconds
     zmq_client_ = std::make_unique<GenericZmqClient>(clientConfig);
     
     // Initialize MarketDataInterface
-    riskConfig_.zmqSubscriberEndpoint = SERVER_INTERNAL_ENDPOINT;
+    riskConfig_.zmqSubscriberEndpoint = SERVER_PUBLISER_ENDPOINT;
     riskConfig_.zmqPublisherEndpoint = SERVER_REQUEST_ENDPOINT;
     marketDataInterface_ = std::make_shared<trading::risk::MarketDataInterface>(riskConfig_);
     // set zmq client to marketDataInterface_
@@ -313,17 +313,6 @@ void Trading_system::printStatus() {
     std::cout << "Service Health: " << (dataIngestionService_->isHealthy() ? "HEALTHY" : "UNHEALTHY") << std::endl;
     std::cout << "Order book updates received: " << messagesProcessed_.load() << std::endl;
     std::cout << "internal zmq msg sent: " << orderBookUpdatesReceived_.load() << std::endl;
-    // calculate msg/s
-    double msgPerSec = static_cast<double>(messagesProcessed_.load()) / (elapsed > 0 ? elapsed : 1);
-    std::cout << "Message processing rate: " << std::fixed << std::setprecision(2) << msgPerSec << " msg/s" << std::endl;
-    std::cout << "Order book updates processed: " << orderBookUpdatesReceived_.load() << std::endl;
-    double internalMsgPerSec = static_cast<double>(orderBookUpdatesReceived_.load()) / (elapsed > 0 ? elapsed : 1);
-    std::cout << "Internal message processing rate: " << std::fixed << std::setprecision(2) << internalMsgPerSec << " msg/s" << std::endl;
-    std::cout << "Order book queue size: " << orderbookQueue_.size() << std::endl;
-    std::cout << "Signal queue size: " << signalQueue_.size() << std::endl;
-    std::cout << "Execution queue size: " << execQueue_.size() << std::endl;
-    std::cout << "Active market intelligence entries: " << latestIntelligence_.size() << std::endl;
-    std::cout << "Active order books: " << dataIngestionService_->getActiveOrderBooks().size() << std::endl;
     // List active symbols with intelligence
 
     // Print publish stats if available

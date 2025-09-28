@@ -11,10 +11,13 @@
 #pragma once
 
 #include "strategy/types.hpp"
+#include <common/circular_buffer.hpp>
 
 #include <map>
 #include <deque>
 #include <vector>
+
+using namespace trading::common;  // For CircularBuffer
    // Track metric statistics for normalization
    struct MetricStatistics {
        double mean = 0.0;
@@ -123,6 +126,7 @@ public:
     void updateHighestCorrelatedMetrics();
 private:
     size_t window_size_;
+    size_t data_point_limit_ = 5000; // Hard cap on data points to prevent excessive memory use
     CorrelationParameters params_;
     //mutex correlation_mutex_;
     // Mutex for thread safety
@@ -136,12 +140,16 @@ private:
     struct DataPoint {
         OrderBookMetrics metrics;
         PriceMovement price_movement;
+        double volume_ratio = 1.0; // If available
+        double spread_ratio = 1.0; // If available
         core::Timestamp timestamp;
     };
 
     // mutable std::unordered_map<std::string, MetricStatistics> metricStatistics_;
     std::map<std::string, MetricStatistics> metricStatistics_;
-    std::deque<DataPoint> data_points_;
+    // std::deque<DataPoint> data_points_;
+    common::CircularBuffer<DataPoint> data_points_{5000};
+
     std::map<std::string, double> correlation_coefficients_;
     // correlation_strengths_
     std::map<std::string, double> correlation_strengths_;

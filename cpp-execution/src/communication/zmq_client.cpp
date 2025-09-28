@@ -122,6 +122,11 @@ void GenericZmqClient::disconnect() {
             }
         } else {
             try {
+                // Notify worker condition variable in case threads are sleeping
+                {
+                    std::lock_guard<std::mutex> lk(worker_mutex_);
+                }
+                worker_cv_.notify_all();
                 monitor_thread_.join();
             } catch (const std::exception& e) {
                 std::cerr << "Exception while joining monitor_thread_: " << e.what() << std::endl;
@@ -355,8 +360,10 @@ void GenericZmqClient::subscribeWorker() {
             result = sub_socket_->recv(topic_frame, zmq::recv_flags::dontwait);
             
             if (!result) {
-                // No message available, sleep briefly
-                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                // No message available, wait briefly in an interruptible way
+                std::unique_lock<std::mutex> lk(worker_mutex_);
+                worker_cv_.wait_for(lk, std::chrono::milliseconds(10), [this]() { return should_stop_.load(); });
+                if (should_stop_.load()) break;
                 continue;
             }
             
@@ -452,11 +459,14 @@ void GenericZmqClient::subscribeWorker() {
 
 void GenericZmqClient::monitorWorker() {
     while (!should_stop_.load()) {
-        std::this_thread::sleep_for(std::chrono::seconds(30));
-        
+        // Wait in an interruptible manner so disconnect() can wake us
+        std::unique_lock<std::mutex> lk(worker_mutex_);
+        worker_cv_.wait_for(lk, std::chrono::seconds(30), [this]() { return should_stop_.load(); });
+        if (should_stop_.load()) break;
+
         // Log statistics
         std::cout << "Client stats - Messages received: " << messages_received_.load() << std::endl;
-        
+
         // Check connection health (simplified)
         if (connected_.load() && config_.auto_reconnect) {
             // Could implement more sophisticated health checks here
