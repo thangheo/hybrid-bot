@@ -162,8 +162,8 @@ public:
             return true;
         }
         // Setup ZeroMQ clients
-        clientConfig.req_endpoint = requestEndpoint_;
-        clientConfig.pub_endpoints = {publishEndpoint_};
+        // clientConfig.req_endpoint = requestEndpoint_;
+        // clientConfig.pub_endpoints = {publishEndpoint_};
         clientConfig.rcvtimeo = 5000;  // 5 seconds
         clientConfig.sndtimeo = 5000;  // 5 seconds
         clientConfig.heartbeat_ivl = 30000;  // 30 seconds

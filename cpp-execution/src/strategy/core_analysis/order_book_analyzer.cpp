@@ -209,15 +209,15 @@ void OrderBookAnalyzer::processOrderBook(const data_ingestion::OrderBook& snapsh
                       << tradingPair_.toString() << " on " << exchangeId_.toString() << std::endl;
         }
         //print some derrivative info
-        if (debug_counter % 1000 == 0) {
-            std::cout << "Metrics for " << tradingPair_.toString() << " on " << exchangeId_.toString()
-                      << "  MidPrice: " << currentMetrics_.midPrice 
-                      << ", Spread: " << currentMetrics_.spread 
-                      << ", Volume Imbalance: " << currentMetrics_.volumeImbalance 
-                      << ", Liquidity Pressure: " << currentMetrics_.liquidityPressure
-                      << ", Volatility Expectation: " << currentMetrics_.volatilityExpectation
-                      << std::endl;
-        }
+        // if (debug_counter % 1000 == 0) {
+        //     std::cout << "Metrics for " << tradingPair_.toString() << " on " << exchangeId_.toString()
+        //               << "  MidPrice: " << currentMetrics_.midPrice 
+        //               << ", Spread: " << currentMetrics_.spread 
+        //               << ", Volume Imbalance: " << currentMetrics_.volumeImbalance 
+        //               << ", Liquidity Pressure: " << currentMetrics_.liquidityPressure
+        //               << ", Volatility Expectation: " << currentMetrics_.volatilityExpectation
+        //               << std::endl;
+        // }
         lastUpdateTime_ = snapshot.getTimestamp();
         metricsToNotify = currentMetrics_;
         // Avoid sending large time-series data in the notification copy. Callers

@@ -23,7 +23,7 @@ namespace risk {
  */
 struct ProcessorConfig {
     size_t maxMessageSize = 256 * 1024;  // 256KB max message size
-    bool enableJsonProcessing = true;
+    bool enableJsonProcessing = false;
     bool enableProtobufProcessing = true;
     std::string defaultExchange = "binance";
 };

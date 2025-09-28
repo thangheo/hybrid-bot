@@ -37,22 +37,35 @@ bool MarketDataSubscriber::initialize() {
         // Create ZMQ client if not injected
         if (!zmqClient_) {
             trading::communication::ZmqClientConfig zmqConfig;
-            // zmqConfig.pub_endpoints = {config_.subscriberEndpoint};
-            // zmqConfig.req_endpoint = config_.publisherEndpoint;
+            // Configure endpoints correctly:
+            // - pub_endpoints: endpoints of the server publisher(s) the SUB socket should connect to
+            // - req_endpoint: endpoint of the server request/reply socket for RPCs
+            zmqConfig.pub_endpoints = { config_.publisherEndpoint };
+            zmqConfig.req_endpoint = config_.subscriberEndpoint;
             zmqConfig.auto_reconnect = config_.autoReconnect;
             zmqConfig.reconnect_delay_ms = static_cast<int>(config_.reconnectInterval.count());
             zmqConfig.req_timeout = static_cast<int>(config_.requestTimeout.count());
             zmqConfig.max_retries = config_.maxReconnectAttempts;
             zmqConfig.rcvhwm = 10000;  // High water mark for receive
             zmqConfig.sndhwm = 10000;  // High water mark for send
+
+            LOG_INFO("MarketDataSubscriber ZMQ config: pub_endpoints=[{}], req_endpoint={}",
+                     config_.publisherEndpoint, config_.subscriberEndpoint);
             
             zmqClient_ = std::make_unique<trading::communication::GenericZmqClient>(zmqConfig);
         }
-        
-        // Connect the client
-        if (!zmqClient_->connect()) {
-            LOG_ERROR("Failed to connect ZMQ client: {}", zmqClient_->getLastError());
-            return false;
+        //check if client is already connected
+        if (zmqClient_->isConnected()) {
+            LOG_WARN("ZMQ client already connected");
+        }
+        else {
+            LOG_INFO("ZMQ client not connected, proceeding to connect");
+            // Connect the client
+            if (!zmqClient_->connect()) {
+                LOG_ERROR("Failed to connect ZMQ client: {}", zmqClient_->getLastError());
+                return false;
+            }
+            LOG_INFO("ZMQ client connected successfully");    
         }
         
         running_.store(true);
@@ -113,7 +126,7 @@ bool MarketDataSubscriber::subscribe(const core::Symbol& tradingPair,
     
     std::string exchange = exchangeId.value_or("binance");
     std::string topic = createOrderbookTopic(tradingPair, exchange);
-    
+    LOG_INFO("Subscribing to market data: {}", topic);
     try {
         bool success = zmqClient_->subscribe(topic, 
             [this](const std::string& topic, const std::string& message,
@@ -160,6 +173,51 @@ bool MarketDataSubscriber::unsubscribe(const core::Symbol& tradingPair,
         
     } catch (const std::exception& e) {
         LOG_ERROR("Exception during unsubscribe from {}: {}", topic, e.what());
+        return false;
+    }
+}
+
+bool MarketDataSubscriber::subscribePattern(const std::string& topicPattern) {
+    if (!running_.load() || !zmqClient_) {
+        LOG_ERROR("Cannot subscribe pattern - subscriber not running");
+        return false;
+    }
+
+    LOG_INFO("Subscribing to pattern: {}", topicPattern);
+    try {
+        bool success = zmqClient_->subscribe(topicPattern,
+            [this](const std::string& topic, const std::string& message,
+                   const std::unordered_map<std::string, std::string>& metadata) {
+                this->onMessageReceived(topic, message, metadata);
+            });
+
+        if (success) {
+            std::lock_guard<std::mutex> lock(subscriptionMutex_);
+            subscribedTopics_.insert(topicPattern);
+            LOG_INFO("Subscribed to pattern: {}", topicPattern);
+            return true;
+        } else {
+            LOG_ERROR("Failed to subscribe to pattern: {}", topicPattern);
+            return false;
+        }
+    } catch (const std::exception& e) {
+        LOG_ERROR("Exception during pattern subscription {}: {}", topicPattern, e.what());
+        return false;
+    }
+}
+
+bool MarketDataSubscriber::unsubscribePattern(const std::string& topicPattern) {
+    if (!zmqClient_) return false;
+    try {
+        bool success = zmqClient_->unsubscribe(topicPattern);
+        if (success) {
+            std::lock_guard<std::mutex> lock(subscriptionMutex_);
+            subscribedTopics_.erase(topicPattern);
+            LOG_INFO("Unsubscribed pattern: {}", topicPattern);
+        }
+        return success;
+    } catch (const std::exception& e) {
+        LOG_ERROR("Exception during unsubscribe pattern {}: {}", topicPattern, e.what());
         return false;
     }
 }
@@ -514,7 +572,10 @@ std::string MarketDataSubscriber::createOrderbookTopic(
     const core::Symbol& tradingPair, const std::string& exchange) const {
     
     std::string symbol = tradingPair.toString();
-    std::replace(symbol.begin(), symbol.end(), '/', '_');  // Convert BTC/USDT to BTC_USDT
+    //real topic is for e.g orderbook.BINANCE.UNI/USDT
+    // Use the symbol format produced by tradingPair.toString() (e.g. BTC/USDT)
+    // Publisher topics use the slash separator ("BTC/USDT"), so keep it
+    // to ensure subscriber topic strings match published topics.
     
     return std::string(ORDERBOOK_TOPIC_PREFIX) + exchange + "." + symbol;
 }

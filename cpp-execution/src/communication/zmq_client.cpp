@@ -65,8 +65,10 @@ bool GenericZmqClient::connect() {
         should_stop_.store(false);
         connected_.store(true);
 
-        // Start worker threads
-        sub_thread_ = std::thread(&GenericZmqClient::subscribeWorker, this);
+    // Start worker threads
+    // Start handler pool if configured
+    startHandlerPool();
+    sub_thread_ = std::thread(&GenericZmqClient::subscribeWorker, this);
         
         if (config_.auto_reconnect) {
             monitor_thread_ = std::thread(&GenericZmqClient::monitorWorker, this);
@@ -134,6 +136,9 @@ void GenericZmqClient::disconnect() {
         }
     }
 
+    // Stop handler pool
+    stopHandlerPool();
+
     cleanupSockets();
 }
 void GenericZmqClient::stop() {
@@ -162,7 +167,7 @@ bool GenericZmqClient::subscribe(const std::string& topic, MessageHandler handle
         // Set ZMQ subscription (empty string subscribes to all)
         sub_socket_->set(zmq::sockopt::subscribe, sub_key);
 
-        std::cout << "[ZMQ Client] Subscribed pattern='" << topic << "' -> key='" << sub_key << "'" << std::endl;
+        // std::cout << "[ZMQ Client] Subscribed pattern='" << topic << "' -> key='" << sub_key << "'" << std::endl;
 
         // Store handler keyed by original pattern so matching still works
         subscriptions_[topic] = std::move(handler);
@@ -307,40 +312,79 @@ std::string GenericZmqClient::getLastError() const {
 }
 
 bool GenericZmqClient::initializeSockets() {
+    // Create SUB socket
     try {
-        // Create SUB socket
         sub_socket_ = std::make_unique<zmq::socket_t>(*context_, ZMQ_SUB);
-        
-        // Set socket options
-        sub_socket_->set(zmq::sockopt::rcvhwm, config_.rcvhwm);
-        sub_socket_->set(zmq::sockopt::rcvtimeo, config_.rcvtimeo);
-        sub_socket_->set(zmq::sockopt::linger, config_.linger);
-        
-        // Heartbeat settings
-        sub_socket_->set(zmq::sockopt::heartbeat_ivl, config_.heartbeat_ivl);
-        sub_socket_->set(zmq::sockopt::heartbeat_timeout, config_.heartbeat_timeout);
-        sub_socket_->set(zmq::sockopt::heartbeat_ttl, config_.heartbeat_ttl);
-        
-        // Connect to all publisher endpoints
-        for (const auto& endpoint : config_.pub_endpoints) {
-            sub_socket_->connect(endpoint);
-        }
-
-        // Create REQ socket
-        req_socket_ = std::make_unique<zmq::socket_t>(*context_, ZMQ_REQ);
-        
-        req_socket_->set(zmq::sockopt::rcvtimeo, config_.rcvtimeo);
-        req_socket_->set(zmq::sockopt::sndtimeo, config_.sndtimeo);
-        req_socket_->set(zmq::sockopt::linger, config_.linger);
-        
-        req_socket_->connect(config_.req_endpoint);
-
-        return true;
     } catch (const zmq::error_t& e) {
-        setLastError("Failed to initialize sockets: " + std::string(e.what()));
+        setLastError(std::string("Failed to create SUB socket: ") + e.what());
         cleanupSockets();
         return false;
     }
+
+    // Set basic socket options
+    try {
+        sub_socket_->set(zmq::sockopt::rcvhwm, config_.rcvhwm);
+        sub_socket_->set(zmq::sockopt::rcvtimeo, config_.rcvtimeo);
+        sub_socket_->set(zmq::sockopt::linger, config_.linger);
+    } catch (const zmq::error_t& e) {
+        setLastError(std::string("Failed to set SUB socket options: ") + e.what());
+        cleanupSockets();
+        return false;
+    }
+
+    // Heartbeat options may not be available on all libzmq versions / socket types
+    try {
+        // Note: heartbeat_ivl is not available in client config; set what we have
+        sub_socket_->set(zmq::sockopt::heartbeat_timeout, config_.heartbeat_timeout);
+        sub_socket_->set(zmq::sockopt::heartbeat_ttl, config_.heartbeat_ttl);
+    } catch (const zmq::error_t& e) {
+        // Don't fail hard; log and continue since heartbeat options are optional
+        std::cerr << "Warning: failed to set SUB heartbeat options: " << e.what() << std::endl;
+    }
+
+    // Connect to all publisher endpoints
+    for (const auto& endpoint : config_.pub_endpoints) {
+        try {
+            std::cout << "[ZMQ Client] connecting SUB to endpoint '" << endpoint << "'" << std::endl;
+            sub_socket_->connect(endpoint);
+        } catch (const zmq::error_t& e) {
+            setLastError(std::string("Failed to connect SUB socket to endpoint '") + endpoint + "': " + e.what());
+            cleanupSockets();
+            return false;
+        }
+    }
+
+    // Create REQ socket
+    try {
+        req_socket_ = std::make_unique<zmq::socket_t>(*context_, ZMQ_REQ);
+    } catch (const zmq::error_t& e) {
+        setLastError(std::string("Failed to create REQ socket: ") + e.what());
+        cleanupSockets();
+        return false;
+    }
+
+    // Set REQ options
+    try {
+        req_socket_->set(zmq::sockopt::rcvtimeo, config_.rcvtimeo);
+        req_socket_->set(zmq::sockopt::sndtimeo, config_.sndtimeo);
+        req_socket_->set(zmq::sockopt::linger, config_.linger);
+    } catch (const zmq::error_t& e) {
+        setLastError(std::string("Failed to set REQ socket options: ") + e.what());
+        cleanupSockets();
+        return false;
+    }
+
+    // Connect REQ socket
+    try {
+        std::cout << "[ZMQ Client] connecting REQ to endpoint '" << config_.req_endpoint << "'" << std::endl;
+        req_socket_->connect(config_.req_endpoint);
+    } catch (const zmq::error_t& e) {
+        setLastError(std::string("Failed to connect REQ socket to endpoint '") + config_.req_endpoint + "': " + e.what());
+        cleanupSockets();
+        return false;
+    }
+
+    return true;
 }
 
 void GenericZmqClient::cleanupSockets() {
@@ -368,7 +412,7 @@ void GenericZmqClient::subscribeWorker() {
             }
             
             std::string topic(static_cast<char*>(topic_frame.data()), topic_frame.size());
-            std::cout << "[ZMQ Client] Received topic frame='" << topic << "' size=" << topic_frame.size() << std::endl;
+            // std::cout << "[ZMQ Client] Received topic frame='" << topic << "' size=" << topic_frame.size() << std::endl;
             
             // Check if there are more frames
             int more = 0;
@@ -377,7 +421,7 @@ void GenericZmqClient::subscribeWorker() {
             
             if (!more) {
                 // Single frame message, treat as legacy format
-                std::cout << "[ZMQ Client] No more frames after topic\n";
+                // std::cout << "[ZMQ Client] No more frames after topic\n";
                 continue;
             }
             
@@ -408,11 +452,11 @@ void GenericZmqClient::subscribeWorker() {
             {
                 std::lock_guard<std::mutex> lock(subscriptions_mutex_);
                 // Debug: list current subscription patterns
-                std::cout << "[ZMQ Client] Current subscriptions:";
-                for (const auto& [pattern, h] : subscriptions_) {
-                    std::cout << " '" << pattern << "'";
-                }
-                std::cout << std::endl;
+                // std::cout << "[ZMQ Client] Current subscriptions:";
+                // for (const auto& [pattern, h] : subscriptions_) {
+                //     std::cout << " '" << pattern << "'";
+                // }
+                // std::cout << std::endl;
 
                 // Find exact match first
                 auto it = subscriptions_.find(topic);
@@ -422,7 +466,7 @@ void GenericZmqClient::subscribeWorker() {
                     // Check for pattern matches and print diagnostics
                     for (const auto& [pattern, h] : subscriptions_) {
                         bool m = matchesPattern(topic, pattern);
-                        std::cout << "[ZMQ Client] matching topic='" << topic << "' against pattern='" << pattern << "' -> " << (m ? "MATCH" : "NO") << std::endl;
+                        // std::cout << "[ZMQ Client] matching topic='" << topic << "' against pattern='" << pattern << "' -> " << (m ? "MATCH" : "NO") << std::endl;
                         if (m) {
                             handler = h;
                             break;
@@ -433,15 +477,29 @@ void GenericZmqClient::subscribeWorker() {
             
             if (handler) {
                 messages_received_.fetch_add(1);
-                
-                // Execute handler in a separate thread to avoid blocking
-                std::thread([handler = std::move(handler), topic, data, metadata]() {
+
+                if (config_.handler_thread_count <= 0) {
+                    // Execute inline in subscribe worker thread
                     try {
                         handler(topic, data, metadata);
                     } catch (const std::exception& e) {
                         std::cerr << "Handler exception for topic '" << topic << "': " << e.what() << std::endl;
                     }
-                }).detach();
+                } else {
+                    // Enqueue task to handler pool
+                    auto h = std::move(handler);
+                    {
+                        std::lock_guard<std::mutex> lk(handler_mutex_);
+                        handler_queue_.push([h = std::move(h), topic = std::move(topic), data = std::move(data), metadata = std::move(metadata)]() mutable {
+                            try {
+                                h(topic, data, metadata);
+                            } catch (const std::exception& e) {
+                                std::cerr << "Handler exception in pool for topic '" << topic << "': " << e.what() << std::endl;
+                            }
+                        });
+                    }
+                    handler_cv_.notify_one();
+                }
             }
             
         } catch (const zmq::error_t& e) {
@@ -536,3 +594,57 @@ std::string GenericZmqClient::createRequestFrame(const std::string& request_type
 }
 
 } // namespace trading::communication
+
+// Handler pool lifecycle
+void trading::communication::GenericZmqClient::startHandlerPool() {
+    if (config_.handler_thread_count <= 0) return;
+
+    // Create worker threads
+    for (int i = 0; i < config_.handler_thread_count; ++i) {
+        handler_threads_.emplace_back([this]() {
+            while (!should_stop_.load()) {
+                std::function<void()> task;
+                {
+                    std::unique_lock<std::mutex> lk(handler_mutex_);
+                    handler_cv_.wait_for(lk, std::chrono::milliseconds(100), [this]() { return should_stop_.load() || !handler_queue_.empty(); });
+                    if (should_stop_.load() && handler_queue_.empty()) return;
+                    if (!handler_queue_.empty()) {
+                        task = std::move(handler_queue_.front());
+                        handler_queue_.pop();
+                    }
+                }
+
+                if (task) {
+                    try {
+                        task();
+                    } catch (const std::exception& e) {
+                        std::cerr << "Exception in handler pool task: " << e.what() << std::endl;
+                    }
+                }
+            }
+        });
+    }
+}
+
+void trading::communication::GenericZmqClient::stopHandlerPool() {
+    // Signal threads to stop
+    should_stop_.store(true);
+    handler_cv_.notify_all();
+
+    // Join handler threads
+    for (auto& t : handler_threads_) {
+        if (t.joinable()) {
+            try {
+                t.join();
+            } catch (const std::exception& e) {
+                std::cerr << "Exception while joining handler thread: " << e.what() << std::endl;
+            }
+        }
+    }
+
+    handler_threads_.clear();
+
+    // Clear remaining tasks
+    std::lock_guard<std::mutex> lk(handler_mutex_);
+    while (!handler_queue_.empty()) handler_queue_.pop();
+}

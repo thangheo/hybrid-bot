@@ -18,15 +18,22 @@
 //publiser
 namespace trading::communication {
 // SERVER_REQUEST_ENDPOINT
-const std::string SERVER_REQUEST_ENDPOINT = "inproc://server_rep";
+// Defaults use loopback addresses so clients can connect using the same concrete
+// endpoint. Change these values in configuration if you want binding on all
+// interfaces (e.g. tcp://*:5555).
+const std::string SERVER_REQUEST_ENDPOINT = "tcp://127.0.0.1:5556";
 // SERVER_PUBLISHER_ENDPOINT
-const std::string SERVER_PUBLISHER_ENDPOINT = "inproc://server_pub";
+// const std::string SERVER_PUBLISHER_ENDPOINT = "inproc://server_pub";
+const std::string SERVER_PUBLISHER_ENDPOINT = "tcp://127.0.0.1:5555";
 // SERVER_EXECUTION_REQUEST_ENDPOINT
-const std::string SERVER_EXECUTION_REQUEST_ENDPOINT = "inproc://execution_rep";
+const std::string SERVER_EXECUTION_REQUEST_ENDPOINT = "tcp://127.0.0.1:5557";
 // SERVER_EXECUTION_PUBLISH_ENDPOINT
-const std::string SERVER_EXECUTION_PUBLISH_ENDPOINT = "inproc://execution_pub";
+const std::string SERVER_EXECUTION_PUBLISH_ENDPOINT = "tcp://127.0.0.1:5558";
 // SERVER_RISK_PUBLISH_ENDPOINT
-const std::string SERVER_RISK_PUBLISH_ENDPOINT = "inproc://risk_pub";
+// const std::string SERVER_RISK_PUBLISH_ENDPOINT = "inproc://risk_pub";
+const std::string SERVER_RISK_PUBLISH_ENDPOINT = "tcp://127.0.0.1:5559";
+// SERVER_STRATEGY_EVENTS_PUBLISH_ENDPOINT
+const std::string SERVER_STRATEGY_EVENTS_PUBLISH_ENDPOINT = "tcp://127.0.0.1:5560";
 // MARKET_DATA_TOPIC
 const std::string MARKET_DATA_TOPIC = "market.*";
 // ORDERBOOK_UPDATES_TOPIC
@@ -57,8 +64,8 @@ using RequestHandler = std::function<std::string(const std::string& data, const 
 
 // Configuration structures
 struct ZmqServerConfig {
-    std::string pub_endpoint = "inproc://server_pub";
-    std::string rep_endpoint = "inproc://server_rep";
+    std::string pub_endpoint = SERVER_PUBLISHER_ENDPOINT;
+    std::string rep_endpoint = SERVER_REQUEST_ENDPOINT;
     int sndhwm = 10000;
     int rcvhwm = 10000;
     int sndtimeo = 1000;  // milliseconds
@@ -77,8 +84,11 @@ struct ZmqServerConfig {
 };
 
 struct ZmqClientConfig {
-    std::vector<std::string> pub_endpoints = {"inproc://server_pub"};
-    std::string req_endpoint = "inproc://server_rep";
+    // Clients should connect to a concrete address (host:port). The server may bind to
+    // a wildcard address like "tcp://*:5555" but clients must use a reachable host
+    // (for local testing use loopback 127.0.0.1).
+    std::vector<std::string> pub_endpoints = {"tcp://127.0.0.1:5555"};
+    std::string req_endpoint = "tcp://127.0.0.1:5556";
     int rcvhwm = 10000;
     int sndhwm = 10000;
     int rcvtimeo = 5000;  // milliseconds
@@ -91,7 +101,10 @@ struct ZmqClientConfig {
     int reconnect_delay_ms = 1000;
     
     // Reliability settings
-    int heartbeat_ivl = 30000;
+    // Number of threads used to execute subscription handlers. Set to 0 to
+    // execute handlers inline in the subscribe worker thread.
+    int handler_thread_count = 4;
+    
     int heartbeat_timeout = 90000;
     int heartbeat_ttl = 30000;
 };
@@ -251,6 +264,11 @@ private:
     // Threading
     std::thread sub_thread_;
     std::thread monitor_thread_;
+    // Handler pool for executing subscription handlers
+    std::vector<std::thread> handler_threads_;
+    std::queue<std::function<void()>> handler_queue_;
+    mutable std::mutex handler_mutex_;
+    std::condition_variable handler_cv_;
     // Condition variable to allow interruptible sleeps and fast shutdown
     mutable std::mutex worker_mutex_;
     mutable std::condition_variable worker_cv_;
@@ -269,6 +287,8 @@ private:
     // Internal methods
     void subscribeWorker();
     void monitorWorker();
+    void startHandlerPool();
+    void stopHandlerPool();
     bool initializeSockets();
     void cleanupSockets();
     bool reconnect();

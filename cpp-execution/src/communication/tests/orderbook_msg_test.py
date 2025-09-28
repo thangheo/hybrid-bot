@@ -4,7 +4,7 @@ ZMQ subscriber for orderbook protobuf messages.
 Receives raw protobuf binary messages from the C++ trading system.
 
 Usage:
-  python orderbook_msg_test.py [--uri tcp://localhost:5557] [--print-every 10]
+  python orderbook_msg_test.py [--uri tcp://localhost:5555] [--print-every 10]
 """
 import time
 import zmq
@@ -90,14 +90,28 @@ def main():
                 try:
                     if args.verbose:
                         print(f"DEBUG: received multipart with {len(parts)} frames")
-                    # Topic is usually the first frame; payload is the last frame
+                    # Topic is the first frame. The current publisher sends three frames:
+                    # [topic][data][metadata]. Use the data frame (parts[1]) as the
+                    # protobuf payload when present. Fall back to last frame for
+                    # legacy single-frame formats.
                     topic = parts[0].decode() if len(parts) >= 2 else ""
-                    payload = parts[-1]
+                    if len(parts) >= 3:
+                        payload = parts[1]
+                        metadata_frame = parts[2]
+                    else:
+                        payload = parts[-1]
+                        metadata_frame = None
 
                     if args.verbose:
                         sample = payload[:64]
                         # show hex sample for binary safety
                         print(f"DEBUG: topic='{topic}' payload_len={len(payload)} sample={sample.hex()}")
+                        if metadata_frame is not None:
+                            try:
+                                mstr = metadata_frame.decode()
+                                print(f"DEBUG: metadata_frame={mstr}")
+                            except Exception:
+                                print("DEBUG: metadata_frame (binary)")
 
                     # Parse protobuf from payload bytes
                     protobuf_data = payload

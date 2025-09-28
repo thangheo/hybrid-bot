@@ -11,6 +11,7 @@
 #include <unordered_set>
 #include <functional>
 
+
 using namespace trading::communication;
 
 namespace trading {
@@ -117,6 +118,16 @@ public:
      */
     bool unsubscribe(const core::Symbol& tradingPair, 
                     const std::optional<std::string>& exchangeId = std::nullopt);
+
+    /**
+     * Subscribe using a raw topic pattern (supports ZMQ prefix-style subscriptions with wildcards)
+     */
+    bool subscribePattern(const std::string& topicPattern);
+
+    /**
+     * Unsubscribe a raw topic pattern
+     */
+    bool unsubscribePattern(const std::string& topicPattern);
     
     /**
      * Register callback for processed market data
