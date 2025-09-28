@@ -43,6 +43,17 @@ bool MarketDataInterface::initialize() {
             LOG_ERROR("Failed to initialize market data subscriber");
             return false;
         }
+
+        // Auto-subscribe to orderbook updates (wildcard) so internal consumers receive orderbook messages
+        try {
+            if (!subscriber_->subscribePattern(ORDERBOOK_UPDATES_TOPIC)) {
+                LOG_WARN("Failed to auto-subscribe to {}", ORDERBOOK_UPDATES_TOPIC);
+            } else {
+                LOG_INFO("Auto-subscribed to {}", ORDERBOOK_UPDATES_TOPIC);
+            }
+        } catch (const std::exception& e) {
+            LOG_WARN("Exception during auto-subscribe: {}", e.what());
+        }
         
         initialized_.store(true);
         LOG_INFO("MarketDataInterface initialized successfully");
@@ -311,11 +322,15 @@ void MarketDataInterface::configureCache() {
 
 void MarketDataInterface::configureSubscriber() {
     SubscriberConfig subConfig;
-    subConfig.subscriberEndpoint = config_.zmqSubscriberEndpoint;
-    subConfig.publisherEndpoint = config_.zmqPublisherEndpoint;
+    // subscriberEndpoint is the REQ endpoint the client uses to talk to server
+    // publisherEndpoint is the PUB endpoint(s) the SUB socket should connect to
+    subConfig.subscriberEndpoint = config_.marketDataRequestEndpoint; // server REQ/REP
+    subConfig.publisherEndpoint = config_.zmqSubscriberEndpoint; // server PUB endpoint
     subConfig.enableConflation = true;
     subConfig.processingThreadCount = 8;  // Could be configurable
-    
+
+    LOG_INFO("Configuring MarketDataSubscriber: publisherEndpoint='{}' subscriberEndpoint='{}'",
+             subConfig.publisherEndpoint, subConfig.subscriberEndpoint);
     subscriber_ = std::make_unique<MarketDataSubscriber>(subConfig);
     LOG_INFO("MarketDataSubscriber configured");
 }

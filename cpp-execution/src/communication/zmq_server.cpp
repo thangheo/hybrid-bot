@@ -285,6 +285,14 @@ void GenericZmqServer::publishWorker() {
         }
         
         if (message && matchesTopicFilter(message->topic)) {
+            // Debug: log dequeued message info
+            // try {
+            //     std::cout << "[ZMQ Server] Dequeued message topic='" << message->topic << "' data_len=" << message->data.size()
+            //               << " queue_size=" << getQueueSize() << std::endl;
+            // } catch (...) {
+            //     // swallow any logging errors
+            // }
+
             if (sendMessage(message->topic, message->data, message->metadata)) {
                 messages_sent_.fetch_add(1);
             } else {
@@ -382,6 +390,8 @@ bool GenericZmqServer::sendMessage(const std::string& topic, const std::string& 
         zmq::message_t topic_msg(topic.size());
         memcpy(topic_msg.data(), topic.c_str(), topic.size());
         
+        // Normal operation: do not emit large binary dumps to stdout here.
+
         zmq::message_t data_msg(data.size());
         memcpy(data_msg.data(), data.c_str(), data.size());
         

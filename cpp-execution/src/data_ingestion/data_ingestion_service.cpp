@@ -218,7 +218,11 @@ bool DataIngestionService::setupOrderBookComponents() {
                       << (orderBookManager_ ? "set" : "null") << std::endl;
             return false;
         }
-        std::cout << "OrderBookReconstructor initialized and ready" << std::endl;
+        // By default the reconstructor does not publish to avoid duplicate messages.
+        // Enable publishing here so the reconstructor forwards snapshots/updates to the internal
+        // ZMQ publisher. This can be toggled by other components via setPublishingEnabled().
+        reconstructor_->setPublishingEnabled(true);
+        std::cout << "OrderBookReconstructor initialized and ready (publishing ENABLED)" << std::endl;
         
         return true;
     } catch (const std::exception& e) {

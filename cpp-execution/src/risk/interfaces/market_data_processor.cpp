@@ -1,6 +1,7 @@
 #include "risk/interfaces/market_data_processor.hpp"
 #include "common/logger.hpp"
-#include "internal_orderbook.pb.h"
+// #include "internal_orderbook.pb.h"
+#include "../generated/cpp/internal_oderbook.pb.h"
 #include <google/protobuf/message.h>
 #include <google/protobuf/io/coded_stream.h>
 #include <google/protobuf/io/zero_copy_stream_impl.h>
@@ -135,7 +136,6 @@ std::optional<core::MarketData> MarketDataProcessor::processJsonOrderbook(
 
 std::optional<core::MarketData> MarketDataProcessor::processProtobufOrderbook(
     const std::string& topic, const std::string& message) {
-    
     try {
         if (message.empty()) {
             LOG_ERROR("Empty protobuf message for topic: {}", topic);
@@ -220,6 +220,7 @@ std::optional<core::MarketData> MarketDataProcessor::processProtobufOrderbook(
         marketData.volume = data.volume();
         marketData.high24h = data.high24h();
         marketData.low24h = data.low24h();
+
         
         return marketData;
 

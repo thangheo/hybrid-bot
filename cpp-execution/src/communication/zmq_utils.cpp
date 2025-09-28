@@ -90,7 +90,7 @@ bool matchesPattern(const std::string& topic, const std::string& pattern) {
         std::string full_regex = "^" + regex_pattern + "$";
         std::regex pattern_regex(full_regex);
         bool res = std::regex_match(topic, pattern_regex);
-        std::cout << "[ZMQ Utils] pattern='" << pattern << "' -> regex='" << full_regex << "' topic='" << topic << "' -> " << (res ? "MATCH" : "NO") << std::endl;
+        // std::cout << "[ZMQ Utils] pattern='" << pattern << "' -> regex='" << full_regex << "' topic='" << topic << "' -> " << (res ? "MATCH" : "NO") << std::endl;
         return res;
     } catch (const std::regex_error& e) {
         // If regex compilation fails, fall back to exact match

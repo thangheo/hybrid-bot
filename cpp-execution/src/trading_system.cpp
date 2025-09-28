@@ -29,11 +29,11 @@ Trading_system::Trading_system() : running_(false), systemHealthy_(true) {
     zmq_client_ = std::make_unique<GenericZmqClient>(clientConfig);
     
     // Initialize MarketDataInterface
-    riskConfig_.zmqSubscriberEndpoint = SERVER_PUBLISHER_ENDPOINT;
-    riskConfig_.zmqPublisherEndpoint = SERVER_REQUEST_ENDPOINT;
+    // riskConfig_.zmqSubscriberEndpoint = SERVER_REQUEST_ENDPOINT;
+    // riskConfig_.zmqPublisherEndpoint = SERVER_PUBLISHER_ENDPOINT;
     marketDataInterface_ = std::make_shared<trading::risk::MarketDataInterface>(riskConfig_);
     // set zmq client to marketDataInterface_
-    // marketDataInterface_->setZmqClient(std::move(zmq_client_));
+    marketDataInterface_->setZmqClient(std::move(zmq_client_));
     // Initialize position sizer with default config for now
     positionSizer_ = std::make_unique<trading::risk::PositionSizer>();
     
@@ -312,7 +312,7 @@ void Trading_system::printStatus() {
     std::cout << "Runtime: " << elapsed << "s" << std::endl;  //this will be always 0s
     std::cout << "Service Health: " << (dataIngestionService_->isHealthy() ? "HEALTHY" : "UNHEALTHY") << std::endl;
     std::cout << "Order book updates received: " << messagesProcessed_.load() << std::endl;
-    std::cout << "internal zmq msg sent: " << orderBookUpdatesReceived_.load() << std::endl;
+    // std::cout << "internal zmq msg sent: " << orderBookUpdatesReceived_.load() << std::endl;
     // List active symbols with intelligence
 
     // Print publish stats if available

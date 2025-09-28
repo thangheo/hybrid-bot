@@ -12,10 +12,10 @@ class ZmqStressTest {
 public:
     struct TestConfig {
         std::string transport = "inproc";  // inproc, ipc, tcp
-        int message_rate = 400;           // messages per second
+        int message_rate = 4000;           // messages per second
         int duration_seconds = 5;         // test duration
         int num_topics = 5;              // number of different topics
-        int payload_size = 100;          // bytes
+        int payload_size = 300;          // bytes
         bool use_metadata = true;
         bool mixed_priorities = true;
         double target_delivery_rate = 0.97;  // 97%
