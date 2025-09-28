@@ -163,15 +163,32 @@ void MomentumCorrelation::calculateCorrelations() {
         }
         //we use circular buffer, no need to trim
 
-        // Use pointer snapshot to avoid copying
-        std::vector<const DataPoint*> ptrs = data_points_.snapshotPtrs();
-        size_t startIdx = ptrs.size() > n ? ptrs.size() - n : 0;
+        // Take a safe copy of the snapshot. Using pointer snapshots into the
+        // internal circular buffer can race with concurrent writes and may cause
+        // instability; copying is slightly more expensive but deterministic.
+        std::vector<DataPoint> snapshotCopy = data_points_.snapshot();
+        size_t total = snapshotCopy.size();
+        if (total < params_.min_data_points) {
+            LOG_WARN("Not enough data points: have {} need {}", total, params_.min_data_points);
+            return;
+        }
 
-        // Pre-allocate with exact sizes
+        // Cap the number of points we process to avoid large allocations under
+        // memory pressure. This keeps latency bounded and prevents OOMs.
+        const size_t HARD_POINT_CAP = 2000; // tuned conservative cap
+        size_t startIdx = 0;
+        size_t capN = total;
+        if (total > HARD_POINT_CAP) {
+            startIdx = total - HARD_POINT_CAP;
+            capN = HARD_POINT_CAP;
+            LOG_WARN("Capping correlation data points from {} -> {}", total, capN);
+        }
+
+        // Pre-allocate with cap size
         std::vector<double> priceMovements;
         std::vector<double> timeWeights;
-        priceMovements.reserve(n);
-        timeWeights.reserve(n);
+        priceMovements.reserve(capN);
+        timeWeights.reserve(capN);
 
         // Simple metric storage - no fancy maps
         struct SimpleMetric {
@@ -194,23 +211,23 @@ void MomentumCorrelation::calculateCorrelations() {
 
         auto currentTime = std::chrono::system_clock::now();
 
-        // Single pass data collection
-        for (size_t i = startIdx; i < ptrs.size() && i < startIdx + n; ++i) {
-            const DataPoint* dp = ptrs[i];
-            
-            priceMovements.push_back(dp->price_movement.percent_change);
-            
+        // Single pass data collection over the copied snapshot
+        for (size_t idx = startIdx; idx < startIdx + capN; ++idx) {
+            const DataPoint& dp = snapshotCopy[idx];
+
+            priceMovements.push_back(dp.price_movement.percent_change);
+
             auto timeDiff = std::chrono::duration_cast<std::chrono::seconds>(
-                currentTime - dp->timestamp).count();
+                currentTime - dp.timestamp).count();
             double timeWeight = std::exp(-params_.time_decay_factor * timeDiff / 3600.0);
             timeWeights.push_back(timeWeight);
 
             // Add metric values
-            if (metrics.size() > 0) metrics[0].values.push_back(dp->metrics.bidAskVolumeRatio);
-            if (metrics.size() > 1) metrics[1].values.push_back(dp->metrics.volumeImbalance);
-            if (metrics.size() > 2) metrics[2].values.push_back(dp->metrics.weightedVolumeImbalance);
-            if (metrics.size() > 3) metrics[3].values.push_back(dp->metrics.depthImbalance);
-            if (metrics.size() > 4) metrics[4].values.push_back(dp->metrics.pressureImbalance);
+            if (metrics.size() > 0) metrics[0].values.push_back(dp.metrics.bidAskVolumeRatio);
+            if (metrics.size() > 1) metrics[1].values.push_back(dp.metrics.volumeImbalance);
+            if (metrics.size() > 2) metrics[2].values.push_back(dp.metrics.weightedVolumeImbalance);
+            if (metrics.size() > 3) metrics[3].values.push_back(dp.metrics.depthImbalance);
+            if (metrics.size() > 4) metrics[4].values.push_back(dp.metrics.pressureImbalance);
         }
 
         // Simple correlation calculation
@@ -598,23 +615,42 @@ double MomentumCorrelation::getCorrelationCoefficient(const std::string& metric_
 // }
 
 void MomentumCorrelation::updateHighestCorrelatedMetrics() {
-    // Sort metrics by correlation strength
+    // Snapshot the correlation maps under lock so we don't iterate over
+    // containers that may be concurrently modified by another thread.
+    std::map<std::string, double> strengthsSnapshot;
+    std::map<std::string, double> coeffsSnapshot;
+    {
+        std::lock_guard<std::mutex> lock(correlation_mutex_);
+        strengthsSnapshot = correlation_strengths_;
+        coeffsSnapshot = correlation_coefficients_;
+    }
+
+    // Sort metrics by correlation strength (work on the local snapshot)
     std::vector<std::pair<std::string, double>> sortedMetrics;
-    for (const auto& [metric, strength] : correlation_strengths_) {
+    sortedMetrics.reserve(strengthsSnapshot.size());
+    for (const auto& [metric, strength] : strengthsSnapshot) {
         sortedMetrics.push_back({metric, strength});
     }
-    
+
     // Sort in descending order of correlation strength
-    std::sort(sortedMetrics.begin(), sortedMetrics.end(), 
+    std::sort(sortedMetrics.begin(), sortedMetrics.end(),
               [](const auto& a, const auto& b) { return a.second > b.second; });
-    
-    // Take top N metrics
-    highest_correlated_metrics_.clear();
+
+    // Build new highest correlated list from snapshots (no lock held)
+    std::vector<std::pair<std::string, double>> newHighest;
+    newHighest.reserve(std::min<size_t>(params_.top_metrics_count, sortedMetrics.size()));
     for (size_t i = 0; i < std::min(params_.top_metrics_count, sortedMetrics.size()); ++i) {
-        highest_correlated_metrics_.push_back({
-            sortedMetrics[i].first, 
-            correlation_coefficients_[sortedMetrics[i].first]
-        });
+        const auto& name = sortedMetrics[i].first;
+        double coeff = 0.0;
+        auto it = coeffsSnapshot.find(name);
+        if (it != coeffsSnapshot.end()) coeff = it->second;
+        newHighest.push_back({name, coeff});
+    }
+
+    // Commit the update under lock to avoid races on highest_correlated_metrics_
+    {
+        std::lock_guard<std::mutex> lock(correlation_mutex_);
+        highest_correlated_metrics_ = std::move(newHighest);
     }
 }
  void MomentumCorrelation::calculateFeatureImportance() {
