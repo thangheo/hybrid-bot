@@ -15,12 +15,12 @@
 #include <future>
 #include <chrono>
 #include <random>
-
+//publiser
 namespace trading::communication {
 // SERVER_REQUEST_ENDPOINT
 const std::string SERVER_REQUEST_ENDPOINT = "inproc://server_rep";
-// SERVER_PUBLISER_ENDPOINT
-const std::string SERVER_PUBLISER_ENDPOINT = "inproc://server_pub";
+// SERVER_PUBLISHER_ENDPOINT
+const std::string SERVER_PUBLISHER_ENDPOINT = "inproc://server_pub";
 // SERVER_EXECUTION_REQUEST_ENDPOINT
 const std::string SERVER_EXECUTION_REQUEST_ENDPOINT = "inproc://execution_rep";
 // SERVER_EXECUTION_PUBLISH_ENDPOINT

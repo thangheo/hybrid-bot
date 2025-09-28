@@ -181,7 +181,7 @@ void MomentumCorrelation::calculateCorrelations() {
         if (total > HARD_POINT_CAP) {
             startIdx = total - HARD_POINT_CAP;
             capN = HARD_POINT_CAP;
-            LOG_WARN("Capping correlation data points from {} -> {}", total, capN);
+            // LOG_WARN("Capping correlation data points from {} -> {}", total, capN);
         }
 
         // Pre-allocate with cap size
@@ -203,11 +203,12 @@ void MomentumCorrelation::calculateCorrelations() {
         metrics.reserve(MAX_METRICS);
         
         // Add core metrics only
-        metrics.emplace_back("bid_ask_ratio", n);
-        metrics.emplace_back("volumeImbalance", n);
-        metrics.emplace_back("weightedVolumeImbalance", n);
-        metrics.emplace_back("depthImbalance", n);
-        metrics.emplace_back("pressureImbalance", n);
+        metrics.emplace_back("bid_ask_ratio", capN);
+        metrics.emplace_back("volumeImbalance", capN);
+        metrics.emplace_back("weightedVolumeImbalance", capN);
+        metrics.emplace_back("depthImbalance", capN);
+        metrics.emplace_back("pressureImbalance", capN);
+
 
         auto currentTime = std::chrono::system_clock::now();
 

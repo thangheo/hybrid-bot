@@ -94,7 +94,7 @@ public:
      * @param symbol Trading symbol
      */
     void updateOrderBookFromJson(ExchangeId exchangeId, const nlohmann::json& data, const core::Symbol& symbol);
-     
+    void publishOrderBookUpdate(const OrderBookUpdate& update) ;
     /**
      * @brief Process a market data snapshot
      * 

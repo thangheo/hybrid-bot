@@ -30,7 +30,7 @@ struct RawMessage {
  */
 struct SubscriberConfig {
     std::string subscriberEndpoint = trading::communication::SERVER_REQUEST_ENDPOINT;
-    std::string publisherEndpoint = trading::communication::SERVER_PUBLISER_ENDPOINT;
+    std::string publisherEndpoint = trading::communication::SERVER_PUBLISHER_ENDPOINT;
     std::string defaultExchange = "binance";
     // Queue settings
     size_t inboundQueueMaxSize = 10000;
