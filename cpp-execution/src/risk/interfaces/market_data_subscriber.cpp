@@ -37,8 +37,8 @@ bool MarketDataSubscriber::initialize() {
         // Create ZMQ client if not injected
         if (!zmqClient_) {
             trading::communication::ZmqClientConfig zmqConfig;
-            zmqConfig.pub_endpoints = {config_.subscriberEndpoint};
-            zmqConfig.req_endpoint = config_.publisherEndpoint;
+            // zmqConfig.pub_endpoints = {config_.subscriberEndpoint};
+            // zmqConfig.req_endpoint = config_.publisherEndpoint;
             zmqConfig.auto_reconnect = config_.autoReconnect;
             zmqConfig.reconnect_delay_ms = static_cast<int>(config_.reconnectInterval.count());
             zmqConfig.req_timeout = static_cast<int>(config_.requestTimeout.count());

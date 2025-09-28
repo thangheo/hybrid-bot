@@ -22,14 +22,14 @@ Trading_system::Trading_system() : running_(false), systemHealthy_(true) {
     
     ZmqClientConfig clientConfig;
     //no long use socket but use inproc
-    // clientConfig.server_pub_endpoint = SERVER_PUBLISER_ENDPOINT; // internal endpoint for orderbook
+    // clientConfig.server_pub_endpoint = SERVER_PUBLISHER_ENDPOINT; // internal endpoint for orderbook
     // clientConfig.server_req_endpoint = SERVER_REQUEST_ENDPOINT; // request endpoint for risk
     // clientConfig.auto_reconnect = true;
     // clientConfig.request_timeout = std::chrono::milliseconds(30000); // 30 seconds
     zmq_client_ = std::make_unique<GenericZmqClient>(clientConfig);
     
     // Initialize MarketDataInterface
-    riskConfig_.zmqSubscriberEndpoint = SERVER_PUBLISER_ENDPOINT;
+    riskConfig_.zmqSubscriberEndpoint = SERVER_PUBLISHER_ENDPOINT;
     riskConfig_.zmqPublisherEndpoint = SERVER_REQUEST_ENDPOINT;
     marketDataInterface_ = std::make_shared<trading::risk::MarketDataInterface>(riskConfig_);
     // set zmq client to marketDataInterface_
