@@ -164,11 +164,11 @@ public:
         // Setup ZeroMQ clients
         // clientConfig.req_endpoint = requestEndpoint_;
         // clientConfig.pub_endpoints = {publishEndpoint_};
-        clientConfig.rcvtimeo = 5000;  // 5 seconds
-        clientConfig.sndtimeo = 5000;  // 5 seconds
-        clientConfig.heartbeat_ivl = 30000;  // 30 seconds
-        clientConfig.heartbeat_timeout = 90000;  // 90 seconds
-        clientConfig.heartbeat_ttl = 30000;  // 30 seconds
+    clientConfig.rcvtimeo = 5000;  // 5 seconds
+    clientConfig.sndtimeo = 5000;  // 5 seconds
+    // heartbeat_ivl is not available on the client config; set timeout/ttl only
+    clientConfig.heartbeat_timeout = 90000;  // 90 seconds
+    clientConfig.heartbeat_ttl = 30000;  // 30 seconds
         zmqClient_ = std::make_unique<GenericZmqClient>(clientConfig);
         try {
             // Connect the client
