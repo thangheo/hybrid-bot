@@ -57,9 +57,16 @@ bool DrawdownMonitor::initialize() {
         if (config_.enableDetailedMetrics) {
             maintenanceActive_.store(true);
             maintenanceThread_ = std::make_unique<std::thread>([this]() {
+                std::unique_lock<std::mutex> lock(maintenanceMutex_);
                 while (maintenanceActive_.load()) {
+                    // Perform maintenance without holding the mutex
+                    lock.unlock();
                     performMaintenance();
-                    std::this_thread::sleep_for(config_.updateIntervalSeconds);
+                    lock.lock();
+                    // Wait for either the timeout or a shutdown notification
+                    maintenanceCv_.wait_for(lock, config_.updateIntervalSeconds, [this]() {
+                        return !maintenanceActive_.load();
+                    });
                 }
             });
         }
@@ -80,8 +87,13 @@ void DrawdownMonitor::shutdown() {
     }
     
     isShuttingDown_.store(true);
+    // Signal the maintenance thread to stop and wake it if it's waiting
     maintenanceActive_.store(false);
-    
+    {
+        std::lock_guard<std::mutex> lk(maintenanceMutex_);
+        maintenanceCv_.notify_all();
+    }
+
     if (maintenanceThread_ && maintenanceThread_->joinable()) {
         maintenanceThread_->join();
     }

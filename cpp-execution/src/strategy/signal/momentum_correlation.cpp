@@ -35,6 +35,9 @@ MomentumCorrelation::MomentumCorrelation(size_t window_size)
 
 MomentumCorrelation::MomentumCorrelation(const MomentumCorrelationConfig& config) {
     window_size_ = config.correlationWindowMs;
+    if(window_size_ <= 1000) {
+        window_size_ = 1000; // Default if not set
+    }
     //  int predictionHorizonMs = 5000;        // Prediction horizon in milliseconds
     }
 
@@ -50,7 +53,6 @@ void MomentumCorrelation::updateCorrelationModel(
         return;
     }
     
-    // Create data point
     DataPoint dataPoint;
     dataPoint.metrics = metrics;
     dataPoint.price_movement = movement;
@@ -61,12 +63,12 @@ void MomentumCorrelation::updateCorrelationModel(
     {
         std::lock_guard<std::mutex> lock(correlation_mutex_);
         // Emplace to avoid an extra copy of potentially-heavy DataPoint
-        data_points_.emplace_back(std::move(dataPoint));
+        data_points_.push(std::move(dataPoint));
 
-        // Maintain window size
-        while (data_points_.size() > window_size_) {
-            data_points_.pop_front();
-        }
+        // // Maintain window size
+        // while (data_points_.size() > window_size_) {
+        //     data_points_.pop();
+        // }
 
         currentSize = data_points_.size();
     }
@@ -117,7 +119,7 @@ void MomentumCorrelation::updateCorrelationModel(
  }
  
  void MomentumCorrelation::reset() {
-     data_points_.clear();
+    //  data_points_.clear();
      correlation_coefficients_.clear();
      feature_importance_.clear();
      current_regime_ = MarketRegime::NORMAL;
@@ -147,308 +149,37 @@ void MomentumCorrelation::updateParameters(const ParameterSet& params) {
     // Update the timestamp to reflect the last update
 }
 
-// void MomentumCorrelation::calculateCorrelations() {
-//     try {
-//     // Snapshot pointers to data_points_ under lock to avoid heavy copies
-//     std::vector<const DataPoint*> snapshotPtrs;
-//     size_t n = 0;
-//     {
-//         std::lock_guard<std::mutex> lock(correlation_mutex_);
-//         if (data_points_.size() < params_.min_data_points) {
-//             LOG_WARN("Not enough data points for correlation calculation. Have {} but need at least {}", 
-//                     data_points_.size(), params_.min_data_points);
-//             return;
-//         }
-//         n = data_points_.size();
-
-//         // Defensive cap to avoid unbounded allocations causing std::bad_alloc
-//         const size_t HARD_POINT_CAP = 5000; // if you need more, increase carefully
-//         size_t capN = n;
-//         size_t startIndex = 0;
-//         if (n > HARD_POINT_CAP) {
-//             capN = HARD_POINT_CAP;
-//             startIndex = n - capN; // take the most recent points
-//             LOG_WARN("Capping correlation data points from {} to {} to avoid excessive memory use", n, capN);
-//         }
-
-//         snapshotPtrs.reserve(capN);
-//         // Push only the most recent capN entries
-//         for (size_t i = startIndex; i < data_points_.size(); ++i) snapshotPtrs.push_back(&data_points_[i]);
-//         n = snapshotPtrs.size();
-//     }
-
-//     // Extract key metrics for correlation from the snapshot pointers
-//     std::map<std::string, std::vector<double>> metricValues;
-//     std::vector<double> priceMovements;
-//     std::vector<double> timeWeights;  // For time-weighted correlation
-//     priceMovements.reserve(n);
-//     timeWeights.reserve(n);
-
-//     // Precompute level keys to avoid repeated string allocations
-//     std::vector<std::string> levelKeys;
-//     levelKeys.reserve(params_.max_level_depth);
-//     for (size_t level = 1; level <= params_.max_level_depth; ++level) {
-//         levelKeys.push_back("level_" + std::to_string(level) + "_imbalance");
-//     }
-
-//     // Get current time for time weighting
-//     auto currentTime = std::chrono::system_clock::now();
-
-//     for (const auto* dataPointPtr : snapshotPtrs) {
-//         const auto& dataPoint = *dataPointPtr;
-
-//         // Add price movement
-//         priceMovements.push_back(dataPoint.price_movement.percent_change);
-
-//         // Calculate time weight (newer points have higher weight)
-//         auto timeDiff = std::chrono::duration_cast<std::chrono::seconds>(
-//             currentTime - dataPoint.timestamp).count();
-//         double timeWeight = std::exp(-params_.time_decay_factor * timeDiff / 3600.0); // decay per hour
-//         timeWeights.push_back(timeWeight);
-
-//         // Helper to reserve metric vector capacity on first insertion
-//         auto ensureReserve = [&](std::vector<double>& vec) {
-//             if (vec.empty()) vec.reserve(n);
-//         };
-
-//         // Extract and store key metrics from OrderBookMetrics with capacity hints
-//         {
-//             auto& v = metricValues["bid_ask_ratio"];
-//             ensureReserve(v);
-//             v.push_back(dataPoint.metrics.bidAskVolumeRatio);
-//         }
-//         {
-//             auto& v = metricValues["volumeImbalance "];
-//             ensureReserve(v);
-//             v.push_back(dataPoint.metrics.volumeImbalance);
-//         }
-//         {
-//             auto& v = metricValues["weightedVolumeImbalance"];
-//             ensureReserve(v);
-//             v.push_back(dataPoint.metrics.weightedVolumeImbalance);
-//         }
-//         {
-//             auto& v = metricValues["depthImbalance"];
-//             ensureReserve(v);
-//             v.push_back(dataPoint.metrics.depthImbalance);
-//         }
-//         {
-//             auto& v = metricValues["pressureImbalance"];
-//             ensureReserve(v);
-//             v.push_back(dataPoint.metrics.pressureImbalance);
-//         }
-//         {
-//             auto& v = metricValues["spread"];
-//             ensureReserve(v);
-//             v.push_back(dataPoint.metrics.spread);
-//         }
-//         {
-//             auto& v = metricValues["spreadPercent"];
-//             ensureReserve(v);
-//             v.push_back(dataPoint.metrics.spreadPercent);
-//         }
-//         {
-//             auto& v = metricValues["priceLevelImbalance"];
-//             ensureReserve(v);
-//             v.push_back(dataPoint.metrics.priceLevelImbalance);
-//         }
-//         {
-//             auto& v = metricValues["marketDirectionalCoefficient"];
-//             ensureReserve(v);
-//             v.push_back(dataPoint.metrics.marketDirectionalCoefficient);
-//         }
-//         {
-//             auto& v = metricValues["liquidityProfileScore"];
-//             ensureReserve(v);
-//             v.push_back(dataPoint.metrics.liquidityProfileScore);
-//         }
-
-//         // Add time-based metrics if they exist
-//         if (dataPoint.metrics.priceVelocity != 0.0) {
-//             auto& v = metricValues["priceVelocity"];
-//             ensureReserve(v);
-//             v.push_back(dataPoint.metrics.priceVelocity);
-//         }
-//         if (dataPoint.metrics.volumeVelocity != 0.0) {
-//             auto& v = metricValues["volumeVelocity"];
-//             ensureReserve(v);
-//             v.push_back(dataPoint.metrics.volumeVelocity);
-//         }
-//         if (dataPoint.metrics.spreadVelocity != 0.0) {
-//             auto& v = metricValues["spreadVelocity"];
-//             ensureReserve(v);
-//             v.push_back(dataPoint.metrics.spreadVelocity);
-//         }
-
-//         // Process level-specific metrics from timeSeriesMetrics if available
-//         auto levelIt = dataPoint.metrics.timeSeriesMetrics.find("level_imbalances");
-//         if (levelIt != dataPoint.metrics.timeSeriesMetrics.end()) {
-//             const auto& levelDataVec = levelIt->second;
-//             for (size_t level = 1; level <= params_.max_level_depth; ++level) {
-//                 if (level <= levelDataVec.size()) {
-//                     auto& v = metricValues[levelKeys[level-1]];
-//                     ensureReserve(v);
-//                     v.push_back(levelDataVec[level-1]);
-//                 }
-//             }
-//         }
-
-//         // Add any other metrics from the metrics map via const-ref accessor to avoid copies
-//         for (const auto& kv : dataPoint.metrics.metricsMap()) {
-//             const auto& key = kv.first;
-//             const auto& value = kv.second;
-//             auto& v = metricValues[key];
-//             ensureReserve(v);
-//             v.push_back(value);
-//         }
-//     }
-
-//     // Calculate time-weighted correlation coefficients for each metric
-//     std::map<std::string, double> newCorrelationCoeffs;
-//     std::map<std::string, double> newCorrelationStrengths;
-
-//     for (auto& [metric, values] : metricValues) {
-//         // Skip if we don't have enough data points or sizes don't match
-//         if (values.size() != priceMovements.size() || values.size() < params_.min_data_points) {
-//             // LOG_WARN("Skipping correlation for metric {} due to insufficient or mismatched data", metric);
-//             correlation_coefficients_[metric] = 0.0;
-//             continue;
-//         }
-        
-//         try {
-//             // Normalize the metric values to improve correlation quality
-//             std::vector<double> normalizedValues;
-//             normalizedValues.reserve(values.size());
-            
-//             // Calculate mean and stddev for normalization
-//             double sum = 0.0;
-//             for (size_t i = 0; i < values.size(); ++i) {
-//                 sum += values[i] * timeWeights[i];
-//             }
-//             double weightSum = std::accumulate(timeWeights.begin(), timeWeights.end(), 0.0);
-//             double mean = weightSum > 0 ? sum / weightSum : 0.0;
-            
-//             double varianceSum = 0.0;
-//             for (size_t i = 0; i < values.size(); ++i) {
-//                 double diff = values[i] - mean;
-//                 varianceSum += diff * diff * timeWeights[i];
-//             }
-//             double stddev = weightSum > 0 ? std::sqrt(varianceSum / weightSum) : 1.0;
-//             stddev = std::max(stddev, params_.min_stddev_threshold); // Avoid division by very small numbers
-            
-//             // Normalize values
-//             for (double val : values) {
-//                 normalizedValues.push_back((val - mean) / stddev);
-//             }
-            
-//             // Also normalize price movements
-//             double priceMean = 0.0;
-//             double priceWeightSum = 0.0;
-//             for (size_t i = 0; i < priceMovements.size(); ++i) {
-//                 priceMean += priceMovements[i] * timeWeights[i];
-//                 priceWeightSum += timeWeights[i];
-//             }
-//             priceMean = priceWeightSum > 0 ? priceMean / priceWeightSum : 0.0;
-            
-//             double priceVarianceSum = 0.0;
-//             for (size_t i = 0; i < priceMovements.size(); ++i) {
-//                 double diff = priceMovements[i] - priceMean;
-//                 priceVarianceSum += diff * diff * timeWeights[i];
-//             }
-//             double priceStddev = priceWeightSum > 0 ? std::sqrt(priceVarianceSum / priceWeightSum) : 1.0;
-//             priceStddev = std::max(priceStddev, params_.min_stddev_threshold);
-            
-//             std::vector<double> normalizedPrices;
-//             normalizedPrices.reserve(priceMovements.size());
-//             for (double val : priceMovements) {
-//                 normalizedPrices.push_back((val - priceMean) / priceStddev);
-//             }
-            
-//             // Calculate time-weighted correlation
-//             double covariance = 0.0;
-//             for (size_t i = 0; i < normalizedValues.size(); ++i) {
-//                 covariance += normalizedValues[i] * normalizedPrices[i] * timeWeights[i];
-//             }
-            
-//             // The normalization simplifies the correlation formula since variances are now 1.0
-//             double correlation = weightSum > 0 ? covariance / weightSum : 0.0;
-            
-//             // Clamp correlation to valid range [-1, 1]
-//             correlation = std::max(-1.0, std::min(1.0, correlation));
-            
-//             // Apply exponential decay to smooth correlation over time
-//             if (correlation_coefficients_.count(metric) > 0) {
-//                 correlation = params_.correlation_decay_rate * correlation_coefficients_[metric] +
-//                                 (1.0 - params_.correlation_decay_rate) * correlation;
-//             }
-            
-//             // Store in local maps (will commit under lock later)
-//             newCorrelationCoeffs[metric] = correlation;
-            
-//             // Store correlation strength (absolute value) for sorting
-//             newCorrelationStrengths[metric] = std::abs(correlation);
-            
-//             // Log strong correlations for debugging
-//             // if (std::abs(correlation) > params_.strong_correlation_threshold) {
-//             //     LOG_DEBUG("Strong correlation detected: metric: {}, correlation: {:.4f}", metric, correlation);
-//             // }
-//         }
-//         catch (const std::bad_alloc& e) {
-//             LOG_ERROR("std::bad_alloc while calculating correlation for metric {}: {}", metric, e.what());
-//             newCorrelationCoeffs[metric] = 0.0;
-//             newCorrelationStrengths[metric] = 0.0;
-//             // skip to next metric
-//             continue;
-//         }
-//         catch (const std::exception& e) {
-//             LOG_ERROR("Error calculating correlation for metric {}: {}", metric, e.what());
-//             newCorrelationCoeffs[metric] = 0.0;
-//         }
-//     }
-//     // Commit new correlation maps under lock
-//     {
-//         std::lock_guard<std::mutex> lock(correlation_mutex_);
-//         correlation_coefficients_.swap(newCorrelationCoeffs);
-//         correlation_strengths_.swap(newCorrelationStrengths);
-//     }
-
-//     // Update highest correlated metrics list (it will take the lock internally)
-//     updateHighestCorrelatedMetrics();
-//     } catch (const std::bad_alloc& e) {
-//         LOG_ERROR("std::bad_alloc in calculateCorrelations(): {}", e.what());
-//         return;
-//     } catch (const std::exception& e) {
-//         LOG_ERROR("Exception in calculateCorrelations(): {}", e.what());
-//         return;
-//     }
-// }
 void MomentumCorrelation::calculateCorrelations() {
     try {
-        // Snapshot pointers to data_points_ under lock
-        std::vector<const DataPoint*> snapshotPtrs;
-        size_t n = 0;
-        {
-            std::lock_guard<std::mutex> lock(correlation_mutex_);
-            if (data_points_.size() < params_.min_data_points) {
-                LOG_WARN("Not enough data points: have {} need {}", 
-                         data_points_.size(), params_.min_data_points);
-                return;
-            }
-            n = data_points_.size();
+        // Take a safe copy of the data point snapshot. Prior code took addresses of
+        // elements inside a temporary returned by data_points_.snapshot(), which
+        // produced dangling pointers when the temporary was destroyed. Copying the
+        // snapshot ensures stable storage for the remainder of the computation.
+        std::vector<DataPoint> snapshotCopy = data_points_.snapshot();
+        size_t n = snapshotCopy.size();
+        if (n < params_.min_data_points) {
+            LOG_WARN("Not enough data points: have {} need {}", n, params_.min_data_points);
+            return;
+        }
 
-            const size_t HARD_POINT_CAP = 5000;
-            size_t capN = n;
-            size_t startIndex = 0;
-            if (n > HARD_POINT_CAP) {
-                capN = HARD_POINT_CAP;
-                startIndex = n - capN;
-                LOG_WARN("Capping correlation data points from {} → {}", n, capN);
-            }
+        // Apply optional hard cap and determine start index (keeps behavior similar to
+        // previous implementation which intended to cap at a HARD_POINT_CAP).
+        const size_t HARD_POINT_CAP = 5000;
+        size_t capN = n;
+        size_t startIndex = 0;
+        if (n > HARD_POINT_CAP) {
+            capN = HARD_POINT_CAP;
+            startIndex = n - capN;
+            LOG_WARN("Capping correlation data points from {} → {}", n, capN);
+        }
 
-            snapshotPtrs.reserve(capN);
-            for (size_t i = startIndex; i < data_points_.size(); ++i)
-                snapshotPtrs.push_back(&data_points_[i]);
-            n = snapshotPtrs.size();
+        // Adjust snapshot view to the capped range
+        if (startIndex != 0 || capN != n) {
+            std::vector<DataPoint> tmp;
+            tmp.reserve(capN);
+            for (size_t i = startIndex; i < startIndex + capN; ++i) tmp.push_back(std::move(snapshotCopy[i]));
+            snapshotCopy.swap(tmp);
+            n = snapshotCopy.size();
         }
 
         // Use unordered_map to reduce overhead
@@ -472,8 +203,7 @@ void MomentumCorrelation::calculateCorrelations() {
         // CAP for metrics to avoid runaway memory
         const size_t HARD_METRIC_CAP = 64;
 
-        for (const auto* dpPtr : snapshotPtrs) {
-            const auto& dp = *dpPtr;
+        for (const auto& dp : snapshotCopy) {
 
             priceMovements.push_back(dp.price_movement.percent_change);
 
@@ -827,13 +557,16 @@ void MomentumCorrelation::updateMarketRegime() {
     
     {
         std::lock_guard<std::mutex> lock(correlation_mutex_);
-        size_t startIdx = std::max(0, static_cast<int>(data_points_.size() - params_.regime_detection_window));
+        // Create a snapshot which provides index access; avoid using operator[] on the custom container directly
+        const auto& snapshot = data_points_.snapshot();
+        size_t total = snapshot.size();
+        size_t startIdx = total > params_.regime_detection_window ? total - params_.regime_detection_window : 0;
         
-        for (size_t i = startIdx; i < data_points_.size(); ++i) {
-            recentMovements.push_back(data_points_[i].price_movement.percent_change);
+        for (size_t i = startIdx; i < total; ++i) {
+            recentMovements.push_back(snapshot[i].price_movement.percent_change);
             // Add volume and spread data if available in your data structure
-            // recentVolumes.push_back(data_points_[i].volume_ratio);
-            // recentSpreads.push_back(data_points_[i].spread_ratio);
+            recentVolumes.push_back(snapshot[i].volume_ratio);
+            recentSpreads.push_back(snapshot[i].spread_ratio);
         }
     }
     

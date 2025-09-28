@@ -67,7 +67,7 @@ set(SOURCES
     zmq_manager.cpp
     zmq_client.cpp
     zmq_utils.cpp
-    market_data_subscriber.cpp
+    # market_data_subscriber.cpp
 
     # full_bridge.cpp
     ${PROTO_SOURCES}  # Include protobuf-generated files

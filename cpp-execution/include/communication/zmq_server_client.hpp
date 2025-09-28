@@ -19,8 +19,8 @@
 namespace trading::communication {
 // SERVER_REQUEST_ENDPOINT
 const std::string SERVER_REQUEST_ENDPOINT = "inproc://server_rep";
-// SERVER_INTERNAL_ENDPOINT
-const std::string SERVER_INTERNAL_ENDPOINT = "inproc://server_pub";
+// SERVER_PUBLISER_ENDPOINT
+const std::string SERVER_PUBLISER_ENDPOINT = "inproc://server_pub";
 // SERVER_EXECUTION_REQUEST_ENDPOINT
 const std::string SERVER_EXECUTION_REQUEST_ENDPOINT = "inproc://execution_rep";
 // SERVER_EXECUTION_PUBLISH_ENDPOINT
@@ -251,6 +251,9 @@ private:
     // Threading
     std::thread sub_thread_;
     std::thread monitor_thread_;
+    // Condition variable to allow interruptible sleeps and fast shutdown
+    mutable std::mutex worker_mutex_;
+    mutable std::condition_variable worker_cv_;
     
     // Subscription management
     std::unordered_map<std::string, MessageHandler> subscriptions_;

@@ -32,6 +32,7 @@
 #include <thread>
 #include <unordered_map>
 #include <vector>
+#include <condition_variable>
 
 namespace trading::risk {
 
@@ -334,6 +335,9 @@ private:
     // Background processing
     std::unique_ptr<std::thread> maintenanceThread_;
     std::atomic<bool> maintenanceActive_{false};
+    // Condition variable and mutex to allow interruptible sleep/wait for shutdown
+    mutable std::mutex maintenanceMutex_;
+    mutable std::condition_variable maintenanceCv_;
     
     // Performance tracking
     mutable std::atomic<uint64_t> totalUpdates_{0};
