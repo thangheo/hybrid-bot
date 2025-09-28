@@ -13,6 +13,10 @@
 #include <mutex>
 #include <format>
 #include <common/logger.hpp>
+
+// Define a sane default for maximum metrics reserved by the correlation calculator.
+// This keeps the previous intent (reserve capacity) and prevents an undefined identifier.
+constexpr size_t MAX_METRICS = 64;
  
  namespace trading {
  namespace strategy {
@@ -151,183 +155,132 @@ void MomentumCorrelation::updateParameters(const ParameterSet& params) {
 
 void MomentumCorrelation::calculateCorrelations() {
     try {
-        // Take a safe copy of the data point snapshot. Prior code took addresses of
-        // elements inside a temporary returned by data_points_.snapshot(), which
-        // produced dangling pointers when the temporary was destroyed. Copying the
-        // snapshot ensures stable storage for the remainder of the computation.
-        std::vector<DataPoint> snapshotCopy = data_points_.snapshot();
-        size_t n = snapshotCopy.size();
+        // Simple fix: reduce data size FIRST
+        size_t n = data_points_.size();
         if (n < params_.min_data_points) {
             LOG_WARN("Not enough data points: have {} need {}", n, params_.min_data_points);
             return;
         }
+        //we use circular buffer, no need to trim
 
-        // Apply optional hard cap and determine start index (keeps behavior similar to
-        // previous implementation which intended to cap at a HARD_POINT_CAP).
-        const size_t HARD_POINT_CAP = 5000;
-        size_t capN = n;
-        size_t startIndex = 0;
-        if (n > HARD_POINT_CAP) {
-            capN = HARD_POINT_CAP;
-            startIndex = n - capN;
-            LOG_WARN("Capping correlation data points from {} → {}", n, capN);
-        }
+        // Use pointer snapshot to avoid copying
+        std::vector<const DataPoint*> ptrs = data_points_.snapshotPtrs();
+        size_t startIdx = ptrs.size() > n ? ptrs.size() - n : 0;
 
-        // Adjust snapshot view to the capped range
-        if (startIndex != 0 || capN != n) {
-            std::vector<DataPoint> tmp;
-            tmp.reserve(capN);
-            for (size_t i = startIndex; i < startIndex + capN; ++i) tmp.push_back(std::move(snapshotCopy[i]));
-            snapshotCopy.swap(tmp);
-            n = snapshotCopy.size();
-        }
-
-        // Use unordered_map to reduce overhead
-        std::unordered_map<std::string, std::vector<double>> metricValues;
-        metricValues.reserve(64); // expected metric count
-
+        // Pre-allocate with exact sizes
         std::vector<double> priceMovements;
         std::vector<double> timeWeights;
         priceMovements.reserve(n);
         timeWeights.reserve(n);
 
-        // Precompute keys
-        std::vector<std::string> levelKeys;
-        levelKeys.reserve(params_.max_level_depth);
-        for (size_t level = 1; level <= params_.max_level_depth; ++level) {
-            levelKeys.push_back("level_" + std::to_string(level) + "_imbalance");
-        }
+        // Simple metric storage - no fancy maps
+        struct SimpleMetric {
+            std::string name;
+            std::vector<double> values;
+            SimpleMetric(const std::string& n, size_t reserve_size) : name(n) {
+                values.reserve(reserve_size);
+            }
+        };
+        
+        std::vector<SimpleMetric> metrics;
+        metrics.reserve(MAX_METRICS);
+        
+        // Add core metrics only
+        metrics.emplace_back("bid_ask_ratio", n);
+        metrics.emplace_back("volumeImbalance", n);
+        metrics.emplace_back("weightedVolumeImbalance", n);
+        metrics.emplace_back("depthImbalance", n);
+        metrics.emplace_back("pressureImbalance", n);
 
         auto currentTime = std::chrono::system_clock::now();
 
-        // CAP for metrics to avoid runaway memory
-        const size_t HARD_METRIC_CAP = 64;
-
-        for (const auto& dp : snapshotCopy) {
-
-            priceMovements.push_back(dp.price_movement.percent_change);
-
+        // Single pass data collection
+        for (size_t i = startIdx; i < ptrs.size() && i < startIdx + n; ++i) {
+            const DataPoint* dp = ptrs[i];
+            
+            priceMovements.push_back(dp->price_movement.percent_change);
+            
             auto timeDiff = std::chrono::duration_cast<std::chrono::seconds>(
-                currentTime - dp.timestamp).count();
+                currentTime - dp->timestamp).count();
             double timeWeight = std::exp(-params_.time_decay_factor * timeDiff / 3600.0);
             timeWeights.push_back(timeWeight);
 
-            auto ensureReserve = [&](std::vector<double>& v) {
-                if (v.capacity() == 0) v.reserve(n);
-            };
-
-            // Selected metrics (whitelist – you can tune later)
-            auto& v1 = metricValues["bid_ask_ratio"]; ensureReserve(v1); v1.push_back(dp.metrics.bidAskVolumeRatio);
-            auto& v2 = metricValues["volumeImbalance"]; ensureReserve(v2); v2.push_back(dp.metrics.volumeImbalance);
-            auto& v3 = metricValues["weightedVolumeImbalance"]; ensureReserve(v3); v3.push_back(dp.metrics.weightedVolumeImbalance);
-            auto& v4 = metricValues["depthImbalance"]; ensureReserve(v4); v4.push_back(dp.metrics.depthImbalance);
-            auto& v5 = metricValues["pressureImbalance"]; ensureReserve(v5); v5.push_back(dp.metrics.pressureImbalance);
-
-            // Optional additional metrics (only if under cap)
-            if (metricValues.size() < HARD_METRIC_CAP) {
-                for (const auto& kv : dp.metrics.metricsMap()) {
-                    auto& v = metricValues[kv.first];
-                    ensureReserve(v);
-                    v.push_back(kv.second);
-                }
-            }
-
-            // Level metrics
-            auto levelIt = dp.metrics.timeSeriesMetrics.find("level_imbalances");
-            if (levelIt != dp.metrics.timeSeriesMetrics.end()) {
-                const auto& levelDataVec = levelIt->second;
-                for (size_t level = 1; level <= params_.max_level_depth; ++level) {
-                    if (level <= levelDataVec.size()) {
-                        auto& v = metricValues[levelKeys[level - 1]];
-                        ensureReserve(v);
-                        v.push_back(levelDataVec[level - 1]);
-                    }
-                }
-            }
+            // Add metric values
+            if (metrics.size() > 0) metrics[0].values.push_back(dp->metrics.bidAskVolumeRatio);
+            if (metrics.size() > 1) metrics[1].values.push_back(dp->metrics.volumeImbalance);
+            if (metrics.size() > 2) metrics[2].values.push_back(dp->metrics.weightedVolumeImbalance);
+            if (metrics.size() > 3) metrics[3].values.push_back(dp->metrics.depthImbalance);
+            if (metrics.size() > 4) metrics[4].values.push_back(dp->metrics.pressureImbalance);
         }
 
-        // Reusable scratch buffers (thread_local avoids reallocs each call)
-        thread_local std::vector<double> scratch1;
-        thread_local std::vector<double> scratch2;
-        scratch1.clear();
-        scratch2.clear();
-
-        // Use the same associative container type as the member variables so swap() works
+        // Simple correlation calculation
         std::map<std::string, double> newCorrelationCoeffs;
         std::map<std::string, double> newCorrelationStrengths;
 
-        for (auto& [metric, values] : metricValues) {
-            if (values.size() != priceMovements.size() || values.size() < params_.min_data_points) {
-                newCorrelationCoeffs[metric] = 0.0;
+        for (const auto& metric : metrics) {
+            if (metric.values.size() != priceMovements.size() || 
+                metric.values.size() < params_.min_data_points) {
+                newCorrelationCoeffs[metric.name] = 0.0;
                 continue;
             }
 
             try {
-                // --- normalize metric ---
-                scratch1.clear();
-                scratch1.reserve(values.size());
-
-                double sum = 0.0, weightSum = 0.0;
-                for (size_t i = 0; i < values.size(); ++i) {
-                    sum += values[i] * timeWeights[i];
-                    weightSum += timeWeights[i];
+                // Calculate means
+                double metricSum = 0.0, priceSum = 0.0, weightSum = 0.0;
+                for (size_t i = 0; i < metric.values.size(); ++i) {
+                    double w = timeWeights[i];
+                    metricSum += metric.values[i] * w;
+                    priceSum += priceMovements[i] * w;
+                    weightSum += w;
                 }
-                double mean = weightSum > 0 ? sum / weightSum : 0.0;
+                
+                double metricMean = weightSum > 0 ? metricSum / weightSum : 0.0;
+                double priceMean = weightSum > 0 ? priceSum / weightSum : 0.0;
 
-                double varSum = 0.0;
-                for (size_t i = 0; i < values.size(); ++i) {
-                    double d = values[i] - mean;
-                    varSum += d * d * timeWeights[i];
+                // Calculate standard deviations
+                double metricVar = 0.0, priceVar = 0.0;
+                for (size_t i = 0; i < metric.values.size(); ++i) {
+                    double w = timeWeights[i];
+                    double md = metric.values[i] - metricMean;
+                    double pd = priceMovements[i] - priceMean;
+                    metricVar += md * md * w;
+                    priceVar += pd * pd * w;
                 }
-                double stddev = weightSum > 0 ? std::sqrt(varSum / weightSum) : 1.0;
-                stddev = std::max(stddev, params_.min_stddev_threshold);
+                
+                double metricStd = weightSum > 0 ? std::sqrt(metricVar / weightSum) : 1.0;
+                double priceStd = weightSum > 0 ? std::sqrt(priceVar / weightSum) : 1.0;
+                
+                metricStd = std::max(metricStd, params_.min_stddev_threshold);
+                priceStd = std::max(priceStd, params_.min_stddev_threshold);
 
-                for (double val : values) scratch1.push_back((val - mean) / stddev);
-
-                // --- normalize prices ---
-                scratch2.clear();
-                scratch2.reserve(priceMovements.size());
-
-                double pSum = 0.0, pWeightSum = 0.0;
-                for (size_t i = 0; i < priceMovements.size(); ++i) {
-                    pSum += priceMovements[i] * timeWeights[i];
-                    pWeightSum += timeWeights[i];
-                }
-                double pMean = pWeightSum > 0 ? pSum / pWeightSum : 0.0;
-
-                double pVarSum = 0.0;
-                for (size_t i = 0; i < priceMovements.size(); ++i) {
-                    double d = priceMovements[i] - pMean;
-                    pVarSum += d * d * timeWeights[i];
-                }
-                double pStd = pWeightSum > 0 ? std::sqrt(pVarSum / pWeightSum) : 1.0;
-                pStd = std::max(pStd, params_.min_stddev_threshold);
-
-                for (double val : priceMovements) scratch2.push_back((val - pMean) / pStd);
-
-                // --- correlation ---
+                // Calculate correlation
                 double covariance = 0.0;
-                for (size_t i = 0; i < scratch1.size(); ++i)
-                    covariance += scratch1[i] * scratch2[i] * timeWeights[i];
+                for (size_t i = 0; i < metric.values.size(); ++i) {
+                    double normalizedMetric = (metric.values[i] - metricMean) / metricStd;
+                    double normalizedPrice = (priceMovements[i] - priceMean) / priceStd;
+                    covariance += normalizedMetric * normalizedPrice * timeWeights[i];
+                }
 
                 double correlation = weightSum > 0 ? covariance / weightSum : 0.0;
                 correlation = std::clamp(correlation, -1.0, 1.0);
 
-                if (correlation_coefficients_.count(metric)) {
-                    correlation = params_.correlation_decay_rate * correlation_coefficients_[metric] +
+                // Apply decay if exists
+                if (correlation_coefficients_.count(metric.name)) {
+                    correlation = params_.correlation_decay_rate * correlation_coefficients_[metric.name] +
                                   (1.0 - params_.correlation_decay_rate) * correlation;
                 }
 
-                newCorrelationCoeffs[metric] = correlation;
-                newCorrelationStrengths[metric] = std::abs(correlation);
+                newCorrelationCoeffs[metric.name] = correlation;
+                newCorrelationStrengths[metric.name] = std::abs(correlation);
             }
             catch (const std::bad_alloc& e) {
-                LOG_ERROR("bad_alloc on metric {}: {}", metric, e.what());
-                newCorrelationCoeffs[metric] = 0.0;
-                newCorrelationStrengths[metric] = 0.0;
+                LOG_ERROR("Memory error on metric {}", metric.name);
+                newCorrelationCoeffs[metric.name] = 0.0;
+                newCorrelationStrengths[metric.name] = 0.0;
             }
         }
 
+        // Update results
         {
             std::lock_guard<std::mutex> lock(correlation_mutex_);
             correlation_coefficients_.swap(newCorrelationCoeffs);
@@ -337,12 +290,213 @@ void MomentumCorrelation::calculateCorrelations() {
         updateHighestCorrelatedMetrics();
     }
     catch (const std::bad_alloc& e) {
-        LOG_ERROR("bad_alloc in calculateCorrelations(): {}", e.what());
+        LOG_ERROR("Critical memory error in calculateCorrelations(): {}", e.what());
+        // Emergency: clear some data
+        {
+            std::lock_guard<std::mutex> lock(correlation_mutex_);
+            correlation_coefficients_.clear();
+            correlation_strengths_.clear();
+        }
     }
     catch (const std::exception& e) {
         LOG_ERROR("Exception in calculateCorrelations(): {}", e.what());
     }
 }
+
+// void MomentumCorrelation::calculateCorrelations() {
+//     try {
+//         // Take a safe copy of the data point snapshot. Prior code took addresses of
+//         // elements inside a temporary returned by data_points_.snapshot(), which
+//         // produced dangling pointers when the temporary was destroyed. Copying the
+//         // snapshot ensures stable storage for the remainder of the computation.
+//         std::vector<DataPoint> snapshotCopy = data_points_.snapshot();
+//         size_t n = snapshotCopy.size();
+//         if (n < params_.min_data_points) {
+//             LOG_WARN("Not enough data points: have {} need {}", n, params_.min_data_points);
+//             return;
+//         }
+
+//         // Apply optional hard cap and determine start index (keeps behavior similar to
+//         // previous implementation which intended to cap at a HARD_POINT_CAP).
+//         const size_t HARD_POINT_CAP = 5000;
+//         size_t capN = n;
+//         size_t startIndex = 0;
+//         if (n > HARD_POINT_CAP) {
+//             capN = HARD_POINT_CAP;
+//             startIndex = n - capN;
+//             LOG_WARN("Capping correlation data points from {} → {}", n, capN);
+//         }
+
+//         // Adjust snapshot view to the capped range
+//         if (startIndex != 0 || capN != n) {
+//             std::vector<DataPoint> tmp;
+//             tmp.reserve(capN);
+//             for (size_t i = startIndex; i < startIndex + capN; ++i) tmp.push_back(std::move(snapshotCopy[i]));
+//             snapshotCopy.swap(tmp);
+//             n = snapshotCopy.size();
+//         }
+
+//         // Use unordered_map to reduce overhead
+//         std::unordered_map<std::string, std::vector<double>> metricValues;
+//         metricValues.reserve(64); // expected metric count
+
+//         std::vector<double> priceMovements;
+//         std::vector<double> timeWeights;
+//         priceMovements.reserve(n);
+//         timeWeights.reserve(n);
+
+//         // Precompute keys
+//         std::vector<std::string> levelKeys;
+//         levelKeys.reserve(params_.max_level_depth);
+//         for (size_t level = 1; level <= params_.max_level_depth; ++level) {
+//             levelKeys.push_back("level_" + std::to_string(level) + "_imbalance");
+//         }
+
+//         auto currentTime = std::chrono::system_clock::now();
+
+//         // CAP for metrics to avoid runaway memory
+//         const size_t HARD_METRIC_CAP = 64;
+
+//         for (const auto& dp : snapshotCopy) {
+
+//             priceMovements.push_back(dp.price_movement.percent_change);
+
+//             auto timeDiff = std::chrono::duration_cast<std::chrono::seconds>(
+//                 currentTime - dp.timestamp).count();
+//             double timeWeight = std::exp(-params_.time_decay_factor * timeDiff / 3600.0);
+//             timeWeights.push_back(timeWeight);
+
+//             auto ensureReserve = [&](std::vector<double>& v) {
+//                 if (v.capacity() == 0) v.reserve(n);
+//             };
+
+//             // Selected metrics (whitelist – you can tune later)
+//             auto& v1 = metricValues["bid_ask_ratio"]; ensureReserve(v1); v1.push_back(dp.metrics.bidAskVolumeRatio);
+//             auto& v2 = metricValues["volumeImbalance"]; ensureReserve(v2); v2.push_back(dp.metrics.volumeImbalance);
+//             auto& v3 = metricValues["weightedVolumeImbalance"]; ensureReserve(v3); v3.push_back(dp.metrics.weightedVolumeImbalance);
+//             auto& v4 = metricValues["depthImbalance"]; ensureReserve(v4); v4.push_back(dp.metrics.depthImbalance);
+//             auto& v5 = metricValues["pressureImbalance"]; ensureReserve(v5); v5.push_back(dp.metrics.pressureImbalance);
+
+//             // Optional additional metrics (only if under cap)
+//             if (metricValues.size() < HARD_METRIC_CAP) {
+//                 for (const auto& kv : dp.metrics.metricsMap()) {
+//                     auto& v = metricValues[kv.first];
+//                     ensureReserve(v);
+//                     v.push_back(kv.second);
+//                 }
+//             }
+
+//             // Level metrics
+//             auto levelIt = dp.metrics.timeSeriesMetrics.find("level_imbalances");
+//             if (levelIt != dp.metrics.timeSeriesMetrics.end()) {
+//                 const auto& levelDataVec = levelIt->second;
+//                 for (size_t level = 1; level <= params_.max_level_depth; ++level) {
+//                     if (level <= levelDataVec.size()) {
+//                         auto& v = metricValues[levelKeys[level - 1]];
+//                         ensureReserve(v);
+//                         v.push_back(levelDataVec[level - 1]);
+//                     }
+//                 }
+//             }
+//         }
+
+//         // Reusable scratch buffers (thread_local avoids reallocs each call)
+//         thread_local std::vector<double> scratch1;
+//         thread_local std::vector<double> scratch2;
+//         scratch1.clear();
+//         scratch2.clear();
+
+//         // Use the same associative container type as the member variables so swap() works
+//         std::map<std::string, double> newCorrelationCoeffs;
+//         std::map<std::string, double> newCorrelationStrengths;
+
+//         for (auto& [metric, values] : metricValues) {
+//             if (values.size() != priceMovements.size() || values.size() < params_.min_data_points) {
+//                 newCorrelationCoeffs[metric] = 0.0;
+//                 continue;
+//             }
+
+//             try {
+//                 // --- normalize metric ---
+//                 scratch1.clear();
+//                 scratch1.reserve(values.size());
+
+//                 double sum = 0.0, weightSum = 0.0;
+//                 for (size_t i = 0; i < values.size(); ++i) {
+//                     sum += values[i] * timeWeights[i];
+//                     weightSum += timeWeights[i];
+//                 }
+//                 double mean = weightSum > 0 ? sum / weightSum : 0.0;
+
+//                 double varSum = 0.0;
+//                 for (size_t i = 0; i < values.size(); ++i) {
+//                     double d = values[i] - mean;
+//                     varSum += d * d * timeWeights[i];
+//                 }
+//                 double stddev = weightSum > 0 ? std::sqrt(varSum / weightSum) : 1.0;
+//                 stddev = std::max(stddev, params_.min_stddev_threshold);
+
+//                 for (double val : values) scratch1.push_back((val - mean) / stddev);
+
+//                 // --- normalize prices ---
+//                 scratch2.clear();
+//                 scratch2.reserve(priceMovements.size());
+
+//                 double pSum = 0.0, pWeightSum = 0.0;
+//                 for (size_t i = 0; i < priceMovements.size(); ++i) {
+//                     pSum += priceMovements[i] * timeWeights[i];
+//                     pWeightSum += timeWeights[i];
+//                 }
+//                 double pMean = pWeightSum > 0 ? pSum / pWeightSum : 0.0;
+
+//                 double pVarSum = 0.0;
+//                 for (size_t i = 0; i < priceMovements.size(); ++i) {
+//                     double d = priceMovements[i] - pMean;
+//                     pVarSum += d * d * timeWeights[i];
+//                 }
+//                 double pStd = pWeightSum > 0 ? std::sqrt(pVarSum / pWeightSum) : 1.0;
+//                 pStd = std::max(pStd, params_.min_stddev_threshold);
+
+//                 for (double val : priceMovements) scratch2.push_back((val - pMean) / pStd);
+
+//                 // --- correlation ---
+//                 double covariance = 0.0;
+//                 for (size_t i = 0; i < scratch1.size(); ++i)
+//                     covariance += scratch1[i] * scratch2[i] * timeWeights[i];
+
+//                 double correlation = weightSum > 0 ? covariance / weightSum : 0.0;
+//                 correlation = std::clamp(correlation, -1.0, 1.0);
+
+//                 if (correlation_coefficients_.count(metric)) {
+//                     correlation = params_.correlation_decay_rate * correlation_coefficients_[metric] +
+//                                   (1.0 - params_.correlation_decay_rate) * correlation;
+//                 }
+
+//                 newCorrelationCoeffs[metric] = correlation;
+//                 newCorrelationStrengths[metric] = std::abs(correlation);
+//             }
+//             catch (const std::bad_alloc& e) {
+//                 LOG_ERROR("bad_alloc on metric {}: {}", metric, e.what());
+//                 newCorrelationCoeffs[metric] = 0.0;
+//                 newCorrelationStrengths[metric] = 0.0;
+//             }
+//         }
+
+//         {
+//             std::lock_guard<std::mutex> lock(correlation_mutex_);
+//             correlation_coefficients_.swap(newCorrelationCoeffs);
+//             correlation_strengths_.swap(newCorrelationStrengths);
+//         }
+
+//         updateHighestCorrelatedMetrics();
+//     }
+//     catch (const std::bad_alloc& e) {
+//         LOG_ERROR("bad_alloc in calculateCorrelations(): {}", e.what());
+//     }
+//     catch (const std::exception& e) {
+//         LOG_ERROR("Exception in calculateCorrelations(): {}", e.what());
+//     }
+// }
 
 
 double MomentumCorrelation::calculatePearsonCorrelation(

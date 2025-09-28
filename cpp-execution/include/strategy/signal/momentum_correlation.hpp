@@ -12,10 +12,11 @@
 
 #include "strategy/types.hpp"
 #include <common/circular_buffer.hpp>
-
+#include <common/vector_pool.hpp>
 #include <map>
 #include <deque>
 #include <vector>
+
 
 using namespace trading::common;  // For CircularBuffer
    // Track metric statistics for normalization
@@ -125,7 +126,7 @@ public:
     // updateHighestCorrelatedMetrics
     void updateHighestCorrelatedMetrics();
 private:
-    size_t window_size_;
+    size_t window_size_=200; // Rolling window size for correlation
     size_t data_point_limit_ = 5000; // Hard cap on data points to prevent excessive memory use
     CorrelationParameters params_;
     //mutex correlation_mutex_;
@@ -144,6 +145,13 @@ private:
         double spread_ratio = 1.0; // If available
         core::Timestamp timestamp;
     };
+
+
+
+
+
+
+
 
     // mutable std::unordered_map<std::string, MetricStatistics> metricStatistics_;
     std::map<std::string, MetricStatistics> metricStatistics_;
