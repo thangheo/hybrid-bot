@@ -145,14 +145,6 @@ private:
         double spread_ratio = 1.0; // If available
         core::Timestamp timestamp;
     };
-
-
-
-
-
-
-
-
     // mutable std::unordered_map<std::string, MetricStatistics> metricStatistics_;
     std::map<std::string, MetricStatistics> metricStatistics_;
     // std::deque<DataPoint> data_points_;
