@@ -148,6 +148,7 @@ void MomentumCorrelation::updateParameters(const ParameterSet& params) {
 }
 
 void MomentumCorrelation::calculateCorrelations() {
+    try {
     // Snapshot pointers to data_points_ under lock to avoid heavy copies
     std::vector<const DataPoint*> snapshotPtrs;
     size_t n = 0;
@@ -159,8 +160,21 @@ void MomentumCorrelation::calculateCorrelations() {
             return;
         }
         n = data_points_.size();
-        snapshotPtrs.reserve(n);
-        for (const auto& dp : data_points_) snapshotPtrs.push_back(&dp);
+
+        // Defensive cap to avoid unbounded allocations causing std::bad_alloc
+        const size_t HARD_POINT_CAP = 5000; // if you need more, increase carefully
+        size_t capN = n;
+        size_t startIndex = 0;
+        if (n > HARD_POINT_CAP) {
+            capN = HARD_POINT_CAP;
+            startIndex = n - capN; // take the most recent points
+            LOG_WARN("Capping correlation data points from {} to {} to avoid excessive memory use", n, capN);
+        }
+
+        snapshotPtrs.reserve(capN);
+        // Push only the most recent capN entries
+        for (size_t i = startIndex; i < data_points_.size(); ++i) snapshotPtrs.push_back(&data_points_[i]);
+        n = snapshotPtrs.size();
     }
 
     // Extract key metrics for correlation from the snapshot pointers
@@ -379,6 +393,13 @@ void MomentumCorrelation::calculateCorrelations() {
             //     LOG_DEBUG("Strong correlation detected: metric: {}, correlation: {:.4f}", metric, correlation);
             // }
         }
+        catch (const std::bad_alloc& e) {
+            LOG_ERROR("std::bad_alloc while calculating correlation for metric {}: {}", metric, e.what());
+            newCorrelationCoeffs[metric] = 0.0;
+            newCorrelationStrengths[metric] = 0.0;
+            // skip to next metric
+            continue;
+        }
         catch (const std::exception& e) {
             LOG_ERROR("Error calculating correlation for metric {}: {}", metric, e.what());
             newCorrelationCoeffs[metric] = 0.0;
@@ -393,6 +414,13 @@ void MomentumCorrelation::calculateCorrelations() {
 
     // Update highest correlated metrics list (it will take the lock internally)
     updateHighestCorrelatedMetrics();
+    } catch (const std::bad_alloc& e) {
+        LOG_ERROR("std::bad_alloc in calculateCorrelations(): {}", e.what());
+        return;
+    } catch (const std::exception& e) {
+        LOG_ERROR("Exception in calculateCorrelations(): {}", e.what());
+        return;
+    }
 }
 
 double MomentumCorrelation::calculatePearsonCorrelation(

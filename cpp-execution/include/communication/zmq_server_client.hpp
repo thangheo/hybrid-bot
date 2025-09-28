@@ -28,9 +28,15 @@ const std::string SERVER_EXECUTION_PUBLISH_ENDPOINT = "inproc://execution_pub";
 // SERVER_RISK_PUBLISH_ENDPOINT
 const std::string SERVER_RISK_PUBLISH_ENDPOINT = "inproc://risk_pub";
 // MARKET_DATA_TOPIC
-const std::string MARKET_DATA_TOPIC = "orderbook.";
+const std::string MARKET_DATA_TOPIC = "market.*";
+// ORDERBOOK_UPDATES_TOPIC
+const std::string ORDERBOOK_UPDATES_TOPIC = "orderbook.*";
+// TRADES_TOPIC
+const std::string TRADES_TOPIC = "trade.*";
 // EXECUTION_REPORTS_TOPIC
 const std::string EXECUTION_REPORTS_TOPIC = "execution_reports";
+//strategy events topic
+const std::string STRATEGY_EVENTS_TOPIC = "strategy_events";
 // Message priority enumeration
 enum class MessagePriority {
     LOW = 0,
@@ -119,7 +125,7 @@ struct MessagePriorityCompare {
 
 class GenericZmqServer {
 public:
-    explicit GenericZmqServer(const ZmqServerConfig& config);
+    explicit GenericZmqServer(const ZmqServerConfig& config, std::shared_ptr<zmq::context_t> shared_context = nullptr);
     ~GenericZmqServer();
 
     // Core lifecycle methods
@@ -157,7 +163,7 @@ public:
     void publish(const std::string& topic, const std::string& message);
 private:
     ZmqServerConfig config_;
-    std::unique_ptr<zmq::context_t> context_;
+    std::shared_ptr<zmq::context_t> context_;
     std::unique_ptr<zmq::socket_t> pub_socket_;
     std::unique_ptr<zmq::socket_t> rep_socket_;
     
@@ -207,7 +213,7 @@ private:
 
 class GenericZmqClient {
 public:
-    explicit GenericZmqClient(const ZmqClientConfig& config);
+    explicit GenericZmqClient(const ZmqClientConfig& config, std::shared_ptr<zmq::context_t> shared_context = nullptr);
     ~GenericZmqClient();
 
     // Core lifecycle methods
@@ -235,7 +241,7 @@ public:
     uint64_t getMessagesReceived() const { return messages_received_.load(); }
 private:
     ZmqClientConfig config_;
-    std::unique_ptr<zmq::context_t> context_;
+    std::shared_ptr<zmq::context_t> context_;
     std::unique_ptr<zmq::socket_t> sub_socket_;
     std::unique_ptr<zmq::socket_t> req_socket_;
     

@@ -71,8 +71,25 @@ RiskManager::RiskManager(std::shared_ptr<trading::execution::ExecutionService> e
 }
 bool RiskManager::initialize() {
     try {
-        m_strategyInterface = createStrategyInterface(m_config);
-        LOG_INFO("RiskManager", "Created StrategyInterface");
+        // Ensure we have a StrategyInterface. The constructor already creates one
+        // so avoid recreating it here — recreating would destroy the running
+        // instance and call its destructor which stops the ZMQ client and joins
+        // worker threads (this can deadlock if the worker is executing callbacks
+        // or blocked). Reuse the existing instance when available.
+        if (!m_strategyInterface) {
+            m_strategyInterface = createStrategyInterface(m_config);
+            LOG_INFO("RiskManager", "Created StrategyInterface");
+        } else {
+            LOG_INFO("RiskManager", "Using existing StrategyInterface");
+        }
+
+        // Initialize the strategy interface if present
+        if (m_strategyInterface) {
+            if (!m_strategyInterface->initialize()) {
+                LOG_ERROR("RiskManager", "Failed to initialize StrategyInterface");
+                return false;
+            }
+        }
         
         m_executionInterface = createExecutionInterface_withExecutionService(m_execService);
         if (!m_executionInterface) {
@@ -108,10 +125,10 @@ bool RiskManager::initialize() {
         }
         
         // Initialize the existing DataInterface
-        if (!m_dataInterface->initialize()) {
-            LOG_ERROR(std::format("{} {}", "RiskManager", "Failed to initialize DataInterface"));
-            return false;
-        }
+        // if (!m_dataInterface->initialize()) {
+        //     LOG_ERROR(std::format("{} {}", "RiskManager", "Failed to initialize DataInterface"));
+        //     return false;
+        // }
         
         // ✅ Give DataInterface time to establish connections  
         std::this_thread::sleep_for(std::chrono::milliseconds(100));

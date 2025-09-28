@@ -236,18 +236,34 @@ void StrategyEngine::processQueuedSignals() {
      }
      
      try {
-            // Process the order book through the analyzer      
-        orderBookAnalyzer_->processOrderBook(orderBook);
-        
-         // Get the metrics from the analyzer
-         auto metrics = orderBookAnalyzer_->getMetrics(orderBook.getSymbol(), orderBook.getExchangeId());
+            // Process the order book through the analyzer
+            try {
+                orderBookAnalyzer_->processOrderBook(orderBook);
+            } catch (const std::bad_alloc& e) {
+                LOG_ERROR("std::bad_alloc during orderBookAnalyzer_->processOrderBook for {}: {}", orderBook.getSymbol(), e.what());
+                return false;
+            }
+
+             // Get the metrics from the analyzer
+             decltype(orderBookAnalyzer_->getMetrics(orderBook.getSymbol(), orderBook.getExchangeId())) metrics;
+            try {
+                metrics = orderBookAnalyzer_->getMetrics(orderBook.getSymbol(), orderBook.getExchangeId());
+            } catch (const std::bad_alloc& e) {
+                LOG_ERROR("std::bad_alloc during orderBookAnalyzer_->getMetrics for {}: {}", orderBook.getSymbol(), e.what());
+                return false;
+            }
          //print bids and asks and volumes       
 
          // Process imbalance detection
 
         OrderBookDelta delta = orderBook.getOrderBookDelta();
         if (!delta.isEmpty()) {
-            liquidityMonitor_->processOrderBookDelta(std::move(delta));
+            try {
+                liquidityMonitor_->processOrderBookDelta(std::move(delta));
+            } catch (const std::bad_alloc& e) {
+                LOG_ERROR("std::bad_alloc during liquidityMonitor_->processOrderBookDelta for {}: {}", orderBook.getSymbol(), e.what());
+                return false;
+            }
         }
 
         //the below function was never been called which mean orderbook delta is always empty
@@ -257,12 +273,21 @@ void StrategyEngine::processQueuedSignals() {
          std::string vpId = orderBook.getExchangeId().toString() + ":" + orderBook.getSymbol().toString();
 
          auto vpIt = volumeProfileAnalyzers_.find(vpId);
-         if (vpIt == volumeProfileAnalyzers_.end()) {
+             if (vpIt == volumeProfileAnalyzers_.end()) {
              // Create analyzer on demand using params from config
              try {
                  auto analyzer = createVolumeProfileAnalyzer(orderBook.getExchangeId(), orderBook.getSymbol(), config_.volumeProfileConfig.params);
-                 volumeProfileAnalyzers_[vpId] = analyzer;
+                 // protect insertion which may allocate
+                 try {
+                     volumeProfileAnalyzers_[vpId] = analyzer;
+                 } catch (const std::bad_alloc& e) {
+                     LOG_ERROR("std::bad_alloc inserting VolumeProfileAnalyzer into map for {}: {}", vpId, e.what());
+                     return false;
+                 }
                  vpIt = volumeProfileAnalyzers_.find(vpId);
+             } catch (const std::bad_alloc& e) {
+                 LOG_ERROR("std::bad_alloc creating VolumeProfileAnalyzer for {}: {}", vpId, e.what());
+                 return false;
              } catch (const std::exception& e) {
                  LOG_ERROR("Failed to create VolumeProfileAnalyzer on demand for {}: {}", vpId, e.what());
              }
@@ -275,7 +300,12 @@ void StrategyEngine::processQueuedSignals() {
             //                      vpIt->second->calculatePointOfControl()) << std::endl;
          }
         //  return true; // Return true if imbalance detected
-         imbalanceDetector_->analyzeMetrics(metrics);
+         try {
+             imbalanceDetector_->analyzeMetrics(metrics);
+         } catch (const std::bad_alloc& e) {
+             LOG_ERROR("std::bad_alloc during imbalanceDetector_->analyzeMetrics for {}: {}", orderBook.getSymbol(), e.what());
+             return false;
+         }
          //print detected imbalances
          auto imbalances = imbalanceDetector_->getDetectedImbalances();
          for (const auto& imb : imbalances) {
@@ -321,7 +351,12 @@ void StrategyEngine::processQueuedSignals() {
 
          // Update momentum correlation OUTSIDE the lock to avoid blocking other threads
          if (shouldUpdateCorrelation) {
-             momentumCorrelator_->updateCorrelationModel(metrics, movement);
+            try {
+                momentumCorrelator_->updateCorrelationModel(metrics, movement);
+            } catch (const std::bad_alloc& e) {
+                LOG_ERROR("std::bad_alloc during momentumCorrelator_->updateCorrelationModel for {}: {}", orderBook.getSymbol(), e.what());
+                return false;
+            }
          }
          // Record metrics for performance tracking
          recordMetrics();

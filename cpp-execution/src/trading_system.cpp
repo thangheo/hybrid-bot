@@ -33,7 +33,7 @@ Trading_system::Trading_system() : running_(false), systemHealthy_(true) {
     riskConfig_.zmqPublisherEndpoint = SERVER_REQUEST_ENDPOINT;
     marketDataInterface_ = std::make_shared<trading::risk::MarketDataInterface>(riskConfig_);
     // set zmq client to marketDataInterface_
-    marketDataInterface_->setZmqClient(std::move(zmq_client_));
+    // marketDataInterface_->setZmqClient(std::move(zmq_client_));
     // Initialize position sizer with default config for now
     positionSizer_ = std::make_unique<trading::risk::PositionSizer>();
     
@@ -990,25 +990,11 @@ void Trading_system::orderbookWorkerLoop(size_t workerId) {
         // Process batch
         for (const auto &update : batch) {
             try {
-                // PTCA quick update
-                // if (!update.bids.empty() && !update.asks.empty()) {
-                //     double midPrice = (update.bids[0].price + update.asks[0].price) / 2.0;
-                //     onMarketPriceUpdate(update.tradingPair, midPrice);
-                // }
-
+               
                 auto orderBook = dataIngestionService_->getOrderBook(update.exchangeId, update.tradingPair);
                 
                 if (orderBook) {
-                    // orderBookUpdatesReceived_++;                      
-                    // auto [bidDepth, askDepth] = orderBook->getDepthLevels();
-                    // std::cout << "OrderBook worker " << workerId << " processing update for "
-                    //           << update.exchangeId.toString() << ":" << update.tradingPair.toString()
-                    //           << " | Bids: " << bidDepth << " levels, Asks: " << askDepth << " levels"
-                    //           << std::endl;
-                        // Generate intelligence (throttling inside function)
-                    // generateMarketIntelligence(update, orderBook); //no need at this time
-                    // Publish orderbook for risk asynchronously
-                    publishOrderBookForRisk(update);                 
+                    // publishOrderBookForRisk(update);                 
                     // Enqueue a shared ptr to the orderBook for strategy processing
                     try {
                         std::shared_ptr<OrderBook> ob_ptr = orderBook;

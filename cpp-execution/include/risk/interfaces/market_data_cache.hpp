@@ -1,5 +1,5 @@
 // risk/interfaces/market_data_cache.hpp
-#include "../risk_types.hpp"
+#include "risk/risk_types.hpp"
 #include <string>
 #include <unordered_map>
 #include <optional>
@@ -20,6 +20,14 @@ private:
     mutable std::shared_mutex cacheMutex_;
     
 public:
+    //rules of five
+    MarketDataCache() = default;
+    ~MarketDataCache() = default;
+    MarketDataCache(const MarketDataCache&) = delete;
+    MarketDataCache& operator=(const MarketDataCache&) = delete;
+    MarketDataCache(MarketDataCache&&) = delete;
+    MarketDataCache& operator=(MarketDataCache&&) = delete;
+    
     void updatePrice(const core::Symbol& symbol, const MarketData& data);
     std::optional<MarketData> getPrice(const core::Symbol& symbol) const;
     bool isStale(const core::Symbol& symbol, std::chrono::milliseconds maxAge) const;

@@ -13,6 +13,7 @@ include_directories(
 
 # Add subdirectories for component tests
 add_subdirectory(data_ingestion)
+add_subdirectory(communication)
 # add_subdirectory(execution)
 # add_subdirectory(strategy)
 # add_subdirectory(risk)
