@@ -3,10 +3,46 @@
 #include <algorithm>
 namespace trading::communication {
 
-GenericZmqClient::GenericZmqClient(const ZmqClientConfig& config) 
+// Compute the subscription key to pass to ZMQ. ZMQ subscriptions match prefixes,
+// so if the user provides a pattern with wildcards (e.g. "news.*"), we subscribe
+// to the prefix before the first wildcard ("news."). If the pattern starts with
+// a wildcard or is exactly "*", subscribe to empty string to receive all messages.
+static std::string computeSubscriptionKey(const std::string& pattern) {
+    if (pattern.empty() || pattern == "*") {
+        return std::string();
+    }
+    size_t pos_star = pattern.find('*');
+    size_t pos_q = pattern.find('?');
+    size_t pos = std::string::npos;
+    if (pos_star != std::string::npos && pos_q != std::string::npos) {
+        pos = std::min(pos_star, pos_q);
+    } else if (pos_star != std::string::npos) {
+        pos = pos_star;
+    } else if (pos_q != std::string::npos) {
+        pos = pos_q;
+    }
+
+    if (pos == 0) {
+        // Starts with a wildcard, subscribe to everything
+        return std::string();
+    }
+
+    if (pos == std::string::npos) {
+        return pattern; // exact topic (no wildcards)
+    }
+
+    return pattern.substr(0, pos);
+}
+
+
+GenericZmqClient::GenericZmqClient(const ZmqClientConfig& config, std::shared_ptr<zmq::context_t> shared_context) 
     : config_(config) {
-    // Initialize ZMQ context
-    context_ = std::make_unique<zmq::context_t>(1);
+    // Use provided shared context if available; otherwise create our own
+    if (shared_context) {
+        context_ = shared_context;
+    } else {
+        context_ = std::make_shared<zmq::context_t>(1);
+    }
 }
 
 GenericZmqClient::~GenericZmqClient() {
@@ -53,11 +89,44 @@ void GenericZmqClient::disconnect() {
     connected_.store(false);
 
     // Join threads
+    // Avoid joining a thread from itself. If the current thread is the same as
+    // the worker thread, detach instead to allow the object to be destroyed
+    // without blocking. Joining the current thread leads to undefined
+    // behavior / deadlocks.
+    const auto self_id = std::this_thread::get_id();
+
     if (sub_thread_.joinable()) {
-        sub_thread_.join();
+        if (sub_thread_.get_id() == self_id) {
+            std::cerr << "GenericZmqClient::disconnect: detaching sub_thread_ because called from within that thread" << std::endl;
+            try {
+                sub_thread_.detach();
+            } catch (...) {
+                // If detach fails for any reason, swallow to avoid throwing from
+                // a cleanup path.
+            }
+        } else {
+            try {
+                sub_thread_.join();
+            } catch (const std::exception& e) {
+                std::cerr << "Exception while joining sub_thread_: " << e.what() << std::endl;
+            }
+        }
     }
+
     if (monitor_thread_.joinable()) {
-        monitor_thread_.join();
+        if (monitor_thread_.get_id() == self_id) {
+            std::cerr << "GenericZmqClient::disconnect: detaching monitor_thread_ because called from within that thread" << std::endl;
+            try {
+                monitor_thread_.detach();
+            } catch (...) {
+            }
+        } else {
+            try {
+                monitor_thread_.join();
+            } catch (const std::exception& e) {
+                std::cerr << "Exception while joining monitor_thread_: " << e.what() << std::endl;
+            }
+        }
     }
 
     cleanupSockets();
@@ -81,13 +150,18 @@ bool GenericZmqClient::subscribe(const std::string& topic, MessageHandler handle
 
     try {
         std::lock_guard<std::mutex> lock(subscriptions_mutex_);
-        
-        // Set ZMQ subscription
-        sub_socket_->set(zmq::sockopt::subscribe, topic);
-        
-        // Store handler
+
+        // Compute ZMQ subscription key (prefix up to wildcard)
+        std::string sub_key = computeSubscriptionKey(topic);
+
+        // Set ZMQ subscription (empty string subscribes to all)
+        sub_socket_->set(zmq::sockopt::subscribe, sub_key);
+
+        std::cout << "[ZMQ Client] Subscribed pattern='" << topic << "' -> key='" << sub_key << "'" << std::endl;
+
+        // Store handler keyed by original pattern so matching still works
         subscriptions_[topic] = std::move(handler);
-        
+
         return true;
     } catch (const zmq::error_t& e) {
         setLastError("Failed to subscribe to topic '" + topic + "': " + std::string(e.what()));
@@ -103,13 +177,16 @@ bool GenericZmqClient::unsubscribe(const std::string& topic) {
 
     try {
         std::lock_guard<std::mutex> lock(subscriptions_mutex_);
-        
+
+        // Compute the subscription key used when subscribing
+        std::string sub_key = computeSubscriptionKey(topic);
+
         // Remove ZMQ subscription
-        sub_socket_->set(zmq::sockopt::unsubscribe, topic);
-        
+        sub_socket_->set(zmq::sockopt::unsubscribe, sub_key);
+
         // Remove handler
         subscriptions_.erase(topic);
-        
+
         return true;
     } catch (const zmq::error_t& e) {
         setLastError("Failed to unsubscribe from topic '" + topic + "': " + std::string(e.what()));
@@ -144,9 +221,10 @@ void GenericZmqClient::unsubscribeAll() {
     
     try {
         for (const auto& [topic, handler] : subscriptions_) {
-            sub_socket_->set(zmq::sockopt::unsubscribe, topic);
+            std::string sub_key = computeSubscriptionKey(topic);
+            sub_socket_->set(zmq::sockopt::unsubscribe, sub_key);
         }
-        
+
         subscriptions_.clear();
     } catch (const zmq::error_t& e) {
         setLastError("Failed to unsubscribe from all topics: " + std::string(e.what()));
@@ -283,6 +361,7 @@ void GenericZmqClient::subscribeWorker() {
             }
             
             std::string topic(static_cast<char*>(topic_frame.data()), topic_frame.size());
+            std::cout << "[ZMQ Client] Received topic frame='" << topic << "' size=" << topic_frame.size() << std::endl;
             
             // Check if there are more frames
             int more = 0;
@@ -291,6 +370,7 @@ void GenericZmqClient::subscribeWorker() {
             
             if (!more) {
                 // Single frame message, treat as legacy format
+                std::cout << "[ZMQ Client] No more frames after topic\n";
                 continue;
             }
             
@@ -320,15 +400,23 @@ void GenericZmqClient::subscribeWorker() {
             MessageHandler handler;
             {
                 std::lock_guard<std::mutex> lock(subscriptions_mutex_);
-                
+                // Debug: list current subscription patterns
+                std::cout << "[ZMQ Client] Current subscriptions:";
+                for (const auto& [pattern, h] : subscriptions_) {
+                    std::cout << " '" << pattern << "'";
+                }
+                std::cout << std::endl;
+
                 // Find exact match first
                 auto it = subscriptions_.find(topic);
                 if (it != subscriptions_.end()) {
                     handler = it->second;
                 } else {
-                    // Check for pattern matches
+                    // Check for pattern matches and print diagnostics
                     for (const auto& [pattern, h] : subscriptions_) {
-                        if (matchesPattern(topic, pattern)) {
+                        bool m = matchesPattern(topic, pattern);
+                        std::cout << "[ZMQ Client] matching topic='" << topic << "' against pattern='" << pattern << "' -> " << (m ? "MATCH" : "NO") << std::endl;
+                        if (m) {
                             handler = h;
                             break;
                         }
@@ -386,7 +474,8 @@ bool GenericZmqClient::reconnect() {
         std::lock_guard<std::mutex> lock(subscriptions_mutex_);
         try {
             for (const auto& [topic, handler] : subscriptions_) {
-                sub_socket_->set(zmq::sockopt::subscribe, topic);
+                std::string sub_key = computeSubscriptionKey(topic);
+                sub_socket_->set(zmq::sockopt::subscribe, sub_key);
             }
             std::cout << "Reconnected successfully" << std::endl;
             return true;

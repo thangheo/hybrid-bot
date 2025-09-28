@@ -5,7 +5,7 @@
  * Created: 2025-04-29
  */
 
-#include "interfaces/strategy_interface.hpp"
+#include "risk/interfaces/strategy_interface.hpp"
 #include <communication/zmq_server_client.hpp>
 #include <nlohmann/json.hpp>
 #include <sstream>
@@ -14,6 +14,7 @@
 #include <iostream>
 #include <iomanip>
 #include "common/logger.hpp"
+
 using namespace trading::core;
 using namespace trading::communication;
 
@@ -28,18 +29,22 @@ StrategyInterface::StrategyInterface() {
 StrategyInterface::StrategyInterface(const RiskConfig& config) {
     // Constructor with config
 }
+// StrategyInterface::StrategyInterface(const RiskConfig& config, const communication::GenericZmqClient& client) {
+//     // Constructor with config and ZeroMQ client
+// }
 
 // Implementation of the StrategyInterface that uses ZeroMQ for communication
 class StrategyInterfaceImpl : public StrategyInterface {
 private:
+    std::unique_ptr<communication::GenericZmqClient> zmqClient_;
+
     // Configuration
     std::string requestEndpoint_;
     std::string publishEndpoint_;
     std::string strategyEventsTopic_;
     
     // ZeroMQ clients
-    std::unique_ptr<communication::GenericZmqClient> requestClient_;
-    std::unique_ptr<communication::GenericZmqClient> subscriptionClient_;
+    communication::ZmqClientConfig clientConfig;
     
     // Callback for strategy events
     std::function<void(const StrategyId&, const std::string&)> strategyEventCallback_;
@@ -140,12 +145,13 @@ public:
         // strategyEventsTopic_ = config.strategyEventsTopic;
         }
     ~StrategyInterfaceImpl() override {
-        // Clean shutdown of ZeroMQ clients
-        if (subscriptionClient_) {
-            subscriptionClient_->stop();
-        }
-        if (requestClient_) {
-            requestClient_->stop();
+        // Clean shutdown of ZeroMQ client
+        if (zmqClient_) {
+            try {
+                zmqClient_->stop();
+            } catch (...) {
+                // Don't throw from destructor
+            }
         }
     }
     
@@ -155,40 +161,32 @@ public:
         if (initialized_) {
             return true;
         }
-        
+        // Setup ZeroMQ clients
+        clientConfig.req_endpoint = requestEndpoint_;
+        clientConfig.pub_endpoints = {publishEndpoint_};
+        clientConfig.rcvtimeo = 5000;  // 5 seconds
+        clientConfig.sndtimeo = 5000;  // 5 seconds
+        clientConfig.heartbeat_ivl = 30000;  // 30 seconds
+        clientConfig.heartbeat_timeout = 90000;  // 90 seconds
+        clientConfig.heartbeat_ttl = 30000;  // 30 seconds
+        zmqClient_ = std::make_unique<GenericZmqClient>(clientConfig);
         try {
-            // Configure ZeroMQ clients
-            communication::ZmqClientConfig requestConfig;
-            // requestConfig.server_pub_endpoint = requestEndpoint_;
-            
-            communication::ZmqClientConfig subscriptionConfig;
-            // subscriptionConfig.server_req_endpoint = publishEndpoint_;
-            // subscriptionConfig.reconnect_interval = std::chrono::milliseconds(1000);
-            // subscriptionConfig.auto_reconnect = true;
-            // subscriptionConfig.request_timeout = std::chrono::milliseconds(5000);
-            
-            // Initialize request client
-            requestClient_ = std::make_unique<communication::GenericZmqClient>(requestConfig);
-            
-            // Initialize subscription client
-            subscriptionClient_ = std::make_unique<communication::GenericZmqClient>(subscriptionConfig);
-            
-              // Subscribe to the strategy events topic using an instance-bound handler
-            if (!subscriptionClient_->subscribe(strategyEventsTopic_, this->createSubscriptionHandler())) {
-                LOG_ERROR( "Failed to subscribe to strategy events topic");
+            // Connect the client
+            if (!zmqClient_->start()) {
+                LOG_ERROR( "Failed to start ZeroMQ client: " + zmqClient_->getLastError());
+                return false;
+            }else{
+                LOG_INFO("Successfully started ZeroMQ client for StrategyInterface");
+            }
+            //sleep 100ms to ensure connection is established
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+            // Now register subscription handler
+            if (!zmqClient_->subscribe(strategyEventsTopic_, this->createSubscriptionHandler())) {
+                LOG_ERROR( "Failed to subscribe to strategy events topic: " + zmqClient_->getLastError());
+                zmqClient_->stop();
                 return false;
             }
-            if (!requestClient_->start()) {
-                LOG_ERROR( "Failed to start request client");
-                return false;
-            }
-            
-            if (!subscriptionClient_->start()) {
-                LOG_ERROR( "Failed to start subscription client");
-                return false;
-            }
-            
-          
             
             initialized_ = true;
             LOG_INFO("Strategy interface initialized successfully");
@@ -201,8 +199,8 @@ public:
     // isConnected
     bool isConnected() const override {
         std::lock_guard<std::mutex> lock(mutex_);
-        return initialized_ && requestClient_ && requestClient_->isConnected() &&
-               subscriptionClient_ && subscriptionClient_->isConnected();
+        return initialized_ && zmqClient_ && zmqClient_->isConnected() &&
+               zmqClient_ && zmqClient_->isConnected();
     }
     bool sendRiskFeedback(const StrategyId& strategyId, const std::string& feedback) override {
         if (!initialized_) {
@@ -219,7 +217,7 @@ public:
             };
             
             // Send request
-            if (!requestClient_ || !requestClient_->sendRequest("strategy_risk", request.dump()).size()) {
+            if (!zmqClient_ || !zmqClient_->sendRequest("strategy_risk", request.dump()).size()) {
                 LOG_ERROR( "Failed to send risk feedback request");
                 return false;
             }
@@ -247,7 +245,7 @@ public:
             };
             
             // Send request
-            if (!requestClient_ || !requestClient_->sendRequest("strategy_request", request.dump()).size()) {
+            if (!zmqClient_ || !zmqClient_->sendRequest("strategy_request", request.dump()).size()) {
                 LOG_ERROR( "Failed to send get parameters request");
                 return "{}";
             }
@@ -276,7 +274,7 @@ public:
             };
             
             // Send request
-            if (!requestClient_ || !requestClient_->sendRequest("strategy_request", request.dump()).size()) {
+            if (!zmqClient_ || !zmqClient_->sendRequest("strategy_request", request.dump()).size()) {
                 LOG_ERROR( "Failed to send update parameters request");
                 return false;
             }
@@ -305,7 +303,7 @@ public:
             };
             
             // Send request
-            if (!requestClient_ || !requestClient_->sendRequest("strategy_risk", request.dump()).size()) {
+            if (!zmqClient_ || !zmqClient_->sendRequest("strategy_risk", request.dump()).size()) {
                 LOG_ERROR( "Failed to send risk event notification");
                 return false;
             }
@@ -332,7 +330,7 @@ public:
             };
             
             // Send request
-            if (!requestClient_ || !requestClient_->sendRequest("strategy_request", request.dump()).size()) {
+            if (!zmqClient_ || !zmqClient_->sendRequest("strategy_request", request.dump()).size()) {
                 LOG_ERROR( "Failed to send get active strategies request");
                 return {};
             }
@@ -360,7 +358,7 @@ public:
             };
             
             // Send request
-            if (!requestClient_ || !requestClient_->sendRequest("strategy_request", request.dump()).size()) {
+            if (!zmqClient_ || !zmqClient_->sendRequest("strategy_request", request.dump()).size()) {
                 LOG_ERROR( "Failed to send strategy active check request");
                 return false;
             }
@@ -391,7 +389,7 @@ public:
                 {"timestamp", std::chrono::duration_cast<std::chrono::milliseconds>(
                     std::chrono::system_clock::now().time_since_epoch()).count()}
             };
-            if (!requestClient_ || !requestClient_->sendRequest("strategy_risk", request.dump()).size()) {
+            if (!zmqClient_ || !zmqClient_->sendRequest("strategy_risk", request.dump()).size()) {
                 LOG_ERROR( "Failed to send emergency state");
                 return false;
             }

@@ -4,10 +4,14 @@
 #include <iomanip>
 #include <algorithm>
 namespace trading::communication {
-GenericZmqServer::GenericZmqServer(const ZmqServerConfig& config) 
+GenericZmqServer::GenericZmqServer(const ZmqServerConfig& config, std::shared_ptr<zmq::context_t> shared_context)
     : config_(config) {
-    // Initialize ZMQ context with specified IO threads
-    context_ = std::make_unique<zmq::context_t>(config_.io_threads);
+    // Use provided shared context if available; otherwise create our own
+    if (shared_context) {
+        context_ = shared_context;
+    } else {
+        context_ = std::make_shared<zmq::context_t>(config_.io_threads);
+    }
 }
 
 GenericZmqServer::~GenericZmqServer() {
@@ -234,6 +238,7 @@ bool GenericZmqServer::initializeSockets() {
         pub_socket_->set(zmq::sockopt::heartbeat_ttl, config_.heartbeat_ttl);
         
         pub_socket_->bind(config_.pub_endpoint);
+    std::cout << "[ZMQ Server] PUB bound to '" << config_.pub_endpoint << "'" << std::endl;
 
         // Create REP socket
         rep_socket_ = std::make_unique<zmq::socket_t>(*context_, ZMQ_REP);
@@ -244,6 +249,7 @@ bool GenericZmqServer::initializeSockets() {
         rep_socket_->set(zmq::sockopt::linger, config_.linger);
         
         rep_socket_->bind(config_.rep_endpoint);
+    std::cout << "[ZMQ Server] REP bound to '" << config_.rep_endpoint << "'" << std::endl;
 
         return true;
     } catch (const zmq::error_t& e) {
@@ -304,6 +310,7 @@ void GenericZmqServer::requestWorker() {
             
             if (result) {
                 std::string request_str(static_cast<char*>(request.data()), request.size());
+                std::cout << "[ZMQ Server] Received raw request: '" << request_str << "' size=" << request.size() << std::endl;
                 
                 // Parse request JSON
                 nlohmann::json request_json;
@@ -339,6 +346,7 @@ void GenericZmqServer::requestWorker() {
                 zmq::message_t reply(response.size());
                 memcpy(reply.data(), response.c_str(), response.size());
                 rep_socket_->send(reply, zmq::send_flags::none);
+                std::cout << "[ZMQ Server] Sent reply: '" << response << "'" << std::endl;
             } else {
                 // No message received, sleep briefly
                 std::this_thread::sleep_for(std::chrono::milliseconds(10));

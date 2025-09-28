@@ -32,6 +32,9 @@ public:
      * Constructor
      */
     StrategyInterface(const RiskConfig& config);
+    
+    
+    
     /**
      * Destructor
      */

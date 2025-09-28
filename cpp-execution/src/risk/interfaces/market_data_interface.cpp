@@ -118,10 +118,12 @@ bool MarketDataInterface::initialize() {
             
             zmqClient_ = std::make_unique<GenericZmqClient>(zmqConfig);
         }
-        // Start ZeroMQ client BEFORE subscribing so subscriptions succeed
-        if (!zmqClient_->connect()) {
-            LOG_ERROR("Failed to connect ZeroMQ client");
-            return false;
+        // check if connected if not, connect
+        if (zmqClient_ && !zmqClient_->isConnected()) {
+            if (!zmqClient_->connect()) {
+                LOG_ERROR("Failed to connect ZeroMQ client: " + zmqClient_->getLastError());
+                return false;
+            }
         }
         // Record the time of successful connect
         lastConnectionCheck_ = std::chrono::steady_clock::now();
@@ -133,7 +135,7 @@ bool MarketDataInterface::initialize() {
             return "ACK"; // Simple acknowledgment for now
         };
         // Subscribe to orderbook topics
-        zmqClient_->subscribe("orderbook.", 
+        zmqClient_->subscribe(ORDERBOOK_UPDATES_TOPIC, 
             [this](const std::string& topic, const std::string& message, const std::unordered_map<std::string, std::string>& metadata) {
                 // Enqueue-only: push raw message to inbound queue or conflation map and wake processing thread
                 totalReceived_.fetch_add(1, std::memory_order_relaxed);
@@ -182,7 +184,7 @@ bool MarketDataInterface::initialize() {
         // Record the wildcard subscription so it can be reapplied on reconnect
         {
             std::lock_guard<std::mutex> sLock(subscriptionMutex_);
-            subscribedTopics_.insert("orderbook.");
+            subscribedTopics_.insert(ORDERBOOK_UPDATES_TOPIC);
         }
         
         initialized_.store(true);
@@ -190,7 +192,7 @@ bool MarketDataInterface::initialize() {
         
         // Start background reconnection/monitor thread
         try {
-            reconnectionThread_ = std::thread([this]() { this->connectionMonitorLoop(); });
+            // reconnectionThread_ = std::thread([this]() { this->connectionMonitorLoop(); });
             LOG_INFO("MarketDataInterface", "Started connection monitor thread");
         } catch (const std::exception& e) {
             LOG_ERROR("Failed to start connection monitor thread: {}", e.what());
@@ -343,7 +345,7 @@ void MarketDataInterface::processSyntheticOrderBook_json(const std::string& topi
         }
         
         // Quick topic validation - avoid string operations if possible
-        if (topic.size() < 10 || topic.compare(0, 10, "orderbook.") != 0) {
+        if (topic.size() < 10 || topic.compare(0, 10, ORDERBOOK_UPDATES_TOPIC) != 0) {
             return; // Not a synthetic orderbook message
         }
 
@@ -627,7 +629,7 @@ void MarketDataInterface::processSyntheticOrderBook_protobuf(const std::string& 
         }
         
         // Quick topic validation
-        if (topic.size() < 10 || topic.compare(0, 10, "orderbook.") != 0) {
+        if (topic.size() < 10 || topic.compare(0, 10, ORDERBOOK_UPDATES_TOPIC) != 0) {
             return; // Not a synthetic orderbook message
         }
 
@@ -1217,7 +1219,7 @@ bool MarketDataInterface::subscribeMarketData(
     core::ExchangeId exchange = core::ExchangeId::fromString(exchangeId.value_or(DEFAULT_EXCHANGE));
     
     // Subscribe to orderbook and trade topics for this pair
-    std::string orderBookTopic = "orderbook." + exchange.toString() + "." + tradingPair.toString();
+    std::string orderBookTopic = ORDERBOOK_UPDATES_TOPIC + exchange.toString() + "." + tradingPair.toString();
     // std::string tradeTopic = "trade." + exchange.toString() + "." + tradingPair.toString();
 
     bool success = true;
@@ -1259,7 +1261,7 @@ bool MarketDataInterface::unsubscribeMarketData(
     core::ExchangeId exchange = core::ExchangeId::fromString(exchangeId.value_or(DEFAULT_EXCHANGE));
     
     // Unsubscribe from topics
-    std::string orderBookTopic = "orderbook." + exchange.toString() + "." + tradingPair.toString();
+    std::string orderBookTopic = ORDERBOOK_UPDATES_TOPIC + exchange.toString() + "." + tradingPair.toString();
     // std::string tradeTopic = "trade." + exchange.toString() + "." + tradingPair.toString();
 
     bool success = true;
@@ -1502,32 +1504,16 @@ void MarketDataInterface::connectionMonitorLoop() {
                 {
                     std::lock_guard<std::mutex> sLock(subscriptionMutex_);
                     toApply.assign(subscribedTopics_.begin(), subscribedTopics_.end());
-                }
-
-                // Register all subscription handlers BEFORE connecting
-                // This ensures they're queued and will be applied by the subscriber thread
-                for (const auto& topic : toApply) {
-                    zmqClient_->subscribe(topic,
-                        [this](const std::string& t, const std::string& msg, 
-                               const std::unordered_map<std::string, std::string>& meta) {
-                            if (t.find("orderbook") != std::string::npos) {
-                                this->processSyntheticOrderBook_protobuf(t, msg);
-                            } else if (t.find("trade") != std::string::npos) {
-                                this->processTradeUpdate(t, msg);
-                            }
-                        }
-                    );
-                    LOG_INFO("Registered handler for topic: {}", topic);
-                }
+                }                
 
                 // Now connect - the subscriber thread will apply all subscriptions
-                if (zmqClient_->connect()) {
+                if (zmqClient_->start()) { //start is actually connect
                     needsReconnection_.store(false);
                     reconnect_attempt = 0; // reset attempts on success
                     lastConnectionCheck_ = std::chrono::steady_clock::now();
                     LOG_INFO("Successfully reconnected ZeroMQ client");
                 } else {
-                    LOG_ERROR("Failed to connect new ZeroMQ client");
+                    LOG_ERROR("Failed to start new ZeroMQ client");
                     needsReconnection_.store(true);
                     reconnect_attempt++;
                     
@@ -1542,7 +1528,21 @@ void MarketDataInterface::connectionMonitorLoop() {
                         std::this_thread::sleep_for(delay);
                     }
                 }
-
+                // Register all subscription handlers BEFORE connecting
+                // This ensures they're queued and will be applied by the subscriber thread
+                for (const auto& topic : toApply) {
+                    zmqClient_->subscribe(topic,
+                        [this](const std::string& t, const std::string& msg, 
+                               const std::unordered_map<std::string, std::string>& meta) {
+                            if (t.find("orderbook.*") != std::string::npos) {
+                                this->processSyntheticOrderBook_protobuf(t, msg);
+                            } else if (t.find("trade") != std::string::npos) {
+                                this->processTradeUpdate(t, msg);
+                            }
+                        }
+                    );
+                    LOG_INFO("Registered handler for topic: {}", topic);
+                }
             } catch (const std::exception& e) {
                 LOG_ERROR("Exception during reconnection: {}", e.what());
                 reconnect_attempt++;

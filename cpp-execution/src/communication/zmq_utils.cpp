@@ -1,6 +1,7 @@
 #include "communication/zmq_server_client.hpp"
 #include <regex>
 #include <sstream>
+#include <iostream>
 
 namespace trading::communication {
 std::string generateCorrelationId() {
@@ -61,38 +62,36 @@ bool matchesPattern(const std::string& topic, const std::string& pattern) {
         return topic == pattern;
     }
     
-    // Convert wildcard pattern to regex
-    std::string regex_pattern = pattern;
-    
-    // Escape special regex characters except * and ?
-    std::string special_chars = "()[]{}+.^$|\\";
-    for (char c : special_chars) {
-        std::string char_str(1, c);
-        std::string escaped_char = "\\" + char_str;
-        
-        size_t pos = 0;
-        while ((pos = regex_pattern.find(char_str, pos)) != std::string::npos) {
-            regex_pattern.replace(pos, 1, escaped_char);
-            pos += escaped_char.length();
+    // Convert wildcard pattern to regex using a single-pass builder to avoid
+    // double-escaping issues (especially with backslashes).
+    std::string regex_pattern;
+    regex_pattern.reserve(pattern.size() * 2);
+
+    // Regex metacharacters that must be escaped
+    const std::string regex_meta = R"(^.\$|()[]{}+?)"; // note: we'll handle '*' and '?' specially
+
+    for (size_t i = 0; i < pattern.size(); ++i) {
+        char c = pattern[i];
+        if (c == '*') {
+            regex_pattern.append(".*");
+        } else if (c == '?') {
+            regex_pattern.append(".");
+        } else {
+            // Escape if metacharacter for regex
+            if (c == '^' || c == '.' || c == '\\' || c == '$' || c == '|' || c == '(' || c == ')' ||
+                c == '[' || c == ']' || c == '{' || c == '}' || c == '+' ) {
+                regex_pattern.push_back('\\');
+            }
+            regex_pattern.push_back(c);
         }
     }
     
-    // Replace wildcards with regex equivalents
-    size_t pos = 0;
-    while ((pos = regex_pattern.find('*', pos)) != std::string::npos) {
-        regex_pattern.replace(pos, 1, ".*");
-        pos += 2;
-    }
-    
-    pos = 0;
-    while ((pos = regex_pattern.find('?', pos)) != std::string::npos) {
-        regex_pattern.replace(pos, 1, ".");
-        pos += 1;
-    }
-    
     try {
-        std::regex pattern_regex("^" + regex_pattern + "$");
-        return std::regex_match(topic, pattern_regex);
+        std::string full_regex = "^" + regex_pattern + "$";
+        std::regex pattern_regex(full_regex);
+        bool res = std::regex_match(topic, pattern_regex);
+        std::cout << "[ZMQ Utils] pattern='" << pattern << "' -> regex='" << full_regex << "' topic='" << topic << "' -> " << (res ? "MATCH" : "NO") << std::endl;
+        return res;
     } catch (const std::regex_error& e) {
         // If regex compilation fails, fall back to exact match
         return topic == pattern;
