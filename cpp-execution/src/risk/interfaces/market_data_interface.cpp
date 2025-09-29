@@ -274,9 +274,10 @@ std::shared_ptr<DataInterface> MarketDataInterface::createDataInterface(
 
 void MarketDataInterface::setZmqClient(
     std::unique_ptr<trading::communication::GenericZmqClient> zmqClient) {
-    
+    // Store injected client for use when creating/configuring subscriber
+    injectedZmqClient_ = std::move(zmqClient);
     if (subscriber_) {
-        subscriber_->setZmqClient(std::move(zmqClient));
+        subscriber_->setZmqClient(std::move(injectedZmqClient_));
     }
 }
 
@@ -332,8 +333,12 @@ void MarketDataInterface::configureSubscriber() {
     LOG_INFO("Configuring MarketDataSubscriber: publisherEndpoint='{}' subscriberEndpoint='{}'",
              subConfig.publisherEndpoint, subConfig.subscriberEndpoint);
     subscriber_ = std::make_unique<MarketDataSubscriber>(subConfig);
-    // set zmq context
-    if (zmqContext_) {
+    // If a full client was injected, hand it to the subscriber so it uses the
+    // shared client/context (required for inproc transport). Otherwise set
+    // the context if available.
+    if (injectedZmqClient_) {
+        subscriber_->setZmqClient(std::move(injectedZmqClient_));
+    } else if (zmqContext_) {
         subscriber_->setZmqContext(zmqContext_);
     }
     
