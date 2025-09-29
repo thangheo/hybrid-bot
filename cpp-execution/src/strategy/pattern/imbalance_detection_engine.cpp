@@ -580,20 +580,31 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
     // config does not provide a path we leave bayesModelPath_ empty and
     // therefore disable model load/save.
     if (!config_.bayesModelPath.empty()) {
-        bayesModelPath_ = config_.bayesModelPath;
-        // If the configured path is a directory use it as per-symbol directory, otherwise use parent dir
+        // Decide whether the configured path is a directory (per-symbol mode) or a file (legacy single-file mode).
+        std::filesystem::path p(config_.bayesModelPath);
+        bool treatAsDirectory = false;
         try {
-            std::filesystem::path p(bayesModelPath_);
-            if (std::filesystem::is_directory(p)) {
-                bayesModelDirectory_ = bayesModelPath_;
-            } else {
-                bayesModelDirectory_ = p.parent_path().string();
-                if (bayesModelDirectory_.empty()) bayesModelDirectory_ = ".";
+            if (std::filesystem::exists(p) && std::filesystem::is_directory(p)) {
+                treatAsDirectory = true;
+            } else if (!p.has_extension()) {
+                // no extension -> likely a directory path (even if it doesn't exist yet)
+                treatAsDirectory = true;
             }
         } catch (...) {
-            bayesModelDirectory_.clear();
+            // fallback: if path has no extension treat as directory
+            treatAsDirectory = !p.has_extension();
         }
-        LOG_INFO("ImbalanceDetectionEngine: bayes persistence enabled, model path={} directory={}", bayesModelPath_, bayesModelDirectory_);
+
+        if (treatAsDirectory) {
+            bayesModelDirectory_ = config_.bayesModelPath;
+            bayesModelPath_.clear();
+            LOG_INFO("ImbalanceDetectionEngine: bayes per-symbol persistence enabled, model directory={}", bayesModelDirectory_);
+        } else {
+            // treat as single-file legacy mode
+            bayesModelPath_ = config_.bayesModelPath;
+            bayesModelDirectory_.clear();
+            LOG_INFO("ImbalanceDetectionEngine: bayes single-file persistence enabled, model path={}", bayesModelPath_);
+        }
     } else {
         bayesModelPath_.clear();
         bayesModelDirectory_.clear();
@@ -624,36 +635,41 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
     if (config_.labelingDelayMs > 0) labelingDelay_ = std::chrono::milliseconds(config_.labelingDelayMs);
     
 
-    // Create and load Bayesian model adapter handle upfront so load errors surface at init
+    // Create and load Bayesian model adapter handle upfront for legacy single-file mode.
     try {
         std::lock_guard<std::mutex> lk(bayesMutex_);
-        if (!bayes_handle_) {
-            bayes_handle_ = trading::perception::bayes_create();
-            LOG_DEBUG("ImbalanceDetectionEngine: created bayes adapter handle");
-        }
-        if (bayes_handle_ && !bayesModelPath_.empty()) {
-            try {
-                if (trading::perception::bayes_load(bayes_handle_, bayesModelPath_)) {
-                    LOG_INFO("ImbalanceDetectionEngine: loaded bayes model from {}", bayesModelPath_);
-                } else {
-                    LOG_WARN("ImbalanceDetectionEngine: bayes_load returned false for {}", bayesModelPath_);
+        if (!bayesModelPath_.empty()) {
+            // legacy single-file mode: create a shared global handle
+            if (!bayes_handle_) {
+                bayes_handle_ = trading::perception::bayes_create();
+                LOG_DEBUG("ImbalanceDetectionEngine: created bayes adapter handle (single-file mode)");
+            }
+            if (bayes_handle_) {
+                try {
+                    if (trading::perception::bayes_load(bayes_handle_, bayesModelPath_)) {
+                        LOG_INFO("ImbalanceDetectionEngine: loaded bayes model from {}", bayesModelPath_);
+                    } else {
+                        LOG_WARN("ImbalanceDetectionEngine: bayes_load returned false for {}", bayesModelPath_);
+                    }
+                } catch (const std::exception &ex) {
+                    LOG_WARN("ImbalanceDetectionEngine: exception while loading bayes model {}: {}", bayesModelPath_, ex.what());
+                } catch (...) {
+                    LOG_WARN("ImbalanceDetectionEngine: unknown error while loading bayes model {}", bayesModelPath_);
                 }
-            } catch (const std::exception &ex) {
-                LOG_WARN("ImbalanceDetectionEngine: exception while loading bayes model {}: {}", bayesModelPath_, ex.what());
-            } catch (...) {
-                LOG_WARN("ImbalanceDetectionEngine: unknown error while loading bayes model {}", bayesModelPath_);
             }
         }
-    bayesInitialized_.store(true);
-    // Initialize lastSaveTime_ to now to avoid treating an uninitialized
-    // time_point as long-ago and triggering an immediate interval save.
-    lastSaveTime_ = std::chrono::steady_clock::now();
-    LOG_DEBUG("ImbalanceDetectionEngine: bayes lastSaveTime initialized");
+        // Per-symbol mode creates handles lazily; still consider model subsystem initialized
+        bayesInitialized_.store(true);
+        // Initialize lastSaveTime_ to now to avoid treating an uninitialized
+        // time_point as long-ago and triggering an immediate interval save.
+        lastSaveTime_ = std::chrono::steady_clock::now();
+        LOG_DEBUG("ImbalanceDetectionEngine: bayes lastSaveTime initialized");
     } catch (const std::exception &ex) {
         LOG_WARN("ImbalanceDetectionEngine: failed to create bayes adapter: {}", ex.what());
     } catch (...) {
         LOG_WARN("ImbalanceDetectionEngine: unknown error creating bayes adapter");
     }
+    
 
     // Start background detector worker so analyzeMetrics can offload work.
     try {
