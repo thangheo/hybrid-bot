@@ -343,7 +343,7 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                     if (dt > DETECTOR_WARN_MS) {
                         LOG_WARN("Detector worker: '{}' took {} ms", name, dt);
                     } else {
-                        LOG_DEBUG("Detector worker: '{}' took {} ms", name, dt);
+                        // LOG_DEBUG("Detector worker: '{}' took {} ms", name, dt);
                     }
                     return res;
                 } catch (const std::exception &ex) {
@@ -413,8 +413,8 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                     // Use per-symbol handle for prediction so models are specific to instruments
                     trading::perception::BayesHandle handle = getBayesHandleForSymbol(m.exchangeId, m.symbol);
                     if (handle) signal = trading::perception::bayes_predict(handle, features);
-                    // 
-                    if(signal.probability > 0.1 || (++predict_counter_ % 100 == 0)){
+                    //
+                    if (++predict_counter_ % 100 == 0) {
                         // print for debug for every 100 signals if signal.probability > 0.1
                         LOG_DEBUG("Bayes predict: prob={:.4f} exp_val={:.4f} pos_size={:.4f} uncert={:.4f} should_trade={} dir={}",
                             signal.probability, signal.expected_value, signal.position_size, signal.uncertainty,
@@ -447,6 +447,8 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                 } catch (...) {
                     LOG_WARN("Bayes predict threw unknown");
                 }
+            }else{
+                LOG_ERROR("Bayes model not initialized, cannot predict");
             }
 
             // Process pending training samples: label them based on future midPrice movement
@@ -726,7 +728,7 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
             if (detectorQueue_.size() < detectorQueueMax_) {
                 detectorQueue_.push_back(metrics);
                 detectorQueueCv_.notify_one();
-                LOG_DEBUG("ImbalanceDetectionEngine: enqueued metrics for {}:{} (queue size={})", metrics.exchangeId, metrics.symbol, detectorQueue_.size());
+                // LOG_DEBUG("ImbalanceDetectionEngine: enqueued metrics for {}:{} (queue size={})", metrics.exchangeId, metrics.symbol, detectorQueue_.size());
                 return false; // enqueued for async processing
             } else {
                 LOG_WARN("ImbalanceDetectionEngine: detector queue full (%zu), falling back to synchronous run", detectorQueue_.size());
@@ -1088,6 +1090,10 @@ double ImbalanceDetectionEngine::calculateImbalanceConfidence(ImbalanceType type
     double volatilityAdjustment = (volatilityFactor < 0.5) ? volatilityWeight : (1.0 - volatilityFactor) * volatilityWeight;
     
     double adjustedConfidence = baseConfidence + liquidityAdjustment - volatilityAdjustment;
+    adjustedConfidence = std::clamp(adjustedConfidence, 0.0, 1.0);
+    
+    LOG_DEBUG("ImbalanceDetectionEngine: type={} strength={} baseConf={} liquidityAdj={} volAdj={} => adjustedConf={}",
+              static_cast<int>(type), strength, baseConfidence, liquidityAdjustment, volatilityAdjustment, adjustedConfidence);
     return std::clamp(adjustedConfidence, 0.0, 1.0);
 }
 
@@ -2774,16 +2780,21 @@ double ImbalanceDetectionEngine::calculateVariance(const std::vector<double>& da
     for (const auto& metric : metrics.metrics) {
         event.supportingMetrics[metric.first] = metric.second;
     }
-    
-    // // Log the event emission for diagnostics
-    // LOG_INFO("ImbalanceDetectionEngine: created ImbalanceEvent id={} type={} strength={} dir={} for {}:{} on thread {}",
-    //          event.eventId,
-    //          static_cast<int>(type),
-    //          event.strength,
-    //          static_cast<int>(direction),
-    //          event.exchangeId.toString(),
-    //          event.symbol.toString(),
-    //          std::this_thread::get_id());
+    //only print for every 100 events
+    static std::atomic<int> eventCounter{0};
+    int count = ++eventCounter;
+    if (count % 1000 == 0) {
+        LOG_DEBUG("ImbalanceDetectionEngine: created ImbalanceEvent id={} type={} strength={} dir={}, confidence={} for {}:{} on thread {}, count ={}",
+                event.eventId,
+                static_cast<int>(event.type),
+                event.strength,
+                static_cast<int>(event.direction),
+                static_cast<int>(event.confidence),
+                event.exchangeId,
+                event.symbol,
+                std::this_thread::get_id(),
+                count);
+    }
 
     // Publish to EventBus / callbacks unless publishing is disabled for debugging
     if (!publishEvents_.load()) {

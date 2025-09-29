@@ -52,6 +52,11 @@ void AdaptiveMechanism::updatePerformanceMetrics(const PerformanceMetrics& metri
         performanceHistory_.erase(performanceHistory_.begin());
     }
 }
+void AdaptiveMechanism::processMetrics(const PerformanceMetrics& metrics) {
+    updatePerformanceMetrics(metrics);
+    // Optionally trigger adaptations based on new metrics
+    applyAdaptations();
+}
 
 void AdaptiveMechanism::applyAdaptations() {
     std::lock_guard<std::mutex> lock(mutex_);

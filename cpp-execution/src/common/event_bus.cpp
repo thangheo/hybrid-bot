@@ -6,6 +6,7 @@
 #include "common/event_bus.hpp"
 #include "common/logger.hpp"
 #include <mutex>
+#include <cxxabi.h>
 #include <functional>
 #include <vector>
  #
@@ -139,7 +140,16 @@ void EventBus::handlerThreadLoop() {
 }
 
 // Type-erased helper to process an event pointer; will call processEventInternal with proper type
-void EventBus::processEventAny(const std::shared_ptr<Event>& evtPtr, const char* typeName) {
+// Demangle a C++ type name if possible, otherwise return the raw name
+static std::string demangle(const char* name) {
+    int status = 0;
+    char* dem = abi::__cxa_demangle(name, nullptr, nullptr, &status);
+    std::string res = (status == 0 && dem) ? dem : name;
+    free(dem);
+    return res;
+}
+
+void EventBus::processEventAny(const std::shared_ptr<Event>& evtPtr, const std::type_index& typeIdx, const char* rawTypeName) {
     // We don't have runtime RTTI to cast to the exact type here, so rely on handlers being
     // registered under the same typeid name; processEventInternal is templated, but we can't
     // instantiate it here. The queued lambda in publish captured typed pointer, so we instead
@@ -150,7 +160,7 @@ void EventBus::processEventAny(const std::shared_ptr<Event>& evtPtr, const char*
     std::vector<std::function<void(const Event&)>> handlersToCall;
     {
         std::lock_guard<std::mutex> lock(handlerMutex_);
-        auto it = handlers_.find(typeName);
+        auto it = handlers_.find(typeIdx);
         if (it != handlers_.end()) {
             for (const auto& [id, handler] : it->second) {
                 handlersToCall.push_back(handler);
@@ -159,7 +169,7 @@ void EventBus::processEventAny(const std::shared_ptr<Event>& evtPtr, const char*
     }
 
     if (handlersToCall.empty()) {
-        LOG_DEBUG("EventBus: no handlers for type '{}'", typeName);
+        LOG_DEBUG("EventBus: no handlers for type '{}'", demangle(rawTypeName));
         return;
     }
 

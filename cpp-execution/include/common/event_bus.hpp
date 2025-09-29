@@ -19,6 +19,7 @@
 #include <unordered_map>
 #include <type_traits>
 #include <typeinfo>
+#include <typeindex>
 #include "common/logger.hpp"
 
 namespace trading {
@@ -61,7 +62,8 @@ public:
         
         // Allocate the event on the heap and capture a shared_ptr in the queued lambda.
         auto evtPtr = std::make_shared<std::decay_t<EventType>>(std::forward<EventType>(event));
-        const char* typeName = typeid(EventType).name();
+    const std::type_index typeIdx = std::type_index(typeid(EventType));
+    const char* typeName = typeid(EventType).name();
 
         {
             std::lock_guard<std::mutex> lock(queueMutex_);
@@ -73,8 +75,8 @@ public:
                          eventQueue_.size(), maxQueueSize_, typeName, droppedEvents_.load());
             } else {
                 // enqueue a type-erased processor that will forward to handler thread-pool
-                eventQueue_.push([evtPtr, this, typeName]() {
-                    this->processEventAny(evtPtr, typeName);
+                eventQueue_.push([evtPtr, this, typeIdx, typeName]() {
+                    this->processEventAny(evtPtr, typeIdx, typeName);
                 });
                 queueCondition_.notify_one();
             }
@@ -92,7 +94,8 @@ public:
         std::lock_guard<std::mutex> lock(handlerMutex_);
         
         // Use typeid instead of creating instance
-        const char* typeName = typeid(EventType).name();
+    const std::type_index typeIdx = std::type_index(typeid(EventType));
+    const char* typeName = typeid(EventType).name();
         size_t handlerId = nextHandlerId_++;
         
         // Type-erased wrapper for the handler
@@ -101,7 +104,7 @@ public:
             handler(typedEvent);
         };
         
-        handlers_[typeName][handlerId] = wrapper;
+        handlers_[typeIdx][handlerId] = wrapper;
         return handlerId;
     }
     
@@ -113,8 +116,9 @@ public:
         std::lock_guard<std::mutex> lock(handlerMutex_);
         
         // Use typeid instead of creating instance
-        const char* typeName = typeid(EventType).name();
-        auto typeIt = handlers_.find(typeName);
+    const std::type_index typeIdx = std::type_index(typeid(EventType));
+    const char* typeName = typeid(EventType).name();
+    auto typeIt = handlers_.find(typeIdx);
         if (typeIt != handlers_.end()) {
             auto handlerIt = typeIt->second.find(handlerId);
             if (handlerIt != typeIt->second.end()) {
@@ -134,7 +138,7 @@ private:
     // Handler thread-loop
     void handlerThreadLoop();
     // Type-erased processing for events
-    void processEventAny(const std::shared_ptr<Event>& evtPtr, const char* typeName);
+    void processEventAny(const std::shared_ptr<Event>& evtPtr, const std::type_index& typeIdx, const char* rawTypeName);
     
     // Process a single event (calls all registered handlers)
     template<typename EventType>
@@ -145,8 +149,8 @@ private:
         std::vector<std::function<void(const Event&)>> handlersToCall;
         {
             std::lock_guard<std::mutex> lock(handlerMutex_);
-            const char* typeName = typeid(EventType).name();
-            auto typeIt = handlers_.find(typeName);
+            const std::type_index typeIdx = std::type_index(typeid(EventType));
+            auto typeIt = handlers_.find(typeIdx);
             if (typeIt != handlers_.end()) {
                 handlersToCall.reserve(typeIt->second.size());
                 for (const auto& [id, handler] : typeIt->second) {
@@ -193,7 +197,7 @@ private:
     std::condition_variable handlerQueueCondition_;
     
     // Handler management
-    std::unordered_map<std::string, std::unordered_map<size_t, std::function<void(const Event&)>>> handlers_;
+    std::unordered_map<std::type_index, std::unordered_map<size_t, std::function<void(const Event&)>>> handlers_;
     std::mutex handlerMutex_;
     size_t nextHandlerId_{1};
 

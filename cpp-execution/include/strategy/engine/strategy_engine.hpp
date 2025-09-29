@@ -156,8 +156,8 @@ private:
     size_t eventSubscriptionId_;
     size_t imbalanceSubscriptionId_;
     size_t signalGeneratedSubscriptionId_; //subscription id for signal generated events from event bus
-    //event bus
-    // size_t eventSubscriptionId_ = 0;  
+    size_t metricsUpdatedSubscriptionId_; //subscription id for metrics updated events from event bus
+    // size_t eventSubscriptionId_ = 0;
     // signalQueueMutex_
     std::mutex signalQueueMutex_;
     // std::vector<TradingSignal> signalQueue_;

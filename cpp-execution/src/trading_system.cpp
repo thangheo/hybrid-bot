@@ -208,7 +208,7 @@ bool Trading_system::start() {
         }
         std::cout << std::endl;
         //order book depth from config
-        int depth = 20;//strategyConfig_.orderBookDepth;
+        int depth = 10;//strategyConfig_.orderBookDepth;
         
         if (!dataIngestionService_->start(symbols, depth)) {
             std::cerr << "Failed to start data ingestion service" << std::endl;
