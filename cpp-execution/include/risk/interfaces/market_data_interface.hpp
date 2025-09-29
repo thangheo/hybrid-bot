@@ -132,6 +132,8 @@ private:
     // Core components
     std::unique_ptr<MarketDataCache> cache_;
     std::unique_ptr<MarketDataSubscriber> subscriber_;
+    // Optional injected ZMQ client (kept until subscriber is created)
+    std::unique_ptr<trading::communication::GenericZmqClient> injectedZmqClient_;
     
     // REST client for balance and order history
     data_ingestion::BinanceClient binanceClient_;
