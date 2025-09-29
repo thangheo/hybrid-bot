@@ -150,11 +150,7 @@ int ImbalanceSignalGenerator::processImbalances(const std::vector<ImbalanceEvent
 bool ImbalanceSignalGenerator::processImbalance(const ImbalanceEvent& imbalance) {
     // Apply enhanced filtering
     if (!passesSignalFilters(imbalance)) {
-        LOG_INFO("Imbalance filtered out: Type={}, Direction={}, Strength={:.3f}, Confidence={}",
-                 imbalanceTypeToString(imbalance.type),
-                 (imbalance.direction == core::Direction::BUY ? "BUY" : 
-                  (imbalance.direction == core::Direction::SELL ? "SELL" : "NEUTRAL")),
-                 imbalance.strength, static_cast<int>(imbalance.confidence));
+      
         return false;
     }
     
@@ -716,10 +712,11 @@ MarketRegime ImbalanceSignalGenerator::getCurrentMarketRegime(const ImbalanceEve
     double stress = imbalance.getSupportingMetric("stressIndicator", 0.0);
     auto regime_number = imbalance.getSupportingMetric("marketRegime", static_cast<double>(MarketRegime::UNKNOWN));
     if (regime_number >= static_cast<double>(MarketRegime::NORMAL) && regime_number <= static_cast<double>(MarketRegime::UNKNOWN)) {
+        // LOG_DEBUG("Current market regime: {}", marketRegimeToString(static_cast<MarketRegime>(static_cast<int>(regime_number))));
         return static_cast<MarketRegime>(static_cast<int>(regime_number));
     }
     //print current regime string // you call yourself, you put stuff in your anus?
-    LOG_INFO("Current market regime: {}", marketRegimeToString(static_cast<MarketRegime>(static_cast<int>(regime_number))));
+    // LOG_DEBUG("Current market regime: {}", marketRegimeToString(static_cast<MarketRegime>(static_cast<int>(regime_number))));
     return MarketRegime::UNKNOWN;
 }
 

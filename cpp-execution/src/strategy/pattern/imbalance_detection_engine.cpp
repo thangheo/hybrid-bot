@@ -414,11 +414,11 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                     trading::perception::BayesHandle handle = getBayesHandleForSymbol(m.exchangeId, m.symbol);
                     if (handle) signal = trading::perception::bayes_predict(handle, features);
                     //
-                    if (++predict_counter_ % 100 == 0) {
+                    if (++predict_counter_ % 100 == 0 || signal.should_trade) {
                         // print for debug for every 100 signals if signal.probability > 0.1
-                        LOG_DEBUG("Bayes predict: prob={:.4f} exp_val={:.4f} pos_size={:.4f} uncert={:.4f} should_trade={} dir={}",
-                            signal.probability, signal.expected_value, signal.position_size, signal.uncertainty,
-                            signal.should_trade ? "true" : "false", signal.direction);
+                        // LOG_DEBUG("Bayes predict: prob={:.4f} exp_val={:.4f} pos_size={:.4f} uncert={:.4f} should_trade={} dir={}",
+                        //     signal.probability, signal.expected_value, signal.position_size, signal.uncertainty,
+                        //     signal.should_trade ? "true" : "false", signal.direction);
                     }
                     // Emit event if model indicates a trade signal with sufficient confidence
                     if (signal.should_trade && signal.probability > 0.5) {  // Add confidence threshold
@@ -1092,8 +1092,6 @@ double ImbalanceDetectionEngine::calculateImbalanceConfidence(ImbalanceType type
     double adjustedConfidence = baseConfidence + liquidityAdjustment - volatilityAdjustment;
     adjustedConfidence = std::clamp(adjustedConfidence, 0.0, 1.0);
     
-    LOG_DEBUG("ImbalanceDetectionEngine: type={} strength={} baseConf={} liquidityAdj={} volAdj={} => adjustedConf={}",
-              static_cast<int>(type), strength, baseConfidence, liquidityAdjustment, volatilityAdjustment, adjustedConfidence);
     return std::clamp(adjustedConfidence, 0.0, 1.0);
 }
 
@@ -2783,7 +2781,7 @@ double ImbalanceDetectionEngine::calculateVariance(const std::vector<double>& da
     //only print for every 100 events
     static std::atomic<int> eventCounter{0};
     int count = ++eventCounter;
-    if (count % 1000 == 0) {
+    if (count % 1000 == 0 || event.strength > 0.2 || event.confidence >= ConfidenceLevel::LOW) {
         LOG_DEBUG("ImbalanceDetectionEngine: created ImbalanceEvent id={} type={} strength={} dir={}, confidence={} for {}:{} on thread {}, count ={}",
                 event.eventId,
                 static_cast<int>(event.type),
