@@ -9,8 +9,15 @@ Trading_system::Trading_system() : running_(false), systemHealthy_(true) {
     adaptiveIntel_ = std::make_unique<trading::intelligence::AdaptiveMarketIntelligence>();
     
     ZmqServerConfig serverConfig;
+    //create shared context for server and client
+    // use a single shared_context variable for server/client ZMQ usage
+    auto shared_context = std::make_shared<zmq::context_t>(1);
+
+    serverConfig.pub_endpoint = SERVER_PUBLISHER_ENDPOINT; // internal endpoint for orderbook
+    serverConfig.rep_endpoint = SERVER_REQUEST_ENDPOINT; // request endpoint for risk
+    serverConfig.io_threads = 1;
     //use default config for now
-    zmq_server_ = std::make_shared<GenericZmqServer>(serverConfig);
+    zmq_server_ = std::make_shared<GenericZmqServer>(serverConfig, shared_context);
     zmq_server_->registerRequestHandler("ping", [](const std::string& request, 
                                             const std::unordered_map<std::string, std::string>& metadata) -> std::string {
         nlohmann::json response;
@@ -26,11 +33,11 @@ Trading_system::Trading_system() : running_(false), systemHealthy_(true) {
     // clientConfig.server_req_endpoint = SERVER_REQUEST_ENDPOINT; // request endpoint for risk
     // clientConfig.auto_reconnect = true;
     // clientConfig.request_timeout = std::chrono::milliseconds(30000); // 30 seconds
-    zmq_client_ = std::make_unique<GenericZmqClient>(clientConfig);
+    zmq_client_ = std::make_unique<GenericZmqClient>(clientConfig, shared_context);
     
     // Initialize MarketDataInterface
-    // riskConfig_.zmqSubscriberEndpoint = SERVER_REQUEST_ENDPOINT;
-    // riskConfig_.zmqPublisherEndpoint = SERVER_PUBLISHER_ENDPOINT;
+    riskConfig_.zmqSubscriberEndpoint = SERVER_REQUEST_ENDPOINT;
+    riskConfig_.zmqPublisherEndpoint = SERVER_PUBLISHER_ENDPOINT;
     marketDataInterface_ = std::make_shared<trading::risk::MarketDataInterface>(riskConfig_);
     // set zmq client to marketDataInterface_
     marketDataInterface_->setZmqClient(std::move(zmq_client_));
@@ -129,7 +136,13 @@ bool Trading_system::initialize() {
     // 3. Initialize risk manager
             
     // ✅ NEW - Use the factory method
-    riskManager_ = RiskManager::create(executionService_, riskConfig_, marketDataInterface_);
+    // riskManager_ = RiskManager::create(executionService_, riskConfig_, marketDataInterface_);
+    riskManager_ = trading::risk::RiskManager::create(
+        executionService_, 
+        riskConfig_, 
+        marketDataInterface_,
+        zmq_server_->getContext() // Pass shared ZMQ context
+    );
     if (!riskManager_) {
         LOG_ERROR("Application", "Failed to initialize risk manager");
         return false;

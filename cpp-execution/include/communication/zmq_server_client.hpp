@@ -21,19 +21,17 @@ namespace trading::communication {
 // Defaults use loopback addresses so clients can connect using the same concrete
 // endpoint. Change these values in configuration if you want binding on all
 // interfaces (e.g. tcp://*:5555).
-const std::string SERVER_REQUEST_ENDPOINT = "tcp://127.0.0.1:5556";
-// SERVER_PUBLISHER_ENDPOINT
-// const std::string SERVER_PUBLISHER_ENDPOINT = "inproc://server_pub";
-const std::string SERVER_PUBLISHER_ENDPOINT = "tcp://127.0.0.1:5555";
-// SERVER_EXECUTION_REQUEST_ENDPOINT
-const std::string SERVER_EXECUTION_REQUEST_ENDPOINT = "tcp://127.0.0.1:5557";
-// SERVER_EXECUTION_PUBLISH_ENDPOINT
-const std::string SERVER_EXECUTION_PUBLISH_ENDPOINT = "tcp://127.0.0.1:5558";
-// SERVER_RISK_PUBLISH_ENDPOINT
-// const std::string SERVER_RISK_PUBLISH_ENDPOINT = "inproc://risk_pub";
-const std::string SERVER_RISK_PUBLISH_ENDPOINT = "tcp://127.0.0.1:5559";
+//now we use inproc all 
+const std::string SERVER_REQUEST_ENDPOINT = "inproc://server_req";
+const std::string SERVER_PUBLISHER_ENDPOINT = "inproc://server_pub";
+const std::string SERVER_EXECUTION_PUBLISH_ENDPOINT = "inproc://server_exec_pub";
+const std::string SERVER_EXECUTION_REQUEST_ENDPOINT = "inproc://server_exec_req";
+// const std::string SERVER_EXECUTION_PUBLISH_ENDPOINT = "inproc://server_exec_pub";
+const std::string SERVER_RISK_PUBLISH_ENDPOINT = "inproc://risk_pub";
+const std::string SERVER_RISK_REQUEST_ENDPOINT = "inproc://risk_req";
 // SERVER_STRATEGY_EVENTS_PUBLISH_ENDPOINT
-const std::string SERVER_STRATEGY_EVENTS_PUBLISH_ENDPOINT = "tcp://127.0.0.1:5560";
+const std::string SERVER_STRATEGY_EVENTS_PUBLISH_ENDPOINT = "inproc://strategy_events_pub";
+const std::string SERVER_STRATEGY_EVENTS_REQUEST_ENDPOINT = "inproc://strategy_events_req";
 // MARKET_DATA_TOPIC
 const std::string MARKET_DATA_TOPIC = "market.*";
 // ORDERBOOK_UPDATES_TOPIC
@@ -161,7 +159,7 @@ public:
     // Request handling
     void registerRequestHandler(const std::string& request_type, RequestHandler handler);
     void unregisterRequestHandler(const std::string& request_type);
-
+    std::shared_ptr<zmq::context_t> getContext();
     // Topic filtering
     void addTopicFilter(const std::string& topic_pattern);
     void removeTopicFilter(const std::string& topic_pattern);

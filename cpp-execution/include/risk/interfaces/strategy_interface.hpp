@@ -107,7 +107,7 @@ public:
  * 
  * @return Unique pointer to StrategyInterface implementation
  */
-std::unique_ptr<StrategyInterface> createStrategyInterface(const RiskConfig& config);
+std::unique_ptr<StrategyInterface> createStrategyInterface(const RiskConfig& config, const std::shared_ptr<zmq::context_t>& zmqContext = nullptr);
 
 } // namespace risk
 } // namespace trading

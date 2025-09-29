@@ -528,10 +528,11 @@ public:
     // marketDataRequestEndpoint
     std::string marketDataRequestEndpoint = SERVER_REQUEST_ENDPOINT;
     std::string marketDataPublishEndpoint = SERVER_RISK_PUBLISH_ENDPOINT;
-    std::string marketDataTopic = MARKET_DATA_TOPIC;
+    std::string marketDataTopic = MARKET_DATA_TOPIC; //ORDERBOOK_UPDATES_TOPIC
     // zmqSubscriberEndpoint
     std::string zmqSubscriberEndpoint = SERVER_PUBLISHER_ENDPOINT;
-
+    // shared context for zmq
+    // std::shared_ptr<zmq::context_t> zmqContext = std::make_shared<zmq::context_t>(1);
     // zmqPublisherEndpoint
     std::string zmqPublisherEndpoint = SERVER_REQUEST_ENDPOINT;
     // cache validity duration in milliseconds (default increased to 1000ms to avoid

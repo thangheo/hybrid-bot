@@ -53,10 +53,11 @@ public:
     static std::shared_ptr<RiskManager> create(
         std::shared_ptr<trading::execution::ExecutionService> execService, 
         const RiskConfig& config, 
-        std::shared_ptr<trading::risk::MarketDataInterface> marketDataInterface
+        std::shared_ptr<trading::risk::MarketDataInterface> marketDataInterface,
+        std::shared_ptr<zmq::context_t> zmqContext = nullptr
     ) {
         // Create using make_shared - this enables shared_from_this()
-        auto manager = std::shared_ptr<RiskManager>(new RiskManager(execService, config, marketDataInterface));
+        auto manager = std::shared_ptr<RiskManager>(new RiskManager(execService, config, marketDataInterface, zmqContext));
 
         // Now safe to call methods that use shared_from_this()
         if (!manager->initialize()) {
@@ -80,7 +81,8 @@ public:
 // new constructor
     RiskManager(std::shared_ptr<trading::execution::ExecutionService> execService, 
                 const RiskConfig& config,
-                std::shared_ptr<trading::risk::MarketDataInterface> marketDataInterface);   
+                std::shared_ptr<trading::risk::MarketDataInterface> marketDataInterface,
+                std::shared_ptr<zmq::context_t> zmqContext = nullptr);   
 
     /**
      * Initialize the risk manager and its subsystems
@@ -187,7 +189,9 @@ private:
         // DON'T call any methods that use shared_from_this() here!
         LOG_INFO("RiskManager", "RiskManager constructor completed");
     }
-// config_
+    // zmq context
+    std::shared_ptr<zmq::context_t> zmqContext_;
+
     // just declare fucking idiots
     std::unique_ptr<CollateralManager> m_collateralManager;
     // Core subsystems
