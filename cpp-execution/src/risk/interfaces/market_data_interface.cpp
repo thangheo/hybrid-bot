@@ -332,6 +332,11 @@ void MarketDataInterface::configureSubscriber() {
     LOG_INFO("Configuring MarketDataSubscriber: publisherEndpoint='{}' subscriberEndpoint='{}'",
              subConfig.publisherEndpoint, subConfig.subscriberEndpoint);
     subscriber_ = std::make_unique<MarketDataSubscriber>(subConfig);
+    // set zmq context
+    if (zmqContext_) {
+        subscriber_->setZmqContext(zmqContext_);
+    }
+    
     LOG_INFO("MarketDataSubscriber configured");
 }
 

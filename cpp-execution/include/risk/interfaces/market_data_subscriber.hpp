@@ -106,7 +106,10 @@ public:
      * Shutdown the subscriber
      */
     void shutdown();
-    
+    //function to set zmq context
+    void setZmqContext(std::shared_ptr<zmq::context_t> context) {
+        zmqContext_ = context;
+    }
     /**
      * Subscribe to market data for a trading pair
      */
@@ -176,6 +179,7 @@ private:
     
     // ZMQ client
     std::unique_ptr<trading::communication::GenericZmqClient> zmqClient_;
+    std::shared_ptr<zmq::context_t> zmqContext_;
     
     // Message processor
     std::unique_ptr<MarketDataProcessor> processor_;

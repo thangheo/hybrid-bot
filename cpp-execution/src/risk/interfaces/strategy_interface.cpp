@@ -36,8 +36,6 @@ StrategyInterface::StrategyInterface(const RiskConfig& config) {
 // Implementation of the StrategyInterface that uses ZeroMQ for communication
 class StrategyInterfaceImpl : public StrategyInterface {
 private:
-    std::unique_ptr<communication::GenericZmqClient> zmqClient_;
-
     // Configuration
     std::string requestEndpoint_;
     std::string publishEndpoint_;
@@ -45,7 +43,9 @@ private:
     
     // ZeroMQ clients
     communication::ZmqClientConfig clientConfig;
-    
+    std::unique_ptr<communication::GenericZmqClient> zmqClient_;
+    //zmq context
+    std::shared_ptr<zmq::context_t> zmqContext_;
     // Callback for strategy events
     std::function<void(const StrategyId&, const std::string&)> strategyEventCallback_;
     
@@ -91,7 +91,7 @@ private:
         
         return json;
     }
-
+ 
     // Handle received strategy event messages
     void handleStrategyEventMessage(const std::string& topic, const std::string& message) {
         if (topic == strategyEventsTopic_) {
@@ -130,14 +130,14 @@ public:
     StrategyInterfaceImpl() : StrategyInterface() {
         // Load configuration
         // In a real implementation, this would be loaded from a config file
-        requestEndpoint_ = SERVER_REQUEST_ENDPOINT;
-        publishEndpoint_ = SERVER_PUBLISHER_ENDPOINT;
+        requestEndpoint_ = SERVER_STRATEGY_EVENTS_REQUEST_ENDPOINT;
+        publishEndpoint_ = SERVER_STRATEGY_EVENTS_PUBLISH_ENDPOINT;
         strategyEventsTopic_ = "strategy_events";
     }
     StrategyInterfaceImpl(const RiskConfig& config) : StrategyInterface(config) {
         // Load configuration from RiskConfig
-        requestEndpoint_ = SERVER_REQUEST_ENDPOINT;
-        publishEndpoint_ = SERVER_PUBLISHER_ENDPOINT;
+        requestEndpoint_ = SERVER_STRATEGY_EVENTS_REQUEST_ENDPOINT;
+        publishEndpoint_ = SERVER_STRATEGY_EVENTS_PUBLISH_ENDPOINT;
         strategyEventsTopic_ = "strategy_events";
 
         // requestEndpoint_ = config.strategyRequestEndpoint;
@@ -154,7 +154,10 @@ public:
             }
         }
     }
-    
+     //set zmq context
+    void setZmqContext(const std::shared_ptr<zmq::context_t>& context) {
+        zmqContext_ = context;
+    }
     bool initialize() override {
         std::lock_guard<std::mutex> lock(mutex_);
         
@@ -162,14 +165,14 @@ public:
             return true;
         }
         // Setup ZeroMQ clients
-        // clientConfig.req_endpoint = requestEndpoint_;
-        // clientConfig.pub_endpoints = {publishEndpoint_};
+    clientConfig.req_endpoint = requestEndpoint_;
+    clientConfig.pub_endpoints = {publishEndpoint_};
     clientConfig.rcvtimeo = 5000;  // 5 seconds
     clientConfig.sndtimeo = 5000;  // 5 seconds
     // heartbeat_ivl is not available on the client config; set timeout/ttl only
     clientConfig.heartbeat_timeout = 90000;  // 90 seconds
     clientConfig.heartbeat_ttl = 30000;  // 30 seconds
-        zmqClient_ = std::make_unique<GenericZmqClient>(clientConfig);
+        zmqClient_ = std::make_unique<GenericZmqClient>(clientConfig, zmqContext_);
         try {
             // Connect the client
             if (!zmqClient_->start()) {
@@ -400,9 +403,16 @@ public:
         }
     } //
 };
-std::unique_ptr<StrategyInterface> createStrategyInterface(const RiskConfig& config) {
-    return std::make_unique<StrategyInterfaceImpl>(config);
+// std::unique_ptr<StrategyInterface> createStrategyInterface(const RiskConfig& config) {
+//     return std::make_unique<StrategyInterfaceImpl>(config);
+// }
+
+std::unique_ptr<StrategyInterface> createStrategyInterface(const RiskConfig& config, const std::shared_ptr<zmq::context_t>& zmqContext) {
+    auto strategyInterface = std::make_unique<StrategyInterfaceImpl>(config);
+    strategyInterface->setZmqContext(zmqContext);
+    return strategyInterface;
 }
+
 
 } // namespace risk
 } // namespace trading

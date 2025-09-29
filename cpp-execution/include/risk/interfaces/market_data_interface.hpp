@@ -117,8 +117,14 @@ public:
         ProcessorErrorStats processorStats;
     };
     HealthStatus getHealthStatus() const;
-
+    //set zmq context
+    void setZmqContext(std::shared_ptr<zmq::context_t> context) {
+        zmqContext_ = context;
+    }
 private:
+    // ZMQ context shared across components , this should be come from outside
+    // std::shared_ptr<zmq::context_t> zmqContext_{std::make_shared<zmq::context_t>(1)};
+    std::shared_ptr<zmq::context_t> zmqContext_;
     // Configuration
     RiskConfig config_;
     std::string defaultExchange_{"binance"};

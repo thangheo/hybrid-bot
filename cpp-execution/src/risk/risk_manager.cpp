@@ -40,14 +40,16 @@ namespace risk {
 //new constructor
 RiskManager::RiskManager(std::shared_ptr<trading::execution::ExecutionService> execService, 
                          const RiskConfig& config,
-                         std::shared_ptr<trading::risk::MarketDataInterface> marketDataInterface)
+                         std::shared_ptr<trading::risk::MarketDataInterface> marketDataInterface,
+                         std::shared_ptr<zmq::context_t> zmqContext)
     : m_execService(execService)
     , m_config(config)
     , m_mode(RiskManagerMode::NORMAL)
     , m_marketDataInterface(marketDataInterface) // Use the provided MarketDataInterface
+    , zmqContext_(zmqContext)
 {
     // Initialize components
-    m_strategyInterface = createStrategyInterface(m_config);
+    m_strategyInterface = createStrategyInterface(m_config, zmqContext_);
     LOG_INFO("RiskManager", "Created StrategyInterface");
     
     m_executionInterface = createExecutionInterface_withExecutionService(execService);
@@ -77,7 +79,11 @@ bool RiskManager::initialize() {
         // worker threads (this can deadlock if the worker is executing callbacks
         // or blocked). Reuse the existing instance when available.
         if (!m_strategyInterface) {
-            m_strategyInterface = createStrategyInterface(m_config);
+            //check if zmqContext_ is null, if so create a new one
+            if (!zmqContext_) {
+                zmqContext_ = std::make_shared<zmq::context_t>(1);
+            }
+            m_strategyInterface = createStrategyInterface(m_config, zmqContext_);
             LOG_INFO("RiskManager", "Created StrategyInterface");
         } else {
             LOG_INFO("RiskManager", "Using existing StrategyInterface");
@@ -230,13 +236,6 @@ bool RiskManager::initialize() {
         LOG_INFO(std::format("{} {}", "RiskManager", "Created CollateralManager successfully"));
         if (!m_collateralManager->initialize()) {
             LOG_ERROR(std::format("{} {}", "RiskManager", "Failed to initialize CollateralManager"));
-            return false;
-        }
-        // Initialize strategy interface
-        m_strategyInterface = createStrategyInterface(m_config);
-        
-        if (!m_strategyInterface->initialize() || !m_executionInterface->initialize()) {
-            std::cerr << "Failed to initialize external interfaces" << std::endl;
             return false;
         }
         

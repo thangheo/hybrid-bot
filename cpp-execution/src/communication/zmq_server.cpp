@@ -196,7 +196,9 @@ void GenericZmqServer::unregisterRequestHandler(const std::string& request_type)
     std::lock_guard<std::mutex> lock(handlers_mutex_);
     request_handlers_.erase(request_type);
 }
-
+std::shared_ptr<zmq::context_t> GenericZmqServer::getContext() {
+    return context_;
+}
 void GenericZmqServer::addTopicFilter(const std::string& topic_pattern) {
     std::lock_guard<std::mutex> lock(filters_mutex_);
     if (std::find(topic_filters_.begin(), topic_filters_.end(), topic_pattern) == topic_filters_.end()) {

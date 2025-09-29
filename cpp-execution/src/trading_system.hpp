@@ -116,7 +116,10 @@ public:
     bool checkSystemHealth() ;
 
 private:
-    //shm
+    // Event bus for internal communication
+    // EventBus eventBus_;
+
+    // Statistics
     std::atomic<uint64_t> orderBookUpdatesReceived_{0};
     
 
@@ -171,6 +174,8 @@ private:
     
     std::shared_ptr<GenericZmqServer> zmq_server_;
     std::unique_ptr<GenericZmqClient> zmq_client_;
+    //share context
+    std::shared_ptr<zmq::context_t> zmq_context_;
 
     std::unique_ptr<trading::intelligence::AdaptiveMarketIntelligence> adaptiveIntel_;
     std::mutex intelligenceMutex_;

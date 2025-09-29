@@ -26,6 +26,8 @@ MarketDataSubscriber::~MarketDataSubscriber() {
         shutdown();
     }
 }
+//set zmq context
+
 
 bool MarketDataSubscriber::initialize() {
     if (running_.load()) {
@@ -51,8 +53,12 @@ bool MarketDataSubscriber::initialize() {
 
             LOG_INFO("MarketDataSubscriber ZMQ config: pub_endpoints=[{}], req_endpoint={}",
                      config_.publisherEndpoint, config_.subscriberEndpoint);
-            
-            zmqClient_ = std::make_unique<trading::communication::GenericZmqClient>(zmqConfig);
+            // Use provided ZMQ context or create a new one
+            if (!zmqContext_) {
+                // zmqContext_ = std::make_shared<zmq::context_t>(1);
+                zmqContext_ = std::make_shared<zmq::context_t>(1);
+            }
+            zmqClient_ = std::make_unique<trading::communication::GenericZmqClient>(zmqConfig, zmqContext_);
         }
         //check if client is already connected
         if (zmqClient_->isConnected()) {
