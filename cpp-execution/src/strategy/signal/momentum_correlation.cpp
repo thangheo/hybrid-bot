@@ -836,6 +836,8 @@ void MomentumCorrelation::updateMarketRegime() {
                   marketRegimeToString(current_regime_), marketRegimeToString(detectedRegime),
                   volatility, directionalMovement, oscillation, trendPersistence, stressIndicator);
     }
+    // update current regime
+    current_regime_ = detectedRegime;
 }
 
 // Helper method to calculate trend persistence

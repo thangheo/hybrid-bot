@@ -25,6 +25,9 @@ using namespace trading::common;  // For CircularBuffer
        double stddev = 1.0;
        size_t sampleCount = 0;
    };
+  
+   
+
 
 namespace trading {
 namespace strategy {
@@ -83,7 +86,7 @@ public:
      * @return Identified market regime
      */
     MarketRegime detectMarketRegime() const;
-    
+
     /**
      * @brief Get correlation coefficient for a specific metric
      * @param metric_name Name of the metric

@@ -87,7 +87,9 @@ using namespace trading::core;
         // Set up component dependencies
         signalGenerator_->setMomentumCorrelation(momentumCorrelator_);
         signalGenerator_->setThresholdManager(thresholdManager_);
-               
+        // signalGenerator_->setSignalDecayModel(signalDecayModel_);
+        // signalGenerator_->setMarketRegimeDetector(regimeDetector_);
+        //set up regime detector and performance tracker later when available
         imbalanceSubscriptionId_ = common::EventBus::getInstance().subscribe<events::ImbalanceDetectedEvent>(
             [this](const events::ImbalanceDetectedEvent& event) {
                 this->processImbalanceEvents({event.imbalance});
@@ -590,6 +592,7 @@ TradingSignal StrategyEngine::enhanceSignalWithEventContext(
         double expectedPriceImpact = momentumCorrelator_->predictPriceMovement(sourceEvent);
         //get current regime and set to metric
         MarketRegime regime = momentumCorrelator_->detectMarketRegime();
+
         enhancedSignal.setMetric("marketRegime", static_cast<int>(regime));
         enhancedSignal.expectedPriceImpact = expectedPriceImpact;
         
@@ -649,8 +652,21 @@ void StrategyEngine::processImbalanceEvents(const std::vector<ImbalanceEvent>& e
     if (events.empty()) return;
     
     std::lock_guard<std::recursive_mutex> lock(mutex_);
+    // Before handing events to the signal generator, enrich them with
+    // context that may be available in the engine (for example the
+    // detected market regime from the momentum correlator). This ensures
+    // the signal generator can read `event.getSupportingMetric("marketRegime")`.
+    std::vector<ImbalanceEvent> enrichedEvents = events;
+    if (momentumCorrelator_) {
+        MarketRegime detected = momentumCorrelator_->detectMarketRegime();
+        for (auto &ev : enrichedEvents) {
+            ev.supportingMetrics["marketRegime"] = static_cast<double>(detected);
+        }
+        // LOG_DEBUG("Injected marketRegime={} into {} imbalance event(s)", marketRegimeToString(detected), enrichedEvents.size());
+    }
+
     // Process all events at once for efficiency
-    signalGenerator_->processImbalances(events);
+    signalGenerator_->processImbalances(enrichedEvents);
     auto allSignals = signalGenerator_->generateSignals();
     
     // Clear the signal generator's state to prevent accumulation
