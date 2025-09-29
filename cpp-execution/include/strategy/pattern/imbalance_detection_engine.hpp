@@ -23,6 +23,7 @@ namespace trading { namespace perception { class BayesianTradingModel; } }
 #include <vector>
 #include <memory>
 #include <map>
+#include <unordered_map>
 #include <string>
 #include <mutex>
 #include <functional>
@@ -254,6 +255,9 @@ public:
         core::Timestamp timestamp;
         std::vector<double> features; // uses imbalanceValue ordering
         double midPrice;
+        // Add symbol context so training can be applied to the correct per-symbol model
+        core::ExchangeId exchangeId;
+        core::Symbol symbol;
     };
     std::deque<PendingTraining> pendingTraining_;
     mutable std::mutex pendingTrainingMutex_;
@@ -264,6 +268,18 @@ public:
 
     // Optional model persistence path (can be set via env BAYES_MODEL_PATH)
     std::string bayesModelPath_;
+    // If configured, use this directory to store per-symbol model files. Derived from bayesModelPath_
+    std::string bayesModelDirectory_;
+    // Per-symbol Bayes handles (opaque handles from perception adapter)
+    std::unordered_map<std::string, trading::perception::BayesHandle> bayesHandles_;
+    mutable std::mutex bayesHandlesMutex_;
+
+    // Helpers for per-symbol model management
+    trading::perception::BayesHandle getBayesHandleForSymbol(const core::ExchangeId &exch, const core::Symbol &sym);
+    bool saveBayesForSymbol(trading::perception::BayesHandle h, const core::ExchangeId &exch, const core::Symbol &sym);
+    // If configured, use this directory to store per-symbol model files. Derived from bayesModelPath_
+    
+    // Per-symbol Bayes handles (opaque handles from perception adapter)
     // Save-after-updates counter (decremented on each bayes_update)
     int bayesSaveAfterUpdates_ = 0;
     // Configured save interval (ms) for periodic saves

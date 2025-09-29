@@ -27,8 +27,79 @@
 #include <logger.hpp>
 #include "perception/bayesian_trading_adapter.hpp"
 
- namespace trading {
- namespace strategy {
+namespace trading {
+namespace strategy {
+// Helper: build filesystem-friendly model filename for exchange+symbol
+static std::string buildSymbolModelPath(const std::string &baseDir, const core::ExchangeId &exch, const core::Symbol &sym) {
+    if (baseDir.empty()) return std::string();
+    std::ostringstream ss;
+    ss << baseDir;
+    std::string base = ss.str();
+    if (!base.empty() && base.back() != '/' && base.back() != '\\') ss << '/';
+    // sanitize exchange and symbol by replacing any path-unfriendly chars
+    auto sanitize = [](const std::string &s) {
+        std::string out;
+        for (char c : s) {
+            if (std::isalnum((unsigned char)c) || c == '_' || c == '-' ) out.push_back(c);
+            else out.push_back('_');
+        }
+        return out;
+    };
+    ss << sanitize(exch.toString()) << "_" << sanitize(sym.toString()) << ".json";
+    return ss.str();
+}
+
+// Get or create a per-symbol Bayes handle, load model file if exists
+trading::perception::BayesHandle trading::strategy::ImbalanceDetectionEngine::getBayesHandleForSymbol(const core::ExchangeId &exch, const core::Symbol &sym) {
+    std::string key = exch.toString() + "_" + sym.toString();
+    {
+        std::lock_guard<std::mutex> lk(bayesHandlesMutex_);
+        auto it = bayesHandles_.find(key);
+        if (it != bayesHandles_.end()) return it->second;
+    }
+
+    trading::perception::BayesHandle h = nullptr;
+    try {
+        h = trading::perception::bayes_create();
+    } catch (...) {
+        return nullptr;
+    }
+
+    // Try load from per-symbol path if configured
+    if (!bayesModelDirectory_.empty()) {
+        try {
+            std::string path = buildSymbolModelPath(bayesModelDirectory_, exch, sym);
+            if (!path.empty() && std::filesystem::exists(path)) {
+                trading::perception::bayes_load(h, path);
+                LOG_DEBUG("ImbalanceDetectionEngine: loaded per-symbol bayes model {}", path);
+            }
+        } catch (const std::exception &ex) {
+            LOG_WARN("ImbalanceDetectionEngine: failed to load per-symbol bayes model: {}", ex.what());
+        } catch (...) {
+            LOG_WARN("ImbalanceDetectionEngine: unknown error loading per-symbol bayes model");
+        }
+    }
+
+    {
+        std::lock_guard<std::mutex> lk(bayesHandlesMutex_);
+        bayesHandles_[key] = h;
+    }
+    return h;
+}
+
+bool trading::strategy::ImbalanceDetectionEngine::saveBayesForSymbol(trading::perception::BayesHandle h, const core::ExchangeId &exch, const core::Symbol &sym) {
+    if (!h) return false;
+    if (bayesModelDirectory_.empty()) return false;
+    try {
+        std::string path = buildSymbolModelPath(bayesModelDirectory_, exch, sym);
+        if (path.empty()) return false;
+        try { std::filesystem::create_directories(std::filesystem::path(path).parent_path()); } catch (...) {}
+        return trading::perception::bayes_save(h, path);
+    } catch (...) {
+        return false;
+    }
+}
+
 
 // Internal simple thread-pool used to run detectors without creating a new
 // OS thread for each call. Kept internal to this translation unit.
@@ -197,6 +268,29 @@ ImbalanceDetectionEngine::~ImbalanceDetectionEngine() {
                 LOG_WARN("ImbalanceDetectionEngine: unknown error while saving bayes model {}", bayesModelPath_);
             }
         }
+        // Save and destroy any per-symbol handles
+        {
+            std::lock_guard<std::mutex> lk2(bayesHandlesMutex_);
+            for (auto &pr : bayesHandles_) {
+                auto &symKey = pr.first;
+                auto h = pr.second;
+                try {
+                    if (!bayesModelDirectory_.empty()) {
+                        // Save using the key-derived filename
+                        std::string filename = bayesModelDirectory_;
+                        if (!filename.empty() && filename.back() != '/' && filename.back() != '\\') filename += '/';
+                        filename += symKey + ".json";
+                        trading::perception::bayes_save(h, filename);
+                        LOG_INFO("ImbalanceDetectionEngine: saved per-symbol bayes model {}", filename);
+                    }
+                } catch (...) {
+                    LOG_WARN("ImbalanceDetectionEngine: failed to save per-symbol bayes model for {}", symKey);
+                }
+                try { trading::perception::bayes_destroy(h); } catch(...) {}
+            }
+            bayesHandles_.clear();
+        }
+
         if (bayes_handle_) {
             try {
                 trading::perception::bayes_destroy(bayes_handle_);
@@ -309,18 +403,25 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
             {
                 std::lock_guard<std::mutex> pl(pendingTrainingMutex_);
                 if (pendingTraining_.size() >= maxPendingTraining_) pendingTraining_.pop_front();
-                pendingTraining_.push_back(PendingTraining{m.timestamp, features, m.midPrice});
+                pendingTraining_.push_back(PendingTraining{m.timestamp, features, m.midPrice, m.exchangeId, m.symbol});
             }
-
+            static int predict_counter_ = 0;
             // Predict with Bayesian model and emit a single aggregated event if signal indicates trade
             if (bayesInitialized_.load()) {
                 try {
                     trading::perception::BayesSignal signal;
-                    {
-                        std::lock_guard<std::mutex> lk(bayesMutex_);
-                        if (bayes_handle_) signal = trading::perception::bayes_predict(bayes_handle_, features);
+                    // Use per-symbol handle for prediction so models are specific to instruments
+                    trading::perception::BayesHandle handle = getBayesHandleForSymbol(m.exchangeId, m.symbol);
+                    if (handle) signal = trading::perception::bayes_predict(handle, features);
+                    // 
+                    if(signal.probability > 0.1 || (++predict_counter_ % 100 == 0)){
+                        // print for debug for every 100 signals if signal.probability > 0.1
+                        LOG_DEBUG("Bayes predict: prob={:.4f} exp_val={:.4f} pos_size={:.4f} uncert={:.4f} should_trade={} dir={}",
+                            signal.probability, signal.expected_value, signal.position_size, signal.uncertainty,
+                            signal.should_trade ? "true" : "false", signal.direction);
                     }
-                    if (signal.should_trade && signal.probability > 0.55) {  // Add confidence threshold
+                    // Emit event if model indicates a trade signal with sufficient confidence
+                    if (signal.should_trade && signal.probability > 0.5) {  // Add confidence threshold
                         Direction dir = (signal.direction > 0) ? Direction::BUY : Direction::SELL;
                         OrderBookMetrics mcopy = m;
                         
@@ -350,7 +451,8 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
 
             // Process pending training samples: label them based on future midPrice movement
             try {
-                std::vector<std::pair<std::vector<double>, int>> toTrain;
+                // toTrain: features, label, exchangeId, symbol
+                std::vector<std::tuple<std::vector<double>, int, core::ExchangeId, core::Symbol>> toTrain;
                 {
                     std::lock_guard<std::mutex> pl(pendingTrainingMutex_);
                     auto now = m.timestamp;
@@ -376,66 +478,61 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                                 continue;
                             }
                             
-                            toTrain.emplace_back(pt.features, label);
+                            toTrain.emplace_back(pt.features, label, pt.exchangeId, pt.symbol);
                             pendingTraining_.pop_front();
                         } else {
                             break;
                         }
                     }
                 }
-                // update model outside lock
-                for (auto &pair : toTrain) {
+                // update model outside lock; apply updates to per-symbol models
+                for (auto &t : toTrain) {
                     try {
-                        std::lock_guard<std::mutex> lk(bayesMutex_);
-                        if (bayes_handle_) {
+                        const auto &features = std::get<0>(t);
+                        int label = std::get<1>(t);
+                        const auto &exch = std::get<2>(t);
+                        const auto &sym = std::get<3>(t);
 
-                            trading::perception::bayes_update(bayes_handle_, pair.first, pair.second);
-                            // Save model according to configured policy: save-after-N-updates (if >0)
-                            // otherwise interval-based save (if interval > 0). Additionally,
-                            // require model to have some updates (requireModelReadyUpdates_) before persisting
-                            if (!bayesModelPath_.empty()) {
-                                try {
-                                    bool doSave = false;
+                        // Get or create per-symbol handle
+                        trading::perception::BayesHandle handle = getBayesHandleForSymbol(exch, sym);
+                        if (!handle) continue;
 
-                                    // Check model has seen enough updates before allowing any save
-                                    int modelUpdates = trading::perception::bayes_get_num_updates(bayes_handle_);
-                                    if (modelUpdates < requireModelReadyUpdates_) {
-                                        // Not ready to persist yet
-                                        LOG_DEBUG("ImbalanceDetectionEngine: bayes model has {} updates (< required {}), skipping save check", modelUpdates, requireModelReadyUpdates_);
-                                    } else {
-                                        // Save-after-N policy (priority)
-                                        if (config_.bayesSaveAfterUpdates > 0) {
-                                            if (--bayesSaveAfterUpdates_ <= 0) {
-                                                doSave = true;
-                                                bayesSaveAfterUpdates_ = config_.bayesSaveAfterUpdates; // reset
-                                            }
-                                        } else if (config_.bayesSaveIntervalMs > 0 && bayesSaveInterval_.count() > 0) {
-                                            // Enforce minimum debounce interval between saves
-                                            auto now = std::chrono::steady_clock::now();
-                                            if (now - lastSaveTime_ > std::max(bayesSaveInterval_, bayesMinSaveInterval_)) {
-                                                doSave = true;
-                                            }
+                        trading::perception::bayes_update(handle, features, label);
+
+                        // per-symbol save policy
+                        if (!bayesModelDirectory_.empty()) {
+                            try {
+                                bool doSave = false;
+                                int modelUpdates = trading::perception::bayes_get_num_updates(handle);
+                                if (modelUpdates < requireModelReadyUpdates_) {
+                                    LOG_DEBUG("ImbalanceDetectionEngine: per-symbol bayes model has {} updates (< required {}), skipping save check", modelUpdates, requireModelReadyUpdates_);
+                                } else {
+                                    if (config_.bayesSaveAfterUpdates > 0) {
+                                        if (--bayesSaveAfterUpdates_ <= 0) {
+                                            doSave = true;
+                                            bayesSaveAfterUpdates_ = config_.bayesSaveAfterUpdates;
                                         }
+                                    } else if (config_.bayesSaveIntervalMs > 0 && bayesSaveInterval_.count() > 0) {
+                                        auto nowt = std::chrono::steady_clock::now();
+                                        if (nowt - lastSaveTime_ > std::max(bayesSaveInterval_, bayesMinSaveInterval_)) doSave = true;
                                     }
-
-                                    if (doSave) {
-                                        // Perform atomic save via adapter
-                                        if (trading::perception::bayes_save(bayes_handle_, bayesModelPath_)) {
-                                            lastSaveTime_ = std::chrono::steady_clock::now();
-                                            updatesSinceLastSave_ = 0;
-                                            LOG_INFO("ImbalanceDetectionEngine: bayes model checkpoint saved to {}", bayesModelPath_);
-                                        } else {
-                                            LOG_WARN("ImbalanceDetectionEngine: bayes_save failed for {}", bayesModelPath_);
-                                        }
-                                    } else {
-                                        // Track that we processed an update since last save
-                                        updatesSinceLastSave_++;
-                                    }
-                                } catch (const std::exception &ex) {
-                                    LOG_WARN("Bayes save threw: {}", ex.what());
-                                } catch (...) {
-                                    LOG_WARN("Bayes save threw unknown");
                                 }
+
+                                if (doSave) {
+                                    if (saveBayesForSymbol(handle, exch, sym)) {
+                                        lastSaveTime_ = std::chrono::steady_clock::now();
+                                        updatesSinceLastSave_ = 0;
+                                        LOG_INFO("ImbalanceDetectionEngine: per-symbol bayes model saved for {}_{}", exch, sym);
+                                    } else {
+                                        LOG_WARN("ImbalanceDetectionEngine: per-symbol bayes save failed for {}_{}", exch, sym);
+                                    }
+                                } else {
+                                    updatesSinceLastSave_++;
+                                }
+                            } catch (const std::exception &ex) {
+                                LOG_WARN("Bayes save threw: {}", ex.what());
+                            } catch (...) {
+                                LOG_WARN("Bayes save threw unknown");
                             }
                         }
                     } catch (const std::exception &ex) {
@@ -484,9 +581,22 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
     // therefore disable model load/save.
     if (!config_.bayesModelPath.empty()) {
         bayesModelPath_ = config_.bayesModelPath;
-        LOG_INFO("ImbalanceDetectionEngine: bayes persistence enabled, model path={}", bayesModelPath_);
+        // If the configured path is a directory use it as per-symbol directory, otherwise use parent dir
+        try {
+            std::filesystem::path p(bayesModelPath_);
+            if (std::filesystem::is_directory(p)) {
+                bayesModelDirectory_ = bayesModelPath_;
+            } else {
+                bayesModelDirectory_ = p.parent_path().string();
+                if (bayesModelDirectory_.empty()) bayesModelDirectory_ = ".";
+            }
+        } catch (...) {
+            bayesModelDirectory_.clear();
+        }
+        LOG_INFO("ImbalanceDetectionEngine: bayes persistence enabled, model path={} directory={}", bayesModelPath_, bayesModelDirectory_);
     } else {
         bayesModelPath_.clear();
+        bayesModelDirectory_.clear();
         LOG_INFO("ImbalanceDetectionEngine: bayes persistence disabled (no model path configured)");
     }
 
