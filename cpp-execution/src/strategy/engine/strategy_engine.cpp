@@ -100,6 +100,12 @@ using namespace trading::core;
                 this->handleSignalGenerated(event.signal);
             }
         );
+        // subscribe to MetricsUpdatedEvents for adaptive mechanism
+        metricsUpdatedSubscriptionId_ = common::EventBus::getInstance().subscribe<events::MetricsUpdatedEvent>(
+            [this](const events::MetricsUpdatedEvent& event) {
+                // this->adaptiveMechanism_->processMetrics(event.metrics);
+            }
+        );
         // Remove signal generated event subscription to avoid circular dependencies
         // We use direct callbacks from the signal generator instead
 
@@ -649,7 +655,7 @@ void StrategyEngine::processImbalanceEvents(const std::vector<ImbalanceEvent>& e
     
     // Clear the signal generator's state to prevent accumulation
     signalGenerator_->clear();
-    
+    // LOG_INFO("Generated {} signals from {} imbalance events", allSignals.size(), events.size());
     for (const auto& signal : allSignals) {
         try {
             // Find the source event for this signal

@@ -51,7 +51,8 @@ public:
     AdaptiveMechanism(const AdaptiveMechanismConfig& config); 
     // Update performance metrics to inform adaptation
     void updatePerformanceMetrics(const PerformanceMetrics& metrics);
-    
+    // processMetrics
+    void processMetrics(const PerformanceMetrics& metrics);
     // Apply adaptations based on collected metrics
     void applyAdaptations();
     
