@@ -287,11 +287,13 @@ std::future<models::ExecutionReport> BinanceApiClient::placeOrder(const models::
                 minNotional = itf->second.minNotional;
             }
             if (alignedQty <= 0.0) {
-                throw std::runtime_error("Invalid quantity after alignment: result is zero");
-            }
-            if (minQty > 0.0 && alignedQty + 1e-12 < minQty) {
                 std::ostringstream oss;
-                oss << "Quantity " << alignedQty << " is below exchange minQty " << minQty;
+                oss << "Invalid quantity after alignment for symbol " << sym
+                    << ": requested=" << quantity
+                    << ", step=" << step
+                    << ", aligned=" << alignedQty
+                    << ". This typically means the requested quantity is smaller than the exchange lot step and rounded down to zero."
+                    << " Increase the requested quantity to at least the step or the exchange minQty.";
                 throw std::runtime_error(oss.str());
             }
             // If MIN_NOTIONAL is set, also validate notional
