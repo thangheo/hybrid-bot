@@ -349,7 +349,7 @@ bool OrderValidator::validateTimeInForce(const std::string& timeInForce, std::ve
 
 double OrderValidator::getCurrentMarketPrice(const core::Symbol& tradingPair) const {
     try {
-        return m_dataInterface->getCurrentPrice(tradingPair);
+        return m_dataInterface->getCurrentPrice(tradingPair, core::ExchangeId::binance().toString());
     } catch (const std::exception& ex) {
         LOG_ERROR("Failed to get market price for {}: {}", tradingPair, ex.what());
         throw std::runtime_error("Failed to get market price");
