@@ -165,14 +165,14 @@ BayesianTradingModel::TradingSignal BayesianTradingModel::predict(const std::vec
     
     // Trading decision
     bool should_trade = false;
-    int direction = 0;
+    core::Direction direction = Direction::NEUTRAL;
     
     if (config_.use_expected_value) {
         should_trade = (expected_value > 0.01);  // Minimum EV threshold
-        direction = (expected_value > 0) ? 1 : -1;
+        direction = (expected_value > 0) ? Direction::BUY : Direction::SELL;
     } else {
         should_trade = (probability > config_.min_probability) || (probability < (1.0 - config_.min_probability));
-        direction = (probability > 0.5) ? 1 : -1;
+        direction = (probability > 0.5) ? Direction::BUY : Direction::SELL;
     }
     
     return TradingSignal{
@@ -181,7 +181,7 @@ BayesianTradingModel::TradingSignal BayesianTradingModel::predict(const std::vec
         .position_size = position_size,
         .uncertainty = uncertainty,
         .should_trade = should_trade,
-        .direction = direction
+        .direction = direction,
     };
 }
 

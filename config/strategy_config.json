@@ -163,9 +163,9 @@
           "liquidityPressure": 0.4,
           "order_flow": 0.3
         },
-        "bayesModelPath": "models/bayesian/imbalance_bayes_model_v1.bin",
+        "bayesModelPath": "models/bayesian/",
         "labelingDelayMs": 1500,
-        "bayesSaveAfterUpdates": 50000,
+        "bayesSaveAfterUpdates": 20000,
         "requireModelReadyUpdates": 200,
         "bayesMinSaveIntervalMs": 60000,
         "bayesSaveIntervalMs": 3600000 

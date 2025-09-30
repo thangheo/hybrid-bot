@@ -2,6 +2,7 @@
 
 #include <vector>
 #include <string>
+#include <core/direction.hpp>
 
 namespace trading {
 namespace perception {
@@ -12,7 +13,8 @@ struct BayesSignal {
     double position_size = 0.0;
     double uncertainty = 0.0;
     bool should_trade = false;
-    int direction = 0; // 1 buy, -1 sell, 0 hold
+    int confidence = 0; // 0-100
+    core::Direction direction = core::Direction::NEUTRAL; // 1=BUY, -1=SELL, 0=HOLD
 };
 
 using BayesHandle = void*;

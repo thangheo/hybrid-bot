@@ -2,8 +2,10 @@
 #include <iostream>
 #include <random>
 #include <vector>
-
+#include  <core/direction.hpp>
 using namespace trading::perception;
+using namespace trading::core;
+using namespace trading;
 
 /**
  * Example usage of BayesianTradingModel
@@ -45,7 +47,7 @@ std::vector<double> simulate_detector_outputs(int num_detectors) {
 }
 
 // Simulate market direction (replace with your actual labeling logic)
-int simulate_market_direction(const std::vector<double>& features) {
+core::Direction simulate_market_direction(const std::vector<double>& features) {
     // Simulate a scenario where some features are predictive
     double signal = 0.0;
     for (size_t i = 0; i < features.size(); ++i) {
@@ -67,7 +69,7 @@ int simulate_market_direction(const std::vector<double>& features) {
     signal += noise(gen);
     
     // Convert to binary label
-    return (signal > 0.0) ? 1 : 0;
+    return (signal > 0.0) ? core::Direction::BUY : core::Direction::SELL;
 }
 
 int main() {
@@ -93,6 +95,7 @@ int main() {
     
     // 3. Training loop - simulate receiving detector signals and market feedback
     std::vector<double> training_returns;
+    // std::vector<core::Direction> predictions, actuals;
     std::vector<int> predictions, actuals;
     
     for (int epoch = 0; epoch < 500; ++epoch) {
@@ -100,10 +103,10 @@ int main() {
         auto features = simulate_detector_outputs(num_detectors);
         
         // Get market direction (this would be your 2-minute forward return > 0)
-        int actual_direction = simulate_market_direction(features);
+        auto actual_direction = simulate_market_direction(features);
         
         // Update model with observation
-        model.update(features, actual_direction);
+        model.update(features, (actual_direction==Direction::BUY) ? 1 : -1);
         
         // Every 10 updates, make a prediction and see how we're doing
         if (epoch % 50 == 0) {
@@ -114,19 +117,19 @@ int main() {
                       << " | EV: " << signal.expected_value
                       << " | Size: " << signal.position_size
                       << " | Uncertainty: " << signal.uncertainty
-                      << " | Should trade: " << signal.should_trade
-                      << " | Direction: " << signal.direction << std::endl;
+                      << " | Should trade: " << signal.should_trade;
+                    //   << " | Direction: " << signal.direction << std::endl;
         }
         
         if (epoch > 100) {  // Start making predictions after some training
             auto signal = model.predict(features);
-            predictions.push_back(signal.direction > 0 ? 1 : 0);
-            actuals.push_back(actual_direction);
+            predictions.push_back(signal.should_trade ? (signal.direction == Direction::BUY ? 1 : -1) : 0);
+            // predictions.push_back(signal.should_trade ? signal.direction : core::Direction::NEUTRAL);
+            actuals.push_back((actual_direction==Direction::BUY) ? 1 : -1);
             
             // Simulate return if we traded
             if (signal.should_trade) {
-                double simulated_return = (actual_direction == (signal.direction > 0 ? 1 : 0)) ? 
-                                        signal.position_size * 0.01 : -signal.position_size * 0.01;
+                double simulated_return = (actual_direction == Direction::BUY) ? signal.position_size * 0.01 : -signal.position_size * 0.01;
                 training_returns.push_back(simulated_return);
             }
         }
@@ -170,13 +173,13 @@ int main() {
         std::cout << "    Position Size: " << signal.position_size << std::endl;
         std::cout << "    Uncertainty: " << signal.uncertainty << std::endl;
         std::cout << "    Should Trade: " << (signal.should_trade ? "YES" : "NO") << std::endl;
-        std::cout << "    Direction: " << (signal.direction > 0 ? "BUY" : "SELL") << std::endl;
+        // std::cout << "    Direction: " << (signal.direction == core::Direction::BUY ? "BUY" : "SELL") << std::endl;
         
         // Simulate market feedback and continue learning
-        int market_direction = simulate_market_direction(features);
-        model.update(features, market_direction);
-        
-        std::cout << "    Actual Direction: " << (market_direction ? "UP" : "DOWN") << std::endl;
+        auto market_direction = simulate_market_direction(features);
+        model.update(features, (market_direction==Direction::BUY) ? 1 : -1);
+
+        // std::cout << "    Actual Direction: " << (market_direction == Direction::BUY ? "UP" : "DOWN") << std::endl;
         std::cout << std::endl;
     }
     

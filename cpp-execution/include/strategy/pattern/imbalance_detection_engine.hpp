@@ -216,7 +216,10 @@ private:
     // Imbalance evaluation
     double calculateImbalanceStrength(ImbalanceType type, const OrderBookMetrics& metrics);
     void createImbalanceEvent(ImbalanceType type, double strength, core::Direction direction, const OrderBookMetrics& metrics);
-    
+    //create a specific imbalance event for custom bayes signal
+    void createImbalanceEventForBayesModel(ImbalanceType type, double strength ,core::Direction direction, 
+        const OrderBookMetrics& metrics, double bayesProbability, double uncertainty = 0.0);
+    // Detected imbalances
     // Callback management
     std::map<size_t, ImbalanceCallback> callbacks_;
     size_t nextCallbackId_;
