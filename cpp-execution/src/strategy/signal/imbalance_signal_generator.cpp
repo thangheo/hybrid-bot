@@ -298,8 +298,8 @@ TradingSignal ImbalanceSignalGenerator::createSignalFromImbalance(const Imbalanc
         std::chrono::steady_clock::now() - t0).count();
 
     // Emit both total and sub-step timings to aid diagnosis (debug-level)
-    LOG_DEBUG("createSignalFromImbalance: id={} total={}us (strength={}us, predict={}us, quality={}us)",
-              signal.id, dur_us, sub_dt_strength, sub_dt_predict, sub_dt_quality);
+    // LOG_DEBUG("createSignalFromImbalance: id={} total={}us (strength={}us, predict={}us, quality={}us)",
+    //           signal.id, dur_us, sub_dt_strength, sub_dt_predict, sub_dt_quality);
 
     if (dur_us > 2000) {
         LOG_WARN("createSignalFromImbalance: signal id={} creation took {} us", signal.id, dur_us);

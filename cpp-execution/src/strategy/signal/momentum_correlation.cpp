@@ -702,6 +702,20 @@ void MomentumCorrelation::updateHighestCorrelatedMetrics() {
              }
          }
     }
+    // Publish lock-free snapshots for fast readers
+    try {
+        auto newCoeffs = std::make_shared<std::map<std::string,double>>();
+        auto newImportance = std::make_shared<std::map<std::string,double>>();
+        {
+            std::lock_guard<std::mutex> lock(correlation_mutex_);
+            *newCoeffs = correlation_coefficients_;
+            *newImportance = feature_importance_;
+        }
+        std::atomic_store(&coeffs_snapshot_, newCoeffs);
+        std::atomic_store(&importance_snapshot_, newImportance);
+    } catch (...) {
+        // swallow snapshot failures
+    }
  }
  
  bool MomentumCorrelation::isStatisticallySignificant(double coefficient, size_t sample_size) const {
@@ -958,29 +972,24 @@ void MomentumCorrelation::applyRegimeSmoothing(MarketRegime& detectedRegime) {
 
 
 double MomentumCorrelation::calculateWeightedPrediction(const ImbalanceEvent& event) const {
-    // Snapshot correlation data under lock for thread-safe reads
-    std::map<std::string, double> coeffsSnapshot;
-    std::map<std::string, double> importanceSnapshot;
-    {
-        std::lock_guard<std::mutex> lock(correlation_mutex_);
-        coeffsSnapshot = correlation_coefficients_;
-        importanceSnapshot = feature_importance_;
-    }
-
-    if (coeffsSnapshot.empty()) {
+    // Fast path: read lock-free snapshots published by the updater
+    auto coeffsPtr = std::atomic_load(&coeffs_snapshot_);
+    auto importancePtr = std::atomic_load(&importance_snapshot_);
+    if (!coeffsPtr || !importancePtr || coeffsPtr->empty()) {
+        // Not enough data yet
         LOG_DEBUG("No correlation data available for prediction");
         return 0.0;
     }
 
     double prediction = 0.0;
     double totalWeight = 0.0;
-    
-    // Process supporting metrics
+
+    // Process supporting metrics using snapshots (no lock)
     for (const auto& [metricName, metricValue] : event.supportingMetrics) {
-        auto corrIt = coeffsSnapshot.find(metricName);
-        auto impIt = importanceSnapshot.find(metricName);
+        auto corrIt = coeffsPtr->find(metricName);
+        auto impIt = importancePtr->find(metricName);
         
-        if (corrIt == coeffsSnapshot.end() || impIt == importanceSnapshot.end()) {
+        if (corrIt == coeffsPtr->end() || impIt == importancePtr->end()) {
             continue;
         }
         
@@ -1002,10 +1011,10 @@ double MomentumCorrelation::calculateWeightedPrediction(const ImbalanceEvent& ev
     
     // Process primary metric with extra weight
     std::string primaryMetricName = imbalanceTypeToString(event.type);
-    auto corrIt = coeffsSnapshot.find(primaryMetricName);
-    auto impIt = importanceSnapshot.find(primaryMetricName);
+    auto corrIt = coeffsPtr->find(primaryMetricName);
+    auto impIt = importancePtr->find(primaryMetricName);
     
-    if (corrIt != coeffsSnapshot.end() && impIt != importanceSnapshot.end()) {
+    if (corrIt != coeffsPtr->end() && impIt != importancePtr->end()) {
         double correlation = corrIt->second;
         double importance = impIt->second;
         
