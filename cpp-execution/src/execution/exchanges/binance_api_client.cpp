@@ -29,6 +29,8 @@ struct BinanceApiClient::BinanceImpl {
     struct SymbolFilters {
         double stepSize = 0.0; // lot size step for quantities
         double tickSize = 0.0; // price tick for prices
+        double minQty = 0.0;   // minimum allowed quantity on exchange
+        double minNotional = 0.0; // minimum notional value for the symbol
     };
     std::unordered_map<std::string, SymbolFilters> symbolFilters;
     
@@ -125,8 +127,15 @@ void BinanceApiClient::connect() {
                                 const std::string& ftype = f["filterType"].asString();
                                 if (ftype == "LOT_SIZE") {
                                     filters.stepSize = std::stod(f["stepSize"].asString());
+                                    if (f.isMember("minQty")) {
+                                        filters.minQty = std::stod(f["minQty"].asString());
+                                    }
                                 } else if (ftype == "PRICE_FILTER") {
                                     filters.tickSize = std::stod(f["tickSize"].asString());
+                                } else if (ftype == "MIN_NOTIONAL") {
+                                    if (f.isMember("minNotional")) {
+                                        filters.minNotional = std::stod(f["minNotional"].asString());
+                                    }
                                 }
                             }
                         }
@@ -268,7 +277,34 @@ std::future<models::ExecutionReport> BinanceApiClient::placeOrder(const models::
         }
 
         if (step > 0.0) {
-            params["quantity"] = formatDoubleWithStep(roundDownToStep(quantity, step), step);
+            double alignedQty = roundDownToStep(quantity, step);
+            // Validate against exchange minQty if available
+            auto itf = pImpl_->symbolFilters.find(sym);
+            double minQty = 0.0;
+            double minNotional = 0.0;
+            if (itf != pImpl_->symbolFilters.end()) {
+                minQty = itf->second.minQty;
+                minNotional = itf->second.minNotional;
+            }
+            if (alignedQty <= 0.0) {
+                throw std::runtime_error("Invalid quantity after alignment: result is zero");
+            }
+            if (minQty > 0.0 && alignedQty + 1e-12 < minQty) {
+                std::ostringstream oss;
+                oss << "Quantity " << alignedQty << " is below exchange minQty " << minQty;
+                throw std::runtime_error(oss.str());
+            }
+            // If MIN_NOTIONAL is set, also validate notional
+            if (minNotional > 0.0 && price > 0.0) {
+                double notional = alignedQty * price;
+                if (notional + 1e-12 < minNotional) {
+                    std::ostringstream oss;
+                    oss << "Notional " << notional << " is below exchange minNotional " << minNotional;
+                    throw std::runtime_error(oss.str());
+                }
+            }
+
+            params["quantity"] = formatDoubleWithStep(alignedQty, step);
         } else {
             params["quantity"] = std::to_string(quantity);
         }
@@ -626,7 +662,25 @@ std::string BinanceApiClient::makeApiRequest(std::string endpoint, std::string m
         throw std::runtime_error(std::string("CURL request failed: ") + err);
     }
     if (httpCode >= 400) {
-        throw std::runtime_error("HTTP error " + std::to_string(httpCode) + ": " + responseBuffer);
+        // Build a short context string for debugging (do not include secrets)
+        std::ostringstream ctx;
+        ctx << "HTTP " << httpCode << " on " << endpoint << " method=" << method;
+        if (!params.empty()) {
+            ctx << " params=";
+            bool first = true;
+            for (const auto& kv : params) {
+                if (!first) ctx << ",";
+                // hide values for keys that could be sensitive
+                if (kv.first == "signature") {
+                    ctx << kv.first << "=<sig>";
+                } else {
+                    ctx << kv.first << "=" << kv.second;
+                }
+                first = false;
+            }
+        }
+        std::string errMsg = std::string("HTTP error ") + std::to_string(httpCode) + ": " + responseBuffer + " (" + ctx.str() + ")";
+        throw std::runtime_error(errMsg);
     }
     
     return responseBuffer;
@@ -686,17 +740,27 @@ std::string BinanceApiClient::translateOrderSide(models::OrderSide side) const {
 // Helper: round down value to nearest multiple of step (avoid exceeding allowed precision)
 double BinanceApiClient::roundDownToStep(double value, double step) const {
     if (step <= 0.0) return value;
-    double inv = std::floor(1.0 / step + 1e-12);
-    // Determine number of decimals from step
+    // Determine decimal places from step by converting to string
+    std::ostringstream ss;
+    ss.setf(std::ios::fixed);
+    ss << std::setprecision(18) << step;
+    std::string s = ss.str();
+    // Trim trailing zeros
+    while (!s.empty() && s.back() == '0') s.pop_back();
+    if (!s.empty() && s.back() == '.') s.pop_back();
+    size_t pos = s.find('.');
     int decimals = 0;
-    double tmp = step;
-    while (tmp < 1.0 - 1e-12 && decimals < 18) {
-        tmp *= 10.0;
-        decimals++;
+    if (pos != std::string::npos) {
+        decimals = (int)(s.size() - pos - 1);
     }
     double factor = std::pow(10.0, decimals);
-    double stepped = std::floor(value * factor) / factor;
-    return stepped;
+    double stepped = std::floor(value * factor + 1e-12) / factor;
+    // Ensure stepped is a multiple of step (avoid precision residue)
+    double multiples = std::floor((stepped / step) + 1e-12);
+    double result = multiples * step;
+    // Round result to decimals
+    double rounded = std::floor(result * factor + 0.5) / factor;
+    return rounded;
 }
 
 // Helper: format double to string with decimals matching the step
@@ -704,16 +768,20 @@ std::string BinanceApiClient::formatDoubleWithStep(double value, double step) co
     if (step <= 0.0) {
         return std::to_string(value);
     }
-    int decimals = 0;
-    double tmp = step;
-    while (tmp < 1.0 - 1e-12 && decimals < 18) {
-        tmp *= 10.0;
-        decimals++;
-    }
     std::ostringstream ss;
     ss.setf(std::ios::fixed);
-    ss << std::setprecision(decimals) << value;
-    return ss.str();
+    // Determine decimals similarly to roundDownToStep
+    ss << std::setprecision(18) << step;
+    std::string s = ss.str();
+    while (!s.empty() && s.back() == '0') s.pop_back();
+    if (!s.empty() && s.back() == '.') s.pop_back();
+    size_t pos = s.find('.');
+    int decimals = 0;
+    if (pos != std::string::npos) decimals = (int)(s.size() - pos - 1);
+    std::ostringstream out;
+    out.setf(std::ios::fixed);
+    out << std::setprecision(decimals) << value;
+    return out.str();
 }
 
 models::ExecutionReport BinanceApiClient::parseOrderResponse(const std::string& response) const {

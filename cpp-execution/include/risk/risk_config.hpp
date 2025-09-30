@@ -42,6 +42,9 @@ namespace nlohmann {
  */
 struct PositionLimitConfig {
     std::map<std::string, double> assetLimits;
+    // Optional notional limits (quote currency, e.g., USD/USDT) per asset.
+    // When present, these will be converted to asset units at runtime using market prices.
+    std::map<std::string, double> assetNotionalLimits;
     std::map<std::string, double> strategyLimits;
     std::map<std::string, double> exchangeLimits;
     double defaultLimit = 1000.0;
