@@ -202,7 +202,16 @@ bool DataIngestionService::setupPublisher() {
         return false;
     }
 }
-
+// getLastPrice
+std::optional<double> DataIngestionService::getLastPrice(const ExchangeId& exchange, const Symbol& symbol) const {
+    if (reconstructor_) {
+        auto orderBook = reconstructor_->getOrderBook(exchange, symbol);
+        if (orderBook) {
+            return orderBook->getMidPrice();
+        }
+    }
+    return std::nullopt;
+}
 bool DataIngestionService::setupOrderBookComponents() {
     try {
         // Initialize reconstructor
