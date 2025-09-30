@@ -34,7 +34,7 @@ public:
         double position_size;    // Recommended position size [0,1]
         double uncertainty;      // Model uncertainty (trace of covariance)
         bool should_trade;       // Final trading decision
-        core::Direction direction;          // 1=BUY, -1=SELL, 0=HOLD
+        core::Direction direction;          // BUY, SELL, or NEUTRAL
     };
 
     struct ModelConfig {

@@ -111,6 +111,10 @@ double MarketDataInterface::getCurrentPrice(
     std::string cacheKey = createCacheKey(exchange, tradingPair);
     
     auto price = cache_->getCurrentPrice(cacheKey);
+    if (!price.has_value()) {
+        LOG_DEBUG("Price not found in cache for {}:{}", exchange.toString(), tradingPair.toString());
+        //throw std::runtime_error("Price not found in cache");
+    }
     return price.value_or(0.0);
 }
 
