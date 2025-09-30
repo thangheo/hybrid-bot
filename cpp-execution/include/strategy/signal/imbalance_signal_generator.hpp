@@ -234,7 +234,13 @@ private:
      * @param imbalance Source imbalance event
      * @return Generated trading signal
      */
-    TradingSignal createSignalFromImbalance(const ImbalanceEvent& imbalance);
+    TradingSignal createSignalFromImbalance(
+        const ImbalanceEvent& imbalance,
+        MomentumCorrelationPtr momentumCopy = nullptr,
+        ThresholdManagerPtr thresholdCopy = nullptr,
+        std::shared_ptr<MarketRegimeDetector> regimeDetectorCopy = nullptr,
+        std::shared_ptr<SignalPerformanceTracker> perfTrackerCopy = nullptr,
+        SignalGeneratorConfig configCopy = SignalGeneratorConfig());
     
     /**
      * @brief Check if an imbalance passes signal generation filters

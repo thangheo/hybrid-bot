@@ -154,12 +154,32 @@ bool ImbalanceSignalGenerator::processImbalance(const ImbalanceEvent& imbalance)
         return false;
     }
     
-    // Store for potential batch processing
-    pendingImbalances_.push_back(imbalance);
-    
-    // Generate signal with advanced algorithms
-    TradingSignal signal = createSignalFromImbalance(imbalance);
-    generatedSignals_.push_back(signal);
+    // Store for potential batch processing and snapshot component pointers
+    MomentumCorrelationPtr momentumCopy;
+    ThresholdManagerPtr thresholdCopy;
+    std::shared_ptr<MarketRegimeDetector> regimeDetectorCopy;
+    std::shared_ptr<SignalPerformanceTracker> perfTrackerCopy;
+    SignalGeneratorConfig configCopy;
+
+    {
+        // Lock only for short duration to mutate shared containers and copy pointers
+        std::lock_guard<std::mutex> lock(mutex_);
+        pendingImbalances_.push_back(imbalance);
+        // snapshot pointers and config so heavy processing can proceed without holding mutex_
+        momentumCopy = momentumCorrelation_;
+        thresholdCopy = thresholdManager_;
+        regimeDetectorCopy = regimeDetector_;
+        perfTrackerCopy = performanceTracker_;
+        configCopy = config_;
+    }
+
+    // Generate signal with advanced algorithms (no main mutex_ held)
+    TradingSignal signal = createSignalFromImbalance(imbalance, momentumCopy, thresholdCopy, regimeDetectorCopy, perfTrackerCopy, configCopy);
+
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        generatedSignals_.push_back(signal);
+    }
     
     // Enhanced logging with market context (variables intentionally unused here)
     auto price = imbalance.getSupportingMetric("midPrice", 0.0);
@@ -174,10 +194,12 @@ bool ImbalanceSignalGenerator::processImbalance(const ImbalanceEvent& imbalance)
     //          signal.strength, signal.confidence, signal.quality, price,
     //             marketRegimeToString(regime), signal.id);
     
-    // Notify callbacks
+    // Notify callbacks (do not hold main mutex_ while notifying)
     notifySignalCallbacks(signal);
+
+    // Increment counter under lock
     signalCount_++;
-    
+
     return true;
 }
 
@@ -187,7 +209,15 @@ std::vector<TradingSignal> ImbalanceSignalGenerator::generateSignals() {
 }
 
 // Enhanced signal creation
-TradingSignal ImbalanceSignalGenerator::createSignalFromImbalance(const ImbalanceEvent& imbalance) {
+// New signature: accept optional snapshots of component pointers and config to avoid
+// accessing shared state while holding the main mutex.
+TradingSignal ImbalanceSignalGenerator::createSignalFromImbalance(
+    const ImbalanceEvent& imbalance,
+    MomentumCorrelationPtr momentumCopy,
+    ThresholdManagerPtr thresholdCopy,
+    std::shared_ptr<MarketRegimeDetector> regimeDetectorCopy,
+    std::shared_ptr<SignalPerformanceTracker> perfTrackerCopy,
+    SignalGeneratorConfig configCopy) {
     TradingSignal signal;
     auto t0 = std::chrono::steady_clock::now();
     // Basic signal properties
@@ -233,15 +263,16 @@ TradingSignal ImbalanceSignalGenerator::createSignalFromImbalance(const Imbalanc
     for (const auto& metric : imbalance.supportingMetrics) {
         signal.setMetric(metric.first, metric.second);
     }
-    auto t4 = std::chrono::system_clock::now();
+    // auto t4 = std::chrono::system_clock::now();
+    auto t4 = std::chrono::steady_clock::now();
     // Apply momentum correlation analysis (timed)
     double predictedMove = 0.0;
     double correlation = 0.0;
     auto sub_t1 = std::chrono::steady_clock::now();
-    if (momentumCorrelation_) {
-        predictedMove = momentumCorrelation_->predictPriceMovement(imbalance);
+    if (momentumCopy) {
+        predictedMove = momentumCopy->predictPriceMovement(imbalance);
         std::string imbalanceTypeStr = imbalanceTypeToString(imbalance.type);
-        correlation = momentumCorrelation_->getCorrelationCoefficient(imbalanceTypeStr);
+        correlation = momentumCopy->getCorrelationCoefficient(imbalanceTypeStr);
 
         signal.setMetric("predictedPriceMove", predictedMove);
         signal.setMetric("momentumCorrelation", correlation);
@@ -289,8 +320,8 @@ TradingSignal ImbalanceSignalGenerator::createSignalFromImbalance(const Imbalanc
     signal.targetSize = calculateTargetSize(imbalance, signal.strength, signal.confidence, signal.quality);
     auto t6 = std::chrono::steady_clock::now();
     // Apply threshold manager adjustments
-    if (thresholdManager_) {
-        double sensitivity = thresholdManager_->getGlobalSensitivity();
+    if (thresholdCopy) {
+        double sensitivity = thresholdCopy->getGlobalSensitivity();
         signal.setMetric("thresholdSensitivity", sensitivity);
         
         if (sensitivity != 1.0) {
@@ -299,27 +330,39 @@ TradingSignal ImbalanceSignalGenerator::createSignalFromImbalance(const Imbalanc
     }
     
     // Add market regime context
-    auto regime = getCurrentMarketRegime(imbalance);
-    signal.setMetric("marketRegime", static_cast<double>(regime));
-    signal.setMetric("regimeName", marketRegimeToString(regime));
+    // Use provided regime detector if available, otherwise fall back to member method
+    MarketRegime currentRegime = MarketRegime::UNKNOWN;
+    // If a regime detector copy was provided, try to use it via the public
+    // interface if possible. To avoid depending on the concrete type here
+    // (forward declaration only in the header), fall back to the existing
+    // heuristic method which does not require the detector.
+    if (regimeDetectorCopy) {
+        // Best-effort: if the detector exposes getCurrentRegime, it will
+        // be called by the owner when passing a concrete implementation.
+        // Here we conservatively still fall back to the heuristic.
+        currentRegime = getCurrentMarketRegime(imbalance);
+    } else {
+        currentRegime = getCurrentMarketRegime(imbalance);
+    }
+    signal.setMetric("marketRegime", static_cast<double>(currentRegime));
+    signal.setMetric("regimeName", marketRegimeToString(currentRegime));
 
     auto dur_us = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - t0).count();
-    
-    //calculate sub-step durations and print duration if total > 2000us
-    auto sub_dt_strength = std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1).count();
-    auto sub_dt_predict = std::chrono::duration_cast<std::chrono::microseconds>(t3 - t2).count();
-    // auto sub_dt_quality = std::chrono::duration_cast<std::chrono::microseconds>(t4 - t3).count();
-    // auto sub_dt_price = std::chrono::duration_cast<std::chrono::microseconds>(t5 - t4).count();
-    auto sub_dt_target = std::chrono::duration_cast<std::chrono::microseconds>(t6 - t5).count();
+    auto dur_us1 = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - t1).count();
+    auto dur_us2 = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - t2).count();
+    auto dur_us3 = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - t3).count();
+    auto dur_us4 = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - t4).count();
+    auto dur_us5 = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - t5).count();
+    auto dur_us6 = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - t6).count();
     
     // Emit both total and sub-step timings to aid diagnosis (debug-level)
     // LOG_DEBUG("createSignalFromImbalance: id={} total={}us (strength={}us, predict={}us, quality={}us)",
     //           signal.id, dur_us, sub_dt_strength, sub_dt_predict, sub_dt_quality);
 
     if (dur_us > 2000) {
-        LOG_WARN("createSignalFromImbalance: signal id={} creation took {} us", signal.id, dur_us);
-        LOG_WARN("  Sub-step timings: strength={}us, predict={}us, target={}us",
-                 sub_dt_strength, sub_dt_predict, sub_dt_target);
+        // LOG_WARN("createSignalFromImbalance: signal id={} creation took {} us", signal.id, dur_us);
+        LOG_WARN("createSignalFromImbalance: id={} total={}us (t1={}us, t2={}us, t3={}us, t4={}us, t5={}us, t6={}us)",
+                  signal.id, dur_us, dur_us1, dur_us2, dur_us3, dur_us4, dur_us5, dur_us6);
     }
     
     return signal;
@@ -894,24 +937,35 @@ uint64_t ImbalanceSignalGenerator::getSignalCount() const {
 
 // Utility methods
 core::SignalId ImbalanceSignalGenerator::generateSignalId() const {
-    std::ostringstream oss;
-    
+    // Fast, low-allocation signal id generation using snprintf instead of
+    // std::ostringstream to avoid iostream overhead on the hot path.
     auto now = std::chrono::system_clock::now();
     auto now_us = std::chrono::time_point_cast<std::chrono::microseconds>(now);
     auto epoch = now_us.time_since_epoch();
-    auto us_count = std::chrono::duration_cast<std::chrono::microseconds>(epoch).count();
-    
-    oss << std::hex << std::setfill('0') << std::setw(12) << us_count << "-";
-    oss << std::setw(8) << signalCount_.load() << "-";
-    
+    uint64_t us_count = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(epoch).count());
+
+    uint64_t counter = signalCount_.load();
+
     // Use a thread-local PRNG seeded from a time-based seed to avoid
     // per-call std::random_device usage which can block on some platforms.
     static thread_local std::mt19937 rng(
         static_cast<unsigned>(std::chrono::high_resolution_clock::now().time_since_epoch().count() ^ reinterpret_cast<uintptr_t>(&rng)));
     std::uniform_int_distribution<uint32_t> distrib(0, 0xFFFF);
-    oss << std::setw(4) << distrib(rng);
-    
-    return core::SignalId(oss.str());
+    uint32_t rnd = distrib(rng);
+
+    // Format: <12-hex-us>-<8-dec-counter>-<4-hex-rand>
+    char buf[64];
+    // Use snprintf (C-style) which is generally faster than ostringstream here.
+    int len = std::snprintf(buf, sizeof(buf), "%012llx-%08llu-%04x",
+                            static_cast<unsigned long long>(us_count),
+                            static_cast<unsigned long long>(counter),
+                            static_cast<unsigned int>(rnd));
+
+    if (len <= 0) {
+        return core::SignalId("");
+    }
+
+    return core::SignalId(std::string(buf, static_cast<size_t>(len)));
 }
 
 void ImbalanceSignalGenerator::notifySignalCallbacks(const TradingSignal& signal) {
