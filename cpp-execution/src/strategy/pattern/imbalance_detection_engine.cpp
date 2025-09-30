@@ -413,27 +413,21 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                     trading::perception::BayesHandle handle = getBayesHandleForSymbol(m.exchangeId, m.symbol);
                     if (handle) signal = trading::perception::bayes_predict(handle, features);
                     //
-                    // if (++predict_counter_ % 100 == 0 ) {
-                    //     LOG_DEBUG("Bayes predict: prob={:.4f} exp_val={:.4f} pos_size={:.4f} uncert={:.4f} should_trade={} dir={}",
-                    //         signal.probability, signal.expected_value, signal.position_size, signal.uncertainty,
-                    //         signal.should_trade ? "true" : "false", (signal.direction == core::Direction::BUY ? "BUY" : (signal.direction == core::Direction::SELL ? "SELL" : "NEUTRAL")) );
-                    // }
-                    // Emit event if model indicates a trade signal with sufficient confidence
-                    if (signal.should_trade && signal.probability > 0.5) {  
+                    if (signal.should_trade) {
                         core::Direction dir = signal.direction;
-                        OrderBookMetrics mcopy = m;
                         
-                        // Add more signal metadata
+                        // Model đã quyết định direction và confidence
+                        OrderBookMetrics mcopy = m;
                         mcopy.metrics["bayes_probability"] = signal.probability;
                         mcopy.metrics["bayes_expected_value"] = signal.expected_value;
                         mcopy.metrics["bayes_position_size"] = signal.position_size;
                         mcopy.metrics["bayes_uncertainty"] = signal.uncertainty;
                         
-                        // Use position_size as event strength instead of just probability
-                        double event_strength = signal.position_size;  // Already incorporates confidence
+                        double event_strength = signal.position_size;
                         createImbalanceEventForBayesModel(ImbalanceType::CUSTOM, event_strength,
-                            dir, mcopy, signal.probability, signal.uncertainty);
+                                                        dir, mcopy, signal.probability, signal.uncertainty);
                     }
+                    
                 } catch (const std::exception &ex) {
                     LOG_WARN("Bayes predict threw: {}", ex.what());
                 } catch (...) {
@@ -451,6 +445,35 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                     std::lock_guard<std::mutex> pl(pendingTrainingMutex_);
                     auto now = m.timestamp;
                     // OPTION 1: Symmetric thresholds
+                    // while (!pendingTraining_.empty()) {
+                    //     const auto &pt = pendingTraining_.front();
+                        
+                    //     if (now - pt.timestamp >= labelingDelay_) {
+                    //         double priceNow = m.midPrice;
+                    //         double priceThen = pt.midPrice;
+                    //         double priceChangePct = (priceNow - priceThen) / priceThen;
+                            
+                    //         int label;
+                    //         const double THRESHOLD = 0.15/100;  // 0.15% symmetric threshold
+                    //         //what is 1 and what is 0?
+
+                    //         if (priceChangePct > THRESHOLD) {
+                    //             label = 1;  // Price up
+                    //         } else if (priceChangePct < -THRESHOLD) {
+                    //             label = 0;  // Price down  
+                    //         } else {
+                    //             // Skip neutral moves - don't train on noise
+                    //             pendingTraining_.pop_front();
+                    //             continue;
+                    //         }
+                            
+                    //         toTrain.emplace_back(pt.features, label, pt.exchangeId, pt.symbol);
+                    //         pendingTraining_.pop_front();
+                    //     } else {
+                    //         break;
+                    //     }
+                    // }
+                    //OPTION 2: Asymmetric thresholds
                     while (!pendingTraining_.empty()) {
                         const auto &pt = pendingTraining_.front();
                         
@@ -460,11 +483,12 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                             double priceChangePct = (priceNow - priceThen) / priceThen;
                             
                             int label;
-                            const double THRESHOLD = 0.1/100;  // 0.1% symmetric threshold
-                            
-                            if (priceChangePct > THRESHOLD) {
+                            const double UP_THRESHOLD = 0.13/100;    // 0.1% threshold for price up
+                            const double DOWN_THRESHOLD = 0.2/100;  // 0.2% threshold for price down
+
+                            if (priceChangePct > UP_THRESHOLD) {
                                 label = 1;  // Price up
-                            } else if (priceChangePct < -THRESHOLD) {
+                            } else if (priceChangePct < -DOWN_THRESHOLD) {
                                 label = 0;  // Price down  
                             } else {
                                 // Skip neutral moves - don't train on noise

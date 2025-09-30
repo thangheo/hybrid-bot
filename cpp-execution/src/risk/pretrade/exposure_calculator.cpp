@@ -329,11 +329,12 @@ private:
             try {
                 if (dataInterface_) {
                     // First try current price API
-                    const double p = dataInterface_->getCurrentPrice(context.symbol.toString());
+                    const double p = dataInterface_->getCurrentPrice(context.symbol, context.exchangeId.toString());
                     if (p > 0.0) {
                         context.price = p;
                     } else {
                         // As a secondary fallback, try getting MarketData and use bid/ask mid if available
+                        //there is no fucking reason to come to this place if we have a data interface
                         auto mdOpt = dataInterface_->getMarketData(context.symbol);
                         if (mdOpt.has_value()) {
                             const auto& md = mdOpt.value();
