@@ -447,14 +447,14 @@ void OrderBookReconstructor::publishOrderBook(const std::shared_ptr<OrderBook>& 
     try {
         // Get the full order book snapshot
         OrderBookUpdate update = orderBook->getSnapshot();
-    //we reduce the update frequency to 1 per second per symbol
+    //we reduce the update frequency to 10 per second per symbol
     static std::unordered_map<std::string, core::Timestamp> lastPublishTime;
     auto now = std::chrono::system_clock::now();
     std::string key = orderBook->getExchangeId().toString() + ":" + orderBook->getSymbol().toString();
     if (lastPublishTime.find(key) != lastPublishTime.end()) {
-        auto duration = std::chrono::duration_cast<std::chrono::seconds>(now - lastPublishTime[key]).count();
-        if (duration < 1) {
-            return; // Skip publishing if less than 1 second since last publish
+        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastPublishTime[key]).count();
+        if (duration < 100) {
+            return; // Skip publishing if less than 100 milliseconds since last publish
         }
     }
     lastPublishTime[key] = now;
