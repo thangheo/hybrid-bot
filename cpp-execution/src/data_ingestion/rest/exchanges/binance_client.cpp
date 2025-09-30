@@ -82,9 +82,49 @@ BinanceClient::BinanceClient() : m_base_url(MAINNET_URL) , clockOffsetMs_(0), de
     } else {
         LOG_INFO("BinanceClient: BINANCE_API_KEY/BINANCE_API_SECRET not set; private endpoints require explicit credentials");
     }
+
+    // Configure periodic time resync interval from environment variable
+    const char* env_resync = std::getenv("BINANCE_TIME_RESYNC_INTERVAL_SEC");
+    if (env_resync) {
+        try {
+            int v = std::stoi(std::string(env_resync));
+            if (v > 0) timeResyncIntervalSec_ = v;
+        } catch (...) {
+            // ignore invalid values and keep default
+        }
+    }
+
+    // Start background thread for periodic server time resync
+    timeResyncRunning_.store(true);
+    timeResyncThread_ = std::thread([this]() {
+        std::unique_lock<std::mutex> lk(this->timeResyncMutex_);
+        while (this->timeResyncRunning_.load()) {
+            // Wait for interval or until signaled to stop
+            auto now = std::chrono::system_clock::now();
+            auto wake = now + std::chrono::seconds(this->timeResyncIntervalSec_);
+            this->timeResyncCv_.wait_until(lk, wake, [this]() { return !this->timeResyncRunning_.load(); });
+            if (!this->timeResyncRunning_.load()) break;
+
+            try {
+                if (!this->resyncServerTime()) {
+                    LOG_WARN("BinanceClient: periodic server time resync attempt failed");
+                }
+            } catch (const std::exception& e) {
+                LOG_WARN("BinanceClient: periodic server time resync threw: {}", e.what());
+            }
+        }
+    });
 }
 
 BinanceClient::~BinanceClient() {
+    // Stop background resync thread
+    try {
+        timeResyncRunning_.store(false);
+        timeResyncCv_.notify_all();
+        if (timeResyncThread_.joinable()) timeResyncThread_.join();
+    } catch (...) {
+        // destructor should not throw
+    }
 }
 void BinanceClient::setApiKey(const std::string& key, const std::string& secret) {
     {
@@ -242,7 +282,14 @@ double BinanceClient::getPrice(const std::string& symbol) {
         }
 
         if (root.contains("price")) {
-            return root["price"].get<double>();
+            // Binance sometimes returns price as string ("123.45") or number
+            if (root["price"].is_string()) {
+                return std::stod(root["price"].get<std::string>());
+            } else if (root["price"].is_number()) {
+                return root["price"].get<double>();
+            } else {
+                throw std::runtime_error("Unexpected type for price field");
+            }
         } else {
             throw std::runtime_error("Price not found in response");
         }
@@ -352,10 +399,23 @@ OrderInfo BinanceClient::getOrderStatus(const std::string& symbol, const std::st
 
         orderInfo.orderId = root["orderId"].get<std::string>();
         orderInfo.symbol = root["symbol"].get<std::string>();
-        orderInfo.price = root["price"].get<double>();
-        orderInfo.quantity = root["origQty"].get<double>();
-        orderInfo.executedQty = root["executedQty"].get<double>();
-        orderInfo.timestamp = root["time"].get<long long>();
+        // Robust parsing: Binance fields may come as strings or numbers
+        if (root.contains("price")) {
+            if (root["price"].is_string()) orderInfo.price = std::stod(root["price"].get<std::string>());
+            else orderInfo.price = root["price"].get<double>();
+        }
+        if (root.contains("origQty")) {
+            if (root["origQty"].is_string()) orderInfo.quantity = std::stod(root["origQty"].get<std::string>());
+            else orderInfo.quantity = root["origQty"].get<double>();
+        }
+        if (root.contains("executedQty")) {
+            if (root["executedQty"].is_string()) orderInfo.executedQty = std::stod(root["executedQty"].get<std::string>());
+            else orderInfo.executedQty = root["executedQty"].get<double>();
+        }
+        if (root.contains("time")) {
+            if (root["time"].is_string()) orderInfo.timestamp = std::stoll(root["time"].get<std::string>());
+            else orderInfo.timestamp = root["time"].get<long long>();
+        }
         
         // Parse status
         std::string status = root["status"].get<std::string>();
