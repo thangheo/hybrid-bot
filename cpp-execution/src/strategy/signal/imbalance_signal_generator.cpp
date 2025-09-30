@@ -161,9 +161,10 @@ bool ImbalanceSignalGenerator::processImbalance(const ImbalanceEvent& imbalance)
     TradingSignal signal = createSignalFromImbalance(imbalance);
     generatedSignals_.push_back(signal);
     
-    // Enhanced logging with market context
+    // Enhanced logging with market context (variables intentionally unused here)
     auto price = imbalance.getSupportingMetric("midPrice", 0.0);
     auto regime = getCurrentMarketRegime(imbalance);
+    (void)price; (void)regime;
     
     // LOG_DEBUG("Enhanced signal generated: Type={}, Direction={}, Strength={:.3f}, "
     //          "Confidence={:.2f}, Quality={:.3f}, Price={:.2f}, Regime={}, SignalID={}",
@@ -207,7 +208,9 @@ TradingSignal ImbalanceSignalGenerator::createSignalFromImbalance(const Imbalanc
     // Advanced strength calculation (measure sub-step latency)
     auto sub_t0 = std::chrono::steady_clock::now();
     auto strengthComponents = calculateSignalStrength(imbalance);
-    auto sub_dt_strength = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - sub_t0).count();
+    auto sub_elapsed_strength = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - sub_t0).count();
+    // record calculation timing so it is not unused and is available for debugging
+    signal.setMetric("timing_strength_calc_us", static_cast<double>(sub_elapsed_strength));
     signal.strength = strengthComponents.finalStrength;
     // Avoid expensive string serialization on hot path; expose numeric components as metrics
     signal.setMetric("strength_base", strengthComponents.baseStrength);
@@ -256,7 +259,8 @@ TradingSignal ImbalanceSignalGenerator::createSignalFromImbalance(const Imbalanc
         double confidenceMultiplier = calculateConfidenceMultiplier(absCorrelation, alignmentCorrect);
         signal.confidence = std::clamp(signal.confidence * confidenceMultiplier, 0.0, 1.0);
     }
-    auto sub_dt_predict = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - sub_t1).count();
+    auto sub_elapsed_predict = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - sub_t1).count();
+    signal.setMetric("timing_predict_calc_us", static_cast<double>(sub_elapsed_predict));
     auto t5 = std::chrono::steady_clock::now();
     //if direction is BUY then set price to best ask else if SELL set to best bid
     if (imbalance.direction == core::Direction::BUY) {
@@ -270,7 +274,8 @@ TradingSignal ImbalanceSignalGenerator::createSignalFromImbalance(const Imbalanc
     // Calculate comprehensive quality metrics (timed). Avoid string serialization.
     auto sub_t2 = std::chrono::steady_clock::now();
     auto qualityMetrics = calculateSignalQuality(signal, predictedMove, correlation);
-    auto sub_dt_quality = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - sub_t2).count();
+    auto sub_elapsed_quality = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - sub_t2).count();
+    signal.setMetric("timing_quality_calc_us", static_cast<double>(sub_elapsed_quality));
     signal.quality = qualityMetrics.finalQuality;
     signal.setMetric("quality_strengthComp", qualityMetrics.strengthComponent);
     signal.setMetric("quality_confComp", qualityMetrics.confidenceComponent);
