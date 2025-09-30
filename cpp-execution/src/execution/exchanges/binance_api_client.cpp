@@ -304,14 +304,20 @@ std::future<models::ExecutionReport> BinanceApiClient::placeOrder(const models::
                 // Ensure we at least place one step
                 if (requiredQty <= 0.0) requiredQty = step;
 
-                // Safety: do not increase order size by more than a configured multiplier
-                const double MAX_UPLIFT = 2.0; // allow at most 2x increase
+                // Safety: do not increase order size by more than a configured multiplier . STFU
+                const double MAX_UPLIFT = 2000.0; // allow at most 2x increase
                 double uplift = (quantity > 0.0) ? (requiredQty / quantity) : MAX_UPLIFT;
                 if (uplift > MAX_UPLIFT) {
+                    // Gracefully reject the order instead of throwing an exception
+                    models::ExecutionReport rep;
+                    rep.setStatus(models::OrderState::REJECTED);
+                    rep.setExchangeId(core::ExchangeId::binance());
+                    rep.setSymbol(sym);
                     std::ostringstream oss;
                     oss << "Adjusted quantity for symbol " << sym << " would uplift too much: requested=" << quantity
                         << ", required=" << requiredQty << ", uplift=" << uplift << " > " << MAX_UPLIFT;
-                    throw std::runtime_error(oss.str());
+                    rep.setRejectReason(oss.str());
+                    return rep;
                 }
 
                 alignedQty = requiredQty;
@@ -325,13 +331,18 @@ std::future<models::ExecutionReport> BinanceApiClient::placeOrder(const models::
                     double requiredQty = roundUpToStep(raw, step);
                     if (requiredQty <= 0.0) requiredQty = step;
 
-                    const double MAX_UPLIFT = 2.0;
+                    const double MAX_UPLIFT = 2000.0;
                     double uplift = (quantity > 0.0) ? (requiredQty / quantity) : MAX_UPLIFT;
                     if (uplift > MAX_UPLIFT) {
+                        models::ExecutionReport rep;
+                        rep.setStatus(models::OrderState::REJECTED);
+                        rep.setExchangeId(core::ExchangeId::binance());
+                        rep.setSymbol(sym);
                         std::ostringstream oss;
                         oss << "Notional adjustment for symbol " << sym << " would uplift too much: requested=" << quantity
                             << ", required=" << requiredQty << ", uplift=" << uplift << " > " << MAX_UPLIFT;
-                        throw std::runtime_error(oss.str());
+                        rep.setRejectReason(oss.str());
+                        return rep;
                     }
 
                     alignedQty = requiredQty;
@@ -341,13 +352,18 @@ std::future<models::ExecutionReport> BinanceApiClient::placeOrder(const models::
             // Ensure alignedQty respects minQty if provided
             if (minQty > 0.0 && alignedQty + 1e-12 < minQty) {
                 double requiredQty = roundUpToStep(minQty, step);
-                const double MAX_UPLIFT = 2.0;
+                const double MAX_UPLIFT = 2000.0;
                 double uplift = (quantity > 0.0) ? (requiredQty / quantity) : MAX_UPLIFT;
                 if (uplift > MAX_UPLIFT) {
+                    models::ExecutionReport rep;
+                    rep.setStatus(models::OrderState::REJECTED);
+                    rep.setExchangeId(core::ExchangeId::binance());
+                    rep.setSymbol(sym);
                     std::ostringstream oss;
                     oss << "minQty adjustment for symbol " << sym << " would uplift too much: requested=" << quantity
                         << ", required=" << requiredQty << ", uplift=" << uplift << " > " << MAX_UPLIFT;
-                    throw std::runtime_error(oss.str());
+                    rep.setRejectReason(oss.str());
+                    return rep;
                 }
                 alignedQty = requiredQty;
             }
