@@ -71,7 +71,7 @@ trading::perception::BayesHandle trading::strategy::ImbalanceDetectionEngine::ge
             std::string path = buildSymbolModelPath(bayesModelDirectory_, exch, sym);
             if (!path.empty() && std::filesystem::exists(path)) {
                 trading::perception::bayes_load(h, path);
-                LOG_DEBUG("ImbalanceDetectionEngine: loaded per-symbol bayes model {}", path);
+                // LOG_DEBUG("ImbalanceDetectionEngine: loaded per-symbol bayes model {}", path);
             }
         } catch (const std::exception &ex) {
             LOG_WARN("ImbalanceDetectionEngine: failed to load per-symbol bayes model: {}", ex.what());
@@ -166,7 +166,6 @@ SimpleThreadPool &getDetectorThreadPool() {
     return pool;
 }
 } // namespace
-
  
  // Constructor
 ImbalanceDetectionEngine::ImbalanceDetectionEngine() : nextCallbackId_(0) {
@@ -414,15 +413,14 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                     trading::perception::BayesHandle handle = getBayesHandleForSymbol(m.exchangeId, m.symbol);
                     if (handle) signal = trading::perception::bayes_predict(handle, features);
                     //
-                    if (++predict_counter_ % 100 == 0 || signal.should_trade) {
-                        // print for debug for every 100 signals if signal.probability > 0.1
-                        // LOG_DEBUG("Bayes predict: prob={:.4f} exp_val={:.4f} pos_size={:.4f} uncert={:.4f} should_trade={} dir={}",
-                        //     signal.probability, signal.expected_value, signal.position_size, signal.uncertainty,
-                        //     signal.should_trade ? "true" : "false", signal.direction);
+                    if (++predict_counter_ % 100 == 0 ) {
+                        LOG_DEBUG("Bayes predict: prob={:.4f} exp_val={:.4f} pos_size={:.4f} uncert={:.4f} should_trade={} dir={}",
+                            signal.probability, signal.expected_value, signal.position_size, signal.uncertainty,
+                            signal.should_trade ? "true" : "false", (signal.direction == core::Direction::BUY ? "BUY" : (signal.direction == core::Direction::SELL ? "SELL" : "NEUTRAL")) );
                     }
                     // Emit event if model indicates a trade signal with sufficient confidence
-                    if (signal.should_trade && signal.probability > 0.5) {  // Add confidence threshold
-                        Direction dir = (signal.direction > 0) ? Direction::BUY : Direction::SELL;
+                    if (signal.should_trade && signal.probability > 0.5) {  
+                        core::Direction dir = signal.direction;
                         OrderBookMetrics mcopy = m;
                         
                         // Add more signal metadata
@@ -433,15 +431,9 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                         
                         // Use position_size as event strength instead of just probability
                         double event_strength = signal.position_size;  // Already incorporates confidence
-                        createImbalanceEvent(ImbalanceType::CUSTOM, event_strength, dir, mcopy);
+                        createImbalanceEventForBayesModel(ImbalanceType::CUSTOM, event_strength,
+                            dir, mcopy, signal.probability, signal.uncertainty);
                     }
-                    // if (signal.should_trade) {
-                    //     Direction dir = (signal.direction > 0) ? Direction::BUY : Direction::SELL;
-                    //     OrderBookMetrics mcopy = m;
-                    //     mcopy.metrics["bayes_probability"] = signal.probability;
-                    //     // Use model probability as the event strength (0..1)
-                    //     createImbalanceEvent(ImbalanceType::CUSTOM, signal.probability, dir, mcopy);
-                    // }
                 } catch (const std::exception &ex) {
                     LOG_WARN("Bayes predict threw: {}", ex.what());
                 } catch (...) {
@@ -468,7 +460,7 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                             double priceChangePct = (priceNow - priceThen) / priceThen;
                             
                             int label;
-                            const double THRESHOLD = 0.15/100;  // 0.15% symmetric threshold
+                            const double THRESHOLD = 0.1/100;  // 0.1% symmetric threshold
                             
                             if (priceChangePct > THRESHOLD) {
                                 label = 1;  // Price up
@@ -507,7 +499,7 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                                 bool doSave = false;
                                 int modelUpdates = trading::perception::bayes_get_num_updates(handle);
                                 if (modelUpdates < requireModelReadyUpdates_) {
-                                    LOG_DEBUG("ImbalanceDetectionEngine: per-symbol bayes model has {} updates (< required {}), skipping save check", modelUpdates, requireModelReadyUpdates_);
+                                    // LOG_DEBUG("ImbalanceDetectionEngine: per-symbol bayes model has {} updates (< required {}), skipping save check", modelUpdates, requireModelReadyUpdates_);
                                 } else {
                                     if (config_.bayesSaveAfterUpdates > 0) {
                                         if (--bayesSaveAfterUpdates_ <= 0) {
@@ -2803,6 +2795,65 @@ double ImbalanceDetectionEngine::calculateVariance(const std::vector<double>& da
     // Option 2: Event bus only (better for decoupling)
     common::EventBus::getInstance().publish(events::ImbalanceDetectedEvent{event});
 }
+
+void ImbalanceDetectionEngine::createImbalanceEventForBayesModel(ImbalanceType type, double strength,
+    core::Direction direction, const OrderBookMetrics& metrics, double bayesProbability, double uncertainty) {
+    // Validate inputs
+    if (strength < 0.0 || strength > 1.0) {
+        LOG_WARN("Invalid strength value: {}", strength);
+        return;
+    }
+    
+    if (direction == core::Direction::NEUTRAL) {
+        LOG_WARN("Cannot create imbalance event with NEUTRAL direction");
+        return;
+    }
+    
+    ImbalanceEvent event;
+    event.type = type;
+    event.strength = std::clamp(strength, 0.0, 1.0);
+    event.direction = direction;
+    event.detectionTime = std::chrono::system_clock::now();
+    event.exchangeId = metrics.exchangeId;
+    event.symbol = metrics.symbol;
+    
+    // event.confidence = trading::core::valueToConfidenceLevel(calculateImbalanceConfidence(type, strength, metrics)); 
+    event.eventId = generateEventId();
+    //convert probability to confidence level
+    // event.confidence = trading::core::valueToConfidenceLevel(bayesProbability);
+    auto confidence = static_cast<int>((bayesProbability * (1.0 - uncertainty)) * 100);
+    event.confidence = trading::core::valueToConfidenceLevel(confidence);
+    // Copy relevant metrics
+    for (const auto& metric : metrics.metrics) {
+        event.supportingMetrics[metric.first] = metric.second;
+    }
+    //only print for every 100 events
+    static std::atomic<int> eventCounter{0};
+    int count = ++eventCounter;
+    if (count % 1000 == 0 || event.strength > 0.2) {
+        LOG_DEBUG("createImbalanceEventForBayesModel: created ImbalanceEvent id={} type={} strength={} dir={}, confidence={} bayesProb={} for {}:{} on thread {}, count ={}",
+                event.eventId,
+                static_cast<int>(event.type),
+                event.strength,
+                static_cast<int>(event.direction),
+                static_cast<int>(event.confidence),
+                bayesProbability,
+                event.exchangeId,
+                event.symbol,
+                std::this_thread::get_id(),
+                count);
+    }
+
+    // Publish to EventBus / callbacks unless publishing is disabled for debugging
+    if (!publishEvents_.load()) {
+        LOG_DEBUG("ImbalanceDetectionEngine: publishing disabled, skipping ImbalanceEvent id={}", event.eventId);
+        return;
+    }
+
+    // Option 2: Event bus only (better for decoupling)
+    common::EventBus::getInstance().publish(events::ImbalanceDetectedEvent{event});    
+}
+
  void ImbalanceDetectionEngine::notifyImbalanceCallbacks(const ImbalanceEvent& event) {
     if (!publishEvents_.load()) {
         LOG_DEBUG("ImbalanceDetectionEngine: publishing disabled, skipping callback notify for eventId={}", event.eventId);

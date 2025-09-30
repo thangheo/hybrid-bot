@@ -131,7 +131,7 @@ private:
     std::atomic<bool> orderbookWorkersRunning_{false};
     size_t orderbookQueueLimit_ = 20000; // hard cap (increased to handle bursts)
     size_t orderbookBatchSize_ = 40; // number of updates per batch (larger batches)
-    size_t orderbookWorkerCount_ = 4; // increased worker count for faster consumption on upgraded VPS
+    size_t orderbookWorkerCount_ = 1; // increased worker count for faster consumption on upgraded VPS
 
     // Signal processing queue and worker pool
     std::deque<strategy::TradingSignal> signalQueue_;
@@ -151,7 +151,7 @@ private:
     std::atomic<bool> strategyOrderbookWorkersRunning_{false};
     size_t strategyOrderbookQueueLimit_ = 20000;
     size_t strategyOrderbookBatchSize_ = 16;
-    size_t strategyOrderbookWorkerCount_ = 4;
+    size_t strategyOrderbookWorkerCount_ = 2;
 
     // Execution task queue and worker pool (avoid spawning detached threads)
     std::deque<execution::TradingSignal> execQueue_;

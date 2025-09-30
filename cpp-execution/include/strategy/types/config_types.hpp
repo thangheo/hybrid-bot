@@ -193,8 +193,8 @@
   * Configuration for ImbalanceSignalGenerator
   */
  struct SignalGeneratorConfig {
-     double minSignalStrength = 0.1;        // Minimum signal strength to generate
-     double confidenceThreshold = 0.2;      // Minimum confidence for signal generation
+     double minSignalStrength = 0.01;        // Minimum signal strength to generate
+     double confidenceThreshold = 0.5;      // Minimum confidence for signal generation
      uint64_t signalTtlMs = 500;           // Time-to-live for signals in milliseconds
      double minPredictionThreshold = 0.01;   // Minimum prediction threshold to consider
      double qualityBase = 0.5;              // Base quality score

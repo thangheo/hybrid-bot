@@ -10,7 +10,8 @@
 #include <algorithm>
 #include <mutex>
 #include <jsoncpp/json/json.h>
-
+#include <core/direction.hpp>
+using namespace trading::core;
 /**
  * BayesianTradingModel - Online Bayesian Learning for Trading Signals
  * 
@@ -33,7 +34,7 @@ public:
         double position_size;    // Recommended position size [0,1]
         double uncertainty;      // Model uncertainty (trace of covariance)
         bool should_trade;       // Final trading decision
-        int direction;          // 1=BUY, -1=SELL, 0=HOLD
+        core::Direction direction;          // 1=BUY, -1=SELL, 0=HOLD
     };
 
     struct ModelConfig {

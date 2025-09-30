@@ -165,13 +165,13 @@ bool ImbalanceSignalGenerator::processImbalance(const ImbalanceEvent& imbalance)
     auto price = imbalance.getSupportingMetric("midPrice", 0.0);
     auto regime = getCurrentMarketRegime(imbalance);
     
-    LOG_DEBUG("Enhanced signal generated: Type={}, Direction={}, Strength={:.3f}, "
-             "Confidence={:.2f}, Quality={:.3f}, Price={:.2f}, Regime={}, SignalID={}",
-             imbalanceTypeToString(imbalance.type),
-             (imbalance.direction == core::Direction::BUY ? "BUY" : 
-              (imbalance.direction == core::Direction::SELL ? "SELL" : "NEUTRAL")),
-             signal.strength, signal.confidence, signal.quality, price,
-                marketRegimeToString(regime), signal.id);
+    // LOG_DEBUG("Enhanced signal generated: Type={}, Direction={}, Strength={:.3f}, "
+    //          "Confidence={:.2f}, Quality={:.3f}, Price={:.2f}, Regime={}, SignalID={}",
+    //          imbalanceTypeToString(imbalance.type),
+    //          (imbalance.direction == core::Direction::BUY ? "BUY" : 
+    //           (imbalance.direction == core::Direction::SELL ? "SELL" : "NEUTRAL")),
+    //          signal.strength, signal.confidence, signal.quality, price,
+    //             marketRegimeToString(regime), signal.id);
     
     // Notify callbacks
     notifySignalCallbacks(signal);
@@ -282,7 +282,7 @@ TradingSignal ImbalanceSignalGenerator::createSignalFromImbalance(const Imbalanc
     if (dur_us > 2000) {
         LOG_DEBUG("createSignalFromImbalance: signal id={} creation took {} us", signal.id, dur_us);
     } else {
-        LOG_DEBUG("createSignalFromImbalance: took {} us", dur_us);
+        // LOG_DEBUG("createSignalFromImbalance: took {} us", dur_us);
     }
     
     return signal;
@@ -291,9 +291,9 @@ TradingSignal ImbalanceSignalGenerator::createSignalFromImbalance(const Imbalanc
 // Enhanced filtering with regime awareness
 bool ImbalanceSignalGenerator::passesSignalFilters(const ImbalanceEvent& imbalance) const {
     // Basic strength check
-    if (imbalance.strength < config_.minSignalStrength) {
-        return false;
-    }
+    // if (imbalance.strength < config_.minSignalStrength) {
+    //     return false;
+    // }
     
     // Basic confidence check
     if (trading::core::confidenceLevelToValue(imbalance.confidence) < config_.confidenceThreshold) {
@@ -707,15 +707,15 @@ MarketRegime ImbalanceSignalGenerator::getCurrentMarketRegime(const ImbalanceEve
     }
     
     // Fallback to simple heuristics based on available metrics
-    double volatility = imbalance.getSupportingMetric("volatility", 0.01);
-    double trend = imbalance.getSupportingMetric("trendStrength", 0.0);
-    double stress = imbalance.getSupportingMetric("stressIndicator", 0.0);
+    // double volatility = imbalance.getSupportingMetric("volatility", 0.01);
+    // double trend = imbalance.getSupportingMetric("trendStrength", 0.0);
+    // double stress = imbalance.getSupportingMetric("stressIndicator", 0.0);
     auto regime_number = imbalance.getSupportingMetric("marketRegime", static_cast<double>(MarketRegime::UNKNOWN));
     if (regime_number >= static_cast<double>(MarketRegime::NORMAL) && regime_number <= static_cast<double>(MarketRegime::UNKNOWN)) {
         // LOG_DEBUG("Current market regime: {}", marketRegimeToString(static_cast<MarketRegime>(static_cast<int>(regime_number))));
         return static_cast<MarketRegime>(static_cast<int>(regime_number));
     }
-    //print current regime string // you call yourself, you put stuff in your anus?
+    
     // LOG_DEBUG("Current market regime: {}", marketRegimeToString(static_cast<MarketRegime>(static_cast<int>(regime_number))));
     return MarketRegime::UNKNOWN;
 }

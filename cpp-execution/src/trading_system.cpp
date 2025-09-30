@@ -1028,26 +1028,29 @@ void Trading_system::orderbookWorkerLoop(size_t workerId) {
 }
 
 void Trading_system::strategyOrderbookWorkerLoop(size_t workerId) {
-    std::vector<std::shared_ptr<OrderBook>> batch;
-    batch.reserve(strategyOrderbookBatchSize_);
+    // Use a local deque to swap the shared queue with -- this minimizes lock hold time
+    std::deque<std::shared_ptr<OrderBook>> localDeque;
     std::cout << "Strategy orderbook worker " << workerId << " started" << std::endl;
     while (strategyOrderbookWorkersRunning_.load()) {
+        // Wait until there's work or we are shutting down
         std::unique_lock<std::mutex> lk(strategyOrderbookQueueMutex_);
         strategyOrderbookQueueCv_.wait_for(lk, std::chrono::milliseconds(100), [this]() {
             return !strategyOrderbookQueue_.empty() || !strategyOrderbookWorkersRunning_.load();
         });
         if (!strategyOrderbookWorkersRunning_.load() && strategyOrderbookQueue_.empty()) break;
 
-        batch.clear();
-        for (size_t i = 0; i < strategyOrderbookBatchSize_ && !strategyOrderbookQueue_.empty(); ++i) {
-            batch.push_back(std::move(strategyOrderbookQueue_.front()));
-            strategyOrderbookQueue_.pop_front();
-        }
+        // Swap the entire shared queue into localDeque. This is O(1) and very cheap.
+        localDeque.clear();
+        localDeque.swap(strategyOrderbookQueue_);
         lk.unlock();
 
-        if (batch.empty()) continue;
+        if (localDeque.empty()) continue;
 
-        for (const auto &ob_ptr : batch) {
+        // Process up to the configured batch size from localDeque
+        size_t toProcess = std::min(strategyOrderbookBatchSize_, localDeque.size());
+        for (size_t i = 0; i < toProcess; ++i) {
+            auto ob_ptr = std::move(localDeque.front());
+            localDeque.pop_front();
             try {
                 if (strategyEngine_ && ob_ptr) {
                     strategyEngine_->processOrderBook(*ob_ptr);
@@ -1055,6 +1058,22 @@ void Trading_system::strategyOrderbookWorkerLoop(size_t workerId) {
             } catch (const std::exception &e) {
                 std::cerr << "Strategy orderbook worker " << workerId << " error: " << e.what() << std::endl;
             }
+        }
+
+        // If there are leftovers in localDeque, push them back into the shared queue in a single locked section.
+        if (!localDeque.empty()) {
+            std::unique_lock<std::mutex> lk2(strategyOrderbookQueueMutex_);
+            // Ensure we respect the queue limit: drop oldest when necessary
+            while (!localDeque.empty()) {
+                if (strategyOrderbookQueue_.size() >= strategyOrderbookQueueLimit_) {
+                    strategyOrderbookQueue_.pop_front();
+                }
+                strategyOrderbookQueue_.push_back(std::move(localDeque.front()));
+                localDeque.pop_front();
+            }
+            // Notify one worker that new items are available again
+            lk2.unlock();
+            strategyOrderbookQueueCv_.notify_one();
         }
     }
     std::cout << "Strategy orderbook worker " << workerId << " stopped" << std::endl;
@@ -1140,10 +1159,10 @@ void Trading_system::signalWorkerLoop(size_t workerId) {
 
                 // Basic filtering
                 if (execSignal.direction == core::Direction::BUY) {
-                    if (execSignal.strength < 0.5) continue;
-                    if (execSignal.confidence < 0.6) continue;
+                    // if (execSignal.strength < 0.5) continue;
+                    if (execSignal.confidence < 0.5) continue;
                 } else if (execSignal.direction == core::Direction::SELL) {
-                    if (execSignal.strength < 0.3) continue;
+                    // if (execSignal.strength < 0.3) continue;
                     if (execSignal.confidence < 0.6) continue;
                 }
                 //recalculate targetSize based on limit money
