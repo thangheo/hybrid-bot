@@ -1176,36 +1176,26 @@ void Trading_system::signalWorkerLoop(size_t workerId) {
                               << " - No allowed position size" << std::endl;
                     continue; // no allowed size
                 }
-                execSignal.targetSize = std::max(allowedSize, execSignal.targetSize);
-                // double sizerFraction = 1.0;
-                // if (positionSizer_) {
-                //     std::map<std::string, double> metrics;
-                //     // Minimal metrics: use confidence as a rough proxy for win_rate
-                //     metrics["win_rate"] = execSignal.confidence;
-                //     metrics["volatility"] = signal.getMetric("volatility", 0.05);
-                //     std::cout << "Using volatility metric for position sizing: " << metrics["volatility"] << std::endl;
-                //     // placeholder volatility - can be replaced with real vol from market data
-                //     // metrics["volatility"] = 0.05;
-                //     std::map<std::string, double> portfolio;
-                //     sizerFraction = positionSizer_->calculateSize(execSignal.symbol.toString(), metrics, portfolio);
-                //     sizerFraction = std::clamp(sizerFraction, 0.0, 1.0);
-                // }
-                // double positionSize = allowedSize * sizerFraction;
-                // // clamp this to
-                // double finalQty = positionSize * execSignal.targetSize;
-                // clamp to limit exposure or it will be rejected by risk
-                // finalQty = std::clamp(finalQty, 0.0, allowedSize);
+                // execSignal.targetSize = std::min(allowedSize, execSignal.targetSize);
+                double sizerFraction = 1.0;
+                if (positionSizer_) {
+                    std::map<std::string, double> metrics;
+                    // Minimal metrics: use confidence as a rough proxy for win_rate
+                    metrics["win_rate"] = execSignal.confidence;
+                    metrics["volatility"] = signal.getMetric("volatility", 0.05);
+                    std::cout << "Using volatility metric for position sizing: " << metrics["volatility"] << std::endl;
+                    // placeholder volatility - can be replaced with real vol from market data
+                    // metrics["volatility"] = 0.05;
+                    std::map<std::string, double> portfolio;
+                    sizerFraction = positionSizer_->calculateSize(execSignal.symbol.toString(), metrics, portfolio);
+                    sizerFraction = std::clamp(sizerFraction, 0.0, 1.0);
+                }
+                double positionSize = allowedSize * sizerFraction;
+                // clamp this to
+                double finalQty = positionSize * execSignal.targetSize;
+                finalQty = std::clamp(finalQty, 0.0, allowedSize);
               
-                // finalQty = std::max(finalQty, 0.01);
-
-                // execSignal.targetSize = finalQty; // now this is absolute size
-                // if (execSignal.targetSize < 0.0001) {
-                //     std::cout << "🛑 Signal rejected: " << execSignal.id 
-                //               << " for " << execSignal.symbol.toString() 
-                //               << " - TargetSize too small: " << execSignal.targetSize 
-                //               << std::endl;
-                //     continue; // too small
-                // }
+                execSignal.targetSize = finalQty; // now this is absolute size
 
                 //check if price target percentage > 0.2%
                 for (const auto& target : execSignal.targets) {
