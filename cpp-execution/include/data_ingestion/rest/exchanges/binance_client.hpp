@@ -12,6 +12,9 @@
 // nlohmann json for JSON parsing
 #include <nlohmann/json.hpp>
 #include <mutex>
+#include <thread>
+#include <atomic>
+#include <condition_variable>
 
 using namespace trading::core;
 // Forward declarations
@@ -135,6 +138,14 @@ private:
     
     // Mutex for protecting API credentials only
     mutable std::mutex apiMutex_;
+
+    // Background thread for periodic server time resync
+    std::thread timeResyncThread_;
+    std::atomic<bool> timeResyncRunning_{false};
+    std::condition_variable timeResyncCv_;
+    std::mutex timeResyncMutex_;
+    // Interval in seconds between automatic server time resyncs
+    int timeResyncIntervalSec_{300};
 };
 
 
