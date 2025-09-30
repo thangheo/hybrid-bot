@@ -10,7 +10,7 @@
 #include "data_ingestion/normalization/order_book_normalizer.hpp"
 #include "data_ingestion/websocket/exchanges/binance_websocket_client.hpp"
 #include "data_ingestion/protocol/binance_adapter.hpp"
-#include "readerwriterqueue.h"
+#include "common/readerwriterqueue.h"
 #include <iostream>
 #include <memory>
 #include <vector>

@@ -305,7 +305,7 @@ std::future<models::ExecutionReport> BinanceApiClient::placeOrder(const models::
                 if (requiredQty <= 0.0) requiredQty = step;
 
                 // Safety: do not increase order size by more than a configured multiplier . STFU
-                const double MAX_UPLIFT = 2000.0; // allow at most 2x increase
+                const double MAX_UPLIFT = 20; // allow at most 2x increase
                 double uplift = (quantity > 0.0) ? (requiredQty / quantity) : MAX_UPLIFT;
                 if (uplift > MAX_UPLIFT) {
                     // Gracefully reject the order instead of throwing an exception
@@ -331,7 +331,7 @@ std::future<models::ExecutionReport> BinanceApiClient::placeOrder(const models::
                     double requiredQty = roundUpToStep(raw, step);
                     if (requiredQty <= 0.0) requiredQty = step;
 
-                    const double MAX_UPLIFT = 2000.0;
+                    const double MAX_UPLIFT = 20;
                     double uplift = (quantity > 0.0) ? (requiredQty / quantity) : MAX_UPLIFT;
                     if (uplift > MAX_UPLIFT) {
                         models::ExecutionReport rep;
@@ -352,7 +352,7 @@ std::future<models::ExecutionReport> BinanceApiClient::placeOrder(const models::
             // Ensure alignedQty respects minQty if provided
             if (minQty > 0.0 && alignedQty + 1e-12 < minQty) {
                 double requiredQty = roundUpToStep(minQty, step);
-                const double MAX_UPLIFT = 2000.0;
+                const double MAX_UPLIFT = 20;
                 double uplift = (quantity > 0.0) ? (requiredQty / quantity) : MAX_UPLIFT;
                 if (uplift > MAX_UPLIFT) {
                     models::ExecutionReport rep;

@@ -16,6 +16,9 @@ sudo apt-get install -y build-essential cmake libzmq3-dev libboost-all-dev \
 
 sudo apt-get install -y nlohmann-json3-dev
 sudo apt-get install -y build-essential cmake libzmq3-dev libboost-all-dev nlohmann-json3-dev
+    # sudo apt-get install -y build-essential cmake libzmq3-dev libboost-all-dev
+sudo apt update
+sudo apt install libeigen3-dev
 
 # Build Google Test
 cd /usr/src/gtest
@@ -120,3 +123,11 @@ echo "To build the project, run: cd build && make"
 echo ""
 echo "Installed package versions:"
 pip list | grep -E "numpy|scipy|pandas|scikit-learn|matplotlib|pyzmq|psycopg2"
+
+# install readerwriterqueue
+cd ../libs
+if [ ! -d "readerwriterqueue" ]; then
+    git clone https://github.com/cameron314/readerwriterqueue.git
+else
+    echo "readerwriterqueue already cloned."
+fi
