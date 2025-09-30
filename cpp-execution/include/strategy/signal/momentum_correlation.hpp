@@ -158,6 +158,10 @@ private:
     std::map<std::string, double> correlation_strengths_;
     std::map<std::string, double> feature_importance_;
     MarketRegime current_regime_ = MarketRegime::NORMAL;
+    // Lock-free snapshots published for fast read access by predictPriceMovement()
+    // Updated under correlation_mutex_ via std::atomic_store/std::atomic_load helpers
+    mutable std::shared_ptr<std::map<std::string, double>> coeffs_snapshot_;
+    mutable std::shared_ptr<std::map<std::string, double>> importance_snapshot_;
     double calculatePearsonCorrelation(const std::vector<double>& x, const std::vector<double>& y) const;
     // std::string imbalanceTypeToString(ImbalanceType type) const;
 
