@@ -200,11 +200,20 @@ TradingSignal ImbalanceSignalGenerator::createSignalFromImbalance(const Imbalanc
     
     signal.generationTime = std::chrono::system_clock::now();
     signal.confidence = trading::core::confidenceLevelToValue(imbalance.confidence);
+    // Reserve containers to avoid repeated allocations on hot path
+    signal.reserveContainers(4, 16);
     
-    // Advanced strength calculation
+    // Advanced strength calculation (measure sub-step latency)
+    auto sub_t0 = std::chrono::steady_clock::now();
     auto strengthComponents = calculateSignalStrength(imbalance);
+    auto sub_dt_strength = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - sub_t0).count();
     signal.strength = strengthComponents.finalStrength;
-    signal.setMetric("strengthComponents", strengthComponents.toString());
+    // Avoid expensive string serialization on hot path; expose numeric components as metrics
+    signal.setMetric("strength_base", strengthComponents.baseStrength);
+    signal.setMetric("strength_type_adjust", strengthComponents.typeAdjustment);
+    signal.setMetric("strength_conf_boost", strengthComponents.confidenceBoost);
+    signal.setMetric("strength_regime_adj", strengthComponents.regimeAdjustment);
+    signal.setMetric("strength_momentum_align", strengthComponents.momentumAlignment);
     
     // Generate sophisticated price targets
     signal.targets = generatePriceTargets(imbalance);
@@ -220,31 +229,32 @@ TradingSignal ImbalanceSignalGenerator::createSignalFromImbalance(const Imbalanc
         signal.setMetric(metric.first, metric.second);
     }
     
-    // Apply momentum correlation analysis
+    // Apply momentum correlation analysis (timed)
     double predictedMove = 0.0;
     double correlation = 0.0;
-    
+    auto sub_t1 = std::chrono::steady_clock::now();
     if (momentumCorrelation_) {
         predictedMove = momentumCorrelation_->predictPriceMovement(imbalance);
         std::string imbalanceTypeStr = imbalanceTypeToString(imbalance.type);
         correlation = momentumCorrelation_->getCorrelationCoefficient(imbalanceTypeStr);
-        
+
         signal.setMetric("predictedPriceMove", predictedMove);
         signal.setMetric("momentumCorrelation", correlation);
-        
+
         // Handle prediction alignment
         bool alignmentCorrect = checkPredictionAlignment(imbalance.direction, predictedMove);
         signal.setMetric("predictionAligned", alignmentCorrect ? 1.0 : 0.0);
-        
+
         if (!alignmentCorrect) {
             handlePredictionConflict(signal, imbalance, predictedMove, correlation);
         }
-        
+
         // Apply sophisticated confidence adjustment
         double absCorrelation = std::abs(correlation);
         double confidenceMultiplier = calculateConfidenceMultiplier(absCorrelation, alignmentCorrect);
         signal.confidence = std::clamp(signal.confidence * confidenceMultiplier, 0.0, 1.0);
     }
+    auto sub_dt_predict = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - sub_t1).count();
     //if direction is BUY then set price to best ask else if SELL set to best bid
     if (imbalance.direction == core::Direction::BUY) {
         signal.price = imbalance.getSupportingMetric("askPrice", 0.0);
@@ -254,10 +264,18 @@ TradingSignal ImbalanceSignalGenerator::createSignalFromImbalance(const Imbalanc
         signal.price = imbalance.getSupportingMetric("midPrice", 0.0);
     }
     //if price is 0 then we should get from something else
-    // Calculate comprehensive quality metrics
+    // Calculate comprehensive quality metrics (timed). Avoid string serialization.
+    auto sub_t2 = std::chrono::steady_clock::now();
     auto qualityMetrics = calculateSignalQuality(signal, predictedMove, correlation);
+    auto sub_dt_quality = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - sub_t2).count();
     signal.quality = qualityMetrics.finalQuality;
-    signal.setMetric("qualityMetrics", qualityMetrics.toString());
+    signal.setMetric("quality_strengthComp", qualityMetrics.strengthComponent);
+    signal.setMetric("quality_confComp", qualityMetrics.confidenceComponent);
+    signal.setMetric("quality_predComp", qualityMetrics.predictionComponent);
+    signal.setMetric("quality_corrComp", qualityMetrics.correlationComponent);
+    signal.setMetric("quality_regime", qualityMetrics.regimeConsistency);
+    signal.setMetric("quality_hist", qualityMetrics.historicalPerformance);
+    signal.setMetric("quality_final", qualityMetrics.finalQuality);
     
     // Calculate adaptive target size
     signal.targetSize = calculateTargetSize(imbalance, signal.strength, signal.confidence, signal.quality);
@@ -279,10 +297,12 @@ TradingSignal ImbalanceSignalGenerator::createSignalFromImbalance(const Imbalanc
     auto dur_us = std::chrono::duration_cast<std::chrono::microseconds>(
         std::chrono::steady_clock::now() - t0).count();
 
+    // Emit both total and sub-step timings to aid diagnosis (debug-level)
+    LOG_DEBUG("createSignalFromImbalance: id={} total={}us (strength={}us, predict={}us, quality={}us)",
+              signal.id, dur_us, sub_dt_strength, sub_dt_predict, sub_dt_quality);
+
     if (dur_us > 2000) {
-        LOG_DEBUG("createSignalFromImbalance: signal id={} creation took {} us", signal.id, dur_us);
-    } else {
-        // LOG_DEBUG("createSignalFromImbalance: took {} us", dur_us);
+        LOG_WARN("createSignalFromImbalance: signal id={} creation took {} us", signal.id, dur_us);
     }
     
     return signal;
