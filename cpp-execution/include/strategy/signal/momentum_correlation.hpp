@@ -130,7 +130,7 @@ public:
     void updateHighestCorrelatedMetrics();
 private:
     size_t window_size_=200; // Rolling window size for correlation
-    size_t data_point_limit_ = 5000; // Hard cap on data points to prevent excessive memory use
+    size_t data_point_limit_ = 2000; // Hard cap on data points to prevent excessive memory use
     CorrelationParameters params_;
     //mutex correlation_mutex_;
     // Mutex for thread safety
