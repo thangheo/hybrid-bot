@@ -150,6 +150,20 @@ public:
             return 0.0;
         }
     }
+
+    double getPriceFromRest(const core::Symbol& tradingPair, 
+                          const std::optional<std::string>& exchangeId) override {
+        if (!initialized_) {
+            LOG_ERROR("DataInterface not initialized (REST price lookup)");
+            return 0.0;
+        }
+        try {
+            return marketDataInterface_->getPriceFromRest(tradingPair, exchangeId);
+        } catch (const std::exception& e) {
+            LOG_ERROR("Failed to get REST price: {}", e.what());
+            return 0.0;
+        }
+    }
     
     std::vector<OrderRequest> getOrderHistory(const core::ExchangeId& exchangeId, 
                                             const core::Symbol& tradingPair, 

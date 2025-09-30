@@ -328,9 +328,33 @@ private:
         if (context.price <= 0.0) {
             try {
                 if (dataInterface_) {
+                    // First try current price API
                     const double p = dataInterface_->getCurrentPrice(context.symbol.toString());
                     if (p > 0.0) {
                         context.price = p;
+                    } else {
+                        // As a secondary fallback, try getting MarketData and use bid/ask mid if available
+                        auto mdOpt = dataInterface_->getMarketData(context.symbol);
+                        if (mdOpt.has_value()) {
+                            const auto& md = mdOpt.value();
+                            if (md.bid > 0.0 && md.ask > 0.0) {
+                                context.price = (md.bid + md.ask) / 2.0;
+                            } else if (md.lastTradePrice > 0.0) {
+                                context.price = md.lastTradePrice;
+                            }
+                        }
+                    }
+                    // Last resort: try the REST fallback (rate-limited) if available
+                    if (context.price <= 0.0) {
+                        try {
+                            double restP = dataInterface_->getPriceFromRest(context.symbol);
+                            if (restP > 0.0) {
+                                context.price = restP;
+                                LOG_INFO("REST fallback price {} for {}", restP, context.symbol.toString());
+                            }
+                        } catch (const std::exception& ex) {
+                            LOG_WARN("REST fallback failed for {}: {}", context.symbol.toString(), ex.what());
+                        }
                     }
                 }
                 else{
