@@ -107,6 +107,9 @@ public:
     // For testing - allow injection of components
     void setZmqClient(std::unique_ptr<trading::communication::GenericZmqClient> zmqClient);
     
+    // REST fallback to fetch a fresh price from exchange REST client (may be rate-limited)
+    double getPriceFromRest(const core::Symbol& tradingPair, const std::optional<std::string>& exchangeId = std::nullopt);
+    
     // Health and statistics
     struct HealthStatus {
         bool cacheHealthy{false};

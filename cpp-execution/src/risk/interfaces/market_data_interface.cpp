@@ -1,6 +1,8 @@
 #include "risk/interfaces/market_data_interface.hpp"
 #include "common/logger.hpp"
 #include <algorithm>
+// Needed for normalizeSymbolForExchange utility
+#include "execution/exchange_api_client.hpp"
 
 namespace trading {
 namespace risk {
@@ -356,6 +358,25 @@ void MarketDataInterface::configureBinanceClient() {
         LOG_INFO("Binance client configured");
     } else {
         LOG_WARN("Binance API credentials not set");
+    }
+}
+
+double MarketDataInterface::getPriceFromRest(const core::Symbol& tradingPair, const std::optional<std::string>& exchangeId) {
+    try {
+        // Normalize symbol string for REST client
+        std::string sym = trading::execution::util::normalizeSymbolForExchange(tradingPair.toString());
+        // Use the internal BinanceClient to fetch a synchronous price
+        double p = 0.0;
+        try {
+            p = binanceClient_.getPrice(sym);
+        } catch (const std::exception& ex) {
+            LOG_WARN("Binance REST price lookup failed for {}: {}", sym, ex.what());
+            return 0.0;
+        }
+        return p;
+    } catch (const std::exception& ex) {
+        LOG_ERROR("getPriceFromRest error for {}: {}", tradingPair.toString(), ex.what());
+        return 0.0;
     }
 }
 

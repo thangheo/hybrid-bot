@@ -16,6 +16,7 @@
     "defaultLimit": 1000.0,
     "enforceStrictly": true
   },
+  "marketDataCacheDurationMs": 5000,
   "exposureLimit": {
     "maxTotalExposure": 100000.0,
     "maxAssetExposure": 20000.0,

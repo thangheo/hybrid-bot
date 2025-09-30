@@ -157,6 +157,14 @@ public:
      * @return Map of fee types to fee values
      */
     virtual std::map<std::string, double> getTradingFees(const core::ExchangeId& exchangeId, const std::optional<std::string>& tradingPair = std::nullopt) = 0;
+    
+        /**
+         * REST fallback: ask the underlying REST client for a current price (may be rate-limited)
+         * Implementations should use this sparingly and respect rate limits.
+         */
+        virtual double getPriceFromRest(const core::Symbol& tradingPair, const std::optional<std::string>& exchangeId = std::nullopt) {
+            return 0.0;
+        }
 };
 
 /**
