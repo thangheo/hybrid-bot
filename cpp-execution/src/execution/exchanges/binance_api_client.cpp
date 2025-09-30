@@ -11,6 +11,7 @@
 #include <future>
 #include <stdexcept>
 #include <iostream>
+#include <cmath>
 #include <sys/stat.h>
 
 namespace trading {
@@ -286,24 +287,69 @@ std::future<models::ExecutionReport> BinanceApiClient::placeOrder(const models::
                 minQty = itf->second.minQty;
                 minNotional = itf->second.minNotional;
             }
+            // If aligned to zero or too small, try to round up to meet exchange minimums
+            const double DEFAULT_MIN_NOTIONAL = 10.0; // $10 default if exchange doesn't provide minNotional
+            double effectiveMinNotional = (minNotional > 0.0 ? minNotional : DEFAULT_MIN_NOTIONAL);
+
             if (alignedQty <= 0.0) {
-                std::ostringstream oss;
-                oss << "Invalid quantity after alignment for symbol " << sym
-                    << ": requested=" << quantity
-                    << ", step=" << step
-                    << ", aligned=" << alignedQty
-                    << ". This typically means the requested quantity is smaller than the exchange lot step and rounded down to zero."
-                    << " Increase the requested quantity to at least the step or the exchange minQty.";
-                throw std::runtime_error(oss.str());
-            }
-            // If MIN_NOTIONAL is set, also validate notional
-            if (minNotional > 0.0 && price > 0.0) {
-                double notional = alignedQty * price;
-                if (notional + 1e-12 < minNotional) {
+                // Compute required qty to meet minNotional (if price available)
+                double requiredQty = step; // at least one step
+                if (price > 0.0 && effectiveMinNotional > 0.0) {
+                    double raw = effectiveMinNotional / price;
+                    requiredQty = roundUpToStep(raw, step);
+                } else if (minQty > 0.0) {
+                    requiredQty = roundUpToStep(minQty, step);
+                }
+
+                // Ensure we at least place one step
+                if (requiredQty <= 0.0) requiredQty = step;
+
+                // Safety: do not increase order size by more than a configured multiplier
+                const double MAX_UPLIFT = 2.0; // allow at most 2x increase
+                double uplift = (quantity > 0.0) ? (requiredQty / quantity) : MAX_UPLIFT;
+                if (uplift > MAX_UPLIFT) {
                     std::ostringstream oss;
-                    oss << "Notional " << notional << " is below exchange minNotional " << minNotional;
+                    oss << "Adjusted quantity for symbol " << sym << " would uplift too much: requested=" << quantity
+                        << ", required=" << requiredQty << ", uplift=" << uplift << " > " << MAX_UPLIFT;
                     throw std::runtime_error(oss.str());
                 }
+
+                alignedQty = requiredQty;
+            }
+
+            // If MIN_NOTIONAL is set, also validate notional and increase if necessary
+            if (effectiveMinNotional > 0.0 && price > 0.0) {
+                double notional = alignedQty * price;
+                if (notional + 1e-12 < effectiveMinNotional) {
+                    double raw = effectiveMinNotional / price;
+                    double requiredQty = roundUpToStep(raw, step);
+                    if (requiredQty <= 0.0) requiredQty = step;
+
+                    const double MAX_UPLIFT = 2.0;
+                    double uplift = (quantity > 0.0) ? (requiredQty / quantity) : MAX_UPLIFT;
+                    if (uplift > MAX_UPLIFT) {
+                        std::ostringstream oss;
+                        oss << "Notional adjustment for symbol " << sym << " would uplift too much: requested=" << quantity
+                            << ", required=" << requiredQty << ", uplift=" << uplift << " > " << MAX_UPLIFT;
+                        throw std::runtime_error(oss.str());
+                    }
+
+                    alignedQty = requiredQty;
+                }
+            }
+
+            // Ensure alignedQty respects minQty if provided
+            if (minQty > 0.0 && alignedQty + 1e-12 < minQty) {
+                double requiredQty = roundUpToStep(minQty, step);
+                const double MAX_UPLIFT = 2.0;
+                double uplift = (quantity > 0.0) ? (requiredQty / quantity) : MAX_UPLIFT;
+                if (uplift > MAX_UPLIFT) {
+                    std::ostringstream oss;
+                    oss << "minQty adjustment for symbol " << sym << " would uplift too much: requested=" << quantity
+                        << ", required=" << requiredQty << ", uplift=" << uplift << " > " << MAX_UPLIFT;
+                    throw std::runtime_error(oss.str());
+                }
+                alignedQty = requiredQty;
             }
 
             params["quantity"] = formatDoubleWithStep(alignedQty, step);
@@ -759,6 +805,32 @@ double BinanceApiClient::roundDownToStep(double value, double step) const {
     double stepped = std::floor(value * factor + 1e-12) / factor;
     // Ensure stepped is a multiple of step (avoid precision residue)
     double multiples = std::floor((stepped / step) + 1e-12);
+    double result = multiples * step;
+    // Round result to decimals
+    double rounded = std::floor(result * factor + 0.5) / factor;
+    return rounded;
+}
+
+// Helper: round up value to nearest multiple of step
+double BinanceApiClient::roundUpToStep(double value, double step) const {
+    if (step <= 0.0) return value;
+    // Determine decimal places from step by converting to string
+    std::ostringstream ss;
+    ss.setf(std::ios::fixed);
+    ss << std::setprecision(18) << step;
+    std::string s = ss.str();
+    // Trim trailing zeros
+    while (!s.empty() && s.back() == '0') s.pop_back();
+    if (!s.empty() && s.back() == '.') s.pop_back();
+    size_t pos = s.find('.');
+    int decimals = 0;
+    if (pos != std::string::npos) {
+        decimals = (int)(s.size() - pos - 1);
+    }
+    double factor = std::pow(10.0, decimals);
+    // Compute ceil to decimals then ceil to step multiples
+    double stepped = std::ceil(value * factor - 1e-12) / factor;
+    double multiples = std::ceil((stepped / step) - 1e-12);
     double result = multiples * step;
     // Round result to decimals
     double rounded = std::floor(result * factor + 0.5) / factor;

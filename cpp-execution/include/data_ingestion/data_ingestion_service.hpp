@@ -66,6 +66,7 @@ public:
         publisher_ = server;
         return true;
     }
+    std::optional<double> getLastPrice(const ExchangeId& exchange, const Symbol& symbol) const;
 private:
     std::vector<Symbol> subscribedSymbols_;
     // Core components (proper order for RAII)

@@ -60,6 +60,7 @@ private:
     models::ExecutionReport parseOrderResponse(const std::string& response) const;
     // Helpers to format quantities/prices according to Binance symbol filters
     double roundDownToStep(double value, double step) const;
+    double roundUpToStep(double value, double step) const;
     std::string formatDoubleWithStep(double value, double step) const;
 };
 
