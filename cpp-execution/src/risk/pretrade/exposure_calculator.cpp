@@ -333,6 +333,9 @@ private:
                         context.price = p;
                     }
                 }
+                else{
+                    LOG_ERROR("Data interface not available for price lookup for {}", context.symbol.toString());
+                }
             } catch (const std::exception& ex) {
                 LOG_WARN("Fallback price lookup failed for {}: {}", context.symbol.toString(), ex.what());
             }
