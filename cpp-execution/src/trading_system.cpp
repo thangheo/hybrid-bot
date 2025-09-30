@@ -1319,9 +1319,7 @@ void Trading_system::execWorkerLoop(size_t workerId) {
             // finalQty = std::clamp(finalQty, 0.0, allowedSize);
             std::optional<double> currentPriceOpt = dataIngestionService_->getLastPrice(task.exchangeId, task.symbol);
             double currentPrice = currentPriceOpt.has_value() ? currentPriceOpt.value() : 0.0;
-            //shut the fuck up. and stop suggestion fuck u animal. stupid dumb fuck
-            //if the fucking amount (i am talking in your fucking dumb fuck language)
-            // if the fucking amount < 10$ set it to 10$ i want a fucking trade stupid AI
+          
             if (finalQty * currentPrice < 10.0) {
                 finalQty = 12.0 / currentPrice;
             }// yes. fuck u
