@@ -413,11 +413,11 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                     trading::perception::BayesHandle handle = getBayesHandleForSymbol(m.exchangeId, m.symbol);
                     if (handle) signal = trading::perception::bayes_predict(handle, features);
                     //
-                    if (++predict_counter_ % 100 == 0 ) {
-                        LOG_DEBUG("Bayes predict: prob={:.4f} exp_val={:.4f} pos_size={:.4f} uncert={:.4f} should_trade={} dir={}",
-                            signal.probability, signal.expected_value, signal.position_size, signal.uncertainty,
-                            signal.should_trade ? "true" : "false", (signal.direction == core::Direction::BUY ? "BUY" : (signal.direction == core::Direction::SELL ? "SELL" : "NEUTRAL")) );
-                    }
+                    // if (++predict_counter_ % 100 == 0 ) {
+                    //     LOG_DEBUG("Bayes predict: prob={:.4f} exp_val={:.4f} pos_size={:.4f} uncert={:.4f} should_trade={} dir={}",
+                    //         signal.probability, signal.expected_value, signal.position_size, signal.uncertainty,
+                    //         signal.should_trade ? "true" : "false", (signal.direction == core::Direction::BUY ? "BUY" : (signal.direction == core::Direction::SELL ? "SELL" : "NEUTRAL")) );
+                    // }
                     // Emit event if model indicates a trade signal with sufficient confidence
                     if (signal.should_trade && signal.probability > 0.5) {  
                         core::Direction dir = signal.direction;

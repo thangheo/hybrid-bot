@@ -223,15 +223,20 @@ bool OrderValidator::isOrderSizeValid(const core::ExchangeId& exchangeId,
     if (m_minTradeValue > 0.0) {
         try {
             double marketPrice = getCurrentMarketPrice(tradingPair);
-            double notional = quantity * marketPrice;
-            if (notional < m_minTradeValue) {
-                RiskViolation violation;
-                violation.type = ViolationType::ORDER_SIZE_LIMIT;
-                violation.description = "Order notional value below configured minimum";
-                violation.limitValue = m_minTradeValue;
-                violation.actualValue = notional;
-                violations.push_back(violation);
-                return false;
+            // If market price is not available (0 or negative), skip notional validation
+            if (marketPrice <= 0.0) {
+                LOG_WARN("Could not determine market price for {} - skipping notional (min trade value) check", tradingPair.toString());
+            } else {
+                double notional = quantity * marketPrice;
+                if (notional < m_minTradeValue) {
+                    RiskViolation violation;
+                    violation.type = ViolationType::ORDER_SIZE_LIMIT;
+                    violation.description = "Order notional value below configured minimum";
+                    violation.limitValue = m_minTradeValue;
+                    violation.actualValue = notional;
+                    violations.push_back(violation);
+                    return false;
+                }
             }
         } catch (const std::exception& ex) {
             // If we cannot fetch market price, fall back to size-based validation only

@@ -1151,7 +1151,7 @@ void Trading_system::signalWorkerLoop(size_t workerId) {
                 execSignal.expirationTime = signal.expirationTime;
                 execSignal.targets = signal.targets;
                 execSignal.exchangeId = signal.exchangeId;
-
+                // execSignal.
                 if (!dedup.shouldProcessSignal(execSignal)) {
                     // Duplicate — skip processing, do NOT register the original with PTCA
                     continue;
@@ -1170,35 +1170,43 @@ void Trading_system::signalWorkerLoop(size_t workerId) {
                 if (riskManager_) {
                     allowedSize = riskManager_->getAllowedPositionSize(execSignal.symbol);
                 }
-
-                double sizerFraction = 1.0;
-                if (positionSizer_) {
-                    std::map<std::string, double> metrics;
-                    // Minimal metrics: use confidence as a rough proxy for win_rate
-                    metrics["win_rate"] = execSignal.confidence;
-                    // placeholder volatility - can be replaced with real vol from market data
-                    metrics["volatility"] = 0.05;
-                    std::map<std::string, double> portfolio;
-                    sizerFraction = positionSizer_->calculateSize(execSignal.symbol.toString(), metrics, portfolio);
-                    sizerFraction = std::clamp(sizerFraction, 0.0, 1.0);
+                if (allowedSize <= 0.0) {
+                    std::cout << "🛑 Signal rejected: " << execSignal.id 
+                              << " for " << execSignal.symbol.toString() 
+                              << " - No allowed position size" << std::endl;
+                    continue; // no allowed size
                 }
-                double positionSize = allowedSize * sizerFraction;
-                // clamp this to
-                double finalQty = positionSize * execSignal.targetSize;
+                execSignal.targetSize = std::max(allowedSize, execSignal.targetSize);
+                // double sizerFraction = 1.0;
+                // if (positionSizer_) {
+                //     std::map<std::string, double> metrics;
+                //     // Minimal metrics: use confidence as a rough proxy for win_rate
+                //     metrics["win_rate"] = execSignal.confidence;
+                //     metrics["volatility"] = signal.getMetric("volatility", 0.05);
+                //     std::cout << "Using volatility metric for position sizing: " << metrics["volatility"] << std::endl;
+                //     // placeholder volatility - can be replaced with real vol from market data
+                //     // metrics["volatility"] = 0.05;
+                //     std::map<std::string, double> portfolio;
+                //     sizerFraction = positionSizer_->calculateSize(execSignal.symbol.toString(), metrics, portfolio);
+                //     sizerFraction = std::clamp(sizerFraction, 0.0, 1.0);
+                // }
+                // double positionSize = allowedSize * sizerFraction;
+                // // clamp this to
+                // double finalQty = positionSize * execSignal.targetSize;
                 // clamp to limit exposure or it will be rejected by risk
-                finalQty = std::clamp(finalQty, 0.0, allowedSize);
+                // finalQty = std::clamp(finalQty, 0.0, allowedSize);
+              
+                // finalQty = std::max(finalQty, 0.01);
 
-                execSignal.targetSize = finalQty; // now this is absolute size
-                
-                // std::cout << "🛎️ Signal passed filtering: " << execSignal.id 
-                //           << " for " << execSignal.symbol.toString() 
-                //           << " Direction: " << (execSignal.direction == core::Direction::BUY ? "BUY" : "SELL")
-                //           << " Strength: " << execSignal.strength 
-                //           << " Confidence: " << execSignal.confidence 
-                //           << " Quality: " << execSignal.quality 
-                //           << " TargetSize: " << execSignal.targetSize 
-                //           << " PTCA Recommendation: " << ptcaRecommendation
-                //           << std::endl;
+                // execSignal.targetSize = finalQty; // now this is absolute size
+                // if (execSignal.targetSize < 0.0001) {
+                //     std::cout << "🛑 Signal rejected: " << execSignal.id 
+                //               << " for " << execSignal.symbol.toString() 
+                //               << " - TargetSize too small: " << execSignal.targetSize 
+                //               << std::endl;
+                //     continue; // too small
+                // }
+
                 //check if price target percentage > 0.2%
                 for (const auto& target : execSignal.targets) {
                     if (target.percentage > 0.2) {
