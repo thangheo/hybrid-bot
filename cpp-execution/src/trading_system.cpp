@@ -1165,37 +1165,45 @@ void Trading_system::signalWorkerLoop(size_t workerId) {
                     // if (execSignal.strength < 0.3) continue;
                     if (execSignal.confidence < 0.6) continue;
                 }
+                // this is dupplicate with execution
                 //recalculate targetSize based on limit money
-                double allowedSize = 0.0;
-                if (riskManager_) {
-                    allowedSize = riskManager_->getAllowedPositionSize(execSignal.symbol);
-                }
-                if (allowedSize <= 0.0) {
-                    std::cout << "🛑 Signal rejected: " << execSignal.id 
-                              << " for " << execSignal.symbol.toString() 
-                              << " - No allowed position size" << std::endl;
-                    continue; // no allowed size
-                }
-                // execSignal.targetSize = std::min(allowedSize, execSignal.targetSize);
-                double sizerFraction = 1.0;
-                if (positionSizer_) {
-                    std::map<std::string, double> metrics;
-                    // Minimal metrics: use confidence as a rough proxy for win_rate
-                    metrics["win_rate"] = execSignal.confidence;
-                    metrics["volatility"] = signal.getMetric("volatility", 0.05);
-                    std::cout << "Using volatility metric for position sizing: " << metrics["volatility"] << std::endl;
-                    // placeholder volatility - can be replaced with real vol from market data
-                    // metrics["volatility"] = 0.05;
-                    std::map<std::string, double> portfolio;
-                    sizerFraction = positionSizer_->calculateSize(execSignal.symbol.toString(), metrics, portfolio);
-                    sizerFraction = std::clamp(sizerFraction, 0.0, 1.0);
-                }
-                double positionSize = allowedSize * sizerFraction;
-                // clamp this to
-                double finalQty = positionSize * execSignal.targetSize;
-                finalQty = std::clamp(finalQty, 0.0, allowedSize);
+                // double allowedSize = 0.0;
+                // if (riskManager_) {
+                //     allowedSize = riskManager_->getAllowedPositionSize(execSignal.symbol);
+                // }
+                // if (allowedSize <= 0.0) {
+                //     std::cout << "🛑 Signal rejected: " << execSignal.id 
+                //               << " for " << execSignal.symbol.toString() 
+                //               << " - No allowed position size" << std::endl;
+                //     continue; // no allowed size
+                // }
+                // // execSignal.targetSize = std::min(allowedSize, execSignal.targetSize);
+                // double sizerFraction = 1.0;
+                // if (positionSizer_) {
+                //     std::map<std::string, double> metrics;
+                //     // Minimal metrics: use confidence as a rough proxy for win_rate
+                //     metrics["win_rate"] = execSignal.confidence;
+                //     metrics["volatility"] = signal.getMetric("volatility", 0.05);
+                //     std::cout << "Using volatility metric for position sizing: " << metrics["volatility"] << std::endl;
+                //     // placeholder volatility - can be replaced with real vol from market data
+                //     // metrics["volatility"] = 0.05;
+                //     std::map<std::string, double> portfolio;
+                //     sizerFraction = positionSizer_->calculateSize(execSignal.symbol.toString(), metrics, portfolio);
+                //     sizerFraction = std::clamp(sizerFraction, 0.0, 1.0);
+                // }
+                // double positionSize = allowedSize * sizerFraction;
+                // // clamp this to
+                // double finalQty = positionSize * execSignal.targetSize;
+                // finalQty = std::clamp(finalQty, 0.0, allowedSize);
               
-                execSignal.targetSize = finalQty; // now this is absolute size
+                // // Keep targetSize as a fraction (0..1) of the allowed position size
+                // // Execution path expects targetSize to be a proportion so that
+                // // final execution quantity = allowedSize * sizerFraction * targetSize
+                // if (allowedSize > 0.0) {
+                //     execSignal.targetSize = std::clamp(finalQty / allowedSize, 0.0, 1.0);
+                // } else {
+                //     execSignal.targetSize = 0.0;
+                // }
 
                 //check if price target percentage > 0.2%
                 for (const auto& target : execSignal.targets) {
@@ -1285,8 +1293,6 @@ void Trading_system::execWorkerLoop(size_t workerId) {
             report.setOrderId("ORDER_" + task.id);
             report.setSymbol(task.symbol);
             report.setSide(task.direction == core::Direction::BUY ? execution::models::OrderSide::BUY : execution::models::OrderSide::SELL);
-            // targetSize is a scale from 0 to 1 (1 == full position as allowed by risk)
-            // We compute an allowed size from the risk manager then modulate it by the PositionSizer
             double allowedSize = 0.0;
             if (riskManager_) {
                 allowedSize = riskManager_->getAllowedPositionSize(task.symbol);
@@ -1303,6 +1309,7 @@ void Trading_system::execWorkerLoop(size_t workerId) {
                 sizerFraction = positionSizer_->calculateSize(task.symbol.toString(), metrics, portfolio);
                 sizerFraction = std::clamp(sizerFraction, 0.0, 1.0);
             }
+            //allowedSize = usd? DO NOT USE THE ASSET QUANTITY BS HERE BECAUSE IT IS MESSED UP. convert everything to usd first to usd
 
             double positionSize = allowedSize * sizerFraction;
             // clamp this to
@@ -1310,6 +1317,8 @@ void Trading_system::execWorkerLoop(size_t workerId) {
 
             // clamp to limit exposure or it will be rejected by risk
             finalQty = std::clamp(finalQty, 0.0, allowedSize);
+            //check if finalQty* current price < 10$
+            
             report.setQuantity(finalQty);
             report.setFilledQuantity(finalQty);
             report.setStatus(execution::models::OrderState::FILLED);

@@ -447,43 +447,17 @@ void OrderBookReconstructor::publishOrderBook(const std::shared_ptr<OrderBook>& 
     try {
         // Get the full order book snapshot
         OrderBookUpdate update = orderBook->getSnapshot();
-        
-    //     // Create a proper message with order book data
-    //     nlohmann::json message;
-        
-    //     // Header information
-    //     message["exchangeId"] = update.exchangeId.toString();
-    //     message["tradingPair"] = update.tradingPair.toString();
-    //     message["sequenceNumber"] = update.sequenceNumber;
-    //     message["exchangeTimestamp"] = timestampToMillis(update.exchangeTimestamp);
-    //     message["receivedTimestamp"] = timestampToMillis(update.receivedTimestamp);
-    //     message["isSnapshot"] = update.isSnapshot;
-        
-    //     // Bids data
-    //     message["bids"] = nlohmann::json::array();
-    //     for (const auto& bid : update.bids) {
-    //         message["bids"].push_back({
-    //             {"price", bid.price},
-    //             {"quantity", bid.quantity}
-    //         });
-    //     }
-        
-    //     // Asks data  
-    //     message["asks"] = nlohmann::json::array();
-    //     for (const auto& ask : update.asks) {
-    //         message["asks"].push_back({
-    //             {"price", ask.price},
-    //             {"quantity", ask.quantity}
-    //         });
-    //     }
-    // // Convert to JSON payload
-    // std::string jsonStr = message.dump();
-    
-    // // Publish with proper topic
-    // std::string topic = "orderbook." + update.exchangeId.toString() + "." + update.tradingPair.toString();
-    // // publisher_->PublishOrderBookData(topic, binaryPayload);
-    // publisher_->publishAsync(topic, jsonStr);
-    // publisher_->publishAsync(topic, std::string(binaryPayload.begin(), binaryPayload.end()));
+    //we reduce the update frequency to 1 per second per symbol
+    static std::unordered_map<std::string, core::Timestamp> lastPublishTime;
+    auto now = std::chrono::system_clock::now();
+    std::string key = orderBook->getExchangeId().toString() + ":" + orderBook->getSymbol().toString();
+    if (lastPublishTime.find(key) != lastPublishTime.end()) {
+        auto duration = std::chrono::duration_cast<std::chrono::seconds>(now - lastPublishTime[key]).count();
+        if (duration < 1) {
+            return; // Skip publishing if less than 1 second since last publish
+        }
+    }
+    lastPublishTime[key] = now;
     publishOrderBookUpdate(update);
     
     } catch (const std::exception& e) {
