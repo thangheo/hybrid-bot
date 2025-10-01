@@ -7,14 +7,23 @@
 namespace trading {
 namespace risk {
 
+// Shared singleton instance used by all factory overloads to ensure a single
+// MarketDataInterface (and therefore a single MarketDataCache) across the
+// process. Previously each overload had its own function-local static which
+// resulted in multiple singletons and duplicated caches.
+namespace {
+    std::shared_ptr<DataInterface> g_marketDataInterface_singleton;
+    std::mutex g_marketDataInterface_singleton_mutex;
+}
+
 MarketDataInterface::MarketDataInterface() {
-    LOG_INFO("MarketDataInterface default constructor");
+    LOG_INFO("MarketDataInterface default constructor this={}", static_cast<const void*>(this));
 }
 
 MarketDataInterface::MarketDataInterface(const RiskConfig& config) 
     : config_(config) {
     defaultExchange_ = config.defaultExchange;
-    LOG_INFO("MarketDataInterface configured with default exchange: {}", defaultExchange_);
+    LOG_INFO("MarketDataInterface configured this={} with default exchange: {}", static_cast<const void*>(this), defaultExchange_);
 }
 
 MarketDataInterface::~MarketDataInterface() {
@@ -269,13 +278,38 @@ double MarketDataInterface::getBalance(const core::ExchangeId& exchangeId,
 
 std::shared_ptr<DataInterface> MarketDataInterface::createDataInterface(
     const RiskConfig& config) {
-    
+    std::lock_guard<std::mutex> lg(g_marketDataInterface_singleton_mutex);
+    if (g_marketDataInterface_singleton) return g_marketDataInterface_singleton;
+
     auto instance = std::make_shared<MarketDataInterface>(config);
     if (!instance->initialize()) {
         LOG_ERROR("Failed to initialize MarketDataInterface");
         return nullptr;
     }
-    return instance;
+    g_marketDataInterface_singleton = instance;
+    LOG_INFO("MarketDataInterface singleton created (this={})", static_cast<const void*>(instance.get()));
+    return g_marketDataInterface_singleton;
+}
+
+std::shared_ptr<DataInterface> MarketDataInterface::createDataInterface(
+    const RiskConfig& config,
+    std::unique_ptr<trading::communication::GenericZmqClient> injectedClient,
+    std::shared_ptr<zmq::context_t> context) {
+    std::lock_guard<std::mutex> lg(g_marketDataInterface_singleton_mutex);
+    if (g_marketDataInterface_singleton) return g_marketDataInterface_singleton;
+
+    auto instance = std::make_shared<MarketDataInterface>(config);
+    // inject context and client before initialization
+    if (context) instance->setZmqContext(context);
+    if (injectedClient) instance->setZmqClient(std::move(injectedClient));
+
+    if (!instance->initialize()) {
+        LOG_ERROR("Failed to initialize MarketDataInterface (injected)");
+        return nullptr;
+    }
+    g_marketDataInterface_singleton = instance;
+    LOG_INFO("MarketDataInterface singleton (injected) created (this={})", static_cast<const void*>(instance.get()));
+    return g_marketDataInterface_singleton;
 }
 
 void MarketDataInterface::setZmqClient(
