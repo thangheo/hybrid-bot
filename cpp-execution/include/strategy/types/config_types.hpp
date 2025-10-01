@@ -196,6 +196,11 @@
      double minSignalStrength = 0.01;        // Minimum signal strength to generate
      double confidenceThreshold = 0.5;      // Minimum confidence for signal generation
      uint64_t signalTtlMs = 500;           // Time-to-live for signals in milliseconds
+    // Timeout for external prediction/predictor calls in microseconds.
+    // If predictor does not return within this interval, generator will
+    // fall back to a safe default to avoid stalling signal creation.
+    // A value of 0 disables the timeout and does a blocking call.
+    std::uint32_t predictTimeoutUs = 2000; // default 2000us (2ms)
      double minPredictionThreshold = 0.01;   // Minimum prediction threshold to consider
      double qualityBase = 0.5;              // Base quality score
      double qualityFactor = 0.5;            // Factor for quality calculation

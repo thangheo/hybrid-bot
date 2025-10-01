@@ -212,7 +212,7 @@ std::optional<core::MarketData> MarketDataCache::getMarketData(const std::string
     try {
         std::shared_lock<std::shared_mutex> lock(cacheMutex_);
         
-    LOG_DEBUG("[cache_this={}] Looking for key '{}' in cache with {} entries",
+    LOG_TRACE("[cache_this={}] Looking for key '{}' in cache with {} entries",
           static_cast<const void*>(this), cacheKey, marketDataCache_.size());
         
         auto it = marketDataCache_.find(cacheKey);
