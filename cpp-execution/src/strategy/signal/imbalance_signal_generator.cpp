@@ -23,6 +23,7 @@
 #include <sstream>
 #include <iomanip>
 #include <random>
+#include <future>
 #include <common/logger.hpp>
 
 namespace trading {
@@ -269,12 +270,54 @@ TradingSignal ImbalanceSignalGenerator::createSignalFromImbalance(
     double correlation = 0.0;
     auto sub_t1 = std::chrono::steady_clock::now();
     if (momentumCopy) {
-        predictedMove = momentumCopy->predictPriceMovement(imbalance);
-        std::string imbalanceTypeStr = imbalanceTypeToString(imbalance.type);
-        correlation = momentumCopy->getCorrelationCoefficient(imbalanceTypeStr);
+        // Non-blocking predictor call with timeout to avoid stalling signal creation
+        double localPredictedMove = 0.0;
+        double localCorrelation = 0.0;
+        bool timedOut = false;
+
+        if (configCopy.predictTimeoutUs == 0) {
+            // Blocking call (backward-compatible)
+            localPredictedMove = momentumCopy->predictPriceMovement(imbalance);
+            std::string imbalanceTypeStr = imbalanceTypeToString(imbalance.type);
+            localCorrelation = momentumCopy->getCorrelationCoefficient(imbalanceTypeStr);
+        } else {
+            try {
+                auto fut = std::async(std::launch::async, [momentumCopy, &imbalance]() {
+                    return momentumCopy->predictPriceMovement(imbalance);
+                });
+                auto status = fut.wait_for(std::chrono::microseconds(configCopy.predictTimeoutUs));
+                if (status == std::future_status::ready) {
+                    localPredictedMove = fut.get();
+                    std::string imbalanceTypeStr = imbalanceTypeToString(imbalance.type);
+                    localCorrelation = momentumCopy->getCorrelationCoefficient(imbalanceTypeStr);
+                } else {
+                    // Timeout: fallback safely
+                    timedOut = true;
+                    localPredictedMove = 0.0;
+                    localCorrelation = 0.0;
+                }
+            } catch (const std::exception &ex) {
+                LOG_WARN("ImbalanceSignalGenerator: predictor threw: {}", ex.what());
+                localPredictedMove = 0.0;
+                localCorrelation = 0.0;
+            } catch (...) {
+                LOG_WARN("ImbalanceSignalGenerator: predictor threw unknown");
+                localPredictedMove = 0.0;
+                localCorrelation = 0.0;
+            }
+        }
+
+        predictedMove = localPredictedMove;
+        correlation = localCorrelation;
 
         signal.setMetric("predictedPriceMove", predictedMove);
         signal.setMetric("momentumCorrelation", correlation);
+        if (timedOut) {
+            signal.setMetric("predict_timed_out", 1.0);
+            LOG_DEBUG("ImbalanceSignalGenerator: predictor timed out for signal {} (timeout={}us)", signal.id, configCopy.predictTimeoutUs);
+        } else {
+            signal.setMetric("predict_timed_out", 0.0);
+        }
 
         // Handle prediction alignment
         bool alignmentCorrect = checkPredictionAlignment(imbalance.direction, predictedMove);

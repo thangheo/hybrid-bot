@@ -165,10 +165,10 @@
         },
         "bayesModelPath": "models/bayesian/",
         "labelingDelayMs": 1500,
-        "bayesSaveAfterUpdates": 2000,
+        "bayesSaveAfterUpdates": 200,
         "requireModelReadyUpdates": 200,
-        "bayesMinSaveIntervalMs": 6000,
-        "bayesSaveIntervalMs": 36000 
+        "bayesMinSaveIntervalMs": 60000,
+        "bayesSaveIntervalMs": 360000 
       }
     },
     "liquidityMonitor": {
