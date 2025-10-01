@@ -6,9 +6,9 @@
  * No direct gateway access from this interface.
  */
 
-#include "interfaces/execution_interface.hpp"
+#include "risk/interfaces/execution_interface.hpp"
 #include "execution/execution_service.hpp"
-#include "risk_config.hpp"
+#include "risk/risk_config.hpp"
 #include "common/logger.hpp"
 #include <chrono>
 #include <mutex>

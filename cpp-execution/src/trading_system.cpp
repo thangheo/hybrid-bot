@@ -125,6 +125,17 @@ bool Trading_system::initialize() {
         "config/data_ingestion.json");
     //set comm server
     dataIngestionService_->setCommServer(zmq_server_);
+    // Ensure internal ZMQ server is started/bound before components that create
+    // ZMQ clients/subscribers (important for inproc transport which requires
+    // the bind to exist prior to connects in the same context).
+    if (!zmq_server_->isRunning()) {
+        if (!zmq_server_->start()) {
+            std::cerr << "Failed to start internal ZMQ server during initialization: " << zmq_server_->getLastError() << std::endl;
+            return false;
+        }
+        // brief pause to let sockets bind
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
     // sleep for 2s
     std::this_thread::sleep_for(std::chrono::seconds(2));
     if (!dataIngestionService_->initialize()) {
@@ -182,9 +193,11 @@ bool Trading_system::start() {
         systemHealthy_ = true;
         startTime_ = std::chrono::steady_clock::now();
         
-        if (!zmq_server_->start()) {
-            std::cerr << "Failed to start internal ZMQ server: " << zmq_server_->getLastError() << std::endl;
-            return -1;
+        if (!zmq_server_->isRunning()) {
+            if (!zmq_server_->start()) {
+                std::cerr << "Failed to start internal ZMQ server: " << zmq_server_->getLastError() << std::endl;
+                return false;
+            }
         }
 
         // CRITICAL DEBUG - Check if threads are actually running
@@ -217,7 +230,7 @@ bool Trading_system::start() {
     // Start orderbook worker pool after data ingestion starts
     startOrderbookWorkerPool();
     // Start dedicated strategy orderbook worker pool (decoupled)
-    startStrategyOrderbookWorkerPool();
+    // startStrategyOrderbookWorkerPool(); //disable for debugging market data interface
         
         // 2. Start strategy engine
         if (!strategyEngine_->start()) {
@@ -226,7 +239,7 @@ bool Trading_system::start() {
         }
 
         // Start signal worker pool
-        startSignalWorkerPool();
+        // startSignalWorkerPool(); //disable for debugging market data interface
          
         lastPriceUpdate_ = std::chrono::steady_clock::now();
         // Start exec worker pool
@@ -264,7 +277,16 @@ void Trading_system::shutdown() {
         std::cout << "\n=== SHUTTING DOWN TRADING SYSTEM ===" << std::endl;
         
         running_ = false;
-                
+        // Stop data ingestion FIRST and wait for cleanup
+        if (dataIngestionService_) {
+            std::cout << "Stopping data ingestion service..." << std::endl;
+            dataIngestionService_->stop();
+            
+            // Give WebSocket connections time to close gracefully
+            std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+        }
+
+        
         // Stop other services
         if (strategyEngine_) {
             std::cout << "Stopping strategy engine..." << std::endl;
@@ -277,15 +299,7 @@ void Trading_system::shutdown() {
     stopSignalWorkerPool();
     stopExecWorkerPool();
 
-        // Stop data ingestion FIRST and wait for cleanup
-        if (dataIngestionService_) {
-            std::cout << "Stopping data ingestion service..." << std::endl;
-            dataIngestionService_->stop();
-            
-            // Give WebSocket connections time to close gracefully
-            std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-        }
-
+        
         
         // Stop services in reverse order
         if (zmq_server_) {
@@ -1165,45 +1179,7 @@ void Trading_system::signalWorkerLoop(size_t workerId) {
                     // if (execSignal.strength < 0.3) continue;
                     if (execSignal.confidence < 0.6) continue;
                 }
-                // this is dupplicate with execution
-                //recalculate targetSize based on limit money
-                // double allowedSize = 0.0;
-                // if (riskManager_) {
-                //     allowedSize = riskManager_->getAllowedPositionSize(execSignal.symbol);
-                // }
-                // if (allowedSize <= 0.0) {
-                //     std::cout << "🛑 Signal rejected: " << execSignal.id 
-                //               << " for " << execSignal.symbol.toString() 
-                //               << " - No allowed position size" << std::endl;
-                //     continue; // no allowed size
-                // }
-                // // execSignal.targetSize = std::min(allowedSize, execSignal.targetSize);
-                // double sizerFraction = 1.0;
-                // if (positionSizer_) {
-                //     std::map<std::string, double> metrics;
-                //     // Minimal metrics: use confidence as a rough proxy for win_rate
-                //     metrics["win_rate"] = execSignal.confidence;
-                //     metrics["volatility"] = signal.getMetric("volatility", 0.05);
-                //     std::cout << "Using volatility metric for position sizing: " << metrics["volatility"] << std::endl;
-                //     // placeholder volatility - can be replaced with real vol from market data
-                //     // metrics["volatility"] = 0.05;
-                //     std::map<std::string, double> portfolio;
-                //     sizerFraction = positionSizer_->calculateSize(execSignal.symbol.toString(), metrics, portfolio);
-                //     sizerFraction = std::clamp(sizerFraction, 0.0, 1.0);
-                // }
-                // double positionSize = allowedSize * sizerFraction;
-                // // clamp this to
-                // double finalQty = positionSize * execSignal.targetSize;
-                // finalQty = std::clamp(finalQty, 0.0, allowedSize);
-              
-                // // Keep targetSize as a fraction (0..1) of the allowed position size
-                // // Execution path expects targetSize to be a proportion so that
-                // // final execution quantity = allowedSize * sizerFraction * targetSize
-                // if (allowedSize > 0.0) {
-                //     execSignal.targetSize = std::clamp(finalQty / allowedSize, 0.0, 1.0);
-                // } else {
-                //     execSignal.targetSize = 0.0;
-                // }
+                
 
                 //check if price target percentage > 0.2%
                 for (const auto& target : execSignal.targets) {
@@ -1221,7 +1197,7 @@ void Trading_system::signalWorkerLoop(size_t workerId) {
                     signalsValidated_++;
                     if (validationResult.approved) {
                         signalsApproved_++;
-                        realExecution(execSignal);
+                        realExecution(execSignal); // disable for debugging
                     } else {
                         signalsRejected_++;
                     }
@@ -1361,8 +1337,7 @@ void Trading_system::setupComponentConnections() {
         orderbookQueueCv_.notify_one();
     });
         
-    
-        // 2. Connect strategy engine to risk manager
+    // 2. Connect strategy engine to risk manager
     // Enqueue signals into bounded queue; processing done by worker pool
     strategyEngine_->registerSignalCallback([this](const strategy::TradingSignal& signal) {
         // quick enqueue
@@ -1372,15 +1347,7 @@ void Trading_system::setupComponentConnections() {
         //print debug info for every 20th signal
         static std::atomic<int> signalCount{0};
         int count = signalCount.fetch_add(1);
-        // if (count < 20 || count % 500 == 0) {
-        //     std::cout << "🛎️ Signal #" << count << ": "
-        //               << signal.symbol.toString() 
-        //               << " Dir: " << (signal.direction == core::Direction::BUY ? "BUY" : "SELL")
-        //               << " Strength: " << signal.strength 
-        //               << " Confidence: " << signal.confidence 
-        //               << " Quality: " << signal.quality 
-        //               << " Targets: " << signal.targets.size() << std::endl;
-        // }
+      
         if (signalQueue_.size() >= signalQueueLimit_) {
             // drop oldest to make room
             signalQueue_.pop_front();
@@ -1396,7 +1363,6 @@ void Trading_system::setupComponentConnections() {
         std::cout << "🚨 Risk Event: " << event.description 
                     << " (Severity: " << event.severity << ")" << std::endl;
     });
-    setupPTCAConnections();
 }
 
 void Trading_system::realExecution(const execution::TradingSignal& signal) {
