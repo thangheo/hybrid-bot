@@ -590,30 +590,11 @@ double MomentumCorrelation::getCorrelationCoefficient(const std::string& metric_
         //     LOG_DEBUG("Found correlation for {}: {}", metric_name, it->second);
         // }
         return it->second;
-    }
-    
-    // LOG_DEBUG("No correlation found for metric: {}", metric_name);
-    
-    // Debug: print all available correlations
-    // LOG_DEBUG("Available correlations:");
-    // for (const auto& [name, coeff] : correlation_coefficients_) {
-    //     LOG_DEBUG("  {}: {}", name, coeff);
-    // }
+    }   
     
     return 0.0;
 }
 
-// Add this helper method to your header file
-// std::string MomentumCorrelation::imbalanceTypeToString(ImbalanceType type) const {
-//     switch (type) {
-//         case ImbalanceType::VOLUME_IMBALANCE: return "volumeImbalance ";
-//         case ImbalanceType::DEPTH_IMBALANCE: return "depthImbalance";
-//         case ImbalanceType::PRESSURE_IMBALANCE: return "pressureImbalance";
-//         case ImbalanceType::BID_ASK_RATIO: return "bid_ask_ratio";
-//         case ImbalanceType::SPREAD_IMBALANCE: return "spread";
-//         default: return "unknown_imbalance";
-//     }
-// }
 
 void MomentumCorrelation::updateHighestCorrelatedMetrics() {
     // Snapshot the correlation maps under lock so we don't iterate over

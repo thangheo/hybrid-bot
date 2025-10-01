@@ -46,7 +46,7 @@
   */
  inline std::string imbalanceTypeToString(ImbalanceType type) {
      switch (type) {
-         case ImbalanceType::VOLUME_IMBALANCE: return "volumeImbalance ";
+         case ImbalanceType::VOLUME_IMBALANCE: return "volumeImbalance";
          case ImbalanceType::PRICE_LEVEL_IMBALANCE: return "priceLevelImbalance";
          case ImbalanceType::LIQUIDITY_REMOVAL: return "liquidity_removal";
          case ImbalanceType::ORDER_FLOW_IMBALANCE: return "order_flow_imbalance";
