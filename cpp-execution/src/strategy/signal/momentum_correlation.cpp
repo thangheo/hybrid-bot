@@ -585,10 +585,7 @@ double MomentumCorrelation::predictPriceMovement(const ImbalanceEvent& event) {
 double MomentumCorrelation::getCorrelationCoefficient(const std::string& metric_name) const {
     auto it = correlation_coefficients_.find(metric_name);
     if (it != correlation_coefficients_.end()) {
-        //only log if correlation is significant
-        // if (std::abs(it->second) > 0) {
-        //     LOG_DEBUG("Found correlation for {}: {}", metric_name, it->second);
-        // }
+      
         return it->second;
     }   
     
