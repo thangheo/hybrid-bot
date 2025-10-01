@@ -519,9 +519,6 @@ void MarketDataSubscriber::processQueueLoop() {
             }
         }
         
-        // Process batch WITHOUT async - this is the key fix
-        LOG_INFO("Processing batch of {} messages", batch.size());
-        
         for (auto& rawMsg : batch) {
             try {
                 auto start = std::chrono::steady_clock::now();
