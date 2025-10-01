@@ -52,10 +52,22 @@
       "description": "Dogecoin - Original meme with payments"
     },
     {
+      "symbol": "DOT/USDT",
+      "exchange": "BINANCE", 
+      "category": "interoperability",
+      "description": "Polkadot - Cross-chain protocol"
+    },
+    {
       "symbol": "LINK/USDT",
       "exchange": "BINANCE",
       "category": "defi_infrastructure", 
       "description": "Chainlink - Oracle network"
+    },
+    {
+      "symbol": "UNI/USDT",
+      "exchange": "BINANCE",
+      "category": "defi",
+      "description": "Uniswap - Leading DEX"
     },
     {
       "symbol": "AAVE/USDT",
@@ -82,16 +94,106 @@
       "description": "Fetch.ai - AI agent platform"
     },
      {
+       "symbol": "INJ/USDT",
+       "exchange": "BINANCE",
+       "category": "defi",
+       "description": "Injective - DeFi-focused chain"
+     },
+     {
+       "symbol": "ONDO/USDT",
+       "exchange": "BINANCE",
+       "category": "rwa",
+       "description": "Ondo Finance - Tokenized treasuries"
+     },
+     {
+       "symbol": "HBAR/USDT",
+       "exchange": "BINANCE",
+       "category": "rwa_enterprise",
+       "description": "Hedera - Hashgraph for enterprise"
+     },
+     {
+       "symbol": "PAXG/USDT",
+       "exchange": "BINANCE",
+       "category": "rwa_commodities",
+       "description": "Pax Gold - Tokenized gold"
+     },
+     {
+       "symbol": "SAND/USDT",
+       "exchange": "BINANCE",
+       "category": "metaverse",
+       "description": "The Sandbox - Gaming metaverse"
+     },
+     {
+       "symbol": "GALA/USDT",
+       "exchange": "BINANCE",
+       "category": "gaming",
+       "description": "Gala Games - Blockchain gaming"
+     },
+     {
+       "symbol": "IMX/USDT",
+       "exchange": "BINANCE",
+       "category": "gaming_nft",
+       "description": "Immutable X - NFT scaling"
+     },
+     {
        "symbol": "SUI/USDT",
        "exchange": "BINANCE", 
        "category": "emerging_l1",
        "description": "Sui - Move-based blockchain"
      },
      {
+       "symbol": "APT/USDT",
+       "exchange": "BINANCE",
+       "category": "emerging_l1", 
+       "description": "Aptos - Move language blockchain"
+     },
+     {
+       "symbol": "KAS/USDT",
+       "exchange": "BINANCE",
+       "category": "mining_innovation",
+       "description": "Kaspa - DAG-based mining"
+     },
+     {
+       "symbol": "TIA/USDT",
+       "exchange": "BINANCE",
+       "category": "modular_blockchain",
+       "description": "Celestia - Modular blockchain"
+     },
+     {
+       "symbol": "SHIB/USDT",
+       "exchange": "BINANCE",
+       "category": "meme_ecosystem",
+       "description": "Shiba Inu - Ecosystem expansion"
+     },
+     {
        "symbol": "PEPE/USDT",
        "exchange": "BINANCE",
        "category": "meme",
        "description": "Pepe - Leading meme coin"
+     },
+     {
+       "symbol": "FLOKI/USDT",
+       "exchange": "BINANCE", 
+       "category": "meme_utility",
+       "description": "Floki - Gaming utility meme"
+     },
+     {
+       "symbol": "ATOM/USDT",
+       "exchange": "BINANCE",
+       "category": "interoperability",
+       "description": "Cosmos - Internet of blockchains"
+     },
+     {
+       "symbol": "FTM/USDT",
+       "exchange": "BINANCE",
+       "category": "high_performance",
+       "description": "Fantom - Fast, low-cost platform"
+     },
+     {
+       "symbol": "ALGO/USDT",
+       "exchange": "BINANCE",
+       "category": "consensus_innovation",
+       "description": "Algorand - Pure proof-of-stake"
      }
     ],
   "parameters": {

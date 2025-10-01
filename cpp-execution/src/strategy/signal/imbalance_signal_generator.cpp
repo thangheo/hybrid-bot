@@ -26,6 +26,16 @@
 #include <future>
 #include <common/logger.hpp>
 
+#include "common/thread_pool.hpp"
+
+// Thread pool singleton cho momentum prediction
+static ThreadPool& getPredictionThreadPool() {
+    // 2-4 threads cho prediction tasks
+    static ThreadPool pool(4);
+    return pool;
+}
+
+
 namespace trading {
 namespace strategy {
 // Static lookup tables for regime-aware scaling
@@ -186,14 +196,6 @@ bool ImbalanceSignalGenerator::processImbalance(const ImbalanceEvent& imbalance)
     auto regime = getCurrentMarketRegime(imbalance);
     (void)price; (void)regime;
     
-    // LOG_DEBUG("Enhanced signal generated: Type={}, Direction={}, Strength={:.3f}, "
-    //          "Confidence={:.2f}, Quality={:.3f}, Price={:.2f}, Regime={}, SignalID={}",
-    //          imbalanceTypeToString(imbalance.type),
-    //          (imbalance.direction == core::Direction::BUY ? "BUY" : 
-    //           (imbalance.direction == core::Direction::SELL ? "SELL" : "NEUTRAL")),
-    //          signal.strength, signal.confidence, signal.quality, price,
-    //             marketRegimeToString(regime), signal.id);
-    
     // Notify callbacks (do not hold main mutex_ while notifying)
     notifySignalCallbacks(signal);
 
@@ -208,6 +210,7 @@ std::vector<TradingSignal> ImbalanceSignalGenerator::generateSignals() {
     return generatedSignals_;
 }
 
+#define DEBUG_BUILD 1
 // Enhanced signal creation
 // New signature: accept optional snapshots of component pointers and config to avoid
 // accessing shared state while holding the main mutex.
@@ -251,12 +254,13 @@ TradingSignal ImbalanceSignalGenerator::createSignalFromImbalance(
     
     auto t3 = std::chrono::steady_clock::now();
     // Generate sophisticated price targets
-    signal.targets = generatePriceTargets(imbalance);
+    signal.targets = generatePriceTargets(imbalance); // có khả nghi 
     
     // Calculate adaptive TTL
     auto deltaPrice = signal.targets.empty() ? 0.001 : 
                      std::abs(signal.targets.back().price - signal.price);
-    signal.ttl = calculateSignalTTL(imbalance, deltaPrice);
+
+    signal.ttl = calculateSignalTTL(imbalance, deltaPrice); // không khả nghi
     signal.expirationTime = imbalance.detectionTime + signal.ttl;
     
     // Copy and enhance metrics
@@ -269,69 +273,72 @@ TradingSignal ImbalanceSignalGenerator::createSignalFromImbalance(
     double predictedMove = 0.0;
     double correlation = 0.0;
     auto sub_t1 = std::chrono::steady_clock::now();
-    if (momentumCopy) {
-        // Non-blocking predictor call with timeout to avoid stalling signal creation
-        double localPredictedMove = 0.0;
-        double localCorrelation = 0.0;
-        bool timedOut = false;
 
+    
+    bool predictionTimedOut = false;
+
+    if (momentumCopy) {
         if (configCopy.predictTimeoutUs == 0) {
             // Blocking call (backward-compatible)
-            localPredictedMove = momentumCopy->predictPriceMovement(imbalance);
+            predictedMove = momentumCopy->predictPriceMovement(imbalance);
+            // Create an owning string here so any view passed to other APIs
+            // does not dangle when the temporary returned from
+            // imbalanceTypeToString() is destroyed.
             std::string imbalanceTypeStr = imbalanceTypeToString(imbalance.type);
-            localCorrelation = momentumCopy->getCorrelationCoefficient(imbalanceTypeStr);
+            correlation = momentumCopy->getCorrelationCoefficient(imbalanceTypeStr);
+
         } else {
+            // Non-blocking with thread pool
             try {
-                auto fut = std::async(std::launch::async, [momentumCopy, &imbalance]() {
+                auto& pool = getPredictionThreadPool();
+                
+                // Submit task to thread pool
+                auto future = pool.enqueue([momentumCopy, &imbalance]() {
                     return momentumCopy->predictPriceMovement(imbalance);
                 });
-                auto status = fut.wait_for(std::chrono::microseconds(configCopy.predictTimeoutUs));
+                
+                // Wait with timeout
+                auto status = future.wait_for(std::chrono::microseconds(configCopy.predictTimeoutUs));
+                
                 if (status == std::future_status::ready) {
-                    localPredictedMove = fut.get();
+                    predictedMove = future.get();
+                    // Keep an owning std::string to ensure lifetime while used
+                    // in getCorrelationCoefficient.
                     std::string imbalanceTypeStr = imbalanceTypeToString(imbalance.type);
-                    localCorrelation = momentumCopy->getCorrelationCoefficient(imbalanceTypeStr);
+                    correlation = momentumCopy->getCorrelationCoefficient(imbalanceTypeStr);
                 } else {
-                    // Timeout: fallback safely
-                    timedOut = true;
-                    localPredictedMove = 0.0;
-                    localCorrelation = 0.0;
+                    predictionTimedOut = true;
+                    // Future will be cleaned up by pool
                 }
-            } catch (const std::exception &ex) {
-                LOG_WARN("ImbalanceSignalGenerator: predictor threw: {}", ex.what());
-                localPredictedMove = 0.0;
-                localCorrelation = 0.0;
-            } catch (...) {
-                LOG_WARN("ImbalanceSignalGenerator: predictor threw unknown");
-                localPredictedMove = 0.0;
-                localCorrelation = 0.0;
+            } catch (const std::exception& ex) {
+                // Log only in debug build
+                #ifdef DEBUG_BUILD
+                LOG_WARN("ImbalanceSignalGenerator: predictor exception: {}", ex.what());
+                #endif
+                predictedMove = 0.0;
+                correlation = 0.0;
             }
         }
-
-        predictedMove = localPredictedMove;
-        correlation = localCorrelation;
-
+        
+        // Set metrics in batch
         signal.setMetric("predictedPriceMove", predictedMove);
         signal.setMetric("momentumCorrelation", correlation);
-        if (timedOut) {
-            signal.setMetric("predict_timed_out", 1.0);
-            LOG_DEBUG("ImbalanceSignalGenerator: predictor timed out for signal {} (timeout={}us)", signal.id, configCopy.predictTimeoutUs);
-        } else {
-            signal.setMetric("predict_timed_out", 0.0);
-        }
-
+        signal.setMetric("predict_timed_out", predictionTimedOut ? 1.0 : 0.0);
+        
         // Handle prediction alignment
         bool alignmentCorrect = checkPredictionAlignment(imbalance.direction, predictedMove);
         signal.setMetric("predictionAligned", alignmentCorrect ? 1.0 : 0.0);
-
+        
         if (!alignmentCorrect) {
             handlePredictionConflict(signal, imbalance, predictedMove, correlation);
         }
-
-        // Apply sophisticated confidence adjustment
+        
+        // Apply confidence adjustment
         double absCorrelation = std::abs(correlation);
         double confidenceMultiplier = calculateConfidenceMultiplier(absCorrelation, alignmentCorrect);
         signal.confidence = std::clamp(signal.confidence * confidenceMultiplier, 0.0, 1.0);
     }
+
     auto sub_elapsed_predict = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - sub_t1).count();
     signal.setMetric("timing_predict_calc_us", static_cast<double>(sub_elapsed_predict));
     auto t5 = std::chrono::steady_clock::now();
