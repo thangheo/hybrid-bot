@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <sstream>
 #include "common/logger.hpp"
+#include <unordered_set>
 namespace trading::risk {
 
 // Helper function to replace std::format (C++20) with string stream (C++17)
@@ -447,6 +448,7 @@ std::map<std::string, double> PostTradeMonitor::getMonitoringStatistics() {
     stats["system_health_score"] = systemHealth_.getHealthScore();
     stats["total_risk_events"] = static_cast<double>(systemHealth_.totalRiskEvents.load());
     stats["critical_events"] = static_cast<double>(systemHealth_.criticalEvents.load());
+    stats["ttl_exits"] = static_cast<double>(ttlExits_.load());
     
     // Add component statistics
     auto stopLossStats = safeComponentOperation(stopLossManager_, [](const auto& component) {
@@ -838,6 +840,13 @@ void PostTradeMonitor::performScheduledTasks() {
         (void)events; // Suppress unused variable warning
         return true;
     });
+
+    // Enforce position TTLs more frequently than other maintenance tasks
+    try {
+        enforcePositionTTL();
+    } catch (...) {
+        // swallow errors to avoid thread exit
+    }
     
     // Perform maintenance tasks
     static auto lastMaintenance = core::now();
@@ -846,6 +855,108 @@ void PostTradeMonitor::performScheduledTasks() {
     if (now - lastMaintenance >= std::chrono::minutes(10)) {
         performMaintenanceTasks();
         lastMaintenance = now;
+    }
+}
+
+int64_t PostTradeMonitor::calculateDynamicTTL(double currentVolatility) {
+    const int64_t BASE_TTL = 5000;  // 5 seconds base
+    const int64_t MAX_TTL = 30000;  // 30 seconds max
+
+    // Low volatility → longer TTL
+    // High volatility → shorter TTL
+    double multiplier = 1.0 / (1.0 + currentVolatility);
+    int64_t ttl = static_cast<int64_t>(BASE_TTL * (1.0 + multiplier));
+    return std::min(MAX_TTL, ttl);
+}
+
+void PostTradeMonitor::enforcePositionTTL() {
+    if (!positionTracker_ || !dataInterface_) return;
+
+    // Get snapshot of positions
+    auto positions = positionTracker_->getAllPositions();
+    if (positions.empty()) return;
+
+    auto now = core::now();
+
+    for (const auto& pos : positions) {
+        try {
+            if (std::abs(pos.getQuantity()) < 1e-8) continue;
+
+            // create a stable key for the position
+            std::string key = pos.getExchangeId().toString() + ":" + pos.getTradingPair().toString();
+
+            // Skip if already being closed
+            {
+                std::shared_lock<std::shared_mutex> sl(positionsClosingMutex_);
+                if (positionsBeingClosed_.find(key) != positionsBeingClosed_.end()) continue;
+            }
+
+            int64_t ttlMs = static_cast<int64_t>(monitorConfig_.defaultPositionTTL.count());
+
+            // If dynamic TTL is enabled, query volatility and adjust
+            if (monitorConfig_.enableDynamicTtl) {
+                double vol = dataInterface_->getVolatility(pos.getTradingPair(), monitorConfig_.volatilityTimeframe, pos.getExchangeId().toString());
+                if (vol > 0.0) {
+                    ttlMs = calculateDynamicTTL(vol);
+                }
+            }
+
+            auto entryTime = pos.getLastUpdated();
+            auto ageMs = std::chrono::duration_cast<std::chrono::milliseconds>(now - entryTime).count();
+
+            if (ageMs > ttlMs) {
+                // mark as being closed
+                {
+                    std::unique_lock<std::shared_mutex> ul(positionsClosingMutex_);
+                    positionsBeingClosed_.insert(key);
+                }
+
+                // Prefer using stopLossManager to liquidate so we follow same plumbing
+                bool exitRequested = false;
+                if (stopLossManager_) {
+                    safeComponentOperation(stopLossManager_, [&](auto& mgr) {
+                        // Use liquidatePosition API which returns order id optionally
+                        auto oid = mgr.liquidatePosition(pos.getExchangeId(), pos.getTradingPair());
+                        exitRequested = oid.has_value();
+                        return true;
+                    });
+                }
+
+                // Fallback to execution interface if needed
+                if (!exitRequested && executionInterface_) {
+                    OrderRequest req;
+                    req.exchangeId = pos.getExchangeId();
+                    req.tradingPair = pos.getTradingPair();
+                    req.quantity = std::abs(pos.getQuantity());
+                    req.side = pos.getQuantity() > 0 ? core::Direction::SELL : core::Direction::BUY;
+                    req.type = OrderType::MARKET;
+                    req.timestamp = core::now();
+                    // Submit order
+                    try {
+                        auto orderId = executionInterface_->submitOrder(req);
+                        exitRequested = !orderId.empty();
+                    } catch (...) {
+                        exitRequested = false;
+                    }
+                }
+
+                // Record metric and event
+                if (exitRequested) {
+                    ttlExits_.fetch_add(1);
+
+                    RiskEvent event(
+                        RiskEventType::EMERGENCY_ACTION,
+                        formatString("TTL exit triggered for {}:{} after {} ms (ttl={})", pos.getExchangeId().toString(), pos.getTradingPair().toString(), ageMs, ttlMs),
+                        "info"
+                    );
+                    notifyRiskEvent(event);
+                }
+
+                // Note: positionsBeingClosed_ will be cleaned up when position disappears from snapshot or on next reconcile
+            }
+        } catch (...) {
+            // ignore per-position errors
+        }
     }
 }
 
