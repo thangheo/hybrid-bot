@@ -2686,7 +2686,7 @@ double ImbalanceDetectionEngine::calculateVariance(const std::vector<double>& da
     static std::atomic<int> eventCounter{0};
     int count = ++eventCounter;
     if (count % 1000 == 0 || event.strength > 0.2 || event.confidence >= ConfidenceLevel::LOW) {
-        LOG_DEBUG("ImbalanceDetectionEngine: created ImbalanceEvent id={} type={} strength={} dir={}, confidence={} for {}:{} on thread {}, count ={}",
+        LOG_TRACE("ImbalanceDetectionEngine: created ImbalanceEvent id={} type={} strength={} dir={}, confidence={} for {}:{} on thread {}, count ={}",
                 event.eventId,
                 static_cast<int>(event.type),
                 event.strength,
@@ -2743,7 +2743,7 @@ void ImbalanceDetectionEngine::createImbalanceEventForBayesModel(ImbalanceType t
     static std::atomic<int> eventCounter{0};
     int count = ++eventCounter;
     if (count % 1000 == 0 || event.strength > 0.2) {
-        LOG_DEBUG("createImbalanceEventForBayesModel: created ImbalanceEvent id={} type={} strength={} dir={}, confidence={} bayesProb={} for {}:{} on thread {}, count ={}",
+        LOG_TRACE("createImbalanceEventForBayesModel: created ImbalanceEvent id={} type={} strength={} dir={}, confidence={} bayesProb={} for {}:{} on thread {}, count ={}",
                 event.eventId,
                 static_cast<int>(event.type),
                 event.strength,
