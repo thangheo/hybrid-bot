@@ -202,13 +202,7 @@ bool Trading_system::start() {
 
         // CRITICAL DEBUG - Check if threads are actually running
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
-
-        // Try to trigger the diagnostic logs by checking queue state
-        // std::cout << "=== THREAD DEBUG ===" << std::endl;
-        // std::cout << "Intel queue size: " << zmq_server_->getQueueSize("intel") << std::endl;
-        // std::cout << "Internal queue size: " << zmq_server_->getQueueSize("internal") << std::endl;
-        // std::cout << "Health check: " << (zmq_server_->healthCheck() ? "HEALTHY" : "UNHEALTHY") << std::endl;
-
+ 
         //load symbols from strategy config
         std::vector<Symbol> symbols;
         for (const auto& [name, pair] : strategyConfig_.tradingPairs) {
@@ -281,7 +275,8 @@ void Trading_system::shutdown() {
         if (dataIngestionService_) {
             std::cout << "Stopping data ingestion service..." << std::endl;
             dataIngestionService_->stop();
-            
+            dataIngestionService_.reset();
+
             // Give WebSocket connections time to close gracefully
             std::this_thread::sleep_for(std::chrono::milliseconds(1000));
         }
@@ -317,7 +312,6 @@ void Trading_system::shutdown() {
             
         // // Clear data ingestion service pointer after shutdown
         // std::cout << "Clearing data ingestion service..." << std::endl;
-        // dataIngestionService_.reset();
         
         // Stop event bus last
         std::cout << "Stopping event bus..." << std::endl;
@@ -371,120 +365,7 @@ void Trading_system::printStatus() {
 
     std::cout << "=========================================" << std::endl;
 }
-
-// void Trading_system::generateMarketIntelligence(const OrderBookUpdate& update, std::shared_ptr<OrderBook> orderBook) {
-//     try {
-//         if (!orderBook) {
-//             return; // No order book available
-//         }           
-//         // Validate order book has data
-//         auto bids = orderBook->getBids(5);
-//         auto asks = orderBook->getAsks(5);
-        
-//         if (bids.empty() || asks.empty()) {
-//             return;
-//         }
-        
-//         // Verify prices are valid
-//         if (bids[0].price <= 0 || asks[0].price <= 0 || asks[0].price <= bids[0].price) {
-//             return;
-//         }
-        
-//         // Generate adaptive market intelligence
-//         std::string tradingPair = update.tradingPair.toString();
-        
-//         // Throttle intelligence generation (use instance maps to avoid data races)
-//         auto now = std::chrono::steady_clock::now();
-//         bool shouldGenerate = false;
-//         {
-//             std::lock_guard<std::mutex> lm(intelMapsMutex_);
-//             if (lastIntelTime_.find(tradingPair) == lastIntelTime_.end()) {
-//                 shouldGenerate = true; // First time
-//             } else {
-//                 auto timeSinceLastIntel = now - lastIntelTime_[tradingPair];
-//                 if (timeSinceLastIntel >= std::chrono::milliseconds(500)) { // Generate every 500 ms
-//                     shouldGenerate = true;
-//                 }
-//             }
-//             if (!shouldGenerate) return;
-//             lastIntelTime_[tradingPair] = now;
-//         }
-
-//         trading::MarketIntelligence intel = adaptiveIntel_->GenerateAdaptiveMarketIntelligence(tradingPair, orderBook);
-
-//         if (intel.symbol().empty()) {
-//             return; // No valid intelligence generated
-//         }
-
-//         // Debug output for intelligence generations
-//         {
-//             std::lock_guard<std::mutex> lm(intelMapsMutex_);
-//             intelDebugCounts_[tradingPair]++;
-//             if (intelDebugCounts_[tradingPair] <= 1 || intelDebugCounts_[tradingPair] % 5000 == 0) {
-//                 std::cout << "🧠 Generated intelligence #" << intelDebugCounts_[tradingPair]
-//                             << " for " << tradingPair << " (spread: " << intel.bid_ask_spread()
-//                             << ", imbalance: " << intel.order_book_imbalance() << ")" << std::endl;
-//             }
-//         }
-        
-//         // Store latest intelligence
-//         {
-//             std::lock_guard<std::mutex> lock(intelligenceMutex_);
-//             latestIntelligence_[tradingPair] = intel;
-//         }
-        
-//         // ✅ Direct ZMQ publishing like full_bridge.cpp
-//         if (zmq_server_ && !intel.symbol().empty()) {
-//             // Debug output for publishing
-//             static std::atomic<int> publishCount{0};
-//             int count = publishCount.fetch_add(1);
-//             if (count < 5 || count % 100 == 0) {
-//                 std::cout << "📢 Publishing intelligence #" << count
-//                             << " for " << tradingPair << std::endl;
-//             }   
-//             if (intel.DebugString().size() > 1000) {
-//                 std::cerr << "Warning: Intelligence message size is large ("
-//                             << intel.DebugString().size() << " bytes)" << std::endl;
-//             }
-//             if (zmq_server_) {
-//                 // Serialize protobuf safely into a std::string (SerializeToString returns bool)
-//                 std::string serialized_intel;
-//                 if (!intel.SerializeToString(&serialized_intel)) {
-//                     std::cerr << "Failed to serialize MarketIntelligence protobuf" << std::endl;
-//                 } else {
-//                     // Backpressure: check queue size for topic and skip if too large
-//                     std::string topic = "MARKET_INTEL.";
-//                     // try {
-//                     //     size_t qsize = zmq_server_->getQueueSize(topic);
-//                     //     if (qsize > 1000) { // arbitrary high watermark
-//                     //         //drop all the old data. you are not a fucking historian.
-//                     //         zmq_server_->dropMessages(topic, qsize - 500); // keep last 500 messages
-//                     //         // publishAllowed = false;
-//                     //         std::cerr << "Backpressure: ZMQ queue for " << topic << " size=" << qsize
-//                     //                     << ", skipping publish to avoid memory growth" << std::endl;
-//                     //     }
-//                     // } catch (...) {
-//                     //     // If getQueueSize not implemented or fails, allow publish
-//                     // }
-//                     //what the fucking i am doing?
-//                     // Use publishAsync to avoid blocking the intelligence generation path.
-//                     // Move the serialized string to avoid an extra copy.
-//                     zmq_server_->publishAsync("MARKET_INTEL", std::move(serialized_intel), MessagePriority::NORMAL);
-//                     // zmq_server_->publishProtobuf("MARKET_INTEL", intel, MessagePriority::NORMAL);
-                    
-//                 }
-//             }
-//             else {
-//                 std::cerr << "ZMQ server not available for publishing intelligence" << std::endl;
-//                 // Handle case where ZMQ server is not available
-//             }
-//         }
-        
-//     } catch (const std::exception& e) {
-//         std::cerr << "Error generating market intelligence: " << e.what() << std::endl;
-//     }
-// }
-
+ 
 
 bool Trading_system::checkSystemHealth() {
     try {
