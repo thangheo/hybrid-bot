@@ -174,6 +174,12 @@ struct PostTradeMonitorConfig {
     bool enableBackgroundMonitoring{true};
     int maxConcurrentTasks{4};
     bool enableDetailedLogging{true};
+
+    // Position TTL (time-to-live) settings
+    std::chrono::milliseconds defaultPositionTTL{std::chrono::milliseconds(1500)}; // 1.5s default
+    std::chrono::milliseconds positionTtlCheckIntervalMs{std::chrono::milliseconds(200)}; // check interval
+    bool enableDynamicTtl{true};
+    std::string volatilityTimeframe{"1m"};
     
     // Alert settings
     bool enableRealTimeAlerts{true};
@@ -394,6 +400,18 @@ private:
     std::atomic<uint64_t> totalExecutionReports_{0};
     std::atomic<uint64_t> totalMarketDataUpdates_{0};
     std::atomic<uint64_t> lastHealthCheckNanos_{0};
+    // TTL metrics
+    std::atomic<uint64_t> ttlExits_{0};
+
+    // Positions currently being closed by TTL enforcement (keys)
+    mutable std::shared_mutex positionsClosingMutex_;
+    std::unordered_set<std::string> positionsBeingClosed_;
+
+    // Enforce position TTL
+    void enforcePositionTTL();
+
+    // Calculate dynamic TTL based on volatility
+    static int64_t calculateDynamicTTL(double currentVolatility);
     
     // Mode transition tracking
     mutable std::shared_mutex modeTransitionMutex_;
