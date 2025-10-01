@@ -292,8 +292,10 @@ TradingSignal ImbalanceSignalGenerator::createSignalFromImbalance(
             try {
                 auto& pool = getPredictionThreadPool();
                 
-                // Submit task to thread pool
-                auto future = pool.enqueue([momentumCopy, &imbalance]() {
+                // Submit task to thread pool. Capture imbalance by value to avoid
+                // referencing a stack object from another thread which can lead
+                // to undefined behavior if the caller returns before the task runs.
+                auto future = pool.enqueue([momentumCopy, imbalance]() {
                     return momentumCopy->predictPriceMovement(imbalance);
                 });
                 
