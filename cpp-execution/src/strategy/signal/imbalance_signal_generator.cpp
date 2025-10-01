@@ -127,7 +127,6 @@ bool ImbalanceSignalGenerator::initialize(const SignalGeneratorConfig& config) {
 // Core processing methods
 int ImbalanceSignalGenerator::processImbalances(const std::vector<ImbalanceEvent>& imbalances) {
     auto t0 = std::chrono::steady_clock::now();
-    std::lock_guard<std::mutex> lock(mutex_);
     int signalsGenerated = 0;
 
     for (const auto& imbalance : imbalances) {

@@ -21,6 +21,8 @@ endif()
 message(STATUS "Using protobuf ${Protobuf_VERSION}")
 message(STATUS "Protobuf include dirs: ${Protobuf_INCLUDE_DIRS}")
 message(STATUS "Protobuf libraries: ${Protobuf_LIBRARIES}")
+#add directory for interfaces
+add_subdirectory(interfaces)
 
 add_library(risk STATIC ${RISK_SOURCES})
 set_target_properties(risk PROPERTIES POSITION_INDEPENDENT_CODE ON)

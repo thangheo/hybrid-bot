@@ -23,27 +23,41 @@ MarketDataProcessor::MarketDataProcessor(const ProcessorConfig& config)
 
 std::optional<core::MarketData> MarketDataProcessor::processMessage(
     const std::string& topic, const std::string& message) {
-    
+    // Entry log for diagnostics
+    // LOG_DEBUG("Entering processMessage: topic='{}', message_size={}", topic, message.size());
+
     // Basic validation
     if (!isValidTopic(topic) || !isValidMessageSize(message)) {
+        // LOG_DEBUG("Exiting processMessage: invalid topic/size for topic='{}', size={}", topic, message.size());
         return std::nullopt;
     }
-    
+
     totalProcessed_.fetch_add(1, std::memory_order_relaxed);
-    
+
     // Try protobuf first (more efficient), then JSON
-    if (config_.enableProtobufProcessing) {
-        auto result = processProtobufOrderbook(topic, message);
-        if (result.has_value()) {
+    try {
+        if (config_.enableProtobufProcessing) {
+            // LOG_DEBUG("Attempting protobuf parse...");
+            auto result = processProtobufOrderbook(topic, message);
+            if (result.has_value()) {
+                // LOG_INFO("processMessage END: protobuf success for topic='{}'", topic);
+                return result;
+            }
+        }
+        
+        if (config_.enableJsonProcessing) {
+            // LOG_DEBUG("Attempting JSON parse...");
+            auto result = processJsonOrderbook(topic, message);
+            // LOG_INFO("processMessage END: json {} for topic='{}'", 
+            //          result.has_value() ? "success" : "failed", topic);
             return result;
         }
+    } catch (const std::exception& e) {
+        LOG_ERROR("processMessage exception: {}", e.what());
     }
-    
-    if (config_.enableJsonProcessing) {
-        return processJsonOrderbook(topic, message);
-    }
-    
+
     LOG_WARN("No enabled processors for message on topic: {}", topic);
+    LOG_DEBUG("Exiting processMessage: topic='{}', returned=0 (no processors enabled)", topic);
     return std::nullopt;
 }
 
@@ -137,14 +151,16 @@ std::optional<core::MarketData> MarketDataProcessor::processJsonOrderbook(
 std::optional<core::MarketData> MarketDataProcessor::processProtobufOrderbook(
     const std::string& topic, const std::string& message) {
     try {
+        // LOG_DEBUG("processProtobufOrderbook: entry topic='{}', size={}", topic, message.size());
         if (message.empty()) {
             LOG_ERROR("Empty protobuf message for topic: {}", topic);
             ++errorStats_.protobufParseErrors;
+            // LOG_DEBUG("processProtobufOrderbook: exiting early empty message for topic='{}'", topic);
             return std::nullopt;
         }
 
         orderbook::OrderbookMessage orderbook_msg;
-        
+        // LOG_DEBUG("Protobuf parse start: topic='{}', size={}", topic, message.size());
         try {
             // Use CodedInputStream for better memory control
             google::protobuf::io::ArrayInputStream array_input(
@@ -157,13 +173,15 @@ std::optional<core::MarketData> MarketDataProcessor::processProtobufOrderbook(
                 LOG_ERROR("Failed to parse protobuf message for topic: {}", topic);
                 protobufParseErrors_.fetch_add(1, std::memory_order_relaxed);
                 recordError();
+                LOG_DEBUG("Protobuf parse failed for topic='{}'", topic);
                 return std::nullopt;
             }
-            
+            // LOG_DEBUG("Protobuf parse success: topic='{}'", topic);
         } catch (const std::exception& e) {
             LOG_ERROR("Exception parsing protobuf for topic {}: {}", topic, e.what());
             protobufParseErrors_.fetch_add(1, std::memory_order_relaxed);
             recordError();
+            LOG_DEBUG("Protobuf parse exception for topic='{}': {}", topic, e.what());
             return std::nullopt;
         }
 
@@ -171,6 +189,7 @@ std::optional<core::MarketData> MarketDataProcessor::processProtobufOrderbook(
         if (!orderbook_msg.has_data()) {
             LOG_ERROR("Protobuf message missing data field for topic: {}", topic);
             protobufParseErrors_.fetch_add(1, std::memory_order_relaxed);
+            LOG_DEBUG("processProtobufOrderbook: missing data for topic='{}'", topic);
             return std::nullopt;
         }
 
@@ -221,8 +240,8 @@ std::optional<core::MarketData> MarketDataProcessor::processProtobufOrderbook(
         marketData.high24h = data.high24h();
         marketData.low24h = data.low24h();
 
-        
-        return marketData;
+    LOG_DEBUG("processProtobufOrderbook: created market data for topic='{}' exchange='{}' symbol='{}'", topic, exchange, symbol);
+    return marketData;
 
     } catch (const std::exception& e) {
         LOG_ERROR("Exception in processProtobufOrderbook for topic {}: {}", topic, e.what());
@@ -239,15 +258,41 @@ std::pair<std::string, std::string> MarketDataProcessor::extractExchangeSymbol(
     std::string symbol;
     
     // Parse topic format: "orderbook.{exchange}.{symbol}"
+    // Robust parsing: locate the prefix then the next dot separator between exchange and symbol.
     std::string_view topic_view(topic);
-    auto first_dot = topic_view.find('.', 10); // Skip "orderbook."
-    if (first_dot != std::string_view::npos) {
-        auto second_dot = topic_view.find('.', first_dot + 1);
-        if (second_dot != std::string_view::npos) {
-            exchange = std::string(topic_view.substr(first_dot + 1, second_dot - first_dot - 1));
-            symbol = std::string(topic_view.substr(second_dot + 1));
-            // Convert '_' to '/' in symbol
+    const std::string_view prefix("orderbook.");
+    if (topic_view.rfind(prefix, 0) == 0) {
+        // start after the prefix
+        size_t start = prefix.size();
+        auto dot_pos = topic_view.find('.', start);
+        if (dot_pos != std::string_view::npos) {
+            exchange = std::string(topic_view.substr(start, dot_pos - start));
+            symbol = std::string(topic_view.substr(dot_pos + 1));
+            // Convert '_' to '/' in symbol if needed
             std::replace(symbol.begin(), symbol.end(), '_', '/');
+        } else {
+            LOG_DEBUG("Topic '{}' does not contain exchange/symbol separator after prefix", topic);
+        }
+    } else {
+        // Fallback: try to split by dots and take last two components
+        std::vector<std::string> parts;
+        std::string tmp(topic);
+        size_t pos = 0;
+        while (true) {
+            auto p = tmp.find('.');
+            if (p == std::string::npos) {
+                parts.push_back(tmp);
+                break;
+            }
+            parts.push_back(tmp.substr(0, p));
+            tmp = tmp.substr(p + 1);
+        }
+        if (parts.size() >= 3) {
+            exchange = parts[parts.size() - 2];
+            symbol = parts.back();
+            std::replace(symbol.begin(), symbol.end(), '_', '/');
+        } else {
+            LOG_DEBUG("Unable to parse exchange/symbol from topic '{}', parts found: {}", topic, parts.size());
         }
     }
     
@@ -293,10 +338,10 @@ ProcessorErrorStats MarketDataProcessor::getStats() const {
 
 bool MarketDataProcessor::isValidTopic(const std::string& topic) const {
     // Check if topic starts with expected prefix
-    if (topic.size() < 10 || topic.compare(0, 10, "orderbook.") != 0) {
-        invalidTopics_.fetch_add(1, std::memory_order_relaxed);
-        return false;
-    }
+    // if (topic.size() < 10 || topic.compare(0, 10, "orderbook.") != 0) {
+    //     invalidTopics_.fetch_add(1, std::memory_order_relaxed);
+    //     return false;
+    // }
     return true;
 }
 

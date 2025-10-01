@@ -112,7 +112,7 @@ double MarketDataInterface::getCurrentPrice(
     
     auto price = cache_->getCurrentPrice(cacheKey);
     if (!price.has_value()) {
-        LOG_DEBUG("Price not found in cache for {}:{}", exchange.toString(), tradingPair.toString());
+        LOG_DEBUG("Price not found in cache for {}:{}, cacheKey={}", exchange.toString(), tradingPair.toString(), cacheKey);
         //throw std::runtime_error("Price not found in cache");
     }
     return price.value_or(0.0);
@@ -390,7 +390,11 @@ void MarketDataInterface::onMarketDataReceived(const core::MarketData& data) {
         core::ExchangeId exchange = data.exchangeId;
         core::Symbol symbol = data.tradingPair;
         std::string cacheKey = createCacheKey(exchange, symbol);
-        
+        //print for every 100 messages
+        static int messageCount = 0;
+        // if (++messageCount % 1 == 0) {
+        //     LOG_DEBUG("Received market data for {}:{}, cacheKey={}", exchange.toString(), symbol.toString(), cacheKey);
+        // }
         cache_->updateMarketData(cacheKey, data);
         
     } catch (const std::exception& e) {

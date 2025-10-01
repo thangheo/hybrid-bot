@@ -46,8 +46,10 @@ if(USE_SANITIZERS AND CMAKE_BUILD_TYPE MATCHES Debug)
 endif()
 
 
-# Add protobuf-generated files to the SOURCES list
-file(GLOB PROTO_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../../generated/cpp/*.cc)
+# Protobuf-generated .cc files are built into the proto_lib target (see proto/CMakeLists)
+# Do NOT add generated/cpp/*.cc here or they'll be compiled into this library as well
+# which can cause ODR violations when proto sources are also compiled into proto_lib.
+# file(GLOB PROTO_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../../generated/cpp/*.cc)
 file(GLOB WEBSOCKET_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../../src/data_ingestion/websocket/*.cpp)
 file(GLOB WEBSOCKET_EX_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../../src/data_ingestion/websocket/exchanges/*.cpp)
 file(GLOB ORDERBOOK_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../../src/data_ingestion/orderbook/*.cpp)
@@ -70,7 +72,7 @@ set(SOURCES
     # market_data_subscriber.cpp
 
     # full_bridge.cpp
-    ${PROTO_SOURCES}  # Include protobuf-generated files
+    # protobuf sources are provided via proto_lib; do not compile generated .cc here
     ${WEBSOCKET_SOURCES}  # Add the expanded list of websocket .cpp files
     ${WEBSOCKET_EX_SOURCES}  # Add the expanded list of websocket exchange .cpp files
     # addd all source above
