@@ -235,14 +235,17 @@ ImbalanceDetectionEngine::ImbalanceDetectionEngine(const ImbalanceDetectionConfi
  }
 
 ImbalanceDetectionEngine::~ImbalanceDetectionEngine() {
-    // Stop detector worker if running
+    // Stop detector workers if running
     try {
         {
             std::lock_guard<std::mutex> lk(mutex_);
             detectorWorkerRunning_.store(false);
         }
         detectorQueueCv_.notify_all();
-        if (detectorWorkerThread_.joinable()) detectorWorkerThread_.join();
+        for (auto &t : detectorWorkerThreads_) {
+            if (t.joinable()) t.join();
+        }
+        detectorWorkerThreads_.clear();
     } catch (...) {
         // swallow in destructor
     }
@@ -303,260 +306,126 @@ ImbalanceDetectionEngine::~ImbalanceDetectionEngine() {
     }
 }
 
-// Start the detector worker (call from initialization path if desired)
+// Start detector worker(s) that dequeue metrics and run detectors
 void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
-
-    std::lock_guard<std::mutex> lk(mutex_);
-    if (!bayesInitialized_.load()) {
-        LOG_WARN("ImbalanceDetectionEngine: startDetectorWorker called before bayes model initialized; refusing to start worker");
-        return;
-    }
     if (detectorWorkerRunning_.load()) return;
+    if (threads == 0) threads = std::max<size_t>(1, std::thread::hardware_concurrency());
+
     detectorWorkerRunning_.store(true);
-    detectorWorkerThread_ = std::thread([this](){
-        while (detectorWorkerRunning_.load()) {
-            
-            OrderBookMetrics m;
-            {
-                std::unique_lock<std::mutex> qlk(detectorQueueMutex_);
-                detectorQueueCv_.wait_for(qlk, std::chrono::milliseconds(50), [this]{
-                    return !detectorQueue_.empty() || !detectorWorkerRunning_.load();
-                });
-                if (!detectorQueue_.empty()) {
-                    m = std::move(detectorQueue_.front());
+    for (size_t i = 0; i < threads; ++i) {
+        detectorWorkerThreads_.emplace_back([this] {
+            while (detectorWorkerRunning_.load()) {
+                OrderBookMetrics m;
+                {
+                    std::unique_lock<std::mutex> lk(detectorQueueMutex_);
+                    detectorQueueCv_.wait(lk, [this] { return !detectorWorkerRunning_.load() || !detectorQueue_.empty(); });
+                    if (!detectorWorkerRunning_.load() && detectorQueue_.empty()) break;
+                    if (detectorQueue_.empty()) continue;
+                    m = detectorQueue_.front();
                     detectorQueue_.pop_front();
-                } else {
-                    continue;
                 }
-            }
-            // Run detectors directly in the worker thread and time them to detect
-            // any slow detector. Running here avoids nested submission to the
-            // shared thread-pool which could cause starvation.
-            const auto DETECTOR_WARN_MS = 100; // warn threshold
-            std::vector<DetectorResult> results;
-            auto runDirect = [&](const char *name, const std::function<DetectorResult()> &fn) {
+
+                // Run all detectors sequentially for this metric
+                std::vector<DetectorResult> results;
                 try {
-                    auto t0 = std::chrono::steady_clock::now();
-                    DetectorResult res = fn();
-                    auto dt = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count();
-                    if (dt > DETECTOR_WARN_MS) {
-                        LOG_WARN("Detector worker: '{}' took {} ms", name, dt);
-                    } else {
-                        // LOG_DEBUG("Detector worker: '{}' took {} ms", name, dt);
-                    }
-                    return res;
-                } catch (const std::exception &ex) {
-                    LOG_WARN("Detector worker: '{}' threw: {}", name, ex.what());
+                    results.push_back(detectVolumeImbalance(m));
+                    results.push_back(detectPriceLevelImbalance(m));
+                    results.push_back(detectLiquidityFlowImbalance(m));
+                    results.push_back(detectAbnormalSpread(m));
+                    results.push_back(detectMarketDepthChange(m));
+                    results.push_back(detectLargeOrderAppearance(m));
+                    results.push_back(detectLargeOrderDisappearance(m));
+                    results.push_back(detectOrderFlowImbalance(m));
+                    results.push_back(detectPriceLevelConcentration(m));
+                    results.push_back(detectLiquidityImbalance(m));
+                    results.push_back(detectTrendContinuation(m));
+                    results.push_back(detectTrendReversal(m));
+                    results.push_back(detectTradeImbalance(m));
+                    results.push_back(detectCancellationImbalance(m));
+                    results.push_back(detectPriceVolatilityImbalance(m));
+                    results.push_back(detectHiddenLiquidityImbalance(m));
+                    results.push_back(detectCustomImbalance(m));
                 } catch (...) {
-                    LOG_WARN("Detector worker: '{}' threw unknown exception", name);
+                    // swallow detector errors
                 }
-                return DetectorResult{};
-            };
 
-            results.emplace_back(runDirect("detectVolumeImbalance", [&]{ return detectVolumeImbalance(m); })); //0    
-            results.emplace_back(runDirect("detectPriceLevelImbalance", [&]{ return detectPriceLevelImbalance(m); }));   //1
-            results.emplace_back(runDirect("detectLiquidityFlowImbalance", [&]{ return detectLiquidityFlowImbalance(m); })); //2
-            results.emplace_back(runDirect("detectAbnormalSpread", [&]{ return detectAbnormalSpread(m); })); //3
-            results.emplace_back(runDirect("detectMarketDepthChange", [&]{ return detectMarketDepthChange(m); })); //4
-            results.emplace_back(runDirect("detectLargeOrderAppearance", [&]{ return detectLargeOrderAppearance(m); })); //5
-            results.emplace_back(runDirect("detectLargeOrderDisappearance", [&]{ return detectLargeOrderDisappearance(m); })); //6
-            results.emplace_back(runDirect("detectHiddenLiquidityImbalance", [&]{ return detectHiddenLiquidityImbalance(m); })); //7
-            results.emplace_back(runDirect("detectOrderFlowImbalance", [&]{ return detectOrderFlowImbalance(m); })); //8
-            results.emplace_back(runDirect("detectPriceLevelConcentration", [&]{ return detectPriceLevelConcentration(m); })); //9
-            results.emplace_back(runDirect("detectLiquidityImbalance", [&]{ return detectLiquidityImbalance(m); }));  //10
-            results.emplace_back(runDirect("detectTrendContinuation", [&]{ return detectTrendContinuation(m); })); //11
-            results.emplace_back(runDirect("detectTrendReversal", [&]{ return detectTrendReversal(m); }));  //12
-            results.emplace_back(runDirect("detectTradeImbalance", [&]{ return detectTradeImbalance(m); })); //13   
-            results.emplace_back(runDirect("detectCancellationImbalance", [&]{ return detectCancellationImbalance(m); }));  //14
-            results.emplace_back(runDirect("detectPriceVolatilityImbalance", [&]{ return detectPriceVolatilityImbalance(m); })); //15
-            // results.emplace_back(runDirect("detectCustomImbalance", [&]{ return detectCustomImbalance(m); }));
-        
-            // Add other detectors as neede
-
-            // Commit shared state under single lock
-            {
-                std::lock_guard<std::mutex> lock(mutex_);
+                // Build feature vector from detectors
+                std::vector<double> features;
+                features.reserve(results.size());
                 for (const auto &r : results) {
-                    // preserve boolean detector state but we'll drive emission via Bayesian model
-                    imbalanceState_[r.type] = r.shouldEmitEvent;
-                }
-                lastMetrics_ = m;
-            }
-
-            // Build feature vector from detectors (use imbalanceValue / strength mapping)
-            std::vector<double> features;
-            features.reserve(results.size());
-            for (const auto &r : results) {
-                double v = 0.0;
-                if (std::isfinite(r.strength) && r.strength > 0.0) {
-                    // v = std::clamp(r.strength, 0.0, 1.0);
-                    // no need to clapm , there is normalize function is bayesian model
-                } else if (std::isfinite(r.imbalanceValue)) {
-                    // map raw ratio-ish values into [0,1] using strength calc with default threshold
-                    v = calculateImbalanceStrength(r.imbalanceValue, 1.0);
-                }
-                features.push_back(v);
-            }
-
-            // Buffer features for later labeling/training
-            {
-                std::lock_guard<std::mutex> pl(pendingTrainingMutex_);
-                if (pendingTraining_.size() >= maxPendingTraining_) pendingTraining_.pop_front();
-                pendingTraining_.push_back(PendingTraining{m.timestamp, features, m.midPrice, m.exchangeId, m.symbol});
-            }
-            static int predict_counter_ = 0;
-            // Predict with Bayesian model and emit a single aggregated event if signal indicates trade
-            if (bayesInitialized_.load()) {
-                try {
-                    trading::perception::BayesSignal signal;
-                    // Use per-symbol handle for prediction so models are specific to instruments
-                    trading::perception::BayesHandle handle = getBayesHandleForSymbol(m.exchangeId, m.symbol);
-                    if (handle) signal = trading::perception::bayes_predict(handle, features);
-                    //
-                    if (signal.should_trade) {
-                        core::Direction dir = signal.direction;
-                        
-                        // Model đã quyết định direction và confidence
-                        OrderBookMetrics mcopy = m;
-                        mcopy.metrics["bayes_probability"] = signal.probability;
-                        mcopy.metrics["bayes_expected_value"] = signal.expected_value;
-                        mcopy.metrics["bayes_position_size"] = signal.position_size;
-                        mcopy.metrics["bayes_uncertainty"] = signal.uncertainty;
-                        
-                        double event_strength = signal.position_size;
-                        createImbalanceEventForBayesModel(ImbalanceType::CUSTOM, event_strength,
-                                                        dir, mcopy, signal.probability, signal.uncertainty);
+                    double v = 0.0;
+                    if (std::isfinite(r.strength) && r.strength > 0.0) {
+                        v = r.strength;
+                    } else if (std::isfinite(r.imbalanceValue)) {
+                        v = calculateImbalanceStrength(r.imbalanceValue, 1.0);
                     }
-                    
-                } catch (const std::exception &ex) {
-                    LOG_WARN("Bayes predict threw: {}", ex.what());
-                } catch (...) {
-                    LOG_WARN("Bayes predict threw unknown");
+                    features.push_back(v);
                 }
-            }else{
-                LOG_ERROR("Bayes model not initialized, cannot predict");
-            }
 
-            // Process pending training samples: label them based on future midPrice movement
-            try {
-                // toTrain: features, label, exchangeId, symbol
-                std::vector<std::tuple<std::vector<double>, int, core::ExchangeId, core::Symbol>> toTrain;
+                // Buffer features for later labeling/training
                 {
                     std::lock_guard<std::mutex> pl(pendingTrainingMutex_);
-                    auto now = m.timestamp;
-                    // OPTION 1: Symmetric thresholds
-                    // while (!pendingTraining_.empty()) {
-                    //     const auto &pt = pendingTraining_.front();
-                        
-                    //     if (now - pt.timestamp >= labelingDelay_) {
-                    //         double priceNow = m.midPrice;
-                    //         double priceThen = pt.midPrice;
-                    //         double priceChangePct = (priceNow - priceThen) / priceThen;
-                            
-                    //         int label;
-                    //         const double THRESHOLD = 0.15/100;  // 0.15% symmetric threshold
-                    //         //what is 1 and what is 0?
-
-                    //         if (priceChangePct > THRESHOLD) {
-                    //             label = 1;  // Price up
-                    //         } else if (priceChangePct < -THRESHOLD) {
-                    //             label = 0;  // Price down  
-                    //         } else {
-                    //             // Skip neutral moves - don't train on noise
-                    //             pendingTraining_.pop_front();
-                    //             continue;
-                    //         }
-                            
-                    //         toTrain.emplace_back(pt.features, label, pt.exchangeId, pt.symbol);
-                    //         pendingTraining_.pop_front();
-                    //     } else {
-                    //         break;
-                    //     }
-                    // }
-                    //OPTION 2: Asymmetric thresholds
-                    // TRAINING - giữ nguyên như bạn đề xuất
-                    while (!pendingTraining_.empty()) {
-                        const auto &pt = pendingTraining_.front();
-                        if (now - pt.timestamp >= labelingDelay_) {
-                            double priceChangePct = (m.midPrice - pt.midPrice) / pt.midPrice;
-                            
-                            int label;
-                            const double THRESHOLD = 0.1/100;  // Symmetric cho simplicity
-                            
-                            if (priceChangePct > THRESHOLD) {
-                                label = 2;  // BUY signal
-                            } else if (priceChangePct < -THRESHOLD) {
-                                label = 0;  // SELL signal  
-                            } else {
-                                label = 1;  // NEUTRAL - QUAN TRỌNG: train cả neutral
-                            }
-                            
-                            toTrain.emplace_back(pt.features, label, pt.exchangeId, pt.symbol);
-                            pendingTraining_.pop_front();
-                        }
-                    }
+                    if (pendingTraining_.size() >= maxPendingTraining_) pendingTraining_.pop_front();
+                    pendingTraining_.push_back(PendingTraining{m.timestamp, features, m.midPrice, m.exchangeId, m.symbol});
                 }
-                // update model outside lock; apply updates to per-symbol models
-                for (auto &t : toTrain) {
+
+                // Predict with Bayesian model and emit event if needed
+                if (bayesInitialized_.load()) {
                     try {
-                        const auto &features = std::get<0>(t);
-                        int label = std::get<1>(t);
-                        const auto &exch = std::get<2>(t);
-                        const auto &sym = std::get<3>(t);
-
-                        // Get or create per-symbol handle
-                        trading::perception::BayesHandle handle = getBayesHandleForSymbol(exch, sym);
-                        if (!handle) continue;
-
-                        trading::perception::bayes_update(handle, features, label);
-
-                        // per-symbol save policy
-                        if (!bayesModelDirectory_.empty()) {
-                            try {
-                                bool doSave = false;
-                                int modelUpdates = trading::perception::bayes_get_num_updates(handle);
-                                if (modelUpdates < requireModelReadyUpdates_) {
-                                    // LOG_DEBUG("ImbalanceDetectionEngine: per-symbol bayes model has {} updates (< required {}), skipping save check", modelUpdates, requireModelReadyUpdates_);
-                                } else {
-                                    if (config_.bayesSaveAfterUpdates > 0) {
-                                        if (--bayesSaveAfterUpdates_ <= 0) {
-                                            doSave = true;
-                                            bayesSaveAfterUpdates_ = config_.bayesSaveAfterUpdates;
-                                        }
-                                    } else if (config_.bayesSaveIntervalMs > 0 && bayesSaveInterval_.count() > 0) {
-                                        auto nowt = std::chrono::steady_clock::now();
-                                        if (nowt - lastSaveTime_ > std::max(bayesSaveInterval_, bayesMinSaveInterval_)) doSave = true;
-                                    }
-                                }
-
-                                if (doSave) {
-                                    if (saveBayesForSymbol(handle, exch, sym)) {
-                                        lastSaveTime_ = std::chrono::steady_clock::now();
-                                        updatesSinceLastSave_ = 0;
-                                        LOG_INFO("ImbalanceDetectionEngine: per-symbol bayes model saved for {}_{}", exch, sym);
-                                    } else {
-                                        LOG_WARN("ImbalanceDetectionEngine: per-symbol bayes save failed for {}_{}", exch, sym);
-                                    }
-                                } else {
-                                    updatesSinceLastSave_++;
-                                }
-                            } catch (const std::exception &ex) {
-                                LOG_WARN("Bayes save threw: {}", ex.what());
-                            } catch (...) {
-                                LOG_WARN("Bayes save threw unknown");
-                            }
+                        trading::perception::BayesSignal signal;
+                        trading::perception::BayesHandle handle = getBayesHandleForSymbol(m.exchangeId, m.symbol);
+                        if (handle) signal = trading::perception::bayes_predict(handle, features);
+                        if (signal.should_trade) {
+                            core::Direction dir = signal.direction;
+                            OrderBookMetrics mcopy = m;
+                            mcopy.metrics["bayes_probability"] = signal.probability;
+                            mcopy.metrics["bayes_expected_value"] = signal.expected_value;
+                            mcopy.metrics["bayes_position_size"] = signal.position_size;
+                            mcopy.metrics["bayes_uncertainty"] = signal.uncertainty;
+                            double event_strength = signal.position_size;
+                            createImbalanceEventForBayesModel(ImbalanceType::CUSTOM, event_strength,
+                                                            dir, mcopy, signal.probability, signal.uncertainty);
                         }
                     } catch (const std::exception &ex) {
-                        LOG_WARN("Bayes update threw: {}", ex.what());
+                        LOG_WARN("Bayes predict threw: {}", ex.what());
                     } catch (...) {
-                        LOG_WARN("Bayes update threw unknown");
+                        LOG_WARN("Bayes predict threw unknown");
                     }
                 }
-            } catch (...) {
-                // swallow
+
+                // Process pending training samples
+                try {
+                    std::vector<std::tuple<std::vector<double>, int, core::ExchangeId, core::Symbol>> toTrain;
+                    {
+                        std::lock_guard<std::mutex> pl(pendingTrainingMutex_);
+                        auto now = m.timestamp;
+                        while (!pendingTraining_.empty()) {
+                            const auto &pt = pendingTraining_.front();
+                            if (now - pt.timestamp >= labelingDelay_) {
+                                double priceChangePct = (m.midPrice - pt.midPrice) / pt.midPrice;
+                                int label;
+                                const double THRESHOLD = 0.1/100;
+                                if (priceChangePct > THRESHOLD) label = 2; else if (priceChangePct < -THRESHOLD) label = 0; else label = 1;
+                                toTrain.emplace_back(pt.features, label, pt.exchangeId, pt.symbol);
+                                pendingTraining_.pop_front();
+                            } else break;
+                        }
+                    }
+                    for (auto &t : toTrain) {
+                        try {
+                            const auto &features = std::get<0>(t);
+                            int label = std::get<1>(t);
+                            const auto &exch = std::get<2>(t);
+                            const auto &sym = std::get<3>(t);
+                            trading::perception::BayesHandle handle = getBayesHandleForSymbol(exch, sym);
+                            if (!handle) continue;
+                            trading::perception::bayes_update(handle, features, label);
+                        } catch (...) {}
+                    }
+                } catch (...) {}
             }
-        }
-    });
+        });
+    }
 }
 
 
@@ -740,7 +609,7 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                 // LOG_DEBUG("ImbalanceDetectionEngine: enqueued metrics for {}:{} (queue size={})", metrics.exchangeId, metrics.symbol, detectorQueue_.size());
                 return false; // enqueued for async processing
             } else {
-                LOG_WARN("ImbalanceDetectionEngine: detector queue full (%zu), falling back to synchronous run", detectorQueue_.size());
+                LOG_WARN("ImbalanceDetectionEngine: detector queue full ({}), falling back to synchronous run", detectorQueue_.size());
             }
         }
     }
@@ -2532,6 +2401,32 @@ bool ImbalanceDetectionEngine::detectCorrelationAnomalies(const OrderBookMetrics
     }
     
     return false;
+}
+
+// Custom detector hook: looks for a user-provided "customSignal" metric and
+// exposes it as a DetectorResult of type CUSTOM. This is intentionally small
+// and non-invasive — it avoids heavy dependencies and provides a safe default
+// so callers (and the linker) have a concrete implementation.
+DetectorResult ImbalanceDetectionEngine::detectCustomImbalance(const OrderBookMetrics& metrics) {
+    DetectorResult r;
+    r.type = ImbalanceType::CUSTOM;
+
+    try {
+        auto it = metrics.metrics.find("customSignal");
+        if (it != metrics.metrics.end()) {
+            double v = it->second;
+            r.imbalanceValue = v;
+            r.strength = std::min(1.0, std::max(0.0, std::abs(v)));
+            if (v > 0) r.direction = Direction::BUY;
+            else if (v < 0) r.direction = Direction::SELL;
+            else r.direction = Direction::NEUTRAL;
+            r.shouldEmitEvent = (r.strength > 0.2);
+        }
+    } catch (...) {
+        // swallow errors to keep detector non-fatal
+    }
+
+    return r;
 }
 
 // Utility function to calculate variance

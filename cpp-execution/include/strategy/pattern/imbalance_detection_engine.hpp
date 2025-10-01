@@ -235,8 +235,9 @@ public:
     // and to allow per-instrument change gating in a multi-threaded environment.
     std::map<std::pair<core::ExchangeId, core::Symbol>, double> lastVolumeRatio_;
     mutable std::mutex lastVolumeMutex_;
-    // Background detector worker to offload expensive detection
-    std::thread detectorWorkerThread_;
+    // Background detector worker(s) to offload expensive detection
+    // Support multiple worker threads to avoid single-thread bottleneck
+    std::vector<std::thread> detectorWorkerThreads_;
     mutable std::mutex detectorQueueMutex_;
     std::condition_variable detectorQueueCv_;
     std::deque<OrderBookMetrics> detectorQueue_;
