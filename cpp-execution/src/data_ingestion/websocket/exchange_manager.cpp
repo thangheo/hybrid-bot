@@ -289,13 +289,30 @@ bool ExchangeManager::connect() {
 
 void ExchangeManager::disconnect() {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
-    
+
+    // First, request worker/monitor threads to stop and join them to ensure no
+    // further callbacks (which may call into other components) are emitted
+    // while we're tearing down shared resources.
+    try {
+        running_.store(false);
+
+        if (monitorThread_.joinable()) {
+            monitorThread_.join();
+        }
+
+        if (processingThread_.joinable()) {
+            processingThread_.join();
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "Error stopping ExchangeManager threads: " << e.what() << '\n';
+    }
+
+    // Now it's safe to shutdown the connection pool and mark disconnected.
     if (connectionPool_) {
         try {
             connectionPool_->shutdown();
             isConnected_.store(false);
             std::cout << "Disconnected from Binance\n";
-           
         } catch (const std::exception& e) {
             std::cerr << "Error disconnecting: " << e.what() << '\n';
         }

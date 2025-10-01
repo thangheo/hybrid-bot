@@ -474,32 +474,25 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                     //     }
                     // }
                     //OPTION 2: Asymmetric thresholds
+                    // TRAINING - giữ nguyên như bạn đề xuất
                     while (!pendingTraining_.empty()) {
                         const auto &pt = pendingTraining_.front();
-                        
                         if (now - pt.timestamp >= labelingDelay_) {
-                            double priceNow = m.midPrice;
-                            double priceThen = pt.midPrice;
-                            double priceChangePct = (priceNow - priceThen) / priceThen;
+                            double priceChangePct = (m.midPrice - pt.midPrice) / pt.midPrice;
                             
                             int label;
-                            const double UP_THRESHOLD = 0.13/100;    // 0.1% threshold for price up
-                            const double DOWN_THRESHOLD = 0.2/100;  // 0.2% threshold for price down
-
-                            if (priceChangePct > UP_THRESHOLD) {
-                                label = 1;  // Price up
-                            } else if (priceChangePct < -DOWN_THRESHOLD) {
-                                label = 0;  // Price down  
+                            const double THRESHOLD = 0.1/100;  // Symmetric cho simplicity
+                            
+                            if (priceChangePct > THRESHOLD) {
+                                label = 2;  // BUY signal
+                            } else if (priceChangePct < -THRESHOLD) {
+                                label = 0;  // SELL signal  
                             } else {
-                                // Skip neutral moves - don't train on noise
-                                pendingTraining_.pop_front();
-                                continue;
+                                label = 1;  // NEUTRAL - QUAN TRỌNG: train cả neutral
                             }
                             
                             toTrain.emplace_back(pt.features, label, pt.exchangeId, pt.symbol);
                             pendingTraining_.pop_front();
-                        } else {
-                            break;
                         }
                     }
                 }

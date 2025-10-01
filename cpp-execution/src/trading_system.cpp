@@ -230,7 +230,7 @@ bool Trading_system::start() {
     // Start orderbook worker pool after data ingestion starts
     startOrderbookWorkerPool();
     // Start dedicated strategy orderbook worker pool (decoupled)
-    // startStrategyOrderbookWorkerPool(); //disable for debugging market data interface
+        startStrategyOrderbookWorkerPool(); 
         
         // 2. Start strategy engine
         if (!strategyEngine_->start()) {
@@ -239,7 +239,7 @@ bool Trading_system::start() {
         }
 
         // Start signal worker pool
-        // startSignalWorkerPool(); //disable for debugging market data interface
+        startSignalWorkerPool();
          
         lastPriceUpdate_ = std::chrono::steady_clock::now();
         // Start exec worker pool
@@ -298,7 +298,6 @@ void Trading_system::shutdown() {
     stopStrategyOrderbookWorkerPool();
     stopSignalWorkerPool();
     stopExecWorkerPool();
-
         
         
         // Stop services in reverse order
@@ -487,129 +486,6 @@ void Trading_system::printStatus() {
 // }
 
 
-// FIXED VERSION of publishOrderBookForRisk method
-void Trading_system::publishOrderBookForRisk(const OrderBookUpdate& update) {
-    try {
-        // Validate input
-        if (update.bids.empty() && update.asks.empty()) {
-            std::cerr << "Warning: Orderbook update is empty for "
-                        << update.exchangeId.toString() << ":" << update.tradingPair.toString() << std::endl;
-            return;
-        }
-        
-        // Create protobuf message (this part is correct)
-        orderbook::OrderbookMessage obMsg;
-        auto* data = obMsg.mutable_data();
-        data->set_exchange(update.exchangeId.toString());
-        data->set_symbol(update.tradingPair.toString());
-        data->set_sequence(update.sequenceNumber);
-        data->set_timestamp(std::chrono::duration_cast<std::chrono::milliseconds>(
-            update.exchangeTimestamp.time_since_epoch()).count());
-        
-        // Best bid/ask
-        data->set_bid(!update.bids.empty() ? update.bids[0].price : 0.0);
-        data->set_ask(!update.asks.empty() ? update.asks[0].price : 0.0);
-        
-        // Mid price
-        data->set_price((!update.bids.empty() && !update.asks.empty())
-            ? (update.bids[0].price + update.asks[0].price) / 2.0 : 0.0);
-        
-        // Volume at top 5 levels
-        double bidVolume = 0.0, askVolume = 0.0;
-        for (int i = 0; i < std::min(5, (int)update.bids.size()); ++i) bidVolume += update.bids[i].quantity;
-        for (int i = 0; i < std::min(5, (int)update.asks.size()); ++i) askVolume += update.asks[i].quantity;
-        data->set_volume(bidVolume + askVolume);
-        
-        // Add bids/asks
-        for (const auto& bid : update.bids) {
-            auto* level = data->add_bids();
-            level->set_price(bid.price);
-            level->set_quantity(bid.quantity);
-        }
-        for (const auto& ask : update.asks) {
-            auto* level = data->add_asks();
-            level->set_price(ask.price);
-            level->set_quantity(ask.quantity);
-        }
-        
-        // Placeholders for 24h stats and last trade
-        data->set_lasttradeprice(data->price());
-        data->set_lasttradequantity(0.0);
-        data->set_open24h(data->price());
-        data->set_high24h(data->price());
-        data->set_low24h(data->price());
-        data->set_volumequote24h(0.0);
-        data->set_pricechange24h(0.0);
-        data->set_pricechangepercent24h(0.0);
-        
-        // Populate metadata
-        auto* metadata = obMsg.mutable_metadata();
-        metadata->set_correlation_id(""); // Empty for now
-        metadata->set_priority("HIGH");
-        auto now = std::chrono::system_clock::now();
-        metadata->set_timestamp(std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
-            now.time_since_epoch()).count()));
-        
-        // Serialize protobuf to string
-        std::string serializedOb;
-        if (!obMsg.SerializeToString(&serializedOb)) {
-            std::cerr << "Failed to serialize OrderBook protobuf" << std::endl;
-            return;
-        }
-        
-        // CRITICAL FIX: Create proper topic WITHOUT embedding in protobuf
-        std::string topic = "orderbook." + update.exchangeId.toString() + "." + update.tradingPair.toString();
-        
-        // CRITICAL FIX: Use publishAsync correctly - it should send topic + data as separate frames
-        // The issue was likely that the topic was being embedded in the protobuf data itself
-        
-        // Validate before publishing
-        if (topic.empty() || serializedOb.empty()) {
-            std::cerr << "Empty topic or serialized data" << std::endl;
-            return;
-        }
-        
-        // Debug output for first few messages
-        static std::atomic<int> publishCount{0};
-        int count = publishCount.fetch_add(1);
-        if (count < 10) {
-            std::cout << "=== PUBLISH DEBUG #" << count << " ===" << std::endl;
-            std::cout << "Topic: '" << topic << "'" << std::endl;
-            std::cout << "Protobuf size: " << serializedOb.size() << " bytes" << std::endl;
-            std::cout << "Protobuf starts with: ";
-            for (size_t i = 0; i < std::min<size_t>(16, serializedOb.size()); ++i) {
-                printf("%02x ", static_cast<unsigned char>(serializedOb[i]));
-            }
-            std::cout << std::endl;
-            
-            // Check if topic is accidentally embedded in protobuf
-            if (serializedOb.find(topic) != std::string::npos) {
-                std::cout << "ERROR: Topic found embedded in protobuf data!" << std::endl;
-            } else {
-                std::cout << "Good: Topic not embedded in protobuf" << std::endl;
-            }
-            std::cout << "===============================" << std::endl;
-        }
-        
-        // IMPORTANT: Use internal queue (not intel) for orderbook data to internal consumers
-        bool success = zmq_server_->publishAsync(topic, std::move(serializedOb), MessagePriority::HIGH);
-        //use publishSync to ensure message is sent before we move on                
-        if (success) {
-            orderBookUpdatesReceived_.fetch_add(1);
-            
-            if (count < 5 || count % 5000 == 0) {
-                std::cout << "📢 Published orderbook #" << count << " (" << topic << ")" << std::endl;
-            }
-        } else {
-            std::cerr << "Failed to publish orderbook: " << topic << std::endl;
-        }
-        
-    } catch (const std::exception& e) {
-        std::cerr << "Error publishing orderbook for risk: " << e.what() << std::endl;
-    }
-}
-
-// ✅ Simple health check like full_bridge.cpp
 bool Trading_system::checkSystemHealth() {
     try {
         // Basic health checks
@@ -729,30 +605,7 @@ void Trading_system::onExecutionResponse(const execution::ExecutionResponse& res
     // }
 }
 
-
-//create ptca config
-// void Trading_system::createPTCAConfig() {
-//     trading::learning::PTCAIntegrationConfig ptcaConfig;        
-//     // Configure PTCA for your trading environment
-//     ptcaConfig.outcomeEvaluationDelay = std::chrono::minutes(2);  // Evaluate outcomes after 2 minutes
-//     ptcaConfig.signalTrackingWindow = std::chrono::minutes(15);   // Track signals for 15 minutes
-//     ptcaConfig.minimumPnLThreshold = 0.0005;                     // 0.05% minimum P&L to learn from
-//     ptcaConfig.priceMovementThreshold = 0.003;                   // 0.3% price movement significance
-//     ptcaConfig.pnlSuccessThreshold = 0.008;                      // 0.8% P&L success threshold
-//     ptcaConfig.strongOutcomeThreshold = 0.02;                    // 2% strong outcome threshold
-    
-//     // Set up model persistence
-//     ptcaConfig.modelSaveDirectory = "models/ptca/";
-//     ptcaConfig.modelSaveInterval = std::chrono::minutes(20);
-//     ptcaConfig.enableContinuousLearning = true;
-//     ptcaConfig.enableDetailedLogging = true;
-    
-//     // Performance limits
-//     ptcaConfig.maxSignalsToTrack = 500;  // Limit memory usage
-    
-//     ptcaManager_ = std::make_unique<trading::learning::PTCAIntegrationManager>(ptcaConfig);
-
-// }
+ 
 
 void Trading_system::createRiskConfig() {
     // Setup risk configuration (similar to risk demo)

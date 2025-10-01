@@ -24,9 +24,10 @@ void BayesianTradingModel::initialize_model(int num_features) {
     num_updates_ = 0;
     
     // Initialize Bayesian parameters
-    mu_ = Eigen::VectorXd::Zero(num_features);
-    sigma_ = config_.initial_sigma * Eigen::MatrixXd::Identity(num_features, num_features);
-    update_sigma_inverse();
+    // Allocate per-class parameters (one-vs-rest)
+    mu_.assign(NUM_CLASSES, Eigen::VectorXd::Zero(num_features));
+    sigma_diag_.assign(NUM_CLASSES, Eigen::VectorXd::Constant(num_features, config_.initial_sigma));
+    sigma_inv_diag_.assign(NUM_CLASSES, Eigen::VectorXd::Constant(num_features, 1.0 / config_.initial_sigma));
     
     // Initialize feature normalization
     feature_mean_ = Eigen::VectorXd::Zero(num_features);
@@ -74,32 +75,30 @@ Eigen::VectorXd BayesianTradingModel::normalize_features(const Eigen::VectorXd& 
 }
 
 void BayesianTradingModel::update_bayesian_weights(const Eigen::VectorXd& normalized_features, int label) {
-    // Bayesian update with logistic regression
-    // Posterior: N(mu_post, Sigma_post)
-    // Sigma_post^{-1} = Sigma_prior^{-1} + β * x * x^T
-    // mu_post = Sigma_post * (Sigma_prior^{-1} * mu_prior + β * x * y)
-    
-    Eigen::MatrixXd feature_outer = normalized_features * normalized_features.transpose();
-    Eigen::MatrixXd sigma_inv_new = sigma_inv_ + config_.beta * feature_outer;
-    
-    // Update mean
-    Eigen::VectorXd mu_new = sigma_inv_new.ldlt().solve(
-        sigma_inv_ * mu_ + config_.beta * normalized_features * label
-    );
-    
-    // Update covariance
-    Eigen::MatrixXd sigma_new = sigma_inv_new.inverse();
-    
-    // Apply updates
-    mu_ = mu_new;
-    sigma_ = sigma_new;
-    sigma_inv_ = sigma_inv_new;
-    
-    // Regularization to prevent numerical issues
-    double trace_sigma = sigma_.trace();
-    if (trace_sigma > 100.0) {  // Too much uncertainty
-        sigma_ *= 100.0 / trace_sigma;
-        update_sigma_inverse();
+    // One-vs-rest Bayesian update per class using diagonal covariance approximation
+    // Label is 0,1,2. Create one-hot targets for each class: t_c = 1 if label==c else 0
+    for (int c = 0; c < NUM_CLASSES; ++c) {
+        double t = (label == c) ? 1.0 : 0.0;
+
+        // Using diagonal approximation: sigma_inv_new = sigma_inv + beta * x^2 (elementwise)
+        Eigen::VectorXd x2 = normalized_features.array().square();
+        Eigen::VectorXd sigma_inv_new = sigma_inv_diag_[c].array() + config_.beta * x2.array();
+
+        // Update mean: mu_new = mu + config_.beta * (sigma_new * x) * (t - sigmoid(mu.dot(x)))
+        // sigma_new (diag) = 1 / sigma_inv_new
+        Eigen::VectorXd sigma_new = sigma_inv_new.array().inverse();
+
+        double pred_logit = mu_[c].dot(normalized_features);
+        double pred = sigmoid(pred_logit);
+        double error = t - pred;
+
+        // delta_mu = sigma_new * (config_.beta * x * error) elementwise
+        Eigen::VectorXd delta = (sigma_new.array() * (config_.beta * normalized_features.array() * error)).matrix();
+        mu_[c] += delta;
+
+        // Store back diagonal covariances and inverses
+        sigma_diag_[c] = sigma_new;
+        sigma_inv_diag_[c] = sigma_inv_new;
     }
 }
 //signmoid or logistic function
@@ -111,87 +110,168 @@ double BayesianTradingModel::sigmoid(double x) const {
 }
 
 void BayesianTradingModel::update_sigma_inverse() {
-    sigma_inv_ = sigma_.inverse();
+    // No-op for diagonal implementation; kept for compatibility
 }
 
-BayesianTradingModel::TradingSignal BayesianTradingModel::predict(const std::vector<double>& features) {
+std::tuple<double, double, double> BayesianTradingModel::predict_multiclass(const std::vector<double>& features) {
     if (features.empty()) {
         throw std::invalid_argument("Features vector cannot be empty");
     }
-    
-    // Initialize if needed
+
     if (!is_initialized_) {
         initialize_model(features.size());
     }
-    
+
     if (features.size() != static_cast<size_t>(num_features_)) {
         throw std::invalid_argument("Feature dimension mismatch");
     }
-    
+
     std::lock_guard<std::mutex> lock(model_mutex_);
-    
-    // Convert to Eigen vector
     Eigen::VectorXd feature_vec = Eigen::Map<const Eigen::VectorXd>(features.data(), features.size());
-    
-    // Normalize features
-    Eigen::VectorXd normalized_features = normalize_features(feature_vec);
-    
-    // Calculate prediction
-    double score = mu_.dot(normalized_features);
-    double probability = sigmoid(score);
-    
-    // Calculate uncertainty (predictive variance)
-    double uncertainty = normalized_features.transpose() * sigma_ * normalized_features;
-    uncertainty = std::sqrt(uncertainty);
-    
-    // Calculate expected value
-    double expected_value = 0.0;
-    if (config_.use_expected_value) {
-        expected_value = probability * config_.payoff_long - (1.0 - probability) * config_.payoff_short;
+    Eigen::VectorXd normalized = normalize_features(feature_vec);
+
+    // Compute logits for each class
+    Eigen::VectorXd logits(NUM_CLASSES);
+    for (int c = 0; c < NUM_CLASSES; ++c) {
+        logits(c) = mu_[c].dot(normalized);
     }
-    
-    // Calculate position size (incorporate uncertainty)
-    double confidence = 1.0 / (1.0 + config_.uncertainty_penalty * uncertainty);
-    double position_size = config_.base_position_size * confidence;
-    
-    if (config_.use_expected_value) {
-        position_size *= std::max(0.0, expected_value);  // Scale by positive EV
-    } else {
-        // Scale by distance from 0.5 (neutral)
-        position_size *= 2.0 * std::abs(probability - 0.5);
-    }
-    
-    position_size = std::min(1.0, position_size);  // Cap at 100%
-    
-    // Trading decision
-    bool should_trade = false;
-    core::Direction direction = Direction::NEUTRAL;
-    
-    if (config_.use_expected_value) {
-        should_trade = (expected_value > 0.01);  // Minimum EV threshold
-        direction = (expected_value > 0) ? Direction::BUY : Direction::SELL;
-    } else {
-        should_trade = (probability > config_.min_probability) || (probability < (1.0 - config_.min_probability));
-        direction = (probability > 0.5) ? Direction::BUY : Direction::SELL;
-    }
-    
-    return TradingSignal{
-        .probability = probability,
-        .expected_value = expected_value,
-        .position_size = position_size,
-        .uncertainty = uncertainty,
-        .should_trade = should_trade,
-        .direction = direction,
-    };
+
+    // Softmax to probabilities (stable)
+    double max_logit = logits.maxCoeff();
+    Eigen::VectorXd exps = (logits.array() - max_logit).exp();
+    double sum_exps = exps.sum();
+    Eigen::VectorXd probs = exps / sum_exps;
+
+    return {probs(0), probs(1), probs(2)};
 }
+
+// BayesianTradingModel::TradingSignal BayesianTradingModel::predict(const std::vector<double>& features) {
+//     if (features.empty()) {
+//         throw std::invalid_argument("Features vector cannot be empty");
+//     }
+    
+//     // Initialize if needed
+//     if (!is_initialized_) {
+//         initialize_model(features.size());
+//     }
+    
+//     if (features.size() != static_cast<size_t>(num_features_)) {
+//         throw std::invalid_argument("Feature dimension mismatch");
+//     }
+    
+//     std::lock_guard<std::mutex> lock(model_mutex_);
+    
+//     // Convert to Eigen vector
+//     Eigen::VectorXd feature_vec = Eigen::Map<const Eigen::VectorXd>(features.data(), features.size());
+    
+//     // Normalize features
+//     Eigen::VectorXd normalized_features = normalize_features(feature_vec);
+    
+//     // Calculate prediction
+//     double score = mu_.dot(normalized_features);
+//     double probability = sigmoid(score);
+    
+//     // Calculate uncertainty (predictive variance)
+//     double uncertainty = normalized_features.transpose() * sigma_ * normalized_features;
+//     uncertainty = std::sqrt(uncertainty);
+    
+//     // Calculate expected value
+//     double expected_value = 0.0;
+//     if (config_.use_expected_value) {
+//         expected_value = probability * config_.payoff_long - (1.0 - probability) * config_.payoff_short;
+//     }
+    
+//     // Calculate position size (incorporate uncertainty)
+//     double confidence = 1.0 / (1.0 + config_.uncertainty_penalty * uncertainty);
+//     double position_size = config_.base_position_size * confidence;
+    
+//     if (config_.use_expected_value) {
+//         position_size *= std::max(0.0, expected_value);  // Scale by positive EV
+//     } else {
+//         // Scale by distance from 0.5 (neutral)
+//         position_size *= 2.0 * std::abs(probability - 0.5);
+//     }
+    
+//     position_size = std::min(1.0, position_size);  // Cap at 100%
+    
+//     // Trading decision
+//     bool should_trade = false;
+//     core::Direction direction = Direction::NEUTRAL;
+    
+//     if (config_.use_expected_value) {
+//         should_trade = (expected_value > 0.01);  // Minimum EV threshold
+//         direction = (expected_value > 0) ? Direction::BUY : Direction::SELL;
+//     } else {
+//         should_trade = (probability > config_.min_probability) || (probability < (1.0 - config_.min_probability));
+//         direction = (probability > 0.5) ? Direction::BUY : Direction::SELL;
+//     }
+    
+//     return TradingSignal{
+//         .probability = probability,
+//         .expected_value = expected_value,
+//         .position_size = position_size,
+//         .uncertainty = uncertainty,
+//         .should_trade = should_trade,
+//         .direction = direction,
+//     };
+// }
+
+BayesianTradingModel::TradingSignal BayesianTradingModel::predict(const std::vector<double>& features) {
+    auto [prob_sell, prob_neutral, prob_buy] = predict_multiclass(features);
+    
+    TradingSignal signal;
+    
+    // QUAN TRỌNG: Thresholds dựa trên backtesting
+    const double MIN_CONFIDENCE = 0.5;  // Minimum để trade
+    const double NEUTRAL_VETO = 0.4;    // Nếu neutral > này thì KHÔNG trade
+    
+    // Decision logic theo research
+    if (prob_neutral > NEUTRAL_VETO) {
+        // Neutral quá cao - KHÔNG TRADE
+        signal.direction = Direction::NEUTRAL;
+        signal.should_trade = false;
+        signal.probability = 0.5;
+        signal.position_size = 0.0;
+    } 
+    else if (prob_buy > prob_sell && prob_buy > MIN_CONFIDENCE) {
+        // BUY signal
+        signal.direction = Direction::BUY;
+        signal.should_trade = true;
+        signal.probability = prob_buy;
+        // Position size dựa trên confidence gap
+        signal.position_size = (prob_buy - prob_neutral) / (1.0 - prob_neutral);
+    }
+    else if (prob_sell > prob_buy && prob_sell > MIN_CONFIDENCE) {
+        // SELL signal
+        signal.direction = Direction::SELL;
+        signal.should_trade = true;
+        signal.probability = 1.0 - prob_sell;  // Convert to "up probability" for compatibility
+        signal.position_size = (prob_sell - prob_neutral) / (1.0 - prob_neutral);
+    }
+    else {
+        // Không đủ confidence
+        signal.direction = Direction::NEUTRAL;
+        signal.should_trade = false;
+        signal.probability = 0.5;
+        signal.position_size = 0.0;
+    }
+    
+    // Uncertainty based on entropy
+    signal.uncertainty = -prob_sell * log(prob_sell) 
+                        -prob_neutral * log(prob_neutral) 
+                        -prob_buy * log(prob_buy);
+    
+    return signal;
+}
+
 
 void BayesianTradingModel::update(const std::vector<double>& features, int label) {
     if (features.empty()) {
         throw std::invalid_argument("Features vector cannot be empty");
     }
     
-    if (label != 0 && label != 1) {
-        throw std::invalid_argument("Label must be 0 (price down) or 1 (price up)");
+    if (label < 0 || label >= NUM_CLASSES) {
+        throw std::invalid_argument("Label must be 0 (SELL), 1 (NEUTRAL) or 2 (BUY)");
     }
     
     // Initialize if needed
@@ -224,15 +304,19 @@ std::pair<std::vector<double>, std::vector<double>> BayesianTradingModel::get_we
     if (!is_initialized_) {
         return {{}, {}};
     }
-    
-    std::vector<double> means(mu_.data(), mu_.data() + mu_.size());
-    
+    // Return flattened means for all classes then uncertainties (sqrt of diag variances)
+    std::vector<double> means;
     std::vector<double> uncertainties;
-    uncertainties.reserve(num_features_);
-    for (int i = 0; i < num_features_; ++i) {
-        uncertainties.push_back(std::sqrt(sigma_(i, i)));
+    means.reserve(NUM_CLASSES * num_features_);
+    uncertainties.reserve(NUM_CLASSES * num_features_);
+
+    for (int c = 0; c < NUM_CLASSES; ++c) {
+        for (int i = 0; i < num_features_; ++i) {
+            means.push_back(mu_[c](i));
+            uncertainties.push_back(std::sqrt(sigma_diag_[c](i)));
+        }
     }
-    
+
     return {means, uncertainties};
 }
 
@@ -244,17 +328,25 @@ BayesianTradingModel::ModelStats BayesianTradingModel::get_stats() const {
     stats.num_updates = num_updates_;
     
     if (is_initialized_) {
-        stats.total_uncertainty = sigma_.trace();
+        // Total uncertainty as sum of traces of per-class covariance
+        double trace = 0.0;
+        for (int c = 0; c < NUM_CLASSES; ++c) {
+            trace += sigma_diag_[c].sum();
+        }
+        stats.total_uncertainty = trace;
         
         // Feature statistics
         stats.feature_means.assign(feature_mean_.data(), feature_mean_.data() + feature_mean_.size());
         stats.feature_stds.assign(feature_std_.data(), feature_std_.data() + feature_std_.size());
         
         // Weight statistics
-        stats.weight_means.assign(mu_.data(), mu_.data() + mu_.size());
-        stats.weight_uncertainties.reserve(num_features_);
-        for (int i = 0; i < num_features_; ++i) {
-            stats.weight_uncertainties.push_back(std::sqrt(sigma_(i, i)));
+        stats.weight_means.clear();
+        stats.weight_uncertainties.clear();
+        for (int c = 0; c < NUM_CLASSES; ++c) {
+            for (int i = 0; i < num_features_; ++i) {
+                stats.weight_means.push_back(mu_[c](i));
+                stats.weight_uncertainties.push_back(std::sqrt(sigma_diag_[c](i)));
+            }
         }
     }
     
@@ -298,21 +390,27 @@ bool BayesianTradingModel::save_model(const std::string& filepath) const {
         root["num_features"] = num_features_;
         root["num_updates"] = num_updates_;
         
-        // Weights (mean)
+        // Weights (mean) per class
         Json::Value mu_json(Json::arrayValue);
-        for (int i = 0; i < num_features_; ++i) {
-            mu_json.append(mu_(i));
+        for (int c = 0; c < NUM_CLASSES; ++c) {
+            Json::Value class_arr(Json::arrayValue);
+            for (int i = 0; i < num_features_; ++i) {
+                class_arr.append(mu_[c](i));
+            }
+            mu_json.append(class_arr);
         }
         root["mu"] = mu_json;
-        
-        // Covariance matrix (flatten)
-        Json::Value sigma_json(Json::arrayValue);
-        for (int i = 0; i < num_features_; ++i) {
-            for (int j = 0; j < num_features_; ++j) {
-                sigma_json.append(sigma_(i, j));
+
+        // Diagonal covariance per class (flatten class-major)
+        Json::Value sigma_diag_json(Json::arrayValue);
+        for (int c = 0; c < NUM_CLASSES; ++c) {
+            Json::Value class_arr(Json::arrayValue);
+            for (int i = 0; i < num_features_; ++i) {
+                class_arr.append(sigma_diag_[c](i));
             }
+            sigma_diag_json.append(class_arr);
         }
-        root["sigma"] = sigma_json;
+        root["sigma_diag"] = sigma_diag_json;
         
         // Feature normalization
         Json::Value feat_mean_json(Json::arrayValue);
@@ -377,22 +475,35 @@ bool BayesianTradingModel::load_model(const std::string& filepath) {
         num_features_ = root["num_features"].asInt();
         num_updates_ = root["num_updates"].asInt();
         
-        // Load weights
+        // Load weights per class
         const Json::Value& mu_json = root["mu"];
-        mu_ = Eigen::VectorXd(num_features_);
-        for (int i = 0; i < num_features_; ++i) {
-            mu_(i) = mu_json[i].asDouble();
-        }
-        
-        // Load covariance matrix
-        const Json::Value& sigma_json = root["sigma"];
-        sigma_ = Eigen::MatrixXd(num_features_, num_features_);
-        for (int i = 0; i < num_features_; ++i) {
-            for (int j = 0; j < num_features_; ++j) {
-                sigma_(i, j) = sigma_json[i * num_features_ + j].asDouble();
+        mu_.clear();
+        mu_.reserve(NUM_CLASSES);
+        for (int c = 0; c < NUM_CLASSES; ++c) {
+            Eigen::VectorXd v(num_features_);
+            const Json::Value& class_arr = mu_json[c];
+            for (int i = 0; i < num_features_; ++i) {
+                v(i) = class_arr[i].asDouble();
             }
+            mu_.push_back(v);
         }
-        update_sigma_inverse();
+
+        // Load diagonal covariance per class
+        const Json::Value& sigma_diag_json = root["sigma_diag"];
+        sigma_diag_.clear();
+        sigma_inv_diag_.clear();
+        sigma_diag_.reserve(NUM_CLASSES);
+        sigma_inv_diag_.reserve(NUM_CLASSES);
+        for (int c = 0; c < NUM_CLASSES; ++c) {
+            Eigen::VectorXd v(num_features_);
+            const Json::Value& class_arr = sigma_diag_json[c];
+            for (int i = 0; i < num_features_; ++i) {
+                v(i) = class_arr[i].asDouble();
+            }
+            sigma_diag_.push_back(v);
+            Eigen::VectorXd inv = v.array().inverse();
+            sigma_inv_diag_.push_back(inv);
+        }
         
         // Load feature normalization
         const Json::Value& feat_mean_json = root["feature_mean"];
@@ -443,13 +554,19 @@ void BayesianTradingModel::print_summary() const {
     std::cout << "\n=== Bayesian Trading Model Summary ===" << std::endl;
     std::cout << "Features: " << num_features_ << std::endl;
     std::cout << "Updates: " << num_updates_ << std::endl;
-    std::cout << "Total Uncertainty: " << sigma_.trace() << std::endl;
+    // Total uncertainty (sum of diag across classes)
+    double total_uncert = 0.0;
+    for (int c = 0; c < NUM_CLASSES; ++c) total_uncert += sigma_diag_[c].sum();
+    std::cout << "Total Uncertainty: " << total_uncert << std::endl;
     std::cout << "Ready for trading: " << (is_ready() ? "Yes" : "No") << std::endl;
     
     std::cout << "\nWeight Summary:" << std::endl;
-    for (int i = 0; i < num_features_; ++i) {
-        std::cout << "  Feature " << i << ": " 
-                  << mu_(i) << " ± " << std::sqrt(sigma_(i, i)) << std::endl;
+    for (int c = 0; c < NUM_CLASSES; ++c) {
+        std::cout << "Class " << c << " weights:\n";
+        for (int i = 0; i < num_features_; ++i) {
+            std::cout << "  Feature " << i << ": " 
+                      << mu_[c](i) << " ± " << std::sqrt(std::max(0.0, sigma_diag_[c](i))) << std::endl;
+        }
     }
     
     std::cout << "\nConfig:" << std::endl;

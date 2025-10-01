@@ -11,6 +11,7 @@
 #include <mutex>
 #include <jsoncpp/json/json.h>
 #include <core/direction.hpp>
+#include <strategy/types/trading_signal.hpp>
 using namespace trading::core;
 /**
  * BayesianTradingModel - Online Bayesian Learning for Trading Signals
@@ -28,6 +29,7 @@ namespace perception {
 
 class BayesianTradingModel {
 public:
+    static constexpr int NUM_CLASSES = 3; // 0: SELL, 1: NEUTRAL, 2: BUY
     struct TradingSignal {
         double probability;      // P(price_up) ∈ [0,1]
         double expected_value;   // Expected value of trade
@@ -49,10 +51,10 @@ public:
     };
 
 private:
-    // Model parameters
-    Eigen::VectorXd mu_;              // Mean weights
-    Eigen::MatrixXd sigma_;           // Covariance matrix
-    Eigen::MatrixXd sigma_inv_;       // Inverse covariance (for efficiency)
+    // Model parameters (one-vs-rest per class)
+    std::vector<Eigen::VectorXd> mu_;              // Mean weights per class (NUM_CLASSES x num_features)
+    std::vector<Eigen::VectorXd> sigma_diag_;      // Diagonal covariance per class (variance vector)
+    std::vector<Eigen::VectorXd> sigma_inv_diag_;  // Inverse diagonal covariance per class
     
     // Feature normalization
     Eigen::VectorXd feature_mean_;    // Running mean
@@ -75,6 +77,7 @@ private:
     void update_bayesian_weights(const Eigen::VectorXd& normalized_features, int label);
     double sigmoid(double x) const;
     void update_sigma_inverse();
+    std::tuple<double, double, double> predict_multiclass(const std::vector<double>& features);
 
 public:
     /**
@@ -93,12 +96,14 @@ public:
      * @param features Raw feature vector (will be normalized internally)
      * @return Complete trading signal with probability, EV, position size
      */
-    TradingSignal predict(const std::vector<double>& features);
+    // TradingSignal predict(const std::vector<double>& features);
+    TradingSignal predict(const std::vector<double>& features) ;
     
+
     /**
      * Update model with new observation
      * @param features Raw feature vector
-     * @param label 1 if price went up, 0 if price went down
+     * @param label 0 = SELL (price down), 1 = NEUTRAL, 2 = BUY (price up)
      */
     void update(const std::vector<double>& features, int label);
     

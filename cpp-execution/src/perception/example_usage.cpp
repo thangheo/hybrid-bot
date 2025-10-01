@@ -47,7 +47,8 @@ std::vector<double> simulate_detector_outputs(int num_detectors) {
 }
 
 // Simulate market direction (replace with your actual labeling logic)
-core::Direction simulate_market_direction(const std::vector<double>& features) {
+// Return a class label: 0 SELL, 1 NEUTRAL, 2 BUY
+int simulate_market_label(const std::vector<double>& features) {
     // Simulate a scenario where some features are predictive
     double signal = 0.0;
     for (size_t i = 0; i < features.size(); ++i) {
@@ -68,8 +69,11 @@ core::Direction simulate_market_direction(const std::vector<double>& features) {
     static std::normal_distribution<> noise(0.0, 0.5);
     signal += noise(gen);
     
-    // Convert to binary label
-    return (signal > 0.0) ? core::Direction::BUY : core::Direction::SELL;
+    // Map to 3-class label with deadzone around 0
+    const double THRESH = 0.05;
+    if (signal > THRESH) return 2; // BUY
+    if (signal < -THRESH) return 0; // SELL
+    return 1; // NEUTRAL
 }
 
 int main() {
@@ -103,10 +107,10 @@ int main() {
         auto features = simulate_detector_outputs(num_detectors);
         
         // Get market direction (this would be your 2-minute forward return > 0)
-        auto actual_direction = simulate_market_direction(features);
-        
-        // Update model with observation
-        model.update(features, (actual_direction==Direction::BUY) ? 1 : -1);
+    int actual_label = simulate_market_label(features);
+
+    // Update model with observation (0 SELL, 1 NEUTRAL, 2 BUY)
+    model.update(features, actual_label);
         
         // Every 10 updates, make a prediction and see how we're doing
         if (epoch % 50 == 0) {
@@ -123,13 +127,14 @@ int main() {
         
         if (epoch > 100) {  // Start making predictions after some training
             auto signal = model.predict(features);
-            predictions.push_back(signal.should_trade ? (signal.direction == Direction::BUY ? 1 : -1) : 0);
-            // predictions.push_back(signal.should_trade ? signal.direction : core::Direction::NEUTRAL);
-            actuals.push_back((actual_direction==Direction::BUY) ? 1 : -1);
+            // Convert predicted signal to class label
+            int pred_label = signal.should_trade ? (signal.direction == Direction::BUY ? 2 : (signal.direction == Direction::SELL ? 0 : 1)) : 1;
+            predictions.push_back(pred_label);
+            actuals.push_back(actual_label);
             
             // Simulate return if we traded
             if (signal.should_trade) {
-                double simulated_return = (actual_direction == Direction::BUY) ? signal.position_size * 0.01 : -signal.position_size * 0.01;
+                double simulated_return = (actual_label == 2) ? signal.position_size * 0.01 : -signal.position_size * 0.01;
                 training_returns.push_back(simulated_return);
             }
         }
@@ -176,8 +181,8 @@ int main() {
         // std::cout << "    Direction: " << (signal.direction == core::Direction::BUY ? "BUY" : "SELL") << std::endl;
         
         // Simulate market feedback and continue learning
-        auto market_direction = simulate_market_direction(features);
-        model.update(features, (market_direction==Direction::BUY) ? 1 : -1);
+    int market_label = simulate_market_label(features);
+    model.update(features, market_label);
 
         // std::cout << "    Actual Direction: " << (market_direction == Direction::BUY ? "UP" : "DOWN") << std::endl;
         std::cout << std::endl;

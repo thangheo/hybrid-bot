@@ -189,7 +189,7 @@ std::optional<core::MarketData> MarketDataProcessor::processProtobufOrderbook(
         if (!orderbook_msg.has_data()) {
             LOG_ERROR("Protobuf message missing data field for topic: {}", topic);
             protobufParseErrors_.fetch_add(1, std::memory_order_relaxed);
-            LOG_DEBUG("processProtobufOrderbook: missing data for topic='{}'", topic);
+            // LOG_DEBUG("processProtobufOrderbook: missing data for topic='{}'", topic);
             return std::nullopt;
         }
 
@@ -240,7 +240,7 @@ std::optional<core::MarketData> MarketDataProcessor::processProtobufOrderbook(
         marketData.high24h = data.high24h();
         marketData.low24h = data.low24h();
 
-    LOG_DEBUG("processProtobufOrderbook: created market data for topic='{}' exchange='{}' symbol='{}'", topic, exchange, symbol);
+    // LOG_DEBUG("processProtobufOrderbook: created market data for topic='{}' exchange='{}' symbol='{}'", topic, exchange, symbol);
     return marketData;
 
     } catch (const std::exception& e) {
