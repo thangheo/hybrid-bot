@@ -420,6 +420,52 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                             trading::perception::BayesHandle handle = getBayesHandleForSymbol(exch, sym);
                             if (!handle) continue;
                             trading::perception::bayes_update(handle, features, label);
+
+                            // Runtime persistence policy: increment update counter and
+                            // save model when thresholds / intervals are reached.
+                            try {
+                                // Update counters atomically with bayes mutex to avoid races
+                                std::lock_guard<std::mutex> lk(bayesMutex_);
+                                updatesSinceLastSave_++;
+                                auto now = std::chrono::steady_clock::now();
+                                bool minIntervalPassed = (now - lastSaveTime_) >= bayesMinSaveInterval_;
+                                bool intervalPassed = (bayesSaveInterval_.count() > 0) && ((now - lastSaveTime_) >= bayesSaveInterval_);
+                                bool enoughUpdates = (bayesSaveAfterUpdates_ > 0) && (updatesSinceLastSave_ >= bayesSaveAfterUpdates_);
+
+                                // Check model readiness if configured
+                                int modelUpdates = trading::perception::bayes_get_num_updates(handle);
+                                bool modelReady = (modelUpdates >= requireModelReadyUpdates_) || trading::perception::bayes_is_ready(handle);
+
+                                if (modelReady && minIntervalPassed && (enoughUpdates || intervalPassed)) {
+                                    try {
+                                        if (!bayesModelDirectory_.empty()) {
+                                            // Per-symbol persistence
+                                            if (saveBayesForSymbol(handle, exch, sym)) {
+                                                LOG_INFO("ImbalanceDetectionEngine: auto-saved per-symbol bayes model for {}:{}", exch, sym);
+                                            } else {
+                                                LOG_WARN("ImbalanceDetectionEngine: auto-save failed for per-symbol bayes model {}:{}", exch, sym);
+                                            }
+                                        } else if (!bayesModelPath_.empty() && bayes_handle_) {
+                                            // Legacy single-file mode: save shared handle
+                                            if (trading::perception::bayes_save(bayes_handle_, bayesModelPath_)) {
+                                                LOG_INFO("ImbalanceDetectionEngine: auto-saved bayes model to {}", bayesModelPath_);
+                                            } else {
+                                                LOG_WARN("ImbalanceDetectionEngine: auto-save failed for bayes model {}", bayesModelPath_);
+                                            }
+                                        }
+                                    } catch (const std::exception &ex) {
+                                        LOG_WARN("ImbalanceDetectionEngine: exception during auto-save: {}", ex.what());
+                                    } catch (...) {
+                                        LOG_WARN("ImbalanceDetectionEngine: unknown error during auto-save");
+                                    }
+
+                                    // Reset counters / timestamp
+                                    lastSaveTime_ = now;
+                                    updatesSinceLastSave_ = 0;
+                                }
+                            } catch (...) {
+                                // swallow any issues in save bookkeeping
+                            }
                         } catch (...) {}
                     }
                 } catch (...) {}
