@@ -232,7 +232,7 @@ bool MarketDataSubscriber::unsubscribePattern(const std::string& topicPattern) {
 void MarketDataSubscriber::registerCallback(const MarketDataCallback& callback) {
     std::lock_guard<std::mutex> lock(callbackMutex_);
     callbacks_.push_back(callback);
-    LOG_DEBUG("Registered market data callback (total: {})", callbacks_.size());
+    LOG_TRACE("Registered market data callback (total: {})", callbacks_.size());
 }
 
 bool MarketDataSubscriber::isConnected() const {
@@ -262,7 +262,7 @@ void MarketDataSubscriber::setZmqClient(
     
 //     {
 //         std::unique_lock<std::mutex> lock(queueMutex_);
-//         // LOG_DEBUG("Received message on topic: {}, queue size: {}", topic, inboundQueue_.size());
+//         // LOG_TRACE("Received message on topic: {}, queue size: {}", topic, inboundQueue_.size());
 //         if (config_.enableConflation) {
 //             // Use conflation to keep only latest message per topic
 //             auto it = conflationMap_.find(topic);
@@ -275,7 +275,7 @@ void MarketDataSubscriber::setZmqClient(
 //                 conflationMap_.emplace(topic, std::move(rawMsg));
 //                 conflationKeyQueue_.push_back(topic);
 //                 totalEnqueued_.fetch_add(1, std::memory_order_relaxed);
-//                 LOG_DEBUG("Enqueued (conflation) topic='{}', conflation_map_size={}, conflation_key_queue_size={}",
+//                 LOG_TRACE("Enqueued (conflation) topic='{}', conflation_map_size={}, conflation_key_queue_size={}",
 //                           topic, conflationMap_.size(), conflationKeyQueue_.size());
 //             }
             
@@ -292,7 +292,7 @@ void MarketDataSubscriber::setZmqClient(
 //             } else {
 //                 inboundQueue_.push_back(std::move(rawMsg));
 //                 totalEnqueued_.fetch_add(1, std::memory_order_relaxed);
-//                     LOG_DEBUG("Enqueued (inbound) topic='{}', inbound_queue_size={}", topic, inboundQueue_.size());
+//                     LOG_TRACE("Enqueued (inbound) topic='{}', inbound_queue_size={}", topic, inboundQueue_.size());
 //             }
 //         }
         
@@ -317,14 +317,14 @@ void MarketDataSubscriber::onMessageReceived(
                 // Update existing message - don't add to key queue again
                 it->second = std::move(rawMsg);
                 totalDropped_.fetch_add(1, std::memory_order_relaxed);
-                LOG_DEBUG("Updated conflation entry for topic='{}', map_size={}, queue_size={}",
+                LOG_TRACE("Updated conflation entry for topic='{}', map_size={}, queue_size={}",
                           topic, conflationMap_.size(), conflationKeyQueue_.size());
             } else {
                 // New topic - add to both map and key queue
                 conflationMap_.emplace(topic, std::move(rawMsg));
                 conflationKeyQueue_.push_back(topic);
                 totalEnqueued_.fetch_add(1, std::memory_order_relaxed);
-                LOG_DEBUG("Added new conflation entry for topic='{}', map_size={}, queue_size={}",
+                LOG_TRACE("Added new conflation entry for topic='{}', map_size={}, queue_size={}",
                           topic, conflationMap_.size(), conflationKeyQueue_.size());
             }
         } else {
@@ -335,7 +335,7 @@ void MarketDataSubscriber::onMessageReceived(
             } else {
                 inboundQueue_.push_back(std::move(rawMsg));
                 totalEnqueued_.fetch_add(1, std::memory_order_relaxed);
-                LOG_DEBUG("Enqueued message for topic='{}', queue_size={}", 
+                LOG_TRACE("Enqueued message for topic='{}', queue_size={}", 
                           topic, inboundQueue_.size());
             }
         }
@@ -345,139 +345,8 @@ void MarketDataSubscriber::onMessageReceived(
     }
 }
 
-// void MarketDataSubscriber::processQueueLoop() {
-//     LOG_DEBUG("Processing thread started");
-    
-//     while (processingRunning_.load()) {
-//         std::vector<RawMessage> batch;
-        
-//         // Get batch of messages
-//         {
-//             std::unique_lock<std::mutex> lock(queueMutex_);
-//             // Debug: log sizes while holding the lock to get a consistent snapshot
-//             LOG_DEBUG("Locked for extraction: conflation_map_size={}, conflation_key_queue_size={}, inbound_queue_size={}",
-//                       conflationMap_.size(), conflationKeyQueue_.size(), inboundQueue_.size());
-//             // LOG_DEBUG("processQueueLoop checking queue, inbound size: {}, conflation size: {}",
-//             //           inboundQueue_.size(), conflationMap_.size());
-//             // Wait for messages or timeout
-//             if (conflationMap_.empty() && inboundQueue_.empty()) {
-//                 queueCv_.wait_for(lock, std::chrono::milliseconds(100));
-//                 if (!processingRunning_.load()) break;
-//                 if (conflationMap_.empty() && inboundQueue_.empty()) continue;
-//             }
-            
-//             // Extract batch
-//             if (config_.enableConflation && !conflationKeyQueue_.empty()) {
-//                 size_t batchSize = std::min(currentBatchSize_, conflationKeyQueue_.size());
-
-//                 for (size_t i = 0; i < batchSize; ++i) {
-//                     const std::string key = conflationKeyQueue_.front();
-//                     LOG_DEBUG("Popping conflation key: {}", key);
-//                     conflationKeyQueue_.pop_front();
-                    
-//                     auto it = conflationMap_.find(key);
-//                     if (it != conflationMap_.end()) {
-//                         LOG_DEBUG("Draining conflation entry for key: {}", key);
-//                         batch.push_back(std::move(it->second));
-//                         conflationMap_.erase(it);
-//                     } else {
-//                         LOG_DEBUG("No conflation entry found for key: {}", key);
-//                     }
-//                 }
-//             } else if (config_.enableConflation && conflationKeyQueue_.empty() && !conflationMap_.empty()) {
-//                 // Edge case: conflation map contains entries but the key queue is empty
-//                 // (possible if keys were consumed elsewhere). Drain up to currentBatchSize_
-//                 // entries directly from the map to ensure progress.
-//                 size_t batchSize = std::min(currentBatchSize_, conflationMap_.size());
-//                 auto it = conflationMap_.begin();
-//                 for (size_t i = 0; i < batchSize && it != conflationMap_.end(); ++i) {
-//                     const std::string key = it->first;
-//                     LOG_DEBUG("Draining map entry for key (direct drain): {}", key);
-//                     batch.push_back(std::move(it->second));
-//                     auto eraseIt = it++;
-//                     conflationMap_.erase(eraseIt);
-//                 }
-//             } else if (!inboundQueue_.empty()) {
-//                 size_t batchSize = std::min(currentBatchSize_, inboundQueue_.size());
-                
-//                 for (size_t i = 0; i < batchSize; ++i) {
-//                     batch.push_back(std::move(inboundQueue_.front()));
-//                     inboundQueue_.pop_front();
-//                 }
-//             }
-//         }
-        
-//         // Process batch
-//         // If conflation is enabled but the key queue is empty while the map contains entries,
-//         // drain the conflation map directly into the batch to avoid wasting messages.
-//         {
-//             std::unique_lock<std::mutex> lock(queueMutex_, std::defer_lock);
-//             // We're already outside the lock here; extraction was done above while holding the lock.
-//         }
-
-//         LOG_INFO("Processing batch of {} messages (conflation_map_size={}, inbound_size={})",
-//                  batch.size(), conflationMap_.size(), inboundQueue_.size());
-
-//         for (auto& rawMsg : batch) {
-//             try {
-//                 auto start = std::chrono::steady_clock::now();
-                
-//                 // Process message using processor with timeout to prevent hangs
-//                 LOG_INFO("Invoking processor for topic='{}', message_size={}'", rawMsg.topic, rawMsg.message.size());
-
-//                 // Make copies for the async worker to avoid use-after-move
-//                 std::string topic_copy = rawMsg.topic;
-//                 std::string msg_copy = rawMsg.message;
-
-//                 auto fut = std::async(std::launch::async, [this, topic_copy = std::move(topic_copy), msg_copy = std::move(msg_copy)]() {
-//                     return this->processor_->processMessage(topic_copy, msg_copy);
-//                 });
-
-//                 // Wait up to 200ms for processing (tunable)
-//                 constexpr auto kProcessingTimeout = std::chrono::milliseconds(200);
-//                 std::optional<core::MarketData> marketData;
-//                 if (fut.wait_for(kProcessingTimeout) == std::future_status::ready) {
-//                     marketData = fut.get();
-//                     // Debug: log every processed message (helpful during investigation)
-//                     if (marketData.has_value()) {
-//                         LOG_INFO("Processed market data: {} from topic {}", 
-//                                  marketData->tradingPair.toString(), rawMsg.topic);
-//                     } else {
-//                         LOG_INFO("Processor returned no market data for topic {}", rawMsg.topic);
-//                     }
-//                 } else {
-//                     LOG_ERROR("Processing timeout for topic '{}' after {} ms", rawMsg.topic, kProcessingTimeout.count());
-//                     recordError();
-//                     // Attempt to detach/ignore the future — it will complete on its own thread
-//                     // and its result will be discarded. Continue to next message.
-//                     continue;
-//                 }
-//                 if (marketData.has_value()) {
-//                     invokeCallbacks(marketData.value());
-//                     totalProcessed_.fetch_add(1, std::memory_order_relaxed);
-//                 }
-                
-//                 // Log slow processing
-//                 auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(
-//                     std::chrono::steady_clock::now() - start).count();
-                
-//                 if (duration > 50) {  // Log if processing takes > 50ms
-//                     LOG_WARN("Slow message processing: {}ms for topic {}", 
-//                             duration, rawMsg.topic);
-//                 }
-                
-//             } catch (const std::exception& e) {
-//                 LOG_ERROR("Error processing message from topic {}: {}", 
-//                          rawMsg.topic, e.what());
-//                 recordError();
-//             }
-//         }
-//     }
-    
-//     LOG_DEBUG("Processing thread stopped");
-// }
 void MarketDataSubscriber::processQueueLoop() {
-    LOG_DEBUG("Processing thread started");
+    LOG_TRACE("Processing thread started");
     
     while (processingRunning_.load()) {
         std::vector<RawMessage> batch;
@@ -499,12 +368,12 @@ void MarketDataSubscriber::processQueueLoop() {
 
                 for (size_t i = 0; i < batchSize; ++i) {
                     const std::string key = conflationKeyQueue_.front();
-                    LOG_DEBUG("Popping conflation key: {}", key);
+                    LOG_TRACE("Popping conflation key: {}", key);
                     conflationKeyQueue_.pop_front();
                     
                     auto it = conflationMap_.find(key);
                     if (it != conflationMap_.end()) {
-                        LOG_DEBUG("Draining conflation entry for key: {}", key);
+                        LOG_TRACE("Draining conflation entry for key: {}", key);
                         batch.push_back(std::move(it->second));
                         conflationMap_.erase(it);
                     }
@@ -524,18 +393,18 @@ void MarketDataSubscriber::processQueueLoop() {
                 auto start = std::chrono::steady_clock::now();
                 
                 // Direct call without async
-                LOG_DEBUG("Invoking processor for topic='{}', message_size={}", 
-                         rawMsg.topic, rawMsg.message.size());
+                // LOG_TRACE("Invoking processor for topic='{}', message_size={}", 
+                        //  rawMsg.topic, rawMsg.message.size());   
                 
                 auto marketData = processor_->processMessage(rawMsg.topic, rawMsg.message);
                 
                 if (marketData.has_value()) {
-                    LOG_DEBUG("Processed market data: {} from topic {}", 
+                    LOG_TRACE("Processed market data: {} from topic {}", 
                              marketData->tradingPair.toString(), rawMsg.topic);
                     invokeCallbacks(marketData.value());
                     totalProcessed_.fetch_add(1, std::memory_order_relaxed);
                 } else {
-                    LOG_DEBUG("Processor returned no market data for topic {}", rawMsg.topic);
+                    LOG_TRACE("Processor returned no market data for topic {}", rawMsg.topic);
                 }
                 
                 // Log slow processing
@@ -555,11 +424,11 @@ void MarketDataSubscriber::processQueueLoop() {
         }
     }
     
-    LOG_DEBUG("Processing thread stopped");
+    LOG_TRACE("Processing thread stopped");
 }
 
 void MarketDataSubscriber::connectionMonitorLoop() {
-    LOG_DEBUG("Connection monitor thread started");
+    LOG_TRACE("Connection monitor thread started");
     
     int reconnectAttempt = 0;
     auto lastRateCheck = std::chrono::steady_clock::now();
@@ -605,7 +474,7 @@ void MarketDataSubscriber::connectionMonitorLoop() {
         }
     }
     
-    LOG_DEBUG("Connection monitor thread stopped");
+    LOG_TRACE("Connection monitor thread stopped");
 }
 
 bool MarketDataSubscriber::checkConnection() {
@@ -811,13 +680,13 @@ void MarketDataSubscriber::startConnectionMonitor() {
     connectionThread_ = std::thread([this]() { 
         this->connectionMonitorLoop(); 
     });
-    LOG_DEBUG("Started connection monitor thread");
+    LOG_TRACE("Started connection monitor thread");
 }
 
 void MarketDataSubscriber::stopConnectionMonitor() {
     if (connectionThread_.joinable()) {
         connectionThread_.join();
-        LOG_DEBUG("Stopped connection monitor thread");
+        LOG_TRACE("Stopped connection monitor thread");
     }
 }
 
