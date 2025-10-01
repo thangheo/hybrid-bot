@@ -874,7 +874,29 @@ void PostTradeMonitor::enforcePositionTTL() {
 
     // Get snapshot of positions
     auto positions = positionTracker_->getAllPositions();
-    if (positions.empty()) return;
+
+    // Build set of currently active position keys (only non-zero quantity positions)
+    std::unordered_set<std::string> currentKeys;
+    for (const auto& p : positions) {
+        try {
+            if (std::abs(p.getQuantity()) < 1e-8) continue;
+            currentKeys.insert(p.getExchangeId().toString() + ":" + p.getTradingPair().toString());
+        } catch (...) {
+            // ignore malformed entries
+        }
+    }
+
+    // Clean up stale entries from positionsBeingClosed_ that are no longer present
+    {
+        std::unique_lock<std::shared_mutex> ul(positionsClosingMutex_);
+        for (auto it = positionsBeingClosed_.begin(); it != positionsBeingClosed_.end(); ) {
+            if (currentKeys.find(*it) == currentKeys.end()) {
+                it = positionsBeingClosed_.erase(it);
+            } else {
+                ++it;
+            }
+        }
+    }
 
     auto now = core::now();
 
