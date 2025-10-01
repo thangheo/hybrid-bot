@@ -120,8 +120,8 @@ double VolatilityCalculator::calculateSimpleVolatility(
 // MarketDataCache implementation
 MarketDataCache::MarketDataCache(const MarketDataCacheConfig& config)
     : config_(config), lastCleanup_(std::chrono::steady_clock::now()) {
-    LOG_INFO("MarketDataCache initialized with {} ms cache validity, {} max history size",
-             config_.cacheValidityDuration.count(), config_.maxHistorySize);
+    LOG_INFO("MarketDataCache initialized (this={}) with {} ms cache validity, {} max history size",
+             static_cast<const void*>(this), config_.cacheValidityDuration.count(), config_.maxHistorySize);
 }
 
 MarketDataCache::~MarketDataCache() {
@@ -135,20 +135,21 @@ void MarketDataCache::updateMarketData(const std::string& cacheKey, const core::
         totalUpdates_.fetch_add(1, std::memory_order_relaxed);
         
         // Update main cache
+        LOG_TRACE("Updating market data for {}: price={}, bid={}, ask={}, volume={}, cacheKey={}",
+                 cacheKey, data.price, data.bid, data.ask, data.volume, cacheKey);
+
         {
             std::unique_lock<std::shared_mutex> lock(cacheMutex_);
+            size_t sizeBefore = marketDataCache_.size();
             marketDataCache_[cacheKey] = MarketDataCacheEntry{
-                data, 
-                std::chrono::steady_clock::now(), 
+                data,
+                std::chrono::steady_clock::now(),
                 data.price > 0.0  // Valid if we have a price
             };
+            size_t sizeAfter = marketDataCache_.size();
+            LOG_TRACE("MarketDataCache::updateMarketData this={} key='{}' sizeBefore={} sizeAfter={}",
+                      static_cast<const void*>(this), cacheKey, sizeBefore, sizeAfter);
         }
-        
-        // Update price history if we have a valid price
-        if (data.price > 0.0) {
-            updatePrice(cacheKey, data.timestamp, data.price);
-        }
-        
         // Periodic cleanup check
         if (shouldPerformCleanup()) {
             performPeriodicCleanup();
@@ -159,29 +160,29 @@ void MarketDataCache::updateMarketData(const std::string& cacheKey, const core::
     }
 }
 
-std::optional<core::MarketData> MarketDataCache::getMarketData(const std::string& cacheKey) const {
-    try {
-        std::shared_lock<std::shared_mutex> lock(cacheMutex_);
-        auto it = marketDataCache_.find(cacheKey);
+// std::optional<core::MarketData> MarketDataCache::getMarketData(const std::string& cacheKey) const {
+//     try {
+//         std::shared_lock<std::shared_mutex> lock(cacheMutex_);
+//         auto it = marketDataCache_.find(cacheKey);
         
-        if (it != marketDataCache_.end()) {
-            const auto& entry = it->second;
+//         if (it != marketDataCache_.end()) {
+//             const auto& entry = it->second;
             
-            // Check if entry is still valid
-            if (entry.isValid && !entry.isExpired(config_.cacheValidityDuration)) {
-                cacheHits_.fetch_add(1, std::memory_order_relaxed);
-                return entry.data;
-            }
-        }
+//             // Check if entry is still valid
+//             if (entry.isValid && !entry.isExpired(config_.cacheValidityDuration)) {
+//                 cacheHits_.fetch_add(1, std::memory_order_relaxed);
+//                 return entry.data;
+//             }
+//         }
         
-        cacheMisses_.fetch_add(1, std::memory_order_relaxed);
-        return std::nullopt;
+//         cacheMisses_.fetch_add(1, std::memory_order_relaxed);
+//         return std::nullopt;
         
-    } catch (const std::exception& e) {
-        LOG_ERROR("Error getting market data for {}: {}", cacheKey, e.what());
-        return std::nullopt;
-    }
-}
+//     } catch (const std::exception& e) {
+//         LOG_ERROR("Error getting market data for {}: {}", cacheKey, e.what());
+//         return std::nullopt;
+//     }
+// }
 
 void MarketDataCache::updatePrice(const std::string& cacheKey, Timestamp timestamp, double price) {
     try {
@@ -205,6 +206,40 @@ void MarketDataCache::updatePrice(const std::string& cacheKey, Timestamp timesta
         
     } catch (const std::exception& e) {
         LOG_ERROR("Error updating price for {}: {}", cacheKey, e.what());
+    }
+}
+std::optional<core::MarketData> MarketDataCache::getMarketData(const std::string& cacheKey) const {
+    try {
+        std::shared_lock<std::shared_mutex> lock(cacheMutex_);
+        
+    LOG_DEBUG("[cache_this={}] Looking for key '{}' in cache with {} entries",
+          static_cast<const void*>(this), cacheKey, marketDataCache_.size());
+        
+        auto it = marketDataCache_.find(cacheKey);
+        
+        if (it != marketDataCache_.end()) {
+            const auto& entry = it->second;
+            LOG_TRACE("Found entry for '{}': isValid={}, isExpired={}", 
+                     cacheKey, entry.isValid, entry.isExpired(config_.cacheValidityDuration));
+            
+            if (entry.isValid && !entry.isExpired(config_.cacheValidityDuration)) {
+                cacheHits_.fetch_add(1, std::memory_order_relaxed);
+                return entry.data;
+            }
+        } else {
+            LOG_DEBUG("Key '{}' not found in cache", cacheKey);
+            // Log all keys in cache for debugging
+            for (const auto& [key, _] : marketDataCache_) {
+                LOG_DEBUG("  Cache contains key: '{}'", key);
+            }
+        }
+        
+        cacheMisses_.fetch_add(1, std::memory_order_relaxed);
+        return std::nullopt;
+        
+    } catch (const std::exception& e) {
+        LOG_ERROR("Error getting market data for {}: {}", cacheKey, e.what());
+        return std::nullopt;
     }
 }
 

@@ -103,6 +103,12 @@ public:
     
     // Factory method
     static std::shared_ptr<DataInterface> createDataInterface(const RiskConfig& config);
+    // Overload that allows injecting a pre-created ZMQ client/context so the
+    // subscriber can be configured before initialization (important for inproc).
+    static std::shared_ptr<DataInterface> createDataInterface(
+        const RiskConfig& config,
+        std::unique_ptr<trading::communication::GenericZmqClient> injectedClient,
+        std::shared_ptr<zmq::context_t> context);
     
     // For testing - allow injection of components
     void setZmqClient(std::unique_ptr<trading::communication::GenericZmqClient> zmqClient);

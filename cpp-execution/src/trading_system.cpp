@@ -35,15 +35,20 @@ Trading_system::Trading_system() : running_(false), systemHealthy_(true) {
     // clientConfig.auto_reconnect = true;
     // clientConfig.request_timeout = std::chrono::milliseconds(30000); // 30 seconds
     zmq_client_ = std::make_unique<GenericZmqClient>(clientConfig, zmq_context_);
+    LOG_INFO("Trading_system constructed - ZMQ server and client created (server={}, client={})",
+             static_cast<const void*>(zmq_server_.get()), static_cast<const void*>(zmq_client_.get()));
     
     // Initialize MarketDataInterface
     // Subscriber should connect to the server's PUB endpoint; publisher endpoint
     // is the server's REQ/REP endpoint for requests. Ensure these are not swapped.
     riskConfig_.zmqSubscriberEndpoint = SERVER_PUBLISHER_ENDPOINT;
     riskConfig_.zmqPublisherEndpoint = SERVER_REQUEST_ENDPOINT;
-    marketDataInterface_ = std::make_shared<trading::risk::MarketDataInterface>(riskConfig_);
-    // set zmq client to marketDataInterface_
-    marketDataInterface_->setZmqClient(std::move(zmq_client_));
+    // marketDataInterface_ = std::make_shared<trading::risk::MarketDataInterface>(riskConfig_);
+
+    // Use shared singleton MarketDataInterface to ensure a single cache instance.
+    // Defer creating/initializing MarketDataInterface until initialize()
+    // so we can ensure the internal ZMQ server is bound and the shared
+    // ZMQ client/context can be injected before the subscriber starts.
     // Initialize position sizer with default config for now
     positionSizer_ = std::make_unique<trading::risk::PositionSizer>();
     
@@ -143,9 +148,30 @@ bool Trading_system::initialize() {
         return false;
     }
     // 3. Initialize market data interface
+    if (!marketDataInterface_) {
+        // Obtain the shared singleton instance using the overload that accepts
+        // an injected ZMQ client/context so the subscriber is created with the
+        // correct shared inproc context (avoid late injection).
+        auto mdi_base = MarketDataInterface::createDataInterface(
+            riskConfig_, std::move(zmq_client_), zmq_context_);
+        marketDataInterface_ = std::dynamic_pointer_cast<MarketDataInterface>(mdi_base);
+        if (!marketDataInterface_) {
+            std::cerr << "Failed to obtain MarketDataInterface singleton" << std::endl;
+            return false;
+        }
+    }
+
     if (!marketDataInterface_->initialize()) {
         std::cerr << "Failed to initialize MarketDataInterface" << std::endl;
         return false;
+    }
+    // Diagnostic: log health & cache stats immediately after initialization
+    try {
+        auto hs = marketDataInterface_->getHealthStatus();
+        LOG_INFO("MarketDataInterface health - cacheEntries={}, validEntries={}, cacheHealthy={}, subscriberHealthy={}",
+                 hs.cacheStats.totalEntries, hs.cacheStats.validEntries, hs.cacheHealthy, hs.subscriberHealthy);
+    } catch (const std::exception& e) {
+        LOG_WARN("Failed to query MarketDataInterface health after init: {}", e.what());
     }
     // 3. Initialize risk manager
             

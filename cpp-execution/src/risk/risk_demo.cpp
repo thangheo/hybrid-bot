@@ -61,9 +61,11 @@ public:
             std::shared_ptr<FillReconciliation>(),
             std::shared_ptr<ApiClientManager>()
         );
-        marketDataInterface_ = std::make_shared<MarketDataInterface>(config_);
-        if (!marketDataInterface_->initialize()) {
-            std::cerr << "Failed to initialize MarketDataInterface" << std::endl;
+        // Use shared singleton MarketDataInterface to ensure single cache instance
+        auto mdi = MarketDataInterface::createDataInterface(config_);
+        marketDataInterface_ = std::dynamic_pointer_cast<MarketDataInterface>(mdi);
+        if (!marketDataInterface_) {
+            std::cerr << "Failed to obtain MarketDataInterface singleton" << std::endl;
             return false;
         }
         // riskManager_ = std::make_unique<RiskManager>(executionService_, config_); //avoid compiler error

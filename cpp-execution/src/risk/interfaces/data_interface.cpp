@@ -19,7 +19,8 @@ namespace risk {
 class DataInterfaceImpl : public DataInterface {
 private:
     // The new implementation we're wrapping
-    std::unique_ptr<MarketDataInterface> marketDataInterface_;
+    std::shared_ptr<DataInterface> marketDataInterface_owner_; // hold the shared MarketDataInterface as DataInterface
+    MarketDataInterface* marketDataInterfaceRaw_ = nullptr; // non-owning raw pointer for calls
     
     // Track initialization state
     bool initialized_ = false;
@@ -29,13 +30,22 @@ private:
     std::function<void(const MarketData&)> marketDataCallback_;
     
 public:
-    DataInterfaceImpl() : DataInterface() {
+    // Allow injection of an existing MarketDataInterface singleton
+    DataInterfaceImpl(std::shared_ptr<DataInterface> injected = nullptr) : DataInterface() {
         try {
-            // Create the new market data interface
-            marketDataInterface_ = std::make_unique<MarketDataInterface>();
-            //should we use singleton pattern here?
-
-            LOG_INFO("DataInterfaceImpl created with MarketDataInterface wrapper");
+            if (injected) {
+                marketDataInterface_owner_ = injected;
+                // try to get raw pointer to MarketDataInterface if possible
+                marketDataInterfaceRaw_ = dynamic_cast<MarketDataInterface*>(marketDataInterface_owner_.get());
+                LOG_INFO("DataInterfaceImpl created (this={}) using injected MarketDataInterface (this={})",
+                         static_cast<const void*>(this), static_cast<const void*>(marketDataInterfaceRaw_));
+            } else {
+                // Create the new market data interface (singleton via factory)
+                marketDataInterface_owner_ = MarketDataInterface::createDataInterface(RiskConfig{});
+                marketDataInterfaceRaw_ = dynamic_cast<MarketDataInterface*>(marketDataInterface_owner_.get());
+                LOG_INFO("DataInterfaceImpl created (this={}) with internal MarketDataInterface (this={})",
+                         static_cast<const void*>(this), static_cast<const void*>(marketDataInterfaceRaw_));
+            }
         } catch (const std::exception& e) {
             LOG_ERROR("Failed to create MarketDataInterface: " + std::string(e.what()));
             throw;
@@ -55,20 +65,20 @@ public:
         
         try {
             // Initialize the wrapped interface
-            if (!marketDataInterface_) {
+            if (!marketDataInterface_owner_) {
                 LOG_ERROR("MarketDataInterface is null");
                 return false;
             }
-            
-            bool success = marketDataInterface_->initialize();
-            
+
+            bool success = marketDataInterface_owner_->initialize();
+
             if (success) {
                 initialized_ = true;
                 LOG_INFO("DataInterface initialized successfully via MarketDataInterface");
-                
+
                 // If we have a stored callback, register it now
                 if (marketDataCallback_) {
-                    marketDataInterface_->registerMarketDataCallback(marketDataCallback_);
+                    marketDataInterface_owner_->registerMarketDataCallback(marketDataCallback_);
                 }
             } else {
                 LOG_ERROR("Failed to initialize MarketDataInterface");
@@ -89,7 +99,7 @@ public:
         }
         
         try {
-            return marketDataInterface_->getMarketData(tradingPair, exchangeId);
+            return marketDataInterface_owner_->getMarketData(tradingPair, exchangeId);
         } catch (const std::exception& e) {
             LOG_ERROR("Failed to get market data: " + std::string(e.what()));
             return std::nullopt;
@@ -98,7 +108,7 @@ public:
     // isConnected
     bool isConnected() const override {
         std::lock_guard<std::mutex> lock(mutex_);
-        return initialized_ && marketDataInterface_ && marketDataInterface_->isConnected();
+    return initialized_ && marketDataInterface_owner_ && marketDataInterface_owner_->isConnected();
     }
 
     double getCurrentPrice(const core::Symbol& tradingPair, 
@@ -109,7 +119,7 @@ public:
         }
         
         try {
-            return marketDataInterface_->getCurrentPrice(tradingPair, exchangeId);
+            return marketDataInterface_owner_->getCurrentPrice(tradingPair, exchangeId);
         } catch (const std::exception& e) {
             LOG_ERROR("Failed to get current price: " + std::string(e.what()));
             return 0.0;
@@ -128,7 +138,7 @@ public:
         }
         
         try {
-            return marketDataInterface_->getHistoricalPrices(tradingPair, interval, count, exchangeId);
+            return marketDataInterface_owner_->getHistoricalPrices(tradingPair, interval, count, exchangeId);
         } catch (const std::exception& e) {
             LOG_ERROR("Failed to get historical prices: " + std::string(e.what()));
             return {};
@@ -144,7 +154,7 @@ public:
         }
         
         try {
-            return marketDataInterface_->getVolatility(tradingPair, timeframe, exchangeId);
+            return marketDataInterface_owner_->getVolatility(tradingPair, timeframe, exchangeId);
         } catch (const std::exception& e) {
             LOG_ERROR("Failed to get volatility: " + std::string(e.what()));
             return 0.0;
@@ -158,7 +168,7 @@ public:
             return 0.0;
         }
         try {
-            return marketDataInterface_->getPriceFromRest(tradingPair, exchangeId);
+            return marketDataInterface_owner_->getPriceFromRest(tradingPair, exchangeId);
         } catch (const std::exception& e) {
             LOG_ERROR("Failed to get REST price: {}", e.what());
             return 0.0;
@@ -175,7 +185,7 @@ public:
         
         try {
             // The new implementation might not have full order history yet
-            auto history = marketDataInterface_->getOrderHistory(exchangeId, tradingPair, limit);
+            auto history = marketDataInterface_owner_->getOrderHistory(exchangeId, tradingPair, limit);
             
             // If no history available, log a warning
             if (history.empty()) {
@@ -196,7 +206,7 @@ public:
         }
         
         try {
-            auto balances = marketDataInterface_->getExchangeBalances(exchangeId);
+            auto balances = marketDataInterface_owner_->getExchangeBalances(exchangeId);
             
             // You can also update balances if you have them from another source
             // For example, if you receive balance updates from execution engine:
@@ -214,9 +224,9 @@ public:
         marketDataCallback_ = callback;
         
         // If already initialized, register with the wrapped interface
-        if (initialized_ && marketDataInterface_) {
+        if (initialized_ && marketDataInterface_owner_) {
             try {
-                marketDataInterface_->registerMarketDataCallback(callback);
+                marketDataInterface_owner_->registerMarketDataCallback(callback);
                 // LOG_INFO("Market data callback registered");
             } catch (const std::exception& e) {
                 LOG_ERROR("Failed to register callback: " + std::string(e.what()));
@@ -232,7 +242,7 @@ public:
         }
         
         try {
-            bool success = marketDataInterface_->subscribeMarketData(tradingPair, exchangeId);
+            bool success = marketDataInterface_owner_->subscribeMarketData(tradingPair, exchangeId);
             
             if (success) {
                 std::string exchange = exchangeId.value_or("default");
@@ -256,7 +266,7 @@ public:
         }
         
         try {
-            bool success = marketDataInterface_->unsubscribeMarketData(tradingPair, exchangeId);
+            bool success = marketDataInterface_owner_->unsubscribeMarketData(tradingPair, exchangeId);
             
             if (success) {
                 std::string exchange = exchangeId.value_or("default");
@@ -278,7 +288,7 @@ public:
         }
         
         try {
-            return marketDataInterface_->getTradingFees(exchangeId, tradingPair);
+            return marketDataInterface_owner_->getTradingFees(exchangeId, tradingPair);
         } catch (const std::exception& e) {
             LOG_ERROR("Failed to get trading fees: " + std::string(e.what()));
             return {};
@@ -287,9 +297,13 @@ public:
     
     // Additional helper methods for enhanced functionality
     void updateBalance(const core::ExchangeId& exchangeId, const std::string& asset, double balance) {
-        if (initialized_ && marketDataInterface_) {
+        if (initialized_ && marketDataInterface_owner_) {
             try {
-                marketDataInterface_->updateBalance(exchangeId, asset, balance);
+                if (marketDataInterfaceRaw_) {
+                    marketDataInterfaceRaw_->updateBalance(exchangeId, asset, balance);
+                } else {
+                    LOG_ERROR("Underlying MarketDataInterface does not support updateBalance");
+                }
                 LOG_DEBUG("Updated balance for " + exchangeId.toString() + ":" + asset + " = " + std::to_string(balance));
             } catch (const std::exception& e) {
                 LOG_ERROR("Failed to update balance: " + std::string(e.what()));
@@ -298,9 +312,14 @@ public:
     }
     
     double getBalance(const core::ExchangeId& exchangeId, const std::string& asset) const {
-        if (initialized_ && marketDataInterface_) {
+        if (initialized_ && marketDataInterface_owner_) {
             try {
-                return marketDataInterface_->getBalance(exchangeId, asset);
+                if (marketDataInterfaceRaw_) {
+                    return marketDataInterfaceRaw_->getBalance(exchangeId, asset);
+                } else {
+                    LOG_ERROR("Underlying MarketDataInterface does not support getBalance");
+                    return 0.0;
+                }
             } catch (const std::exception& e) {
                 LOG_ERROR("Failed to get balance: " + std::string(e.what()));
                 return 0.0;
@@ -319,7 +338,9 @@ DataInterface::DataInterface() {
 // Factory function to create DataInterface
 std::unique_ptr<DataInterface> createDataInterface() {
     try {
-        return std::make_unique<DataInterfaceImpl>();
+        // Use the shared MarketDataInterface singleton to avoid multiple instances
+        auto sharedMdIface = MarketDataInterface::createDataInterface(RiskConfig{});
+        return std::make_unique<DataInterfaceImpl>(sharedMdIface);
     } catch (const std::exception& e) {
         LOG_ERROR("Failed to create DataInterface: " + std::string(e.what()));
         throw;

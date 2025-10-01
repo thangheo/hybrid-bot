@@ -14,7 +14,7 @@
 #include <memory>
 #include <optional>
 #include <functional>
-
+#include "communication/zmq_server_client.hpp"
 namespace trading {
 namespace risk {
 
@@ -76,6 +76,10 @@ public:
     // fetchCurrentPositions
     virtual std::vector<Position> fetchCurrentPositions() {
         return {}; // Default empty implementation
+    }
+    // setZmqClient
+    virtual void setZmqClient(std::shared_ptr<zmq::socket_t> zmqClient) {
+        // Default implementation does nothing
     }
     /**
      * Get historical prices for a trading pair
