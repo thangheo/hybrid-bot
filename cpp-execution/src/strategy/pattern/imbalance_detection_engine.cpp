@@ -510,13 +510,33 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                                     double vol = std::max(1e-6, m.realizedVolatility);
                                     double normalizedReturn = priceChangeLogRet / vol;
 
-                                    // thresholds on normalized returns (z-score like)
-                                    const double SELL_THRESHOLD_N = -0.5; // normalized units
-                                    const double BUY_THRESHOLD_N = 0.6;
+                                    // absolute return (percent) for profitability check
+                                    double absReturn = std::abs(std::exp(priceChangeLogRet) - 1.0);
 
-                                    double priceChangePct = normalizedReturn; // Keep legacy variable name for downstream logic
-                                int label;
-                                if (normalizedReturn > BUY_THRESHOLD_N) label = 2; else if (normalizedReturn < SELL_THRESHOLD_N) label = 0; else label = 1;
+                                    // fee / profitability filtering
+                                    const double MIN_ABS_RETURN_PCT = 0.0025;  // 0.25% minimum absolute move to consider
+                                    const double TRADING_FEE_PCT = 0.002;      // 0.2% round-trip
+                                    const double SAFETY_BUFFER = 0.0005;      // 0.05% slippage buffer
+                                    const double MIN_PROFITABLE_RETURN = TRADING_FEE_PCT + SAFETY_BUFFER;  // 0.25%
+
+                                    // Base normalized thresholds (z-score like)
+                                    const double BASE_SELL_N = -0.5;
+                                    const double BASE_BUY_N = 0.6;
+
+                                    // Adaptive sigma threshold: ensure normalized threshold corresponds to at least the min profitable return
+                                    double min_sigma_for_profitability = MIN_PROFITABLE_RETURN / vol;
+                                    double buy_threshold = std::max(BASE_BUY_N, min_sigma_for_profitability);
+                                    double sell_threshold = std::min(BASE_SELL_N, -min_sigma_for_profitability);
+
+                                    double priceChangePct = normalizedReturn; // legacy name
+                                    int label;
+                                    if (normalizedReturn > buy_threshold && absReturn > MIN_ABS_RETURN_PCT) {
+                                        label = 2; // BUY - statistically significant and profitable
+                                    } else if (normalizedReturn < sell_threshold && absReturn > MIN_ABS_RETURN_PCT) {
+                                        label = 0; // SELL - statistically significant and profitable
+                                    } else {
+                                        label = 1; // NEUTRAL
+                                    }
                                 toTrain.emplace_back(pt.features, label, pt.exchangeId, pt.symbol);
                                 pendingTraining_.pop_front();
                             } else break;
