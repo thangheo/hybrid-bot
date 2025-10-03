@@ -178,7 +178,8 @@ public:
      * @param momentumCorrelation Pointer to momentum correlation component
      */
     void setMomentumCorrelation(MomentumCorrelationPtr momentumCorrelation);
-    
+    //setSignalDecayModel
+    void setSignalDecayModel(SignalDecayModelPtr signalDecayModel);
     /**
      * @brief Set the threshold manager for adaptive thresholding
      * @param thresholdManager Pointer to threshold manager component
@@ -217,7 +218,8 @@ private:
     std::shared_ptr<MarketRegimeDetector> regimeDetector_;
     // std::shared_ptr<VolatilityEstimator> volatilityEstimator_;
     std::shared_ptr<SignalPerformanceTracker> performanceTracker_;
-    
+    // signalDecayModel_
+    SignalDecayModelPtr signalDecayModel_;
     // Callback management
     std::map<size_t, SignalCallback> callbacks_;
     size_t nextCallbackId_;

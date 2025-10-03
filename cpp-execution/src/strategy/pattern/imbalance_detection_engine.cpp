@@ -361,12 +361,91 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                     }
                     features.push_back(v);
                 }
+                // also add some raw metrics that may be useful
+                // sanitize values (replace NaN/inf), clamp or normalize where reasonable
+                auto safe = [](double v, double def = 0.0) {
+                    return std::isfinite(v) ? v : def;
+                };
+
+                // spread percent - clamp to a sensible range
+                features.push_back(std::clamp(safe(m.spreadPercent, 0.0), 0.0, 100.0));
+
+                // bid/ask volume ratio - convert to symmetric ratio and compress into [0,1]
+                double bar = safe(m.bidAskVolumeRatio, 1.0);
+                bar = std::max(bar, 1.0 / std::max(bar, 1e-10));
+                features.push_back(calculateImbalanceStrength(bar, 1.0));
+
+                // velocities: compress with tanh to keep values bounded
+                features.push_back(std::tanh(safe(m.priceVelocity, 0.0) * 10.0));
+                features.push_back(std::tanh(safe(m.volumeVelocity, 0.0) / 1000.0));
+                features.push_back(std::tanh(safe(m.spreadVelocity, 0.0) * 10.0));
+
+                // liquidity / volatility related
+                features.push_back(std::clamp(safe(m.liquidityPressure, 0.0), -10.0, 10.0));
+                features.push_back(std::clamp(safe(m.volatilityExpectation, 0.0), 0.0, 10.0));
+                features.push_back(std::clamp(safe(m.realizedVolatility, 0.0), 0.0, 100.0));
+                features.push_back(std::clamp(safe(m.volatilityPerUnitTime, 0.0), 0.0, 100.0));
+
+                // market directional coefficient and profile score - keep bounded
+                features.push_back(std::tanh(safe(m.marketDirectionalCoefficient, 0.0)));
+                features.push_back(std::clamp(safe(m.liquidityProfileScore, 0.0), -1.0, 1.0));
+
+                // extra orderbook-level features: total bid/ask volumes and top-3 level sums
+                double totalBid = safe(m.totalBidVolume, 0.0);
+                double totalAsk = safe(m.totalAskVolume, 0.0);
+                // avoid division by zero, convert to simple imbalance strength
+                features.push_back(calculateImbalanceStrength((totalBid + 1.0) / (totalAsk + 1.0), 1.0));
+
+                double topBidSum = 0.0;
+                double topAskSum = 0.0;
+                for (size_t i = 0; i < std::min<size_t>(3, m.bidVolumesByLevel.size()); ++i) topBidSum += safe(m.bidVolumesByLevel[i], 0.0);
+                for (size_t i = 0; i < std::min<size_t>(3, m.askVolumesByLevel.size()); ++i) topAskSum += safe(m.askVolumesByLevel[i], 0.0);
+                features.push_back(calculateImbalanceStrength((topBidSum + 1.0) / (topAskSum + 1.0), 1.0));
 
                 // Buffer features for later labeling/training
                 {
                     std::lock_guard<std::mutex> pl(pendingTrainingMutex_);
                     if (pendingTraining_.size() >= maxPendingTraining_) pendingTraining_.pop_front();
-                    pendingTraining_.push_back(PendingTraining{m.timestamp, features, m.midPrice, m.exchangeId, m.symbol});
+                    // capture VWAP/SMA if present in metrics map (optional)
+                    double vwap_snap = 0.0;
+                    double sma_snap = 0.0;
+                    try {
+                        // use getMetric to prefer member fields if available
+                        vwap_snap = m.getMetric("vwap", 0.0);
+                        // SMA may be exposed as a metric in timeSeriesMetrics or metrics map
+                        sma_snap = m.getMetric("sma", 0.0);
+                    } catch (...) {}
+
+                        // compute microprice = (bidPrice * askVolume + askPrice * bidVolume) / (bidVolume + askVolume)
+                        double micro = 0.0;
+                        try {
+                            double bidP = m.bidPrice;
+                            double askP = m.askPrice;
+                            double bidV = (m.bidVolumesByLevel.empty() ? m.totalBidVolume : m.bidVolumesByLevel.front());
+                            double askV = (m.askVolumesByLevel.empty() ? m.totalAskVolume : m.askVolumesByLevel.front());
+                            double denom = bidV + askV;
+                            if (denom > 0.0) micro = (bidP * askV + askP * bidV) / denom;
+                        } catch (...) { micro = 0.0; }
+
+                        // choose reference in order: vwap, sma, micro, midPrice
+                        double refVal = 0.0;
+                        int refType = 0; // 0=mid,1=vwap,2=sma,3=micro
+                        if (vwap_snap > 0.0) { refVal = vwap_snap; refType = 1; }
+                        else if (sma_snap > 0.0) { refVal = sma_snap; refType = 2; }
+                        else if (micro > 0.0) { refVal = micro; refType = 3; }
+                        else { refVal = m.midPrice; refType = 0; }
+
+                        PendingTraining pt;
+                        pt.timestamp = m.timestamp;
+                        pt.features = features;
+                        pt.midPrice = m.midPrice;
+                        pt.vwap = vwap_snap;
+                        pt.sma = sma_snap;
+                        pt.referenceValue = refVal;
+                        pt.referenceType = refType;
+                        pt.exchangeId = m.exchangeId;
+                        pt.symbol = m.symbol;
+                        pendingTraining_.push_back(pt);
                 }
 
                 // Predict with Bayesian model and emit event if needed
@@ -402,10 +481,42 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                         while (!pendingTraining_.empty()) {
                             const auto &pt = pendingTraining_.front();
                             if (now - pt.timestamp >= labelingDelay_) {
-                                double priceChangePct = (m.midPrice - pt.midPrice) / pt.midPrice;
+                                    // Use the stored reference at capture if available, otherwise re-evaluate current reference
+                                    double baseRef = pt.referenceValue;
+                                    double target = pt.referenceValue;
+                                    // try to read current counterpart for same reference type
+                                    try {
+                                        if (pt.referenceType == 1) { // vwap
+                                            double cur = m.getMetric("vwap", 0.0);
+                                            if (cur > 0.0) target = cur; else target = m.midPrice;
+                                        } else if (pt.referenceType == 2) { // sma
+                                            double cur = m.getMetric("sma", 0.0);
+                                            if (cur > 0.0) target = cur; else target = m.midPrice;
+                                        } else if (pt.referenceType == 3) { // micro
+                                            double bidP = m.bidPrice; double askP = m.askPrice;
+                                            double bidV = (m.bidVolumesByLevel.empty() ? m.totalBidVolume : m.bidVolumesByLevel.front());
+                                            double askV = (m.askVolumesByLevel.empty() ? m.totalAskVolume : m.askVolumesByLevel.front());
+                                            double denom = bidV + askV;
+                                            if (denom > 0.0) target = (bidP * askV + askP * bidV) / denom; else target = m.midPrice;
+                                        } else { target = m.midPrice; }
+                                    } catch (...) { target = m.midPrice; }
+
+                                    double priceChangeLogRet = 0.0;
+                                    if (baseRef > 0.0 && std::isfinite(baseRef) && std::isfinite(target) && target > 0.0) {
+                                        priceChangeLogRet = std::log(target) - std::log(baseRef);
+                                    }
+
+                                    // normalize by realized volatility (fallback floor to avoid div by zero)
+                                    double vol = std::max(1e-6, m.realizedVolatility);
+                                    double normalizedReturn = priceChangeLogRet / vol;
+
+                                    // thresholds on normalized returns (z-score like)
+                                    const double SELL_THRESHOLD_N = -0.5; // normalized units
+                                    const double BUY_THRESHOLD_N = 0.6;
+
+                                    double priceChangePct = normalizedReturn; // Keep legacy variable name for downstream logic
                                 int label;
-                                const double THRESHOLD = 0.1/100;
-                                if (priceChangePct > THRESHOLD) label = 2; else if (priceChangePct < -THRESHOLD) label = 0; else label = 1;
+                                if (normalizedReturn > BUY_THRESHOLD_N) label = 2; else if (normalizedReturn < SELL_THRESHOLD_N) label = 0; else label = 1;
                                 toTrain.emplace_back(pt.features, label, pt.exchangeId, pt.symbol);
                                 pendingTraining_.pop_front();
                             } else break;

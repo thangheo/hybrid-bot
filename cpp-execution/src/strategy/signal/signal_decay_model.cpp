@@ -8,7 +8,7 @@
  #include <algorithm>
  #include <functional>
  #include <iostream>
- #include "logger.hpp"
+ #include "common/logger.hpp"
  namespace trading {
  namespace strategy 
  {

@@ -87,7 +87,7 @@ using namespace trading::core;
         // Set up component dependencies
         signalGenerator_->setMomentumCorrelation(momentumCorrelator_);
         signalGenerator_->setThresholdManager(thresholdManager_);
-        // signalGenerator_->setSignalDecayModel(signalDecayModel_);
+        signalGenerator_->setSignalDecayModel(signalDecayModel_);
         // signalGenerator_->setMarketRegimeDetector(regimeDetector_);
         //set up regime detector and performance tracker later when available
         imbalanceSubscriptionId_ = common::EventBus::getInstance().subscribe<events::ImbalanceDetectedEvent>(
