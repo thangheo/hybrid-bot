@@ -463,7 +463,7 @@ bool BayesianTradingModel::load_model(const std::string& filepath) {
         // Load configuration
         const Json::Value& config_json = root["config"];
         config_.initial_sigma = config_json.get("initial_sigma", 1.0).asDouble();
-        config_.beta = config_json.get("beta", 1.0).asDouble();
+    config_.beta = config_json.get("beta", 0.1).asDouble();
         config_.min_probability = config_json.get("min_probability", 0.6).asDouble();
         config_.base_position_size = config_json.get("base_position_size", 0.1).asDouble();
         config_.uncertainty_penalty = config_json.get("uncertainty_penalty", 0.5).asDouble();
