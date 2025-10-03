@@ -41,7 +41,7 @@ public:
 
     struct ModelConfig {
         double initial_sigma = 1.0;        // Initial weight uncertainty
-        double beta = 1.0;                 // Bayesian update strength
+    double beta = 0.1;                 // Bayesian update strength (learning rate)
         double min_probability = 0.6;      // Threshold for trading decision
         double base_position_size = 0.1;   // Base position size
         double uncertainty_penalty = 0.5;  // Reduce size when uncertain

@@ -434,7 +434,21 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                         else if (sma_snap > 0.0) { refVal = sma_snap; refType = 2; }
                         else if (micro > 0.0) { refVal = micro; refType = 3; }
                         else { refVal = m.midPrice; refType = 0; }
+                        // from learning result we need to rescale some tiny-valued features so the
+                        // Bayesian model sees sensible dynamic ranges. Apply safely with bounds checks.
+                        try {
+                            // Indices discovered from feature ordering: 21, 24, 25 are small-scale.
+                            if (features.size() > 21) features[21] *= 1000.0; // bring to ~0.1 scale
+                            if (features.size() > 24) features[24] *= 1000.0; // bring to ~1.0 scale
+                            if (features.size() > 25) features[25] *= 1000.0; // bring to ~1.0 scale
 
+                            // Alternative: if those features are ratios and highly skewed you may
+                            // prefer a log1p transform. Uncomment the following lines to use log1p
+                            // instead of linear scaling for index 21:
+                            // if (features.size() > 21 && features[21] > 0.0) features[21] = std::log1p(features[21]);
+                        } catch (...) {
+                            // safe-guard: if anything odd happens, continue without scaling
+                        }
                         PendingTraining pt;
                         pt.timestamp = m.timestamp;
                         pt.features = features;
@@ -446,6 +460,7 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                         pt.exchangeId = m.exchangeId;
                         pt.symbol = m.symbol;
                         pendingTraining_.push_back(pt);
+
                 }
 
                 // Predict with Bayesian model and emit event if needed
@@ -488,26 +503,29 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                                     try {
                                         if (pt.referenceType == 1) { // vwap
                                             double cur = m.getMetric("vwap", 0.0);
-                                            if (cur > 0.0) target = cur; else target = m.midPrice;
+                                            // If current VWAP missing, keep target == baseRef to avoid
+                                            // comparing different reference types (apples vs oranges)
+                                            if (cur > 0.0) target = cur; else target = baseRef;
                                         } else if (pt.referenceType == 2) { // sma
                                             double cur = m.getMetric("sma", 0.0);
-                                            if (cur > 0.0) target = cur; else target = m.midPrice;
+                                            if (cur > 0.0) target = cur; else target = baseRef;
                                         } else if (pt.referenceType == 3) { // micro
                                             double bidP = m.bidPrice; double askP = m.askPrice;
                                             double bidV = (m.bidVolumesByLevel.empty() ? m.totalBidVolume : m.bidVolumesByLevel.front());
                                             double askV = (m.askVolumesByLevel.empty() ? m.totalAskVolume : m.askVolumesByLevel.front());
                                             double denom = bidV + askV;
-                                            if (denom > 0.0) target = (bidP * askV + askP * bidV) / denom; else target = m.midPrice;
+                                            if (denom > 0.0) target = (bidP * askV + askP * bidV) / denom; else target = baseRef;
                                         } else { target = m.midPrice; }
-                                    } catch (...) { target = m.midPrice; }
+                                    } catch (...) { target = baseRef; }
 
                                     double priceChangeLogRet = 0.0;
                                     if (baseRef > 0.0 && std::isfinite(baseRef) && std::isfinite(target) && target > 0.0) {
                                         priceChangeLogRet = std::log(target) - std::log(baseRef);
                                     }
 
-                                    // normalize by realized volatility (fallback floor to avoid div by zero)
-                                    double vol = std::max(1e-6, m.realizedVolatility);
+                                    // normalize by realized volatility
+                                    // clamp volatility to avoid extreme normalization during spikes
+                                    double vol = std::clamp(m.realizedVolatility, 0.001, 0.05); // 0.1% - 5%
                                     double normalizedReturn = priceChangeLogRet / vol;
 
                                     // absolute return (percent) for profitability check
@@ -528,12 +546,12 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                                     double buy_threshold = std::max(BASE_BUY_N, min_sigma_for_profitability);
                                     double sell_threshold = std::min(BASE_SELL_N, -min_sigma_for_profitability);
 
-                                    double priceChangePct = normalizedReturn; // legacy name
+                                    // Use adaptive sigma-only labeling (threshold already enforces profitability)
                                     int label;
-                                    if (normalizedReturn > buy_threshold && absReturn > MIN_ABS_RETURN_PCT) {
-                                        label = 2; // BUY - statistically significant and profitable
-                                    } else if (normalizedReturn < sell_threshold && absReturn > MIN_ABS_RETURN_PCT) {
-                                        label = 0; // SELL - statistically significant and profitable
+                                    if (normalizedReturn > buy_threshold) {
+                                        label = 2; // BUY
+                                    } else if (normalizedReturn < sell_threshold) {
+                                        label = 0; // SELL
                                     } else {
                                         label = 1; // NEUTRAL
                                     }
