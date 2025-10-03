@@ -946,7 +946,11 @@ void ImbalanceSignalGenerator::setMomentumCorrelation(MomentumCorrelationPtr mom
     std::lock_guard<std::mutex> lock(mutex_);
     momentumCorrelation_ = momentumCorrelation;
 }
-
+// setSignalDecayModel
+void ImbalanceSignalGenerator::setSignalDecayModel(SignalDecayModelPtr signalDecayModel) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    signalDecayModel_ = signalDecayModel;
+}
 void ImbalanceSignalGenerator::setThresholdManager(ThresholdManagerPtr thresholdManager) {
     std::lock_guard<std::mutex> lock(mutex_);
     thresholdManager_ = thresholdManager;

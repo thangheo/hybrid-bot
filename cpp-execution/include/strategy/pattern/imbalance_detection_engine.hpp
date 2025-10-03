@@ -259,6 +259,10 @@ public:
         core::Timestamp timestamp;
         std::vector<double> features; // uses imbalanceValue ordering
         double midPrice;
+        double vwap = 0.0; // optional VWAP snapshot at capture
+        double sma = 0.0;  // optional simple moving average snapshot at capture
+        double referenceValue = 0.0; // chosen reference value used for labeling (vwap/sma/micro/mid)
+        int referenceType = 0; // 0=mid,1=vwap,2=sma,3=micro
         // Add symbol context so training can be applied to the correct per-symbol model
         core::ExchangeId exchangeId;
         core::Symbol symbol;
