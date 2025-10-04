@@ -137,6 +137,12 @@ using namespace trading::core;
          
         // Load default parameters
         loadDefaultParameters();
+        // Create regime subscriber (non-blocking) - will be started in start()
+        try {
+            regime_subscriber_ = std::make_unique<trading::strategy::core_analysis::RegimeSubscriber>();
+        } catch (const std::exception& e) {
+            LOG_WARN("Failed to create RegimeSubscriber: {}", e.what());
+        }
         
         state_ = StrategyState::INITIALIZED;
         LOG_INFO("Strategy Engine initialized: {}", strategyId_);
@@ -180,6 +186,12 @@ void StrategyEngine::processQueuedSignals() {
         handleSignalGenerated(signal);
     }
 }
+
+bool StrategyEngine::getRegimeInfo(const std::string& symbol, trading::strategy::core_analysis::RegimeInfo& out) const {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    if (!regime_subscriber_) return false;
+    return regime_subscriber_->get(symbol, out);
+}
  // Start the strategy engine
  bool StrategyEngine::start() {
      std::lock_guard<std::recursive_mutex> lock(mutex_);
@@ -194,6 +206,13 @@ void StrategyEngine::processQueuedSignals() {
          // Start the signal maintenance thread
          runMaintenanceThread_ = true;
          signalMaintenanceThread_ = std::make_unique<std::thread>(&StrategyEngine::signalMaintenanceWorker, this);
+
+        // Start regime subscriber if available
+        try {
+            if (regime_subscriber_) regime_subscriber_->start();
+        } catch (const std::exception& e) {
+            LOG_WARN("Failed to start RegimeSubscriber: {}", e.what());
+        }
          
          state_ = StrategyState::RUNNING;
          LOG_INFO("Strategy Engine started: {}", strategyId_);
@@ -223,6 +242,12 @@ void StrategyEngine::processQueuedSignals() {
      if (signalMaintenanceThread_ && signalMaintenanceThread_->joinable()) {
          signalMaintenanceThread_->join();
      }
+    // Stop regime subscriber
+    try {
+        if (regime_subscriber_) regime_subscriber_->stop();
+    } catch (const std::exception& e) {
+        LOG_WARN("Error stopping RegimeSubscriber: {}", e.what());
+    }
      
      {
          std::lock_guard<std::recursive_mutex> lock(mutex_);

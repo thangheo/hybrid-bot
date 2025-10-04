@@ -33,6 +33,7 @@
 #include <functional>
 #include <chrono>
 #include "core/types.hpp"
+#include "strategy/core_analysis/regime_subscriber.hpp"
 namespace trading {
 namespace strategy {
 
@@ -226,6 +227,12 @@ private:
     
     // Additional components
     // std::shared_ptr<LogisticRegressionSignalGenerator> logistic_regression_signal_generator_;
+    // Regime subscriber (receives regimes from Python publisher)
+    std::unique_ptr<trading::strategy::core_analysis::RegimeSubscriber> regime_subscriber_;
+
+public:
+    // Query latest regime info for a symbol (thread-safe). Returns true if symbol exists.
+    bool getRegimeInfo(const std::string& symbol, trading::strategy::core_analysis::RegimeInfo& out) const;
 };
 
 // Type aliases

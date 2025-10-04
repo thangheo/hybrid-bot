@@ -20,6 +20,7 @@ namespace trading { namespace perception { class BayesianTradingModel; } }
 
 #include "data_ingestion/orderbook/order_book.hpp"
 #include "perception/bayesian_trading_adapter.hpp"
+#include "strategy/core_analysis/regime_subscriber.hpp"
 #include <vector>
 #include <memory>
 #include <map>
@@ -279,10 +280,21 @@ public:
     // If configured, use this directory to store per-symbol model files. Derived from bayesModelPath_
     std::string bayesModelDirectory_;
     // Per-symbol Bayes handles (opaque handles from perception adapter)
-    std::unordered_map<std::string, trading::perception::BayesHandle> bayesHandles_;
+    // Now support 3 handles per symbol (one per regime)
+    std::unordered_map<std::string, std::array<trading::perception::BayesHandle, 3>> bayesHandles_;
     mutable std::mutex bayesHandlesMutex_;
 
+    // Pointer to the global regime subscriber (optional). Set by caller (StrategyEngine)
+    trading::strategy::core_analysis::RegimeSubscriber* regime_subscriber_ = nullptr;
+
+public:
+    // Set the RegimeSubscriber so the engine can snapshot regime probabilities at capture time and weight predictions
+    void setRegimeSubscriber(trading::strategy::core_analysis::RegimeSubscriber* sub) { regime_subscriber_ = sub; }
+
     // Helpers for per-symbol model management
+    // Return an array of 3 handles (one per regime). Null entries allowed.
+    std::array<trading::perception::BayesHandle,3> getBayesHandlesForSymbol(const core::ExchangeId &exch, const core::Symbol &sym);
+    // Legacy compatibility: return a single handle (regime 0) or create one
     trading::perception::BayesHandle getBayesHandleForSymbol(const core::ExchangeId &exch, const core::Symbol &sym);
     bool saveBayesForSymbol(trading::perception::BayesHandle h, const core::ExchangeId &exch, const core::Symbol &sym);
     // If configured, use this directory to store per-symbol model files. Derived from bayesModelPath_
