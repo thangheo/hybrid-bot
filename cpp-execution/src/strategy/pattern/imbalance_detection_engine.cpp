@@ -473,7 +473,7 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                         trading::perception::BayesSignal signal;
                         trading::perception::BayesHandle handle = getBayesHandleForSymbol(m.exchangeId, m.symbol);
                         if (handle) signal = trading::perception::bayes_predict(handle, features);
-                        if (signal.should_trade and signal.confidence >= 0.6 and signal.probability >= 0.6) {
+                        if (signal.should_trade and signal.position_size > 0.0) {
                             core::Direction dir = signal.direction;
                             OrderBookMetrics mcopy = m;
                             mcopy.metrics["bayes_probability"] = signal.probability;

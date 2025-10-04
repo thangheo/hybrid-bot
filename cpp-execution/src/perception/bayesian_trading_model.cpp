@@ -144,122 +144,42 @@ std::tuple<double, double, double> BayesianTradingModel::predict_multiclass(cons
 
     return {probs(0), probs(1), probs(2)};
 }
-
-// BayesianTradingModel::TradingSignal BayesianTradingModel::predict(const std::vector<double>& features) {
-//     if (features.empty()) {
-//         throw std::invalid_argument("Features vector cannot be empty");
-//     }
-    
-//     // Initialize if needed
-//     if (!is_initialized_) {
-//         initialize_model(features.size());
-//     }
-    
-//     if (features.size() != static_cast<size_t>(num_features_)) {
-//         throw std::invalid_argument("Feature dimension mismatch");
-//     }
-    
-//     std::lock_guard<std::mutex> lock(model_mutex_);
-    
-//     // Convert to Eigen vector
-//     Eigen::VectorXd feature_vec = Eigen::Map<const Eigen::VectorXd>(features.data(), features.size());
-    
-//     // Normalize features
-//     Eigen::VectorXd normalized_features = normalize_features(feature_vec);
-    
-//     // Calculate prediction
-//     double score = mu_.dot(normalized_features);
-//     double probability = sigmoid(score);
-    
-//     // Calculate uncertainty (predictive variance)
-//     double uncertainty = normalized_features.transpose() * sigma_ * normalized_features;
-//     uncertainty = std::sqrt(uncertainty);
-    
-//     // Calculate expected value
-//     double expected_value = 0.0;
-//     if (config_.use_expected_value) {
-//         expected_value = probability * config_.payoff_long - (1.0 - probability) * config_.payoff_short;
-//     }
-    
-//     // Calculate position size (incorporate uncertainty)
-//     double confidence = 1.0 / (1.0 + config_.uncertainty_penalty * uncertainty);
-//     double position_size = config_.base_position_size * confidence;
-    
-//     if (config_.use_expected_value) {
-//         position_size *= std::max(0.0, expected_value);  // Scale by positive EV
-//     } else {
-//         // Scale by distance from 0.5 (neutral)
-//         position_size *= 2.0 * std::abs(probability - 0.5);
-//     }
-    
-//     position_size = std::min(1.0, position_size);  // Cap at 100%
-    
-//     // Trading decision
-//     bool should_trade = false;
-//     core::Direction direction = Direction::NEUTRAL;
-    
-//     if (config_.use_expected_value) {
-//         should_trade = (expected_value > 0.01);  // Minimum EV threshold
-//         direction = (expected_value > 0) ? Direction::BUY : Direction::SELL;
-//     } else {
-//         should_trade = (probability > config_.min_probability) || (probability < (1.0 - config_.min_probability));
-//         direction = (probability > 0.5) ? Direction::BUY : Direction::SELL;
-//     }
-    
-//     return TradingSignal{
-//         .probability = probability,
-//         .expected_value = expected_value,
-//         .position_size = position_size,
-//         .uncertainty = uncertainty,
-//         .should_trade = should_trade,
-//         .direction = direction,
-//     };
-// }
+ 
 
 BayesianTradingModel::TradingSignal BayesianTradingModel::predict(const std::vector<double>& features) {
     auto [prob_sell, prob_neutral, prob_buy] = predict_multiclass(features);
     
+    // Validate probability distribution
+    assert(std::abs(prob_sell + prob_neutral + prob_buy - 1.0) < 1e-6);
+    
     TradingSignal signal;
     
-    // QUAN TRỌNG: Thresholds dựa trên backtesting
-    const double MIN_CONFIDENCE = 0.5;  // Minimum để trade
-    const double NEUTRAL_VETO = 0.4;    // Nếu neutral > này thì KHÔNG trade
+    // High neutral probability vetoes trading
+    if (prob_neutral > neutral_veto_threshold_) {
+        return createNeutralSignal();
+    }
     
-    // Decision logic theo research
-    if (prob_neutral > NEUTRAL_VETO) {
-        // Neutral quá cao - KHÔNG TRADE
-        signal.direction = Direction::NEUTRAL;
-        signal.should_trade = false;
-        signal.probability = 0.5;
-        signal.position_size = 0.0;
-    } 
-    else if (prob_buy > prob_sell && prob_buy > MIN_CONFIDENCE) {
-        // BUY signal
+    // Buy signal
+    if (prob_buy > prob_sell && prob_buy > min_confidence_threshold_) {
         signal.direction = Direction::BUY;
         signal.should_trade = true;
         signal.probability = prob_buy;
-        // Position size dựa trên confidence gap
-        signal.position_size = (prob_buy - prob_neutral) / (1.0 - prob_neutral);
+        signal.position_size = calculatePositionSize(prob_buy, prob_neutral);
     }
-    else if (prob_sell > prob_buy && prob_sell > MIN_CONFIDENCE) {
-        // SELL signal
+    // Sell signal
+    else if (prob_sell > prob_buy && prob_sell > min_confidence_threshold_) {
         signal.direction = Direction::SELL;
         signal.should_trade = true;
-        signal.probability = 1.0 - prob_sell;  // Convert to "up probability" for compatibility
-        signal.position_size = (prob_sell - prob_neutral) / (1.0 - prob_neutral);
+        signal.probability = prob_sell;
+        signal.position_size = calculatePositionSize(prob_sell, prob_neutral);
     }
+    // Insufficient confidence
     else {
-        // Không đủ confidence
-        signal.direction = Direction::NEUTRAL;
-        signal.should_trade = false;
-        signal.probability = 0.5;
-        signal.position_size = 0.0;
+        return createNeutralSignal();
     }
     
-    // Uncertainty based on entropy
-    signal.uncertainty = -prob_sell * log(prob_sell) 
-                        -prob_neutral * log(prob_neutral) 
-                        -prob_buy * log(prob_buy);
+    // Calculate entropy-based uncertainty
+    signal.uncertainty = calculateEntropy(prob_sell, prob_neutral, prob_buy);
     
     return signal;
 }
