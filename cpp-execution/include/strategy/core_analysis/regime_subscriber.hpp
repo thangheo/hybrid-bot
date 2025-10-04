@@ -33,7 +33,8 @@ public:
 
     bool get(const std::string& symbol, RegimeInfo& out) const;
     void dump() const;
-
+// interactive_loop
+    
 private:
     struct Impl;
     Impl* impl_ = nullptr;
