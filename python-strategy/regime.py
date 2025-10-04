@@ -40,8 +40,16 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 
-def load_config():
+def load_config(config_path: str = None) -> dict:
     # Look for config in repo root (parent of python-strategy)
+    if config_path:
+        p = Path(config_path)
+        if p.exists():
+            with open(p, 'r') as f:
+                return yaml.safe_load(f)
+        else:
+            raise FileNotFoundError(f"Config file {config_path} not found")
+
     repo_root = HERE.parent
     candidates = [repo_root / 'config' / 'trading_bot.yaml', repo_root / 'trading_bot.yaml', HERE / 'config' / 'trading_bot.yaml']
     for p in candidates:
@@ -680,7 +688,7 @@ def watch_and_publish_snapshot(snapshot_path: Path, socket, topic: str = 'regime
 
 
 def main(n_states: int = 3, days: int = 60, save_plots: bool = True, watch_snapshot: bool = False):
-    cfg = load_config()
+    cfg = load_config(config_path=None)
     # data_ingestion/symbols
     symbols = cfg.get('data_ingestion', {}).get('symbols', [])
     if not symbols:
@@ -768,10 +776,10 @@ if __name__ == '__main__':
     p.add_argument('--trainer-interval-days', dest='trainer_interval_days', type=int, default=7, help='Days between scheduled training runs')
     p.add_argument('--data-source', dest='data_source', type=str, default='binance', choices=['binance','coinbase'], help='Which data source to use for scheduled training')
     args = p.parse_args()
-
+    p.add_argument('--config', type=str, default=None, help='Path to trading_bot.yaml (default: search in repo root and current dir)')
     # start training worker if requested
     if args.start_trainer:
-        cfg = load_config()
+        cfg = load_config(config_path=args.config)
         symbols = cfg.get('data_ingestion', {}).get('symbols', [])
         if not symbols:
             raise RuntimeError('No symbols found in config for scheduled training')
