@@ -225,7 +225,7 @@ TradingSignal ImbalanceSignalGenerator::createSignalFromImbalance(
     auto t0 = std::chrono::steady_clock::now();
     // Basic signal properties
     signal.id = generateSignalId();
-    auto t1 = std::chrono::steady_clock::now();
+    // auto t1 = std::chrono::steady_clock::now();
     signal.sourceEventId = imbalance.eventId;
     signal.correlationId = imbalance.eventId;
     signal.direction = imbalance.direction;
@@ -237,7 +237,7 @@ TradingSignal ImbalanceSignalGenerator::createSignalFromImbalance(
     signal.confidence = trading::core::confidenceLevelToValue(imbalance.confidence);
     // Reserve containers to avoid repeated allocations on hot path
     signal.reserveContainers(4, 16);
-    auto t2 = std::chrono::steady_clock::now();
+    // auto t2 = std::chrono::steady_clock::now();
     // Advanced strength calculation (measure sub-step latency)
     auto sub_t0 = std::chrono::steady_clock::now();
     auto strengthComponents = calculateSignalStrength(imbalance);
@@ -252,7 +252,7 @@ TradingSignal ImbalanceSignalGenerator::createSignalFromImbalance(
     signal.setMetric("strength_regime_adj", strengthComponents.regimeAdjustment);
     signal.setMetric("strength_momentum_align", strengthComponents.momentumAlignment);
     
-    auto t3 = std::chrono::steady_clock::now();
+    // auto t3 = std::chrono::steady_clock::now();
     // Generate sophisticated price targets
     signal.targets = generatePriceTargets(imbalance); // có khả nghi 
     
@@ -268,7 +268,7 @@ TradingSignal ImbalanceSignalGenerator::createSignalFromImbalance(
         signal.setMetric(metric.first, metric.second);
     }
     // auto t4 = std::chrono::system_clock::now();
-    auto t4 = std::chrono::steady_clock::now();
+    // auto t4 = std::chrono::steady_clock::now();
     // Apply momentum correlation analysis (timed)
     double predictedMove = 0.0;
     double correlation = 0.0;
@@ -343,7 +343,7 @@ TradingSignal ImbalanceSignalGenerator::createSignalFromImbalance(
 
     auto sub_elapsed_predict = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - sub_t1).count();
     signal.setMetric("timing_predict_calc_us", static_cast<double>(sub_elapsed_predict));
-    auto t5 = std::chrono::steady_clock::now();
+    // auto t5 = std::chrono::steady_clock::now();
     //if direction is BUY then set price to best ask else if SELL set to best bid
     if (imbalance.direction == core::Direction::BUY) {
         signal.price = imbalance.getSupportingMetric("askPrice", 0.0);
@@ -399,21 +399,24 @@ TradingSignal ImbalanceSignalGenerator::createSignalFromImbalance(
     signal.setMetric("regimeName", marketRegimeToString(currentRegime));
 
     auto dur_us = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - t0).count();
-    auto dur_us1 = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - t1).count();
-    auto dur_us2 = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - t2).count();
-    auto dur_us3 = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - t3).count();
-    auto dur_us4 = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - t4).count();
-    auto dur_us5 = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - t5).count();
+    // auto dur_us1 = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - t1).count();
+    // auto dur_us2 = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - t2).count();
+    // auto dur_us3 = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - t3).count();
+    // auto dur_us4 = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - t4).count();
+    // auto dur_us5 = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - t5).count();
     auto dur_us6 = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - t6).count();
     
     // Emit both total and sub-step timings to aid diagnosis (debug-level)
     // LOG_DEBUG("createSignalFromImbalance: id={} total={}us (strength={}us, predict={}us, quality={}us)",
     //           signal.id, dur_us, sub_dt_strength, sub_dt_predict, sub_dt_quality);
 
-    if (dur_us > 2000) {
+    if (dur_us > 20000) {
         // LOG_WARN("createSignalFromImbalance: signal id={} creation took {} us", signal.id, dur_us);
-        LOG_WARN("createSignalFromImbalance: id={} total={}us (t1={}us, t2={}us, t3={}us, t4={}us, t5={}us, t6={}us)",
-                  signal.id, dur_us, dur_us1, dur_us2, dur_us3, dur_us4, dur_us5, dur_us6);
+        LOG_WARN("createSignalFromImbalance: id={} total={}us (strength={}us, predict={}us, quality={}us)",
+                  signal.id, dur_us, sub_elapsed_strength, sub_elapsed_predict, sub_elapsed_quality);
+        // LOG_WARN("createSignalFromImbalance: id={} total={}us (t1={}us, t2={}us, t3={}us, t4={}us, t5={}us, t6={}us)",
+        //           signal.id, dur_us, dur_us1, dur_us2, dur_us3, dur_us4, dur_us5, dur_us6);
+
     }
     
     return signal;

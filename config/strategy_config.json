@@ -266,7 +266,7 @@
           "order_flow": 0.3
         },
         "bayesModelPath": "models/bayesian/",
-        "labelingDelayMs": 5500,
+        "labelingDelayMs": 10000,
         "bayesSaveAfterUpdates": 200,
         "requireModelReadyUpdates": 400,
         "bayesMinSaveIntervalMs": 600000,

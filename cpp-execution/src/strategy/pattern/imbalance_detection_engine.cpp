@@ -328,11 +328,11 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                 // Run all detectors sequentially for this metric
                 std::vector<DetectorResult> results;
                 try {
-                    results.push_back(detectVolumeImbalance(m));
-                    results.push_back(detectPriceLevelImbalance(m));
-                    results.push_back(detectLiquidityFlowImbalance(m));
-                    results.push_back(detectAbnormalSpread(m));
-                    results.push_back(detectMarketDepthChange(m));
+                    // results.push_back(detectVolumeImbalance(m));
+                    // results.push_back(detectPriceLevelImbalance(m));
+                    // results.push_back(detectLiquidityFlowImbalance(m));
+                    // results.push_back(detectAbnormalSpread(m));
+                    // results.push_back(detectMarketDepthChange(m));
                     results.push_back(detectLargeOrderAppearance(m));
                     results.push_back(detectLargeOrderDisappearance(m));
                     results.push_back(detectOrderFlowImbalance(m));
@@ -341,10 +341,10 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                     results.push_back(detectTrendContinuation(m));
                     results.push_back(detectTrendReversal(m));
                     results.push_back(detectTradeImbalance(m));
-                    results.push_back(detectCancellationImbalance(m));
+                    // results.push_back(detectCancellationImbalance(m)); 
                     results.push_back(detectPriceVolatilityImbalance(m));
-                    results.push_back(detectHiddenLiquidityImbalance(m));
-                    results.push_back(detectCustomImbalance(m));
+                    // results.push_back(detectHiddenLiquidityImbalance(m));
+                    // results.push_back(detectCustomImbalance(m));
                 } catch (...) {
                     // swallow detector errors
                 }
@@ -366,17 +366,14 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                 auto safe = [](double v, double def = 0.0) {
                     return std::isfinite(v) ? v : def;
                 };
-
+                // std::cout << "liquidityPressure range: " << min << " to " << max << std::endl;
                 // spread percent - clamp to a sensible range
-                features.push_back(std::clamp(safe(m.spreadPercent, 0.0), 0.0, 100.0));
-
+                // features.push_back(std::clamp(safe(m.spreadPercent, 0.0), 0.0, 100.0)); //features 17
                 // bid/ask volume ratio - convert to symmetric ratio and compress into [0,1]
                 double bar = safe(m.bidAskVolumeRatio, 1.0);
-                bar = std::max(bar, 1.0 / std::max(bar, 1e-10));
-                features.push_back(calculateImbalanceStrength(bar, 1.0));
-
-                // velocities: compress with tanh to keep values bounded
-                features.push_back(std::tanh(safe(m.priceVelocity, 0.0) * 10.0));
+                double normalized = (bar - 1.0) / (bar + 1.0);  // Maps (0,∞) → (-1,1)
+                features.push_back(calculateImbalanceStrength(bar, 1.0));                
+                features.push_back(safe(m.priceVelocity, 0.0));
                 features.push_back(std::tanh(safe(m.volumeVelocity, 0.0) / 1000.0));
                 features.push_back(std::tanh(safe(m.spreadVelocity, 0.0) * 10.0));
 
@@ -387,8 +384,8 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                 features.push_back(std::clamp(safe(m.volatilityPerUnitTime, 0.0), 0.0, 100.0));
 
                 // market directional coefficient and profile score - keep bounded
-                features.push_back(std::tanh(safe(m.marketDirectionalCoefficient, 0.0)));
-                features.push_back(std::clamp(safe(m.liquidityProfileScore, 0.0), -1.0, 1.0));
+                // features.push_back(std::tanh(safe(m.marketDirectionalCoefficient, 0.0))); // features 26
+                // features.push_back(std::clamp(safe(m.liquidityProfileScore, 0.0), -1.0, 1.0));
 
                 // extra orderbook-level features: total bid/ask volumes and top-3 level sums
                 double totalBid = safe(m.totalBidVolume, 0.0);
@@ -401,6 +398,13 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                 for (size_t i = 0; i < std::min<size_t>(3, m.bidVolumesByLevel.size()); ++i) topBidSum += safe(m.bidVolumesByLevel[i], 0.0);
                 for (size_t i = 0; i < std::min<size_t>(3, m.askVolumesByLevel.size()); ++i) topAskSum += safe(m.askVolumesByLevel[i], 0.0);
                 features.push_back(calculateImbalanceStrength((topBidSum + 1.0) / (topAskSum + 1.0), 1.0));
+
+
+                //print all raw values to check the range of them  
+                // std::cout << "Raw feature values:" << std::endl;
+                // for (size_t i = 0; i < features.size(); ++i) {
+                //     std::cout << "Feature " << i << ": " << features[i] << std::endl;
+                // }
 
                 // Buffer features for later labeling/training
                 {
@@ -436,19 +440,19 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                         else { refVal = m.midPrice; refType = 0; }
                         // from learning result we need to rescale some tiny-valued features so the
                         // Bayesian model sees sensible dynamic ranges. Apply safely with bounds checks.
-                        try {
-                            // Indices discovered from feature ordering: 21, 24, 25 are small-scale.
-                            if (features.size() > 21) features[21] *= 1000.0; // bring to ~0.1 scale
-                            if (features.size() > 24) features[24] *= 1000.0; // bring to ~1.0 scale
-                            if (features.size() > 25) features[25] *= 1000.0; // bring to ~1.0 scale
+                        // try {
+                        //     // Indices discovered from feature ordering: 21, 24, 25 are small-scale.
+                        //     if (features.size() > 21) features[21] *= 1000.0; // bring to ~0.1 scale
+                        //     if (features.size() > 24) features[24] *= 1000.0; // bring to ~1.0 scale
+                        //     if (features.size() > 25) features[25] *= 1000.0; // bring to ~1.0 scale
 
-                            // Alternative: if those features are ratios and highly skewed you may
-                            // prefer a log1p transform. Uncomment the following lines to use log1p
-                            // instead of linear scaling for index 21:
-                            // if (features.size() > 21 && features[21] > 0.0) features[21] = std::log1p(features[21]);
-                        } catch (...) {
-                            // safe-guard: if anything odd happens, continue without scaling
-                        }
+                        //     // Alternative: if those features are ratios and highly skewed you may
+                        //     // prefer a log1p transform. Uncomment the following lines to use log1p
+                        //     // instead of linear scaling for index 21:
+                        //     // if (features.size() > 21 && features[21] > 0.0) features[21] = std::log1p(features[21]);
+                        // } catch (...) {
+                        //     // safe-guard: if anything odd happens, continue without scaling
+                        // }
                         PendingTraining pt;
                         pt.timestamp = m.timestamp;
                         pt.features = features;
@@ -469,7 +473,7 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                         trading::perception::BayesSignal signal;
                         trading::perception::BayesHandle handle = getBayesHandleForSymbol(m.exchangeId, m.symbol);
                         if (handle) signal = trading::perception::bayes_predict(handle, features);
-                        if (signal.should_trade) {
+                        if (signal.should_trade and signal.confidence >= 0.6 and signal.probability >= 0.6) {
                             core::Direction dir = signal.direction;
                             OrderBookMetrics mcopy = m;
                             mcopy.metrics["bayes_probability"] = signal.probability;
@@ -533,7 +537,7 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
 
                                     // fee / profitability filtering
                                     const double MIN_ABS_RETURN_PCT = 0.0025;  // 0.25% minimum absolute move to consider
-                                    const double TRADING_FEE_PCT = 0.002;      // 0.2% round-trip
+                                    const double TRADING_FEE_PCT = 0.003;      // 0.3% round-trip
                                     const double SAFETY_BUFFER = 0.0005;      // 0.05% slippage buffer
                                     const double MIN_PROFITABLE_RETURN = TRADING_FEE_PCT + SAFETY_BUFFER;  // 0.25%
 
