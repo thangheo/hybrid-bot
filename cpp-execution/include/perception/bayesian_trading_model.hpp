@@ -69,7 +69,9 @@ private:
     
     // Thread safety
     mutable std::mutex model_mutex_;
-    
+    //min_confidence_threshold_
+    double min_confidence_threshold_ = 0.55;  // Require 55% confidence
+    double neutral_veto_threshold_ = 0.40;    // Veto if >40% uncertain
     // Helper methods
     void initialize_model(int num_features);
     void update_feature_stats(const Eigen::VectorXd& features);
@@ -78,7 +80,21 @@ private:
     double sigmoid(double x) const;
     void update_sigma_inverse();
     std::tuple<double, double, double> predict_multiclass(const std::vector<double>& features);
-
+    double calculatePositionSize(double primary_prob, double neutral_prob) const {
+        double confidence_gap = std::max(0.0, primary_prob - neutral_prob);
+        return std::clamp(confidence_gap / (1.0 - neutral_prob + 1e-10), 0.0, 1.0);
+    }
+        
+    double calculateEntropy(double p1, double p2, double p3) const {
+        auto safe_log = [](double p) { 
+            return p > 1e-10 ? std::log(p) : 0.0; 
+        };
+        return -(p1 * safe_log(p1) + p2 * safe_log(p2) + p3 * safe_log(p3));
+    }
+    
+    TradingSignal createNeutralSignal() const {
+        return {0.0, 0.0, 0.0, 1.0, false, Direction::NEUTRAL};
+    }
 public:
     /**
      * Constructor
