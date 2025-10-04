@@ -26,6 +26,10 @@
 #include <filesystem>
 #include <logger.hpp>
 #include "perception/bayesian_trading_adapter.hpp"
+#include "core_analysis/regime_subscriber.hpp"
+
+ using namespace trading::core;
+ using namespace std::chrono_literals;
 
 namespace trading {
 namespace strategy {
@@ -51,13 +55,26 @@ static std::string buildSymbolModelPath(const std::string &baseDir, const core::
 
 // Get or create a per-symbol Bayes handle, load model file if exists
 trading::perception::BayesHandle trading::strategy::ImbalanceDetectionEngine::getBayesHandleForSymbol(const core::ExchangeId &exch, const core::Symbol &sym) {
+    // Legacy helper kept for compatibility: if running in per-symbol (per-regime)
+    // mode return the first regime handle (regime 0) if present, otherwise
+    // fall back to creating a single handle as before.
     std::string key = exch.toString() + "_" + sym.toString();
     {
         std::lock_guard<std::mutex> lk(bayesHandlesMutex_);
         auto it = bayesHandles_.find(key);
-        if (it != bayesHandles_.end()) return it->second;
+        if (it != bayesHandles_.end()) {
+            auto arr = it->second;
+            return arr[0];
+        }
     }
 
+    // If per-symbol directory configured we prefer to create/get the array of handles
+    if (!bayesModelDirectory_.empty()) {
+        auto arr = getBayesHandlesForSymbol(exch, sym);
+        return arr[0];
+    }
+
+    // Legacy single-file mode: create or return cached single handle
     trading::perception::BayesHandle h = nullptr;
     try {
         h = trading::perception::bayes_create();
@@ -65,26 +82,76 @@ trading::perception::BayesHandle trading::strategy::ImbalanceDetectionEngine::ge
         return nullptr;
     }
 
-    // Try load from per-symbol path if configured
+    // Try load from single-file path if configured
+    if (!bayesModelPath_.empty()) {
+        try {
+            if (std::filesystem::exists(bayesModelPath_)) {
+                trading::perception::bayes_load(h, bayesModelPath_);
+            }
+        } catch (...) {}
+    }
+
+    {
+        std::lock_guard<std::mutex> lk(bayesMutex_);
+        // store into legacy handle slot
+        if (!bayes_handle_) bayes_handle_ = h;
+    }
+    return h;
+}
+
+// New: return array of 3 handles (one per regime). Create/load them if missing.
+std::array<trading::perception::BayesHandle,3> trading::strategy::ImbalanceDetectionEngine::getBayesHandlesForSymbol(const core::ExchangeId &exch, const core::Symbol &sym) {
+    std::array<trading::perception::BayesHandle,3> out{nullptr,nullptr,nullptr};
+    std::string key = exch.toString() + "_" + sym.toString();
+    {
+        std::lock_guard<std::mutex> lk(bayesHandlesMutex_);
+        auto it = bayesHandles_.find(key);
+        if (it != bayesHandles_.end()) return it->second;
+    }
+
+    // Create three handles
+    for (int i = 0; i < 3; ++i) {
+        try {
+            out[i] = trading::perception::bayes_create();
+        } catch (...) {
+            out[i] = nullptr;
+        }
+    }
+
+    // Try load per-regime files if directory configured
     if (!bayesModelDirectory_.empty()) {
         try {
-            std::string path = buildSymbolModelPath(bayesModelDirectory_, exch, sym);
-            if (!path.empty() && std::filesystem::exists(path)) {
-                trading::perception::bayes_load(h, path);
-                // LOG_DEBUG("ImbalanceDetectionEngine: loaded per-symbol bayes model {}", path);
+            // create base path and append regime index
+            std::ostringstream ss;
+            ss << bayesModelDirectory_;
+            std::string base = ss.str();
+            if (!base.empty() && base.back() != '/' && base.back() != '\\') ss << '/';
+            // sanitized base name
+            auto sanitize = [](const std::string &s) {
+                std::string out;
+                for (char c : s) {
+                    if (std::isalnum((unsigned char)c) || c == '_' || c == '-') out.push_back(c);
+                    else out.push_back('_');
+                }
+                return out;
+            };
+            std::string name = sanitize(exch.toString()) + "_" + sanitize(sym.toString());
+            for (int i = 0; i < 3; ++i) {
+                std::ostringstream fn;
+                fn << bayesModelDirectory_ << "/" << name << "_regime" << i << ".json";
+                std::string path = fn.str();
+                if (!path.empty() && std::filesystem::exists(path) && out[i]) {
+                    try { trading::perception::bayes_load(out[i], path); } catch (...) {}
+                }
             }
-        } catch (const std::exception &ex) {
-            LOG_WARN("ImbalanceDetectionEngine: failed to load per-symbol bayes model: {}", ex.what());
-        } catch (...) {
-            LOG_WARN("ImbalanceDetectionEngine: unknown error loading per-symbol bayes model");
-        }
+        } catch (...) {}
     }
 
     {
         std::lock_guard<std::mutex> lk(bayesHandlesMutex_);
-        bayesHandles_[key] = h;
+        bayesHandles_[key] = out;
     }
-    return h;
+    return out;
 }
 
 bool trading::strategy::ImbalanceDetectionEngine::saveBayesForSymbol(trading::perception::BayesHandle h, const core::ExchangeId &exch, const core::Symbol &sym) {
@@ -273,23 +340,30 @@ ImbalanceDetectionEngine::~ImbalanceDetectionEngine() {
         // Save and destroy any per-symbol handles
         {
             std::lock_guard<std::mutex> lk2(bayesHandlesMutex_);
-            for (auto &pr : bayesHandles_) {
-                auto &symKey = pr.first;
-                auto h = pr.second;
-                try {
-                    if (!bayesModelDirectory_.empty()) {
-                        // Save using the key-derived filename
-                        std::string filename = bayesModelDirectory_;
-                        if (!filename.empty() && filename.back() != '/' && filename.back() != '\\') filename += '/';
-                        filename += symKey + ".json";
-                        trading::perception::bayes_save(h, filename);
-                        LOG_INFO("ImbalanceDetectionEngine: saved per-symbol bayes model {}", filename);
+                for (auto &pr : bayesHandles_) {
+                    auto &symKey = pr.first;
+                    auto harray = pr.second;
+                    try {
+                        if (!bayesModelDirectory_.empty()) {
+                            // Save three files per symbol, one per regime index
+                            for (int i = 0; i < 3; ++i) {
+                                auto h = harray[i];
+                                if (!h) continue;
+                                std::string filename = bayesModelDirectory_;
+                                if (!filename.empty() && filename.back() != '/' && filename.back() != '\\') filename += '/';
+                                filename += symKey + "_regime" + std::to_string(i) + ".json";
+                                trading::perception::bayes_save(h, filename);
+                                LOG_INFO("ImbalanceDetectionEngine: saved per-symbol bayes model {}", filename);
+                            }
+                        }
+                    } catch (...) {
+                        LOG_WARN("ImbalanceDetectionEngine: failed to save per-symbol bayes model for {}", symKey);
                     }
-                } catch (...) {
-                    LOG_WARN("ImbalanceDetectionEngine: failed to save per-symbol bayes model for {}", symKey);
+                    // destroy handles
+                    for (int i = 0; i < 3; ++i) {
+                        try { if (harray[i]) trading::perception::bayes_destroy(harray[i]); } catch(...) {}
+                    }
                 }
-                try { trading::perception::bayes_destroy(h); } catch(...) {}
-            }
             bayesHandles_.clear();
         }
 
@@ -471,8 +545,36 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                 if (bayesInitialized_.load()) {
                     try {
                         trading::perception::BayesSignal signal;
-                        trading::perception::BayesHandle handle = getBayesHandleForSymbol(m.exchangeId, m.symbol);
-                        if (handle) signal = trading::perception::bayes_predict(handle, features);
+                        // Get per-regime handles and perform weighted ensemble prediction
+                        auto handles = getBayesHandlesForSymbol(m.exchangeId, m.symbol);
+                        // default uniform probs
+                        std::array<double,3> probs{1.0/3,1.0/3,1.0/3};
+                        if (regime_subscriber_) {
+                            trading::strategy::core_analysis::RegimeInfo rinfo;
+                            if (regime_subscriber_->get(m.symbol.toString(), rinfo) && rinfo.probs.size() == 3) {
+                                for (int i=0;i<3;i++) probs[i] = rinfo.probs[i];
+                            }
+                        }
+                        // run predictions for each handle and combine
+                        trading::perception::BayesSignal combined{};
+                        for (int i=0;i<3;i++) {
+                            if (!handles[i]) continue;
+                            try {
+                                auto s = trading::perception::bayes_predict(handles[i], features);
+                                combined.probability += probs[i] * s.probability;
+                                combined.expected_value += probs[i] * s.expected_value;
+                                combined.position_size += probs[i] * s.position_size;
+                                combined.uncertainty += probs[i] * s.uncertainty;
+                                // direction: weighted by probability*direction
+                                double dir = 0.0;
+                                if (s.direction == core::Direction::BUY) dir = 1.0;
+                                else if (s.direction == core::Direction::SELL) dir = -1.0;
+                                combined.direction = (combined.direction==core::Direction::NEUTRAL) ? s.direction : combined.direction; // keep simple
+                                // Should_trade heuristic: weighted by probs
+                                combined.should_trade = combined.should_trade || s.should_trade;
+                            } catch (...) {}
+                        }
+                        signal = combined;
                         if (signal.should_trade and signal.position_size > 0.0) {
                             core::Direction dir = signal.direction;
                             OrderBookMetrics mcopy = m;
@@ -570,7 +672,25 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                             int label = std::get<1>(t);
                             const auto &exch = std::get<2>(t);
                             const auto &sym = std::get<3>(t);
-                            trading::perception::BayesHandle handle = getBayesHandleForSymbol(exch, sym);
+
+                            // Get the three per-regime handles
+                            auto handles = getBayesHandlesForSymbol(exch, sym);
+                            if (handles[0] == nullptr && handles[1] == nullptr && handles[2] == nullptr) continue;
+
+                            // Choose regime to update: argmax of regime_subscriber_ probs if available, otherwise default to regime 0
+                            int updateIdx = 0;
+                            if (regime_subscriber_) {
+                                trading::strategy::core_analysis::RegimeInfo rinfo;
+                                if (regime_subscriber_->get(sym.toString(), rinfo) && rinfo.probs.size() == 3) {
+                                    double best = -1.0; int bi = 0;
+                                    for (int i = 0; i < 3; ++i) {
+                                        if (rinfo.probs[i] > best) { best = rinfo.probs[i]; bi = i; }
+                                    }
+                                    updateIdx = bi;
+                                }
+                            }
+
+                            auto handle = handles[updateIdx];
                             if (!handle) continue;
                             trading::perception::bayes_update(handle, features, label);
 
@@ -592,12 +712,21 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                                 if (modelReady && minIntervalPassed && (enoughUpdates || intervalPassed)) {
                                     try {
                                         if (!bayesModelDirectory_.empty()) {
-                                            // Per-symbol persistence
-                                            if (saveBayesForSymbol(handle, exch, sym)) {
-                                                LOG_INFO("ImbalanceDetectionEngine: auto-saved per-symbol bayes model for {}:{}", exch, sym);
-                                            } else {
-                                                LOG_WARN("ImbalanceDetectionEngine: auto-save failed for per-symbol bayes model {}:{}", exch, sym);
-                                            }
+                                            // Per-symbol persistence: save all three regime files
+                                            try {
+                                                std::string base = bayesModelDirectory_;
+                                                if (!base.empty() && base.back() != '/' && base.back() != '\\') base += '/';
+                                                std::string name;
+                                                // sanitize key
+                                                auto sanitize = [](const std::string &s){ std::string out; for (char c: s) { if (std::isalnum((unsigned char)c) || c=='_' || c=='-') out.push_back(c); else out.push_back('_'); } return out; };
+                                                name = sanitize(exch.toString()) + "_" + sanitize(sym.toString());
+                                                for (int i = 0; i < 3; ++i) {
+                                                    auto h = handles[i];
+                                                    if (!h) continue;
+                                                    std::string filename = base + name + "_regime" + std::to_string(i) + ".json";
+                                                    trading::perception::bayes_save(h, filename);
+                                                }
+                                            } catch (...) {}
                                         } else if (!bayesModelPath_.empty() && bayes_handle_) {
                                             // Legacy single-file mode: save shared handle
                                             if (trading::perception::bayes_save(bayes_handle_, bayesModelPath_)) {

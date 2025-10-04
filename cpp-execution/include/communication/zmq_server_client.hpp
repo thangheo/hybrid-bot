@@ -42,6 +42,10 @@ const std::string TRADES_TOPIC = "trade.*";
 const std::string EXECUTION_REPORTS_TOPIC = "execution_reports";
 //strategy events topic
 const std::string STRATEGY_EVENTS_TOPIC = "strategy_events";
+//market regime topic and endpoint
+const std::string MARKET_REGIME_TOPIC = "market_regime.*";
+const std::string MARKET_REGIME_PUBLISH_ENDPOINT = "tcp://*:5555";
+const std::string MARKET_REGIME_REQUEST_ENDPOINT = "tcp://*:5556";
 // Message priority enumeration
 enum class MessagePriority {
     LOW = 0,
