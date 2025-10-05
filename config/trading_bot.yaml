@@ -93,14 +93,14 @@ data_ingestion:
     - "LINKUSDT"   # Chainlink - Oracle infrastructure leader
     - "UNIUSDT"    # Uniswap - DEX pioneer
     - "AAVEUSDT"   # Aave - Lending protocol leader
-    - "COMPUSDT"   # Compound - Interest rate protocol
-    - "SUSHIUSDT"  # SushiSwap - Community-driven DEX
+    # - "COMPUSDT"   # Compound - Interest rate protocol
+    # - "SUSHIUSDT"  # SushiSwap - Community-driven DEX
     - "ARBUSDT"    # Arbitrum - Ethereum Layer 2 scaling
     - "OPUSDT"     # Optimism - Another major L2 solution
 
     # AI & Technology Innovators  
     - "FETUSDT"    # Fetch.ai - AI agent marketplace
-    - "AGIXUSDT"   # SingularityNET - AI services platform
+    # - "AGIXUSDT"   # SingularityNET - AI services platform
     - "INJUSDT"    # Injective - DeFi-focused blockchain
 
     # Real World Assets (RWA) - Major Growth Trend
@@ -112,21 +112,21 @@ data_ingestion:
     - "SANDUSDT"   # The Sandbox - Gaming metaverse
     - "GALAUSDT"   # Gala Games - Blockchain gaming platform
     - "IMXUSDT"    # Immutable X - NFT scaling solution
-    - "AXSUSDT"    # Axie Infinity - Play-to-earn leader
-    - "BEAMUSDT"   # Beam - Gaming-focused blockchain
+    # - "AXSUSDT"    # Axie Infinity - Play-to-earn leader
+    # - "BEAMUSDT"   # Beam - Gaming-focused blockchain
 
     # Emerging Altcoins with High Potential
     - "SUIUSDT"    # Sui - Move-based high-performance chain
     - "APTUSDT"    # Aptos - Another Move language blockchain
     - "KASUSDT"    # Kaspa - DAG-based mining innovation
     - "TIAUSDT"    # Celestia - Modular blockchain pioneer
-    - "STRKUSDT"   # StarkNet - ZK-rollup scaling solution
+    # - "STRKUSDT"   # StarkNet - ZK-rollup scaling solution
 
     # Meme Coins with Utility Potential
     - "SHIBUSDT"   # Shiba Inu - Ecosystem expansion
     - "PEPEUSDT"   # Pepe - Leading meme with strong community
     - "FLOKIUSDT"  # Floki - Gaming and utility expansion
-    - "BONKUSDT"   # Bonk - Solana-based meme leader
+    # - "BONKUSDT"   # Bonk - Solana-based meme leader
 
     # Infrastructure & Interoperability
     - "ATOMUSDT"   # Cosmos - Internet of blockchains
@@ -134,7 +134,7 @@ data_ingestion:
     - "ALGOUSDT"   # Algorand - Pure proof-of-stake
 
     # Privacy & Security
-    - "XMRUSDT"    # Monero - Privacy-by-default leader
+    # - "XMRUSDT"    # Monero - Privacy-by-default leader
     - "ZECUSDT"    # Zcash - Selective privacy features
 
     # # Stablecoins for Trading Pairs

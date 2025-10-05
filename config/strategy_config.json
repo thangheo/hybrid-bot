@@ -194,7 +194,13 @@
        "exchange": "BINANCE",
        "category": "consensus_innovation",
        "description": "Algorand - Pure proof-of-stake"
-     }
+     },
+     {
+       "symbol": "ZEC/USDT",
+       "exchange": "BINANCE",
+       "category": "privacy",
+       "description": "Zcash - Privacy-focused coin"
+     }    
     ],
   "parameters": {
     "numeric": {
