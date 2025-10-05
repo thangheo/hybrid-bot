@@ -11,7 +11,10 @@ echo "Build completed successfully."
 #then it would source venv/bin/activate and then cd to python-strategy and run python regime.py with nohup and & at the end
 source venv/bin/activate
 cd python-strategy || exit 1
-nohup python regime.py --config config/trading_bot.yaml &
+# nohup python regime.py --config config/trading_bot.yaml &
+# nohup python3 python-strategy/regime.py --mode publish &>/dev/null &
+python3 python-strategy/regime.py --mode publish --config config/trading_bot.yaml &
+# python3 python-strategy/regime.py --mode train --config config/trading_bot.yaml &
 echo "regime.py started successfully."
 
 #then sleep for at least 1 hour waiting for regime.py finish training and generating model files,
