@@ -765,7 +765,7 @@ if __name__ == '__main__':
     # print how to use:
     # python3 regime.py --start-trainer --watch-snapshot --trainer-interval-days 7 --data-source coinbase
     print("Usage examples:")
-    print("  python3 regime.py --start-trainer --watch-snapshot --trainer-interval-days 7 --data-source coinbase")
+    print("  python3 regime.py --start-trainer --watch-snapshot --trainer-interval-days 777 --data-source coinbase")
     # small CLI-ish behavior
     p = argparse.ArgumentParser(description='Train regime HMMs for configured symbols')
     p.add_argument('--n-states', type=int, default=3)
@@ -775,11 +775,19 @@ if __name__ == '__main__':
     p.add_argument('--start-trainer', dest='start_trainer', action='store_true', help='Start scheduled training worker')
     p.add_argument('--trainer-interval-days', dest='trainer_interval_days', type=int, default=7, help='Days between scheduled training runs')
     p.add_argument('--data-source', dest='data_source', type=str, default='binance', choices=['binance','coinbase'], help='Which data source to use for scheduled training')
-    args = p.parse_args()
+    # allow forcing startup training even if config disables it
+    p.add_argument('--train-now', dest='train_now', action='store_true', help='Run training on startup immediately (overrides config)')
+    # config path must be added before parsing args
     p.add_argument('--config', type=str, default=None, help='Path to trading_bot.yaml (default: search in repo root and current dir)')
+    args = p.parse_args()
+    # load config early so we can consult regime.train_on_startup
+    try:
+        cfg = load_config(config_path=args.config)
+    except FileNotFoundError:
+        cfg = {}
+    train_on_startup = cfg.get('regime', {}).get('train_on_startup', True)
     # start training worker if requested
     if args.start_trainer:
-        cfg = load_config(config_path=args.config)
         symbols = cfg.get('data_ingestion', {}).get('symbols', [])
         if not symbols:
             raise RuntimeError('No symbols found in config for scheduled training')
@@ -806,6 +814,11 @@ if __name__ == '__main__':
         # exit after watcher finishes
         sys.exit(0)
 
-    # if not watching snapshot, run main training once (behaviour preserved)
-    if not args.watch_snapshot and not args.start_trainer:
+# decide whether to run one-off startup training
+    if not args.watch_snapshot and not args.start_trainer and (train_on_startup or args.train_now):
         main(n_states=args.n_states, days=args.days, save_plots=not args.plots)
+    else:
+        # If we're not running the watcher and not starting the trainer, report skipped startup
+        if not args.watch_snapshot and not args.start_trainer:
+            print('Startup training skipped (train_on_startup=False in config).')
+            print('To force immediate training use --train-now, or to run scheduled training use --start-trainer')
