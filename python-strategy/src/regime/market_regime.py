@@ -4,7 +4,27 @@ from hmmlearn.hmm import GaussianHMM
 import ccxt
 from sklearn.preprocessing import StandardScaler
 from datetime import datetime, timedelta
-from data.download import download_binance_1m_data
+# Ensure python-strategy root is importable so `data.download` module can be found
+import sys
+from pathlib import Path
+HERE = Path(__file__).resolve().parents[2]
+if str(HERE) not in sys.path:
+    sys.path.insert(0, str(HERE))
+try:
+    from data.download import download_binance_1m_data
+except ModuleNotFoundError:
+    # Fallback: load the file directly from the python-strategy/data path
+    import importlib.util
+    import sys as _sys
+    DATA_FILE = HERE / 'data' / 'download.py'
+    if DATA_FILE.exists():
+        spec = importlib.util.spec_from_file_location('data.download', str(DATA_FILE))
+        mod = importlib.util.module_from_spec(spec)
+        _sys.modules['data.download'] = mod
+        spec.loader.exec_module(mod)
+        download_binance_1m_data = mod.download_binance_1m_data
+    else:
+        raise
 class Regime:
     def __init__(self, n_states=3):
         self.n_states = n_states
