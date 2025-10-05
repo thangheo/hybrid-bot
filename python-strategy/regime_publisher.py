@@ -171,8 +171,7 @@ def publish_regimes(symbols, data_dir, socket, interval=600):
                 
                 try:
                     # Lấy data mới
-                    df = get_recent_data(regime_obj, symbol, data_dir, days=1)
-                    
+                    df = get_recent_data(regime_obj, symbol, data_dir, days=1)                    
                     if df is None or df.empty:
                         entry['error'] = 'no_data'
                         payload['regimes'][symbol] = entry
