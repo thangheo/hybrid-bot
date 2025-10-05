@@ -740,27 +740,7 @@ def main(n_states: int = 3, days: int = 60, save_plots: bool = True, watch_snaps
         socket.close()
         context.term()
 
-    # start snapshot watcher in a daemon thread if requested
-    if watch_snapshot:
-        snapshot_path = data_dir / 'regimes_snapshot.json'
-        def snapshot_watcher():
-            context = zmq.Context()
-            socket = context.socket(zmq.PUB)
-            socket.bind("tcp://*:5556")  # listen on port 5556
-            try:
-                watch_and_publish_snapshot(snapshot_path, socket, topic='regimes_snapshot_update', poll_interval=5)
-            except Exception as e:
-                print(f"Error in snapshot_watcher: {e}")
-            finally:
-                socket.close()
-                context.term()
-
-        # daemon thread for snapshot watching
-        t = threading.Thread(target=snapshot_watcher, daemon=True)
-        t.start()
-        print(f"Started snapshot watcher thread (file={snapshot_path})")
-
-
+   
 if __name__ == '__main__':
     # print how to use:
     # python3 regime.py --start-trainer --watch-snapshot --trainer-interval-days 7 --data-source coinbase
@@ -771,7 +751,6 @@ if __name__ == '__main__':
     p.add_argument('--n-states', type=int, default=3)
     p.add_argument('--days', type=int, default=60)
     p.add_argument('--no-plots', dest='plots', action='store_false')
-    p.add_argument('--watch-snapshot', dest='watch_snapshot', action='store_true', help='Watch data/regimes_snapshot.json and publish when updated')
     p.add_argument('--start-trainer', dest='start_trainer', action='store_true', help='Start scheduled training worker')
     p.add_argument('--trainer-interval-days', dest='trainer_interval_days', type=int, default=7, help='Days between scheduled training runs')
     p.add_argument('--data-source', dest='data_source', type=str, default='binance', choices=['binance','coinbase'], help='Which data source to use for scheduled training')
