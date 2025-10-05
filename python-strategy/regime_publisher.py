@@ -296,7 +296,7 @@ def publish_regimes(symbols, data_dir, socket, interval=600):
     # Create and start DataCache: download full history once and then update per-minute
     cache = DataCache(data_dir, regime_obj)
     try:
-        cache.start(symbols, initial_days=7, interval=600)
+        cache.start(symbols, initial_days=7, interval=300)
 
         while True:
             payload = {
