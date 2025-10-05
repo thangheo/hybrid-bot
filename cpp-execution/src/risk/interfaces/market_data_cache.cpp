@@ -227,10 +227,10 @@ std::optional<core::MarketData> MarketDataCache::getMarketData(const std::string
                 return entry.data;
             }
         } else {
-            LOG_DEBUG("Key '{}' not found in cache", cacheKey);
+            LOG_TRACE("Key '{}' not found in cache", cacheKey);
             // Log all keys in cache for debugging
             for (const auto& [key, _] : marketDataCache_) {
-                LOG_DEBUG("  Cache contains key: '{}'", key);
+                LOG_TRACE("  Cache contains key: '{}'", key);
             }
         }
         

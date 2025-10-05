@@ -122,7 +122,38 @@ double MarketDataInterface::getCurrentPrice(
     auto price = cache_->getCurrentPrice(cacheKey);
     if (!price.has_value()) {
         LOG_DEBUG("Price not found in cache for {}:{}, cacheKey={}", exchange.toString(), tradingPair.toString(), cacheKey);
-        //throw std::runtime_error("Price not found in cache");
+        // Try a few non-invasive fallback key formats to handle different symbol formatting used elsewhere
+        // 1) Alphanumeric uppercase sanitized symbol (remove '/', '-', '_')
+        auto sanitize = [](const std::string &s){ std::string out; for (char c: s) { if (std::isalnum((unsigned char)c)) out.push_back(static_cast<char>(std::toupper((unsigned char)c))); } return out; };
+        std::string altKey = exchange.toString() + ":" + sanitize(tradingPair.toString());
+        price = cache_->getCurrentPrice(altKey);
+        if (price.has_value()) {
+            LOG_DEBUG("Found price using alternate sanitized key {}", altKey);
+            return price.value();
+        }
+
+        // 2) Try removing only slash characters (common format differences)
+        std::string noSlash = tradingPair.toString();
+        noSlash.erase(std::remove(noSlash.begin(), noSlash.end(), '/'), noSlash.end());
+        std::string altKey2 = exchange.toString() + ":" + noSlash;
+        price = cache_->getCurrentPrice(altKey2);
+        if (price.has_value()) {
+            LOG_DEBUG("Found price using alternate no-slash key {}", altKey2);
+            return price.value();
+        }
+
+        // 3) Try exchange-specific normalization if available
+        try {
+            std::string normalized = trading::execution::util::normalizeSymbolForExchange(tradingPair.toString());
+            std::string altKey3 = exchange.toString() + ":" + normalized;
+            price = cache_->getCurrentPrice(altKey3);
+            if (price.has_value()) {
+                LOG_DEBUG("Found price using exchange-normalized key {}", altKey3);
+                return price.value();
+            }
+        } catch (...) {
+            // ignore normalization errors
+        }
     }
     return price.value_or(0.0);
 }
