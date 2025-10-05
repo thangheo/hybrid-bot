@@ -17,6 +17,10 @@ from pathlib import Path
 from datetime import datetime, timezone
 import argparse
 import yaml
+import requests
+import threading
+import os
+import tempfile
 
 # Import Regime class để dùng compute_regime_features và download_crypto_data
 HERE = Path(__file__).resolve().parent
@@ -72,27 +76,151 @@ def load_models(data_dir):
 
 def get_recent_data(regime_obj, symbol, data_dir, days=1):
     """Lấy data gần nhất (từ file hoặc download)"""
-    csv_file = data_dir / f"{symbol_filename(symbol)}.csv"
-    
-    # Thử đọc từ file trước
-    if csv_file.exists():
-        try:
-            df = pd.read_csv(csv_file, index_col=0, parse_dates=True)
-            # Lấy data mới nhất (1 ngày)
-            cutoff = datetime.utcnow() - pd.Timedelta(days=days)
-            df = df[df.index >= cutoff]
-            if not df.empty:
-                return df
-        except Exception as e:
-            print(f"Lỗi đọc file {csv_file}: {e}")
-    
-    # Không có file hoặc data cũ → download mới
+    # Deprecated: use DataCache for incremental updates. Keep as fallback to download full data.
     try:
         df = regime_obj.download_crypto_data(symbol, days=days)
         return df
     except Exception as e:
         print(f"Lỗi download data cho {symbol}: {e}")
         return None
+
+
+class DataCache:
+    """In-memory cache of symbol DataFrames + background updater that fetches recent 1m candles
+    and appends them to the CSV on disk. Designed to download full history once and then only
+    fetch small recent windows every minute to avoid rate limits.
+    """
+    def __init__(self, data_dir: Path, regime_obj, per_symbol_delay: float = 0.2, retention_days: int = 7):
+        # DataCache is intentionally in-memory-only. We do NOT read or write CSVs in production.
+        # data_dir is accepted for API compatibility but not used.
+        self.data_dir = Path(data_dir)
+        self.regime_obj = regime_obj
+        self.lock = threading.Lock()
+        self.dfs = {}  # symbol_key -> DataFrame
+        self.running = False
+        self.thread = None
+        self.per_symbol_delay = per_symbol_delay
+        # retention_days: keep only the most recent N days of data in memory (FIFO). Default 7 days.
+        self.retention_days = retention_days
+
+    @staticmethod
+    def _binance_symbol(symbol: str) -> str:
+        return symbol.replace('/', '').replace('-', '')
+
+    @staticmethod
+    def _klines_to_df(klines):
+        # klines: list of [open_time, open, high, low, close, volume, ...]
+        import pandas as _pd
+        rows = []
+        for k in klines:
+            ts = datetime.utcfromtimestamp(k[0] / 1000)
+            rows.append([ts, float(k[1]), float(k[2]), float(k[3]), float(k[4]), float(k[5])])
+        df = _pd.DataFrame(rows, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+        df['timestamp'] = _pd.to_datetime(df['timestamp'])
+        df.set_index('timestamp', inplace=True)
+        return df
+
+    def load_symbol_once(self, symbol: str, days: int = 7):
+        """Load CSV if exists, else download full history once and save. Returns DataFrame."""
+        key = symbol_filename(symbol)
+        try:
+            print(f"Downloading in-memory history for {symbol} (days={days})...")
+            df = self.regime_obj.download_crypto_data(symbol, days=days)
+            if df is None or df.empty:
+                return pd.DataFrame()
+            # ensure index name and sorting
+            df.index.name = 'timestamp'
+            df = df[~df.index.duplicated(keep='first')].sort_index()
+            # Trim to retention immediately if configured
+            if self.retention_days is not None and not df.empty:
+                cutoff_time = df.index[-1] - pd.Timedelta(days=self.retention_days)
+                df = df[df.index >= cutoff_time]
+            with self.lock:
+                self.dfs[key] = df
+            return df
+        except Exception as e:
+            print(f"Error downloading history for {symbol}: {e}")
+            return pd.DataFrame()
+
+    def fetch_recent(self, symbol: str, limit: int = 5):
+        """Fetch most recent `limit` 1m klines from Binance REST and return DataFrame."""
+        bsym = self._binance_symbol(symbol)
+        url = 'https://api.binance.com/api/v3/klines'
+        params = {'symbol': bsym, 'interval': '1m', 'limit': limit}
+        try:
+            r = requests.get(url, params=params, timeout=10)
+            r.raise_for_status()
+            klines = r.json()
+            return self._klines_to_df(klines)
+        except Exception as e:
+            print(f"fetch_recent failed for {symbol}: {e}")
+            return pd.DataFrame()
+
+    def append_new_candles(self, symbol: str):
+        key = symbol_filename(symbol)
+        with self.lock:
+            df = self.dfs.get(key)
+
+        recent = self.fetch_recent(symbol, limit=10)
+        if recent.empty:
+            return
+
+        # append only rows newer than last index
+        with self.lock:
+            if key not in self.dfs or self.dfs[key] is None or self.dfs[key].empty:
+                self.dfs[key] = recent
+                to_save = recent
+            else:
+                last_ts = self.dfs[key].index[-1]
+                new_rows = recent[recent.index > last_ts]
+                if new_rows.empty:
+                    return
+                # append new rows and remove duplicates
+                self.dfs[key] = pd.concat([self.dfs[key], new_rows]).drop_duplicates(keep='first').sort_index()
+            # Trim old rows if retention_days is configured (FIFO behavior)
+            if self.retention_days is not None and not self.dfs[key].empty:
+                cutoff_time = self.dfs[key].index[-1] - pd.Timedelta(days=self.retention_days)
+                self.dfs[key] = self.dfs[key][self.dfs[key].index >= cutoff_time]
+
+    def start(self, symbols, initial_days: int = 60, interval: int = 60):
+        # load all symbols once (full history)
+        for s in symbols:
+            try:
+                self.load_symbol_once(s, days=initial_days)
+            except Exception as e:
+                print(f"Error loading symbol {s}: {e}")
+
+        # background updater
+        def run_loop():
+            self.running = True
+            while self.running:
+                for s in symbols:
+                    try:
+                        self.append_new_candles(s)
+                    except Exception as e:
+                        print(f"Updater error for {s}: {e}")
+                    time.sleep(self.per_symbol_delay)
+                # sleep until next minute
+                for _ in range(max(1, int(interval))):
+                    if not self.running:
+                        break
+                    time.sleep(1)
+
+        self.thread = threading.Thread(target=run_loop, daemon=True)
+        self.thread.start()
+
+    def stop(self):
+        self.running = False
+        if self.thread and self.thread.is_alive():
+            self.thread.join(timeout=5)
+
+    def get_df(self, symbol: str):
+        key = symbol_filename(symbol)
+        with self.lock:
+            df = self.dfs.get(key)
+            if df is None:
+                return pd.DataFrame()
+            return df.copy()
 
 
 def predict_regime(regime_obj, model_entry, df):
@@ -115,13 +243,32 @@ def predict_regime(regime_obj, model_entry, df):
     available_cols = [c for c in feature_cols if c in features.columns]
     if not available_cols:
         raise RuntimeError("Không có feature columns")
-    
-    X = features[available_cols].iloc[-1:].values
+
+    last_row = features[available_cols].iloc[-1:].copy()
+
+    # If there are NaNs in the last row, try a light-feature fallback once
+    if last_row.isna().any().any():
+        # try light mode
+        features_light = regime_obj.compute_regime_features(df, light=True)
+        available_cols_light = [c for c in feature_cols if c in features_light.columns]
+        if available_cols_light:
+            last_row_light = features_light[available_cols_light].iloc[-1:].copy()
+            if not last_row_light.isna().any().any():
+                last_row = last_row_light
+                available_cols = available_cols_light
+                features = features_light
+
+    # Final check for NaNs
+    nan_cols = [c for c in available_cols if pd.isna(last_row[c].iloc[0])]
+    if nan_cols:
+        raise RuntimeError(f"Input contains NaN in features: {', '.join(nan_cols)}")
+
+    X = last_row.values
     X_scaled = scaler.transform(X)
-    
+
     regime = int(model.predict(X_scaled)[0])
     probs = model.predict_proba(X_scaled)[0].tolist()
-    
+
     return regime, probs
 
 
@@ -146,7 +293,11 @@ def publish_regimes(symbols, data_dir, socket, interval=600):
     
     topic = 'regimes_update'
     
+    # Create and start DataCache: download full history once and then update per-minute
+    cache = DataCache(data_dir, regime_obj)
     try:
+        cache.start(symbols, initial_days=7, interval=600)
+
         while True:
             payload = {
                 'ts': datetime.now(timezone.utc).isoformat(),
@@ -173,11 +324,10 @@ def publish_regimes(symbols, data_dir, socket, interval=600):
                     continue
                 
                 try:
-                    # Lấy data mới
-                    df = get_recent_data(regime_obj, symbol, data_dir, days=1)                    
+                    # Use cached DataFrame (initially downloaded once, then appended per-minute)
+                    df = cache.get_df(symbol)
                     if df is None or df.empty:
                         entry['error'] = 'no_data'
-                        # explicit unknown regime when no data available
                         entry['regime'] = -1
                         entry['probs'] = []
                         payload['regimes'][symbol] = entry
@@ -213,6 +363,11 @@ def publish_regimes(symbols, data_dir, socket, interval=600):
             
     except KeyboardInterrupt:
         print("\n\nStopped by user")
+    finally:
+        try:
+            cache.stop()
+        except Exception:
+            pass
 
 
 def main():
@@ -229,14 +384,25 @@ def main():
         print(f"✗ Lỗi load config: {e}")
         symbols = []
     
+    # If no config or empty symbols, auto-discover symbols from data directory so
+    # the user can run the publisher with a single command (no config required).
     if not symbols:
-        print("✗ Không có symbols trong config")
-        print("  Thêm symbols vào config/trading_bot.yaml:")
-        print("  data_ingestion:")
-        print("    symbols:")
-        print("      - BTC/USDT")
-        print("      - ETH/USDT")
-        return
+        data_dir = HERE / 'data'
+        symbols = []
+        # Prefer trained model files (regime_model_<SYMBOL>.pkl)
+        for p in sorted(data_dir.glob('regime_model_*.pkl')):
+            symbols.append(p.stem.replace('regime_model_', ''))
+        # Fallback: use CSV filenames (skip helper files prefixed with data_ or __)
+        if not symbols:
+            for p in sorted(data_dir.glob('*.csv')):
+                stem = p.stem
+                if stem.startswith('data_') or stem.startswith('__'):
+                    continue
+                symbols.append(stem)
+
+        if not symbols:
+            print("✗ Không có symbols trong config hoặc data/ — cần models hoặc CSVs trong python-strategy/data")
+            return
     
     # Data dir
     data_dir = HERE / 'data'

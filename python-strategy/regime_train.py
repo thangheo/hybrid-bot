@@ -280,27 +280,28 @@ def plot_regimes(symbol, df, features, outpath):
         print(f"  ! Plot failed: {e}")
 
 
-def train_symbol(symbol, regime_obj, data_dir, n_states=3, days=60, source='binance', save_plot=True):
+def train_symbol(symbol, regime_obj, data_dir, n_states=3, days=60, source='binance', save_plot=True,download =False):
     """Train 1 symbol"""
     print(f"\n{'='*60}")
     print(f"Training: {symbol}")
     print(f"{'='*60}")
-    
-    # Download data
-    if source == 'coinbase':
-        product = to_coinbase_product(symbol)
-        df = download_coinbase_data(product, days=days)
-    else:
-        df = download_binance_data(regime_obj, symbol, days=days)
-    
-    if df is None or df.empty:
-        print(f"✗ FAILED: No data for {symbol}\n")
-        return False
-    
-    # Save raw data
-    csv_file = data_dir / f"{symbol_filename(symbol)}.csv"
-    df.to_csv(csv_file)
-    print(f"  ✓ Saved data: {csv_file.name}")
+    df=None
+    if download == True:
+        # Download data
+        if source == 'coinbase':
+            product = to_coinbase_product(symbol)
+            df = download_coinbase_data(product, days=days)
+        else:
+            df = download_binance_data(regime_obj, symbol, days=days)
+        
+        if df is None or df.empty:
+            print(f"✗ FAILED: No data for {symbol}\n")
+            return False
+        
+        # Save raw data
+        csv_file = data_dir / f"{symbol_filename(symbol)}.csv"
+        df.to_csv(csv_file)
+        print(f"  ✓ Saved data: {csv_file.name}")
     
     # Train model
     try:
@@ -387,7 +388,8 @@ def main():
                 n_states=args.n_states,
                 days=args.days,
                 source=args.source,
-                save_plot=not args.no_plot
+                save_plot=not args.no_plot,
+                download=True
             ):
                 success += 1
             else:
