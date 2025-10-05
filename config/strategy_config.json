@@ -148,12 +148,6 @@
        "description": "Aptos - Move language blockchain"
      },
      {
-       "symbol": "KAS/USDT",
-       "exchange": "BINANCE",
-       "category": "mining_innovation",
-       "description": "Kaspa - DAG-based mining"
-     },
-     {
        "symbol": "TIA/USDT",
        "exchange": "BINANCE",
        "category": "modular_blockchain",
@@ -184,12 +178,6 @@
        "description": "Cosmos - Internet of blockchains"
      },
      {
-       "symbol": "FTM/USDT",
-       "exchange": "BINANCE",
-       "category": "high_performance",
-       "description": "Fantom - Fast, low-cost platform"
-     },
-     {
        "symbol": "ALGO/USDT",
        "exchange": "BINANCE",
        "category": "consensus_innovation",
@@ -200,7 +188,7 @@
        "exchange": "BINANCE",
        "category": "privacy",
        "description": "Zcash - Privacy-focused coin"
-     }    
+     }
     ],
   "parameters": {
     "numeric": {
