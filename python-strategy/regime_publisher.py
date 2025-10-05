@@ -166,6 +166,9 @@ def publish_regimes(symbols, data_dir, socket, interval=600):
                 
                 if not model_entry:
                     entry['error'] = 'no_model'
+                    # Be explicit: use -1 as the "unknown" sentinel (matches C++ RegimeInfo)
+                    entry['regime'] = -1
+                    entry['probs'] = []
                     payload['regimes'][symbol] = entry
                     continue
                 
@@ -174,6 +177,9 @@ def publish_regimes(symbols, data_dir, socket, interval=600):
                     df = get_recent_data(regime_obj, symbol, data_dir, days=1)                    
                     if df is None or df.empty:
                         entry['error'] = 'no_data'
+                        # explicit unknown regime when no data available
+                        entry['regime'] = -1
+                        entry['probs'] = []
                         payload['regimes'][symbol] = entry
                         continue
                     
@@ -188,6 +194,9 @@ def publish_regimes(symbols, data_dir, socket, interval=600):
                     
                 except Exception as e:
                     entry['error'] = str(e)
+                    # explicit unknown regime on error
+                    entry['regime'] = -1
+                    entry['probs'] = []
                     print(f"{symbol:12} ERROR: {e}")
                 
                 payload['regimes'][symbol] = entry
