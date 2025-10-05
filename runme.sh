@@ -20,7 +20,7 @@ echo "regime.py started successfully."
 #then sleep for at least 1 hour waiting for regime.py finish training and generating model files,
 #  then cd back to root directory and run cpp-execution/bin/semi_hft with nohup and & at the end
 #this script should also run in background with nohup so that the user can run and go to sleep
-sleep 3600
+# sleep 3600
 # cd ../ || exit 1
 nohup cpp-execution/bin/semi_hft &
 echo "All processes started successfully."
