@@ -63,9 +63,8 @@ def symbol_filename(symbol: str) -> str:
     return symbol.replace('/', '_').replace('-', '_')
 
 
-if __name__ == '__main__':
-    # Simplified entrypoint: two modes only -- 'train' or 'publish'.
-    # Default is 'publish' to avoid accidental training in production.
+def _main():
+    # Single clean entrypoint. Default mode is 'publish' to avoid accidental training.
     p = argparse.ArgumentParser(description='Regime script: choose one mode')
     p.add_argument('--mode', choices=['train', 'publish'], default='publish', help="'train' = download+train models; 'publish' = monitor and publish using existing models")
     p.add_argument('--n-states', type=int, default=3)
@@ -89,13 +88,19 @@ if __name__ == '__main__':
         print(f"Starting training for {len(symbols)} symbols (data_source={args.data_source})")
         download_and_train_all(symbols, data_dir, n_states=args.n_states, days=args.days, data_source=args.data_source, save_plots=not args.plots)
         print('Training finished; exiting')
-        sys.exit(0)
+        return
 
     # publish mode (default)
     print('Starting in publish mode — will monitor data and publish regimes using existing models')
     context = zmq.Context()
     socket = context.socket(zmq.PUB)
-    socket.bind('tcp://*:5555')
+    try:
+        socket.bind('tcp://*:5555')
+    except Exception as e:
+        print(f'Failed to bind publisher socket tcp://*:5555: {e}')
+        context.term()
+        return
+
     try:
         monitor_and_publish_regimes(symbols, data_dir, socket, interval=60, poll_days=1)
     except KeyboardInterrupt:
@@ -103,89 +108,16 @@ if __name__ == '__main__':
     except Exception as e:
         print(f'Publish error: {e}')
     finally:
-        socket.close()
+        try:
+            socket.close()
+        except Exception:
+            pass
         context.term()
         print('Exiting')
-        for rule in ['5min', '15min', '1h']:
-            try:
-                tried.append(rule)
-                # compute minutes per bar from rule
-                minutes_per_bar = None
-                if 'min' in rule:
-                    minutes_per_bar = int(rule.replace('min', ''))
-                elif 'h' in rule:
-                    minutes_per_bar = int(rule.replace('h', '')) * 60
-                else:
-                    # unknown rule format; skip
-                    continue
 
-                df_rs = df.resample(rule).agg({'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last', 'volume': 'sum'}).dropna()
-                if df_rs.empty:
-                    # nothing after resampling
-                    print(f"Resample {rule} produced empty dataframe for symbol={symbol or '<unknown>'}")
-                    continue
 
-                # scale windows: original code used minutes (window_short=15, window_long=60)
-                window_short = max(1, int(15 / minutes_per_bar))
-                window_long = max(1, int(60 / minutes_per_bar))
-
-                features_rs = regime.compute_regime_features(df_rs, window_short=window_short, window_long=window_long)
-                if features_rs.empty or len(features_rs) < min_rows:
-                    print(f"Resample {rule} produced {len(features_rs)} feature rows (need >= {min_rows}) for symbol={symbol or '<unknown>'}")
-                    continue
-
-                # use resampled
-                features = features_rs
-                df = df_rs
-                print(f"Using resampled data ({rule}) for symbol={symbol or '<unknown>'} — rows={len(features)}")
-                break
-            except Exception as e:
-                print(f"Resample {rule} failed for symbol={symbol or '<unknown>'}: {e}")
-                # continue to next rule
-                continue
-
-        else:
-            # Try using a light feature set on the original 1m data as a final fallback
-            try:
-                features_rs = regime.compute_regime_features(df, window_short=window_short, window_long=window_long, light=True)
-                if not features_rs.empty and len(features_rs) >= min_rows:
-                    features = features_rs
-                    print(f"Using light feature set for symbol={symbol or '<unknown>'} — rows={len(features)}")
-            except Exception as e:
-                print(f"Light feature computation failed for symbol={symbol or '<unknown>'}: {e}")
-                pass
-
-    if features.empty:
-        raise RuntimeError(f'No feature rows after compute_regime_features for symbol={symbol or "<unknown>"}')
-    if len(features) < min_rows:
-        raise RuntimeError(f'Not enough feature rows ({len(features)}) to train HMM for symbol={symbol or "<unknown>"}; need >= {min_rows}')
-
-    feature_cols = [
-        'vol_1h', 'vol_4h', 'vol_percentile',
-        'trend_strength', 'directional_movement',
-        'volume_spike', 'rsi_60'
-    ]
-    # guard missing columns
-    feature_cols = [c for c in feature_cols if c in features.columns]
-    if not feature_cols:
-        raise RuntimeError('No feature columns available after feature computation')
-
-    X = features[feature_cols].values
-    scaler = StandardScaler()
-    X_scaled = scaler.fit_transform(X)
-
-    model = GaussianHMM(n_components=n_states, covariance_type='full', n_iter=500, random_state=42)
-    model.fit(X_scaled)
-
-    states = model.predict(X_scaled)
-    probs = model.predict_proba(X_scaled)
-
-    features = features.copy()
-    features['regime'] = states
-    for i in range(n_states):
-        features[f'regime_prob_{i}'] = probs[:, i]
-
-    return model, scaler, features, feature_cols
+if __name__ == '__main__':
+    _main()
 
 
 def load_saved_models(data_dir: Path):
@@ -459,7 +391,6 @@ def monitor_and_publish_regimes(symbols: list, data_dir: Path, socket, interval:
     except KeyboardInterrupt:
         print('Monitor stopped by user')
         return
-
 
 def to_coinbase_product(symbol: str) -> str:
     """Convert a symbol like 'BTC/USDT' or 'BTC-USD' to Coinbase product id like 'BTC-USD'.
