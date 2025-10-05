@@ -453,7 +453,7 @@ void OrderBookReconstructor::publishOrderBook(const std::shared_ptr<OrderBook>& 
     std::string key = orderBook->getExchangeId().toString() + ":" + orderBook->getSymbol().toString();
     if (lastPublishTime.find(key) != lastPublishTime.end()) {
         auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastPublishTime[key]).count();
-        if (duration < 500) {
+        if (duration < 50) {
             return; // Skip publishing if less than 100 milliseconds since last publish
         }
     }
