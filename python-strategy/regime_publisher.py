@@ -14,7 +14,7 @@ import joblib
 import pandas as pd
 import numpy as np
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 import argparse
 import yaml
 
@@ -125,7 +125,7 @@ def predict_regime(regime_obj, model_entry, df):
     return regime, probs
 
 
-def publish_regimes(symbols, data_dir, socket, interval=60):
+def publish_regimes(symbols, data_dir, socket, interval=600):
     """
     Main loop: publish regimes mỗi interval giây
     """
@@ -149,7 +149,7 @@ def publish_regimes(symbols, data_dir, socket, interval=60):
     try:
         while True:
             payload = {
-                'ts': datetime.utcnow().isoformat(),
+                'ts': datetime.now(timezone.utc).isoformat(),
                 'source': 'regime_publisher',
                 'regimes': {}
             }

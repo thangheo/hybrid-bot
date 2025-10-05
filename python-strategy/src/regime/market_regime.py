@@ -170,8 +170,8 @@ class Regime:
         # Replace infinite and extremely large/small values
         features = features.replace([np.inf, -np.inf], np.nan)
 
-        # Try to preserve as many rows as possible for short series: forward/backfill then drop rows that are all-NaN
-        features = features.fillna(method='ffill').fillna(method='bfill')
+    # Try to preserve as many rows as possible for short series: forward/backfill then drop rows that are all-NaN
+    features = features.ffill().bfill()
         return features.dropna(how='all')
 
     # === 3. Train HMM với proper features ===
