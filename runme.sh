@@ -13,9 +13,12 @@ source venv/bin/activate
 # cd python-strategy || exit 1
 # nohup python regime.py --config config/trading_bot.yaml &
 # nohup python3 python-strategy/regime.py --mode publish &>/dev/null &
-python3 python-strategy/regime_publisher.py --config config/trading_bot.yaml &
+python3 python-strategy/regime_publisher.py --config config/trading_bot.yaml --interval 677 & >/dev/null &
+
 # python3 python-strategy/regime.py --mode train --config config/trading_bot.yaml &
 echo "regime.py started successfully."
+# sleep for 30s to let regime.py start and load model files if any
+sleep 30
 
 #then sleep for at least 1 hour waiting for regime.py finish training and generating model files,
 #  then cd back to root directory and run cpp-execution/bin/semi_hft with nohup and & at the end
