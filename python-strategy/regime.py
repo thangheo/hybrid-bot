@@ -24,7 +24,7 @@ import joblib
 import zmq
 from src.regime.market_regime import Regime
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import argparse
 import requests
 import json
@@ -308,8 +308,8 @@ def poll_and_update_regimes(symbols: list, data_dir: Path, interval: int = 60):
                     # get recent data (1 day suffices for prediction)
                     df_recent = download_or_load(regime_obj, symbol, data_dir, days=1)
                     pred, probs = predict_regime_for_symbol(regime_obj, model_entry, df_recent)
-                    current[key] = {'symbol': symbol, 'regime': int(pred), 'probs': probs.tolist(), 'ts': datetime.utcnow().isoformat()}
-                    print(f"{datetime.utcnow().isoformat()}  {symbol}: regime={pred}, probs={np.round(probs,3)}")
+                    current[key] = {'symbol': symbol, 'regime': int(pred), 'probs': probs.tolist(), 'ts': datetime.now(timezone.utc).isoformat()}
+                    print(f"{datetime.now(timezone.utc).isoformat()}  {symbol}: regime={pred}, probs={np.round(probs,3)}")
                 except Exception as e:
                     print(f"Failed to update {symbol}: {e}")
 
@@ -338,7 +338,7 @@ def get_current_regime(symbol: str, data_dir: Path = None):
 
     try:
         pred, probs = predict_regime_for_symbol(regime_obj, model_entry, df_recent)
-        return {'symbol': symbol, 'regime': int(pred), 'probs': probs.tolist(), 'ts': datetime.utcnow().isoformat()}
+    return {'symbol': symbol, 'regime': int(pred), 'probs': probs.tolist(), 'ts': datetime.now(timezone.utc).isoformat()}
     except Exception as e:
         raise RuntimeError(f'Prediction failed for {symbol}: {e}')
 
@@ -353,7 +353,7 @@ def download_coinbase_1m_data(product_id='BTC-USD', days=60):
     print(f"Downloading REAL {product_id} 1m data for {days} days from Coinbase...")
     base = "https://api.exchange.coinbase.com/products/{}/candles".format(product_id)
 
-    end_dt = datetime.utcnow()
+    end_dt = datetime.now(timezone.utc)
     start_dt = end_dt - timedelta(days=days)
 
     all_rows = []
@@ -472,7 +472,7 @@ def monitor_and_publish_regimes(symbols: list, data_dir: Path, socket, interval:
             if any_new:
                 # (re)load models in case they were updated
                 models = load_saved_models(data_dir)
-                payload = {'ts': datetime.utcnow().isoformat(), 'source': 'regime_publisher', 'regimes': {}}
+                payload = {'ts': datetime.now(timezone.utc).isoformat(), 'source': 'regime_publisher', 'regimes': {}}
                 for symbol in symbols:
                     key = symbol_filename(symbol)
                     model_entry = models.get(key)
@@ -526,7 +526,7 @@ def generate_regimes_snapshot(symbols: list, data_dir: Path) -> dict:
     """
     models = load_saved_models(data_dir)
     regime_obj = Regime()
-    payload = {'ts': datetime.utcnow().isoformat(), 'source': 'regime_trainer', 'regimes': {}}
+    payload = {'ts': datetime.now(timezone.utc).isoformat(), 'source': 'regime_trainer', 'regimes': {}}
     for symbol in symbols:
         key = symbol_filename(symbol)
         model_entry = models.get(key)
@@ -615,7 +615,7 @@ def training_worker_process(symbols: list, data_dir: Path, n_states: int, days: 
     """Worker function that loops forever, running training every interval_days. Intended to be started in a Process."""
     while True:
         try:
-            print(f"[trainer] Starting training run at {datetime.utcnow().isoformat()}")
+            print(f"[trainer] Starting training run at {datetime.now(timezone.utc).isoformat()}")
             download_and_train_all(symbols, data_dir, n_states=n_states, days=days, data_source=data_source, save_plots=save_plots)
             print(f"[trainer] Training run complete; sleeping for {interval_days} days")
             time.sleep(interval_days * 86400)
@@ -654,7 +654,7 @@ def watch_and_publish_snapshot(snapshot_path: Path, socket, topic: str = 'regime
             try:
                 msg = json.dumps(payload)
                 socket.send_string(f"{topic} {msg}")
-                print(f"Published initial snapshot ({snapshot_path}) at {datetime.utcnow().isoformat()}")
+                print(f"Published initial snapshot ({snapshot_path}) at {datetime.now(timezone.utc).isoformat()}")
             except Exception as e:
                 print(f"Failed to publish initial snapshot: {e}")
         except Exception as e:
@@ -678,7 +678,7 @@ def watch_and_publish_snapshot(snapshot_path: Path, socket, topic: str = 'regime
                     try:
                         msg = json.dumps(payload)
                         socket.send_string(f"{topic} {msg}")
-                        print(f"Published snapshot ({snapshot_path}) at {datetime.utcnow().isoformat()}")
+                        print(f"Published snapshot ({snapshot_path}) at {datetime.now(timezone.utc).isoformat()}")
                     except Exception as e:
                         print(f"Failed to publish snapshot: {e}")
         except Exception as e:
