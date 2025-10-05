@@ -243,7 +243,9 @@ const std::unordered_map<std::string, double>& LimitManager::getAssetLimits() co
     auto typeIt = m_limits.find("ASSET");
     if (typeIt != m_limits.end()) {
         for (const auto& [id, limit] : typeIt->second) {
-            assetLimits[id] = limit.value;
+            // assetLimits[id] = limit.value;
+            //no limits for assets
+            assetLimits[id] = defaultAssetLimit_;
         }
     }
     return assetLimits;

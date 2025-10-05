@@ -13,7 +13,7 @@
       "binance": 50000.0,
       "coinbase": 30000.0
     },
-    "defaultLimit": 1000.0,
+    "defaultLimit": 4000.0,
     "enforceStrictly": true
   },
   "marketDataCacheDurationMs": 5000,
