@@ -69,61 +69,169 @@ def ensure_data_dir():
     return data_dir
 
 
-def _main():
-    # Single clean entrypoint. Default mode is 'publish' to avoid accidental training.
-    p = argparse.ArgumentParser(description='Regime script: choose one mode')
-    p.add_argument('--mode', choices=['train', 'publish'], default='publish', help="'train' = download+train models; 'publish' = monitor and publish using existing models")
-    p.add_argument('--n-states', type=int, default=3)
-    p.add_argument('--days', type=int, default=60, help='Days of history to download when training')
-    p.add_argument('--no-plots', dest='plots', action='store_false', help='Do not save regime plots during training')
-    p.add_argument('--data-source', dest='data_source', type=str, default='binance', choices=['binance', 'coinbase'], help='Data source for training')
-    p.add_argument('--config', type=str, default=None, help='Path to trading_bot.yaml (default: search in repo root and current dir)')
-    args = p.parse_args()
-
-    try:
-        cfg = load_config(config_path=args.config)
-    except FileNotFoundError:
-        cfg = {}
-
-    symbols = cfg.get('data_ingestion', {}).get('symbols', [])
-    data_dir = ensure_data_dir()
-
-    if args.mode == 'train':
-        if not symbols:
-            raise RuntimeError('No symbols found in config/trading_bot.yaml under "data_ingestion.symbols"')
-        print(f"Starting training for {len(symbols)} symbols (data_source={args.data_source})")
-        download_and_train_all(symbols, data_dir, n_states=args.n_states, days=args.days, data_source=args.data_source, save_plots=not args.plots)
-        print('Training finished; exiting')
-        return
-
-    # publish mode (default)
-    print('Starting in publish mode — will monitor data and publish regimes using existing models')
-    context = zmq.Context()
-    socket = context.socket(zmq.PUB)
-    try:
-        socket.bind('tcp://*:5555')
-    except Exception as e:
-        print(f'Failed to bind publisher socket tcp://*:5555: {e}')
-        context.term()
-        return
-
-    try:
-        monitor_and_publish_regimes(symbols, data_dir, socket, interval=60, poll_days=1)
-    except KeyboardInterrupt:
-        print('Publish loop interrupted by user')
-    except Exception as e:
-        print(f'Publish error: {e}')
-    finally:
+def download_or_load(regime: Regime, symbol: str, data_dir: Path, days: int = 60) -> pd.DataFrame:
+    fname = data_dir / f"{symbol_filename(symbol)}.csv"
+    if fname.exists():
+        # Try a few ways to read existing CSVs that may have different timestamp formats
         try:
-            socket.close()
+            df = pd.read_csv(fname, parse_dates=['timestamp'], index_col='timestamp')
+            return df
         except Exception:
-            pass
-        context.term()
-        print('Exiting')
+            # Try reading with the first column as index (common when index was saved)
+            try:
+                df = pd.read_csv(fname, index_col=0, parse_dates=True)
+                # ensure index is datetime
+                df.index = pd.to_datetime(df.index)
+                df.index.name = 'timestamp'
+                return df
+            except Exception:
+                # Try to infer a datetime-like column
+                df = pd.read_csv(fname)
+                for col in df.columns:
+                    parsed = pd.to_datetime(df[col], errors='coerce')
+                    if parsed.notna().sum() > len(df) * 0.5:
+                        df[col] = parsed
+                        df.set_index(col, inplace=True)
+                        df.index.name = 'timestamp'
+                        return df
+                raise RuntimeError(f"Could not find a timestamp column or datetime index in existing CSV: {fname}")
+
+    # download using Regime's method and save
+    print(f"Downloading data for {symbol} (days={days})...")
+    df = regime.download_crypto_data(symbol, days=days)
+    # ensure we have timestamp index
+    if 'timestamp' in df.columns:
+        # save with timestamp column
+        df.to_csv(fname, index=False)
+        df = pd.read_csv(fname, parse_dates=['timestamp'], index_col='timestamp')
+    else:
+        # DataFrame index is timestamp
+        df = df.copy()
+        df.index.name = 'timestamp'
+        df.reset_index().to_csv(fname, index=False)
+        df = pd.read_csv(fname, parse_dates=['timestamp'], index_col='timestamp')
+    return df
 
 
-if __name__ == '__main__':
-    _main()
+def train_hmm_for_symbol(regime: Regime, df: pd.DataFrame, n_states: int = 3, symbol: str = None):
+    # compute features using the shared code in Regime
+    features = regime.compute_regime_features(df)
+
+    # Validate we have enough rows to train
+    min_rows = max(10, n_states * 5)
+    if features.empty or len(features) < min_rows:
+        # Try resampling to coarser timeframes to create enough rows for rolling windows
+        tried = []
+        # use non-deprecated aliases
+        for rule in ['5min', '15min', '1h']:
+            try:
+                tried.append(rule)
+                # compute minutes per bar from rule
+                minutes_per_bar = None
+                if 'min' in rule:
+                    minutes_per_bar = int(rule.replace('min', ''))
+                elif 'h' in rule:
+                    minutes_per_bar = int(rule.replace('h', '')) * 60
+                else:
+                    # unknown rule format; skip
+                    continue
+
+                df_rs = df.resample(rule).agg({'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last', 'volume': 'sum'}).dropna()
+                if df_rs.empty:
+                    # nothing after resampling
+                    print(f"Resample {rule} produced empty dataframe for symbol={symbol or '<unknown>'}")
+                    continue
+
+                # scale windows: original code used minutes (window_short=15, window_long=60)
+                window_short = max(1, int(15 / minutes_per_bar))
+                window_long = max(1, int(60 / minutes_per_bar))
+
+                features_rs = regime.compute_regime_features(df_rs, window_short=window_short, window_long=window_long)
+                if features_rs.empty or len(features_rs) < min_rows:
+                    print(f"Resample {rule} produced {len(features_rs)} feature rows (need >= {min_rows}) for symbol={symbol or '<unknown>'}")
+                    continue
+
+                # use resampled
+                features = features_rs
+                df = df_rs
+                print(f"Using resampled data ({rule}) for symbol={symbol or '<unknown>'} — rows={len(features)}")
+                break
+            except Exception as e:
+                print(f"Resample {rule} failed for symbol={symbol or '<unknown>'}: {e}")
+                # continue to next rule
+                continue
+
+        else:
+            # Try using a light feature set on the original 1m data as a final fallback
+            try:
+                features_rs = regime.compute_regime_features(df, window_short=window_short, window_long=window_long, light=True)
+                if not features_rs.empty and len(features_rs) >= min_rows:
+                    features = features_rs
+                    print(f"Using light feature set for symbol={symbol or '<unknown>'} — rows={len(features)}")
+            except Exception as e:
+                print(f"Light feature computation failed for symbol={symbol or '<unknown>'}: {e}")
+                pass
+
+    if features.empty:
+        raise RuntimeError(f'No feature rows after compute_regime_features for symbol={symbol or "<unknown>"}')
+    if len(features) < min_rows:
+        raise RuntimeError(f'Not enough feature rows ({len(features)}) to train HMM for symbol={symbol or "<unknown>"}; need >= {min_rows}')
+
+    feature_cols = [
+        'vol_1h', 'vol_4h', 'vol_percentile',
+        'trend_strength', 'directional_movement',
+        'volume_spike', 'rsi_60'
+    ]
+    # guard missing columns
+    feature_cols = [c for c in feature_cols if c in features.columns]
+    if not feature_cols:
+        raise RuntimeError('No feature columns available after feature computation')
+
+    X = features[feature_cols].values
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X)
+
+    model = GaussianHMM(n_components=n_states, covariance_type='full', n_iter=500, random_state=42)
+    model.fit(X_scaled)
+
+    states = model.predict(X_scaled)
+    probs = model.predict_proba(X_scaled)
+
+    features = features.copy()
+    features['regime'] = states
+    for i in range(n_states):
+        features[f'regime_prob_{i}'] = probs[:, i]
+
+    return model, scaler, features, feature_cols
+
+
+def plot_regimes(symbol: str, df: pd.DataFrame, features: pd.DataFrame, outpath: Path):
+    df_plot = df.loc[features.index]
+
+    plt.style.use('seaborn-darkgrid')
+    fig, (ax_price, ax_probs) = plt.subplots(2, 1, figsize=(14, 8), sharex=True, gridspec_kw={'height_ratios': [3, 1]})
+
+    ax_price.plot(df_plot.index, df_plot['close'], label='close')
+    # color points by regime
+    regimes = features['regime'].values
+    cmap = plt.get_cmap('tab10')
+    scatter = ax_price.scatter(features.index, df_plot['close'], c=regimes, cmap=cmap, s=6, alpha=0.8)
+    ax_price.set_title(f"{symbol} close price with regimes")
+    ax_price.legend()
+
+    # plot regime probabilities
+    prob_cols = [c for c in features.columns if c.startswith('regime_prob_')]
+    if prob_cols:
+        for i, col in enumerate(sorted(prob_cols)):
+            ax_probs.plot(features.index, features[col], label=col, color=cmap(i))
+        ax_probs.set_ylim(-0.05, 1.05)
+        ax_probs.set_title('Regime probabilities')
+        ax_probs.legend(ncol=min(4, len(prob_cols)), fontsize='small')
+
+    plt.tight_layout()
+    outpath.parent.mkdir(parents=True, exist_ok=True)
+    plt.savefig(outpath)
+    plt.close(fig)
 
 
 def load_saved_models(data_dir: Path):
@@ -398,6 +506,7 @@ def monitor_and_publish_regimes(symbols: list, data_dir: Path, socket, interval:
         print('Monitor stopped by user')
         return
 
+
 def to_coinbase_product(symbol: str) -> str:
     """Convert a symbol like 'BTC/USDT' or 'BTC-USD' to Coinbase product id like 'BTC-USD'.
     If symbol already looks like Coinbase (contains '-') return as-is.
@@ -578,7 +687,7 @@ def watch_and_publish_snapshot(snapshot_path: Path, socket, topic: str = 'regime
         time.sleep(poll_interval)
 
 
-def main(n_states: int = 3, days: int = 60, save_plots: bool = True):
+def main(n_states: int = 3, days: int = 60, save_plots: bool = True, watch_snapshot: bool = False):
     cfg = load_config(config_path=None)
     # data_ingestion/symbols
     symbols = cfg.get('data_ingestion', {}).get('symbols', [])
@@ -669,4 +778,26 @@ if __name__ == '__main__':
     socket = context.socket(zmq.PUB)
     socket.bind("tcp://*:5555")  # listen on port 5555
 
-    # fuck u stupid code
+    # start watcher if requested
+    if args.watch_snapshot:
+        snapshot_path = ensure_data_dir() / 'regimes_snapshot.json'
+        # Run watcher in foreground so the process remains alive (previous daemon thread exited immediately)
+        try:
+            print(f"Starting snapshot watcher (foreground) for {snapshot_path}")
+            watch_and_publish_snapshot(snapshot_path, socket, topic='regimes_update', poll_interval=5)
+        except KeyboardInterrupt:
+            print('Snapshot watcher interrupted by user')
+        finally:
+            socket.close()
+            context.term()
+        # exit after watcher finishes
+        sys.exit(0)
+
+# decide whether to run one-off startup training
+    if not args.watch_snapshot and not args.start_trainer and (train_on_startup or args.train_now):
+        main(n_states=args.n_states, days=args.days, save_plots=not args.plots)
+    else:
+        # If we're not running the watcher and not starting the trainer, report skipped startup
+        if not args.watch_snapshot and not args.start_trainer:
+            print('Startup training skipped (train_on_startup=False in config).')
+            print('To force immediate training use --train-now, or to run scheduled training use --start-trainer')
