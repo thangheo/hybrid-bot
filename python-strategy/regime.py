@@ -63,6 +63,12 @@ def symbol_filename(symbol: str) -> str:
     return symbol.replace('/', '_').replace('-', '_')
 
 
+def ensure_data_dir():
+    data_dir = HERE / 'data'
+    data_dir.mkdir(parents=True, exist_ok=True)
+    return data_dir
+
+
 def _main():
     # Single clean entrypoint. Default mode is 'publish' to avoid accidental training.
     p = argparse.ArgumentParser(description='Regime script: choose one mode')
