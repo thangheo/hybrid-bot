@@ -26,7 +26,7 @@ SRC_DIR = HERE / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from regime.market_regime import Regime
+from src.regime.market_regime import Regime
 
 
 def load_config(config_path=None):
