@@ -14,13 +14,13 @@ source venv/bin/activate
 # cd python-strategy || exit 1
 # nohup python regime.py --config config/trading_bot.yaml &
 # nohup python3 python-strategy/regime.py --mode publish &>/dev/null &
-python3 python-strategy/regime_publisher.py --config config/trading_bot.yaml --interval 67 & >/dev/null &
+nohup python3 python-strategy/regime_publisher.py --config config/trading_bot.yaml --interval 67 & >/dev/null &
 # save pid of regime_publisher.py to pids.txt
 echo $! >> pids.txt
 # python3 python-strategy/regime.py --mode train --config config/trading_bot.yaml &
 echo "regime.py started successfully."
 # sleep for 30s to let regime.py start and load model files if any
-sleep 60
+sleep 120
 nohup cpp-execution/bin/semi_hft &
 echo $! >> pids.txt
 # save pid of semi_hft to pids.txt
