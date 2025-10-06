@@ -26,6 +26,7 @@
 #include <filesystem>
 #include <logger.hpp>
 #include "perception/bayesian_trading_adapter.hpp"
+#include "perception/rules_adapter.hpp"
 #include "core_analysis/regime_subscriber.hpp"
 
  using namespace trading::core;
@@ -375,6 +376,11 @@ ImbalanceDetectionEngine::~ImbalanceDetectionEngine() {
             bayesInitialized_.store(false);
             LOG_DEBUG("ImbalanceDetectionEngine: destroyed bayes adapter handle");
         }
+        if (rules_handle_) {
+            try { trading::perception::rules_destroy(rules_handle_); } catch(...) {}
+            rules_handle_ = nullptr;
+            LOG_DEBUG("ImbalanceDetectionEngine: destroyed rules adapter handle");
+        }
     } catch (...) {
         // swallow
     }
@@ -402,11 +408,11 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                 // Run all detectors sequentially for this metric
                 std::vector<DetectorResult> results;
                 try {
-                    // results.push_back(detectVolumeImbalance(m));
-                    // results.push_back(detectPriceLevelImbalance(m));
-                    // results.push_back(detectLiquidityFlowImbalance(m));
-                    // results.push_back(detectAbnormalSpread(m));
-                    // results.push_back(detectMarketDepthChange(m));
+                    results.push_back(detectVolumeImbalance(m));
+                    results.push_back(detectPriceLevelImbalance(m));
+                    results.push_back(detectLiquidityFlowImbalance(m));
+                    results.push_back(detectAbnormalSpread(m));
+                    results.push_back(detectMarketDepthChange(m));
                     results.push_back(detectLargeOrderAppearance(m));
                     results.push_back(detectLargeOrderDisappearance(m));
                     results.push_back(detectOrderFlowImbalance(m));
@@ -415,342 +421,80 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                     results.push_back(detectTrendContinuation(m));
                     results.push_back(detectTrendReversal(m));
                     results.push_back(detectTradeImbalance(m));
-                    // results.push_back(detectCancellationImbalance(m)); 
+                    results.push_back(detectCancellationImbalance(m)); 
                     results.push_back(detectPriceVolatilityImbalance(m));
-                    // results.push_back(detectHiddenLiquidityImbalance(m));
-                    // results.push_back(detectCustomImbalance(m));
+                    results.push_back(detectHiddenLiquidityImbalance(m));
+                    results.push_back(detectCustomImbalance(m));
                 } catch (...) {
                     // swallow detector errors
                 }
 
-                // Build feature vector from detectors
+                // Build features vector from detector results (imbalanceValue ordering)
                 std::vector<double> features;
-                features.reserve(results.size());
-                for (const auto &r : results) {
-                    double v = 0.0;
-                    if (std::isfinite(r.strength) && r.strength > 0.0) {
-                        v = r.strength;
-                    } else if (std::isfinite(r.imbalanceValue)) {
-                        v = calculateImbalanceStrength(r.imbalanceValue, 1.0);
-                    }
-                    features.push_back(v);
-                }
-                // also add some raw metrics that may be useful
-                // sanitize values (replace NaN/inf), clamp or normalize where reasonable
-                auto safe = [](double v, double def = 0.0) {
-                    return std::isfinite(v) ? v : def;
-                };
-                // std::cout << "liquidityPressure range: " << min << " to " << max << std::endl;
-                // spread percent - clamp to a sensible range
-                // features.push_back(std::clamp(safe(m.spreadPercent, 0.0), 0.0, 100.0)); //features 17
-                // bid/ask volume ratio - convert to symmetric ratio and compress into [0,1]
-                double bar = safe(m.bidAskVolumeRatio, 1.0);
-                double normalized = (bar - 1.0) / (bar + 1.0);  // Maps (0,∞) → (-1,1)
-                features.push_back(calculateImbalanceStrength(bar, 1.0));                
-                features.push_back(safe(m.priceVelocity, 0.0));
-                features.push_back(std::tanh(safe(m.volumeVelocity, 0.0) / 1000.0));
-                features.push_back(std::tanh(safe(m.spreadVelocity, 0.0) * 10.0));
-
-                // liquidity / volatility related
-                features.push_back(std::clamp(safe(m.liquidityPressure, 0.0), -10.0, 10.0));
-                features.push_back(std::clamp(safe(m.volatilityExpectation, 0.0), 0.0, 10.0));
-                features.push_back(std::clamp(safe(m.realizedVolatility, 0.0), 0.0, 100.0));
-                features.push_back(std::clamp(safe(m.volatilityPerUnitTime, 0.0), 0.0, 100.0));
-
-                // market directional coefficient and profile score - keep bounded
-                // features.push_back(std::tanh(safe(m.marketDirectionalCoefficient, 0.0))); // features 26
-                // features.push_back(std::clamp(safe(m.liquidityProfileScore, 0.0), -1.0, 1.0));
-
-                // extra orderbook-level features: total bid/ask volumes and top-3 level sums
-                double totalBid = safe(m.totalBidVolume, 0.0);
-                double totalAsk = safe(m.totalAskVolume, 0.0);
-                // avoid division by zero, convert to simple imbalance strength
-                features.push_back(calculateImbalanceStrength((totalBid + 1.0) / (totalAsk + 1.0), 1.0));
-
-                double topBidSum = 0.0;
-                double topAskSum = 0.0;
-                for (size_t i = 0; i < std::min<size_t>(3, m.bidVolumesByLevel.size()); ++i) topBidSum += safe(m.bidVolumesByLevel[i], 0.0);
-                for (size_t i = 0; i < std::min<size_t>(3, m.askVolumesByLevel.size()); ++i) topAskSum += safe(m.askVolumesByLevel[i], 0.0);
-                features.push_back(calculateImbalanceStrength((topBidSum + 1.0) / (topAskSum + 1.0), 1.0));
-
-
-                //print all raw values to check the range of them  
-                // std::cout << "Raw feature values:" << std::endl;
-                // for (size_t i = 0; i < features.size(); ++i) {
-                //     std::cout << "Feature " << i << ": " << features[i] << std::endl;
-                // }
-
-                // Buffer features for later labeling/training
-                {
-                    std::lock_guard<std::mutex> pl(pendingTrainingMutex_);
-                    if (pendingTraining_.size() >= maxPendingTraining_) pendingTraining_.pop_front();
-                    // capture VWAP/SMA if present in metrics map (optional)
-                    double vwap_snap = 0.0;
-                    double sma_snap = 0.0;
-                    try {
-                        // use getMetric to prefer member fields if available
-                        vwap_snap = m.getMetric("vwap", 0.0);
-                        // SMA may be exposed as a metric in timeSeriesMetrics or metrics map
-                        sma_snap = m.getMetric("sma", 0.0);
-                    } catch (...) {}
-
-                        // compute microprice = (bidPrice * askVolume + askPrice * bidVolume) / (bidVolume + askVolume)
-                        double micro = 0.0;
-                        try {
-                            double bidP = m.bidPrice;
-                            double askP = m.askPrice;
-                            double bidV = (m.bidVolumesByLevel.empty() ? m.totalBidVolume : m.bidVolumesByLevel.front());
-                            double askV = (m.askVolumesByLevel.empty() ? m.totalAskVolume : m.askVolumesByLevel.front());
-                            double denom = bidV + askV;
-                            if (denom > 0.0) micro = (bidP * askV + askP * bidV) / denom;
-                        } catch (...) { micro = 0.0; }
-
-                        // choose reference in order: vwap, sma, micro, midPrice
-                        double refVal = 0.0;
-                        int refType = 0; // 0=mid,1=vwap,2=sma,3=micro
-                        if (vwap_snap > 0.0) { refVal = vwap_snap; refType = 1; }
-                        else if (sma_snap > 0.0) { refVal = sma_snap; refType = 2; }
-                        else if (micro > 0.0) { refVal = micro; refType = 3; }
-                        else { refVal = m.midPrice; refType = 0; }
-                        // from learning result we need to rescale some tiny-valued features so the
-                        // Bayesian model sees sensible dynamic ranges. Apply safely with bounds checks.
-                        // try {
-                        //     // Indices discovered from feature ordering: 21, 24, 25 are small-scale.
-                        //     if (features.size() > 21) features[21] *= 1000.0; // bring to ~0.1 scale
-                        //     if (features.size() > 24) features[24] *= 1000.0; // bring to ~1.0 scale
-                        //     if (features.size() > 25) features[25] *= 1000.0; // bring to ~1.0 scale
-
-                        //     // Alternative: if those features are ratios and highly skewed you may
-                        //     // prefer a log1p transform. Uncomment the following lines to use log1p
-                        //     // instead of linear scaling for index 21:
-                        //     // if (features.size() > 21 && features[21] > 0.0) features[21] = std::log1p(features[21]);
-                        // } catch (...) {
-                        //     // safe-guard: if anything odd happens, continue without scaling
-                        // }
-                        PendingTraining pt;
-                        pt.timestamp = m.timestamp;
-                        pt.features = features;
-                        pt.midPrice = m.midPrice;
-                        pt.vwap = vwap_snap;
-                        pt.sma = sma_snap;
-                        pt.referenceValue = refVal;
-                        pt.referenceType = refType;
-                        pt.exchangeId = m.exchangeId;
-                        pt.symbol = m.symbol;
-                        pendingTraining_.push_back(pt);
-
-                }
-
-                // Predict with Bayesian model and emit event if needed
-                if (bayesInitialized_.load()) {
-                    try {
-                        trading::perception::BayesSignal signal;
-                        // Get per-regime handles and perform weighted ensemble prediction
-                        auto handles = getBayesHandlesForSymbol(m.exchangeId, m.symbol);
-                        // default uniform probs
-                        std::array<double,3> probs{1.0/3,1.0/3,1.0/3};
-                        if (regime_subscriber_) {
-                            trading::strategy::core_analysis::RegimeInfo rinfo;
-                            if (regime_subscriber_->get(m.symbol.toString(), rinfo) && rinfo.probs.size() == 3) {
-                                for (int i=0;i<3;i++) probs[i] = rinfo.probs[i];
-                            }
-                        }
-                        // run predictions for each handle and combine
-                        trading::perception::BayesSignal combined{};
-                        for (int i=0;i<3;i++) {
-                            if (!handles[i]) continue;
-                            try {
-                                auto s = trading::perception::bayes_predict(handles[i], features);
-                                combined.probability += probs[i] * s.probability;
-                                combined.expected_value += probs[i] * s.expected_value;
-                                combined.position_size += probs[i] * s.position_size;
-                                combined.uncertainty += probs[i] * s.uncertainty;
-                                // direction: weighted by probability*direction
-                                double dir = 0.0;
-                                if (s.direction == core::Direction::BUY) dir = 1.0;
-                                else if (s.direction == core::Direction::SELL) dir = -1.0;
-                                combined.direction = (combined.direction==core::Direction::NEUTRAL) ? s.direction : combined.direction; // keep simple
-                                // Should_trade heuristic: weighted by probs
-                                combined.should_trade = combined.should_trade || s.should_trade;
-                            } catch (...) {}
-                        }
-                        signal = combined;
-                        if (signal.should_trade and signal.position_size > 0.0) {
-                            core::Direction dir = signal.direction;
-                            OrderBookMetrics mcopy = m;
-                            mcopy.metrics["bayes_probability"] = signal.probability;
-                            mcopy.metrics["bayes_expected_value"] = signal.expected_value;
-                            mcopy.metrics["bayes_position_size"] = signal.position_size;
-                            mcopy.metrics["bayes_uncertainty"] = signal.uncertainty;
-                            double event_strength = signal.position_size;
-                            createImbalanceEventForBayesModel(ImbalanceType::CUSTOM, event_strength,
-                                                            dir, mcopy, signal.probability, signal.uncertainty);
-                        }
-                    } catch (const std::exception &ex) {
-                        LOG_WARN("Bayes predict threw: {}", ex.what());
-                    } catch (...) {
-                        LOG_WARN("Bayes predict threw unknown");
-                    }
-                }
-
-                // Process pending training samples
                 try {
-                    std::vector<std::tuple<std::vector<double>, int, core::ExchangeId, core::Symbol>> toTrain;
-                    {
-                        std::lock_guard<std::mutex> pl(pendingTrainingMutex_);
-                        auto now = m.timestamp;
-                        while (!pendingTraining_.empty()) {
-                            const auto &pt = pendingTraining_.front();
-                            if (now - pt.timestamp >= labelingDelay_) {
-                                    // Use the stored reference at capture if available, otherwise re-evaluate current reference
-                                    double baseRef = pt.referenceValue;
-                                    double target = pt.referenceValue;
-                                    // try to read current counterpart for same reference type
-                                    try {
-                                        if (pt.referenceType == 1) { // vwap
-                                            double cur = m.getMetric("vwap", 0.0);
-                                            // If current VWAP missing, keep target == baseRef to avoid
-                                            // comparing different reference types (apples vs oranges)
-                                            if (cur > 0.0) target = cur; else target = baseRef;
-                                        } else if (pt.referenceType == 2) { // sma
-                                            double cur = m.getMetric("sma", 0.0);
-                                            if (cur > 0.0) target = cur; else target = baseRef;
-                                        } else if (pt.referenceType == 3) { // micro
-                                            double bidP = m.bidPrice; double askP = m.askPrice;
-                                            double bidV = (m.bidVolumesByLevel.empty() ? m.totalBidVolume : m.bidVolumesByLevel.front());
-                                            double askV = (m.askVolumesByLevel.empty() ? m.totalAskVolume : m.askVolumesByLevel.front());
-                                            double denom = bidV + askV;
-                                            if (denom > 0.0) target = (bidP * askV + askP * bidV) / denom; else target = baseRef;
-                                        } else { target = m.midPrice; }
-                                    } catch (...) { target = baseRef; }
+                    features.reserve(results.size());
+                    for (const auto &r : results) features.push_back(r.imbalanceValue);
+                } catch (...) {
+                    features.clear();
+                }
 
-                                    double priceChangeLogRet = 0.0;
-                                    if (baseRef > 0.0 && std::isfinite(baseRef) && std::isfinite(target) && target > 0.0) {
-                                        priceChangeLogRet = std::log(target) - std::log(baseRef);
-                                    }
-
-                                    // normalize by realized volatility
-                                    // clamp volatility to avoid extreme normalization during spikes
-                                    double vol = std::clamp(m.realizedVolatility, 0.001, 0.05); // 0.1% - 5%
-                                    double normalizedReturn = priceChangeLogRet / vol;
-
-                                    // absolute return (percent) for profitability check
-                                    double absReturn = std::abs(std::exp(priceChangeLogRet) - 1.0);
-
-                                    // fee / profitability filtering
-                                    const double MIN_ABS_RETURN_PCT = 0.0025;  // 0.25% minimum absolute move to consider
-                                    const double TRADING_FEE_PCT = 0.003;      // 0.3% round-trip
-                                    const double SAFETY_BUFFER = 0.0005;      // 0.05% slippage buffer
-                                    const double MIN_PROFITABLE_RETURN = TRADING_FEE_PCT + SAFETY_BUFFER;  // 0.25%
-
-                                    // Base normalized thresholds (z-score like)
-                                    const double BASE_SELL_N = -0.5;
-                                    const double BASE_BUY_N = 0.6;
-
-                                    // Adaptive sigma threshold: ensure normalized threshold corresponds to at least the min profitable return
-                                    double min_sigma_for_profitability = MIN_PROFITABLE_RETURN / vol;
-                                    double buy_threshold = std::max(BASE_BUY_N, min_sigma_for_profitability);
-                                    double sell_threshold = std::min(BASE_SELL_N, -min_sigma_for_profitability);
-
-                                    // Use adaptive sigma-only labeling (threshold already enforces profitability)
-                                    int label;
-                                    if (normalizedReturn > buy_threshold) {
-                                        label = 2; // BUY
-                                    } else if (normalizedReturn < sell_threshold) {
-                                        label = 0; // SELL
-                                    } else {
-                                        label = 1; // NEUTRAL
-                                    }
-                                toTrain.emplace_back(pt.features, label, pt.exchangeId, pt.symbol);
-                                pendingTraining_.pop_front();
-                            } else break;
-                        }
-                    }
-                    for (auto &t : toTrain) {
-                        try {
-                            const auto &features = std::get<0>(t);
-                            int label = std::get<1>(t);
-                            const auto &exch = std::get<2>(t);
-                            const auto &sym = std::get<3>(t);
-
-                            // Get the three per-regime handles
-                            auto handles = getBayesHandlesForSymbol(exch, sym);
-                            if (handles[0] == nullptr && handles[1] == nullptr && handles[2] == nullptr) continue;
-
-                            // Choose regime to update: argmax of regime_subscriber_ probs if available, otherwise default to regime 0
-                            int updateIdx = 0;
+                    try {
+                        // Rules-based prediction: use single rules_handle_ to score features.
+                        trading::perception::RulesSignal rsignal;
+                        if (rules_handle_) {
+                            rsignal = trading::perception::rules_predict(rules_handle_, features);
+                        } else {
+                            // fallback: try bayes handles if rules not available
+                            auto handles = getBayesHandlesForSymbol(m.exchangeId, m.symbol);
+                            std::array<double,3> probs{1.0/3,1.0/3,1.0/3};
                             if (regime_subscriber_) {
                                 trading::strategy::core_analysis::RegimeInfo rinfo;
-                                if (regime_subscriber_->get(sym.toString(), rinfo) && rinfo.probs.size() == 3) {
-                                    double best = -1.0; int bi = 0;
-                                    for (int i = 0; i < 3; ++i) {
-                                        if (rinfo.probs[i] > best) { best = rinfo.probs[i]; bi = i; }
-                                    }
-                                    updateIdx = bi;
+                                if (regime_subscriber_->get(m.symbol.toString(), rinfo) && rinfo.probs.size() == 3) {
+                                    for (int i=0;i<3;i++) probs[i] = rinfo.probs[i];
                                 }
                             }
-
-                            auto handle = handles[updateIdx];
-                            if (!handle) continue;
-                            trading::perception::bayes_update(handle, features, label);
-
-                            // Runtime persistence policy: increment update counter and
-                            // save model when thresholds / intervals are reached.
-                            try {
-                                // Update counters atomically with bayes mutex to avoid races
-                                std::lock_guard<std::mutex> lk(bayesMutex_);
-                                updatesSinceLastSave_++;
-                                auto now = std::chrono::steady_clock::now();
-                                bool minIntervalPassed = (now - lastSaveTime_) >= bayesMinSaveInterval_;
-                                bool intervalPassed = (bayesSaveInterval_.count() > 0) && ((now - lastSaveTime_) >= bayesSaveInterval_);
-                                bool enoughUpdates = (bayesSaveAfterUpdates_ > 0) && (updatesSinceLastSave_ >= bayesSaveAfterUpdates_);
-
-                                // Check model readiness if configured
-                                int modelUpdates = trading::perception::bayes_get_num_updates(handle);
-                                bool modelReady = (modelUpdates >= requireModelReadyUpdates_) || trading::perception::bayes_is_ready(handle);
-
-                                if (modelReady && minIntervalPassed && (enoughUpdates || intervalPassed)) {
-                                    try {
-                                        if (!bayesModelDirectory_.empty()) {
-                                            // Per-symbol persistence: save all three regime files
-                                            try {
-                                                std::string base = bayesModelDirectory_;
-                                                if (!base.empty() && base.back() != '/' && base.back() != '\\') base += '/';
-                                                std::string name;
-                                                // sanitize key
-                                                auto sanitize = [](const std::string &s){ std::string out; for (char c: s) { if (std::isalnum((unsigned char)c) || c=='_' || c=='-') out.push_back(c); else out.push_back('_'); } return out; };
-                                                name = sanitize(exch.toString()) + "_" + sanitize(sym.toString());
-                                                for (int i = 0; i < 3; ++i) {
-                                                    auto h = handles[i];
-                                                    if (!h) continue;
-                                                    std::string filename = base + name + "_regime" + std::to_string(i) + ".json";
-                                                    trading::perception::bayes_save(h, filename);
-                                                }
-                                            } catch (...) {}
-                                        } else if (!bayesModelPath_.empty() && bayes_handle_) {
-                                            // Legacy single-file mode: save shared handle
-                                            if (trading::perception::bayes_save(bayes_handle_, bayesModelPath_)) {
-                                                LOG_INFO("ImbalanceDetectionEngine: auto-saved bayes model to {}", bayesModelPath_);
-                                            } else {
-                                                LOG_WARN("ImbalanceDetectionEngine: auto-save failed for bayes model {}", bayesModelPath_);
-                                            }
-                                        }
-                                    } catch (const std::exception &ex) {
-                                        LOG_WARN("ImbalanceDetectionEngine: exception during auto-save: {}", ex.what());
-                                    } catch (...) {
-                                        LOG_WARN("ImbalanceDetectionEngine: unknown error during auto-save");
-                                    }
-
-                                    // Reset counters / timestamp
-                                    lastSaveTime_ = now;
-                                    updatesSinceLastSave_ = 0;
-                                }
-                            } catch (...) {
-                                // swallow any issues in save bookkeeping
+                            // aggregate bayes if present (backwards compat)
+                            trading::perception::BayesSignal combined{};
+                            for (int i=0;i<3;i++) {
+                                if (!handles[i]) continue;
+                                try {
+                                    auto s = trading::perception::bayes_predict(handles[i], features);
+                                    combined.probability += probs[i] * s.probability;
+                                    combined.expected_value += probs[i] * s.expected_value;
+                                    combined.position_size += probs[i] * s.position_size;
+                                    combined.uncertainty += probs[i] * s.uncertainty;
+                                    combined.direction = (combined.direction==core::Direction::NEUTRAL) ? s.direction : combined.direction;
+                                    combined.should_trade = combined.should_trade || s.should_trade;
+                                } catch (...) {}
                             }
-                        } catch (...) {}
+                            // map bayes combined into rules signal for downstream handling
+                            rsignal.probability = combined.probability;
+                            rsignal.expected_value = combined.expected_value;
+                            rsignal.position_size = combined.position_size;
+                            rsignal.uncertainty = combined.uncertainty;
+                            rsignal.should_trade = combined.should_trade;
+                            rsignal.direction = combined.direction;
+                        }
+
+                        if (rsignal.should_trade and rsignal.position_size > 0.0) {
+                            core::Direction dir = rsignal.direction;
+                            OrderBookMetrics mcopy = m;
+                            mcopy.metrics["rules_probability"] = rsignal.probability;
+                            mcopy.metrics["rules_expected_value"] = rsignal.expected_value;
+                            mcopy.metrics["rules_position_size"] = rsignal.position_size;
+                            mcopy.metrics["rules_uncertainty"] = rsignal.uncertainty;
+                            double event_strength = rsignal.position_size;
+                            // Reuse existing event creator; keep bayes fields empty if not used
+                            createImbalanceEventForRulesModel(ImbalanceType::CUSTOM, event_strength,
+                                                            dir, mcopy, rsignal.probability, rsignal.uncertainty);
+                        }
+                    } catch (const std::exception &ex) {
+                        LOG_WARN("Rules predict threw: {}", ex.what());
+                    } catch (...) {
+                        LOG_WARN("Rules predict threw unknown");
                     }
-                } catch (...) {}
+                
+
             }
         });
     }
@@ -877,6 +621,17 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
     } catch (...) {
         LOG_WARN("ImbalanceDetectionEngine: unknown error creating bayes adapter");
     }
+    // Ensure rules adapter handle exists for rules-based prediction
+    try {
+        std::lock_guard<std::mutex> lk(bayesMutex_);
+        if (!rules_handle_) {
+            rules_handle_ = trading::perception::rules_create();
+            LOG_DEBUG("ImbalanceDetectionEngine: created rules adapter handle");
+        }
+        if (!rulesModelPath_.empty()) {
+            try { trading::perception::rules_load(rules_handle_, rulesModelPath_); } catch(...) {}
+        }
+    } catch (...) {}
     
 
     // Start background detector worker so analyzeMetrics can offload work.
@@ -2838,24 +2593,6 @@ double ImbalanceDetectionEngine::calculateVariance(const std::vector<double>& da
              break;
          }
 
-        // VOLUME_IMBALANCE,              // bid vs ask volume
-        // PRICE_LEVEL_IMBALANCE,         // level count imbalance
-        // LIQUIDITY_REMOVAL,             // sudden removal
-        // ORDER_FLOW_IMBALANCE,          // order submissions imbalance
-        // LARGE_ORDER_APPEARANCE,        // big orders enter
-        // LARGE_ORDER_DISAPPEARANCE,     // big orders vanish
-        // PRICE_LEVEL_CONCENTRATION,     // volume concentrated at specific price
-        // BID_ASK_SPREAD_CHANGE,         // spread change
-        // MARKET_DEPTH_CHANGE,           // depth change
-        // LIQUIDITY_FLOW_IMBALANCE,      // liquidity flow imbalance
-        // ABNORMAL_SPREAD,               // spread abnormal
-        // LIQUIDITY_IMBALANCE,           // general liquidity imbalance
-        // TREND_CONTINUATION,            // price trend continuation
-        // TREND_REVERSAL,                // price trend reversal
-        // TRADE_IMBALANCE,               // aggressive trades imbalance
-        // CANCELLATION_IMBALANCE,        // one-sided cancellations
-        // PRICE_VOLATILITY_IMBALANCE,    // volatility surge
-        // HIDDEN_LIQUIDITY_IMBALANCE,    // iceberg / hidden liquidity
         case ImbalanceType::MARKET_DEPTH_CHANGE:
             strength = std::abs(metrics.metrics.at("depthChange"));
             break;
@@ -3036,19 +2773,19 @@ double ImbalanceDetectionEngine::calculateVariance(const std::vector<double>& da
     common::EventBus::getInstance().publish(events::ImbalanceDetectedEvent{event});
 }
 
-void ImbalanceDetectionEngine::createImbalanceEventForBayesModel(ImbalanceType type, double strength,
-    core::Direction direction, const OrderBookMetrics& metrics, double bayesProbability, double uncertainty) {
+void ImbalanceDetectionEngine::createImbalanceEventForRulesModel(ImbalanceType type, double strength,
+    core::Direction direction, const OrderBookMetrics& metrics, double rulesProbability, double uncertainty) {
     // Validate inputs
     if (strength < 0.0 || strength > 1.0) {
         LOG_WARN("Invalid strength value: {}", strength);
         return;
     }
-    
+
     if (direction == core::Direction::NEUTRAL) {
         LOG_WARN("Cannot create imbalance event with NEUTRAL direction");
         return;
     }
-    
+
     ImbalanceEvent event;
     event.type = type;
     event.strength = std::clamp(strength, 0.0, 1.0);
@@ -3056,42 +2793,40 @@ void ImbalanceDetectionEngine::createImbalanceEventForBayesModel(ImbalanceType t
     event.detectionTime = std::chrono::system_clock::now();
     event.exchangeId = metrics.exchangeId;
     event.symbol = metrics.symbol;
-    
-    // event.confidence = trading::core::valueToConfidenceLevel(calculateImbalanceConfidence(type, strength, metrics)); 
     event.eventId = generateEventId();
-    //convert probability to confidence level
-    // event.confidence = trading::core::valueToConfidenceLevel(bayesProbability);
-    auto confidence = static_cast<int>((bayesProbability * (1.0 - uncertainty)) * 100);
+
+    // Map rules probability -> confidence level (simple scaling by uncertainty)
+    auto confidence = static_cast<int>((rulesProbability * (1.0 - uncertainty)) * 100);
     event.confidence = trading::core::valueToConfidenceLevel(confidence);
+
     // Copy relevant metrics
     for (const auto& metric : metrics.metrics) {
         event.supportingMetrics[metric.first] = metric.second;
     }
-    //only print for every 100 events
+
+    // Logging heuristics
     static std::atomic<int> eventCounter{0};
     int count = ++eventCounter;
     if (count % 1000 == 0 || event.strength > 0.2) {
-        LOG_TRACE("createImbalanceEventForBayesModel: created ImbalanceEvent id={} type={} strength={} dir={}, confidence={} bayesProb={} for {}:{} on thread {}, count ={}",
+        LOG_TRACE("createImbalanceEventForRulesModel: created ImbalanceEvent id={} type={} strength={} dir={}, confidence={} rulesProb={} for {}:{} on thread {}, count ={}",
                 event.eventId,
                 static_cast<int>(event.type),
                 event.strength,
                 static_cast<int>(event.direction),
                 static_cast<int>(event.confidence),
-                bayesProbability,
+                rulesProbability,
                 event.exchangeId,
                 event.symbol,
                 std::this_thread::get_id(),
                 count);
     }
 
-    // Publish to EventBus / callbacks unless publishing is disabled for debugging
     if (!publishEvents_.load()) {
         LOG_DEBUG("ImbalanceDetectionEngine: publishing disabled, skipping ImbalanceEvent id={}", event.eventId);
         return;
     }
 
-    // Option 2: Event bus only (better for decoupling)
-    common::EventBus::getInstance().publish(events::ImbalanceDetectedEvent{event});    
+    common::EventBus::getInstance().publish(events::ImbalanceDetectedEvent{event});
 }
 
  void ImbalanceDetectionEngine::notifyImbalanceCallbacks(const ImbalanceEvent& event) {

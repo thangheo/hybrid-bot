@@ -15,11 +15,11 @@
 #include "strategy/pattern/analyzer.hpp"
 #include "strategy/types.hpp"
 
-// Forward-declare Bayesian model to avoid pulling heavy Eigen headers into this public header
-namespace trading { namespace perception { class BayesianTradingModel; } }
-
 #include "data_ingestion/orderbook/order_book.hpp"
 #include "perception/bayesian_trading_adapter.hpp"
+#include "perception/rules_adapter.hpp"
+// Forward-declare Bayesian model to avoid pulling heavy Eigen headers into this public header
+namespace trading { namespace perception { class BayesianTradingModel; } }
 #include "strategy/core_analysis/regime_subscriber.hpp"
 #include <vector>
 #include <memory>
@@ -166,7 +166,10 @@ private:
     // Configuration
     ImbalanceDetectionConfig config_;
     ThresholdSet thresholds_;
-    // Bayesian model to aggregate detector strengths into a single signal
+    // Perception/adaptation model to aggregate detector strengths into a single signal
+    // We now support a lightweight rules-based adapter in perception. The older
+    // Bayesian adapter remains for compatibility but the engine will use rules
+    // when configured to operate in rules-only mode.
     std::shared_ptr<trading::perception::BayesianTradingModel> bayes_model_;
     std::chrono::steady_clock::time_point lastSaveTime_;
     // lastMetrics_
@@ -217,9 +220,9 @@ private:
     // Imbalance evaluation
     double calculateImbalanceStrength(ImbalanceType type, const OrderBookMetrics& metrics);
     void createImbalanceEvent(ImbalanceType type, double strength, core::Direction direction, const OrderBookMetrics& metrics);
-    //create a specific imbalance event for custom bayes signal
-    void createImbalanceEventForBayesModel(ImbalanceType type, double strength ,core::Direction direction, 
-        const OrderBookMetrics& metrics, double bayesProbability, double uncertainty = 0.0);
+    // Create a specific imbalance event for custom rules signal
+    void createImbalanceEventForRulesModel(ImbalanceType type, double strength ,core::Direction direction, 
+        const OrderBookMetrics& metrics, double rulesProbability, double uncertainty = 0.0);
     // Detected imbalances
     // Callback management
     std::map<size_t, ImbalanceCallback> callbacks_;
@@ -249,8 +252,10 @@ public:
     std::atomic<bool> publishEvents_{true};
 
     // Bayesian perception model for fusing detector outputs
-    // Adapter handle to a perception bayesian model (opaque, implemented in perception)
+    // Adapter handle to a perception bayesian model (opaque) and rules adapter
+    // for rules-based fusion
     trading::perception::BayesHandle bayes_handle_ = nullptr;
+    trading::perception::RulesHandle rules_handle_ = nullptr;
     // Mutex to protect bayes_handle_ and related operations
     mutable std::mutex bayesMutex_;
     // True after initialize() successfully created/allocated the bayes handle
@@ -279,9 +284,12 @@ public:
     std::string bayesModelPath_;
     // If configured, use this directory to store per-symbol model files. Derived from bayesModelPath_
     std::string bayesModelDirectory_;
+    // Rules adapter persistence path (kept for parity; typically unused)
+    std::string rulesModelPath_;
     // Per-symbol Bayes handles (opaque handles from perception adapter)
     // Now support 3 handles per symbol (one per regime)
     std::unordered_map<std::string, std::array<trading::perception::BayesHandle, 3>> bayesHandles_;
+    // If desired, per-symbol rules handles could be added later; currently we use a single rules_handle_
     mutable std::mutex bayesHandlesMutex_;
 
     // Pointer to the global regime subscriber (optional). Set by caller (StrategyEngine)

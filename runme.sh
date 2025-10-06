@@ -1,27 +1,42 @@
 #!/bin/bash
-# this script will start cd to cpp-execution and run cmake .. and then make -j$(nproc)
+# setup: nohup ./start_all.sh > logs/master.log 2>&1 &
+
+# Create log directory
+mkdir -p logs
+
+echo "=== Build process started at $(date) ===" | tee -a logs/build.log
+
+# Step 1: Build cpp-execution
 cd cpp-execution || exit 1
 mkdir -p build
 cd build || exit 1
-cmake .. || exit 1
-make -j"$(nproc)" || exit 1
+
+cmake .. >> ../../logs/build.log 2>&1 || exit 1
+make -j"$(nproc)" >> ../../logs/build.log 2>&1 || exit 1
+
 cd ../.. || exit 1
-echo "Build completed successfully."
+echo "Build completed successfully at $(date)" | tee -a logs/build.log
 
-#then it would source venv/bin/activate and then cd to python-strategy and run python regime.py with nohup and & at the end
-source venv/bin/activate
+# Step 2: Activate venv
+echo "Activating virtual environment..." | tee -a logs/python.log
+source venv/bin/activate >> logs/python.log 2>&1
 
-nohup python3 python-strategy/regime_publisher.py --config config/trading_bot.yaml --interval 67 >/dev/null &
-
-# save pid of regime_publisher.py to pids.txt
+# Step 3: Run regime_publisher.py
+echo "Starting regime_publisher.py..." | tee -a logs/python.log
+nohup python3 python-strategy/regime_publisher.py \
+  --config config/trading_bot.yaml \
+  --interval 67 >> logs/regime_publisher.log 2>&1 &
 echo $! >> pids.txt
-# python3 python-strategy/regime.py --mode train --config config/trading_bot.yaml &
-echo "regime.py started successfully."
-# sleep for 30s to let regime.py start and load model files if any
+echo "regime_publisher.py started with PID $!" | tee -a logs/python.log
+
+# Step 4: Wait before launching semi_hft
+echo "Sleeping 120s before launching semi_hft..." | tee -a logs/master.log
 sleep 120
-nohup cpp-execution/bin/semi_hft &
+
+# Step 5: Run semi_hft
+echo "Starting semi_hft..." | tee -a logs/master.log
+nohup cpp-execution/bin/semi_hft >> logs/semi_hft.log 2>&1 &
 echo $! >> pids.txt
-# sleep 3600
-# cd ../ || exit 1
-echo "All processes started successfully."
-# this script should also run in background with nohup so that the user can run and go to sleep
+echo "semi_hft started with PID $!" | tee -a logs/master.log
+
+echo "=== All processes started successfully at $(date) ===" | tee -a logs/master.log
