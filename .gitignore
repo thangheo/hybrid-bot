@@ -31,3 +31,4 @@ models/*
 **/build_*
 build/
 *.pkl
+*.png
