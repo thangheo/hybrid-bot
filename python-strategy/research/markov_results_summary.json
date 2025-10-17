@@ -1,0 +1,48 @@
+{
+  "total_candles": 2000,
+  "total_states": 1995,
+  "unique_states": 64,
+  "total_transitions": 1994,
+  "top_10_states": [
+    {
+      "state": "010101",
+      "count": 59
+    },
+    {
+      "state": "101010",
+      "count": 50
+    },
+    {
+      "state": "010110",
+      "count": 49
+    },
+    {
+      "state": "101101",
+      "count": 49
+    },
+    {
+      "state": "011011",
+      "count": 47
+    },
+    {
+      "state": "101011",
+      "count": 46
+    },
+    {
+      "state": "101100",
+      "count": 43
+    },
+    {
+      "state": "011001",
+      "count": 43
+    },
+    {
+      "state": "110110",
+      "count": 43
+    },
+    {
+      "state": "110010",
+      "count": 42
+    }
+  ]
+}
