@@ -1,7 +1,93 @@
 # ================================================================
 # Merged Markov Strategy with SQLite Persistence - Single File
 # ================================================================
+'''
+P(Rᵢ | X_t) = ∑_f P(Rᵢ | f₁, f₂, ..., fₙ) · P(f₁, f₂, ..., fₙ | X_t)
+```
 
+Where:
+- X_t = observed market data at time t
+- P(Rᵢ | f) = regime likelihood given factor configuration
+- P(f | X_t) = posterior factor distribution (inferred from data)
+
+### 3. Transition Dynamics (Impermanence)
+
+Regimes transition according to how conditions evolve. Use a **non-stationary Hidden Markov Model**:
+```
+P(Rₜ | Rₜ₋₁, Fₜ) = π(Rₜ₋₁, Rₜ) · ψ(Fₜ)
+```
+
+Where:
+- π(Rₜ₋₁, Rₜ) = base transition probability
+- ψ(Fₜ) = factor modulation function (allowing non-stationarity)
+
+**Bayesian update** for factor beliefs:
+```
+P(Fₜ | X₁:ₜ) ∝ P(Xₜ | Fₜ) · P(Fₜ | X₁:ₜ₋₁)
+```
+
+### 4. Quantum-Inspired Superposition
+
+Allow **overlapping regimes** via amplitude formulation:
+```
+|Ψ(t)⟩ = α₁|R₁⟩ + α₂|R₂⟩ + α₃|R₃⟩ + α₄|R₄⟩ + α₅|R₅⟩
+
+where ∑|αᵢ|² = 1
+```
+
+Regime probabilities: P(Rᵢ) = |αᵢ|²
+
+**Interference term** between factors (constructive/destructive co-arising):
+```
+I(fᵢ, fⱼ) = 2·Re(αᵢ·αⱼ*·exp(iφᵢⱼ))
+```
+
+Where φᵢⱼ encodes phase relationship (e.g., liquidity and volatility can reinforce or cancel).
+
+### 5. Entropy as "Emptiness"
+
+Measure regime uncertainty using **Shannon entropy**:
+```
+H(R | X_t) = -∑ᵢ P(Rᵢ | X_t) · log P(Rᵢ | X_t)
+```
+
+High entropy → **Emptiness regime** (R₅): no dominant conditions, transitional phase.
+
+---
+
+## Model Architecture
+
+### Bayesian Network Approach
+```
+Factor Layer:        [f₁] [f₂] [f₃] [f₄] [f₅]
+                       ↓    ↓    ↓    ↓    ↓
+                        ╲   |   /    /   ╱
+                         ╲  |  /   /   ╱
+Latent Regime:             [R_t]
+                              ↓
+Observable:                 [X_t]
+```
+
+**Conditional probability tables** (CPTs):
+- P(Rₜ | f₁, f₂, ..., fₙ, Rₜ₋₁)
+- P(X_t | Rₜ) = emission likelihood
+
+### Hidden Markov Model Extension
+
+**State space**: S = {R₁, R₂, R₃, R₄, R₅}
+
+**Observation likelihood**: 
+```
+P(Xₜ | Rₜ = i) = 𝒩(μᵢ(Fₜ), Σᵢ(Fₜ))
+```
+
+Key modification: **factor-dependent parameters** μᵢ(Fₜ), Σᵢ(Fₜ) allow regime characteristics to shift based on conditions.
+
+**Forward-backward algorithm** with factor integration:
+```
+α_t(i) = P(X₁:ₜ, Rₜ = i | Fₜ)
+β_t(i) = P(Xₜ₊₁:T | Rₜ = i, Fₜ)
+'''
 import sqlite3
 import numpy as np
 import pandas as pd
@@ -590,43 +676,7 @@ class MarkovETFStrategyPersistent(BaseStrategy):
             }
         }
      
-    def calculate_indicators_old(self, data: pd.DataFrame) -> Dict[str, pd.Series]:
-        """Calculate indicators with enhanced support"""
-        
-        # Calculate base indicators (keep existing functionality)
-        indicators = {}
-        close = data['close']
-        
-        # Basic indicators (unchanged)
-        indicators['ema_10'] = TechnicalIndicators.ema(close, 10)
-        indicators['ema_30'] = TechnicalIndicators.ema(close, 30)
-        indicators['zscore_20'] = TechnicalIndicators.zscore(close, 20)
-        indicators['rsi_14'] = TechnicalIndicators.rsi(close, 14)
-        
-        # Bollinger Bands
-        bb = TechnicalIndicators.bollinger_bands(close, 20, 2.0)
-        indicators.update(bb)
-        
-        # Volume and trend
-        indicators['volume_sma'] = data['volume'].rolling(20).mean()
-        indicators['volume_ratio'] = data['volume'] / indicators['volume_sma']
-        indicators['trend_strength'] = (indicators['ema_10'] - indicators['ema_30']) / indicators['ema_30']
-        
-        # Volatility
-        returns = close.pct_change()
-        indicators['volatility'] = returns.rolling(20).std()
-        
-        # Enhanced indicators integration
-        if self.use_enhanced_indicators and self.enhanced_processor:
-            try:
-                enhanced_indicators = self.enhanced_processor.calculate_comprehensive_indicators(data)
-                indicators.update(enhanced_indicators)
-                logger.debug(f"Enhanced indicators integrated: {len(enhanced_indicators)} total indicators")
-            except Exception as e:
-                logger.error(f"Enhanced indicator processing failed: {e}")
-                # Continue with base indicators only
-        
-        return indicators
+     
     def calculate_indicators(self, data: pd.DataFrame) -> Dict[str, pd.Series]:
         """Calculate indicators with enhanced support"""
         

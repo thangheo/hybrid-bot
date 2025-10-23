@@ -16,7 +16,7 @@ signal_decay:
 
 # 🚀 ETF ENHANCEMENT CONFIGURATION
 etf_enhancement:
-  enabled: true
+  enabled: false
   alphavantage_api_key: ${ALPHAVANTAGE_API_KEY}
   daily_api_limit: 100000      # Premium: practically unlimited
   minute_api_limit: 75         # Premium: 75 calls/minute
