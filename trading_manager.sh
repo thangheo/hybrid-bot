@@ -7,7 +7,7 @@
 CPP_BUILD_DIR="cpp-execution/build"
 CPP_EXEC_PATH="cpp-execution/bin/semi_hft"
 PYTHON_SCRIPT_PATH="python-strategy/regime.py"
-LOG_DIR="logs"
+LOG_DIR=`pwd`/logs
 CPP_LOG_FILE="$LOG_DIR/semi_hft.log"
 PYTHON_LOG_FILE="$LOG_DIR/python_strategy.log"
 BUILD_LOG_FILE="$LOG_DIR/cpp_build.log"
@@ -166,7 +166,7 @@ build_cpp() {
         print_status "$BLUE" "Changed to build directory: $(pwd)"
         
         # Run make and capture output
-        if make -j7 > "../../$BUILD_LOG_FILE" 2>&1; then
+        if make -j7 > "$BUILD_LOG_FILE" 2>&1; then
             print_status "$GREEN" "C++ build completed successfully"
             # Return to original directory
             cd "$current_dir"
