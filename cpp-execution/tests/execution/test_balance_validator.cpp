@@ -7,38 +7,59 @@
 #include <map>
 
 using namespace trading::execution;
-using namespace trading::models;
+using namespace trading::execution::models;
 using namespace trading::core;
 
 // Mock API client for testing
 class MockApiClient : public ExchangeApiClient {
 public:
     std::map<std::string, double> mockBalances;
-    
+
     std::future<std::map<std::string, double>> getAccountBalances() override {
         return std::async(std::launch::deferred, [this]() {
             return mockBalances;
         });
     }
-    
-    // Other required methods (not used in balance validation)
-    std::future<ExecutionReport> placeOrder(const Order& order) override {
-        return std::async(std::launch::deferred, []() { return ExecutionReport{}; });
+
+    // Minimal implementations for abstract methods so this mock is instantiable
+    std::future<models::ExecutionReport> placeOrder(const models::Order& order) override {
+        return std::async(std::launch::deferred, []() { return models::ExecutionReport{}; });
     }
-    
-    std::future<ExecutionReport> cancelOrder(const std::string& orderId, const Symbol& symbol) override {
-        return std::async(std::launch::deferred, []() { return ExecutionReport{}; });
+
+    std::future<models::ExecutionReport> cancelOrder(const std::string& orderId, const Symbol& symbol) override {
+        return std::async(std::launch::deferred, []() { return models::ExecutionReport{}; });
     }
-    
-    std::future<ExecutionReport> getOrderStatus(const std::string& orderId, const Symbol& symbol) override {
-        return std::async(std::launch::deferred, []() { return ExecutionReport{}; });
+
+    std::future<models::ExecutionReport> getOrderStatus(const std::string& orderId, const Symbol& symbol) override {
+        return std::async(std::launch::deferred, []() { return models::ExecutionReport{}; });
     }
-    
+
     std::future<double> getCurrentPrice(const Symbol& symbol) override {
         return std::async(std::launch::deferred, []() { return 50000.0; });
     }
-    
+
     bool isConnected() const override { return true; }
+    void connect() override {}
+    void disconnect() override {}
+        std::string getExchangeName() const override {
+            return "mock";
+        }
+        std::vector<std::string> getSupportedSymbols() const override {
+            return {};
+        }
+        std::string getHealthStatus() override {
+            return "ok";
+        }
+        std::unordered_map<std::string, std::string> getExchangeStatuses() const override {
+            return {};
+        }
+        int getRemainingRequests(ExchangeRequestType /*requestType*/) const override {
+            return 1000;
+        }
+        std::chrono::milliseconds getResetTimeForRequestType(ExchangeRequestType /*requestType*/) const override {
+            return std::chrono::milliseconds(0);
+        }
+    bool checkConnection() const override { return true; }
 };
 
 class BalanceValidatorTest : public ::testing::Test {
@@ -55,7 +76,7 @@ protected:
         mockClient = std::make_shared<MockApiClient>();
         validator->setApiClient(mockClient);
         
-        exchangeId = ExchangeId("binance");
+    exchangeId = ExchangeId::fromString("BINANCE");
     }
 
     std::unique_ptr<BalanceValidator> validator;
