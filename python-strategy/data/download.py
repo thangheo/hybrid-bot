@@ -7,6 +7,7 @@ import pandas as pd
 import requests
 from datetime import datetime, timedelta
 import time
+import ccxt
 
 def download_binance_1m_data(symbol='BTCUSDT', days=60):
     """
@@ -117,6 +118,109 @@ def download_binance_1m_data(symbol='BTCUSDT', days=60):
     
     return df
 
+
+def download_crypto_data(symbol="BTC/USDT", timeframe="4h", length=5000, exchange_name="binance"):
+    """
+    Tải dữ liệu OHLCV từ sàn crypto
+    
+    Args:
+        symbol: Cặp giao dịch (vd: BTC/USDT)
+        timeframe: Khung thời gian (vd: 1h, 5m, 1d)
+        length: Số nến cần lấy
+        exchange_name: Tên sàn giao dịch
+    
+    Returns:
+        DataFrame chứa dữ liệu OHLCV
+    """
+    # if symbol has format like 'BTCUSDT', convert to 'BTC/USDT'
+    if '/' not in symbol and len(symbol) > 3:
+        symbol = symbol[:-4] + '/' + symbol[-4:]
+    # Tạo đối tượng sàn
+    exchange_class = getattr(ccxt, exchange_name)
+    exchange = exchange_class({
+        'enableRateLimit': True
+    })
+    
+    # Kiểm tra xem sàn có hỗ trợ symbol không
+    markets = exchange.load_markets()
+    if symbol not in markets:
+        raise ValueError(f"{symbol} không có trên {exchange_name}")
+    
+    # Lấy giới hạn tối đa mỗi lần fetch của sàn
+    max_limit = 1000  # Hầu hết các sàn giới hạn 1000 candles/request
+    all_data = []
+    
+    print(f"Đang tải {length} nến {timeframe} cho {symbol}...")
+    
+    # Tính thời gian bắt đầu cần lấy (lấy từ quá khứ đến hiện tại)
+    timeframe_ms = exchange.parse_timeframe(timeframe) * 1000
+    now = exchange.milliseconds()
+    since = now - (length * timeframe_ms)
+    
+    # Tính số lần cần fetch
+    num_fetches = (length + max_limit - 1) // max_limit
+    
+    for i in range(num_fetches):
+        # Tính số nến cần lấy trong lần này
+        remaining = length - len(all_data)
+        fetch_limit = min(remaining, max_limit)
+        
+        try:
+            # Tải dữ liệu OHLCV từ thời điểm 'since'
+            data = exchange.fetch_ohlcv(
+                symbol, 
+                timeframe=timeframe, 
+                since=since, 
+                limit=fetch_limit
+            )
+            
+            if not data:
+                print("⚠️ Không còn dữ liệu để tải")
+                break
+            
+            # Thêm dữ liệu vào danh sách
+            all_data.extend(data)
+            
+            # Cập nhật 'since' để lấy dữ liệu tiếp theo
+            # Lấy timestamp của nến cuối cùng + 1 khung thời gian
+            since = data[-1][0] + timeframe_ms
+            
+            print(f"Đã tải {len(all_data)}/{length} nến...")
+            
+            # Nếu đã đủ số lượng cần thiết
+            if len(all_data) >= length:
+                break
+            
+            # Nếu số lượng dữ liệu trả về ít hơn limit, nghĩa là đã hết dữ liệu
+            if len(data) < fetch_limit:
+                print("⚠️ Đã hết dữ liệu lịch sử")
+                break
+            
+            # Tránh rate limit
+            time.sleep(exchange.rateLimit / 1000)
+            
+        except Exception as e:
+            print(f"❌ Lỗi khi tải dữ liệu: {e}")
+            break
+    
+    if not all_data:
+        raise ValueError("Không thể tải được dữ liệu nào")
+    
+    # Đưa vào DataFrame
+    df = pd.DataFrame(all_data, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+    df['datetime'] = pd.to_datetime(df['timestamp'], unit='ms')
+    
+    # Loại bỏ duplicate và sắp xếp theo thời gian
+    df = df.drop_duplicates(subset=['timestamp']).sort_values('timestamp').reset_index(drop=True)
+    
+    # Chỉ lấy đúng số lượng nến cuối cùng (mới nhất) nếu có dư
+    if len(df) > length:
+        df = df.tail(length).reset_index(drop=True)
+    
+    # Đưa cột datetime lên đầu
+    df = df[['datetime', 'timestamp', 'open', 'high', 'low', 'close', 'volume']]
+    
+    return df
 
 if __name__ == "__main__":
     # Download data

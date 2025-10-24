@@ -110,7 +110,7 @@ std::array<trading::perception::BayesHandle,3> trading::strategy::ImbalanceDetec
     }
 
     // Create three handles
-    for (int i = 0; i < 3; ++i) {
+    for (int i = 0; i < NUMBER_OF_REGIMES; ++i) {
         try {
             out[i] = trading::perception::bayes_create();
         } catch (...) {
@@ -136,7 +136,7 @@ std::array<trading::perception::BayesHandle,3> trading::strategy::ImbalanceDetec
                 return out;
             };
             std::string name = sanitize(exch.toString()) + "_" + sanitize(sym.toString());
-            for (int i = 0; i < 3; ++i) {
+            for (int i = 0; i < NUMBER_OF_REGIMES; ++i) {
                 std::ostringstream fn;
                 fn << bayesModelDirectory_ << "/" << name << "_regime" << i << ".json";
                 std::string path = fn.str();
@@ -346,7 +346,7 @@ ImbalanceDetectionEngine::~ImbalanceDetectionEngine() {
                     try {
                         if (!bayesModelDirectory_.empty()) {
                             // Save three files per symbol, one per regime index
-                            for (int i = 0; i < 3; ++i) {
+                            for (int i = 0; i < NUMBER_OF_REGIMES; ++i) {
                                 auto h = harray[i];
                                 if (!h) continue;
                                 std::string filename = bayesModelDirectory_;
@@ -360,7 +360,7 @@ ImbalanceDetectionEngine::~ImbalanceDetectionEngine() {
                         LOG_WARN("ImbalanceDetectionEngine: failed to save per-symbol bayes model for {}", symKey);
                     }
                     // destroy handles
-                    for (int i = 0; i < 3; ++i) {
+                    for (int i = 0; i < NUMBER_OF_REGIMES; ++i) {
                         try { if (harray[i]) trading::perception::bayes_destroy(harray[i]); } catch(...) {}
                     }
                 }
@@ -548,16 +548,16 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                         // Get per-regime handles and perform weighted ensemble prediction
                         auto handles = getBayesHandlesForSymbol(m.exchangeId, m.symbol);
                         // default uniform probs
-                        std::array<double,3> probs{1.0/3,1.0/3,1.0/3};
+                        std::array<double, NUMBER_OF_REGIMES> probs{1.0/NUMBER_OF_REGIMES, 1.0/NUMBER_OF_REGIMES, 1.0/NUMBER_OF_REGIMES};
                         if (regime_subscriber_) {
                             trading::strategy::core_analysis::RegimeInfo rinfo;
-                            if (regime_subscriber_->get(m.symbol.toString(), rinfo) && rinfo.probs.size() == 3) {
-                                for (int i=0;i<3;i++) probs[i] = rinfo.probs[i];
+                            if (regime_subscriber_->get(m.symbol.toString(), rinfo) && rinfo.probs.size() == NUMBER_OF_REGIMES) {
+                                for (int i=0;i<NUMBER_OF_REGIMES;i++) probs[i] = rinfo.probs[i];
                             }
                         }
                         // run predictions for each handle and combine
                         trading::perception::BayesSignal combined{};
-                        for (int i=0;i<3;i++) {
+                        for (int i=0;i<NUMBER_OF_REGIMES;i++) {
                             if (!handles[i]) continue;
                             try {
                                 auto s = trading::perception::bayes_predict(handles[i], features);
@@ -681,9 +681,9 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                             int updateIdx = 0;
                             if (regime_subscriber_) {
                                 trading::strategy::core_analysis::RegimeInfo rinfo;
-                                if (regime_subscriber_->get(sym.toString(), rinfo) && rinfo.probs.size() == 3) {
+                                if (regime_subscriber_->get(sym.toString(), rinfo) && rinfo.probs.size() == NUMBER_OF_REGIMES) {
                                     double best = -1.0; int bi = 0;
-                                    for (int i = 0; i < 3; ++i) {
+                                    for (int i = 0; i < NUMBER_OF_REGIMES; ++i) {
                                         if (rinfo.probs[i] > best) { best = rinfo.probs[i]; bi = i; }
                                     }
                                     updateIdx = bi;
@@ -720,7 +720,7 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                                                 // sanitize key
                                                 auto sanitize = [](const std::string &s){ std::string out; for (char c: s) { if (std::isalnum((unsigned char)c) || c=='_' || c=='-') out.push_back(c); else out.push_back('_'); } return out; };
                                                 name = sanitize(exch.toString()) + "_" + sanitize(sym.toString());
-                                                for (int i = 0; i < 3; ++i) {
+                                                for (int i = 0; i < NUMBER_OF_REGIMES; ++i) {
                                                     auto h = handles[i];
                                                     if (!h) continue;
                                                     std::string filename = base + name + "_regime" + std::to_string(i) + ".json";

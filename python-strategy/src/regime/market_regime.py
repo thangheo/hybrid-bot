@@ -271,6 +271,29 @@ class Regime:
         
         return regime, probs
 
+    # function to visualize regimes (optional)
+    def plot_regimes(self, features, df):
+        import matplotlib.pyplot as plt
+        import seaborn as sns
+
+        # Align dataframes
+        features_aligned = features.reindex(df.index)
+
+        plt.figure(figsize=(15, 8))
+        plt.plot(df.index, df['close'], label='Close Price', color='black')
+
+        # Plot regimes
+        for state in sorted(features['regime'].unique()):
+            mask = features_aligned['regime'] == state
+            plt.scatter(features_aligned.index[mask], df['close'][mask], label=f'Regime {state}', s=10)
+        # save plot
+
+        plt.title('Market Regimes')
+        plt.xlabel('Time')
+        plt.ylabel('Price')
+        plt.legend()
+        plt.savefig('market_regimes' + datetime.now().strftime('%Y%m%d_%H%M%S') + '.png')
+        plt.show()
 
 if __name__ == "__main__":
     try:
@@ -278,13 +301,13 @@ if __name__ == "__main__":
         print(f"Starting regime detection for {symbol}")
         
         regime = Regime(n_states=3)
-        model, scaler, features, feature_cols = regime.train_regime_hmm(symbol, n_states=3)
+        model, scaler, features, feature_cols = regime.train_regime_hmm(symbol, n_states=4)
         
         print("\n" + "="*50)
         print("REGIME ANALYSIS")
         print("="*50)
         
-        df = regime.download_crypto_data(symbol, days=60)
+        df = regime.download_crypto_data(symbol, days=10)
         regime.analyze_regimes(features, df)
         
         print("\n" + "="*50)
@@ -298,6 +321,7 @@ if __name__ == "__main__":
             print(f"  Regime {i}: {prob*100:.2f}%")
         
         print("\n✓ Success!")
+        regime.plot_regimes(features, df)
         
     except Exception as e:
         print(f"\n✗ Error: {str(e)}")

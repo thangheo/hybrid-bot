@@ -56,7 +56,7 @@ def symbol_filename(symbol):
     return symbol.replace('/', '_').replace('-', '_')
 
 
-def download_binance_data(regime_obj, symbol, days=60):
+def download_binance_data(regime_obj, symbol, days=1500):
     """Download data từ Binance"""
     print(f"  Downloading {symbol} from Binance ({days} days)...")
     try:
@@ -280,7 +280,7 @@ def plot_regimes(symbol, df, features, outpath):
         print(f"  ! Plot failed: {e}")
 
 
-def train_symbol(symbol, regime_obj, data_dir, n_states=3, days=60, source='binance', save_plot=True,download =False):
+def train_symbol(symbol, regime_obj, data_dir, n_states=4, days=1500, source='binance', save_plot=True,download =False):
     """Train 1 symbol"""
     print(f"\n{'='*60}")
     print(f"Training: {symbol}")
@@ -327,7 +327,7 @@ def train_symbol(symbol, regime_obj, data_dir, n_states=3, days=60, source='bina
     # Plot (optional)
     if save_plot:
         plot_file = data_dir / f"regimes_{symbol_filename(symbol)}.png"
-        plot_regimes(symbol, df_final, features, plot_file)
+        # plot_regimes(symbol, df_final, features, plot_file)
     
     print(f"✓ SUCCESS: {symbol}\n")
     return True
