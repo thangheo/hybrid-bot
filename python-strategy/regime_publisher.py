@@ -21,6 +21,7 @@ import requests
 import threading
 import os
 import tempfile
+from typing import Any, Optional
 
 # Import Regime class để dùng compute_regime_features và download_crypto_data
 HERE = Path(__file__).resolve().parent
@@ -32,6 +33,25 @@ if str(HERE) not in sys.path:
     sys.path.insert(0, str(HERE))
 
 from src.regime.market_regime import Regime
+
+
+def format_probs(probs, decimals: int = 4, n_states: int | None = None):
+    """Round probabilities to `decimals` and pad/truncate to `n_states` if provided.
+
+    Args:
+        probs: iterable of numeric probabilities
+        decimals: number of decimal places to round
+        n_states: if provided, ensure returned list has this length (pad with 0.0 or truncate)
+    Returns:
+        list[float]
+    """
+    lst = [round(float(p), decimals) for p in probs]
+    if n_states is not None:
+        if len(lst) < n_states:
+            lst += [0.0] * (n_states - len(lst))
+        elif len(lst) > n_states:
+            lst = lst[:n_states]
+    return lst
 
 
 def load_config(config_path=None):
@@ -272,7 +292,7 @@ def predict_regime(regime_obj, model_entry, df):
     return regime, probs
 
 
-def publish_regimes(symbols, data_dir, socket, interval=600):
+def publish_regimes(symbols, data_dir, socket, interval=600, probs_decimals: int = 4):
     """
     Main loop: publish regimes mỗi interval giây
     """
@@ -309,7 +329,7 @@ def publish_regimes(symbols, data_dir, socket, interval=600):
                 key = symbol_filename(symbol)
                 model_entry = models.get(key)
                 
-                entry = {
+                entry: dict[str, Any] = {
                     'regime': None,
                     'probs': None,
                     'last_ts': None
@@ -337,7 +357,8 @@ def publish_regimes(symbols, data_dir, socket, interval=600):
                     regime, probs = predict_regime(regime_obj, model_entry, df)
                     
                     entry['regime'] = regime
-                    entry['probs'] = [round(p, 3) for p in probs]
+                    n_states = getattr(model_entry.get('model'), 'n_components', None)
+                    entry['probs'] = format_probs(probs, decimals=probs_decimals, n_states=n_states)
                     entry['last_ts'] = df.index[-1].isoformat()
                     
                     print(f"{symbol:12} regime={regime} probs={entry['probs']}")
@@ -373,6 +394,7 @@ def publish_regimes(symbols, data_dir, socket, interval=600):
 def main():
     parser = argparse.ArgumentParser(description='Regime Publisher - chỉ publish, không train')
     parser.add_argument('--interval', type=int, default=60, help='Interval giữa các lần publish (giây)')
+    parser.add_argument('--probs-decimals', type=int, default=4, help='Số lượng chữ số thập phân khi format probabilities')
     parser.add_argument('--config', type=str, default=None, help='Path to trading_bot.yaml')
     args = parser.parse_args()
     
@@ -417,7 +439,7 @@ def main():
     socket.bind("tcp://*:5555")
     
     try:
-        publish_regimes(symbols, data_dir, socket, interval=args.interval)
+        publish_regimes(symbols, data_dir, socket, interval=args.interval, probs_decimals=args.probs_decimals)
     finally:
         socket.close()
         context.term()

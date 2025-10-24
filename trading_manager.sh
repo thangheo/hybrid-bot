@@ -6,7 +6,7 @@
 # Configuration
 CPP_BUILD_DIR="cpp-execution/build"
 CPP_EXEC_PATH="cpp-execution/bin/semi_hft"
-PYTHON_SCRIPT_PATH="python-strategy/regime.py"
+PYTHON_SCRIPT_PATH="python-strategy/regime_publisher.py"
 LOG_DIR=`pwd`/logs
 CPP_LOG_FILE="$LOG_DIR/semi_hft.log"
 PYTHON_LOG_FILE="$LOG_DIR/python_strategy.log"
@@ -244,9 +244,10 @@ start_python() {
     
     # Start Python process with nohup and config parameter
     cd "$(dirname "$PYTHON_SCRIPT_PATH")" || exit 1
-    # nohup python3 "$(basename "$PYTHON_SCRIPT_PATH")" --config "../$config_path" > "$PYTHON_LOG_FILE" 2>&1 &
-    #  python3 regime.py --start-trainer --trainer-interval-days 66 --data-source binance
-    nohup python3 "$(basename "$PYTHON_SCRIPT_PATH")" --start-trainer --trainer-interval-days 30 --data-source binance > "$PYTHON_LOG_FILE" 2>&1 &
+    nohup python3 "$(basename "$PYTHON_SCRIPT_PATH")" --config "../$config_path" > "$PYTHON_LOG_FILE" 2>&1 &
+    # nohup python3 "$(basename "$PYTHON_SCRIPT_PATH")" --start-trainer --n-states 4 --trainer-interval-days 30 --data-source binance > "$PYTHON_LOG_FILE" 2>&1 &
+    # should run publisher only
+    # nohup python3 "$(basename "$PYTHON_SCRIPT_PATH")" --config "../$config
     local python_pid=$!
     
     # Save PID (adjust path since we changed directory)
