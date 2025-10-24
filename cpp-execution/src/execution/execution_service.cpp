@@ -15,6 +15,7 @@
 #include <cctype>
  #include <iostream>
 #include "execution/preflight/preflight.hpp"
+#include "execution/balance_validator_config.hpp"
 #include "risk/risk_config.hpp"
 #include <mutex>
 
@@ -23,7 +24,7 @@
  namespace execution {
 
  ExecutionService::ExecutionService(
-    std::shared_ptr<common::ExchangeGateway> exchangeGateway,
+    std::shared_ptr<execution::ExchangeGateway> exchangeGateway,
     std::shared_ptr<OrderGenerator> order_generator,
     std::shared_ptr<SmartOrderRouter> smart_order_router,
     std::shared_ptr<OrderTypeSelector> order_type_selector,
@@ -44,6 +45,13 @@
     }
     // Get the underlying API client manager from the gateway for compatibility
     api_client_manager_ = exchangeGateway_->getApiClientManager();
+    
+    // Initialize balance validator with configuration from file
+    BalanceValidatorConfig balanceConfig = BalanceValidatorConfigLoader::loadFromFile("config/balance_validation.json");
+    balanceValidator_ = std::make_unique<BalanceValidator>(balanceConfig);
+    
+    // Set exchange gateway for balance validation
+    balanceValidator_->setExchangeGateway(exchangeGateway_);
 }
 //old one-> should not use
  ExecutionService::ExecutionService(
@@ -63,6 +71,16 @@
        api_client_manager_(std::move(api_client_manager)),
        is_initialized_(false),
        is_running_(false) {
+     
+     // Initialize balance validator with configuration from file
+     BalanceValidatorConfig balanceConfig = BalanceValidatorConfigLoader::loadFromFile("config/balance_validation.json");
+     balanceValidator_ = std::make_unique<BalanceValidator>(balanceConfig);
+     
+     // Set API client if available
+     if (api_client_manager_) {
+         // We'll need to set this per exchange - for now, use the first available client
+         // This will be improved when we integrate with the gateway
+     }
  }
  
  ExecutionService::~ExecutionService() {
@@ -347,218 +365,83 @@ ExecutionResponse ExecutionService::executeSignal(const TradingSignal& signal) {
     static double cachedMinNotional = 0.0;
     static std::mutex cachedMinNotionalMutex;
 
-    // === Execution preflight check ===
+    // === Professional Balance Validation ===
     try {
-        // Fetch account balances from gateway or api_client
-        std::unordered_map<std::string, double> balances_map;
-        if (exchangeGateway_) {
-            auto fut = exchangeGateway_->getAccountBalances(exchangeId, false);
-            balances_map = fut.get();
-        } else if (api_client) {
-            auto fut = api_client->getAccountBalances();
-            auto m = fut.get();
-            balances_map = std::unordered_map<std::string, double>(m.begin(), m.end());
-        }
-
-        // Map to stub AccountBalances (quote: USDT, base: asset)
-        trading::execution::AccountBalances ab;
-        // Heuristic: symbol like "ETHUSDT" -> base=first part, quote=USDT
-        std::string sym = exchange_order->getTradingPair().toString();
-        std::string quote = "USDT";
-        if (sym.size() > 4 && sym.substr(sym.size()-4) == "USDT") quote = "USDT";
-        // base asset key extraction (very simple)
-        std::string base = sym.substr(0, sym.size() - quote.size());
-
-        // Helper to lookup balances with flexible key matching (case-insensitive)
-        auto get_balance = [&](const std::string &k) -> double {
-            if (k.empty()) return 0.0;
-            auto it = balances_map.find(k);
-            if (it != balances_map.end()) return it->second;
-            std::string ku = k; std::transform(ku.begin(), ku.end(), ku.begin(), ::toupper);
-            it = balances_map.find(ku);
-            if (it != balances_map.end()) return it->second;
-            std::string kl = k; std::transform(kl.begin(), kl.end(), kl.begin(), ::tolower);
-            it = balances_map.find(kl);
-            if (it != balances_map.end()) return it->second;
-            return 0.0;
-        };
-
-        ab.quoteAvailable = get_balance(quote);
-        ab.baseAvailable = get_balance(base);
-
-        // === Explicit balance guard: reject locally if insufficient funds are detected ===
-        try {
-            double tradingFee = 0.001; // 0.1% default for Binance spot
-            double qty = exchange_order->getQuantity();
-            double price = exchange_order->getPrice();
-
-            if (exchange_order->getSide() == models::OrderSide::BUY) {
-                double estimatedCost = qty * price;
-                double requiredQuote = estimatedCost * (1.0 + tradingFee) + 1e-9; // small buffer
-                if (ab.quoteAvailable + 1e-9 < requiredQuote) {
-                    std::ostringstream oss;
-                    oss << "Insufficient quote balance for BUY on " << sym << ", required=" << requiredQuote
-                        << ", available=" << ab.quoteAvailable;
-                    std::string reason = oss.str();
-
-                    order_lifecycle_tracker_->updateOrderState(
-                        exchange_order->getClientOrderId(),
-                        models::OrderState::REJECTED,
-                        exchange_order->getExchangeOrderId(),
-                        reason
-                    );
-
-                    return ExecutionResponse{
-                        exchange_order->getClientOrderId(),
-                        "",
-                        false,
-                        reason,
-                        std::chrono::system_clock::now(),
-                        "REJECTED_INSUFFICIENT_BALANCE"
-                    };
-                }
-            } else {
-                double requiredBase = qty;
-                if (ab.baseAvailable + 1e-9 < requiredBase) {
-                    std::ostringstream oss;
-                    oss << "Insufficient base asset balance for SELL on " << sym << ", required=" << requiredBase
-                        << ", available=" << ab.baseAvailable;
-                    std::string reason = oss.str();
-
-                    order_lifecycle_tracker_->updateOrderState(
-                        exchange_order->getClientOrderId(),
-                        models::OrderState::REJECTED,
-                        exchange_order->getExchangeOrderId(),
-                        reason
-                    );
-
-                    return ExecutionResponse{
-                        exchange_order->getClientOrderId(),
-                        "",
-                        false,
-                        reason,
-                        std::chrono::system_clock::now(),
-                        "REJECTED_INSUFFICIENT_BALANCE"
-                    };
-                }
+        // Use the new balance validator for comprehensive checking
+        auto balanceResult = balanceValidator_->validateOrder(*exchange_order, exchangeId, false);
+        
+        if (!balanceResult.isValid) {
+            std::cout << "❌ Order rejected due to insufficient balance:" << std::endl;
+            std::cout << "   Symbol: " << exchange_order->getTradingPair().toString() << std::endl;
+            std::cout << "   Side: " << (exchange_order->getSide() == models::OrderSide::BUY ? "BUY" : "SELL") << std::endl;
+            std::cout << "   Quantity: " << exchange_order->getQuantity() << std::endl;
+            std::cout << "   Price: " << exchange_order->getPrice() << std::endl;
+            std::cout << "   Asset: " << balanceResult.asset << std::endl;
+            std::cout << "   Required: " << balanceResult.requiredBalance << std::endl;
+            std::cout << "   Available: " << balanceResult.availableBalance << std::endl;
+            std::cout << "   Reason: " << balanceResult.reason << std::endl;
+            
+            // Suggest quantity adjustment if possible
+            if (balanceResult.canAdjust && balanceResult.suggestedQuantity > 0) {
+                std::cout << "   💡 Suggested quantity: " << balanceResult.suggestedQuantity << std::endl;
             }
-        } catch (const std::exception& e) {
-            std::cerr << "Warning: explicit balance guard failed with error: " << e.what() << ". Continuing to preflight checks." << std::endl;
-        }
 
-        trading::execution::OrderRequest orq;
-        orq.symbol = exchange_order->getTradingPair().toString();
-        orq.price = exchange_order->getPrice();
-        orq.qty = exchange_order->getQuantity();
-        orq.side = (exchange_order->getSide() == models::OrderSide::BUY) ? trading::execution::OrderRequest::Side::BUY : trading::execution::OrderRequest::Side::SELL;
-
-        if (cachedMinNotional <= 0.0) {
-            std::lock_guard<std::mutex> g(cachedMinNotionalMutex);
-            if (cachedMinNotional <= 0.0) {
-                try {
-                    trading::risk::RiskConfig rc("config/risk_config.json");
-                    cachedMinNotional = rc.getOrderValidationConfig().minTradeValue;
-                    if (cachedMinNotional <= 0.0) cachedMinNotional = 10.0; // fallback
-                } catch (const std::exception& e) {
-                    std::cerr << "Warning: failed to load risk config for minTradeValue: " << e.what() << " - using default 10.0" << std::endl;
-                    cachedMinNotional = 10.0;
-                }
-            }
-        }
-
-        trading::execution::ExecutionPreflight preflight(cachedMinNotional);
-        auto pre = preflight.check(orq, ab);
-        if (!pre.allowed) {
-            // Update lifecycle tracker and return rejection
             order_lifecycle_tracker_->updateOrderState(
                 exchange_order->getClientOrderId(),
                 models::OrderState::REJECTED,
                 exchange_order->getExchangeOrderId(),
-                std::string("Preflight failed: ") + pre.reason
+                balanceResult.reason
             );
 
             return ExecutionResponse{
                 exchange_order->getClientOrderId(),
                 "",
                 false,
-                std::string("Preflight failed: ") + pre.reason,
+                balanceResult.reason,
                 std::chrono::system_clock::now(),
-                "REJECTED_PREFLIGHT"
+                "REJECTED_INSUFFICIENT_BALANCE"
             };
         }
+        
+        // Log successful validation
+        std::cout << "✅ Balance validation passed:" << std::endl;
+        std::cout << "   Asset: " << balanceResult.asset << std::endl;
+        std::cout << "   Required: " << balanceResult.requiredBalance << std::endl;
+        std::cout << "   Available: " << balanceResult.availableBalance << std::endl;
+        std::cout << "   Est. fees: " << balanceResult.estimatedFees << std::endl;
+        
     } catch (const std::exception& e) {
-        // If balance fetch fails, proceed but log
-        std::cerr << "Warning: preflight balance fetch failed: " << e.what() << ". Continuing to submit order." << std::endl;
-    }
-    // === Final forced preflight (fresh balances) ===
-    try {
-        std::unordered_map<std::string, double> fresh_balances_map;
-        if (exchangeGateway_) {
-            // Force refresh to get most up-to-date balances before submit
-            auto fut = exchangeGateway_->getAccountBalances(exchangeId, true);
-            fresh_balances_map = fut.get();
-        } else if (api_client) {
-            // Legacy client: getAccountBalances should fetch fresh data
-            auto fut = api_client->getAccountBalances();
-            auto m = fut.get();
-            fresh_balances_map = std::unordered_map<std::string, double>(m.begin(), m.end());
-        }
+        std::cerr << "Warning: balance validation failed with error: " << e.what() << ". Proceeding with legacy checks." << std::endl;
 
-        // Build AccountBalances from fresh map
-        trading::execution::AccountBalances fresh_ab;
-        auto get_balance_fresh = [&](const std::string &k) -> double {
-            if (k.empty()) return 0.0;
-            auto it = fresh_balances_map.find(k);
-            if (it != fresh_balances_map.end()) return it->second;
-            std::string ku = k; std::transform(ku.begin(), ku.end(), ku.begin(), ::toupper);
-            it = fresh_balances_map.find(ku);
-            if (it != fresh_balances_map.end()) return it->second;
-            std::string kl = k; std::transform(kl.begin(), kl.end(), kl.begin(), ::tolower);
-            it = fresh_balances_map.find(kl);
-            if (it != fresh_balances_map.end()) return it->second;
-            return 0.0;
-        };
-
-        std::string sym = exchange_order->getTradingPair().toString();
-        std::string quote = "USDT";
-        if (sym.size() > 4 && sym.substr(sym.size()-4) == "USDT") quote = "USDT";
-        std::string base = sym.substr(0, sym.size() - quote.size());
-
-        fresh_ab.quoteAvailable = get_balance_fresh(quote);
-        fresh_ab.baseAvailable = get_balance_fresh(base);
-
-        // Run an explicit balance guard again with fresh balances
-        trading::execution::OrderRequest orq_final;
-        orq_final.symbol = exchange_order->getTradingPair().toString();
-        orq_final.price = exchange_order->getPrice();
-        orq_final.qty = exchange_order->getQuantity();
-        orq_final.side = (exchange_order->getSide() == models::OrderSide::BUY) ? trading::execution::OrderRequest::Side::BUY : trading::execution::OrderRequest::Side::SELL;
-
-        trading::execution::ExecutionPreflight final_preflight(cachedMinNotional);
-        auto final_pre = final_preflight.check(orq_final, fresh_ab);
-        if (!final_pre.allowed) {
-            std::ostringstream oss;
-            oss << "Final preflight failed: " << final_pre.reason;
-            std::string reason = oss.str();
+        
+        // === Final Balance Check with Fresh Data ===
+        // Perform one more balance validation with forced refresh before submitting
+        auto finalBalanceResult = balanceValidator_->validateOrder(*exchange_order, exchangeId, true);
+        
+        if (!finalBalanceResult.isValid) {
+            std::cout << "❌ Final balance check failed with fresh data:" << std::endl;
+            std::cout << "   Reason: " << finalBalanceResult.reason << std::endl;
+            std::cout << "   Required: " << finalBalanceResult.requiredBalance << std::endl;
+            std::cout << "   Available: " << finalBalanceResult.availableBalance << std::endl;
 
             order_lifecycle_tracker_->updateOrderState(
                 exchange_order->getClientOrderId(),
                 models::OrderState::REJECTED,
                 exchange_order->getExchangeOrderId(),
-                reason
+                "Final balance check failed: " + finalBalanceResult.reason
             );
 
             return ExecutionResponse{
                 exchange_order->getClientOrderId(),
                 "",
                 false,
-                reason,
+                "Final balance check failed: " + finalBalanceResult.reason,
                 std::chrono::system_clock::now(),
-                "REJECTED_PREFLIGHT_FRESH"
+                "REJECTED_FINAL_BALANCE_CHECK"
             };
         }
-    } catch (const std::exception& e) {
-        std::cerr << "Warning: final preflight (fresh balances) failed with error: " << e.what() << ". Proceeding to submit order." << std::endl;
+        
+        std::cout << "✅ Final balance check passed - proceeding to submit order" << std::endl;
     }
 
     if (exchangeGateway_) {
@@ -617,23 +500,14 @@ ExecutionResponse ExecutionService::executeSignal(const TradingSignal& signal) {
                 }
 
                 if (looksLikeInsufficient) {
-                    if (exchangeGateway_) {
-                        // force refresh balances in gateway cache
-                        try {
-                            auto fut = exchangeGateway_->getAccountBalances(exchangeId, true);
-                            auto refreshed = fut.get();
-                            std::cerr << "Info: refreshed balances after insufficient-balance rejection; entries=" << refreshed.size() << std::endl;
-                        } catch (const std::exception& e) {
-                            std::cerr << "Warning: failed to refresh balances after rejection: " << e.what() << std::endl;
-                        }
-                    } else if (api_client) {
-                        try {
-                            auto fut = api_client->getAccountBalances();
-                            auto m = fut.get();
-                            std::cerr << "Info: refreshed balances from legacy client after rejection; entries=" << m.size() << std::endl;
-                        } catch (const std::exception& e) {
-                            std::cerr << "Warning: failed to refresh balances from legacy client after rejection: " << e.what() << std::endl;
-                        }
+                    std::cout << "🔄 Insufficient balance detected, refreshing cache for exchange: " << exchangeId.toString() << std::endl;
+                    
+                    // Use our balance validator to refresh the cache
+                    try {
+                        balanceValidator_->clearBalanceCache(exchangeId);
+                        std::cout << "✅ Balance cache cleared for exchange: " << exchangeId.toString() << std::endl;
+                    } catch (const std::exception& e) {
+                        std::cerr << "Warning: failed to clear balance cache after rejection: " << e.what() << std::endl;
                     }
                 }
             } catch (const std::exception& e) {
@@ -668,7 +542,7 @@ ExecutionResponse ExecutionService::executeSignal(const TradingSignal& signal) {
     }
 }
 // getExchangeGateway
-std::shared_ptr<common::ExchangeGateway> ExecutionService::getExchangeGateway() {
+std::shared_ptr<execution::ExchangeGateway> ExecutionService::getExchangeGateway() {
     return exchangeGateway_;
 }
 

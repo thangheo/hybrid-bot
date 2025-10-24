@@ -25,6 +25,8 @@
 #include "execution/order_lifecycle_tracker.hpp"
 #include "execution/fill_reconciliation.hpp"
 #include "execution/api_client_manager.hpp"
+#include "execution/balance_validator.hpp"  // NEW: Add balance validator
+#include "execution/balance_validator_config.hpp"  // NEW: Add balance validator config
 #include "exchange_gateway.hpp"  // NEW: Add gateway header
 #include <core/market_types.hpp>
 
@@ -76,7 +78,7 @@ public:
      * @param fill_reconciliation Fill reconciliation
      */
     ExecutionService(
-        std::shared_ptr<common::ExchangeGateway> exchangeGateway,   // NEW: Gateway first
+        std::shared_ptr<execution::ExchangeGateway> exchangeGateway,   // NEW: Gateway first
         std::shared_ptr<OrderGenerator> order_generator,
         std::shared_ptr<SmartOrderRouter> smart_order_router,
         std::shared_ptr<OrderTypeSelector> order_type_selector,
@@ -139,14 +141,14 @@ public:
     std::string getActiveOrdersJson(const std::string& request_json = "{}");
     std::string getActiveOrdersByExchangeIdJson(const std::string& request_json);
 // getExchangeGateway
-    std::shared_ptr<common::ExchangeGateway> getExchangeGateway();
+    std::shared_ptr<execution::ExchangeGateway> getExchangeGateway();
     // hasSetGateway
     bool hasSetGateway() const {
         std::lock_guard<std::mutex> lock(mutex_);
         return exchangeGateway_ != nullptr;
     }
     // setExchangeGateway
-    void setExchangeGateway(std::shared_ptr<common::ExchangeGateway> gateway) {
+    void setExchangeGateway(std::shared_ptr<execution::ExchangeGateway> gateway) {
         std::lock_guard<std::mutex> lock(mutex_);
         exchangeGateway_ = gateway;
     }
@@ -167,7 +169,7 @@ private:
     std::string activeOrdersToJson(const std::vector<models::Order>& orders);
 
     // NEW: ExchangeGateway member (optional)
-    std::shared_ptr<common::ExchangeGateway> exchangeGateway_;   // NEW
+    std::shared_ptr<execution::ExchangeGateway> exchangeGateway_;   // NEW
     
     // EXISTING: Component references (unchanged)
     std::shared_ptr<OrderGenerator> order_generator_;
@@ -177,6 +179,9 @@ private:
     std::shared_ptr<OrderLifecycleTracker> order_lifecycle_tracker_;
     std::shared_ptr<FillReconciliation> fill_reconciliation_;
     std::shared_ptr<ApiClientManager> api_client_manager_;       // EXISTING (can be null if using gateway)
+    
+    // NEW: Balance validation
+    std::unique_ptr<BalanceValidator> balanceValidator_;         // NEW: Balance validator
     
     // EXISTING: Service state (unchanged)
     bool is_initialized_ = false;

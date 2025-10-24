@@ -1,0 +1,30 @@
+{
+  "balanceValidation": {
+    "enabled": true,
+    "defaultTradingFee": 0.001,
+    "exchangeTradingFees": {
+      "binance": 0.001,
+      "ftx": 0.0007,
+      "coinbase": 0.005,
+      "kraken": 0.0026
+    },
+    "balanceBufferPercent": 0.01,
+    "balanceCacheExpiryMs": 30000,
+    "enableRealTimeValidation": true,
+    "minNotionalValue": 10.0,
+    "forceRefreshOnRejection": true,
+    "logBalanceDetails": true
+  },
+  "preflightChecks": {
+    "enableSymbolValidation": true,
+    "enablePriceValidation": true,
+    "enableQuantityValidation": true,
+    "enableNotionalValidation": true,
+    "strictMode": false
+  },
+  "orderAdjustment": {
+    "enableAutoAdjustment": false,
+    "maxAdjustmentPercent": 0.1,
+    "notifyOnAdjustment": true
+  }
+}

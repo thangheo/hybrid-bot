@@ -26,7 +26,7 @@
 #include "core/market_types.hpp"
 
 namespace trading {
-namespace common {
+namespace execution { //this is stupid but too late to change
 
 /**
  * Cached account balances with timestamp
