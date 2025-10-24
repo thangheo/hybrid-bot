@@ -694,9 +694,9 @@ def main(n_states: int = 4, days: int = 60, save_plots: bool = True, watch_snaps
    
 if __name__ == '__main__':
     # print how to use:
-    # python3 regime.py --start-trainer --watch-snapshot --trainer-interval-days 7 --data-source coinbase
+    # python3 regime.py --start-trainer --trainer-interval-days 7 --data-source coinbase
     # print("Usage examples:")
-    # print("  python3 regime.py --start-trainer --watch-snapshot --trainer-interval-days 66 --data-source binance")
+    # print("  python3 regime.py --start-trainer  --trainer-interval-days 66 --data-source binance")
     # small CLI-ish behavior
     p = argparse.ArgumentParser(description='Train regime HMMs for configured symbols')
     p.add_argument('--n-states', type=int, default=4)

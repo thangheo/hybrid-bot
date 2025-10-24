@@ -99,9 +99,10 @@ trading::perception::BayesHandle trading::strategy::ImbalanceDetectionEngine::ge
     return h;
 }
 
-// New: return array of 3 handles (one per regime). Create/load them if missing.
-std::array<trading::perception::BayesHandle,3> trading::strategy::ImbalanceDetectionEngine::getBayesHandlesForSymbol(const core::ExchangeId &exch, const core::Symbol &sym) {
-    std::array<trading::perception::BayesHandle,3> out{nullptr,nullptr,nullptr};
+// New: return array of NUMBER_OF_REGIMES handles (one per regime). Create/load them if missing.
+std::array<trading::perception::BayesHandle, ImbalanceDetectionEngine::NUMBER_OF_REGIMES> trading::strategy::ImbalanceDetectionEngine::getBayesHandlesForSymbol(const core::ExchangeId &exch, const core::Symbol &sym) {
+    std::array<trading::perception::BayesHandle, ImbalanceDetectionEngine::NUMBER_OF_REGIMES> out;
+    out.fill(nullptr);
     std::string key = exch.toString() + "_" + sym.toString();
     {
         std::lock_guard<std::mutex> lk(bayesHandlesMutex_);
@@ -109,8 +110,8 @@ std::array<trading::perception::BayesHandle,3> trading::strategy::ImbalanceDetec
         if (it != bayesHandles_.end()) return it->second;
     }
 
-    // Create three handles
-    for (int i = 0; i < NUMBER_OF_REGIMES; ++i) {
+    // Create NUMBER_OF_REGIMES handles
+    for (int i = 0; i < ImbalanceDetectionEngine::NUMBER_OF_REGIMES; ++i) {
         try {
             out[i] = trading::perception::bayes_create();
         } catch (...) {
@@ -136,7 +137,7 @@ std::array<trading::perception::BayesHandle,3> trading::strategy::ImbalanceDetec
                 return out;
             };
             std::string name = sanitize(exch.toString()) + "_" + sanitize(sym.toString());
-            for (int i = 0; i < NUMBER_OF_REGIMES; ++i) {
+            for (int i = 0; i < ImbalanceDetectionEngine::NUMBER_OF_REGIMES; ++i) {
                 std::ostringstream fn;
                 fn << bayesModelDirectory_ << "/" << name << "_regime" << i << ".json";
                 std::string path = fn.str();
@@ -548,16 +549,17 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                         // Get per-regime handles and perform weighted ensemble prediction
                         auto handles = getBayesHandlesForSymbol(m.exchangeId, m.symbol);
                         // default uniform probs
-                        std::array<double, NUMBER_OF_REGIMES> probs{1.0/NUMBER_OF_REGIMES, 1.0/NUMBER_OF_REGIMES, 1.0/NUMBER_OF_REGIMES};
+                        std::array<double, ImbalanceDetectionEngine::NUMBER_OF_REGIMES> probs;
+                        probs.fill(1.0 / static_cast<double>(ImbalanceDetectionEngine::NUMBER_OF_REGIMES));
                         if (regime_subscriber_) {
                             trading::strategy::core_analysis::RegimeInfo rinfo;
-                            if (regime_subscriber_->get(m.symbol.toString(), rinfo) && rinfo.probs.size() == NUMBER_OF_REGIMES) {
-                                for (int i=0;i<NUMBER_OF_REGIMES;i++) probs[i] = rinfo.probs[i];
+                            if (regime_subscriber_->get(m.symbol.toString(), rinfo) && rinfo.probs.size() == ImbalanceDetectionEngine::NUMBER_OF_REGIMES) {
+                                for (int i=0;i<ImbalanceDetectionEngine::NUMBER_OF_REGIMES;i++) probs[i] = rinfo.probs[i];
                             }
                         }
                         // run predictions for each handle and combine
                         trading::perception::BayesSignal combined{};
-                        for (int i=0;i<NUMBER_OF_REGIMES;i++) {
+                        for (int i=0;i<ImbalanceDetectionEngine::NUMBER_OF_REGIMES;i++) {
                             if (!handles[i]) continue;
                             try {
                                 auto s = trading::perception::bayes_predict(handles[i], features);
@@ -673,17 +675,19 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                             const auto &exch = std::get<2>(t);
                             const auto &sym = std::get<3>(t);
 
-                            // Get the three per-regime handles
+                            // Get the per-regime handles
                             auto handles = getBayesHandlesForSymbol(exch, sym);
-                            if (handles[0] == nullptr && handles[1] == nullptr && handles[2] == nullptr) continue;
+                            bool anyHandle = false;
+                            for (int i = 0; i < ImbalanceDetectionEngine::NUMBER_OF_REGIMES; ++i) if (handles[i]) { anyHandle = true; break; }
+                            if (!anyHandle) continue;
 
                             // Choose regime to update: argmax of regime_subscriber_ probs if available, otherwise default to regime 0
                             int updateIdx = 0;
                             if (regime_subscriber_) {
                                 trading::strategy::core_analysis::RegimeInfo rinfo;
-                                if (regime_subscriber_->get(sym.toString(), rinfo) && rinfo.probs.size() == NUMBER_OF_REGIMES) {
+                                if (regime_subscriber_->get(sym.toString(), rinfo) && rinfo.probs.size() == ImbalanceDetectionEngine::NUMBER_OF_REGIMES) {
                                     double best = -1.0; int bi = 0;
-                                    for (int i = 0; i < NUMBER_OF_REGIMES; ++i) {
+                                    for (int i = 0; i < ImbalanceDetectionEngine::NUMBER_OF_REGIMES; ++i) {
                                         if (rinfo.probs[i] > best) { best = rinfo.probs[i]; bi = i; }
                                     }
                                     updateIdx = bi;
