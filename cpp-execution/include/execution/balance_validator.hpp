@@ -14,6 +14,9 @@
 namespace trading {
 namespace execution {
 
+// Forward declaration for optional HTTP balance client
+class HttpBalanceClient;
+
 /**
  * @brief Configuration for balance validation
  */
@@ -118,6 +121,14 @@ private:
     BalanceValidatorConfig config_;
     std::shared_ptr<trading::execution::ExchangeGateway> exchangeGateway_;
     std::shared_ptr<ExchangeApiClient> apiClient_;
+    // Optional remote balance service client (authoritative)
+    std::shared_ptr<HttpBalanceClient> httpBalanceClient_;
+
+public:
+    // Set optional HTTP balance client (e.g., Python prototype)
+    void setHttpBalanceClient(std::shared_ptr<HttpBalanceClient> client) {
+        httpBalanceClient_ = client;
+    }
     
     // Balance caching
     mutable std::mutex balanceCacheMutex_;

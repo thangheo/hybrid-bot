@@ -20,6 +20,7 @@ file(GLOB_RECURSE EXECUTION_SOURCES
     "models/*.cpp"
     "filter/*.cpp"
     "preflight/*.cpp"
+    "http_balance_client.cpp"
     # "risk/risk_config.cpp"
 )
 

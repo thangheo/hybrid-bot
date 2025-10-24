@@ -1,4 +1,5 @@
 #include "execution/balance_validator.hpp"
+#include "execution/http_balance_client.hpp"
 #include <algorithm>
 #include <sstream>
 #include <iostream>
@@ -147,6 +148,29 @@ BalanceValidationResult BalanceValidator::validateOrder(
 std::future<std::map<std::string, double>> BalanceValidator::fetchFreshBalances(
     const trading::core::ExchangeId& exchangeId
 ) {
+    // If an HTTP authoritative balance service is configured and available,
+    // prefer it for forced fresh balance reads.
+    if (httpBalanceClient_) {
+        return std::async(std::launch::async, [this, exchangeId]() {
+            std::map<std::string, double> result;
+            std::string err;
+            auto opt = httpBalanceClient_->getAllBalances(exchangeId.toString(), err);
+            if (opt) {
+                return *opt;
+            }
+            // fall through to gateway/client if http call failed
+            if (exchangeGateway_) {
+                auto unorderedBalances = exchangeGateway_->getAccountBalancesAsync(exchangeId).get();
+                std::map<std::string, double> r(unorderedBalances.begin(), unorderedBalances.end());
+                return r;
+            } else if (apiClient_) {
+                auto balances = apiClient_->getAccountBalances().get();
+                return std::map<std::string, double>(balances.begin(), balances.end());
+            }
+            return result;
+        });
+    }
+
     if (exchangeGateway_) {
         // Use exchange gateway with force refresh and convert unordered_map -> map
         return std::async(std::launch::async, [this, exchangeId]() {
