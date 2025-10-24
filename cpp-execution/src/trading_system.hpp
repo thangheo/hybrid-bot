@@ -195,7 +195,7 @@ private:
     // Position sizing helper (Kelly / volatility adjusted)
     std::unique_ptr<trading::risk::PositionSizer> positionSizer_;
     // gateway
-    std::shared_ptr<common::ExchangeGateway> exchangeGateway_;
+    std::shared_ptr<execution::ExchangeGateway> exchangeGateway_;
 
     // Configurations
     risk::RiskConfig riskConfig_;

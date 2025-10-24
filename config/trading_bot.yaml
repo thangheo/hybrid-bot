@@ -131,7 +131,7 @@ data_ingestion:
 
     # Infrastructure & Interoperability
     - "ATOMUSDT"   # Cosmos - Internet of blockchains
-    - "FTMUSDT"    # Fantom - High-speed, low-cost platform
+    # - "FTMUSDT"    # Fantom - High-speed, low-cost platform
     - "ALGOUSDT"   # Algorand - Pure proof-of-stake
 
     # Privacy & Security

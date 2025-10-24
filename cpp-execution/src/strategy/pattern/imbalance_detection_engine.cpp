@@ -640,10 +640,10 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                                     double absReturn = std::abs(std::exp(priceChangeLogRet) - 1.0);
 
                                     // fee / profitability filtering
-                                    const double MIN_ABS_RETURN_PCT = 0.0025;  // 0.25% minimum absolute move to consider
+                                    const double MIN_ABS_RETURN_PCT = 0.002;  // 0.2% minimum absolute move to consider
                                     const double TRADING_FEE_PCT = 0.003;      // 0.3% round-trip
                                     const double SAFETY_BUFFER = 0.0005;      // 0.05% slippage buffer
-                                    const double MIN_PROFITABLE_RETURN = TRADING_FEE_PCT + SAFETY_BUFFER;  // 0.25%
+                                    const double MIN_PROFITABLE_RETURN = TRADING_FEE_PCT + SAFETY_BUFFER;  // 0.2%
 
                                     // Base normalized thresholds (z-score like)
                                     const double BASE_SELL_N = -0.5;

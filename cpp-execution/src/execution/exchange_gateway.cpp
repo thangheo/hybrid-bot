@@ -13,7 +13,7 @@
 #include <sstream>
 
 namespace trading {
-namespace common {
+namespace execution {
 
 ExchangeGateway::ExchangeGateway(std::shared_ptr<execution::ApiClientManager> apiClientManager)
     : apiClientManager_(std::move(apiClientManager)) {

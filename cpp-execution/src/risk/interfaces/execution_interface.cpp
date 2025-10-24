@@ -323,7 +323,7 @@ std::unique_ptr<ExecutionInterface> createExecutionInterface(const RiskConfig& c
     try {
         // Create all required dependencies for ExecutionService
         auto apiManager = std::make_shared<execution::ApiClientManager>();
-        auto gateway = std::make_shared<ExchangeGateway>(apiManager);
+        auto gateway = std::make_shared<execution::ExchangeGateway>(apiManager);
         
         // Create ExecutionService dependencies
         auto orderGenerator = std::make_shared<trading::execution::OrderGenerator>();

@@ -656,7 +656,7 @@ void Trading_system::setupExecutionEngine() {
     // After initializing the router, add this debug check:
     smart_order_router->initialize(exchanges);
 
-    exchangeGateway_ = std::make_shared<common::ExchangeGateway>(api_client_manager);
+    exchangeGateway_ = std::make_shared<execution::ExchangeGateway>(api_client_manager);
     if (!exchangeGateway_->isHealthy()) {
         std::cout << "Exchange Gateway is not healthy!" << std::endl;
         std::cout << "start using fallback ExecutionService" << std::endl;
