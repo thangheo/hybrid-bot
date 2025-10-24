@@ -31,6 +31,8 @@ import json
 import multiprocessing
 import os
 import threading
+# import for None
+
 
 
 # Ensure src is importable (where market_regime.py lives)
@@ -56,6 +58,7 @@ def load_config(config_path: str = None) -> dict:
         if p.exists():
             with open(p, 'r') as f:
                 return yaml.safe_load(f)
+    raise FileNotFoundError("Could not find trading_bot.yaml in expected locations: " + ",".join(str(x) for x in candidates))
     raise FileNotFoundError("Could not find trading_bot.yaml in expected locations: " + ",".join(str(x) for x in candidates))
 
 
@@ -113,7 +116,7 @@ def download_or_load(regime: Regime, symbol: str, data_dir: Path, days: int = 60
     return df
 
 
-def train_hmm_for_symbol(regime: Regime, df: pd.DataFrame, n_states: int = 3, symbol: str = None):
+def train_hmm_for_symbol(regime: Regime, df: pd.DataFrame, n_states: int = 4, symbol: str = None):
     # compute features using the shared code in Regime
     features = regime.compute_regime_features(df)
 
@@ -164,13 +167,13 @@ def train_hmm_for_symbol(regime: Regime, df: pd.DataFrame, n_states: int = 3, sy
         else:
             # Try using a light feature set on the original 1m data as a final fallback
             try:
-                features_rs = regime.compute_regime_features(df, window_short=window_short, window_long=window_long, light=True)
+                # don't rely on window_short/window_long which may not have been set; let Regime use its defaults for 1m data
+                features_rs = regime.compute_regime_features(df, light=True)
                 if not features_rs.empty and len(features_rs) >= min_rows:
                     features = features_rs
                     print(f"Using light feature set for symbol={symbol or '<unknown>'} — rows={len(features)}")
             except Exception as e:
                 print(f"Light feature computation failed for symbol={symbol or '<unknown>'}: {e}")
-                pass
 
     if features.empty:
         raise RuntimeError(f'No feature rows after compute_regime_features for symbol={symbol or "<unknown>"}')
@@ -338,7 +341,7 @@ def get_current_regime(symbol: str, data_dir: Path = None):
 
     try:
         pred, probs = predict_regime_for_symbol(regime_obj, model_entry, df_recent)
-    return {'symbol': symbol, 'regime': int(pred), 'probs': probs.tolist(), 'ts': datetime.now(timezone.utc).isoformat()}
+        return {'symbol': symbol, 'regime': int(pred), 'probs': probs.tolist(), 'ts': datetime.now(timezone.utc).isoformat()}
     except Exception as e:
         raise RuntimeError(f'Prediction failed for {symbol}: {e}')
 
@@ -558,7 +561,7 @@ def generate_regimes_snapshot(symbols: list, data_dir: Path) -> dict:
     return payload
 
 
-def download_and_train_all(symbols: list, data_dir: Path, n_states: int = 3, days: int = 60, data_source: str = 'binance', save_plots: bool = True):
+def download_and_train_all(symbols: list, data_dir: Path, n_states: int = 4, days: int = 60, data_source: str = 'binance', save_plots: bool = True):
     """Download data and train models for all symbols. This is intended to run in a separate process.
     Writes model pickles into data_dir and a regimes_snapshot.json when done.
     """
@@ -624,7 +627,7 @@ def training_worker_process(symbols: list, data_dir: Path, n_states: int, days: 
             time.sleep(60)
 
 
-def start_scheduled_training(symbols: list, data_dir: Path, n_states: int = 3, days: int = 60, interval_days: int = 7, data_source: str = 'coinbase', save_plots: bool = True):
+def start_scheduled_training(symbols: list, data_dir: Path, n_states: int = 4, days: int = 60, interval_days: int = 7, data_source: str = 'coinbase', save_plots: bool = True):
     """Start a background process to perform scheduled training. Returns the multiprocessing.Process object."""
     p = multiprocessing.Process(target=training_worker_process, args=(symbols, data_dir, n_states, days, interval_days, data_source, save_plots), daemon=False)
     p.start()
@@ -687,7 +690,7 @@ def watch_and_publish_snapshot(snapshot_path: Path, socket, topic: str = 'regime
         time.sleep(poll_interval)
 
 
-def main(n_states: int = 3, days: int = 60, save_plots: bool = True, watch_snapshot: bool = False):
+def main(n_states: int = 4, days: int = 60, save_plots: bool = True, watch_snapshot: bool = False):
     cfg = load_config(config_path=None)
     # data_ingestion/symbols
     symbols = cfg.get('data_ingestion', {}).get('symbols', [])
@@ -745,10 +748,10 @@ if __name__ == '__main__':
     # print how to use:
     # python3 regime.py --start-trainer --watch-snapshot --trainer-interval-days 7 --data-source coinbase
     print("Usage examples:")
-    print("  python3 regime.py --start-trainer --watch-snapshot --trainer-interval-days 777 --data-source coinbase")
+    print("  python3 regime.py --start-trainer --watch-snapshot --trainer-interval-days 66 --data-source binance")
     # small CLI-ish behavior
     p = argparse.ArgumentParser(description='Train regime HMMs for configured symbols')
-    p.add_argument('--n-states', type=int, default=3)
+    p.add_argument('--n-states', type=int, default=4)
     p.add_argument('--days', type=int, default=60)
     p.add_argument('--no-plots', dest='plots', action='store_false')
     p.add_argument('--start-trainer', dest='start_trainer', action='store_true', help='Start scheduled training worker')
@@ -758,6 +761,7 @@ if __name__ == '__main__':
     p.add_argument('--train-now', dest='train_now', action='store_true', help='Run training on startup immediately (overrides config)')
     # config path must be added before parsing args
     p.add_argument('--config', type=str, default=None, help='Path to trading_bot.yaml (default: search in repo root and current dir)')
+    p.add_argument('--watch-snapshot', dest='watch_snapshot', action='store_true', help='Watch regimes_snapshot.json and publish updates via ZMQ')
     args = p.parse_args()
     # load config early so we can consult regime.train_on_startup
     try:

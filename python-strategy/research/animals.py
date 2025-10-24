@@ -310,6 +310,35 @@ class EcosystemSimulation:
         if survival_times:
             avg_survival = np.mean(survival_times)
             print(f"\n⏳ Thời gian sống trung bình (loài tuyệt chủng): {avg_survival:.1f} bước")
+
+    def print_non_extinct_species_features(self, include_history_stats: bool = True):
+        """
+        In ra các đặc trưng (dựa trên dữ liệu mô phỏng) của những loài không bị tuyệt chủng
+        (tức có trạng thái khác EvolutionState.EXTINCT) — không suy diễn.
+
+        Parameters:
+        -----------
+        include_history_stats : bool
+            Nếu True thì in thêm một số thống kê cơ bản từ population_history
+        """
+        non_extinct = [s for s in self.species_list if s.state != EvolutionState.EXTINCT]
+        if not non_extinct:
+            print("\nKhông có loài sống sót (tất cả bị tuyệt chủng).")
+            return
+
+        print("\n🔎 Danh sách các loài KHÔNG BỊ TUYỆT CHỦNG (theo dữ liệu mô phỏng):")
+        print("-" * 50)
+        for s in non_extinct:
+            final_pop = s.population
+            max_pop = max(s.population_history) if s.population_history else final_pop
+            mean_pop = np.mean(s.population_history) if s.population_history else final_pop
+
+            print(f"{s.name} (id={s.id}):")
+            print(f"  Trạng thái cuối: {s.state.name}, Dân số cuối: {final_pop:.2f}")
+            print(f"  birth_rate={s.birth_rate:.3f}, death_rate={s.death_rate:.3f}, carrying_capacity={s.carrying_capacity:.1f}")
+            if include_history_stats:
+                print(f"  Đỉnh dân số trong mô phỏng: {max_pop:.2f}, Trung bình: {mean_pop:.2f}")
+            print("-" * 50)
     
     def plot_results(self, selected_species=None):
         """
@@ -339,7 +368,7 @@ class EcosystemSimulation:
         
         # 4. Biểu đồ tổng dân số và đa dạng sinh học
         ax4 = plt.subplot(2, 2, 4)
-        self._plot_ecosystem_metrics(ax4)
+        self._plot_ecosystem_metrics_en(ax4)
         
         plt.tight_layout()
         plt.show()
@@ -441,7 +470,7 @@ class EcosystemSimulation:
         ax.legend(loc='upper right')
         ax.grid(True, alpha=0.3)
     
-    def _plot_ecosystem_metrics(self, ax):
+    def _plot_ecosystem_metrics_vi(self, ax):
         """
         Vẽ các chỉ số tổng quan của hệ sinh thái
         """
@@ -511,7 +540,76 @@ class EcosystemSimulation:
         lines3, labels3 = ax3.get_legend_handles_labels()
         ax.legend(lines1 + lines2 + lines3, labels1 + labels2 + labels3, 
                  loc='upper right')
-    
+    # _plot_ecosystem_metrics with English titles
+    def _plot_ecosystem_metrics_en(self, ax):
+        """
+        Vẽ các chỉ số tổng quan của hệ sinh thái
+        """
+        ax.set_title('Ecosystem Metrics', fontsize=12, fontweight='bold')
+        ax.set_xlabel('Time Steps')
+        
+        time_points = range(self.time_steps + 1)
+        
+        # Tính tổng dân số và số loài còn sống
+        total_population = []
+        alive_species = []
+        shannon_diversity = []  # Chỉ số đa dạng Shannon
+        
+        for t in time_points:
+            total_pop = 0
+            alive_count = 0
+            populations = []
+            
+            for species in self.species_list:
+                if t < len(species.population_history):
+                    pop = species.population_history[t]
+                    total_pop += pop
+                    if pop > 0:
+                        alive_count += 1
+                        populations.append(pop)
+            
+            total_population.append(total_pop)
+            alive_species.append(alive_count)
+            
+            # Tính chỉ số Shannon diversity
+            if total_pop > 0:
+                proportions = np.array(populations) / total_pop
+                shannon = -np.sum(proportions * np.log(proportions + 1e-10))
+                shannon_diversity.append(shannon)
+            else:
+                shannon_diversity.append(0)
+        
+        # Vẽ với 2 trục y
+        color1 = 'tab:blue'
+        ax.plot(time_points, total_population, color=color1, 
+               label='Total Population', linewidth=2)
+        ax.set_ylabel('Total Population', color=color1)
+        ax.tick_params(axis='y', labelcolor=color1)
+        
+        ax2 = ax.twinx()
+        color2 = 'tab:orange'
+        ax2.plot(time_points, alive_species, color=color2, 
+                label='Alive Species Count', linewidth=2, linestyle='--')
+        ax2.set_ylabel('Alive Species Count', color=color2)
+        ax2.tick_params(axis='y', labelcolor=color2)
+        
+        # Thêm chỉ số đa dạng Shannon (chuẩn hóa)
+        ax3 = ax.twinx()
+        ax3.spines['right'].set_position(('outward', 60))
+        color3 = 'tab:green'
+        shannon_normalized = np.array(shannon_diversity) / np.max(shannon_diversity + [1])
+        ax3.plot(time_points, shannon_normalized, color=color3,
+                label='Shannon Diversity', linewidth=1, alpha=0.6)
+        ax3.set_ylabel('Shannon Diversity Index', color=color3)
+        ax3.tick_params(axis='y', labelcolor=color3)
+        ax.grid(True, alpha=0.3)
+        # Kết hợp legends
+         # Kết hợp legends
+        lines1, labels1 = ax.get_legend_handles_labels()
+        lines2, labels2 = ax2.get_legend_handles_labels()
+        lines3, labels3 = ax3.get_legend_handles_labels()
+        ax.legend(lines1 + lines2 + lines3, labels1 + labels2 + labels3, 
+                 loc='upper right')
     def _select_representative_species(self, n=10):
         """
         Chọn các loài đại diện để hiển thị
@@ -655,7 +753,10 @@ def main():
     # Chạy mô phỏng
     ecosystem.run_simulation()
     
-    # Vẽ kết quả
+    # In các đặc trưng của loài không bị tuyệt chủng (từ dữ liệu mô phỏng)
+    ecosystem.print_non_extinct_species_features()
+
+    # Vẽ kết quả (tùy chọn — có thể tắt nếu chỉ cần kiểm tra nhanh)
     print("\n📈 Đang tạo biểu đồ...")
     ecosystem.plot_results()
     
