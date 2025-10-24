@@ -143,7 +143,7 @@ public:
 
 private:
     //number of regimes
-    static constexpr int NUMBER_OF_REGIMES = 4;
+    static constexpr int NUMBER_OF_REGIMES = 4UL;
     double calculateOrderCountDropRatio(const OrderBookMetrics& metrics);
     double calculateMarketImpactDecayRatio(const OrderBookMetrics& metrics) ;
     double calculateVolatilityDeclineRatio(const OrderBookMetrics& metrics) ;
@@ -282,8 +282,8 @@ public:
     // If configured, use this directory to store per-symbol model files. Derived from bayesModelPath_
     std::string bayesModelDirectory_;
     // Per-symbol Bayes handles (opaque handles from perception adapter)
-    // Now support 3 handles per symbol (one per regime)
-    std::unordered_map<std::string, std::array<trading::perception::BayesHandle, 3>> bayesHandles_;
+    // Now support NUMBER_OF_REGIMES handles per symbol (one per regime)
+    std::unordered_map<std::string, std::array<trading::perception::BayesHandle, NUMBER_OF_REGIMES>> bayesHandles_;
     mutable std::mutex bayesHandlesMutex_;
 
     // Pointer to the global regime subscriber (optional). Set by caller (StrategyEngine)
@@ -294,8 +294,8 @@ public:
     void setRegimeSubscriber(trading::strategy::core_analysis::RegimeSubscriber* sub) { regime_subscriber_ = sub; }
 
     // Helpers for per-symbol model management
-    // Return an array of 3 handles (one per regime). Null entries allowed.
-    std::array<trading::perception::BayesHandle,3> getBayesHandlesForSymbol(const core::ExchangeId &exch, const core::Symbol &sym);
+    // Return an array of NUMBER_OF_REGIMES handles (one per regime). Null entries allowed.
+    std::array<trading::perception::BayesHandle, NUMBER_OF_REGIMES> getBayesHandlesForSymbol(const core::ExchangeId &exch, const core::Symbol &sym);
     // Legacy compatibility: return a single handle (regime 0) or create one
     trading::perception::BayesHandle getBayesHandleForSymbol(const core::ExchangeId &exch, const core::Symbol &sym);
     bool saveBayesForSymbol(trading::perception::BayesHandle h, const core::ExchangeId &exch, const core::Symbol &sym);
