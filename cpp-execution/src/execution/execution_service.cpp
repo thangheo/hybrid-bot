@@ -163,41 +163,10 @@ ExecutionResponse ExecutionService::executeSignal(const TradingSignal& signal) {
             return ExecutionResponse{order.getOrderId(), "", false, "Order validation failed", std::chrono::system_clock::now(), ""};
         }
         
-        // 3. Place order - THIS IS THE ONLY CHANGE!
-        execution::models::ExecutionReport executionReport;
-        
-        if (exchangeGateway_) {
-            // NEW: Use ExchangeGateway (with caching and rate limiting)
-            auto executionFuture = exchangeGateway_->placeOrder(order);
-            executionReport = executionFuture.get();
-        } else {
-            // EXISTING: Use direct API client (legacy mode)
-            auto exchangeId = order.getExchangeId();
-            auto client = api_client_manager_->getClient(exchangeId);
-            auto executionFuture = client->placeOrder(order);
-            executionReport = executionFuture.get();
-        }
-        
-        // 4. Update order lifecycle (UNCHANGED)
-        order_lifecycle_tracker_->updateOrderState(order.getClientOrderId(), executionReport.status(), 
-                                    executionReport.exchangeOrderId(), executionReport.rejectReason());
-        if (execution_callback_) {
-            try {
-                execution_callback_(response);
-            } catch (const std::exception& e) {
-                // Log error but don't fail the execution
-                std::cerr << "Error in execution callback: " << e.what() << std::endl;
-            }
-        }
-        // 5. Return response (UNCHANGED)
-        return ExecutionResponse{
-            order.getClientOrderId(),
-            executionReport.exchangeOrderId(),
-            true, 
-            "Order placed successfully", 
-            std::chrono::system_clock::now(),
-            orderStateToString(executionReport.status())
-        };
+        // 3. Place order - delegate to placeOrder to ensure consistent pre-submit validation,
+        //    routing and lifecycle handling. This prevents bypassing the BalanceValidator
+        //    when callers use executeSignal().
+        return placeOrder(order);
         
     } catch (const std::exception& e) {
         return ExecutionResponse{"", "", false, e.what(), std::chrono::system_clock::now(), ""};
