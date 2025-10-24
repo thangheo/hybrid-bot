@@ -142,6 +142,8 @@ public:
     virtual void updateParameters(const ParameterSet& params);
 
 private:
+    //number of regimes
+    static constexpr int NUMBER_OF_REGIMES = 4;
     double calculateOrderCountDropRatio(const OrderBookMetrics& metrics);
     double calculateMarketImpactDecayRatio(const OrderBookMetrics& metrics) ;
     double calculateVolatilityDeclineRatio(const OrderBookMetrics& metrics) ;
