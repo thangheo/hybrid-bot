@@ -636,59 +636,6 @@ def start_scheduled_training(symbols: list, data_dir: Path, n_states: int = 4, d
     return p
 
 
-def watch_and_publish_snapshot(snapshot_path: Path, socket, topic: str = 'regimes_update', poll_interval: int = 5):
-    """Watch snapshot_path for modifications and publish its JSON content via ZMQ socket when changed.
-
-    This uses simple polling (stat) so it's portable. The message format sent is:
-    '{topic} {json_payload}'
-    """
-    last_mtime = None
-    print(f"Watching snapshot file: {snapshot_path} (poll every {poll_interval}s)")
-
-    # If a snapshot already exists when the watcher starts, publish it once so
-    # subscribers can immediately receive the current state. Previously the
-    # watcher only set last_mtime and waited for a change which made
-    # --watch-snapshot appear silent.
-    if snapshot_path.exists():
-        try:
-            mtime = snapshot_path.stat().st_mtime
-            last_mtime = mtime
-            with open(snapshot_path, 'r') as f:
-                payload = json.load(f)
-            try:
-                msg = json.dumps(payload)
-                socket.send_string(f"{topic} {msg}")
-                print(f"Published initial snapshot ({snapshot_path}) at {datetime.now(timezone.utc).isoformat()}")
-            except Exception as e:
-                print(f"Failed to publish initial snapshot: {e}")
-        except Exception as e:
-            print(f"Watcher startup error reading snapshot {snapshot_path}: {e}")
-
-    while True:
-        try:
-            if snapshot_path.exists():
-                mtime = snapshot_path.stat().st_mtime
-                if last_mtime is None:
-                    last_mtime = mtime
-                elif mtime != last_mtime:
-                    last_mtime = mtime
-                    try:
-                        with open(snapshot_path, 'r') as f:
-                            payload = json.load(f)
-                    except Exception as e:
-                        print(f"Failed to read snapshot file {snapshot_path}: {e}")
-                        payload = {'error': str(e)}
-
-                    try:
-                        msg = json.dumps(payload)
-                        socket.send_string(f"{topic} {msg}")
-                        print(f"Published snapshot ({snapshot_path}) at {datetime.now(timezone.utc).isoformat()}")
-                    except Exception as e:
-                        print(f"Failed to publish snapshot: {e}")
-        except Exception as e:
-            print(f"Watcher error: {e}")
-
-        time.sleep(poll_interval)
 
 
 def main(n_states: int = 4, days: int = 60, save_plots: bool = True, watch_snapshot: bool = False):
@@ -748,8 +695,8 @@ def main(n_states: int = 4, days: int = 60, save_plots: bool = True, watch_snaps
 if __name__ == '__main__':
     # print how to use:
     # python3 regime.py --start-trainer --watch-snapshot --trainer-interval-days 7 --data-source coinbase
-    print("Usage examples:")
-    print("  python3 regime.py --start-trainer --watch-snapshot --trainer-interval-days 66 --data-source binance")
+    # print("Usage examples:")
+    # print("  python3 regime.py --start-trainer --watch-snapshot --trainer-interval-days 66 --data-source binance")
     # small CLI-ish behavior
     p = argparse.ArgumentParser(description='Train regime HMMs for configured symbols')
     p.add_argument('--n-states', type=int, default=4)
