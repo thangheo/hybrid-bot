@@ -18,6 +18,7 @@
 #include "execution/balance_validator_config.hpp"
 #include "risk/risk_config.hpp"
 #include <mutex>
+#include "execution/http_balance_client.hpp"
 
  using namespace trading::core;
  namespace trading {
@@ -52,6 +53,36 @@
     
     // Set exchange gateway for balance validation
     balanceValidator_->setExchangeGateway(exchangeGateway_);
+    // Optionally wire an HTTP-based authoritative balance service if configured
+    const char* balanceSvcUrl = std::getenv("BALANCE_SERVICE_URL");
+    if (balanceSvcUrl && balanceSvcUrl[0] != '\0') {
+        try {
+            auto httpClient = std::make_shared<trading::execution::HttpBalanceClient>(std::string(balanceSvcUrl));
+            balanceValidator_->setHttpBalanceClient(httpClient);
+            std::cout << "Info: HttpBalanceClient configured with URL=" << balanceSvcUrl << std::endl;
+        } catch (const std::exception& e) {
+            std::cerr << "Warning: failed to create HttpBalanceClient: " << e.what() << std::endl;
+        }
+    }
+    // If we have an API client manager available, attempt to initialize the service
+    // so callers that construct and immediately use the service don't hit "not running".
+    try {
+        if (api_client_manager_) {
+            if (api_client_manager_->initialize()) {
+                // Initialize other components that initialize() would normally start
+                order_lifecycle_tracker_->initialize();
+                fill_reconciliation_->initialize();
+                fill_reconciliation_->start();
+                is_initialized_ = true;
+                is_running_ = true;
+                std::cout << "Info: ExecutionService auto-initialized in constructor." << std::endl;
+            } else {
+                std::cerr << "Warning: ExecutionService auto-initialize failed (api_client_manager_ returned false)." << std::endl;
+            }
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "Warning: Exception during ExecutionService auto-initialize: " << e.what() << std::endl;
+    }
 }
 //old one-> should not use
  ExecutionService::ExecutionService(
@@ -81,6 +112,34 @@
          // We'll need to set this per exchange - for now, use the first available client
          // This will be improved when we integrate with the gateway
      }
+    // Optionally wire an HTTP-based authoritative balance service if configured (legacy constructor)
+    const char* balanceSvcUrl = std::getenv("BALANCE_SERVICE_URL");
+    if (balanceSvcUrl && balanceSvcUrl[0] != '\0') {
+        try {
+            auto httpClient = std::make_shared<trading::execution::HttpBalanceClient>(std::string(balanceSvcUrl));
+            balanceValidator_->setHttpBalanceClient(httpClient);
+            std::cout << "Info: HttpBalanceClient configured with URL=" << balanceSvcUrl << std::endl;
+        } catch (const std::exception& e) {
+            std::cerr << "Warning: failed to create HttpBalanceClient: " << e.what() << std::endl;
+        }
+    }
+    // Try to auto-initialize in legacy constructor if an API client manager was provided
+    try {
+        if (api_client_manager_) {
+            if (api_client_manager_->initialize()) {
+                order_lifecycle_tracker_->initialize();
+                fill_reconciliation_->initialize();
+                fill_reconciliation_->start();
+                is_initialized_ = true;
+                is_running_ = true;
+                std::cout << "Info: ExecutionService auto-initialized in legacy constructor." << std::endl;
+            } else {
+                std::cerr << "Warning: ExecutionService auto-initialize failed in legacy constructor." << std::endl;
+            }
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "Warning: Exception during ExecutionService auto-initialize (legacy ctor): " << e.what() << std::endl;
+    }
  }
  
  ExecutionService::~ExecutionService() {
