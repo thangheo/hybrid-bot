@@ -244,7 +244,9 @@ start_python() {
     
     # Start Python process with nohup and config parameter
     cd "$(dirname "$PYTHON_SCRIPT_PATH")" || exit 1
-    nohup python3 "$(basename "$PYTHON_SCRIPT_PATH")" --config "../$config_path" > "$PYTHON_LOG_FILE" 2>&1 &
+    # nohup python3 "$(basename "$PYTHON_SCRIPT_PATH")" --config "../$config_path" > "$PYTHON_LOG_FILE" 2>&1 &
+    #  python3 regime.py --start-trainer --trainer-interval-days 66 --data-source binance
+    nohup python3 "$(basename "$PYTHON_SCRIPT_PATH")" --start-trainer --trainer-interval-days 30 --data-source binance > "$PYTHON_LOG_FILE" 2>&1 &
     local python_pid=$!
     
     # Save PID (adjust path since we changed directory)

@@ -32,6 +32,7 @@ import multiprocessing
 import os
 import threading
 # import for None
+from typing import Optional, Any
 
 
 
@@ -42,7 +43,7 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 
-def load_config(config_path: str = None) -> dict:
+def load_config(config_path: Optional[str] = None) -> dict:
     # Look for config in repo root (parent of python-strategy)
     if config_path:
         p = Path(config_path)
@@ -116,7 +117,7 @@ def download_or_load(regime: Regime, symbol: str, data_dir: Path, days: int = 60
     return df
 
 
-def train_hmm_for_symbol(regime: Regime, df: pd.DataFrame, n_states: int = 4, symbol: str = None):
+def train_hmm_for_symbol(regime: Regime, df: pd.DataFrame, n_states: int = 4, symbol: Optional[str] = None):
     # compute features using the shared code in Regime
     features = regime.compute_regime_features(df)
 
@@ -323,7 +324,7 @@ def poll_and_update_regimes(symbols: list, data_dir: Path, interval: int = 60):
         return current
 
 
-def get_current_regime(symbol: str, data_dir: Path = None):
+def get_current_regime(symbol: str, data_dir: Optional[Path] = None):
     """Convenience function: load model for symbol and return current regime and probabilities.
     If model isn't found in data_dir, raises.
     """
@@ -448,7 +449,7 @@ def monitor_and_publish_regimes(symbols: list, data_dir: Path, socket, interval:
         return
 
     regime_obj = Regime()
-    last_ts = {symbol: None for symbol in symbols}
+    last_ts: dict[str, Optional[str]] = {symbol: None for symbol in symbols}
 
     print('Starting monitor loop — will check every', interval, 'seconds')
     try:
@@ -475,11 +476,11 @@ def monitor_and_publish_regimes(symbols: list, data_dir: Path, socket, interval:
             if any_new:
                 # (re)load models in case they were updated
                 models = load_saved_models(data_dir)
-                payload = {'ts': datetime.now(timezone.utc).isoformat(), 'source': 'regime_publisher', 'regimes': {}}
+                payload: dict[str, Any] = {'ts': datetime.now(timezone.utc).isoformat(), 'source': 'regime_publisher', 'regimes': {}}
                 for symbol in symbols:
                     key = symbol_filename(symbol)
                     model_entry = models.get(key)
-                    entry = {'regime': None, 'probs': None, 'last_ts': latest_seen.get(symbol)}
+                    entry: dict[str, Any] = {'regime': None, 'probs': None, 'last_ts': latest_seen.get(symbol)}
                     if model_entry and latest_seen.get(symbol):
                         try:
                             # predict using the most recent data for that symbol
@@ -529,11 +530,11 @@ def generate_regimes_snapshot(symbols: list, data_dir: Path) -> dict:
     """
     models = load_saved_models(data_dir)
     regime_obj = Regime()
-    payload = {'ts': datetime.now(timezone.utc).isoformat(), 'source': 'regime_trainer', 'regimes': {}}
+    payload: dict[str, Any] = {'ts': datetime.now(timezone.utc).isoformat(), 'source': 'regime_trainer', 'regimes': {}}
     for symbol in symbols:
         key = symbol_filename(symbol)
         model_entry = models.get(key)
-        entry = {'regime': None, 'probs': None, 'last_ts': None}
+        entry: dict[str, Any] = {'regime': None, 'probs': None, 'last_ts': None}
         try:
             df_recent = download_or_load(regime_obj, symbol, data_dir, days=1)
             if df_recent is None or df_recent.empty:
