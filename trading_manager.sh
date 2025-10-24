@@ -164,7 +164,7 @@ build_cpp() {
     # Change to build directory and run make
     if cd "$CPP_BUILD_DIR"; then
         print_status "$BLUE" "Changed to build directory: $(pwd)"
-        
+        cmake ..;
         # Run make and capture output
         if make -j7 > "$BUILD_LOG_FILE" 2>&1; then
             print_status "$GREEN" "C++ build completed successfully"

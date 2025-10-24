@@ -4,6 +4,7 @@
 find_package(PkgConfig REQUIRED)
 find_package(CURL REQUIRED)
 find_package(jsoncpp REQUIRED)
+find_package(GTest REQUIRED)
 
 set(CMAKE_CXX_STANDARD 23)
 
@@ -80,3 +81,28 @@ target_link_libraries(test_execution
     ${UUID_LIBRARIES}      # Add libuuid for test
     Threads::Threads
 )
+
+# Balance validator unit test (added so test_balance_validator can be run)
+add_executable(test_balance_validator ../../tests/execution/test_balance_validator.cpp)
+
+target_link_libraries(test_balance_validator
+    PRIVATE
+    execution
+    common
+    proto_lib
+    ${Protobuf_LIBRARIES}
+    ${gRPC_LIBRARIES}
+    Boost::system
+    OpenSSL::SSL
+    OpenSSL::Crypto
+    CURL::libcurl
+    jsoncpp_lib
+    ${UUID_LIBRARIES}
+    Threads::Threads
+    GTest::GTest
+    GTest::Main
+)
+
+# Register with CTest
+enable_testing()
+add_test(NAME test_balance_validator COMMAND test_balance_validator)
