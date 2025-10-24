@@ -120,7 +120,6 @@ data_ingestion:
     # Emerging Altcoins with High Potential
     - "SUIUSDT"    # Sui - Move-based high-performance chain
     - "APTUSDT"    # Aptos - Another Move language blockchain
-    - "KASUSDT"    # Kaspa - DAG-based mining innovation
     - "TIAUSDT"    # Celestia - Modular blockchain pioneer
     # - "STRKUSDT"   # StarkNet - ZK-rollup scaling solution
 
