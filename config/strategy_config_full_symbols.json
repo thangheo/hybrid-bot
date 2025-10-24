@@ -148,12 +148,6 @@
        "description": "Aptos - Move language blockchain"
      },
      {
-       "symbol": "KAS/USDT",
-       "exchange": "BINANCE",
-       "category": "mining_innovation",
-       "description": "Kaspa - DAG-based mining"
-     },
-     {
        "symbol": "TIA/USDT",
        "exchange": "BINANCE",
        "category": "modular_blockchain",
