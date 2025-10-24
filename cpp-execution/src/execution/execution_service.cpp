@@ -336,7 +336,9 @@ ExecutionResponse ExecutionService::executeSignal(const TradingSignal& signal) {
 
     // === Professional Balance Validation ===
     try {
-        // Use the new balance validator for comprehensive checking
+        // Use the new balance validator for comprehensive checking (cached read)
+        std::cout << "[BALANCE] Preflight (cached) validation for order " << exchange_order->getClientOrderId()
+                  << " on exchange " << exchangeId.toString() << std::endl;
         auto balanceResult = balanceValidator_->validateOrder(*exchange_order, exchangeId, false);
         
         if (!balanceResult.isValid) {
@@ -470,13 +472,52 @@ ExecutionResponse ExecutionService::executeSignal(const TradingSignal& signal) {
 
                 if (looksLikeInsufficient) {
                     std::cout << "🔄 Insufficient balance detected, refreshing cache for exchange: " << exchangeId.toString() << std::endl;
-                    
+
                     // Use our balance validator to refresh the cache
                     try {
                         balanceValidator_->clearBalanceCache(exchangeId);
                         std::cout << "✅ Balance cache cleared for exchange: " << exchangeId.toString() << std::endl;
                     } catch (const std::exception& e) {
                         std::cerr << "Warning: failed to clear balance cache after rejection: " << e.what() << std::endl;
+                    }
+
+                    // After clearing cache, revalidate with fresh data and optionally retry once
+                    try {
+                        std::cout << "[BALANCE] Performing forced fresh validation before optional retry for order " << exchange_order->getClientOrderId() << std::endl;
+                        auto freshValidation = balanceValidator_->validateOrder(*exchange_order, exchangeId, true);
+                        if (freshValidation.isValid) {
+                            std::cout << "[BALANCE] Fresh validation PASSED, attempting one retry submit for " << exchange_order->getClientOrderId() << std::endl;
+                            try {
+                                // perform one resubmit attempt
+                                if (exchangeGateway_) {
+                                    auto retryFuture = exchangeGateway_->placeOrder(order);
+                                    executionReport = retryFuture.get();
+                                } else {
+                                    auto client = api_client_manager_->getClient(exchangeId);
+                                    if (client) {
+                                        auto retryFuture = client->placeOrder(order);
+                                        executionReport = retryFuture.get();
+                                    } else {
+                                        std::cerr << "Warning: cannot retry submit - api client unavailable for exchange: " << exchangeId.toString() << std::endl;
+                                    }
+                                }
+
+                                // Refresh our result to the retry outcome
+                                try {
+                                    result = executionReport;
+                                } catch (...) {
+                                    // If executionReport cannot be converted for some reason, ignore and leave original result
+                                }
+
+                                std::cout << "[RETRY] Resubmit attempt completed for " << exchange_order->getClientOrderId() << std::endl;
+                            } catch (const std::exception& e) {
+                                std::cerr << "Warning: retry submit failed with exception: " << e.what() << std::endl;
+                            }
+                        } else {
+                            std::cout << "[BALANCE] Fresh validation still fails after cache refresh: " << freshValidation.reason << std::endl;
+                        }
+                    } catch (const std::exception& e) {
+                        std::cerr << "Warning: fresh validation before retry failed: " << e.what() << std::endl;
                     }
                 }
             } catch (const std::exception& e) {
