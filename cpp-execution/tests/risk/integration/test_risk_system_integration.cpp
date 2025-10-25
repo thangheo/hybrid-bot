@@ -5,9 +5,9 @@
  * Created: 2025-04-30
  */
 
- #include "risk_manager.hpp"
- #include "service/risk_service.hpp"
- #include "service/risk_validation_service.hpp"
+ #include "risk/risk_manager.hpp"
+ #include "risk/service/risk_service.hpp"
+ #include "risk/service/risk_validation_service.hpp"
  #include <gtest/gtest.h>
  #include <memory>
  #include <chrono>
@@ -60,13 +60,13 @@
      TradingSignal createSampleSignal() {
          TradingSignal signal;
          signal.id = "test-signal-1";
-         signal.exchangeId = "binance";
-         signal.tradingPair = "BTC/USDT";
+         signal.exchangeId = ExchangeId::binance().toString();
+         signal.tradingPair = core::Symbol("BTC/USDT");
          signal.direction = Direction::BUY;
          signal.strength = 0.8;
          signal.targetSize = 1.0;
          signal.strategyId = "order-imbalance";
-         signal.signalTtlMs = 1000;
+         signal.setTtl(std::chrono::milliseconds(10000)); // 10 seconds TTL
          return signal;
      }
      

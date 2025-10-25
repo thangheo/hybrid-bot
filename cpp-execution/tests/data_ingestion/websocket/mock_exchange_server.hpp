@@ -109,18 +109,18 @@ private:
     
     // Data publishing
     void publishData();
-    void publishOrderBookUpdate(const core::Symbol& symbol);
-    void publishTrade(const core::Symbol& symbol);
-    void publishTickerUpdate(const core::Symbol& symbol);
+    void publishOrderBookUpdate(const std::string& symbol);
+    void publishTrade(const std::string& symbol);
+    void publishTickerUpdate(const std::string& symbol);
     
     // Message creation
-    json createOrderBookUpdate(const core::Symbol& symbol);
-    json createTradeUpdate(const core::Symbol& symbol);
-    json createTickerUpdate(const core::Symbol& symbol);
+    json createOrderBookUpdate(const std::string& symbol);
+    json createTradeUpdate(const std::string& symbol);
+    json createTickerUpdate(const std::string& symbol);
     
     // Test data setup
     void initializeTestData();
-    void addTradingPair(const core::Symbol& symbol, double base_price);
+    void addTradingPair(const std::string& symbol, double base_price);
     
     // Utility methods
     double getRandomQuantity();

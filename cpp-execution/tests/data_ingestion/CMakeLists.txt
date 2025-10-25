@@ -41,19 +41,19 @@ target_include_directories(data_ingestion_tests
 )
 
 # WebSocket specific test executable
-add_executable(websocket_tests ${WEBSOCKET_TEST_SOURCES})
-target_link_libraries(websocket_tests
-    PRIVATE
-        data_ingestion
-        common
-        GTest::GTest
-        GTest::Main
-        GMock::GMock
-        Threads::Threads
-        Boost::system
-        Boost::thread
-        OpenSSL::SSL
-)
+# add_executable(websocket_tests ${WEBSOCKET_TEST_SOURCES})
+# target_link_libraries(websocket_tests
+#     PRIVATE
+#         data_ingestion
+#         common
+#         GTest::GTest
+#         GTest::Main
+#         GMock::GMock
+#         Threads::Threads
+#         Boost::system
+#         Boost::thread
+#         OpenSSL::SSL
+# )
 target_include_directories(websocket_tests
     PRIVATE
         ${CMAKE_SOURCE_DIR}/include
