@@ -17,6 +17,7 @@
 #include "execution/preflight/preflight.hpp"
 #include "execution/balance_validator_config.hpp"
 #include "risk/risk_config.hpp"
+#include <util/parse_safe.hpp>
 #include <mutex>
 #include "execution/http_balance_client.hpp"
 
@@ -1494,7 +1495,7 @@ ExecutionResponse ExecutionService::executeOrderWithAlgorithm(const models::Orde
             params->algorithm_type = AlgorithmType::TWAP;
             std::string duration = order.getExtraParam("duration");
             if (!duration.empty()) {
-                params->duration_seconds = std::stoi(duration);
+                params->duration_seconds = ::util::parseIntOr(duration, 0);
             }
         } 
         else if (algorithmName == "VWAP") {

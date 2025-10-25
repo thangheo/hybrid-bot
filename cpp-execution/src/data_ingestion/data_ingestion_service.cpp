@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <stdexcept>
+#include <util/parse_safe.hpp>
 
 namespace trading {
 namespace data_ingestion {
@@ -261,7 +262,7 @@ bool DataIngestionService::setupExchangeManager() {
             auto it = exchConf.additional_params.find("memory_limit_kb");
             if (it != exchConf.additional_params.end()) {
                 try {
-                    memoryLimitKB = std::stoull(it->second);
+                    memoryLimitKB = ::util::parseULLOr(it->second, 0ULL);
                     std::cout << "Found exchange-specific memory limit: " << memoryLimitKB << " KB\n";
                 } catch (...) {
                     std::cerr << "Invalid exchange additional_params.memory_limit_kb; ignoring" << std::endl;

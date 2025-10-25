@@ -7,6 +7,7 @@
 #include <chrono>
 #include <random>
 #include <algorithm>
+#include <util/parse_safe.hpp>
 
 namespace trading {
 namespace execution {
@@ -193,7 +194,7 @@ TwapConfig TwapAlgorithm::extractConfigFromOrder(const models::Order& parentOrde
     auto durationIt = params.find("twap_duration_seconds");
     if (durationIt != params.end() && !durationIt->second.empty()) {
         try {
-            config.duration = std::chrono::seconds(std::stoi(durationIt->second));
+            config.duration = std::chrono::seconds(::util::parseIntOr(durationIt->second, 0));
         } catch (const std::exception& e) {
             // Use default if conversion fails
             config.duration = std::chrono::seconds(3600); // 1 hour default
@@ -206,7 +207,7 @@ TwapConfig TwapAlgorithm::extractConfigFromOrder(const models::Order& parentOrde
     auto intervalIt = params.find("twap_slice_interval_seconds");
     if (intervalIt != params.end() && !intervalIt->second.empty()) {
         try {
-            config.slice_interval = std::chrono::seconds(std::stoi(intervalIt->second));
+            config.slice_interval = std::chrono::seconds(::util::parseIntOr(intervalIt->second, 0));
         } catch (const std::exception& e) {
             // Use default if conversion fails
             config.slice_interval = std::chrono::seconds(300); // 5 minutes default
@@ -246,7 +247,7 @@ ExecutionResponse TwapAlgorithm::execute(const models::Order& parentOrder, Execu
     std::string durationStr = parentOrder.getExtraParam("twap_duration_seconds");
     if (!durationStr.empty()) {
         try {
-            config.duration = std::chrono::seconds(std::stoi(durationStr));
+            config.duration = std::chrono::seconds(::util::parseIntOr(durationStr, 0));
         } catch (const std::exception&) {
             config.duration = std::chrono::seconds(3600); // Default to 1 hour
         }
@@ -258,7 +259,7 @@ ExecutionResponse TwapAlgorithm::execute(const models::Order& parentOrder, Execu
     std::string intervalStr = parentOrder.getExtraParam("twap_slice_interval");
     if (!intervalStr.empty()) {
         try {
-            config.slice_interval = std::chrono::seconds(std::stoi(intervalStr));
+            config.slice_interval = std::chrono::seconds(::util::parseIntOr(intervalStr, 0));
         } catch (const std::exception&) {
             config.slice_interval = std::chrono::seconds(300); // Default to 5 minutes
         }

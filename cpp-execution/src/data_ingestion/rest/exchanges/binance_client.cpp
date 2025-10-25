@@ -413,8 +413,28 @@ OrderInfo BinanceClient::getOrderStatus(const std::string& symbol, const std::st
             else orderInfo.executedQty = root["executedQty"].get<double>();
         }
         if (root.contains("time")) {
-            if (root["time"].is_string()) orderInfo.timestamp = std::stoll(root["time"].get<std::string>());
-            else orderInfo.timestamp = root["time"].get<long long>();
+            try {
+                if (root["time"].is_string()) {
+                    std::string ts = root["time"].get<std::string>();
+                    // tolerant parse: handle empty, decimal, or numeric strings
+                    if (!ts.empty()) {
+                        if (ts.find('.') != std::string::npos) {
+                            double d = std::stod(ts);
+                            orderInfo.timestamp = static_cast<long long>(d);
+                        } else {
+                            orderInfo.timestamp = std::stoll(ts);
+                        }
+                    } else {
+                        orderInfo.timestamp = 0;
+                    }
+                } else orderInfo.timestamp = root["time"].get<long long>();
+            } catch (const std::exception &ex) {
+                LOG_WARN("BinanceClient::getOrderStatus: failed to parse time '{}': {}", root["time"].dump(), ex.what());
+                orderInfo.timestamp = 0;
+            } catch (...) {
+                LOG_WARN("BinanceClient::getOrderStatus: failed to parse time (unknown)");
+                orderInfo.timestamp = 0;
+            }
         }
         
         // Parse status
