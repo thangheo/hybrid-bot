@@ -33,6 +33,93 @@
 
 namespace trading {
 namespace strategy {
+// Thread-safe statistical adapter to compute dynamic thresholds per regime
+class StatisticalThresholdAdapter {
+public:
+    struct DynamicThresholds {
+        double buyThreshold = 0.55;
+        double sellThreshold = -0.5;
+        double minProfitableReturn = 0.003; // default trading cost
+    };
+
+private:
+    struct ThresholdStats {
+        std::deque<double> recentReturns;
+        std::deque<double> recentVolatilities;
+        size_t maxHistory = 1000;
+
+        double percentile(const std::deque<double>& data, double pct) const {
+            if (data.empty()) return 0.0;
+            std::vector<double> sorted(data.begin(), data.end());
+            std::sort(sorted.begin(), sorted.end());
+            size_t idx = static_cast<size_t>(pct * sorted.size());
+            return sorted[std::min(idx, sorted.size() - 1)];
+        }
+    };
+
+    std::map<int, ThresholdStats> regimeStats_;
+    mutable std::mutex mu_;
+
+public:
+    DynamicThresholds calculateThresholds(int regime, double currentVol) {
+        std::lock_guard<std::mutex> lk(mu_);
+        auto &stats = regimeStats_[regime];
+
+        // Tuned percentiles
+        const double P75 = 0.80; // use 80th percentile for buy
+        const double P25 = 0.20; // use 20th percentile for sell
+        const double MIN_ABS_PCT = 0.35; // 35th percentile for min profitable move
+        const double VOL_ADJUST_MULT = 0.25; // stronger volatility scaling
+
+        // The stored recentReturns are normalized returns (logRet / vol) so percentiles are in z-space
+        double p75_return = stats.percentile(stats.recentReturns, P75);
+        double p25_return = stats.percentile(stats.recentReturns, P25);
+        double median_vol = stats.percentile(stats.recentVolatilities, 0.50);
+
+        DynamicThresholds out;
+
+        // avoid division by tiny median vol
+        double volRef = std::max(median_vol, 1e-6);
+        double volAdjust = currentVol / volRef;
+        volAdjust = std::clamp(volAdjust, 0.5, 2.0); // limit extreme scaling
+
+        // Ensure reasonable minimum magnitudes for thresholds in normalized (z) space
+        const double MIN_Z_MAG = 0.5; // require at least ~0.5 sigma
+
+        // Scale percentile thresholds by volatility regime; they are z-like so remain comparable to normalized returns
+        out.buyThreshold = std::max(MIN_Z_MAG, p75_return * (1.0 + VOL_ADJUST_MULT * (volAdjust - 1.0)));
+        out.sellThreshold = std::min(-MIN_Z_MAG, p25_return * (1.0 + VOL_ADJUST_MULT * (volAdjust - 1.0)));
+
+        // min profitable return: use percentile of absolute normalized moves, convert back to absolute pct by multiplying by volRef
+        double minAbsNorm = 0.0;
+        std::deque<double> absvals;
+        for (double r : stats.recentReturns) absvals.push_back(std::abs(r));
+        if (!absvals.empty()) {
+            ThresholdStats tmp{absvals, stats.recentVolatilities, stats.maxHistory};
+            minAbsNorm = tmp.percentile(absvals, MIN_ABS_PCT);
+        }
+        // Convert normalized magnitude back to absolute log-return via volRef and add trading cost buffer
+        out.minProfitableReturn = std::max(0.0005, minAbsNorm * volRef) + 0.003; // keep a small floor plus cost
+
+        return out;
+    }
+
+    void updateStats(int regime, double return_, double volatility) {
+        std::lock_guard<std::mutex> lk(mu_);
+        auto &s = regimeStats_[regime];
+        // Store normalized return (z-like): log-return divided by volatility
+        double volRef = std::max(volatility, 1e-6);
+        double norm = 0.0;
+        if (std::isfinite(return_) && std::isfinite(volRef) && volRef > 0.0) norm = return_ / volRef;
+        s.recentReturns.push_back(norm);
+        s.recentVolatilities.push_back(volatility);
+        while (s.recentReturns.size() > s.maxHistory) s.recentReturns.pop_front();
+        while (s.recentVolatilities.size() > s.maxHistory) s.recentVolatilities.pop_front();
+    }
+};
+
+static StatisticalThresholdAdapter g_statThresholdAdapter;
+
 // Helper: build filesystem-friendly model filename for exchange+symbol
 static std::string buildSymbolModelPath(const std::string &baseDir, const core::ExchangeId &exch, const core::Symbol &sym) {
     if (baseDir.empty()) return std::string();
@@ -617,40 +704,37 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                                         priceChangeLogRet = std::log(target) - std::log(baseRef);
                                     }
 
-                                    // normalize by realized volatility
-                                    // clamp volatility to avoid extreme normalization during spikes
-                                    double vol = std::clamp(m.realizedVolatility, 0.001, 0.05); // 0.1% - 5%
-                                    double normalizedReturn = priceChangeLogRet / vol;
+                                    // normalize by realized volatility (clamp to reasonable range)
+                                    double vol = std::clamp(m.realizedVolatility, 0.0001, 0.5);
+                                    double normalizedReturn = 0.0;
+                                    if (vol > 0.0 && std::isfinite(vol) && std::isfinite(priceChangeLogRet)) normalizedReturn = priceChangeLogRet / vol;
 
-                                    // absolute return (percent) for profitability check
-                                    double absReturn = std::abs(std::exp(priceChangeLogRet) - 1.0);
-
-                                    // fee / profitability filtering
-                                    const double MIN_ABS_RETURN_PCT = 0.0025;  // 0.2% minimum absolute move to consider
-                                    const double TRADING_FEE_PCT = 0.003;      // 0.3% round-trip
-                                    const double SAFETY_BUFFER = 0.0005;      // 0.05% slippage buffer
-                                    const double MIN_PROFITABLE_RETURN = TRADING_FEE_PCT + SAFETY_BUFFER;  // 0.2%
-
-                                    // Base normalized thresholds (z-score like)
-                                    const double BASE_SELL_N = -0.5;
-                                    const double BASE_BUY_N = 0.55;
-
-                                    // Adaptive sigma threshold: ensure normalized threshold corresponds to at least the min profitable return
-                                    double min_sigma_for_profitability = MIN_PROFITABLE_RETURN / vol;
-                                    double buy_threshold = std::max(BASE_BUY_N, min_sigma_for_profitability);
-                                    double sell_threshold = std::min(BASE_SELL_N, -min_sigma_for_profitability);
-
-                                    // Use adaptive sigma-only labeling (threshold already enforces profitability)
-                                    int label;
-                                    if (normalizedReturn > buy_threshold) {
-                                        label = 2; // BUY
-                                    } else if (normalizedReturn < sell_threshold) {
-                                        label = 0; // SELL
-                                    } else {
-                                        label = 1; // NEUTRAL
+                                    // Use statistical thresholds computed per-regime (if regime info not available default to regime 0)
+                                    int regimeIdx = 0;
+                                    if (regime_subscriber_) {
+                                        trading::strategy::core_analysis::RegimeInfo rinfo;
+                                        if (regime_subscriber_->get(pt.symbol.toString(), rinfo) && !rinfo.probs.empty()) {
+                                            // pick most probable regime
+                                            double best = -1.0; int bi = 0;
+                                            for (size_t ii = 0; ii < rinfo.probs.size() && ii < ImbalanceDetectionEngine::NUMBER_OF_REGIMES; ++ii) {
+                                                if (rinfo.probs[ii] > best) { best = rinfo.probs[ii]; bi = static_cast<int>(ii); }
+                                            }
+                                            regimeIdx = bi;
+                                        }
                                     }
-                                toTrain.emplace_back(pt.features, label, pt.exchangeId, pt.symbol);
-                                pendingTraining_.pop_front();
+
+                                    auto dyn = g_statThresholdAdapter.calculateThresholds(regimeIdx, vol);
+
+                                    // The adapter returns absolute-like thresholds; compare normalized return to them
+                                    int label = 1; // NEUTRAL
+                                    if (normalizedReturn > dyn.buyThreshold) label = 2; // BUY
+                                    else if (normalizedReturn < dyn.sellThreshold) label = 0; // SELL
+
+                                    // record for training and update stats with realized (non-normalized) absolute return
+                                    toTrain.emplace_back(pt.features, label, pt.exchangeId, pt.symbol);
+                                    double realizedPct = std::abs(std::exp(priceChangeLogRet) - 1.0);
+                                    g_statThresholdAdapter.updateStats(regimeIdx, priceChangeLogRet, vol);
+                                    pendingTraining_.pop_front();
                             } else break;
                         }
                     }
