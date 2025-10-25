@@ -38,7 +38,8 @@ class StatisticalThresholdAdapter {
 public:
     struct DynamicThresholds {
         double buyThreshold = 0.55;
-        double sellThreshold = -0.5;
+        // make SELL threshold less negative by default to increase sensitivity
+        double sellThreshold = -0.35;
         double minProfitableReturn = 0.003; // default trading cost
     };
 
@@ -83,12 +84,16 @@ public:
         double volAdjust = currentVol / volRef;
         volAdjust = std::clamp(volAdjust, 0.5, 2.0); // limit extreme scaling
 
-        // Ensure reasonable minimum magnitudes for thresholds in normalized (z) space
-        const double MIN_Z_MAG = 0.5; // require at least ~0.5 sigma
+    // Ensure reasonable minimum magnitudes for thresholds in normalized (z) space
+    // Lower the floor to allow more sensitive SELL detection (smaller negative z)
+    const double MIN_Z_MAG = 0.35; // was 0.5, reduce to 0.35 to increase SELL sensitivity
 
         // Scale percentile thresholds by volatility regime; they are z-like so remain comparable to normalized returns
-        out.buyThreshold = std::max(MIN_Z_MAG, p75_return * (1.0 + VOL_ADJUST_MULT * (volAdjust - 1.0)));
-        out.sellThreshold = std::min(-MIN_Z_MAG, p25_return * (1.0 + VOL_ADJUST_MULT * (volAdjust - 1.0)));
+    out.buyThreshold = std::max(MIN_Z_MAG, p75_return * (1.0 + VOL_ADJUST_MULT * (volAdjust - 1.0)));
+    // For sell threshold we want it to be less negative (higher) so SELL labels become
+    // easier to trigger. Use std::max between the scaled percentile and -MIN_Z_MAG
+    // (which is a negative value) so we don't force an overly-negative threshold.
+    out.sellThreshold = std::max(p25_return * (1.0 + VOL_ADJUST_MULT * (volAdjust - 1.0)), -MIN_Z_MAG);
 
         // min profitable return: use percentile of absolute normalized moves, convert back to absolute pct by multiplying by volRef
         double minAbsNorm = 0.0;
