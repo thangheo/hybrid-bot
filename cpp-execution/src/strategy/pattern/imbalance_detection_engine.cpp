@@ -513,21 +513,7 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                         else if (sma_snap > 0.0) { refVal = sma_snap; refType = 2; }
                         else if (micro > 0.0) { refVal = micro; refType = 3; }
                         else { refVal = m.midPrice; refType = 0; }
-                        // from learning result we need to rescale some tiny-valued features so the
-                        // Bayesian model sees sensible dynamic ranges. Apply safely with bounds checks.
-                        // try {
-                        //     // Indices discovered from feature ordering: 21, 24, 25 are small-scale.
-                        //     if (features.size() > 21) features[21] *= 1000.0; // bring to ~0.1 scale
-                        //     if (features.size() > 24) features[24] *= 1000.0; // bring to ~1.0 scale
-                        //     if (features.size() > 25) features[25] *= 1000.0; // bring to ~1.0 scale
-
-                        //     // Alternative: if those features are ratios and highly skewed you may
-                        //     // prefer a log1p transform. Uncomment the following lines to use log1p
-                        //     // instead of linear scaling for index 21:
-                        //     // if (features.size() > 21 && features[21] > 0.0) features[21] = std::log1p(features[21]);
-                        // } catch (...) {
-                        //     // safe-guard: if anything odd happens, continue without scaling
-                        // }
+                       
                         PendingTraining pt;
                         pt.timestamp = m.timestamp;
                         pt.features = features;
@@ -640,14 +626,14 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                                     double absReturn = std::abs(std::exp(priceChangeLogRet) - 1.0);
 
                                     // fee / profitability filtering
-                                    const double MIN_ABS_RETURN_PCT = 0.002;  // 0.2% minimum absolute move to consider
+                                    const double MIN_ABS_RETURN_PCT = 0.0025;  // 0.2% minimum absolute move to consider
                                     const double TRADING_FEE_PCT = 0.003;      // 0.3% round-trip
                                     const double SAFETY_BUFFER = 0.0005;      // 0.05% slippage buffer
                                     const double MIN_PROFITABLE_RETURN = TRADING_FEE_PCT + SAFETY_BUFFER;  // 0.2%
 
                                     // Base normalized thresholds (z-score like)
                                     const double BASE_SELL_N = -0.5;
-                                    const double BASE_BUY_N = 0.6;
+                                    const double BASE_BUY_N = 0.55;
 
                                     // Adaptive sigma threshold: ensure normalized threshold corresponds to at least the min profitable return
                                     double min_sigma_for_profitability = MIN_PROFITABLE_RETURN / vol;

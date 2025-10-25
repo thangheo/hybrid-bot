@@ -80,7 +80,7 @@
     // If empty, persistence is disabled. Set via configuration to enable.
     std::string bayesModelPath = "";
     // Labeling delay in milliseconds for online training buffer
-    int labelingDelayMs = 500;
+    int labelingDelayMs = 5000;
     // Persistence tuning: interval (ms) between automatic saves (default 1h)
     // Set to 0 to disable interval-based saves.
     int bayesSaveIntervalMs = 60 * 60 * 1000; // 1 hour

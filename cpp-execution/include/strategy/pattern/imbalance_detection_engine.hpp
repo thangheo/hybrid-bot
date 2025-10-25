@@ -274,7 +274,7 @@ public:
     mutable std::mutex pendingTrainingMutex_;
 
     // Labeling configuration (milliseconds to wait before labelling a prediction)
-    std::chrono::milliseconds labelingDelay_{500};
+    std::chrono::milliseconds labelingDelay_{5000};
     size_t maxPendingTraining_ = 8192;
 
     // Optional model persistence path (can be set via env BAYES_MODEL_PATH)
