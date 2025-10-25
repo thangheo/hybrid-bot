@@ -28,6 +28,7 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
+#include <functional>
 
 
 namespace trading   {
@@ -147,6 +148,13 @@ public:
      * @param callback The function to call when risk events occur
      */
     void registerRiskEventCallback(const RiskEventCallback& callback);
+
+    /**
+     * Register a signal checker callback for the post-trade monitor.
+     * The checker should return true if there is a BUY signal for the given exchange and symbol.
+     */
+    using PostTradeSignalChecker = std::function<bool(const core::ExchangeId&, const core::Symbol&)>;
+    void registerPostTradeSignalChecker(const PostTradeSignalChecker& checker);
     
     /**
      * Force a position reconciliation
@@ -214,6 +222,8 @@ private:
     // Risk event callbacks
     std::vector<RiskEventCallback> m_eventCallbacks;
     mutable std::mutex m_callbackMutex;
+    // Optional signal checker to be forwarded to PostTradeMonitor during init
+    std::optional<PostTradeSignalChecker> postTradeSignalChecker_;
     
     // Private helper methods
     void notifyRiskEvent(const RiskEvent& event);

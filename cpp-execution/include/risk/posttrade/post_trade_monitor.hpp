@@ -260,6 +260,17 @@ public:
      * Update market data for all price-dependent monitors
      */
     void updateMarketData(const core::MarketData& marketData);
+
+    // External signal checker type (public-facing)
+    using ExternalSignalChecker = std::function<bool(const core::ExchangeId&, const core::Symbol&)>;
+
+    /**
+     * Register an external signal checker callback. This is the public API
+     * for other subsystems to provide a function that returns true when a
+     * BUY signal is active for a given exchange+symbol. Internally this
+     * forwards to the private registerSignalChecker implementation.
+     */
+    void registerExternalSignalChecker(const ExternalSignalChecker& checker);
     
     /**
      * Update performance metrics for drawdown and other monitors
@@ -406,6 +417,28 @@ private:
     // Positions currently being closed by TTL enforcement (keys)
     mutable std::shared_mutex positionsClosingMutex_;
     std::unordered_set<std::string> positionsBeingClosed_;
+
+    // Tracked positions that were created after fills; used to store entry
+    // timestamp, computed deadline and last signal seen time. Keyed by
+    // "exchange:symbol" string.
+    struct TrackedPosition {
+        core::Timestamp entryTime;
+        core::Timestamp deadline;
+        core::Timestamp lastSignalSeen;
+        double ttlMs{0.0};
+        size_t exitAttempts{0};
+    };
+
+    mutable std::shared_mutex trackedPositionsMutex_;
+    std::unordered_map<std::string, TrackedPosition> trackedPositions_;
+
+    // Signal checker: client can register a callback that returns true if there
+    // is an active BUY signal for a given exchange+symbol. If not registered,
+    // the monitor will fall back to age-based TTL behavior.
+    using SignalChecker = std::function<bool(const core::ExchangeId&, const core::Symbol&)>;
+    void registerSignalChecker(const SignalChecker& checker);
+    mutable std::shared_mutex signalCheckerMutex_;
+    SignalChecker signalChecker_;
 
     // Enforce position TTL
     void enforcePositionTTL();

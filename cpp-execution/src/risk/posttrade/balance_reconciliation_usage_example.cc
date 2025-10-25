@@ -114,7 +114,7 @@ private:
     void handleReconciliationEvent(const PositionReconciliationEvent& event) {
         std::cout << "\n=== RECONCILIATION EVENT ===" << std::endl;
         std::cout << "Exchange: " << event.exchangeId.toString() << std::endl;
-        std::cout << "Trading Pair: " << event.tradingPair.symbol << std::endl;
+        std::cout << "Trading Pair: " << event.tradingPair.toString() << std::endl;
         std::cout << "Expected Quantity: " << event.expectedQuantity << std::endl;
         std::cout << "Actual Quantity: " << event.actualQuantity << std::endl;
         std::cout << "Discrepancy: " << (event.expectedQuantity - event.actualQuantity) << std::endl;
@@ -149,7 +149,8 @@ private:
         
         // 3. Reconcile specific trading pair
         std::cout << "\nReconciling BTC/USDT on Binance..." << std::endl;
-        auto pairResult = reconciliation.reconcileTradingPair(core::ExchangeId::binance(), "BTC/USDT");
+        auto pairResult = reconciliation.reconcileTradingPair(core::ExchangeId::binance(),
+                                                              core::Symbol::fromString("BTC/USDT"));
         printReconciliationResult("BTC/USDT Reconciliation", pairResult);
         
         // 4. Get reconciliation statistics
@@ -158,10 +159,7 @@ private:
         
         // 5. Demonstrate manual correction
         std::cout << "\nDemonstrating manual correction..." << std::endl;
-        TradingPair btcUsdt;
-        btcUsdt.symbol = "BTC/USDT";
-        btcUsdt.base = "BTC";
-        btcUsdt.quote = "USDT";
+        TradingPair btcUsdt = core::Symbol::fromString("BTC/USDT");
         
         bool correctionResult = reconciliation.correctDiscrepancy(
             core::ExchangeId::binance(), btcUsdt, 1.5 // Correct quantity to 1.5 BTC
@@ -192,7 +190,7 @@ private:
             std::cout << "Discrepancies:" << std::endl;
             for (size_t i = 0; i < result.discrepancies.size() && i < 5; ++i) {
                 const auto& disc = result.discrepancies[i];
-                std::cout << "  - " << disc.exchangeId.toString() << ":" << disc.tradingPair.symbol 
+                std::cout << "  - " << disc.exchangeId.toString() << ":" << disc.tradingPair.toString()
                          << " (" << disc.discrepancyPercentage << "% discrepancy)" << std::endl;
             }
             if (result.discrepancies.size() > 5) {
@@ -267,6 +265,7 @@ private:
 /**
  * Main function demonstrating the balance reconciliation system
  */
+
 int main() {
     try {
         std::cout << "=== BALANCE RECONCILIATION SYSTEM DEMO ===" << std::endl;

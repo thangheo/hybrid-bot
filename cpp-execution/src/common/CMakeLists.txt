@@ -1,4 +1,6 @@
 # src/common/CMakeLists.txt
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Define library
 add_library(common

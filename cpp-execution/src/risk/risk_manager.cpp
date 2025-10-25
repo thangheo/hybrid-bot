@@ -258,6 +258,15 @@ bool RiskManager::initialize() {
         m_postTradeMonitor->registerRiskEventCallback([this](const RiskEvent& event) {
             notifyRiskEvent(event);
         });
+
+        // If a post-trade signal checker has been registered earlier, forward it to the PostTradeMonitor
+        if (m_postTradeMonitor && postTradeSignalChecker_) {
+            try {
+                m_postTradeMonitor->registerExternalSignalChecker(*postTradeSignalChecker_);
+            } catch (const std::exception& e) {
+                LOG_WARN("RiskManager", "Failed to register post-trade signal checker: {}", e.what());
+            }
+        }
         
         return true;
     } catch (const std::exception& e) {
@@ -307,6 +316,17 @@ bool RiskManager::shutdown() {
     } catch (const std::exception& e) {
         std::cerr << "Exception during RiskManager shutdown: " << e.what() << std::endl;
         return false;
+    }
+}
+
+void RiskManager::registerPostTradeSignalChecker(const RiskManager::PostTradeSignalChecker& checker) {
+    postTradeSignalChecker_ = checker;
+    if (m_postTradeMonitor) {
+        try {
+            m_postTradeMonitor->registerExternalSignalChecker(checker);
+        } catch (const std::exception& e) {
+            LOG_WARN("RiskManager", "Error forwarding post-trade signal checker: {}", e.what());
+        }
     }
 }
 
