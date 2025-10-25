@@ -13,6 +13,9 @@
 #include <unordered_set>
 namespace trading::risk {
 
+// Temporary debug flag for verbose TTL logging. Set to 'false' to disable.
+static bool kPostTradeTtlDebug = true;
+
 // Helper function to replace std::format (C++20) with string stream (C++17)
 template<typename... Args>
 std::string formatString(const std::string& format, Args&&... args) {
@@ -933,6 +936,9 @@ void PostTradeMonitor::enforcePositionTTL() {
                     tp.lastSignalSeen = tp.entryTime; // assume signal present at entry
                     tp.ttlMs = static_cast<double>(ttlMs);
                     trackedPositions_.emplace(key, std::move(tp));
+                    if (kPostTradeTtlDebug) {
+                        LOG_INFO(formatString("[TTL_DEBUG] Tracked position created: {} (entry={} ttlMs={})", key, tp.entryTime.time_since_epoch().count(), ttlMs));
+                    }
                 }
             }
 
@@ -964,8 +970,12 @@ void PostTradeMonitor::enforcePositionTTL() {
                     it->second.lastSignalSeen = now;
                     // Sliding TTL policy: renew/extend deadline from 'now'
                     auto newDeadline = now + std::chrono::milliseconds(static_cast<int64_t>(ttlMs));
+                    auto oldDeadline = it->second.deadline;
                     it->second.deadline = newDeadline;
                     it->second.ttlMs = static_cast<double>(ttlMs);
+                    if (kPostTradeTtlDebug) {
+                        LOG_INFO(formatString("[TTL_DEBUG] Renewed TTL for {}: old_deadline={} new_deadline={} ttlMs={}", key, oldDeadline.time_since_epoch().count(), newDeadline.time_since_epoch().count(), ttlMs));
+                    }
                 }
                 continue; // still has signal -> do not exit
             }
@@ -1002,8 +1012,14 @@ void PostTradeMonitor::enforcePositionTTL() {
                     try {
                         auto orderId = executionInterface_->submitOrder(req);
                         exitRequested = !orderId.empty();
+                        if (kPostTradeTtlDebug) {
+                            LOG_DEBUG(formatString("[TTL_DEBUG] submitOrder called for {} result_order_id='{}'", key, orderId));
+                        }
                     } catch (...) {
                         exitRequested = false;
+                        if (kPostTradeTtlDebug) {
+                            LOG_DEBUG(formatString("[TTL_DEBUG] submitOrder threw exception for {}", key));
+                        }
                     }
                 }
 
@@ -1017,6 +1033,9 @@ void PostTradeMonitor::enforcePositionTTL() {
                         "info"
                     );
                     notifyRiskEvent(event);
+                    if (kPostTradeTtlDebug) {
+                        LOG_DEBUG(formatString("[TTL_DEBUG] TTL exit recorded for {} (ageMs={} ttlMs={} )", key, ageMs, ttlMs));
+                    }
                 }
 
                 // Note: positionsBeingClosed_ will be cleaned up when position disappears from snapshot or on next reconcile
