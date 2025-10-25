@@ -1,0 +1,13 @@
+[Unit]
+Description=Hybrid-bot Bayesian training runner (one-shot)
+After=network.target
+
+[Service]
+Type=oneshot
+# WorkingDirectory and ExecStart should be adjusted when copying the unit to /etc/systemd/system
+# For per-user installs copy the unit to ~/.config/systemd/user/ and it will run as the user.
+# Example ExecStart: /path/to/repo/scripts/trainer_wrapper.sh
+Environment=PATH=/usr/bin:/bin
+
+[Install]
+WantedBy=multi-user.target

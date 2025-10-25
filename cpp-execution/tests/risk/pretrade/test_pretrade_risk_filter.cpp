@@ -39,6 +39,10 @@
      MOCK_METHOD(bool, checkExposureLimit, (const OrderRequest&, std::vector<RiskViolation>&), (override));
      MOCK_METHOD(bool, initialize, (), (override));
      MOCK_METHOD(ExposureLimitConfig, getExposureLimits, (), (const, override));
+    // New mocks matching the current interface used by PreTradeRiskFilter
+    MOCK_METHOD(ExposureValidationResult, validateExposure, (const TradingSignal&), (const, override));
+    MOCK_METHOD(ExposureValidationResult, validateExposure, (const OrderRequest&), (const, override));
+    MOCK_METHOD(std::vector<RiskViolation>, getViolationDetails, (const TradingSignal&), (const, override));
  };
  
  // Mock order validator
@@ -429,6 +433,76 @@ TEST_F(PreTradeRiskFilterTest, ChangeRiskManagerMode) {
     // Change back to NORMAL mode
     riskFilter->setMode(RiskManagerMode::NORMAL);
     EXPECT_EQ(riskFilter->getMode(), RiskManagerMode::NORMAL);
+}
+
+// Test SELL capping to available balance (no shorting)
+TEST_F(PreTradeRiskFilterTest, SellCappedToAvailableBalance) {
+    // Prepare a SELL signal larger than available position
+    TradingSignal signal;
+    signal.id = "sell-cap-1";
+    signal.setTradingPair("BTC/USDT");
+    signal.direction = Direction::SELL;
+    signal.targetSize = 5.0; // request to sell 5
+    signal.exchangeId = "exchange1";
+    signal.strategyId = "strategy1";
+
+    // Exposure validator will return not approved
+    EXPECT_CALL(*mockExposureCalculator, validateExposure(_))
+        .WillOnce(Return(ExposureValidationResult::TOTAL_LIMIT_EXCEEDED));
+
+    // Provide some existing position via position tracker mock by replacing it
+    // Create a mock position tracker with a single long position of 2.0
+    // We'll set the position tracker directly on the filter
+    // Use existing Position class to craft a Position
+    Position pos("exchange1", TradingPair("BTC/USDT"), StrategyId("strategy1"), 2.0, 50000.0);
+    // Replace position tracker with a mock that returns the pos
+    // Create a small lambda-backed mock via existing MockPositionTracker in tests/mocks
+    using risk::test::MockPositionTracker;
+    auto *mockPosTracker = new risk::test::MockPositionTracker();
+    EXPECT_CALL(*mockPosTracker, getPosition(_, _))
+        .WillOnce(Return(std::optional<Position>(pos)));
+    // Other methods can be no-ops
+    EXPECT_CALL(*mockPosTracker, initialize()).WillOnce(Return(true)).RetiresOnSaturation();
+
+    riskFilter->m_positionTracker.reset(mockPosTracker);
+
+    // The rest of checks (order validator, fat finger) won't be reached after exposure handling
+    EXPECT_CALL(*mockOrderValidator, validateOrder(_, _)).Times(AtMost(1));
+    EXPECT_CALL(*mockFatFingerProtection, checkFatFinger(_, _)).Times(AtMost(1));
+
+    // Validate
+    ValidationResult res = riskFilter->validateSignal(signal);
+
+    // Expect approved and adjusted size capped to available (2.0)
+    EXPECT_TRUE(res.approved);
+    EXPECT_DOUBLE_EQ(res.adjustedSize, 2.0);
+}
+
+// Test SELL rejected when no available balance
+TEST_F(PreTradeRiskFilterTest, SellRejectedWhenNoBalance) {
+    TradingSignal signal;
+    signal.id = "sell-cap-2";
+    signal.setTradingPair("BTC/USDT");
+    signal.direction = Direction::SELL;
+    signal.targetSize = 1.0; // request to sell 1
+    signal.exchangeId = "exchange1";
+    signal.strategyId = "strategy1";
+
+    EXPECT_CALL(*mockExposureCalculator, validateExposure(_))
+        .WillOnce(Return(ExposureValidationResult::TOTAL_LIMIT_EXCEEDED));
+
+    // Position tracker returns no position
+    using risk::test::MockPositionTracker;
+    auto *mockPosTracker = new risk::test::MockPositionTracker();
+    EXPECT_CALL(*mockPosTracker, getPosition(_, _))
+        .WillOnce(Return(std::optional<Position>()));
+    EXPECT_CALL(*mockPosTracker, initialize()).WillOnce(Return(true)).RetiresOnSaturation();
+    riskFilter->m_positionTracker.reset(mockPosTracker);
+
+    ValidationResult res = riskFilter->validateSignal(signal);
+
+    // Expect rejected (no available balance to sell)
+    EXPECT_FALSE(res.approved);
 }
 
 int main(int argc, char** argv) {
