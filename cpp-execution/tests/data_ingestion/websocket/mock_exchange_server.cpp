@@ -330,7 +330,7 @@ void MockExchangeServer::publishData() {
     }
 }
 
-void MockExchangeServer::publishOrderBookUpdate(const core::Symbol& symbol) {
+void MockExchangeServer::publishOrderBookUpdate(const std::string& symbol) {
     try {
         if (!running_) return;
         
@@ -362,7 +362,7 @@ void MockExchangeServer::publishOrderBookUpdate(const core::Symbol& symbol) {
     }
 }
 
-void MockExchangeServer::publishTrade(const core::Symbol& symbol) {
+void MockExchangeServer::publishTrade(const std::string& symbol) {
     try {
         if (!running_) return;
         
@@ -393,7 +393,7 @@ void MockExchangeServer::publishTrade(const core::Symbol& symbol) {
     }
 }
 
-void MockExchangeServer::publishTickerUpdate(const core::Symbol& symbol) {
+void MockExchangeServer::publishTickerUpdate(const std::string& symbol) {
     try {
         if (!running_) return;
         
@@ -424,10 +424,10 @@ void MockExchangeServer::publishTickerUpdate(const core::Symbol& symbol) {
     }
 }
 
-json MockExchangeServer::createOrderBookUpdate(const core::Symbol& symbol) {
+nlohmann::json MockExchangeServer::createOrderBookUpdate(const std::string& symbol) {
     auto& data = test_data_[symbol];
     
-    json update;
+    nlohmann::json update;
     update["e"] = "depthUpdate";
     update["E"] = getCurrentTimestampMs();
     update["s"] = symbol;
@@ -435,10 +435,10 @@ json MockExchangeServer::createOrderBookUpdate(const core::Symbol& symbol) {
     update["u"] = data.last_update_id + 2;
     
     // Generate some random bids
-    json bids = json::array();
+    nlohmann::json bids = nlohmann::json::array();
     double bid_price = data.bid_price;
     for (int i = 0; i < 5; ++i) {
-        json level = json::array();
+        nlohmann::json level = nlohmann::json::array();
         level.push_back(formatPrice(bid_price - i * 0.01 * bid_price));
         level.push_back(formatQuantity(getRandomQuantity()));
         bids.push_back(level);
@@ -446,10 +446,10 @@ json MockExchangeServer::createOrderBookUpdate(const core::Symbol& symbol) {
     update["b"] = bids;
     
     // Generate some random asks
-    json asks = json::array();
+    nlohmann::json asks = nlohmann::json::array();
     double ask_price = data.ask_price;
     for (int i = 0; i < 5; ++i) {
-        json level = json::array();
+        nlohmann::json level = nlohmann::json::array();
         level.push_back(formatPrice(ask_price + i * 0.01 * ask_price));
         level.push_back(formatQuantity(getRandomQuantity()));
         asks.push_back(level);
@@ -462,10 +462,10 @@ json MockExchangeServer::createOrderBookUpdate(const core::Symbol& symbol) {
     return update;
 }
 
-json MockExchangeServer::createTradeUpdate(const core::Symbol& symbol) {
+nlohmann::json MockExchangeServer::createTradeUpdate(const std::string& symbol) {
     auto& data = test_data_[symbol];
     
-    json trade;
+    nlohmann::json trade;
     trade["e"] = "trade";
     trade["E"] = getCurrentTimestampMs();
     trade["s"] = symbol;
@@ -497,10 +497,10 @@ json MockExchangeServer::createTradeUpdate(const core::Symbol& symbol) {
     return trade;
 }
 
-json MockExchangeServer::createTickerUpdate(const core::Symbol& symbol) {
+nlohmann::json MockExchangeServer::createTickerUpdate(const std::string& symbol) {
     auto& data = test_data_[symbol];
     
-    json ticker;
+    nlohmann::json ticker;
     ticker["e"] = "24hrTicker";
     ticker["E"] = getCurrentTimestampMs();
     ticker["s"] = symbol;
@@ -537,7 +537,7 @@ void MockExchangeServer::initializeTestData() {
     addTradingPair("adausdt", 1.5);
 }
 
-void MockExchangeServer::addTradingPair(const core::Symbol& symbol, double base_price) {
+void MockExchangeServer::addTradingPair(const std::string& symbol, double base_price) {
     TradingPairData data;
     
     // Initialize with slightly different bid/ask for a small spread

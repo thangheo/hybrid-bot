@@ -5,14 +5,15 @@ find_package(GTest REQUIRED)
 find_package(GMock REQUIRED)
 
 # Add subdirectories for specialized risk test components
-# add_subdirectory(pretrade)
-# add_subdirectory(posttrade)
-# add_subdirectory(integration)
-# add_subdirectory(interfaces)
+add_subdirectory(posttrade)
+add_subdirectory(pretrade)
+add_subdirectory(integration)
+add_subdirectory(interfaces)
 
 # Source files for general risk tests
 set(RISK_TEST_SOURCES
     test_risk_manager.cpp
+    
 )
 
 # Main risk test executable

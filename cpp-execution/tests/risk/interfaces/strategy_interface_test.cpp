@@ -5,7 +5,7 @@
  * Created: 2025-05-05
  */
 
- #include "interfaces/strategy_interface.hpp"
+ #include "risk/interfaces/strategy_interface.hpp"
  #include <gtest/gtest.h>
  #include <gmock/gmock.h>
  #include <memory>
@@ -191,7 +191,7 @@
          .WillOnce(::testing::Return(response.dump()));
      
      // Test sending risk feedback
-     bool result = strategyInterface_->sendRiskFeedback("strategy1", "{\"risk_level\": \"high\"}");
+     bool result = strategyInterface_->sendRiskFeedback(StrategyId("strategy1"), "{\"risk_level\": \"high\"}");
      EXPECT_TRUE(result);
  }
  
@@ -214,7 +214,7 @@
          .WillOnce(::testing::Return(response.dump()));
      
      // Test getting parameters
-     std::string result = strategyInterface_->getStrategyParameters("strategy1");
+     std::string result = strategyInterface_->getStrategyParameters(StrategyId("strategy1"));
      EXPECT_EQ(result, parameters.dump());
  }
  
@@ -229,7 +229,7 @@
          .WillOnce(::testing::Return(response.dump()));
      
      // Test updating parameters
-     bool result = strategyInterface_->updateStrategyParameters("strategy1", 
+     bool result = strategyInterface_->updateStrategyParameters(StrategyId("strategy1"),
          "{\"risk_threshold\": 0.7, \"max_position_size\": 2.0}");
      EXPECT_TRUE(result);
  }
@@ -251,7 +251,7 @@
      event.message = "Position limit exceeded";
      event.data = "{\"current\": 2.5, \"limit\": 2.0}";
      
-     bool result = strategyInterface_->notifyRiskEvent("strategy1", event);
+     bool result = strategyInterface_->notifyRiskEvent(StrategyId("strategy1"), event);
      EXPECT_TRUE(result);
  }
  
@@ -263,7 +263,7 @@
      // Setup mock response
      nlohmann::json response = {
          {"success", true},
-         {"strategies", {"strategy1", "strategy2", "strategy3"}}
+         {"strategies", {StrategyId("strategy1"), "strategy2", "strategy3"}}
      };
      EXPECT_CALL(*mockClient_, sendAndReceive(::testing::_))
          .WillOnce(::testing::Return(response.dump()));
@@ -271,7 +271,7 @@
      // Test getting active strategies
      auto strategies = strategyInterface_->getActiveStrategies();
      EXPECT_EQ(strategies.size(), 3);
-     EXPECT_EQ(strategies[0], "strategy1");
+     EXPECT_EQ(strategies[0], StrategyId("strategy1"));
      EXPECT_EQ(strategies[1], "strategy2");
      EXPECT_EQ(strategies[2], "strategy3");
  }
@@ -290,7 +290,7 @@
          .WillOnce(::testing::Return(response.dump()));
      
      // Test checking if strategy is active
-     bool result = strategyInterface_->isStrategyActive("strategy1");
+     bool result = strategyInterface_->isStrategyActive(StrategyId("strategy1"));
      EXPECT_TRUE(result);
  }
  
@@ -317,17 +317,17 @@
      // Don't initialize (skip strategyInterface_->initialize())
      
      // Test methods without initialization
-     EXPECT_FALSE(strategyInterface_->sendRiskFeedback("strategy1", "{\"risk_level\": \"high\"}"));
-     EXPECT_EQ(strategyInterface_->getStrategyParameters("strategy1"), "{}");
-     EXPECT_FALSE(strategyInterface_->updateStrategyParameters("strategy1", "{}"));
+     EXPECT_FALSE(strategyInterface_->sendRiskFeedback(StrategyId("strategy1"), "{\"risk_level\": \"high\"}"));
+     EXPECT_EQ(strategyInterface_->getStrategyParameters(StrategyId("strategy1")), "{}");
+     EXPECT_FALSE(strategyInterface_->updateStrategyParameters(StrategyId("strategy1"), "{}"));
      
      risk::RiskEvent event;
      event.type = "test";
      event.severity = "low";
      event.message = "Test event";
      event.data = "{}";
-     EXPECT_FALSE(strategyInterface_->notifyRiskEvent("strategy1", event));
+     EXPECT_FALSE(strategyInterface_->notifyRiskEvent(StrategyId("strategy1"), event));
      
      EXPECT_TRUE(strategyInterface_->getActiveStrategies().empty());
-     EXPECT_FALSE(strategyInterface_->isStrategyActive("strategy1"));
+     EXPECT_FALSE(strategyInterface_->isStrategyActive(StrategyId("strategy1")));
  }

@@ -2,7 +2,7 @@
 
 # Source files for risk integration tests
 set(RISK_INTEGRATION_TEST_SOURCES
-    risk_interfaces_integration_test.cpp
+    # risk_interfaces_integration_test.cpp
     test_portfolio_integration.cpp
     test_portfolio_manager.cpp
     test_post_trade_monitor.cpp

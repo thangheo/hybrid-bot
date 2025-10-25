@@ -4,6 +4,7 @@
 set(RISK_POSTTRADE_TEST_SOURCES
     test_circuit_breaker.cpp
     test_post_trade_monitor.cpp
+    test_post_trade_ttl_behavior.cpp
 )
 
 # Posttrade risk test executable
