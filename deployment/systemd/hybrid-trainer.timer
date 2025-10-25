@@ -1,0 +1,11 @@
+[Unit]
+Description=Run hybrid-bot training every 14 days
+
+[Timer]
+# Start 10 minutes after boot and then every 14 days (14*24*3600 = 1209600 seconds)
+OnBootSec=10min
+OnUnitActiveSec=1209600
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -364,14 +364,6 @@ RiskParameters PreTradeRiskFilter::getRiskParameters(const core::ExchangeId& exc
     return params;
 }
 
-void PreTradeRiskFilter::setMode(RiskManagerMode mode) {
-    m_activeMode = mode;
-    LOG_INFO("Pre-trade risk filter mode changed to: {}", static_cast<int>(mode));
-}
-
-RiskManagerMode PreTradeRiskFilter::getMode() const {
-    return m_activeMode;
-}
 
 ValidationResult PreTradeRiskFilter::performAllChecks(const TradingSignal& signal) {
     ValidationResult result;
@@ -405,15 +397,45 @@ ValidationResult PreTradeRiskFilter::performAllChecks(const TradingSignal& signa
     // Check exposure limits
     auto exposureResult = m_exposureCalculator->validateExposure(signal);
     if (exposureResult != ExposureValidationResult::APPROVED) {
-        auto exposureViolations = m_exposureCalculator->getViolationDetails(signal);
-        result.violations.insert(result.violations.end(), 
-                                exposureViolations.begin(), 
-                                exposureViolations.end());
-        result.approved = false;
-        LOG_WARN("Signal {} rejected: failed exposure check", signal.getSignalId());
-        for (const auto& v : exposureViolations) {
-            LOG_DEBUG("  Exposure Violation: type={} desc='{}' limit={} actual={}",
-                      toString(v.type), v.description, v.limitValue, v.actualValue);
+        // For BUYs, instead of outright rejection, attempt to cap the requested size
+        if (signal.getDirection() == core::Direction::BUY) {
+            // Compute allowed size based on current exposure and limits
+            // We'll use getAllowedPositionSize which factors asset exposure and position limits
+            double allowedSize = getAllowedPositionSize(signal.getTradingPair());
+            // Ensure we don't increase size accidentally
+            allowedSize = std::min(allowedSize, signal.getTargetSize());
+
+            auto exposureViolations = m_exposureCalculator->getViolationDetails(signal);
+            result.violations.insert(result.violations.end(), 
+                                    exposureViolations.begin(), 
+                                    exposureViolations.end());
+
+            if (allowedSize > 0.0) {
+                result.approved = true;
+                result.adjustedSize = allowedSize;
+                LOG_WARN("Signal {} exposure would exceed limits; capping BUY size from {} to {}",
+                         signal.getSignalId(), signal.getTargetSize(), allowedSize);
+            } else {
+                result.approved = false;
+                LOG_WARN("Signal {} rejected: failed exposure check and no allowed BUY size available", signal.getSignalId());
+            }
+
+            for (const auto& v : exposureViolations) {
+                LOG_DEBUG("  Exposure Violation: type={} desc='{}' limit={} actual={}",
+                          toString(v.type), v.description, v.limitValue, v.actualValue);
+            }
+        } else {
+            // Non-BUY directions remain rejected
+            auto exposureViolations = m_exposureCalculator->getViolationDetails(signal);
+            result.violations.insert(result.violations.end(), 
+                                    exposureViolations.begin(), 
+                                    exposureViolations.end());
+            result.approved = false;
+            LOG_WARN("Signal {} rejected: failed exposure check", signal.getSignalId());
+            for (const auto& v : exposureViolations) {
+                LOG_DEBUG("  Exposure Violation: type={} desc='{}' limit={} actual={}",
+                          toString(v.type), v.description, v.limitValue, v.actualValue);
+            }
         }
     }
     
@@ -471,23 +493,89 @@ ValidationResult PreTradeRiskFilter::performAllChecks(const OrderRequest& orderR
     // Check exposure limits
     auto exposureResult = m_exposureCalculator->validateExposure(orderRequest);
     if (exposureResult != ExposureValidationResult::APPROVED) {
-        // For OrderRequest, we need to create a temporary signal for violation details
-        TradingSignal tempSignal;
-        tempSignal.id = orderRequest.clientOrderId;
-        tempSignal.setTradingPair(orderRequest.tradingPair.toString());
-        tempSignal.direction = orderRequest.side;
-        tempSignal.targetSize = orderRequest.quantity;
-        tempSignal.exchangeId = orderRequest.exchangeId;
-        
-        auto exposureViolations = m_exposureCalculator->getViolationDetails(tempSignal);
-        result.violations.insert(result.violations.end(), 
-                                exposureViolations.begin(), 
-                                exposureViolations.end());
-        result.approved = false;
-        LOG_INFO("Order {} rejected: failed exposure check", orderRequest.clientOrderId);
-        for (const auto& v : exposureViolations) {
-            LOG_INFO("  Exposure Violation: type={} desc='{}' limit={} actual={}'",
-                     toString(v.type), v.description, v.limitValue, v.actualValue);
+        // For BUY orders, try to cap the quantity instead of rejecting
+        if (orderRequest.side == core::Direction::BUY) {
+            TradingSignal tempSignal;
+            tempSignal.id = orderRequest.clientOrderId;
+            tempSignal.setTradingPair(orderRequest.tradingPair.toString());
+            tempSignal.direction = orderRequest.side;
+            tempSignal.targetSize = orderRequest.quantity;
+            tempSignal.exchangeId = orderRequest.exchangeId;
+
+            auto exposureViolations = m_exposureCalculator->getViolationDetails(tempSignal);
+            result.violations.insert(result.violations.end(), 
+                                    exposureViolations.begin(), 
+                                    exposureViolations.end());
+
+            double allowedSize = getAllowedPositionSize(orderRequest.tradingPair);
+            allowedSize = std::min(allowedSize, orderRequest.quantity);
+
+            if (allowedSize > 0.0) {
+                result.approved = true;
+                result.adjustedSize = allowedSize;
+                LOG_INFO("Order {} exposure would exceed limits; capping BUY qty from {} to {}",
+                         orderRequest.clientOrderId, orderRequest.quantity, allowedSize);
+            } else {
+                result.approved = false;
+                LOG_INFO("Order {} rejected: failed exposure check and no allowed BUY quantity available", orderRequest.clientOrderId);
+            }
+
+            for (const auto& v : exposureViolations) {
+                LOG_INFO("  Exposure Violation: type={} desc='{}' limit={} actual={}'",
+                         toString(v.type), v.description, v.limitValue, v.actualValue);
+            }
+        } else {
+            // Non-BUY orders remain rejected
+            TradingSignal tempSignal;
+            tempSignal.id = orderRequest.clientOrderId;
+            tempSignal.setTradingPair(orderRequest.tradingPair.toString());
+            tempSignal.direction = orderRequest.side;
+            tempSignal.targetSize = orderRequest.quantity;
+            tempSignal.exchangeId = orderRequest.exchangeId;
+
+            auto exposureViolations = m_exposureCalculator->getViolationDetails(tempSignal);
+            result.violations.insert(result.violations.end(), 
+                                    exposureViolations.begin(), 
+                                    exposureViolations.end());
+
+            bool handledByCapping = false;
+            if (orderRequest.side == core::Direction::BUY) {
+                double allowedSize = getAllowedPositionSize(orderRequest.tradingPair);
+                if (allowedSize > 0.0 && allowedSize < orderRequest.quantity) {
+                    result.approved = true;
+                    result.adjustedSize = allowedSize;
+                    handledByCapping = true;
+                    LOG_INFO("Order {} exposure would exceed limits; capping BUY quantity from {} to {}",
+                             orderRequest.clientOrderId, orderRequest.quantity, allowedSize);
+                }
+            } else if (orderRequest.side == core::Direction::SELL) {
+                try {
+                    auto posOpt = m_positionTracker->getPosition(orderRequest.exchangeId, orderRequest.tradingPair);
+                    double available = 0.0;
+                    if (posOpt.has_value()) {
+                        double q = posOpt->getQuantity();
+                        if (q > 0.0) available = std::abs(q);
+                    }
+                    if (available > 0.0 && available < orderRequest.quantity) {
+                        result.approved = true;
+                        result.adjustedSize = available;
+                        handledByCapping = true;
+                        LOG_INFO("Order {} would SELL more than available; capping SELL quantity from {} to {}",
+                                 orderRequest.clientOrderId, orderRequest.quantity, available);
+                    }
+                } catch (const std::exception& ex) {
+                    LOG_WARN("Failed to obtain current position for SELL capping: {}", ex.what());
+                }
+            }
+
+            if (!handledByCapping) {
+                result.approved = false;
+                LOG_INFO("Order {} rejected: failed exposure check", orderRequest.clientOrderId);
+                for (const auto& v : exposureViolations) {
+                    LOG_INFO("  Exposure Violation: type={} desc='{}' limit={} actual={}'",
+                             toString(v.type), v.description, v.limitValue, v.actualValue);
+                }
+            }
         }
     }
     
