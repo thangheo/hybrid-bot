@@ -355,7 +355,7 @@ order_execution:
 
 # 💰 PORTFOLIO
 portfolio:
-  initial_capital: 5000
+  initial_capital: 50000
   base_currency: "USDT"
 
 # ⏰ SCHEDULING
