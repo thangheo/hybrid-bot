@@ -524,7 +524,7 @@ void Trading_system::createRiskConfig() {
     }
     auto& positionConfig = const_cast<PositionLimitConfig&>(riskConfig_.getPositionLimitConfig());
     
-    positionConfig.assetLimits["BTC"] = 0.0001;
+    positionConfig.assetLimits["BTC"] = 0.001;
     positionConfig.assetLimits["ETH"] = 0.1;
     positionConfig.assetLimits["BNB"] = 0.1;
     positionConfig.assetLimits["ADA"] = 10.0;
@@ -577,14 +577,14 @@ void Trading_system::createRiskConfig() {
     positionConfig.assetLimits["XRP"] = 10.0;
     positionConfig.assetLimits["SOL"] = 1.0;
     positionConfig.assetLimits["ADA"] = 10.0;
-    positionConfig.defaultLimit = 5000; // dont care because btc =110k white doge or other maybe 0.001,
+    positionConfig.defaultLimit = 500000; // dont care because btc =110k while doge or other maybe 0.001,
     positionConfig.enforceStrictly = false;
     
     auto& exposureConfig = const_cast<ExposureLimitConfig&>(riskConfig_.getExposureLimitConfig());
-    exposureConfig.maxTotalExposure = 5000.0;
-    exposureConfig.maxAssetExposure = 5000.0;
-    exposureConfig.maxStrategyExposure = 5000.0;
-    exposureConfig.maxExchangeExposure = 5000.0;
+    exposureConfig.maxTotalExposure = 50000.0;
+    exposureConfig.maxAssetExposure = 50000.0;
+    exposureConfig.maxStrategyExposure = 50000.0;
+    exposureConfig.maxExchangeExposure = 50000.0;
 }
 
 void Trading_system::setupStatistics() {
