@@ -11,6 +11,7 @@
 #include <chrono>
 #include <iostream>
 #include <uuid/uuid.h>
+#include <util/parse_safe.hpp>
 
 namespace trading {
 namespace execution {
@@ -464,8 +465,8 @@ std::shared_ptr<ExecutionAlgorithm> ExecutionAlgorithmFactory::createAlgorithm(
             }
             
             if (params->extra_params.find("check_interval_seconds") != params->extra_params.end()) {
-                pov_config.check_interval = std::chrono::seconds(
-                    std::stoi(params->extra_params.at("check_interval_seconds")));
+                int ci = ::util::parseIntOr(params->extra_params.at("check_interval_seconds"), 60);
+                pov_config.check_interval = std::chrono::seconds(ci);
             }
             
             // Use exchange ID if available

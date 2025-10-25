@@ -13,6 +13,7 @@
 #include <iostream>
 #include <cmath>
 #include <sys/stat.h>
+#include <common/logger.hpp>
 
 namespace trading {
 namespace execution {
@@ -950,9 +951,24 @@ models::ExecutionReport BinanceApiClient::parseOrderResponse(const std::string& 
             f.fee = std::stod(fill["commission"].asString());
             f.fee_currency = fill["commissionAsset"].asString();
             
-            // Parse timestamp
-            auto ms = std::chrono::milliseconds(std::stoll(fill["time"].asString()));
-            f.timestamp = std::chrono::system_clock::time_point(ms);
+            // Parse timestamp (tolerant)
+            try {
+                std::string ts = fill["time"].asString();
+                if (!ts.empty()) {
+                    if (ts.find('.') != std::string::npos) {
+                        double d = std::stod(ts);
+                        auto ms = std::chrono::milliseconds(static_cast<long long>(d));
+                        f.timestamp = std::chrono::system_clock::time_point(ms);
+                    } else {
+                        auto ms = std::chrono::milliseconds(std::stoll(ts));
+                        f.timestamp = std::chrono::system_clock::time_point(ms);
+                    }
+                }
+            } catch (const std::exception &ex) {
+                LOG_WARN("binance_api_client: failed to parse fill time '{}' : {}", fill["time"].asString(), ex.what());
+            } catch (...) {
+                LOG_WARN("binance_api_client: failed to parse fill time (unknown)");
+            }
             
             report.addFill(std::move(f));  // Use move semantics
         }
@@ -960,8 +976,23 @@ models::ExecutionReport BinanceApiClient::parseOrderResponse(const std::string& 
     
     // Set timestamps
     if (root.isMember("time")) {
-        auto ms = std::chrono::milliseconds(std::stoll(root["time"].asString()));
-        report.setCreatedAt(std::chrono::system_clock::time_point(ms));
+        try {
+            std::string ts = root["time"].asString();
+            if (!ts.empty()) {
+                if (ts.find('.') != std::string::npos) {
+                    double d = std::stod(ts);
+                    auto ms = std::chrono::milliseconds(static_cast<long long>(d));
+                    report.setCreatedAt(std::chrono::system_clock::time_point(ms));
+                } else {
+                    auto ms = std::chrono::milliseconds(std::stoll(ts));
+                    report.setCreatedAt(std::chrono::system_clock::time_point(ms));
+                }
+            }
+        } catch (const std::exception &ex) {
+            LOG_WARN("binance_api_client: failed to parse root time '{}' : {}", root["time"].asString(), ex.what());
+        } catch (...) {
+            LOG_WARN("binance_api_client: failed to parse root time (unknown)");
+        }
     }
     
     // Add any exchange-specific data
