@@ -69,9 +69,9 @@ struct PositionSizingConfig {
  */
 struct ExposureLimitConfig {
     double maxTotalExposure = 10000.0;
-    double maxAssetExposure = 4000.0;
-    double maxStrategyExposure = 5000.0;
-    double maxExchangeExposure = 8000.0;
+    double maxAssetExposure = 40000.0;
+    double maxStrategyExposure = 50000.0;
+    double maxExchangeExposure = 80000.0;
     double volatilityMultiplier = 1.5;
     bool includeUnrealizedPnl = true;
 };
