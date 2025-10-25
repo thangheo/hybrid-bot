@@ -913,9 +913,8 @@ void PostTradeMonitor::enforcePositionTTL() {
                 if (positionsBeingClosed_.find(key) != positionsBeingClosed_.end()) continue;
             }
 
+            // Determine TTL (may be dynamic)
             int64_t ttlMs = static_cast<int64_t>(monitorConfig_.defaultPositionTTL.count());
-
-            // If dynamic TTL is enabled, query volatility and adjust
             if (monitorConfig_.enableDynamicTtl) {
                 double vol = dataInterface_->getVolatility(pos.getTradingPair(), monitorConfig_.volatilityTimeframe, pos.getExchangeId().toString());
                 if (vol > 0.0) {
@@ -923,10 +922,57 @@ void PostTradeMonitor::enforcePositionTTL() {
                 }
             }
 
-            auto entryTime = pos.getLastUpdated();
-            auto ageMs = std::chrono::duration_cast<std::chrono::milliseconds>(now - entryTime).count();
+            // Ensure trackedPositions_ has an entry for this position
+            {
+                std::unique_lock<std::shared_mutex> tlock(trackedPositionsMutex_);
+                auto it = trackedPositions_.find(key);
+                if (it == trackedPositions_.end()) {
+                    TrackedPosition tp;
+                    tp.entryTime = pos.getLastUpdated();
+                    tp.deadline = tp.entryTime + std::chrono::milliseconds(ttlMs);
+                    tp.lastSignalSeen = tp.entryTime; // assume signal present at entry
+                    tp.ttlMs = static_cast<double>(ttlMs);
+                    trackedPositions_.emplace(key, std::move(tp));
+                }
+            }
 
-            if (ageMs > ttlMs) {
+            // Now fetch tracked info
+            TrackedPosition tracked;
+            {
+                std::shared_lock<std::shared_mutex> tlock(trackedPositionsMutex_);
+                tracked = trackedPositions_.at(key);
+            }
+
+            // Update lastSignalSeen using signalChecker_ if available
+            bool hasBuySignal = false;
+            {
+                std::shared_lock<std::shared_mutex> scl(signalCheckerMutex_);
+                if (signalChecker_) {
+                    try {
+                        hasBuySignal = signalChecker_(pos.getExchangeId(), pos.getTradingPair());
+                    } catch (...) {
+                        hasBuySignal = false;
+                    }
+                }
+            }
+
+            if (hasBuySignal) {
+                // renew lastSignalSeen and extend deadline if desired
+                std::unique_lock<std::shared_mutex> tlock(trackedPositionsMutex_);
+                auto it = trackedPositions_.find(key);
+                if (it != trackedPositions_.end()) {
+                    it->second.lastSignalSeen = now;
+                    // Sliding TTL policy: renew/extend deadline from 'now'
+                    auto newDeadline = now + std::chrono::milliseconds(static_cast<int64_t>(ttlMs));
+                    it->second.deadline = newDeadline;
+                    it->second.ttlMs = static_cast<double>(ttlMs);
+                }
+                continue; // still has signal -> do not exit
+            }
+
+            // If no signal and deadline passed -> attempt exit
+            auto ageMs = std::chrono::duration_cast<std::chrono::milliseconds>(now - tracked.entryTime).count();
+            if (now >= tracked.deadline) {
                 // mark as being closed
                 {
                     std::unique_lock<std::shared_mutex> ul(positionsClosingMutex_);
@@ -937,7 +983,6 @@ void PostTradeMonitor::enforcePositionTTL() {
                 bool exitRequested = false;
                 if (stopLossManager_) {
                     safeComponentOperation(stopLossManager_, [&](auto& mgr) {
-                        // Use liquidatePosition API which returns order id optionally
                         auto oid = mgr.liquidatePosition(pos.getExchangeId(), pos.getTradingPair());
                         exitRequested = oid.has_value();
                         return true;
@@ -980,6 +1025,16 @@ void PostTradeMonitor::enforcePositionTTL() {
             // ignore per-position errors
         }
     }
+}
+
+void PostTradeMonitor::registerSignalChecker(const SignalChecker& checker) {
+    std::unique_lock<std::shared_mutex> lock(signalCheckerMutex_);
+    signalChecker_ = checker;
+}
+
+void PostTradeMonitor::registerExternalSignalChecker(const ExternalSignalChecker& checker) {
+    // Forward to the private implementation
+    registerSignalChecker(static_cast<const SignalChecker&>(checker));
 }
 
 void PostTradeMonitor::performMaintenanceTasks() {

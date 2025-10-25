@@ -1123,6 +1123,24 @@ void Trading_system::setupComponentConnections() {
         std::cout << "🚨 Risk Event: " << event.description 
                     << " (Severity: " << event.severity << ")" << std::endl;
     });
+
+    // Register post-trade signal checker so PostTradeMonitor can consult live strategy signals
+    if (riskManager_ && strategyEngine_) {
+    riskManager_->registerPostTradeSignalChecker([this](const core::ExchangeId& exchangeId, const core::Symbol& symbol) -> bool {
+            try {
+                auto signals = strategyEngine_->getActiveSignals();
+                auto now = std::chrono::system_clock::now();
+                for (const auto& s : signals) {
+                    if (s.exchangeId == exchangeId && s.symbol == symbol && s.isBuySignal()) {
+                        if (s.isValid(now)) return true;
+                    }
+                }
+            } catch (...) {
+                // swallow - return false on error
+            }
+            return false;
+        });
+    }
 }
 
 void Trading_system::realExecution(const execution::TradingSignal& signal) {
