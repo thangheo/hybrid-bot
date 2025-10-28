@@ -83,7 +83,14 @@ std::shared_ptr<Logger>& Logger::getInstance() {
 void Logger::initialize(const std::string& appName, LogLevel level) {
     std::call_once(initialized_, [&appName, level]() {
         if (!shutdown_called_.load()) {
-            getInstance() = std::make_shared<ConsoleLogger>(appName, level);
+            // Allocate ConsoleLogger with a no-op deleter so it is not
+            // destroyed during static teardown. This prevents calling
+            // virtual methods on partially-destroyed objects from other
+            // static destructors which can lead to __cxa_pure_virtual.
+            getInstance() = std::shared_ptr<Logger>(
+                new ConsoleLogger(appName, level),
+                [](Logger*) { /* intentionally leak for process lifetime */ }
+            );
         }
     });
 }

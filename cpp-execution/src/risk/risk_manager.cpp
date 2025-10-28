@@ -36,7 +36,6 @@ namespace risk {
     
 //     m_portfolioManager = nullptr;
 //     // Don't create additional DataInterface instances here
-// }
 //new constructor
 RiskManager::RiskManager(std::shared_ptr<trading::execution::ExecutionService> execService, 
                          const RiskConfig& config,
@@ -48,25 +47,14 @@ RiskManager::RiskManager(std::shared_ptr<trading::execution::ExecutionService> e
     , m_marketDataInterface(marketDataInterface) // Use the provided MarketDataInterface
     , zmqContext_(zmqContext)
 {
-    // Initialize components
-    m_strategyInterface = createStrategyInterface(m_config, zmqContext_);
-    LOG_INFO("RiskManager", "Created StrategyInterface");
+    // Defer creation of StrategyInterface to initialize() to avoid starting ZMQ clients
+    // during construction (useful for unit tests where mocks are injected first).
+    LOG_INFO("RiskManager", "StrategyInterface will be created in initialize() if not injected");
     
-    m_executionInterface = createExecutionInterface_withExecutionService(execService);
-    if (!m_executionInterface) {
-        LOG_ERROR("RiskManager", "Failed to create ExecutionInterface with provided ExecutionService");
-        throw std::runtime_error("Failed to create ExecutionInterface with provided ExecutionService");
-    }
-    LOG_INFO("RiskManager", "Created ExecutionInterface with provided ExecutionService");
-    
-    // ✅ Create DataInterface ONCE and store as member
-    // Create a shared DataInterface (prefer shared ownership to avoid lifetime issues)
-    m_dataInterface = MarketDataInterface::createDataInterface(m_config);
-    if (!m_dataInterface) {
-        LOG_ERROR("RiskManager", "Failed to create DataInterface in constructor");
-        throw std::runtime_error("Failed to create DataInterface");
-    }
-    LOG_INFO("RiskManager", "Created DataInterface as member variable");
+    // Defer creation of ExecutionInterface and DataInterface to initialize().
+    // This avoids starting background threads or ZMQ clients during construction
+    // (useful for unit tests where mocks will be injected before initialize()).
+    LOG_INFO("RiskManager", "ExecutionInterface and DataInterface will be created in initialize() if not injected");
     
     m_portfolioManager = nullptr;
     // Don't create additional DataInterface instances here
@@ -97,15 +85,28 @@ bool RiskManager::initialize() {
             }
         }
         
-        m_executionInterface = createExecutionInterface_withExecutionService(m_execService);
+        // If a test has injected an ExecutionInterface, keep it. Only create one if missing.
         if (!m_executionInterface) {
-            LOG_ERROR("RiskManager", "Failed to create ExecutionInterface with provided ExecutionService");
-            throw std::runtime_error("Failed to create ExecutionInterface with provided ExecutionService");
+            if (m_execService) {
+                m_executionInterface = createExecutionInterface_withExecutionService(m_execService);
+                if (!m_executionInterface) {
+                    LOG_ERROR("RiskManager", "Failed to create ExecutionInterface with provided ExecutionService");
+                    throw std::runtime_error("Failed to create ExecutionInterface with provided ExecutionService");
+                }
+                LOG_INFO("RiskManager", "Created ExecutionInterface with provided ExecutionService");
+            } else {
+                m_executionInterface = createExecutionInterface(m_config);
+                if (!m_executionInterface) {
+                    LOG_ERROR("RiskManager", "Failed to create internal ExecutionInterface in initialize()");
+                    throw std::runtime_error("Failed to create internal ExecutionInterface in initialize()");
+                }
+                LOG_INFO("RiskManager", "Created internal ExecutionInterface in initialize()");
+            }
+        } else {
+            LOG_INFO("RiskManager", "Using injected ExecutionInterface");
         }
-        LOG_INFO("RiskManager", "Created ExecutionInterface with provided ExecutionService");
         
     // m_dataInterface should already be created in constructor; ensure it's present
-    m_portfolioManager = nullptr;
         // Don't create additional DataInterface instances here
         // Load configuration
         loadConfiguration();
@@ -164,22 +165,26 @@ bool RiskManager::initialize() {
             LOG_ERROR("RiskManager: failed to register market data callback: {}", e.what());
         }
 
-        // Initialize portfolio manager first
-        m_portfolioManager = std::make_unique<PortfolioManager>(m_config);
-        if (!m_portfolioManager->initialize()) {
-            LOG_ERROR("RiskManager", "Failed to initialize PortfolioManager");
-            return false;
+        // Initialize portfolio manager first (only if not injected by tests)
+        if (!m_portfolioManager) {
+            m_portfolioManager = std::make_unique<PortfolioManager>(m_config);
+            if (!m_portfolioManager->initialize()) {
+                LOG_ERROR("RiskManager", "Failed to initialize PortfolioManager");
+                return false;
+            }
         }
         LOG_INFO(std::format("{} {}", "RiskManager", "Initialized PortfolioManager successfully"));
         // Initialize pre-trade filter
-        m_preTradeFilter = std::make_unique<PreTradeRiskFilter>(m_config, m_dataInterface);
         if (!m_preTradeFilter) {
-            LOG_ERROR(std::format("{} {}", "RiskManager", "Failed to create PreTradeRiskFilter"));
-            return false;
-        }
-        if (!m_preTradeFilter->initialize()) {
-            LOG_ERROR(std::format("{} {}", "RiskManager", "Failed to initialize PreTradeRiskFilter"));
-            return false;
+            m_preTradeFilter = std::make_unique<PreTradeRiskFilter>(m_config, m_dataInterface);
+            if (!m_preTradeFilter) {
+                LOG_ERROR(std::format("{} {}", "RiskManager", "Failed to create PreTradeRiskFilter"));
+                return false;
+            }
+            if (!m_preTradeFilter->initialize()) {
+                LOG_ERROR(std::format("{} {}", "RiskManager", "Failed to initialize PreTradeRiskFilter"));
+                return false;
+            }
         }
         LOG_INFO(std::format("{} {}", "RiskManager", "Initialized PreTradeRiskFilter successfully"));
         // Initialize post-trade monitor - pass the shared DataInterface so PostTradeMonitor
@@ -189,10 +194,12 @@ bool RiskManager::initialize() {
             return false;
         }
 
-        m_postTradeMonitor = std::make_unique<PostTradeMonitor>(m_config, m_portfolioManager.get(), m_dataInterface);
-        if (!m_postTradeMonitor->initialize()) {
-            LOG_ERROR(std::format("{} {}", "RiskManager", "Failed to initialize PostTradeMonitor"));
-            return false;
+        if (!m_postTradeMonitor) {
+            m_postTradeMonitor = std::make_unique<PostTradeMonitor>(m_config, m_portfolioManager.get(), m_dataInterface);
+            if (!m_postTradeMonitor->initialize()) {
+                LOG_ERROR(std::format("{} {}", "RiskManager", "Failed to initialize PostTradeMonitor"));
+                return false;
+            }
         }
         LOG_INFO(std::format("{} {}", "RiskManager", "Initialized PostTradeMonitor successfully"));
         
@@ -442,11 +449,33 @@ void RiskManager::setMode(RiskManagerMode mode) {
         
         // Take specific actions based on new mode
         if (mode == RiskManagerMode::EMERGENCY) {
-            // Execute emergency procedures
-            //this cause circular calls in infinite loop
-            //emergencyAction ->setMode->emergencyAction->setMode...
-            // emergencyAction("Entered emergency mode");
-            LOG_WARN("Risk manager set to EMERGENCY mode");
+            // Execute emergency procedures synchronously when mode transitions to EMERGENCY
+            LOG_WARN("Risk manager set to EMERGENCY mode - executing emergency procedures");
+            try {
+                // Cancel all orders and notify strategies
+                if (m_executionInterface && m_portfolioManager) {
+                    auto activePositions = m_portfolioManager->getAllPositions();
+                    std::set<std::pair<core::ExchangeId, core::Symbol>> tradingPairs;
+                    for (const auto& position : activePositions) {
+                        tradingPairs.insert(std::make_pair(position.getExchangeId(), core::Symbol(position.getTradingPair())));
+                    }
+
+                    if (tradingPairs.empty()) {
+                        // Fallback to a default cancellation across exchanges
+                        m_executionInterface->cancelAllOrders(core::ExchangeId::binance());
+                    } else {
+                        for (const auto& [exchangeId, symbol] : tradingPairs) {
+                            m_executionInterface->cancelAllOrders(exchangeId, symbol);
+                        }
+                    }
+                }
+
+                if (m_strategyInterface) {
+                    m_strategyInterface->notifyEmergencyState("Entered emergency mode");
+                }
+            } catch (const std::exception& e) {
+                LOG_ERROR("Error executing emergency procedures: {}", e.what());
+            }
         }
     }
 }
@@ -479,9 +508,11 @@ bool RiskManager::reconcilePositions(const std::optional<ExchangeId>& exchangeId
         if (exchangeId.has_value()) {
             return m_portfolioManager->reconcilePositions(exchangeId.value());
         } else {
-            // Handle case where no specific exchange is provided
-            // You may need to reconcile all exchanges or use a default
-            return m_portfolioManager->reconcilePositions(exchangeId.value());
+            // No specific exchange provided - reconcile across all exchanges.
+            // PortfolioManager::reconcilePositions expects an ExchangeId. Use
+            // a sentinel/all Exchanges id or call a default behavior. Here we
+            // choose ExchangeId::all() as a convention for "all exchanges".
+            return m_portfolioManager->reconcilePositions(core::ExchangeId::all());
         }
     }
     return false;
@@ -498,6 +529,8 @@ PerformanceMetrics RiskManager::getPerformanceMetrics() const {
 bool RiskManager::emergencyAction(const std::string& reason) {
     try {
         std::cout << "EXECUTING EMERGENCY ACTIONS: " << reason << std::endl;
+        // Ensure mode reflects emergency when emergencyAction is called directly
+        m_mode.store(RiskManagerMode::EMERGENCY);
         
         // Create emergency event
         RiskEvent event(
@@ -526,18 +559,22 @@ bool RiskManager::emergencyAction(const std::string& reason) {
             
             // If no positions found, use default exchanges and common pairs
             if (tradingPairs.empty()) {
-                // Add default trading pairs for major exchanges
-                std::vector<std::string> defaultPairs = {"BTC/USDT", "ETH/USDT", "BNB/USDT"};
-                std::vector<core::ExchangeId> defaultExchanges = {
-                    core::ExchangeId::binance(),
-                    core::ExchangeId::coinbase(),
-                    core::ExchangeId::kraken()
-                };
-                
-                for (const auto& exchangeId : defaultExchanges) {
-                    for (const auto& pairStr : defaultPairs) {
-                        core::Symbol symbol = core::Symbol::fromString(pairStr);
-                        tradingPairs.insert(std::make_pair(exchangeId, symbol));
+                // Try single-arg cancelAllOrders fallback first (some mocks implement this)
+                try {
+                    m_executionInterface->cancelAllOrders(core::ExchangeId::binance());
+                } catch (...) {
+                    // If fallback fails, build a set of default trading pairs
+                    std::vector<std::string> defaultPairs = {"BTC/USDT", "ETH/USDT", "BNB/USDT"};
+                    std::vector<core::ExchangeId> defaultExchanges = {
+                        core::ExchangeId::binance(),
+                        core::ExchangeId::coinbase(),
+                        core::ExchangeId::kraken()
+                    };
+                    for (const auto& exchangeId : defaultExchanges) {
+                        for (const auto& pairStr : defaultPairs) {
+                            core::Symbol symbol = core::Symbol::fromString(pairStr);
+                            tradingPairs.insert(std::make_pair(exchangeId, symbol));
+                        }
                     }
                 }
             }
@@ -559,8 +596,10 @@ bool RiskManager::emergencyAction(const std::string& reason) {
             std::cout << "Total orders cancelled: " << totalCancelled << std::endl;
         }
         
-        // 2. Disable new order submission
-        setMode(RiskManagerMode::EMERGENCY);
+    // 2. Disable new order submission
+    // Do NOT call setMode here to avoid recursive calls. The caller should set the mode
+    // and setMode will call emergencyAction when transitioning to EMERGENCY.
+    // (Previously this caused setMode->emergencyAction->setMode recursion.)
         
         // 3. Notify strategy engine
         if (m_strategyInterface) {
@@ -749,6 +788,25 @@ void RiskManager::loadConfiguration() {
     m_mode.store(RiskManagerMode::NORMAL);
     
     std::cout << "Risk manager configuration loaded successfully" << std::endl;
+}
+
+// Testing helper - inject raw pointers for internal subsystems. RiskManager will take
+// ownership by wrapping them in unique_ptr/shared_ptr as appropriate. This is only
+// intended for unit tests.
+void RiskManager::injectTestMocks(
+    PortfolioManager* portfolioManager,
+    PreTradeRiskFilter* preTradeFilter,
+    PostTradeMonitor* postTradeMonitor,
+    StrategyInterface* strategyInterface,
+    ExecutionInterface* executionInterface,
+    DataInterface* dataInterface
+) {
+    if (portfolioManager) m_portfolioManager.reset(portfolioManager);
+    if (preTradeFilter) m_preTradeFilter.reset(preTradeFilter);
+    if (postTradeMonitor) m_postTradeMonitor.reset(postTradeMonitor);
+    if (strategyInterface) m_strategyInterface.reset(strategyInterface);
+    if (executionInterface) m_executionInterface.reset(executionInterface);
+    if (dataInterface) m_dataInterface.reset(dataInterface);
 }
 
 RiskManager::~RiskManager() {

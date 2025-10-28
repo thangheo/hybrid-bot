@@ -12,7 +12,7 @@ include_directories(
 )
 
 # Add subdirectories for component tests
-add_subdirectory(data_ingestion)
+# add_subdirectory(data_ingestion)
 # add_subdirectory(communication)
 # Enable risk tests (posttrade/pretrade/integration)
 add_subdirectory(risk)

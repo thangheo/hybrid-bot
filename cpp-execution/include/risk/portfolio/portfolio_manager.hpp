@@ -46,65 +46,65 @@ public:
      * Initialize the portfolio manager and its components
      * @return true if initialization was successful, false otherwise
      */
-    bool initialize();
-    bool shutdown();
+    virtual bool initialize();
+    virtual bool shutdown();
     // isHealthy
-    bool isHealthy() const;
+    virtual bool isHealthy() const;
     /**
      * Process an execution report
      * @param executionReport The execution report to process (from execution component)
      */
-    void processExecutionReport(const trading::execution::models::ExecutionReport& executionReport);
+    virtual void processExecutionReport(const trading::execution::models::ExecutionReport& executionReport);
     // reconcilePositions
-    bool reconcilePositions(ExchangeId exchangeId);
+    virtual bool reconcilePositions(ExchangeId exchangeId);
     /**
      * Update market data
      * @param marketData New market data
      */
-    void updateMarketData(const MarketData& marketData);
+    virtual void updateMarketData(const MarketData& marketData);
     
     /**
      * Get the current portfolio value
      * @return The portfolio value
      */
-    double getPortfolioValue() const;
+    virtual double getPortfolioValue() const;
     
     /**
      * Get the position tracker
      * @return Reference to the position tracker
      */
-    std::shared_ptr<PositionTracker> getPositionTracker() const;
+    virtual std::shared_ptr<PositionTracker> getPositionTracker() const;
     
     /**
      * Get the rebalancing engine
      * @return Reference to the rebalancing engine
      */
-    std::shared_ptr<RebalancingEngine> getRebalancingEngine() const;
+    virtual std::shared_ptr<RebalancingEngine> getRebalancingEngine() const;
     
     /**
      * Get the collateral manager
      * @return Reference to the collateral manager
      */
-    std::shared_ptr<CollateralManager> getCollateralManager() const;
+    virtual std::shared_ptr<CollateralManager> getCollateralManager() const;
     
     /**
      * Trigger portfolio rebalancing
      * @return true if rebalancing was initiated successfully, false otherwise
      */
-    bool triggerRebalancing();
+    virtual bool triggerRebalancing();
     
     /**
      * Get the portfolio allocation
      * @return Map of asset identifier to allocation percentage
      */
-    std::unordered_map<std::string, double> getPortfolioAllocation() const;
+    virtual std::unordered_map<std::string, double> getPortfolioAllocation() const;
     
     /**
      * Get positions by exchange
      * @param exchangeId Optional exchange ID to filter positions
      * @return Vector of positions
      */
-    std::vector<Position> getAllPositions(const std::optional<ExchangeId>& exchangeId = std::nullopt) const;
+    virtual std::vector<Position> getAllPositions(const std::optional<ExchangeId>& exchangeId = std::nullopt) const;
     
     /**
      * Get position by trading pair
@@ -112,7 +112,7 @@ public:
      * @param exchangeId Optional exchange ID to filter positions
      * @return Optional position, or nullopt if not found
      */
-    std::optional<Position> getPosition(const TradingPair& tradingPair, 
+    virtual std::optional<Position> getPosition(const TradingPair& tradingPair, 
                                        const std::optional<ExchangeId>& exchangeId = std::nullopt) const;
     // getAllPositions
     // std::vector<Position> getAllPositions() const;
@@ -121,15 +121,18 @@ public:
      * @param config New configuration
      * @return true if update was successful, false otherwise
      */
-    bool updateConfiguration(const RiskConfig& config);
+    virtual bool updateConfiguration(const RiskConfig& config);
     
     /**
      * Register a callback for portfolio events
      * @param callback The function to call when portfolio events occur
      */
-    void registerPortfolioCallback(const std::function<void(const std::string&, const std::string&)>& callback);
+    virtual void registerPortfolioCallback(const std::function<void(const std::string&, const std::string&)>& callback);
     // processExecution
-    void processExecution(const trading::execution::models::ExecutionReport& executionReport);
+    virtual void processExecution(const trading::execution::models::ExecutionReport& executionReport);
+
+    // Virtual destructor to ensure derived mocks are destroyed correctly
+    virtual ~PortfolioManager() = default;
 private:
     // Sub-components
     std::shared_ptr<PositionTracker> m_positionTracker;

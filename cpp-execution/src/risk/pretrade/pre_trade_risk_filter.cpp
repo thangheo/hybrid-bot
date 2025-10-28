@@ -80,7 +80,11 @@ bool PreTradeRiskFilter::initialize() {
         // TODO: Accept DataInterface from RiskManager constructor
         m_positionTracker = std::make_shared<PositionTracker>(m_config, nullptr);
         // m_dataInterface = std::make_shared<DataInterface>();
-        // m_dataInterface = std::make_unique<MarketDataInterface>(m_config);
+            // m_data_interface = std::make_unique<MarketDataInterface>(m_config);
+            // use singleton pattern to create data interface
+            // m_data_interface = MarketDataInterface::getInstance(m_config);
+            if (!m_dataInterface) {
+    }
         // use singleton pattern to create data interface
         // m_dataInterface = MarketDataInterface::getInstance(m_config);
         if (!m_dataInterface) {
