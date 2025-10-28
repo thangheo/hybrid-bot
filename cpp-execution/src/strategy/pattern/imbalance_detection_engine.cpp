@@ -618,6 +618,28 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                         pt.symbol = m.symbol;
                         pendingTraining_.push_back(pt);
 
+                        // Evaluate warmup gating immediately after buffering a sample.
+                        if (!trainingEnabled_.load()) {
+                            bool enable = false;
+                            try {
+                                auto now_tp = std::chrono::steady_clock::now();
+                                if (config_.trainingStartDelayMs > 0) {
+                                    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now_tp - trainingStartTime_).count();
+                                    if (elapsed >= config_.trainingStartDelayMs) enable = true;
+                                }
+                                if (!enable && config_.minOrderbookLevels > 0) {
+                                    if (m.bidVolumesByLevel.size() >= static_cast<size_t>(config_.minOrderbookLevels) &&
+                                        m.askVolumesByLevel.size() >= static_cast<size_t>(config_.minOrderbookLevels)) {
+                                        enable = true;
+                                    }
+                                }
+                            } catch (...) {}
+                            if (enable) {
+                                trainingEnabled_.store(true);
+                                LOG_INFO("ImbalanceDetectionEngine: training warmup complete, enabling online training (buffered={})", pendingTraining_.size());
+                            }
+                        }
+
                 }
 
                 // Predict with Bayesian model and emit event if needed
@@ -673,7 +695,8 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                     }
                 }
 
-                // Process pending training samples
+                // Process pending training samples (only when training enabled)
+                if (trainingEnabled_.load()) {
                 try {
                     std::vector<std::tuple<std::vector<double>, int, core::ExchangeId, core::Symbol>> toTrain;
                     {
@@ -829,10 +852,13 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                             }
                         } catch (...) {}
                     }
+                    // end if(trainingEnabled_)
                 } catch (...) {}
+            }
             }
         });
     }
+    LOG_INFO("ImbalanceDetectionEngine: started {} detector worker threads", threads);
 }
 
 
@@ -920,6 +946,15 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
 
     // Optional labeling delay from config (in ms)
     if (config_.labelingDelayMs > 0) labelingDelay_ = std::chrono::milliseconds(config_.labelingDelayMs);
+    // Training warmup gating: initialize start time and min levels
+    trainingStartTime_ = std::chrono::steady_clock::now();
+    minOrderbookLevels_ = config_.minOrderbookLevels;
+    if (config_.trainingStartDelayMs <= 0 && config_.minOrderbookLevels <= 0) {
+        trainingEnabled_.store(true);
+    } else {
+        trainingEnabled_.store(false);
+        LOG_INFO("ImbalanceDetectionEngine: training warmup enabled (startDelayMs={}, minOrderbookLevels={})", config_.trainingStartDelayMs, config_.minOrderbookLevels);
+    }
     
 
     // Create and load Bayesian model adapter handle upfront for legacy single-file mode.
