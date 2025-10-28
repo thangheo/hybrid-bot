@@ -281,6 +281,9 @@ ImbalanceDetectionConfig parseImbalanceDetectionConfig(const json& componentJson
     if (params.contains("bayesMinSaveIntervalMs")) config.bayesMinSaveIntervalMs = params["bayesMinSaveIntervalMs"].get<int>();
         // Labeling delay in milliseconds for online training buffer
         if (params.contains("labelingDelayMs")) config.labelingDelayMs = params["labelingDelayMs"].get<int>();
+    // Optional warmup gating: delay before training starts and minimum orderbook levels
+    if (params.contains("trainingStartDelayMs")) config.trainingStartDelayMs = params["trainingStartDelayMs"].get<int>();
+    if (params.contains("minOrderbookLevels")) config.minOrderbookLevels = params["minOrderbookLevels"].get<int>();
         // Parse thresholds map
         if (params.contains("thresholds") && params["thresholds"].is_object()) {
             for (auto it = params["thresholds"].begin(); it != params["thresholds"].end(); ++it) {
@@ -776,6 +779,9 @@ json imbalanceDetectionConfigToJson(const ImbalanceDetectionConfig& config) {
     params["detectionWindowMs"] = config.detectionWindowMs;
     params["maxHistorySize"] = config.maxHistorySize;
     params["global_sensitivity"] = config.global_sensitivity;
+    // Warmup/training gating
+    params["trainingStartDelayMs"] = config.trainingStartDelayMs;
+    params["minOrderbookLevels"] = config.minOrderbookLevels;
     
     // Add thresholds as a nested object
     json thresholdsJson;
@@ -793,6 +799,10 @@ json imbalanceDetectionConfigToJson(const ImbalanceDetectionConfig& config) {
     for (const auto& [key, value] : config.string_parameters) {
         params[key] = value;
     }
+
+    // Add warmup gating parameters
+    params["trainingStartDelayMs"] = config.trainingStartDelayMs;
+    params["minOrderbookLevels"] = config.minOrderbookLevels;
     
     componentJson["parameters"] = params;
     

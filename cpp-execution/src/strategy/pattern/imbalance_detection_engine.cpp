@@ -7,14 +7,71 @@
  * that may predict short-term price movements.
  * 
  * Created on: May 5, 2025
- */
+                    {
+                        std::lock_guard<std::mutex> pl(pendingTrainingMutex_);
+                        auto now = m.timestamp;
+                        // If training not yet enabled due to warmup gating, preserve all pending samples
+                        if (!trainingEnabled_.load()) {
+                            // Do not pop pendingTraining_ while warmup active; wait until trainingEnabled_ is true
+                        } else {
+                            while (!pendingTraining_.empty()) {
+                                const auto &pt = pendingTraining_.front();
+                                if (now - pt.timestamp >= labelingDelay_) {
+                                    // Use the stored reference at capture if available, otherwise re-evaluate current reference
+                                    double baseRef = pt.referenceValue;
+                                    double target = pt.referenceValue;
+                                    // try to read current counterpart for same reference type
+                                    try {
+                                        if (pt.referenceType == 1) { // vwap
+                                            double cur = m.getMetric("vwap", 0.0);
+                                            if (cur > 0.0) target = cur; else target = baseRef;
+                                        } else if (pt.referenceType == 2) { // sma
+                                            double cur = m.getMetric("sma", 0.0);
+                                            if (cur > 0.0) target = cur; else target = baseRef;
+                                        } else if (pt.referenceType == 3) { // micro
+                                            double bidP = m.bidPrice; double askP = m.askPrice;
+                                            double bidV = (m.bidVolumesByLevel.empty() ? m.totalBidVolume : m.bidVolumesByLevel.front());
+                                            double askV = (m.askVolumesByLevel.empty() ? m.totalAskVolume : m.askVolumesByLevel.front());
+                                            double denom = bidV + askV;
+                                            if (denom > 0.0) target = (bidP * askV + askP * bidV) / denom; else target = baseRef;
+                                        } else { target = m.midPrice; }
+                                    } catch (...) { target = baseRef; }
 
- #include "strategy/pattern/imbalance_detection_engine.hpp"
- #include <common/event_bus.hpp>
- #include <common/trading_events.hpp>
- #include <algorithm>
- #include <cmath>
- #include <iostream>
+                                    double priceChangeLogRet = 0.0;
+                                    if (baseRef > 0.0 && std::isfinite(baseRef) && std::isfinite(target) && target > 0.0) {
+                                        priceChangeLogRet = std::log(target) - std::log(baseRef);
+                                    }
+
+                                    double vol = std::clamp(m.realizedVolatility, 0.0001, 0.5);
+                                    double normalizedReturn = 0.0;
+                                    if (vol > 0.0 && std::isfinite(vol) && std::isfinite(priceChangeLogRet)) normalizedReturn = priceChangeLogRet / vol;
+
+                                    int regimeIdx = 0;
+                                    if (regime_subscriber_) {
+                                        trading::strategy::core_analysis::RegimeInfo rinfo;
+                                        if (regime_subscriber_->get(pt.symbol.toString(), rinfo) && !rinfo.probs.empty()) {
+                                            double best = -1.0; int bi = 0;
+                                            for (size_t ii = 0; ii < rinfo.probs.size() && ii < ImbalanceDetectionEngine::NUMBER_OF_REGIMES; ++ii) {
+                                                if (rinfo.probs[ii] > best) { best = rinfo.probs[ii]; bi = static_cast<int>(ii); }
+                                            }
+                                            regimeIdx = bi;
+                                        }
+                                    }
+
+                                    auto dyn = g_statThresholdAdapter.calculateThresholds(regimeIdx, vol);
+
+                                    int label = 1; // NEUTRAL
+                                    if (normalizedReturn > dyn.buyThreshold) label = 2; // BUY
+                                    else if (normalizedReturn < dyn.sellThreshold) label = 0; // SELL
+
+                                    toTrain.emplace_back(pt.features, label, pt.exchangeId, pt.symbol);
+                                    double realizedPct = std::abs(std::exp(priceChangeLogRet) - 1.0);
+                                    g_statThresholdAdapter.updateStats(regimeIdx, priceChangeLogRet, vol);
+                                    pendingTraining_.pop_front();
+                                } else break;
+                            }
+                        }
+                    }
  #include <chrono>
 #include <future>
 #include <functional>
@@ -492,6 +549,26 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                     detectorQueue_.pop_front();
                 }
 
+                // Possibly enable training warmup based on this incoming metric
+                if (!trainingEnabled_.load()) {
+                    bool enableNow = false;
+                    try {
+                        if (config_.trainingStartDelayMs > 0) {
+                            auto now = std::chrono::steady_clock::now();
+                            if ((now - trainingStartTime_) >= std::chrono::milliseconds(config_.trainingStartDelayMs)) enableNow = true;
+                        }
+                        if (!enableNow && config_.minOrderbookLevels > 0) {
+                            size_t bidLevels = m.bidVolumesByLevel.size();
+                            size_t askLevels = m.askVolumesByLevel.size();
+                            if (static_cast<int>(bidLevels) >= config_.minOrderbookLevels && static_cast<int>(askLevels) >= config_.minOrderbookLevels) enableNow = true;
+                        }
+                    } catch (...) {}
+                    if (enableNow) {
+                        trainingEnabled_.store(true);
+                        LOG_INFO("ImbalanceDetectionEngine: training enabled after warmup (delayMs={}, minLevels={})", config_.trainingStartDelayMs, config_.minOrderbookLevels);
+                    }
+                }
+
                 // Run all detectors sequentially for this metric
                 std::vector<DetectorResult> results;
                 try {
@@ -771,6 +848,8 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
 
                             auto handle = handles[updateIdx];
                             if (!handle) continue;
+
+                            // Perform bayes update (toTrain is only populated when trainingEnabled_ is true)
                             trading::perception::bayes_update(handle, features, label);
 
                             // Runtime persistence policy: increment update counter and
@@ -920,6 +999,11 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
 
     // Optional labeling delay from config (in ms)
     if (config_.labelingDelayMs > 0) labelingDelay_ = std::chrono::milliseconds(config_.labelingDelayMs);
+    // Training warmup gating from config
+    trainingStartTime_ = std::chrono::steady_clock::now();
+    minOrderbookLevels_ = config_.minOrderbookLevels;
+    // If no gating requested, enable training immediately
+    if (config_.trainingStartDelayMs <= 0 && config_.minOrderbookLevels <= 0) trainingEnabled_.store(true);
     
 
     // Create and load Bayesian model adapter handle upfront for legacy single-file mode.

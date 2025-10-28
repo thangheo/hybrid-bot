@@ -724,26 +724,7 @@ if __name__ == '__main__':
             raise RuntimeError('No symbols found in config for scheduled training')
         data_dir = ensure_data_dir()
         start_scheduled_training(symbols, data_dir, n_states=args.n_states, days=args.days, interval_days=args.trainer_interval_days, data_source=args.data_source, save_plots=not args.plots)
-
-    # bind publisher socket
-    # context = zmq.Context()
-    # socket = context.socket(zmq.PUB)
-    # socket.bind("tcp://*:5555")  # listen on port 5555
-
-    # # start watcher if requested
-    # if args.watch_snapshot:
-    #     snapshot_path = ensure_data_dir() / 'regimes_snapshot.json'
-    #     # Run watcher in foreground so the process remains alive (previous daemon thread exited immediately)
-    #     try:
-    #         print(f"Starting snapshot watcher (foreground) for {snapshot_path}")
-    #         watch_and_publish_snapshot(snapshot_path, socket, topic='regimes_update', poll_interval=5)
-    #     except KeyboardInterrupt:
-    #         print('Snapshot watcher interrupted by user')
-    #     finally:
-    #         socket.close()
-    #         context.term()
-    #     # exit after watcher finishes
-    #     sys.exit(0)
+ 
 
 # decide whether to run one-off startup training
     if not args.watch_snapshot and not args.start_trainer and (train_on_startup or args.train_now):

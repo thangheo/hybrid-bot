@@ -275,7 +275,15 @@ public:
 
     // Labeling configuration (milliseconds to wait before labelling a prediction)
     std::chrono::milliseconds labelingDelay_{5000};
-    size_t maxPendingTraining_ = 8192;
+    // Increased buffer to hold samples while labelingDelay is long (e.g., 60s)
+    // Default enlarged to avoid dropping samples: ~65k
+    size_t maxPendingTraining_ = 65536;
+
+    // Training warmup gating: start time and enabled flag
+    std::chrono::steady_clock::time_point trainingStartTime_ = std::chrono::steady_clock::now();
+    std::atomic<bool> trainingEnabled_{false};
+    // Minimum orderbook levels required before training can start (from config)
+    int minOrderbookLevels_ = 0;
 
     // Optional model persistence path (can be set via env BAYES_MODEL_PATH)
     std::string bayesModelPath_;
