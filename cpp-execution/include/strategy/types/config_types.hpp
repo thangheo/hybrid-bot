@@ -80,7 +80,13 @@
     // If empty, persistence is disabled. Set via configuration to enable.
     std::string bayesModelPath = "";
     // Labeling delay in milliseconds for online training buffer
-    int labelingDelayMs = 5000;
+    int labelingDelayMs = 60000;
+    // Warmup / gating for online training: delay (ms) to wait after startup
+    // before allowing training to begin. If 0, no delay-based gating is applied.
+    int trainingStartDelayMs = 0;
+    // Minimum number of non-empty order-book price levels on each side required
+    // before allowing training to begin. If 0, no depth-based gating is applied.
+    int minOrderbookLevels = 0;
     // Persistence tuning: interval (ms) between automatic saves (default 1h)
     // Set to 0 to disable interval-based saves.
     int bayesSaveIntervalMs = 60 * 60 * 1000; // 1 hour
