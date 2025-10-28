@@ -326,6 +326,101 @@ SimpleThreadPool &getDetectorThreadPool() {
     return pool;
 }
 } // namespace
+// Helper utilities for feature extraction and reference selection
+namespace {
+// Compute microprice from an OrderBookMetrics snapshot. Returns 0.0 if cannot compute.
+static double computeMicroPrice(const OrderBookMetrics &m) {
+    try {
+        double bidP = m.bidPrice;
+        double askP = m.askPrice;
+        double bidV = (m.bidVolumesByLevel.empty() ? m.totalBidVolume : m.bidVolumesByLevel.front());
+        double askV = (m.askVolumesByLevel.empty() ? m.totalAskVolume : m.askVolumesByLevel.front());
+        double denom = bidV + askV;
+        if (denom > 0.0) return (bidP * askV + askP * bidV) / denom;
+    } catch (...) {}
+    return 0.0;
+}
+
+// Choose a reference value and type from available snapshot metrics.
+// Returns pair(referenceValue, referenceType) where type: 0=mid,1=vwap,2=sma,3=micro
+static std::pair<double,int> selectReference(const OrderBookMetrics &m, double vwap_snap, double sma_snap) {
+    double micro = computeMicroPrice(m);
+    double refVal = 0.0;
+    int refType = 0;
+    if (vwap_snap > 0.0) { refVal = vwap_snap; refType = 1; }
+    else if (sma_snap > 0.0) { refVal = sma_snap; refType = 2; }
+    else if (micro > 0.0) { refVal = micro; refType = 3; }
+    else { refVal = m.midPrice; refType = 0; }
+    return {refVal, refType};
+}
+
+// Build feature vector from detectors results and raw metrics.
+// Accept engine pointer so the helper can call member utilities (e.g. calculateImbalanceStrength).
+static std::vector<double> buildFeatures(const OrderBookMetrics &m, const std::vector<DetectorResult> &results) {
+    std::vector<double> features;
+    features.reserve(results.size() + 16);
+    for (const auto &r : results) {
+        double v = 0.0;
+        if (std::isfinite(r.strength) && r.strength > 0.0) {
+            v = r.strength;
+        } else if (std::isfinite(r.imbalanceValue)) {
+            // inline the small calculateImbalanceStrength logic to avoid depending on class private member
+            double ratio = r.imbalanceValue;
+            double threshold = 1.0;
+            double strength;
+            if (ratio > threshold) strength = (ratio - threshold) / threshold;
+            else if (ratio < 1.0 / threshold) strength = (1.0/threshold - ratio) / (1.0/threshold);
+            else strength = 0.0;
+            v = std::min(1.0, std::max(0.0, strength));
+        }
+        features.push_back(v);
+    }
+
+    auto safe = [](double v, double def = 0.0) { return std::isfinite(v) ? v : def; };
+    double bar = safe(m.bidAskVolumeRatio, 1.0);
+    {
+        double ratio = bar; double threshold = 1.0; double strength;
+        if (ratio > threshold) strength = (ratio - threshold) / threshold;
+        else if (ratio < 1.0/threshold) strength = (1.0/threshold - ratio) / (1.0/threshold);
+        else strength = 0.0;
+        features.push_back(std::min(1.0, std::max(0.0, strength)));
+    }
+    features.push_back(safe(m.priceVelocity, 0.0));
+    features.push_back(std::tanh(safe(m.volumeVelocity, 0.0) / 1000.0));
+    features.push_back(std::tanh(safe(m.spreadVelocity, 0.0) * 10.0));
+
+    features.push_back(std::clamp(safe(m.liquidityPressure, 0.0), -10.0, 10.0));
+    features.push_back(std::clamp(safe(m.volatilityExpectation, 0.0), 0.0, 10.0));
+    features.push_back(std::clamp(safe(m.realizedVolatility, 0.0), 0.0, 100.0));
+    features.push_back(std::clamp(safe(m.volatilityPerUnitTime, 0.0), 0.0, 100.0));
+
+    double totalBid = safe(m.totalBidVolume, 0.0);
+    double totalAsk = safe(m.totalAskVolume, 0.0);
+    {
+        double ratio = (totalBid + 1.0) / (totalAsk + 1.0);
+        double threshold = 1.0; double strength;
+        if (ratio > threshold) strength = (ratio - threshold) / threshold;
+        else if (ratio < 1.0/threshold) strength = (1.0/threshold - ratio) / (1.0/threshold);
+        else strength = 0.0;
+        features.push_back(std::min(1.0, std::max(0.0, strength)));
+    }
+
+    double topBidSum = 0.0;
+    double topAskSum = 0.0;
+    for (size_t i = 0; i < std::min<size_t>(3, m.bidVolumesByLevel.size()); ++i) topBidSum += safe(m.bidVolumesByLevel[i], 0.0);
+    for (size_t i = 0; i < std::min<size_t>(3, m.askVolumesByLevel.size()); ++i) topAskSum += safe(m.askVolumesByLevel[i], 0.0);
+    {
+        double ratio = (topBidSum + 1.0) / (topAskSum + 1.0);
+        double threshold = 1.0; double strength;
+        if (ratio > threshold) strength = (ratio - threshold) / threshold;
+        else if (ratio < 1.0/threshold) strength = (1.0/threshold - ratio) / (1.0/threshold);
+        else strength = 0.0;
+        features.push_back(std::min(1.0, std::max(0.0, strength)));
+    }
+
+    return features;
+}
+} // inner namespace
  
  // Constructor
 ImbalanceDetectionEngine::ImbalanceDetectionEngine() : nextCallbackId_(0) {
@@ -516,107 +611,32 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                     // swallow detector errors
                 }
 
-                // Build feature vector from detectors
-                std::vector<double> features;
-                features.reserve(results.size());
-                for (const auto &r : results) {
-                    double v = 0.0;
-                    if (std::isfinite(r.strength) && r.strength > 0.0) {
-                        v = r.strength;
-                    } else if (std::isfinite(r.imbalanceValue)) {
-                        v = calculateImbalanceStrength(r.imbalanceValue, 1.0);
-                    }
-                    features.push_back(v);
-                }
-                // also add some raw metrics that may be useful
-                // sanitize values (replace NaN/inf), clamp or normalize where reasonable
-                auto safe = [](double v, double def = 0.0) {
-                    return std::isfinite(v) ? v : def;
-                };
-                // std::cout << "liquidityPressure range: " << min << " to " << max << std::endl;
-                // spread percent - clamp to a sensible range
-                // features.push_back(std::clamp(safe(m.spreadPercent, 0.0), 0.0, 100.0)); //features 17
-                // bid/ask volume ratio - convert to symmetric ratio and compress into [0,1]
-                double bar = safe(m.bidAskVolumeRatio, 1.0);
-                double normalized = (bar - 1.0) / (bar + 1.0);  // Maps (0,∞) → (-1,1)
-                features.push_back(calculateImbalanceStrength(bar, 1.0));                
-                features.push_back(safe(m.priceVelocity, 0.0));
-                features.push_back(std::tanh(safe(m.volumeVelocity, 0.0) / 1000.0));
-                features.push_back(std::tanh(safe(m.spreadVelocity, 0.0) * 10.0));
-
-                // liquidity / volatility related
-                features.push_back(std::clamp(safe(m.liquidityPressure, 0.0), -10.0, 10.0));
-                features.push_back(std::clamp(safe(m.volatilityExpectation, 0.0), 0.0, 10.0));
-                features.push_back(std::clamp(safe(m.realizedVolatility, 0.0), 0.0, 100.0));
-                features.push_back(std::clamp(safe(m.volatilityPerUnitTime, 0.0), 0.0, 100.0));
-
-                // market directional coefficient and profile score - keep bounded
-                // features.push_back(std::tanh(safe(m.marketDirectionalCoefficient, 0.0))); // features 26
-                // features.push_back(std::clamp(safe(m.liquidityProfileScore, 0.0), -1.0, 1.0));
-
-                // extra orderbook-level features: total bid/ask volumes and top-3 level sums
-                double totalBid = safe(m.totalBidVolume, 0.0);
-                double totalAsk = safe(m.totalAskVolume, 0.0);
-                // avoid division by zero, convert to simple imbalance strength
-                features.push_back(calculateImbalanceStrength((totalBid + 1.0) / (totalAsk + 1.0), 1.0));
-
-                double topBidSum = 0.0;
-                double topAskSum = 0.0;
-                for (size_t i = 0; i < std::min<size_t>(3, m.bidVolumesByLevel.size()); ++i) topBidSum += safe(m.bidVolumesByLevel[i], 0.0);
-                for (size_t i = 0; i < std::min<size_t>(3, m.askVolumesByLevel.size()); ++i) topAskSum += safe(m.askVolumesByLevel[i], 0.0);
-                features.push_back(calculateImbalanceStrength((topBidSum + 1.0) / (topAskSum + 1.0), 1.0));
-
-
-                //print all raw values to check the range of them  
-                // std::cout << "Raw feature values:" << std::endl;
-                // for (size_t i = 0; i < features.size(); ++i) {
-                //     std::cout << "Feature " << i << ": " << features[i] << std::endl;
-                // }
+                // Build feature vector from detectors + raw metrics (extracted via helper)
+                std::vector<double> features = buildFeatures(m, results);
 
                 // Buffer features for later labeling/training
                 {
                     std::lock_guard<std::mutex> pl(pendingTrainingMutex_);
                     if (pendingTraining_.size() >= maxPendingTraining_) pendingTraining_.pop_front();
-                    // capture VWAP/SMA if present in metrics map (optional)
                     double vwap_snap = 0.0;
                     double sma_snap = 0.0;
                     try {
-                        // use getMetric to prefer member fields if available
                         vwap_snap = m.getMetric("vwap", 0.0);
-                        // SMA may be exposed as a metric in timeSeriesMetrics or metrics map
                         sma_snap = m.getMetric("sma", 0.0);
                     } catch (...) {}
 
-                        // compute microprice = (bidPrice * askVolume + askPrice * bidVolume) / (bidVolume + askVolume)
-                        double micro = 0.0;
-                        try {
-                            double bidP = m.bidPrice;
-                            double askP = m.askPrice;
-                            double bidV = (m.bidVolumesByLevel.empty() ? m.totalBidVolume : m.bidVolumesByLevel.front());
-                            double askV = (m.askVolumesByLevel.empty() ? m.totalAskVolume : m.askVolumesByLevel.front());
-                            double denom = bidV + askV;
-                            if (denom > 0.0) micro = (bidP * askV + askP * bidV) / denom;
-                        } catch (...) { micro = 0.0; }
-
-                        // choose reference in order: vwap, sma, micro, midPrice
-                        double refVal = 0.0;
-                        int refType = 0; // 0=mid,1=vwap,2=sma,3=micro
-                        if (vwap_snap > 0.0) { refVal = vwap_snap; refType = 1; }
-                        else if (sma_snap > 0.0) { refVal = sma_snap; refType = 2; }
-                        else if (micro > 0.0) { refVal = micro; refType = 3; }
-                        else { refVal = m.midPrice; refType = 0; }
-                       
-                        PendingTraining pt;
-                        pt.timestamp = m.timestamp;
-                        pt.features = features;
-                        pt.midPrice = m.midPrice;
-                        pt.vwap = vwap_snap;
-                        pt.sma = sma_snap;
-                        pt.referenceValue = refVal;
-                        pt.referenceType = refType;
-                        pt.exchangeId = m.exchangeId;
-                        pt.symbol = m.symbol;
-                        pendingTraining_.push_back(pt);
+                    auto ref = selectReference(m, vwap_snap, sma_snap);
+                    PendingTraining pt;
+                    pt.timestamp = m.timestamp;
+                    pt.features = features;
+                    pt.midPrice = m.midPrice;
+                    pt.vwap = vwap_snap;
+                    pt.sma = sma_snap;
+                    pt.referenceValue = ref.first;
+                    pt.referenceType = ref.second;
+                    pt.exchangeId = m.exchangeId;
+                    pt.symbol = m.symbol;
+                    pendingTraining_.push_back(pt);
 
                         // Evaluate warmup gating immediately after buffering a sample.
                         if (!trainingEnabled_.load()) {
