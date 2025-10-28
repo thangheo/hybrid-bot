@@ -42,6 +42,9 @@ enum class RiskEventType {
  * BASE RiskEvent structure - MUST BE DEFINED FIRST
  */
 struct RiskEvent {
+    // Severity enum for compatibility with older tests/code
+    enum class Severity { INFO, WARNING, CRITICAL, ERROR };
+
     // Core event information
     RiskEventType type;
     core::Timestamp timestamp;
@@ -60,6 +63,12 @@ struct RiskEvent {
         : type(eventType), timestamp(eventTime), description(std::move(desc)),
           severity(std::move(sev)), eventId(generateEventId()), eventSource("system"),
           message("") {}
+
+            // Default constructor (backwards-compatible)
+            RiskEvent()
+                    : type(RiskEventType::SYSTEM_ERROR), timestamp(core::now()), description(""),
+                        severity("info"), eventId(generateEventId()), eventSource("system"),
+                        message("") {}
     
     RiskEvent(RiskEventType eventType, std::string desc, std::string sev = "info")
         : type(eventType), timestamp(core::now()), description(std::move(desc)),
@@ -379,6 +388,34 @@ inline std::string riskEventTypeToString(RiskEventType type) {
  */
 inline std::string getSeverityString(const RiskEvent& event) {
     return event.severity;
+}
+
+// Convert Severity enum to string
+inline std::string severityToString(RiskEvent::Severity s) {
+    switch (s) {
+        case RiskEvent::Severity::INFO: return "info";
+        case RiskEvent::Severity::WARNING: return "warning";
+        case RiskEvent::Severity::CRITICAL: return "critical";
+        case RiskEvent::Severity::ERROR: return "error";
+        default: return "info";
+    }
+}
+
+// Convert string to Severity enum
+inline RiskEvent::Severity stringToSeverity(const std::string& s) {
+    if (s == "critical") return RiskEvent::Severity::CRITICAL;
+    if (s == "warning") return RiskEvent::Severity::WARNING;
+    if (s == "error") return RiskEvent::Severity::ERROR;
+    return RiskEvent::Severity::INFO;
+}
+
+// Allow comparing enum with string for backwards compatibility in tests
+inline bool operator==(const RiskEvent::Severity& sev, const std::string& s) {
+    return severityToString(sev) == s;
+}
+
+inline bool operator==(const std::string& s, const RiskEvent::Severity& sev) {
+    return s == severityToString(sev);
 }
 
 } // namespace risk

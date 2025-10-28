@@ -48,39 +48,39 @@ public:
     
     // explicit PreTradeRiskFilter(const RiskConfig& config, const PortfolioManager& portfolioManager);
     /**
-     * Destructor
+     * Virtual destructor
      */
-    ~PreTradeRiskFilter();
+    virtual ~PreTradeRiskFilter();
     // getAllowedPositionSize
-    double getAllowedPositionSize(const TradingPair& tradingPair) const;
+    virtual double getAllowedPositionSize(const TradingPair& tradingPair) const;
     /**
      * Initialize the filter and its components
      * @return true if initialization was successful, false otherwise
      */
-    bool initialize();
-    bool shutdown();
+    virtual bool initialize();
+    virtual bool shutdown();
     //isHealthy
-    bool isHealthy() const;
+    virtual bool isHealthy() const;
     /**
      * Validate a trading signal
      * @param signal The trading signal to validate
      * @return ValidationResult containing approval status and any violations
      */
-    ValidationResult validateSignal(const TradingSignal& signal);
+    virtual ValidationResult validateSignal(const TradingSignal& signal);
     
     /**
      * Validate an order request
      * @param orderRequest The order request to validate
      * @return ValidationResult containing approval status and any violations
      */
-    ValidationResult validateOrder(const OrderRequest& orderRequest);
+    virtual ValidationResult validateOrder(const OrderRequest& orderRequest);
     
     /**
      * Update risk parameters
      * @param params The new risk parameters
      * @return true if update was successful, false otherwise
      */
-    bool updateRiskParameters(const RiskParameters& params);
+    virtual bool updateRiskParameters(const RiskParameters& params);
     
     /**
      * Get the current risk parameters
@@ -89,7 +89,7 @@ public:
      * @param strategyId The strategy ID
      * @return RiskParameters containing current risk limits
      */
-    RiskParameters getRiskParameters(const core::ExchangeId& exchangeId, 
+    virtual RiskParameters getRiskParameters(const core::ExchangeId& exchangeId, 
                                    const TradingPair& tradingPair,
                                    const std::string& strategyId) const;
     

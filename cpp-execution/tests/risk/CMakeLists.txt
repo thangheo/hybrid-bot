@@ -21,6 +21,7 @@ add_executable(risk_general_tests ${RISK_TEST_SOURCES})
 target_link_libraries(risk_general_tests
     PRIVATE
         risk
+    execution
         common
         GTest::GTest
         GTest::Main

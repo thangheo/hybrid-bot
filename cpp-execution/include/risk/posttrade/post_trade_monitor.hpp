@@ -293,7 +293,7 @@ public:
     /**
      * Get performance metrics
      */
-    strategy::PerformanceMetrics getPerformanceMetrics() const;
+    virtual strategy::PerformanceMetrics getPerformanceMetrics() const;
     
     /**
      * Set risk manager mode with validation and notifications

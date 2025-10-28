@@ -27,8 +27,29 @@ MarketDataInterface::MarketDataInterface(const RiskConfig& config)
 }
 
 MarketDataInterface::~MarketDataInterface() {
+    // Avoid calling shutdown() here because it performs logging and may
+    // invoke the Logger during static destruction after the Logger
+    // singleton has already been torn down, which can lead to "pure
+    // virtual method called" aborts. Do minimal non-logging cleanup
+    // instead.
     if (initialized_.load()) {
-        shutdown();
+        // During static teardown the order of destruction of singletons and
+        // thread-managed objects is undefined and can cause crashes if we
+        // attempt to join threads or invoke logging. To keep teardown safe in
+        // unit tests, avoid performing complex shutdown here. Reset owned
+        // components to release resources without invoking their shutdown
+        // logic which may touch other partially-destroyed singletons.
+        try {
+            subscriber_.reset();
+        } catch (...) {
+            // swallow
+        }
+        try {
+            cache_.reset();
+        } catch (...) {
+            // swallow
+        }
+        initialized_.store(false);
     }
 }
 
@@ -312,13 +333,18 @@ std::shared_ptr<DataInterface> MarketDataInterface::createDataInterface(
     std::lock_guard<std::mutex> lg(g_marketDataInterface_singleton_mutex);
     if (g_marketDataInterface_singleton) return g_marketDataInterface_singleton;
 
-    auto instance = std::make_shared<MarketDataInterface>(config);
-    if (!instance->initialize()) {
+    // Allocate with new and store into a shared_ptr with a no-op deleter so
+    // the singleton is intentionally not destroyed during static teardown.
+    // This avoids destructor-ordering issues in unit tests where other
+    // singletons (e.g., Logger) may already be torn down.
+    MarketDataInterface* raw = new MarketDataInterface(config);
+    if (!raw->initialize()) {
         LOG_ERROR("Failed to initialize MarketDataInterface");
+        delete raw;
         return nullptr;
     }
-    g_marketDataInterface_singleton = instance;
-    LOG_INFO("MarketDataInterface singleton created (this={})", static_cast<const void*>(instance.get()));
+    g_marketDataInterface_singleton = std::shared_ptr<DataInterface>(raw, [](DataInterface*) { /* leak for process lifetime */ });
+    LOG_INFO("MarketDataInterface singleton created (this={})", static_cast<const void*>(raw));
     return g_marketDataInterface_singleton;
 }
 
@@ -329,17 +355,18 @@ std::shared_ptr<DataInterface> MarketDataInterface::createDataInterface(
     std::lock_guard<std::mutex> lg(g_marketDataInterface_singleton_mutex);
     if (g_marketDataInterface_singleton) return g_marketDataInterface_singleton;
 
-    auto instance = std::make_shared<MarketDataInterface>(config);
+    MarketDataInterface* raw = new MarketDataInterface(config);
     // inject context and client before initialization
-    if (context) instance->setZmqContext(context);
-    if (injectedClient) instance->setZmqClient(std::move(injectedClient));
+    if (context) raw->setZmqContext(context);
+    if (injectedClient) raw->setZmqClient(std::move(injectedClient));
 
-    if (!instance->initialize()) {
+    if (!raw->initialize()) {
         LOG_ERROR("Failed to initialize MarketDataInterface (injected)");
+        delete raw;
         return nullptr;
     }
-    g_marketDataInterface_singleton = instance;
-    LOG_INFO("MarketDataInterface singleton (injected) created (this={})", static_cast<const void*>(instance.get()));
+    g_marketDataInterface_singleton = std::shared_ptr<DataInterface>(raw, [](DataInterface*) { /* leak for process lifetime */ });
+    LOG_INFO("MarketDataInterface singleton (injected) created (this={})", static_cast<const void*>(raw));
     return g_marketDataInterface_singleton;
 }
 

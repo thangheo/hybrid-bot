@@ -200,10 +200,8 @@ public:
     }
     
     double getCurrentPrice(const core::Symbol& tradingPair, const std::optional<std::string>& exchangeId = std::nullopt) override {
-        // // Mock price data???
-        // if (tradingPair.toString().find("BTC") != std::string::npos) return 50000.0;
-        // if (tradingPair.toString().find("ETH") != std::string::npos) return 3000.0;
-        // return 100.0; // Default mock price
+        // Simple deterministic mock price for tests
+        return 50000.0;
     }
     
     std::vector<std::pair<Timestamp, double>> getHistoricalPrices(

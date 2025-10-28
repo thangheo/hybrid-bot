@@ -125,9 +125,22 @@ MarketDataCache::MarketDataCache(const MarketDataCacheConfig& config)
 }
 
 MarketDataCache::~MarketDataCache() {
-    LOG_INFO("MarketDataCache destructor - clearing {} cache entries, {} history entries",
-             marketDataCache_.size(), priceHistories_.size());
-    clear();
+    // Avoid logging from destructor as Logger may be partially torn down
+    // during static destruction which can lead to crashes. Perform minimal
+    // cleanup without invoking other member functions that log.
+    try {
+        {
+            std::unique_lock<std::shared_mutex> lock(cacheMutex_);
+            marketDataCache_.clear();
+        }
+
+        {
+            std::unique_lock<std::shared_mutex> lock(historyMutex_);
+            priceHistories_.clear();
+        }
+    } catch (...) {
+        // swallow
+    }
 }
 
 void MarketDataCache::updateMarketData(const std::string& cacheKey, const core::MarketData& data) {

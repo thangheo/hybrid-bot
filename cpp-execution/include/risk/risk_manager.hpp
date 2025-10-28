@@ -85,6 +85,21 @@ public:
                 std::shared_ptr<trading::risk::MarketDataInterface> marketDataInterface,
                 std::shared_ptr<zmq::context_t> zmqContext = nullptr);   
 
+    // Backwards-compatible constructor used by some unit tests which only pass a RiskConfig
+    explicit RiskManager(const RiskConfig& config)
+        : RiskManager(nullptr, config) {}
+
+    // Testing hook: inject mocks or test doubles for internal subsystems.
+    // RiskManager will take ownership of raw pointers passed here (use with care in tests).
+    void injectTestMocks(
+        PortfolioManager* portfolioManager,
+        PreTradeRiskFilter* preTradeFilter,
+        PostTradeMonitor* postTradeMonitor,
+        StrategyInterface* strategyInterface,
+        ExecutionInterface* executionInterface,
+        DataInterface* dataInterface
+    );
+
     /**
      * Initialize the risk manager and its subsystems
      * @return true if initialization was successful, false otherwise
