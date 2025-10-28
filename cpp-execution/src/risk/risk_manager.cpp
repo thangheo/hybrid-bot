@@ -57,6 +57,12 @@ RiskManager::RiskManager(std::shared_ptr<trading::execution::ExecutionService> e
     LOG_INFO("RiskManager", "ExecutionInterface and DataInterface will be created in initialize() if not injected");
     
     m_portfolioManager = nullptr;
+    // If a MarketDataInterface was provided, reuse it as the DataInterface so
+    // initialize() doesn't try to create a second one. MarketDataInterface
+    // derives from DataInterface so we can store it directly.
+    if (marketDataInterface) {
+        m_dataInterface = std::static_pointer_cast<DataInterface>(marketDataInterface);
+    }
     // Don't create additional DataInterface instances here
 }
 bool RiskManager::initialize() {
