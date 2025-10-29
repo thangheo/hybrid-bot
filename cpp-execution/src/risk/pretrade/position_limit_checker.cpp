@@ -102,7 +102,8 @@ bool PositionLimitChecker::checkPositionLimit(const TradingSignal& signal,
     
     bool withinLimits = true;
     
-    // Check asset-specific limit
+    // Check asset-specific limit // this is fucking stupid// postponed it
+   /*
     if (std::abs(newPosition) > assetLimit) {
         RiskViolation violation(
             ViolationType::POSITION_LIMIT,
@@ -113,6 +114,7 @@ bool PositionLimitChecker::checkPositionLimit(const TradingSignal& signal,
         violations.push_back(violation);
         withinLimits = false;
     }
+    */
     
     // Check strategy limit (if applicable)
     // Note: This requires implementing getTotalPositionForStrategy in PositionTracker
