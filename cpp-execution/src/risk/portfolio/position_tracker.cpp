@@ -143,6 +143,14 @@ bool PositionTracker::isHealthy() const {
 
 bool PositionTracker::initialize() {
     try {
+        // Ensure initialize is idempotent
+        bool expected = false;
+        if (!m_initialized.compare_exchange_strong(expected, true)) {
+            // Already initialized
+            LOG_WARN("PositionTracker", "initialize() called, but already initialized");
+            return true;
+        }
+
         if (!m_dataInterface) {
             LOG_WARN("PositionTracker", "DataInterface is null - running in standalone mode");
             // Don't fail if DataInterface is null - allow standalone operation
@@ -164,18 +172,24 @@ bool PositionTracker::initialize() {
         // Register a callback that captures a weak_ptr to avoid calling into
         // a PositionTracker that has been destroyed. This prevents use-after-free
         // when MarketDataInterface invokes callbacks from worker threads.
-        std::weak_ptr<PositionTracker> weak_self = shared_from_this();
-        m_dataInterface->registerMarketDataCallback(
-            [weak_self](const MarketData& marketData) {
-                if (auto self = weak_self.lock()) {
-                    try {
-                        self->updateMarketData(marketData);
-                    } catch (...) {
-                        // swallow exceptions from callback to avoid crashing caller
+        // Register for market data updates if supported. Capture a weak_ptr to avoid
+        // calling into a PositionTracker that has been destroyed.
+        try {
+            std::weak_ptr<PositionTracker> weak_self = shared_from_this();
+            m_dataInterface->registerMarketDataCallback(
+                [weak_self](const MarketData& marketData) {
+                    if (auto self = weak_self.lock()) {
+                        try {
+                            self->updateMarketData(marketData);
+                        } catch (...) {
+                            // swallow exceptions from callback to avoid crashing caller
+                        }
                     }
                 }
-            }
-        );
+            );
+        } catch (const std::exception& e) {
+            LOG_WARN("PositionTracker", std::format("Failed to register market data callback: {}", e.what()));
+        }
         
         
         return true;
@@ -189,9 +203,21 @@ bool PositionTracker::initialize() {
 bool PositionTracker::shutdown() {
     try {
         // If DataInterface has a shutdown method, call it
+        // Make shutdown idempotent
+        bool expected = true;
+        if (!m_initialized.compare_exchange_strong(expected, false)) {
+            // Was not initialized
+            LOG_WARN("PositionTracker", "shutdown() called, but PositionTracker was not initialized");
+            return true;
+        }
+
         if (m_dataInterface) {
-            m_dataInterface->shutdown();
-            LOG_INFO("PositionTracker", "DataInterface shut down successfully");
+            try {
+                m_dataInterface->shutdown();
+                LOG_INFO("PositionTracker", "DataInterface shut down successfully");
+            } catch (const std::exception& e) {
+                LOG_WARN("PositionTracker", std::format("DataInterface shutdown threw: {}", e.what()));
+            }
         }
         return true;
     } catch (const std::exception& e) {
