@@ -30,9 +30,9 @@ RiskConfig::RiskConfig() {
 
     // Initialize exposure limit config
     exposureLimitConfig_.maxTotalExposure = 10000.0;
-    exposureLimitConfig_.maxAssetExposure = 2000.0;
-    exposureLimitConfig_.maxStrategyExposure = 5000.0;
-    exposureLimitConfig_.maxExchangeExposure = 8000.0;
+    exposureLimitConfig_.maxAssetExposure = exposureLimitConfig_.maxTotalExposure/2;
+    exposureLimitConfig_.maxStrategyExposure = 10000;
+    exposureLimitConfig_.maxExchangeExposure = 10000.0;
     exposureLimitConfig_.volatilityMultiplier = 1.5;
     exposureLimitConfig_.includeUnrealizedPnl = true;
 
@@ -96,7 +96,7 @@ RiskConfig::RiskConfig() {
 
     // Initialize logging config
     loggingConfig_.logLevel = "INFO";
-    loggingConfig_.logDirectory = "/var/log/riskmanagement";
+    loggingConfig_.logDirectory = "logs/riskmanagement";
     loggingConfig_.enableDetailedLogs = true;
     loggingConfig_.logToConsole = true;
     loggingConfig_.logToFile = true;
