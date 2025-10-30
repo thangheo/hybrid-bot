@@ -11,6 +11,9 @@
 #include <sstream>
 #include "common/logger.hpp"
 #include <unordered_set>
+// Persistence and alerting
+#include "risk/storage/event_store.hpp"
+#include "risk/alerting/webhook_client.hpp"
 namespace trading::risk {
 
 // Temporary debug flag for verbose TTL logging. Set to 'false' to disable.
@@ -636,6 +639,35 @@ bool PostTradeMonitor::initializeComponents() {
         if (!balanceReconciliation_->initialize()) {
             return false;
         }
+
+        // Initialize persistence (EventStore) if enabled in config
+        try {
+            const auto& pconf = config_.getPersistenceConfig();
+            if (pconf.enabled && pconf.type == "sqlite") {
+                // Map backpressure mode string to enum
+                trading::risk::storage::EventStore::BackpressureMode mode = trading::risk::storage::EventStore::BackpressureMode::BLOCK;
+                if (pconf.backpressureMode == "DROP_OLDEST") mode = trading::risk::storage::EventStore::BackpressureMode::DROP_OLDEST;
+                else if (pconf.backpressureMode == "FAIL") mode = trading::risk::storage::EventStore::BackpressureMode::FAIL;
+
+                // Create EventStore with configured queue capacity and mode (0 == unbounded)
+                eventStore_ = std::make_unique<trading::risk::storage::EventStore>(pconf.sqlitePath, pconf.queueCapacity, mode);
+                if (!eventStore_->initSchema()) {
+                    LOG_WARN("PostTradeMonitor: EventStore schema initialization failed");
+                }
+            }
+        } catch (...) {
+            LOG_WARN("PostTradeMonitor: failed to initialize EventStore");
+        }
+
+        // Initialize webhook client if alerting configured
+        try {
+            const auto& aconf = config_.getAlertingConfig();
+            if (aconf.enabled && !aconf.webhookEndpoints.empty()) {
+                webhookClient_ = std::make_unique<trading::risk::alerting::WebhookClient>(aconf.webhookEndpoints);
+            }
+        } catch (...) {
+            LOG_WARN("PostTradeMonitor: failed to initialize WebhookClient");
+        }
         
         return true;
     } catch (...) {
@@ -764,6 +796,42 @@ void PostTradeMonitor::handleReconciliationEvent(const PositionReconciliationEve
     // Update mode if significant discrepancy
     if (std::abs(event.discrepancyPercentage) > config_.getBalanceReconciliationConfig().maxDiscrepancyPercent * 2) {
         setMode(RiskManagerMode::HEIGHTENED_RISK, "Significant position reconciliation discrepancy");
+    }
+
+    // Persist reconciliation event if persistence configured
+    try {
+        if (eventStore_) {
+            // Enqueue for background persistence to avoid blocking
+            bool ok = eventStore_->enqueueReconciliationEvent(event);
+            if (!ok) {
+                LOG_WARN("PostTradeMonitor: EventStore queue full or enqueue failed");
+                // fallback: try synchronous save (best-effort)
+                try {
+                    auto id = eventStore_->saveReconciliationEvent(event);
+                    if (!id) LOG_WARN("PostTradeMonitor: fallback synchronous save failed");
+                } catch (...) {
+                    LOG_WARN("PostTradeMonitor: exception during fallback synchronous save");
+                }
+            }
+        }
+    } catch (...) {
+        LOG_WARN("PostTradeMonitor: exception while enqueuing reconciliation event");
+    }
+
+    // Send alert via webhook if configured and threshold exceeded
+    try {
+        const auto& br = config_.getBalanceReconciliationConfig();
+        const auto& aconf = config_.getAlertingConfig();
+        if (webhookClient_ && aconf.enabled) {
+            bool critical = std::abs(event.discrepancyPercentage) >= br.criticalDiscrepancyThreshold;
+            if (monitorConfig_.enableRealTimeAlerts && (critical || br.alertOnDiscrepancy)) {
+                // Build a compact JSON payload
+                std::string payload = "{\"type\":\"reconciliation\",\"exchange\":\"" + event.exchangeId.toString() + "\",\"trading_pair\":\"" + event.tradingPair.toString() + "\",\"discrepancy_percent\":" + std::to_string(event.discrepancyPercentage) + ",\"critical\":" + (critical ? "true" : "false") + ",\"message\":\"" + event.message + "\"}";
+                webhookClient_->send(payload);
+            }
+        }
+    } catch (...) {
+        LOG_WARN("PostTradeMonitor: exception while sending webhook alert");
     }
 }
 

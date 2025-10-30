@@ -170,6 +170,22 @@ bool RiskConfig::loadJsonConfiguration(const std::string& jsonStr) {
         if (j.contains("balanceReconciliation")) {
             loadBalanceReconciliationConfig(j["balanceReconciliation"]);
         }
+
+        if (j.contains("persistence")) {
+            loadPersistenceConfig(j["persistence"]);
+        }
+
+        if (j.contains("alerting")) {
+            loadAlertingConfig(j["alerting"]);
+        }
+
+        if (j.contains("runtime")) {
+            loadRuntimeConfig(j["runtime"]);
+        }
+
+        if (j.contains("idempotency")) {
+            loadIdempotencyConfig(j["idempotency"]);
+        }
         
         if (j.contains("rebalancing")) {
             loadRebalancingConfig(j["rebalancing"]);
@@ -598,6 +614,76 @@ void RiskConfig::loadLoggingConfig(const json& lg) {
     }
 }
 
+void RiskConfig::loadPersistenceConfig(const json& p) {
+    if (p.contains("enabled")) {
+        persistenceConfig_.enabled = p["enabled"].get<bool>();
+    }
+    if (p.contains("type")) {
+        persistenceConfig_.type = p["type"].get<std::string>();
+    }
+    if (p.contains("sqlitePath")) {
+        persistenceConfig_.sqlitePath = p["sqlitePath"].get<std::string>();
+    }
+    if (p.contains("postgresUrl")) {
+        persistenceConfig_.postgresUrl = p["postgresUrl"].get<std::string>();
+    }
+    if (p.contains("retentionDays")) {
+        persistenceConfig_.retentionDays = p["retentionDays"].get<int>();
+    }
+    if (p.contains("queueCapacity")) {
+        persistenceConfig_.queueCapacity = p["queueCapacity"].get<size_t>();
+    }
+    if (p.contains("backpressureMode")) {
+        persistenceConfig_.backpressureMode = p["backpressureMode"].get<std::string>();
+    }
+}
+
+void RiskConfig::loadAlertingConfig(const json& a) {
+    if (a.contains("enabled")) {
+        alertingConfig_.enabled = a["enabled"].get<bool>();
+    }
+    if (a.contains("channels") && a["channels"].is_array()) {
+        alertingConfig_.channels.clear();
+        for (const auto& ch : a["channels"]) alertingConfig_.channels.push_back(ch.get<std::string>());
+    }
+    if (a.contains("webhookEndpoints") && a["webhookEndpoints"].is_array()) {
+        alertingConfig_.webhookEndpoints.clear();
+        for (const auto& url : a["webhookEndpoints"]) alertingConfig_.webhookEndpoints.push_back(url.get<std::string>());
+    }
+    if (a.contains("slackWebhookUrl")) {
+        alertingConfig_.slackWebhookUrl = a["slackWebhookUrl"].get<std::string>();
+    }
+    if (a.contains("enableEmail")) {
+        alertingConfig_.enableEmail = a["enableEmail"].get<bool>();
+    }
+    if (a.contains("smtpHost")) alertingConfig_.smtpHost = a["smtpHost"].get<std::string>();
+    if (a.contains("smtpPort")) alertingConfig_.smtpPort = a["smtpPort"].get<int>();
+    if (a.contains("smtpFrom")) alertingConfig_.smtpFrom = a["smtpFrom"].get<std::string>();
+    if (a.contains("smtpTo") && a["smtpTo"].is_array()) {
+        alertingConfig_.smtpTo.clear();
+        for (const auto& recipient : a["smtpTo"]) alertingConfig_.smtpTo.push_back(recipient.get<std::string>());
+    }
+}
+
+void RiskConfig::loadRuntimeConfig(const json& r) {
+    if (r.contains("maxConcurrentReconciliations")) {
+        runtimeConfig_.maxConcurrentReconciliations = r["maxConcurrentReconciliations"].get<int>();
+    }
+    if (r.contains("reconciliationWorkerTimeoutSeconds")) {
+        runtimeConfig_.reconciliationWorkerTimeoutSeconds = r["reconciliationWorkerTimeoutSeconds"].get<int>();
+    }
+    if (r.contains("enableHttpApi")) runtimeConfig_.enableHttpApi = r["enableHttpApi"].get<bool>();
+    if (r.contains("apiHost")) runtimeConfig_.apiHost = r["apiHost"].get<std::string>();
+    if (r.contains("apiPort")) runtimeConfig_.apiPort = r["apiPort"].get<int>();
+    if (r.contains("zmqEnabled")) runtimeConfig_.zmqEnabled = r["zmqEnabled"].get<bool>();
+    if (r.contains("zmqContextThreads")) runtimeConfig_.zmqContextThreads = r["zmqContextThreads"].get<int>();
+}
+
+void RiskConfig::loadIdempotencyConfig(const json& i) {
+    if (i.contains("enabled")) idempotencyConfig_.enabled = i["enabled"].get<bool>();
+    if (i.contains("dedupWindowSeconds")) idempotencyConfig_.dedupWindowSeconds = i["dedupWindowSeconds"].get<int>();
+}
+
 // Enhanced configuration saving with proper MetricThreshold serialization
 bool RiskConfig::saveToFile(const std::string& configFilePath) const {
     try {
@@ -684,7 +770,57 @@ void RiskConfig::saveOtherConfigs(json& j) const {
         {"enableAutoRiskReduction", drawdownConfig_.enableAutoRiskReduction},
         {"riskReductionFactor", drawdownConfig_.riskReductionFactor}
     };
-    
+
+    // Balance reconciliation
+    j["balanceReconciliation"] = {
+        {"reconciliationFrequencyMinutes", (int)balanceReconciliationConfig_.reconciliationFrequency.count()},
+        {"maxDiscrepancyPercent", balanceReconciliationConfig_.maxDiscrepancyPercent},
+        {"autoCorrectDiscrepancies", balanceReconciliationConfig_.autoCorrectDiscrepancies},
+        {"alertOnDiscrepancy", balanceReconciliationConfig_.alertOnDiscrepancy},
+        {"minimumPositionSize", balanceReconciliationConfig_.minimumPositionSize}
+    };
+
+    // Persistence config
+    j["persistence"] = {
+        {"enabled", persistenceConfig_.enabled},
+        {"type", persistenceConfig_.type},
+        {"sqlitePath", persistenceConfig_.sqlitePath},
+        {"postgresUrl", persistenceConfig_.postgresUrl},
+        {"retentionDays", persistenceConfig_.retentionDays},
+        {"queueCapacity", persistenceConfig_.queueCapacity},
+        {"backpressureMode", persistenceConfig_.backpressureMode}
+    };
+
+    // Alerting config
+    j["alerting"] = {
+        {"enabled", alertingConfig_.enabled},
+        {"channels", alertingConfig_.channels},
+        {"webhookEndpoints", alertingConfig_.webhookEndpoints},
+        {"slackWebhookUrl", alertingConfig_.slackWebhookUrl},
+        {"enableEmail", alertingConfig_.enableEmail},
+        {"smtpHost", alertingConfig_.smtpHost},
+        {"smtpPort", alertingConfig_.smtpPort},
+        {"smtpFrom", alertingConfig_.smtpFrom},
+        {"smtpTo", alertingConfig_.smtpTo}
+    };
+
+    // Runtime config
+    j["runtime"] = {
+        {"maxConcurrentReconciliations", runtimeConfig_.maxConcurrentReconciliations},
+        {"reconciliationWorkerTimeoutSeconds", runtimeConfig_.reconciliationWorkerTimeoutSeconds},
+        {"enableHttpApi", runtimeConfig_.enableHttpApi},
+        {"apiHost", runtimeConfig_.apiHost},
+        {"apiPort", runtimeConfig_.apiPort},
+        {"zmqEnabled", runtimeConfig_.zmqEnabled},
+        {"zmqContextThreads", runtimeConfig_.zmqContextThreads}
+    };
+
+    // Idempotency config
+    j["idempotency"] = {
+        {"enabled", idempotencyConfig_.enabled},
+        {"dedupWindowSeconds", idempotencyConfig_.dedupWindowSeconds}
+    };
+
     // Add other configs as needed...
 }
 
@@ -916,6 +1052,38 @@ void RiskConfig::setPortfolioConfig(const PortfolioConfig& config) {
 
 void RiskConfig::setLoggingConfig(const RiskLoggingConfig& config) {
     loggingConfig_ = config;
+}
+
+const PersistenceConfig& RiskConfig::getPersistenceConfig() const {
+    return persistenceConfig_;
+}
+
+const AlertingConfig& RiskConfig::getAlertingConfig() const {
+    return alertingConfig_;
+}
+
+const RuntimeConfig& RiskConfig::getRuntimeConfig() const {
+    return runtimeConfig_;
+}
+
+const IdempotencyConfig& RiskConfig::getIdempotencyConfig() const {
+    return idempotencyConfig_;
+}
+
+void RiskConfig::setPersistenceConfig(const PersistenceConfig& config) {
+    persistenceConfig_ = config;
+}
+
+void RiskConfig::setAlertingConfig(const AlertingConfig& config) {
+    alertingConfig_ = config;
+}
+
+void RiskConfig::setRuntimeConfig(const RuntimeConfig& config) {
+    runtimeConfig_ = config;
+}
+
+void RiskConfig::setIdempotencyConfig(const IdempotencyConfig& config) {
+    idempotencyConfig_ = config;
 }
 
 } // namespace trading::risk

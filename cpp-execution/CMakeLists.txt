@@ -115,7 +115,7 @@ install(TARGETS tactical
 
 # CPack configuration for binary distribution
 include(InstallRequiredSystemLibraries)
-set(CPACK_PACKAGE_VENDOR "Your Company")
+set(CPACK_PACKAGE_VENDOR "e8")
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Tactical System")
 set(CPACK_PACKAGE_VERSION_MAJOR ${PROJECT_VERSION_MAJOR})
 set(CPACK_PACKAGE_VERSION_MINOR ${PROJECT_VERSION_MINOR})

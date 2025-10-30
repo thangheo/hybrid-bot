@@ -12,7 +12,15 @@ file(GLOB_RECURSE RISK_SOURCES
     "pretrade/*.cpp"
     "service/*.cpp"
     "utils/*.cpp"
+    "storage/*.cpp"
 )
+#find libsqlite3
+find_package(SQLite3 REQUIRED)
+if(NOT SQLite3_FOUND)
+    message(FATAL_ERROR "SQLite3 not found")
+endif()
+message(STATUS "Using SQLite3 ${SQLite3_VERSION}")
+
 # find protobuf
 find_package(Protobuf REQUIRED)
 if(NOT Protobuf_FOUND)
@@ -23,6 +31,9 @@ message(STATUS "Protobuf include dirs: ${Protobuf_INCLUDE_DIRS}")
 message(STATUS "Protobuf libraries: ${Protobuf_LIBRARIES}")
 #add directory for interfaces
 add_subdirectory(interfaces)
+
+# unit tests for risk - event_store batching
+add_subdirectory(event_store_test)
 
 add_library(risk STATIC ${RISK_SOURCES})
 set_target_properties(risk PROPERTIES POSITION_INDEPENDENT_CODE ON)
@@ -47,6 +58,7 @@ target_link_libraries(risk
         nlohmann_json::nlohmann_json
         protobuf::libprotobuf
         gRPC::grpc++
+        SQLite::SQLite3
 )
 
 # Add compiler-specific flags
@@ -79,6 +91,7 @@ target_link_libraries(risk_demo PRIVATE
         common
         nlohmann_json::nlohmann_json
         protobuf::libprotobuf
+        SQLite::SQLite3
         )
 
 # Add format library for std::format (if using GCC < 13)

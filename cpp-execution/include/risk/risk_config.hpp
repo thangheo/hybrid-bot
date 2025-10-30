@@ -336,12 +336,71 @@ struct PortfolioConfig {
  */
 struct RiskLoggingConfig {
     std::string logLevel = "INFO";
-    std::string logDirectory = "/var/log/riskmanagement";
+    std::string logDirectory = "logs/riskmanagement";
     std::string logFileName = "risk_manager.log";
     bool enableDetailedLogs = true;
     bool logToConsole = true;
     bool logToFile = true;
     std::chrono::hours logRetentionPeriod{30 * 24};
+};
+
+/**
+ * Persistence configuration (simple DB settings)
+ */
+struct PersistenceConfig {
+    bool enabled = true;
+    std::string type = "sqlite"; // sqlite | postgres
+    std::string sqlitePath = "data/risk_events.db";
+    std::string postgresUrl = ""; // e.g. postgres://user:pass@host:port/db
+    int retentionDays = 365;
+
+    // Async queue configuration for EventStore
+    size_t queueCapacity = 0; // 0 == unbounded
+    std::string backpressureMode = "BLOCK"; // DROP_OLDEST | BLOCK | FAIL
+
+    PersistenceConfig() = default;
+};
+
+/**
+ * Alerting / notification configuration
+ */
+struct AlertingConfig {
+    bool enabled = true;
+    std::vector<std::string> channels = {"log", "webhook"};
+    std::vector<std::string> webhookEndpoints; // webhook URLs
+    std::string slackWebhookUrl = "";
+    bool enableEmail = false;
+    std::string smtpHost = "";
+    int smtpPort = 587;
+    std::string smtpFrom = "";
+    std::vector<std::string> smtpTo;
+
+    AlertingConfig() = default;
+};
+
+/**
+ * Runtime / operational configuration
+ */
+struct RuntimeConfig {
+    int maxConcurrentReconciliations = 4;
+    int reconciliationWorkerTimeoutSeconds = 30;
+    bool enableHttpApi = false;
+    std::string apiHost = "127.0.0.1";
+    int apiPort = 8080;
+    bool zmqEnabled = true;
+    int zmqContextThreads = 1;
+
+    RuntimeConfig() = default;
+};
+
+/**
+ * Idempotency / deduplication settings
+ */
+struct IdempotencyConfig {
+    bool enabled = true;
+    int dedupWindowSeconds = 300; // 5 minutes
+
+    IdempotencyConfig() = default;
 };
 
 /**
@@ -501,6 +560,10 @@ public:
     const CollateralConfig& getCollateralConfig() const;
     const PortfolioConfig& getPortfolioConfig() const;
     const RiskLoggingConfig& getLoggingConfig() const;
+    const PersistenceConfig& getPersistenceConfig() const;
+    const AlertingConfig& getAlertingConfig() const;
+    const RuntimeConfig& getRuntimeConfig() const;
+    const IdempotencyConfig& getIdempotencyConfig() const;
     bool getBoolValue(std::string key) ;
     // const double getDoubleValue(std::string key) ;
     bool hasKey(std::string key) ;
@@ -521,6 +584,10 @@ public:
     void setCollateralConfig(const CollateralConfig& config);
     void setPortfolioConfig(const PortfolioConfig& config);
     void setLoggingConfig(const RiskLoggingConfig& config);
+    void setPersistenceConfig(const PersistenceConfig& config);
+    void setAlertingConfig(const AlertingConfig& config);
+    void setRuntimeConfig(const RuntimeConfig& config);
+    void setIdempotencyConfig(const IdempotencyConfig& config);
     // Public member for direct access (as shown in original code)
     CollateralConfig collateralConfig;
     PortfolioConfig portfolioConfig;
@@ -559,6 +626,10 @@ private:
     CollateralConfig collateralConfig_;
     PortfolioConfig portfolioConfig_;
     RiskLoggingConfig loggingConfig_;
+    PersistenceConfig persistenceConfig_;
+    AlertingConfig alertingConfig_;
+    RuntimeConfig runtimeConfig_;
+    IdempotencyConfig idempotencyConfig_;
     
     // Private helper methods for JSON loading - use forward declared json
     bool loadJsonConfiguration(const std::string& jsonStr);
@@ -574,6 +645,10 @@ private:
     void loadCollateralConfig(const nlohmann::json& co);
     void loadPortfolioConfig(const nlohmann::json& po);
     void loadLoggingConfig(const nlohmann::json& lg);
+    void loadPersistenceConfig(const nlohmann::json& p);
+    void loadAlertingConfig(const nlohmann::json& a);
+    void loadRuntimeConfig(const nlohmann::json& r);
+    void loadIdempotencyConfig(const nlohmann::json& i);
     
     // Helper method for saving other configs
     void saveOtherConfigs(nlohmann::json& j) const;
