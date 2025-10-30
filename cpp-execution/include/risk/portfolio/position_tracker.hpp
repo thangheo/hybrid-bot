@@ -20,6 +20,7 @@
 #include <vector>
 #include <memory>
 #include <functional>
+#include <atomic>
 
 namespace trading {
 namespace risk {
@@ -172,6 +173,8 @@ private:
     void updatePositionCurrentPrice(Position& position);
     std::string createPositionKey(const ExchangeId& exchangeId, const TradingPair& tradingPair) const;
     double getCurrentPrice(const TradingPair& tradingPair) const;
+    // Tracks whether initialize() has been run successfully to avoid duplicate registration
+    std::atomic<bool> m_initialized{false};
 };
 
 } // namespace risk
