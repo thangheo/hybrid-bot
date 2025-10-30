@@ -186,6 +186,13 @@ struct PostTradeMonitorConfig {
     bool enableDynamicTtl{true};
     std::string volatilityTimeframe{"1m"};
     
+    // Conservative TTL-extension (slow-gate) options
+    bool enableTtlExtension{false}; // opt-in; default off (log-only rollout)
+    double ttlExtensionMinStayProb{0.70}; // minimum stay probability to allow extension
+    double ttlExtensionMinPTrend{0.60}; // minimum slow-drift trend probability
+    size_t ttlExtensionMaxPerPosition{2}; // max number of extensions per position
+    int ttlExtensionDefaultCapMin{5}; // default suggested cap in minutes if none provided by recommender
+    
     // Alert settings
     bool enableRealTimeAlerts{true};
     std::chrono::seconds alertCooldownSeconds{300};
@@ -448,6 +455,25 @@ private:
     void registerSignalChecker(const SignalChecker& checker);
     mutable std::shared_mutex signalCheckerMutex_;
     SignalChecker signalChecker_;
+
+    // External recommendation callback type (optional). The callback should
+    // return a JSON-like map (string->string) or a structured object in the
+    // future; for now we use a simple struct to carry conservative fields.
+    struct ExternalRecommendation {
+        std::string recommended_action; // "extend" | "recommend_exit" | "none"
+        double short_alpha{0.0};
+        double p_trend_up{0.0};
+        double stay_prob{0.0};
+        double mixture_half_life_min{0.0};
+        bool micro_ok{false};
+        std::string reason;
+        std::optional<int> suggested_time_cap_min;
+    };
+
+    using ExternalRecommendationCallback = std::function<std::optional<ExternalRecommendation>(const core::ExchangeId&, const core::Symbol&)>;
+    void registerExternalRecommendationCallback(const ExternalRecommendationCallback& cb);
+    mutable std::shared_mutex externalRecommendationMutex_;
+    ExternalRecommendationCallback externalRecommendationCb_;
 
     // Enforce position TTL
     void enforcePositionTTL();
