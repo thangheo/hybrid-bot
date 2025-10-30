@@ -190,6 +190,11 @@ bool PostTradeMonitor::initialize() {
             healthCheckLoop();
         });
     }
+
+    // Emit startup log for easier diagnostics in deployed logs
+    if (kPostTradeTtlDebug) {
+        LOG_INFO(formatString("[TTL_DEBUG] PostTradeMonitor initialized (enableBackgroundMonitoring={} enableTtlExtension={})", monitorConfig_.enableBackgroundMonitoring, monitorConfig_.enableTtlExtension));
+    }
     
     return true;
 }
@@ -914,6 +919,9 @@ void PostTradeMonitor::performScheduledTasks() {
 
     // Enforce position TTLs more frequently than other maintenance tasks
     try {
+        if (kPostTradeTtlDebug) {
+            LOG_INFO("[TTL_DEBUG] performScheduledTasks invoking enforcePositionTTL");
+        }
         enforcePositionTTL();
     } catch (...) {
         // swallow errors to avoid thread exit
@@ -1051,6 +1059,64 @@ void PostTradeMonitor::enforcePositionTTL() {
             // If no signal and deadline passed -> attempt exit
             auto ageMs = std::chrono::duration_cast<std::chrono::milliseconds>(now - tracked.entryTime).count();
             if (now >= tracked.deadline) {
+                // Before attempting an exit, consult external recommendation (if provided)
+                bool extendedByRecommendation = false;
+                {
+                    std::shared_lock<std::shared_mutex> erl(externalRecommendationMutex_);
+                    if (externalRecommendationCb_) {
+                        try {
+                            auto recOpt = externalRecommendationCb_(pos.getExchangeId(), pos.getTradingPair());
+                            if (recOpt) {
+                                const auto& rec = *recOpt;
+                                if (rec.recommended_action == "extend" && monitorConfig_.enableTtlExtension) {
+                                    double stayProb = rec.stay_prob;
+                                    double pTrend = rec.p_trend_up;
+                                    // check thresholds
+                                    if (stayProb >= monitorConfig_.ttlExtensionMinStayProb && pTrend >= monitorConfig_.ttlExtensionMinPTrend) {
+                                        // enforce per-position extension cap
+                                        std::unique_lock<std::shared_mutex> tlock(trackedPositionsMutex_);
+                                        auto it = trackedPositions_.find(key);
+                                        if (it != trackedPositions_.end()) {
+                                            if (it->second.exitAttempts < monitorConfig_.ttlExtensionMaxPerPosition) {
+                                                // compute extension cap in ms
+                                                int capMin = rec.suggested_time_cap_min.value_or(monitorConfig_.ttlExtensionDefaultCapMin);
+                                                auto extensionMs = std::chrono::milliseconds(static_cast<int64_t>(capMin) * 60 * 1000);
+                                                // extend deadline from now by extensionMs (time-capped)
+                                                auto newDeadline = now + extensionMs;
+                                                it->second.deadline = newDeadline;
+                                                it->second.exitAttempts += 1;
+                                                it->second.ttlMs = static_cast<double>(std::chrono::duration_cast<std::chrono::milliseconds>(extensionMs).count());
+                                                extendedByRecommendation = true;
+                                                if (kPostTradeTtlDebug) {
+                                                    LOG_INFO(formatString("[TTL_DEBUG] Extended TTL for {} by recommendation: stay_prob={} p_trend_up={} capMin={} new_deadline={} attempts={}", key, stayProb, pTrend, capMin, newDeadline.time_since_epoch().count(), it->second.exitAttempts));
+                                                }
+                                            } else {
+                                                if (kPostTradeTtlDebug) {
+                                                    LOG_INFO(formatString("[TTL_DEBUG] Not extending {}: per-position extension cap reached (attempts={})", key, it->second.exitAttempts));
+                                                }
+                                            }
+                                        }
+                                    } else {
+                                        if (kPostTradeTtlDebug) {
+                                            LOG_INFO(formatString("[TTL_DEBUG] Recommendation to extend ignored for {}: thresholds not met (stay_prob={} p_trend_up={})", key, stayProb, pTrend));
+                                        }
+                                    }
+                                } else {
+                                    if (kPostTradeTtlDebug) {
+                                        LOG_INFO(formatString("[TTL_DEBUG] External recommendation for {} is '{}', not extending", key, rec.recommended_action));
+                                    }
+                                }
+                            }
+                        } catch (...) {
+                            // ignore callback exceptions and fall through to exit
+                        }
+                    }
+                }
+
+                if (extendedByRecommendation) {
+                    // We extended the TTL; do not exit now
+                    continue;
+                }
                 // mark as being closed
                 {
                     std::unique_lock<std::shared_mutex> ul(positionsClosingMutex_);
@@ -1122,6 +1188,11 @@ void PostTradeMonitor::registerSignalChecker(const SignalChecker& checker) {
 void PostTradeMonitor::registerExternalSignalChecker(const ExternalSignalChecker& checker) {
     // Forward to the private implementation
     registerSignalChecker(static_cast<const SignalChecker&>(checker));
+}
+
+void PostTradeMonitor::registerExternalRecommendationCallback(const ExternalRecommendationCallback& cb) {
+    std::unique_lock<std::shared_mutex> lock(externalRecommendationMutex_);
+    externalRecommendationCb_ = cb;
 }
 
 void PostTradeMonitor::performMaintenanceTasks() {
