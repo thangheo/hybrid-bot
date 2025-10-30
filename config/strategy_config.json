@@ -273,7 +273,6 @@
         "historySize": 200,
         "flowImbalanceThreshold": 0.4,
         "exchangeId": "BINANCE",
-        "tradingPair": "BTC/USDT",
         "largeOrderThreshold": 5000.0,
         "historyWindowSeconds": 300,
         "largeOrderVolume": 10000.0,

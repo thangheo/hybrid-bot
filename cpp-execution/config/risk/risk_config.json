@@ -220,7 +220,7 @@
   },
   "logging": {
     "logLevel": "INFO",
-    "logDirectory": "/var/log/riskmanagement",
+    "logDirectory": "logs/riskmanagement",
     "enableDetailedLogs": true,
     "logToConsole": true,
     "logToFile": true,

@@ -49,6 +49,11 @@
 
 namespace trading::risk {
 
+// Forward declarations for optional subsystems to avoid heavy includes in header
+namespace storage { class EventStore; }
+namespace alerting { class WebhookClient; }
+
+
 /**
  * Enhanced risk event with additional context and metadata
  */
@@ -391,6 +396,10 @@ private:
     std::shared_ptr<PositionTracker> positionTracker_;
     std::shared_ptr<DataInterface> dataInterface_;
     std::shared_ptr<ExecutionInterface> executionInterface_;
+
+    // Persistence and alerting
+    std::unique_ptr<trading::risk::storage::EventStore> eventStore_;
+    std::unique_ptr<trading::risk::alerting::WebhookClient> webhookClient_;
     
     // Event management
     mutable std::shared_mutex eventMutex_;

@@ -1,0 +1,249 @@
+{
+  "positionLimit": {
+    "assetLimits": {
+      "BTC": 5.0,
+      "ETH": 50.0,
+      "USDT": 100000.0,
+      "BNB": 100.0,
+      "ADA": 10000.0
+    },
+    "strategyLimits": {
+      "order_imbalance": 10000.0,
+      "arbitrage": 5000.0
+    },
+    "exchangeLimits": {
+      "binance": 50000.0,
+      "coinbase": 30000.0
+    },
+  "defaultLimit": 4000.0,
+    "enforceStrictly": true
+  },
+  "marketDataCacheDurationMs": 5000,
+  "exposureLimit": {
+    "maxTotalExposure": 100000.0,
+    "maxAssetExposure": 20000.0,
+    "maxStrategyExposure": 50000.0,
+    "maxExchangeExposure": 80000.0,
+    "volatilityMultiplier": 1.5,
+    "includeUnrealizedPnl": true
+  },
+  "circuitBreaker": {
+    "metricThresholds": {
+      "error_rate": {
+        "warning": 0.05,
+        "critical": 0.10,
+        "isHigherBetter": false
+      },
+      "latency_ms": {
+        "warning": 100.0,
+        "critical": 500.0,
+        "isHigherBetter": false
+      },
+      "success_rate": {
+        "warning": 0.95,
+        "critical": 0.90,
+        "isHigherBetter": true
+      },
+      "throughput": {
+        "warning": 100.0,
+        "critical": 50.0,
+        "isHigherBetter": true
+      },
+      "drawdown_percent": {
+        "warning": 5.0,
+        "critical": 10.0,
+        "isHigherBetter": false
+      },
+      "pnl_drawdown": {
+        "warning": 0.06,
+        "critical": 0.05,
+        "isHigherBetter": true
+      },
+      "order_rejection_rate": {
+        "warning": 0.02,
+        "critical": 0.05,
+        "isHigherBetter": false
+      }
+    },
+    "coolingPeriodSeconds": 300,
+    "warmupPeriodSeconds": 60,
+    "mandatoryHaltPeriodSeconds": 60,
+    "autoResume": true,
+    "maxTriggersPerDay": 10,
+    "maxTriggersBeforeExtendedHalt": 3,
+    "extendedHaltMultiplier": 2,
+    "triggerCountResetMinutes": 60,
+    "maxHistorySize": 1000,
+    "gradualTradingResumption": true
+  },
+  "stopLoss": {
+    "maxLossPercentage": 0.05,
+    "trailingStopDistance": 0.02,
+    "enableTrailingStop": true,
+    "forceLiquidation": true,
+    "liquidationDelaySeconds": 5
+  },
+  "drawdown": {
+    "warningThreshold": 0.10,
+    "criticalThreshold": 0.20,
+    "lookbackPeriodHours": 24,
+    "enableAutoRiskReduction": true,
+    "riskReductionFactor": 0.5
+  },
+  "fatFinger": {
+    "maxPriceDeviation": 0.05,
+    "maxOrderSize": 10.0,
+    "typicalOrderSize": 1.0,
+    "notionalValueLimit": 10000.0,
+    "enforceAdditionalVerification": true
+  },
+    "orderValidation": {
+    "validateMinOrderSize": true,
+    "validatePriceRange": true,
+    "minTradeValue": 10.0,
+    "maxPriceDeviationPercent": 0.1,
+    "enforceSymbolWhitelist": false,
+    "symbolWhitelist": ["BTC/USDT", "ETH/USDT", "BTC/USD", "ETH/USD"]
+  },
+  "balanceReconciliation": {
+    "reconciliationFrequencyMinutes": 30,
+    "maxDiscrepancyPercent": 1.0,
+    "autoCorrectDiscrepancies": false,
+    "alertOnDiscrepancy": true,
+    "maxConsecutiveFailures": 3,
+    "minimumPositionSize": 0.001,
+    "exchangeTimeoutSeconds": 30,
+    "enableDetailedLogging": true,
+    "reconcileOnStartup": true,
+    "maxDiscrepanciesPerRun": 100,
+    "maxRetryAttempts": 3,
+    "retryDelaySeconds": 5,
+    "enableProgressiveBackoff": true,
+    "absoluteToleranceThreshold": 0.0001,
+    "ignoreZeroPositions": true,
+    "validateCrossExchange": true,
+    "enableScheduledReconciliation": true,
+    "maxReconciliationDurationMinutes": 10,
+    "pauseDuringMarketHours": false,
+    "enableSlackNotifications": false,
+    "enableEmailAlerts": true,
+    "criticalDiscrepancyThreshold": 5.0,
+    "enableBatchProcessing": true,
+    "maxConcurrentExchangeQueries": 5,
+    "enablePositionCaching": true,
+    "cacheValidityPeriodMinutes": 5,
+    "validateTimestamps": true,
+    "maxPositionAgeMinutes": 60,
+    "enableDataQualityChecks": true,
+    "requireConfirmationForCorrections": false
+  },
+  "rebalancing": {
+    "autoRebalancingEnabled": true,
+    "autoExecuteRebalancing": false,
+    "parallelExecution": false,
+    "rebalancingIntervalMinutes": 60,
+    "rebalanceWindowMinutes": 15,
+    "staggerWindowMinutes": 30,
+    "allocationDeviationThreshold": 0.08,
+    "allocationDeviationThresholdMin": 0.03,
+    "volatilityMultiplier": 0.5,
+    "minimumOrderSize": 0.01,
+    "minimumRebalancingValue": 50.0,
+    "defaultTransferFeeRate": 0.001,
+    "maxOrdersPerRun": 5,
+    "maxNotionalPerRunPercent": 0.05,
+    "orderExecution": {
+      "defaultOrderType": "LIMIT",
+      "limitOffsetPercent": 0.002,
+      "useTwapForLargeOrders": true,
+      "twapSliceCount": 6,
+      "sliceIntervalSeconds": 60
+    },
+    "targetAllocations": {
+      "BTC": 0.4,
+      "ETH": 0.3,
+      "USDT": 0.3
+    },
+    "fixedPrices": {
+      "USDT": 1.0
+    },
+    "assetTransferFees": {
+      "BTC": 0.0005,
+      "ETH": 0.005,
+      "USDT": 1.0
+    },
+    "exchangeTransferFees": {
+      "binance": 0.001,
+      "coinbase": 0.0025
+    },
+    "preferredExchanges": ["binance", "coinbase"],
+    "perAssetOverrides": {
+      "BTC": { "minOrderSize": 0.0001, "minNotional": 100.0, "maxDeviation": 0.05, "slippageTolerance": 0.01 },
+      "ETH": { "minOrderSize": 0.001, "minNotional": 50.0, "maxDeviation": 0.06, "slippageTolerance": 0.015 },
+      "DOGE": { "minOrderSize": 50.0, "minNotional": 20.0, "maxDeviation": 0.12, "slippageTolerance": 0.03 }
+    }
+  },
+  "collateral": {
+    "targetFreeCollateralRatio": 0.2,
+    "enableEmergencyFunding": false,
+    "fundingSources": ["main_wallet", "backup_wallet"],
+    "maxFundingAmount": 10000.0,
+    "minimumFreeCollateralRatio": 0.15,
+    "emergencyFundingThreshold": 0.1,
+    "autoInitiateEmergencyFunding": false,
+    "managedExchanges": ["binance", "coinbase"],
+    "minimumBalances": {
+      "BTC": 0.01,
+      "ETH": 0.1,
+      "USDT": 1000.0
+    },
+    "emergencyFundingBuffer": 0.1,
+    "emergencyFundingSource": "main_wallet",
+    "exchangeMarginRates": {
+      "binance": {
+        "BTC/USDT": 0.1,
+        "ETH/USDT": 0.15
+      },
+      "coinbase": {
+        "BTC/USD": 0.2,
+        "ETH/USD": 0.25
+      }
+    },
+    "baseCurrency": "USD",
+    "assetConversionRates": {
+      "BTC": 45000.0,
+      "ETH": 3000.0,
+      "USDT": 1.0
+    },
+    "criticalAssetMinimums": {
+      "BTC": 0.001,
+      "ETH": 0.01,
+      "USDT": 100.0
+    }
+  },
+  "portfolio": {
+    "autoRebalancingEnabled": false,
+    "autoExecuteRebalancing": false,
+    "enableRealTimeMetrics": true,
+    "enableAllocationTracking": true,
+    "metricsUpdateIntervalMinutes": 5,
+    "minimumPortfolioValue": 1000.0,
+    "baseCurrency": "USD",
+    "supportedAssets": ["BTC", "ETH", "USDT"],
+    "targetAllocations": {
+      "BTC": 0.4,
+      "ETH": 0.3,
+      "USDT": 0.3
+    },
+    "enableCrossExchangeAggregation": true,
+    "enablePortfolioRebalancing": true
+  },
+  "logging": {
+    "logLevel": "INFO",
+    "logDirectory": "logs/riskmanagement",
+    "enableDetailedLogs": true,
+    "logToConsole": true,
+    "logToFile": true,
+    "logRetentionDays": 30
+  }
+}
