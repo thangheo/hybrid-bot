@@ -1,0 +1,104 @@
+{
+  "summary": {
+    "total_trades": 561,
+    "total_realized_pnl": 0.9205200600001842,
+    "total_unrealized_pnl": 60.22058000000003,
+    "total_pnl": 61.14110006000021,
+    "date_range": {
+      "start": "2025-10-29 03:51:25",
+      "end": "2025-10-30 03:13:32"
+    }
+  },
+  "pairs": {
+    "ZEC/USDT": {
+      "trades": 184,
+      "buys": 163,
+      "sells": 21,
+      "realized_pnl": 2.7882885800000032,
+      "unrealized_pnl": 52.67500999999993,
+      "total_pnl": 55.46329857999993,
+      "buy_volume": 2169.0407099999993,
+      "sell_volume": 220.58243000000002,
+      "sell_fees": 0.22058243,
+      "remaining_position": 5.639,
+      "remaining_cost": 1968.68093,
+      "avg_buy_price": 349.1188029792516,
+      "last_price": 358.46
+    },
+    "SOL/USDT": {
+      "trades": 262,
+      "buys": 229,
+      "sells": 33,
+      "realized_pnl": 0.30184777000000107,
+      "unrealized_pnl": 7.576960000000099,
+      "total_pnl": 7.8788077700001,
+      "buy_volume": 1947.7693899999997,
+      "sell_volume": 270.59347,
+      "sell_fees": 0.2705934700000001,
+      "remaining_position": 8.573,
+      "remaining_cost": 1687.81952,
+      "avg_buy_price": 196.87618336638283,
+      "last_price": 197.76
+    },
+    "BNB/USDT": {
+      "trades": 15,
+      "buys": 11,
+      "sells": 4,
+      "realized_pnl": -0.14935736999999794,
+      "unrealized_pnl": -0.0031200000000004557,
+      "total_pnl": -0.1524773699999984,
+      "buy_volume": 178.73391,
+      "sell_volume": 183.19036999999997,
+      "sell_fees": 0.18319037,
+      "remaining_position": 0.003000000000000008,
+      "remaining_cost": 3.332610000000009,
+      "avg_buy_price": 1110.8700000000001,
+      "last_price": 1109.83
+    },
+    "AAVE/USDT": {
+      "trades": 83,
+      "buys": 39,
+      "sells": 44,
+      "realized_pnl": -0.6870878699999922,
+      "unrealized_pnl": -0.018849999999999145,
+      "total_pnl": -0.7059378699999913,
+      "buy_volume": 407.73118999999986,
+      "sell_volume": 404.89618999999993,
+      "sell_fees": 0.40489619,
+      "remaining_position": 0.013000000000000025,
+      "remaining_cost": 3.0106700000000046,
+      "avg_buy_price": 231.5899999999999,
+      "last_price": 230.14
+    },
+    "PAXG/USDT": {
+      "trades": 13,
+      "buys": 2,
+      "sells": 11,
+      "realized_pnl": -0.7634356899998486,
+      "unrealized_pnl": 0.02148000000000394,
+      "total_pnl": -0.7419556899998446,
+      "buy_volume": 636.8721139999999,
+      "sell_volume": 612.772691,
+      "sell_fees": 0.61277269,
+      "remaining_position": 0.006000000000000019,
+      "remaining_cost": 23.94876000000007,
+      "avg_buy_price": 3991.459999999999,
+      "last_price": 3995.04
+    },
+    "ETH/USDT": {
+      "trades": 4,
+      "buys": 1,
+      "sells": 3,
+      "realized_pnl": -0.5697353599999815,
+      "unrealized_pnl": -0.030900000000002592,
+      "total_pnl": -0.6006353599999841,
+      "buy_volume": 510.621066,
+      "sell_volume": 469.36735699999997,
+      "sell_fees": 0.46936735999999996,
+      "remaining_position": 0.0103,
+      "remaining_cost": 41.153341,
+      "avg_buy_price": 3995.47,
+      "last_price": 3992.47
+    }
+  }
+}
