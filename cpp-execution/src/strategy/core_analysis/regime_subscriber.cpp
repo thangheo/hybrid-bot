@@ -106,11 +106,62 @@ struct trading::strategy::core_analysis::RegimeSubscriber::Impl {
                 }
 
                 if (regime_data.contains("last_ts") && !regime_data["last_ts"].is_null()) {
-                    info.last_ts = regime_data["last_ts"].get<std::string>();
+                    if (regime_data["last_ts"].is_string()) info.last_ts = regime_data["last_ts"].get<std::string>();
                 }
 
                 if (regime_data.contains("error") && regime_data["error"].is_string()) {
                     info.error = regime_data["error"].get<std::string>();
+                }
+
+                // --- optional diagnostics from regime_publisher.py ---
+                if (regime_data.contains("recommended_action") && regime_data["recommended_action"].is_string()) {
+                    info.recommended_action = regime_data["recommended_action"].get<std::string>();
+                }
+
+                auto parse_optional_double = [&](const json& o) -> std::optional<double> {
+                    if (o.is_number()) return o.get<double>();
+                    if (o.is_string()) {
+                        try {
+                            return std::stod(o.get<std::string>());
+                        } catch (...) { return std::nullopt; }
+                    }
+                    return std::nullopt;
+                };
+
+                if (regime_data.contains("short_alpha")) {
+                    info.short_alpha = parse_optional_double(regime_data["short_alpha"]);
+                }
+                if (regime_data.contains("p_trend_up")) {
+                    info.p_trend_up = parse_optional_double(regime_data["p_trend_up"]);
+                }
+                if (regime_data.contains("stay_prob")) {
+                    info.stay_prob = parse_optional_double(regime_data["stay_prob"]);
+                }
+                if (regime_data.contains("mixture_half_life_min")) {
+                    info.mixture_half_life_min = parse_optional_double(regime_data["mixture_half_life_min"]);
+                }
+
+                if (regime_data.contains("micro_ok")) {
+                    if (regime_data["micro_ok"].is_boolean()) {
+                        info.micro_ok = regime_data["micro_ok"].get<bool>();
+                    } else if (regime_data["micro_ok"].is_number_integer()) {
+                        info.micro_ok = (regime_data["micro_ok"].get<int>() != 0);
+                    }
+                }
+
+                // reason field (publisher may call it 'reason')
+                if (regime_data.contains("reason") && regime_data["reason"].is_string()) {
+                    info.recommendation_reason = regime_data["reason"].get<std::string>();
+                } else if (regime_data.contains("recommendation_reason") && regime_data["recommendation_reason"].is_string()) {
+                    info.recommendation_reason = regime_data["recommendation_reason"].get<std::string>();
+                }
+
+                if (regime_data.contains("suggested_time_cap_min")) {
+                    if (regime_data["suggested_time_cap_min"].is_number_integer()) {
+                        info.suggested_time_cap_min = regime_data["suggested_time_cap_min"].get<int>();
+                    } else if (regime_data["suggested_time_cap_min"].is_string()) {
+                        try { info.suggested_time_cap_min = std::stoi(regime_data["suggested_time_cap_min"].get<std::string>()); } catch (...) {}
+                    }
                 }
 
                 {
@@ -126,8 +177,19 @@ struct trading::strategy::core_analysis::RegimeSubscriber::Impl {
                     }
                 }
 
-                std::cout << "  " << symbol << ": regime=" << info.regime << ", probs_count=" << info.probs.size()
-                          << (info.error.empty() ? "" : ", error=" + info.error) << std::endl;
+                // Compact diagnostics log (one-line) - do not change behavior, log-only
+                std::ostringstream diag;
+                diag << "  " << symbol << ": regime=" << info.regime << ", probs_count=" << info.probs.size();
+                if (!info.error.empty()) diag << ", error=" << info.error;
+                if (!info.recommended_action.empty()) diag << ", recommended=" << info.recommended_action;
+                if (info.stay_prob.has_value()) diag << ", stay_prob=" << std::fixed << std::setprecision(3) << info.stay_prob.value();
+                if (info.p_trend_up.has_value()) diag << ", p_trend_up=" << std::fixed << std::setprecision(3) << info.p_trend_up.value();
+                if (info.short_alpha.has_value()) diag << ", short_alpha=" << std::fixed << std::setprecision(4) << info.short_alpha.value();
+                if (info.mixture_half_life_min.has_value()) diag << ", hl_min=" << std::fixed << std::setprecision(1) << info.mixture_half_life_min.value();
+                if (info.micro_ok.has_value()) diag << ", micro_ok=" << (info.micro_ok.value() ? "true" : "false");
+                if (!info.recommendation_reason.empty()) diag << ", reason=" << info.recommendation_reason;
+                if (info.suggested_time_cap_min.has_value()) diag << ", cap_min=" << info.suggested_time_cap_min.value();
+                std::cout << diag.str() << std::endl;
             }
 
         } catch (const json::parse_error& e) {
@@ -244,7 +306,15 @@ void RegimeSubscriber::dump() const {
         }
         std::cout << "]" << std::endl;
         std::cout << "  Last TS: " << info.last_ts << std::endl;
-        if (!info.error.empty()) std::cout << "  Error: " << info.error << std::endl;
+    if (!info.error.empty()) std::cout << "  Error: " << info.error << std::endl;
+    if (!info.recommended_action.empty()) std::cout << "  Recommended: " << info.recommended_action << std::endl;
+    if (info.stay_prob.has_value()) std::cout << "  StayProb: " << std::fixed << std::setprecision(3) << info.stay_prob.value() << std::endl;
+    if (info.p_trend_up.has_value()) std::cout << "  PTrendUp: " << std::fixed << std::setprecision(3) << info.p_trend_up.value() << std::endl;
+    if (info.short_alpha.has_value()) std::cout << "  ShortAlpha: " << std::fixed << std::setprecision(4) << info.short_alpha.value() << std::endl;
+    if (info.mixture_half_life_min.has_value()) std::cout << "  MixtureHalfLifeMin: " << std::fixed << std::setprecision(1) << info.mixture_half_life_min.value() << std::endl;
+    if (info.micro_ok.has_value()) std::cout << "  MicroOK: " << (info.micro_ok.value() ? "true" : "false") << std::endl;
+    if (!info.recommendation_reason.empty()) std::cout << "  Reason: " << info.recommendation_reason << std::endl;
+    if (info.suggested_time_cap_min.has_value()) std::cout << "  SuggestedCapMin: " << info.suggested_time_cap_min.value() << std::endl;
     }
     std::cout << "========================\n" << std::endl;
 }

@@ -22,6 +22,7 @@ import threading
 import os
 import tempfile
 from typing import Any, Optional
+import math
 
 # Import Regime class để dùng compute_regime_features và download_crypto_data
 HERE = Path(__file__).resolve().parent
@@ -313,6 +314,12 @@ def publish_regimes(symbols, data_dir, socket, interval=600, probs_decimals: int
     
     topic = 'regimes_update'
     
+    # Load configuration (thresholds for drift gating etc.)
+    try:
+        cfg = load_config()
+    except Exception:
+        cfg = {}
+
     # Create and start DataCache: download full history once and then update per-minute
     cache = DataCache(data_dir, regime_obj)
     try:
@@ -353,15 +360,151 @@ def publish_regimes(symbols, data_dir, socket, interval=600, probs_decimals: int
                         payload['regimes'][symbol] = entry
                         continue
                     
-                    # Predict
+                    # Predict regime and get posterior probs
                     regime, probs = predict_regime(regime_obj, model_entry, df)
-                    
+
                     entry['regime'] = regime
                     n_states = getattr(model_entry.get('model'), 'n_components', None)
                     entry['probs'] = format_probs(probs, decimals=probs_decimals, n_states=n_states)
                     entry['last_ts'] = df.index[-1].isoformat()
-                    
-                    print(f"{symbol:12} regime={regime} probs={entry['probs']}")
+
+                    # --- Additional drift / slow-gate diagnostics and recommendation ---
+                    # Configurable parameters with conservative defaults
+                    neutral_threshold = cfg.get('neutral_threshold', 0.002)  # short alpha threshold
+                    tau_stay = cfg.get('tau_stay', 0.80)
+                    tau_trend = cfg.get('tau_trend', 0.65)
+                    k_half_life = cfg.get('k_half_life', 1.0)
+                    spread_cap = cfg.get('microstructure', {}).get('max_spread_frac', 0.01)
+                    min_volume = cfg.get('microstructure', {}).get('min_avg_volume', 1.0)
+
+                    # short_alpha proxy: 1-minute return (or normalized by 1m vol)
+                    short_alpha = 0.0
+                    try:
+                        if len(df) >= 2:
+                            last_close = float(df['close'].iloc[-1])
+                            prev_close = float(df['close'].iloc[-2])
+                            short_ret = (last_close / prev_close) - 1.0
+                        else:
+                            short_ret = 0.0
+                        # short vol estimate over last 60 minutes if available
+                        if len(df) >= 60:
+                            returns = df['close'].pct_change().dropna().iloc[-60:]
+                            vol1m = float(returns.std()) if not returns.empty else 0.0
+                        else:
+                            returns = df['close'].pct_change().dropna()
+                            vol1m = float(returns.std()) if not returns.empty else 0.0
+
+                        if vol1m and vol1m > 0:
+                            short_alpha = short_ret / vol1m
+                        else:
+                            short_alpha = short_ret
+                    except Exception:
+                        short_alpha = 0.0
+
+                    # slow trend score: 4h return -> logistic squashed probability
+                    p_trend_up = None
+                    mixture_half_life_min = None
+                    stay_prob = None
+                    try:
+                        # 4h = 240 minutes
+                        if len(df) >= 240:
+                            close_now = float(df['close'].iloc[-1])
+                            close_4h = float(df['close'].iloc[-240])
+                            ret4h = (close_now / close_4h) - 1.0
+                            # vol over 4h for scaling
+                            ret_series = df['close'].pct_change().dropna().iloc[-240:]
+                            vol4h = float(ret_series.std()) if not ret_series.empty else 0.0
+                            # scale factor: if vol small, amplify; if vol big, normalize
+                            scale = 1.0 / (vol4h + 1e-6)
+                            # logistic transform
+                            p_trend_up = 1.0 / (1.0 + math.exp(-3.0 * ret4h * scale))
+                        else:
+                            p_trend_up = None
+                    except Exception:
+                        p_trend_up = None
+
+                    # Estimate P_stay per regime: try model_entry or config, fallback to conservative default
+                    try:
+                        configured_pstay = model_entry.get('P_stay')
+                        if configured_pstay and isinstance(configured_pstay, (list, tuple)) and len(configured_pstay) == len(probs):
+                            P_stay_vec = list(map(float, configured_pstay))
+                        else:
+                            # try global config mapping
+                            cfg_pstay = cfg.get('pstay_by_regime')
+                            if cfg_pstay and isinstance(cfg_pstay, list) and len(cfg_pstay) == len(probs):
+                                P_stay_vec = list(map(float, cfg_pstay))
+                            else:
+                                P_stay_vec = [cfg.get('default_pstay', 0.80)] * (len(probs) if probs else 4)
+                    except Exception:
+                        P_stay_vec = [cfg.get('default_pstay', 0.80)] * (len(probs) if probs else 4)
+
+                    # mixture stay probability and half-life
+                    try:
+                        stay_prob = float(sum([p * s for p, s in zip(probs, P_stay_vec)])) if probs else float(sum(P_stay_vec) / len(P_stay_vec))
+                        HLs = []
+                        for s in P_stay_vec:
+                            try:
+                                if s >= 0.999:
+                                    HL = 1e6
+                                elif s <= 0.0:
+                                    HL = 0.0
+                                else:
+                                    HL = math.log(2.0) / (-math.log(max(min(s, 0.999999), 1e-6)))
+                                HLs.append(HL)
+                            except Exception:
+                                HLs.append(0.0)
+                        mixture_half_life_min = float(sum([p * h for p, h in zip(probs, HLs)])) if probs else float(sum(HLs) / len(HLs))
+                    except Exception:
+                        stay_prob = None
+                        mixture_half_life_min = None
+
+                    # simple microstructure check: use recent high-low as proxy for spread and avg volume
+                    micro_ok = True
+                    try:
+                        # use last candle spread fraction = (high-low)/close
+                        last_high = float(df['high'].iloc[-1])
+                        last_low = float(df['low'].iloc[-1])
+                        last_close = float(df['close'].iloc[-1])
+                        spread_frac = (last_high - last_low) / (last_close + 1e-12)
+                        avg_volume = float(df['volume'].iloc[-60:].mean()) if len(df) >= 60 else float(df['volume'].mean())
+                        micro_ok = (spread_frac <= spread_cap) and (avg_volume >= min_volume)
+                    except Exception:
+                        micro_ok = True
+
+                    # Decision: only consider neutral band using our short_alpha proxy
+                    recommended_action = 'none'
+                    reason = ''
+                    suggested_time_cap_min = None
+
+                    try:
+                        if abs(short_alpha) <= neutral_threshold:
+                            # neutral zone: apply slow gate
+                            if (stay_prob is not None and stay_prob >= tau_stay and
+                                (p_trend_up is not None and p_trend_up >= tau_trend) and micro_ok):
+                                recommended_action = 'extend'
+                                suggested_time_cap_min = None if mixture_half_life_min is None else float(k_half_life * mixture_half_life_min)
+                                reason = f"extend: stay_prob={stay_prob:.3f},p_trend={p_trend_up:.3f},micro_ok={micro_ok}"
+                            else:
+                                recommended_action = 'recommend_exit'
+                                reason = f"exit: stay_prob={None if stay_prob is None else f'{stay_prob:.3f}'},p_trend={None if p_trend_up is None else f'{p_trend_up:.3f}'},micro_ok={micro_ok}"
+                        else:
+                            recommended_action = 'none'
+                            reason = 'not_neutral'
+                    except Exception:
+                        recommended_action = 'none'
+                        reason = 'error_deciding'
+
+                    # Attach new diagnostics to payload
+                    entry['short_alpha'] = None if short_alpha is None else float(short_alpha)
+                    entry['p_trend_up'] = None if p_trend_up is None else float(p_trend_up)
+                    entry['stay_prob'] = None if stay_prob is None else float(stay_prob)
+                    entry['mixture_half_life_min'] = None if mixture_half_life_min is None else float(mixture_half_life_min)
+                    entry['micro_ok'] = bool(micro_ok)
+                    entry['recommended_action'] = recommended_action
+                    entry['reason'] = reason
+                    entry['suggested_time_cap_min'] = None if suggested_time_cap_min is None else float(suggested_time_cap_min)
+
+                    print(f"{symbol:12} regime={regime} probs={entry['probs']} trend={entry['p_trend_up']} stay={entry['stay_prob']} rec={entry['recommended_action']}")
                     
                 except Exception as e:
                     entry['error'] = str(e)
