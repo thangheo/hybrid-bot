@@ -7,6 +7,7 @@
 #include <mutex>
 #include <thread>
 #include <atomic>
+#include <optional>
 
 namespace trading::strategy::core_analysis {
 
@@ -16,6 +17,15 @@ struct RegimeInfo {
     std::string last_ts;
     std::string error;
     bool valid = false; // true when an entry exists
+    // Optional diagnostics published by regime_publisher.py
+    std::string recommended_action; // e.g. "extend", "recommend_exit", "none"
+    std::optional<double> short_alpha;
+    std::optional<double> p_trend_up;
+    std::optional<double> stay_prob;
+    std::optional<double> mixture_half_life_min;
+    std::optional<bool> micro_ok;
+    std::string recommendation_reason;
+    std::optional<int> suggested_time_cap_min;
 };
 
 class RegimeSubscriber {
