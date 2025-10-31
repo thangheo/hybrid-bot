@@ -376,6 +376,11 @@ def publish_regimes(symbols, data_dir, socket, interval=600, probs_decimals: int
                     k_half_life = cfg.get('k_half_life', 1.0)
                     spread_cap = cfg.get('microstructure', {}).get('max_spread_frac', 0.01)
                     min_volume = cfg.get('microstructure', {}).get('min_avg_volume', 1.0)
+                    # EWMA params and logistic slope configurable
+                    ewma_span = cfg.get('ewma_span_short_vol', 60)
+                    vol_floor = cfg.get('vol_floor', 1e-6)
+                    trend_logistic_k = cfg.get('trend_logistic_k', 3.0)
+                    half_life_min_clamp = cfg.get('half_life_min_clamp', 0.5)
 
                     # short_alpha proxy: 1-minute return (or normalized by 1m vol)
                     short_alpha = 0.0
@@ -387,17 +392,19 @@ def publish_regimes(symbols, data_dir, socket, interval=600, probs_decimals: int
                         else:
                             short_ret = 0.0
                         # short vol estimate over last 60 minutes if available
-                        if len(df) >= 60:
-                            returns = df['close'].pct_change().dropna().iloc[-60:]
-                            vol1m = float(returns.std()) if not returns.empty else 0.0
+                        returns = df['close'].pct_change().dropna()
+                        if returns.empty:
+                            vol1m = 0.0
                         else:
-                            returns = df['close'].pct_change().dropna()
-                            vol1m = float(returns.std()) if not returns.empty else 0.0
+                            # Use EWMA std to adapt faster to recent volatility
+                            try:
+                                vol1m = float(returns.ewm(span=ewma_span).std().iloc[-1])
+                            except Exception:
+                                vol1m = float(returns.std())
+                        # soft floor to avoid division blow-up
+                        vol1m = max(vol1m, vol_floor)
 
-                        if vol1m and vol1m > 0:
-                            short_alpha = short_ret / vol1m
-                        else:
-                            short_alpha = short_ret
+                        short_alpha = short_ret / vol1m if vol1m > 0 else short_ret
                     except Exception:
                         short_alpha = 0.0
 
@@ -413,11 +420,17 @@ def publish_regimes(symbols, data_dir, socket, interval=600, probs_decimals: int
                             ret4h = (close_now / close_4h) - 1.0
                             # vol over 4h for scaling
                             ret_series = df['close'].pct_change().dropna().iloc[-240:]
-                            vol4h = float(ret_series.std()) if not ret_series.empty else 0.0
+                            try:
+                                vol4h = float(ret_series.std()) if not ret_series.empty else 0.0
+                            except Exception:
+                                vol4h = 0.0
                             # scale factor: if vol small, amplify; if vol big, normalize
                             scale = 1.0 / (vol4h + 1e-6)
-                            # logistic transform
-                            p_trend_up = 1.0 / (1.0 + math.exp(-3.0 * ret4h * scale))
+                            # logistic transform with configurable slope
+                            try:
+                                p_trend_up = 1.0 / (1.0 + math.exp(-float(trend_logistic_k) * ret4h * scale))
+                            except Exception:
+                                p_trend_up = None
                         else:
                             p_trend_up = None
                     except Exception:
@@ -444,15 +457,18 @@ def publish_regimes(symbols, data_dir, socket, interval=600, probs_decimals: int
                         HLs = []
                         for s in P_stay_vec:
                             try:
-                                if s >= 0.999:
+                                if s >= 0.999999:
                                     HL = 1e6
                                 elif s <= 0.0:
                                     HL = 0.0
                                 else:
-                                    HL = math.log(2.0) / (-math.log(max(min(s, 0.999999), 1e-6)))
+                                    HL = math.log(2.0) / (-math.log(max(min(float(s), 0.999999), 1e-6)))
+                                # clamp lower bound to avoid meaningless tiny half-lives
+                                if HL < float(half_life_min_clamp):
+                                    HL = float(half_life_min_clamp)
                                 HLs.append(HL)
                             except Exception:
-                                HLs.append(0.0)
+                                HLs.append(float(half_life_min_clamp))
                         mixture_half_life_min = float(sum([p * h for p, h in zip(probs, HLs)])) if probs else float(sum(HLs) / len(HLs))
                     except Exception:
                         stay_prob = None
@@ -475,6 +491,8 @@ def publish_regimes(symbols, data_dir, socket, interval=600, probs_decimals: int
                     recommended_action = 'none'
                     reason = ''
                     suggested_time_cap_min = None
+                    # boolean flag for downstream consumers
+                    should_extend = False
 
                     try:
                         if abs(short_alpha) <= neutral_threshold:
@@ -482,10 +500,12 @@ def publish_regimes(symbols, data_dir, socket, interval=600, probs_decimals: int
                             if (stay_prob is not None and stay_prob >= tau_stay and
                                 (p_trend_up is not None and p_trend_up >= tau_trend) and micro_ok):
                                 recommended_action = 'extend'
+                                should_extend = True
                                 suggested_time_cap_min = None if mixture_half_life_min is None else float(k_half_life * mixture_half_life_min)
                                 reason = f"extend: stay_prob={stay_prob:.3f},p_trend={p_trend_up:.3f},micro_ok={micro_ok}"
                             else:
                                 recommended_action = 'recommend_exit'
+                                should_extend = False
                                 reason = f"exit: stay_prob={None if stay_prob is None else f'{stay_prob:.3f}'},p_trend={None if p_trend_up is None else f'{p_trend_up:.3f}'},micro_ok={micro_ok}"
                         else:
                             recommended_action = 'none'
@@ -503,6 +523,7 @@ def publish_regimes(symbols, data_dir, socket, interval=600, probs_decimals: int
                     entry['recommended_action'] = recommended_action
                     entry['reason'] = reason
                     entry['suggested_time_cap_min'] = None if suggested_time_cap_min is None else float(suggested_time_cap_min)
+                    entry['should_extend'] = bool(should_extend)
 
                     print(f"{symbol:12} regime={regime} probs={entry['probs']} trend={entry['p_trend_up']} stay={entry['stay_prob']} rec={entry['recommended_action']}")
                     
@@ -522,8 +543,13 @@ def publish_regimes(symbols, data_dir, socket, interval=600, probs_decimals: int
                 print(f"\n✓ Published at {payload['ts']}\n")
             except Exception as e:
                 print(f"✗ Publish failed: {e}")
-            
-            time.sleep(interval)
+            # Stable timing: aim to publish at fixed cadence regardless of loop runtime
+            try:
+                next_tick = time.time() + float(interval)
+                sleep = max(0.0, next_tick - time.time())
+                time.sleep(sleep)
+            except Exception:
+                time.sleep(interval)
             
     except KeyboardInterrupt:
         print("\n\nStopped by user")
