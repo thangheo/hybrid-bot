@@ -139,6 +139,10 @@ bool RiskConfig::loadJsonConfiguration(const std::string& jsonStr) {
         if (j.contains("positionLimit")) {
             loadPositionLimitConfig(j["positionLimit"]);
         }
+        // Load position sizing config
+        if (j.contains("positionSizing")) {
+            loadPositionSizingConfig(j["positionSizing"]);
+        }
         
         // Load exposure limit config
         if (j.contains("exposureLimit")) {
@@ -402,6 +406,15 @@ void RiskConfig::loadPositionLimitConfig(const json& pl) {
     if (pl.contains("enforceStrictly")) {
         positionLimitConfig_.enforceStrictly = pl["enforceStrictly"].get<bool>();
     }
+}
+
+void RiskConfig::loadPositionSizingConfig(const json& ps) {
+    if (ps.contains("method")) positionSizingConfig_.method = ps["method"].get<std::string>();
+    if (ps.contains("base_risk_per_trade")) positionSizingConfig_.base_risk_per_trade = ps["base_risk_per_trade"].get<double>();
+    if (ps.contains("max_position_size")) positionSizingConfig_.max_position_size = ps["max_position_size"].get<double>();
+    if (ps.contains("kelly_safety_factor")) positionSizingConfig_.kelly_safety_factor = ps["kelly_safety_factor"].get<double>();
+    if (ps.contains("volatility_lookback")) positionSizingConfig_.volatility_lookback = ps["volatility_lookback"].get<int>();
+    if (ps.contains("confidence_compression")) positionSizingConfig_.confidence_compression = ps["confidence_compression"].get<double>();
 }
 
 void RiskConfig::loadExposureLimitConfig(const json& el) {
@@ -959,6 +972,14 @@ bool RiskConfig::validate() const {
 // Getter implementations (unchanged from original)
 const PositionLimitConfig& RiskConfig::getPositionLimitConfig() const {
     return positionLimitConfig_;
+}
+
+const PositionSizingConfig& RiskConfig::getPositionSizingConfig() const {
+    return positionSizingConfig_;
+}
+
+void RiskConfig::setPositionSizingConfig(const PositionSizingConfig& config) {
+    positionSizingConfig_ = config;
 }
 
 const ExposureLimitConfig& RiskConfig::getExposureLimitConfig() const {

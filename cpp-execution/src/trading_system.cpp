@@ -50,8 +50,8 @@ Trading_system::Trading_system() : running_(false), systemHealthy_(true) {
     // Defer creating/initializing MarketDataInterface until initialize()
     // so we can ensure the internal ZMQ server is bound and the shared
     // ZMQ client/context can be injected before the subscriber starts.
-    // Initialize position sizer with default config for now
-    positionSizer_ = std::make_unique<trading::risk::PositionSizer>();
+    // Initialize position sizer with config loaded in riskConfig_
+    positionSizer_ = std::make_unique<trading::risk::PositionSizer>(riskConfig_.getPositionSizingConfig());
     
 }
     
@@ -1036,15 +1036,26 @@ void Trading_system::execWorkerLoop(size_t workerId) {
             }
 
             double sizerFraction = 1.0;
-            if (positionSizer_) {
+            // Apply position sizing only for BUY (spot-only trading). For SELL/NEUTRAL, we unwind or use fixed logic.
+            if (positionSizer_ && task.direction == core::Direction::BUY) {
                 std::map<std::string, double> metrics;
                 // Minimal metrics: use confidence as a rough proxy for win_rate
                 metrics["win_rate"] = task.confidence;
-                // placeholder volatility - can be replaced with real vol from market data
-                metrics["volatility"] = 0.05;
+                // attempt to fetch real volatility from MarketDataInterface (1d timeframe)
+                double vol = 0.05;
+                try {
+                    if (marketDataInterface_) {
+                        vol = marketDataInterface_->getVolatility(task.symbol, "1d", task.exchangeId.toString());
+                        // normalize / clamp to sensible range
+                        vol = std::clamp(vol, 0.0001, 1.0);
+                    }
+                } catch (const std::exception& e) {
+                    LOG_WARN("Failed to get volatility for {}: {}", task.symbol.toString(), e.what());
+                    vol = 0.05;
+                }
+                metrics["volatility"] = vol;
                 std::map<std::string, double> portfolio;
                 sizerFraction = positionSizer_->calculateSize(task.symbol.toString(), metrics, portfolio);
-                sizerFraction = std::clamp(sizerFraction, 0.0, 1.0);
             }
             //allowedSize = usd? DO NOT USE THE ASSET QUANTITY BS HERE BECAUSE IT IS MESSED UP. convert everything to usd first to usd
 

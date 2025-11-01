@@ -60,6 +60,9 @@ struct PositionSizingConfig {
     double max_position_size = 0.15;          // 15% default
     double kelly_safety_factor = 0.25;        // use 25% of Kelly by default
     int volatility_lookback = 14;             // lookback window for volatility
+    // When mapping external confidence -> implied win_rate for Kelly, compress toward 0.5
+    // Value in [0,1], where 1.0 means no compression, 0.0 maps everything to 0.5.
+    double confidence_compression = 0.5;
 
     PositionSizingConfig() = default;
 };
@@ -549,6 +552,7 @@ public:
     
     // Getters
     const PositionLimitConfig& getPositionLimitConfig() const;
+    const PositionSizingConfig& getPositionSizingConfig() const;
     const ExposureLimitConfig& getExposureLimitConfig() const;
     const CircuitBreakerConfig& getCircuitBreakerConfig() const;  // ONLY ONE - FIXED!
     const StopLossConfig& getStopLossConfig() const;
@@ -573,6 +577,7 @@ public:
 
     // Setters
     void setPositionLimitConfig(const PositionLimitConfig& config);
+    void setPositionSizingConfig(const PositionSizingConfig& config);
     void setExposureLimitConfig(const ExposureLimitConfig& config);
     void setCircuitBreakerConfig(const CircuitBreakerConfig& config);
     void setStopLossConfig(const StopLossConfig& config);
@@ -615,6 +620,7 @@ private:
     // m_positionLimitConfig
 
     PositionLimitConfig positionLimitConfig_;
+    PositionSizingConfig positionSizingConfig_;
     ExposureLimitConfig exposureLimitConfig_;
     CircuitBreakerConfig circuitBreakerConfig_;
     StopLossConfig stopLossConfig_;
@@ -652,6 +658,7 @@ private:
     
     // Helper method for saving other configs
     void saveOtherConfigs(nlohmann::json& j) const;
+    void loadPositionSizingConfig(const nlohmann::json& ps);
     
 };
 
