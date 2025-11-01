@@ -82,11 +82,26 @@ void BayesianTradingModel::update_bayesian_weights(const Eigen::VectorXd& normal
 
         // Using diagonal approximation: sigma_inv_new = sigma_inv + beta * x^2 (elementwise)
         Eigen::VectorXd x2 = normalized_features.array().square();
-        Eigen::VectorXd sigma_inv_new = sigma_inv_diag_[c].array() + config_.beta * x2.array();
+
+        // Apply forgetting: discount previous precision (larger precision => more certain).
+        // If forgetting_factor < 1, we reduce the contribution of the previous precision to allow
+        // the posterior to be more influenced by recent data. We implement forgetting by
+        // scaling the previous inverse-variance (precision) by forgetting_factor.
+        double ff = std::clamp(config_.forgetting_factor, 0.0, 1.0);
+        Eigen::VectorXd prev_sigma_inv = sigma_inv_diag_[c] * ff; 
+
+        Eigen::VectorXd sigma_inv_new = prev_sigma_inv.array() + config_.beta * x2.array();
 
         // Update mean: mu_new = mu + config_.beta * (sigma_new * x) * (t - sigmoid(mu.dot(x)))
         // sigma_new (diag) = 1 / sigma_inv_new
         Eigen::VectorXd sigma_new = sigma_inv_new.array().inverse();
+
+        // Process noise: inflate diagonal covariance slightly to model parameter drift.
+        if (config_.process_noise > 0.0) {
+            sigma_new.array() += config_.process_noise;
+            // Recompute inverse after adding process noise
+            sigma_inv_new = sigma_new.array().inverse();
+        }
 
         double pred_logit = mu_[c].dot(normalized_features);
         double pred = sigmoid(pred_logit);
@@ -304,6 +319,8 @@ bool BayesianTradingModel::save_model(const std::string& filepath) const {
         config_json["use_expected_value"] = config_.use_expected_value;
         config_json["payoff_long"] = config_.payoff_long;
         config_json["payoff_short"] = config_.payoff_short;
+    config_json["forgetting_factor"] = config_.forgetting_factor;
+    config_json["process_noise"] = config_.process_noise;
         root["config"] = config_json;
         
         // Model state
@@ -390,6 +407,8 @@ bool BayesianTradingModel::load_model(const std::string& filepath) {
         config_.use_expected_value = config_json.get("use_expected_value", true).asBool();
         config_.payoff_long = config_json.get("payoff_long", 1.0).asDouble();
         config_.payoff_short = config_json.get("payoff_short", 1.0).asDouble();
+        config_.forgetting_factor = config_json.get("forgetting_factor", 1.0).asDouble();
+    config_.process_noise = config_json.get("process_noise", 0.0).asDouble();
         
         // Load model state
         num_features_ = root["num_features"].asInt();
@@ -494,6 +513,8 @@ void BayesianTradingModel::print_summary() const {
     std::cout << "  Min Probability: " << config_.min_probability << std::endl;
     std::cout << "  Base Position Size: " << config_.base_position_size << std::endl;
     std::cout << "  Beta: " << config_.beta << std::endl;
+    std::cout << "  Forgetting Factor: " << config_.forgetting_factor << std::endl;
+    std::cout << "  Process Noise: " << config_.process_noise << std::endl;
     std::cout << "==============================\n" << std::endl;
 }
 

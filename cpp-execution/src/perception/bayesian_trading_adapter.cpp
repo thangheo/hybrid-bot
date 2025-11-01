@@ -93,5 +93,20 @@ void bayes_update(BayesHandle h, const std::vector<double>& features, int label)
     } catch (...) {}
 }
 
+bool bayes_set_forgetting(BayesHandle h, double forgetting_factor, double process_noise) {
+    if (!h) return false;
+    try {
+        auto impl = reinterpret_cast<Impl*>(h);
+        auto cfg = impl->model.get_config();
+        // clamp/validate inputs
+        cfg.forgetting_factor = std::clamp(forgetting_factor, 0.0, 1.0);
+        cfg.process_noise = std::max(0.0, process_noise);
+        impl->model.set_config(cfg);
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
 } // namespace perception
 } // namespace trading

@@ -35,5 +35,8 @@ int  bayes_get_num_updates(BayesHandle h);
 BayesSignal bayes_predict(BayesHandle h, const std::vector<double>& features);
 void bayes_update(BayesHandle h, const std::vector<double>& features, int label);
 
+// Runtime config setters
+bool bayes_set_forgetting(BayesHandle h, double forgetting_factor, double process_noise);
+
 } // namespace perception
 } // namespace trading
