@@ -60,10 +60,13 @@ void BayesianTradingModel::update_feature_stats(const Eigen::VectorXd& features)
 }
 
 Eigen::VectorXd BayesianTradingModel::normalize_features(const Eigen::VectorXd& features) const {
-    if (num_updates_ <= 1) {
-        return features;  // Not enough data for normalization
-    }
     
+    if (num_updates_ <= 1) {
+        Eigen::VectorXd normalized = features;
+        normalized.setZero();  // treat as zero-mean start
+        return normalized;
+    }
+
     Eigen::VectorXd normalized(num_features_);
     for (int i = 0; i < num_features_; ++i) {
         normalized(i) = (features(i) - feature_mean_(i)) / feature_std_(i);
