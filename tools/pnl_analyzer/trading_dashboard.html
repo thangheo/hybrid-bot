@@ -1,0 +1,704 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trading Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 20px;
+            min-height: 100vh;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 16px;
+            padding: 30px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        
+        h1 {
+            color: #2d3748;
+            margin-bottom: 10px;
+            font-size: 32px;
+        }
+        
+        .input-section {
+            background: #f7fafc;
+            padding: 20px;
+            border-radius: 12px;
+            margin-bottom: 30px;
+            border: 2px dashed #cbd5e0;
+        }
+        
+        .input-section h3 {
+            color: #2d3748;
+            margin-bottom: 15px;
+            font-size: 18px;
+        }
+        
+        #jsonInput {
+            width: 100%;
+            min-height: 150px;
+            padding: 15px;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            resize: vertical;
+        }
+        
+        #jsonInput:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+        
+        button {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-size: 14px;
+        }
+        
+        #loadButton {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        
+        #loadButton:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+        
+        #clearButton {
+            background: #e2e8f0;
+            color: #2d3748;
+        }
+        
+        #clearButton:hover {
+            background: #cbd5e0;
+        }
+        
+        #sampleButton {
+            background: #48bb78;
+            color: white;
+        }
+        
+        #sampleButton:hover {
+            background: #38a169;
+        }
+        
+        .error-message {
+            background: #fed7d7;
+            color: #c53030;
+            padding: 12px;
+            border-radius: 8px;
+            margin-top: 10px;
+            display: none;
+        }
+        
+        .success-message {
+            background: #c6f6d5;
+            color: #22543d;
+            padding: 12px;
+            border-radius: 8px;
+            margin-top: 10px;
+            display: none;
+        }
+        
+        .date-range {
+            color: #718096;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+        
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 40px;
+        }
+        
+        .summary-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 25px;
+            border-radius: 12px;
+            color: white;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        
+        .summary-card.negative {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        }
+        
+        .summary-card.positive {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+        }
+        
+        .summary-label {
+            font-size: 12px;
+            opacity: 0.9;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 8px;
+        }
+        
+        .summary-value {
+            font-size: 28px;
+            font-weight: bold;
+        }
+        
+        .charts-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 30px;
+            margin-bottom: 40px;
+        }
+        
+        .chart-card {
+            background: #f7fafc;
+            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+        
+        .chart-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #2d3748;
+            margin-bottom: 20px;
+        }
+        
+        .pairs-table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+        
+        .pairs-table thead {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        
+        .pairs-table th {
+            padding: 15px;
+            text-align: left;
+            font-weight: 600;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .pairs-table td {
+            padding: 15px;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        
+        .pairs-table tbody tr:hover {
+            background: #f7fafc;
+        }
+        
+        .positive-pnl {
+            color: #38a169;
+            font-weight: 600;
+        }
+        
+        .negative-pnl {
+            color: #e53e3e;
+            font-weight: 600;
+        }
+        
+        .pair-name {
+            font-weight: 600;
+            color: #2d3748;
+        }
+        
+        #dashboardContent {
+            display: none;
+        }
+        
+        .instruction {
+            text-align: center;
+            color: #718096;
+            padding: 40px;
+            font-size: 16px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Trading Dashboard</h1>
+        
+        <div class="input-section">
+            <h3>📊 Paste Your Trading JSON Data</h3>
+            <textarea id="jsonInput" placeholder='Paste your JSON data here...'></textarea>
+            <div class="button-group">
+                <button id="loadButton">Load Data</button>
+                <button id="sampleButton">Load Sample Data</button>
+                <button id="clearButton">Clear</button>
+            </div>
+            <div class="error-message" id="errorMessage"></div>
+            <div class="success-message" id="successMessage"></div>
+        </div>
+        
+        <div id="dashboardContent">
+            <div class="date-range" id="dateRange"></div>
+            
+            <div class="summary-grid" id="summaryGrid"></div>
+            
+            <div class="charts-container">
+                <div class="chart-card">
+                    <div class="chart-title">PnL by Trading Pair</div>
+                    <canvas id="pnlChart"></canvas>
+                </div>
+                <div class="chart-card">
+                    <div class="chart-title">Trade Distribution</div>
+                    <canvas id="tradesChart"></canvas>
+                </div>
+                <div class="chart-card">
+                    <div class="chart-title">Volume Analysis</div>
+                    <canvas id="volumeChart"></canvas>
+                </div>
+                <div class="chart-card">
+                    <div class="chart-title">Realized vs Unrealized PnL</div>
+                    <canvas id="pnlBreakdownChart"></canvas>
+                </div>
+            </div>
+            
+            <h2 style="margin-bottom: 20px; color: #2d3748;">Detailed Pair Analysis</h2>
+            <table class="pairs-table" id="pairsTable"></table>
+        </div>
+        
+        <div class="instruction" id="instruction">
+            👆 Paste your JSON data above and click "Load Data" to visualize your trading performance
+        </div>
+    </div>
+
+    <script>
+        const sampleData = {
+  "summary": {
+    "total_trades": 899,
+    "total_realized_pnl": -35.71946843822876,
+    "total_unrealized_pnl": -3.1878672999998265,
+    "total_pnl": -38.90733573822858,
+    "date_range": {
+      "start": "2025-11-01 04:12:46",
+      "end": "2025-11-02 03:20:35"
+    }
+  },
+  "pairs": {
+    "AAVE/USDT": {
+      "trades": 222,
+      "buys": 110,
+      "sells": 112,
+      "realized_pnl": -0.9748320999999924,
+      "unrealized_pnl": 0.0012799999999995038,
+      "total_pnl": -0.9735520999999929,
+      "buy_volume": 911.4792300000004,
+      "sell_volume": 1030.63141,
+      "sell_fees": 1.03063141,
+      "remaining_position": 0.032,
+      "remaining_cost": 7.146560000000001,
+      "avg_buy_price": 223.33,
+      "last_price": 223.37
+    },
+    "ZEC/USDT": {
+      "trades": 444,
+      "buys": 245,
+      "sells": 199,
+      "realized_pnl": -21.888577479999967,
+      "unrealized_pnl": 0.0861300000000007,
+      "total_pnl": -21.802447479999966,
+      "buy_volume": 3316.927989999999,
+      "sell_volume": 3289.4336800000015,
+      "sell_fees": 3.2894336799999997,
+      "remaining_position": 0.027000000000000093,
+      "remaining_cost": 11.089170000000037,
+      "avg_buy_price": 410.7099999999999,
+      "last_price": 413.9
+    },
+    "PAXG/USDT": {
+      "trades": 84,
+      "buys": 50,
+      "sells": 34,
+      "realized_pnl": -4.045179278228334,
+      "unrealized_pnl": -0.008159999999975298,
+      "total_pnl": -4.053339278228309,
+      "buy_volume": 4807.697805,
+      "sell_volume": 4260.366950999999,
+      "sell_fees": 4.260366950000001,
+      "remaining_position": 0.1455,
+      "remaining_cost": 583.1590649999999,
+      "avg_buy_price": 4007.966082474227,
+      "last_price": 4007.91
+    },
+    "SOL/USDT": {
+      "trades": 108,
+      "buys": 105,
+      "sells": 3,
+      "realized_pnl": 0.3227663199999977,
+      "unrealized_pnl": -3.1992000000001326,
+      "total_pnl": -2.876433680000135,
+      "buy_volume": 873.5060499999998,
+      "sell_volume": 1552.56701,
+      "sell_fees": 1.55256701,
+      "remaining_position": 4.084,
+      "remaining_cost": 759.71936,
+      "avg_buy_price": 186.02334965719885,
+      "last_price": 185.24
+    },
+    "ETH/USDT": {
+      "trades": 21,
+      "buys": 7,
+      "sells": 14,
+      "realized_pnl": -0.9027479599999744,
+      "unrealized_pnl": 0.03199999999998582,
+      "total_pnl": -0.8707479599999886,
+      "buy_volume": 1501.700805,
+      "sell_volume": 1492.6219539999997,
+      "sell_fees": 1.49262196,
+      "remaining_position": 0.0024999999999999953,
+      "remaining_cost": 9.668724999999995,
+      "avg_buy_price": 3867.4900000000052,
+      "last_price": 3880.29
+    },
+    "BNB/USDT": {
+      "trades": 15,
+      "buys": 3,
+      "sells": 12,
+      "realized_pnl": -0.6819804799999902,
+      "unrealized_pnl": -0.05950000000000166,
+      "total_pnl": -0.7414804799999919,
+      "buy_volume": 422.09187000000003,
+      "sell_volume": 406.51048,
+      "sell_fees": 0.40651048,
+      "remaining_position": 0.014000000000000012,
+      "remaining_cost": 15.305920000000015,
+      "avg_buy_price": 1093.28,
+      "last_price": 1089.03
+    },
+    "BTC/USDT": {
+      "trades": 5,
+      "buys": 3,
+      "sells": 2,
+      "realized_pnl": -7.548917460000496,
+      "unrealized_pnl": -0.040417299999703005,
+      "total_pnl": -7.589334760000199,
+      "buy_volume": 4636.5191073000005,
+      "sell_volume": 4548.6029541,
+      "sell_fees": 4.54860296,
+      "remaining_position": 0.0007699999999999964,
+      "remaining_cost": 84.91583869999931,
+      "avg_buy_price": 110280.30999999962,
+      "last_price": 110227.82
+    }
+  }
+};
+
+        let charts = {};
+
+        function showError(message) {
+            const errorDiv = document.getElementById('errorMessage');
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+            document.getElementById('successMessage').style.display = 'none';
+        }
+
+        function showSuccess(message) {
+            const successDiv = document.getElementById('successMessage');
+            successDiv.textContent = message;
+            successDiv.style.display = 'block';
+            document.getElementById('errorMessage').style.display = 'none';
+        }
+
+        function destroyCharts() {
+            Object.values(charts).forEach(chart => {
+                if (chart) chart.destroy();
+            });
+            charts = {};
+        }
+
+        function loadData(data) {
+            try {
+                destroyCharts();
+                
+                // Show dashboard, hide instruction
+                document.getElementById('dashboardContent').style.display = 'block';
+                document.getElementById('instruction').style.display = 'none';
+                
+                // Populate summary
+                document.getElementById('dateRange').textContent = 
+                    `${data.summary.date_range.start} to ${data.summary.date_range.end}`;
+                
+                const summaryGrid = document.getElementById('summaryGrid');
+                summaryGrid.innerHTML = '';
+                
+                const summaryCards = [
+                    { label: 'Total Trades', value: data.summary.total_trades.toLocaleString() },
+                    { label: 'Realized PnL', value: `$${data.summary.total_realized_pnl.toFixed(2)}`, class: data.summary.total_realized_pnl >= 0 ? 'positive' : 'negative' },
+                    { label: 'Unrealized PnL', value: `$${data.summary.total_unrealized_pnl.toFixed(2)}`, class: data.summary.total_unrealized_pnl >= 0 ? 'positive' : 'negative' },
+                    { label: 'Total PnL', value: `$${data.summary.total_pnl.toFixed(2)}`, class: data.summary.total_pnl >= 0 ? 'positive' : 'negative' }
+                ];
+                
+                summaryCards.forEach(card => {
+                    const div = document.createElement('div');
+                    div.className = `summary-card ${card.class || ''}`;
+                    div.innerHTML = `
+                        <div class="summary-label">${card.label}</div>
+                        <div class="summary-value">${card.value}</div>
+                    `;
+                    summaryGrid.appendChild(div);
+                });
+
+                // Prepare data for charts
+                const pairs = Object.keys(data.pairs);
+                const pnlData = pairs.map(pair => data.pairs[pair].total_pnl);
+                const tradesData = pairs.map(pair => data.pairs[pair].trades);
+                const realizedPnl = pairs.map(pair => data.pairs[pair].realized_pnl);
+                const unrealizedPnl = pairs.map(pair => data.pairs[pair].unrealized_pnl);
+                const buyVolume = pairs.map(pair => data.pairs[pair].buy_volume);
+                const sellVolume = pairs.map(pair => data.pairs[pair].sell_volume);
+
+                // Color scheme
+                const colors = [
+                    '#667eea', '#764ba2', '#f093fb', '#f5576c',
+                    '#4facfe', '#00f2fe', '#43e97b', '#fa709a'
+                ];
+
+                // PnL Chart
+                charts.pnl = new Chart(document.getElementById('pnlChart'), {
+                    type: 'bar',
+                    data: {
+                        labels: pairs,
+                        datasets: [{
+                            label: 'Total PnL (USDT)',
+                            data: pnlData,
+                            backgroundColor: pnlData.map(val => val >= 0 ? '#48bb78' : '#f56565'),
+                            borderRadius: 8
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: true,
+                        plugins: {
+                            legend: { display: false }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                grid: { color: '#e2e8f0' }
+                            },
+                            x: {
+                                grid: { display: false }
+                            }
+                        }
+                    }
+                });
+
+                // Trades Distribution Chart
+                charts.trades = new Chart(document.getElementById('tradesChart'), {
+                    type: 'doughnut',
+                    data: {
+                        labels: pairs,
+                        datasets: [{
+                            data: tradesData,
+                            backgroundColor: colors.slice(0, pairs.length),
+                            borderWidth: 0
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: true,
+                        plugins: {
+                            legend: {
+                                position: 'bottom'
+                            }
+                        }
+                    }
+                });
+
+                // Volume Chart
+                charts.volume = new Chart(document.getElementById('volumeChart'), {
+                    type: 'bar',
+                    data: {
+                        labels: pairs,
+                        datasets: [
+                            {
+                                label: 'Buy Volume',
+                                data: buyVolume,
+                                backgroundColor: '#4facfe',
+                                borderRadius: 8
+                            },
+                            {
+                                label: 'Sell Volume',
+                                data: sellVolume,
+                                backgroundColor: '#f5576c',
+                                borderRadius: 8
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: true,
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                grid: { color: '#e2e8f0' }
+                            },
+                            x: {
+                                grid: { display: false }
+                            }
+                        }
+                    }
+                });
+
+                // PnL Breakdown Chart
+                charts.breakdown = new Chart(document.getElementById('pnlBreakdownChart'), {
+                    type: 'bar',
+                    data: {
+                        labels: pairs,
+                        datasets: [
+                            {
+                                label: 'Realized PnL',
+                                data: realizedPnl,
+                                backgroundColor: '#667eea',
+                                borderRadius: 8
+                            },
+                            {
+                                label: 'Unrealized PnL',
+                                data: unrealizedPnl,
+                                backgroundColor: '#764ba2',
+                                borderRadius: 8
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: true,
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                grid: { color: '#e2e8f0' }
+                            },
+                            x: {
+                                grid: { display: false }
+                            }
+                        }
+                    }
+                });
+
+                // Populate table
+                const table = document.getElementById('pairsTable');
+                let tableHTML = `
+                    <thead>
+                        <tr>
+                            <th>Pair</th>
+                            <th>Trades</th>
+                            <th>Total PnL</th>
+                            <th>Realized PnL</th>
+                            <th>Unrealized PnL</th>
+                            <th>Position</th>
+                            <th>Avg Buy Price</th>
+                            <th>Last Price</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                `;
+                
+                pairs.forEach(pair => {
+                    const pairData = data.pairs[pair];
+                    const pnlClass = pairData.total_pnl >= 0 ? 'positive-pnl' : 'negative-pnl';
+                    const realizedClass = pairData.realized_pnl >= 0 ? 'positive-pnl' : 'negative-pnl';
+                    const unrealizedClass = pairData.unrealized_pnl >= 0 ? 'positive-pnl' : 'negative-pnl';
+                    
+                    tableHTML += `
+                        <tr>
+                            <td class="pair-name">${pair}</td>
+                            <td>${pairData.trades}</td>
+                            <td class="${pnlClass}">$${pairData.total_pnl.toFixed(4)}</td>
+                            <td class="${realizedClass}">$${pairData.realized_pnl.toFixed(4)}</td>
+                            <td class="${unrealizedClass}">$${pairData.unrealized_pnl.toFixed(4)}</td>
+                            <td>${pairData.remaining_position.toFixed(4)}</td>
+                            <td>$${pairData.avg_buy_price.toFixed(2)}</td>
+                            <td>$${pairData.last_price.toFixed(2)}</td>
+                        </tr>
+                    `;
+                });
+                
+                tableHTML += '</tbody>';
+                table.innerHTML = tableHTML;
+                
+                showSuccess('✅ Data loaded successfully!');
+                
+            } catch (error) {
+                showError('Error rendering dashboard: ' + error.message);
+            }
+        }
+
+        document.getElementById('loadButton').addEventListener('click', () => {
+            const jsonText = document.getElementById('jsonInput').value.trim();
+            
+            if (!jsonText) {
+                showError('Please paste JSON data first');
+                return;
+            }
+            
+            try {
+                const data = JSON.parse(jsonText);
+                
+                // Validate structure
+                if (!data.summary || !data.pairs) {
+                    throw new Error('Invalid JSON structure. Expected "summary" and "pairs" fields.');
+                }
+                
+                loadData(data);
+            } catch (error) {
+                showError('Invalid JSON: ' + error.message);
+            }
+        });
+
+        document.getElementById('sampleButton').addEventListener('click', () => {
+            document.getElementById('jsonInput').value = JSON.stringify(sampleData, null, 2);
+            loadData(sampleData);
+        });
+
+        document.getElementById('clearButton').addEventListener('click', () => {
+            document.getElementById('jsonInput').value = '';
+            document.getElementById('errorMessage').style.display = 'none';
+            document.getElementById('successMessage').style.display = 'none';
+            document.getElementById('dashboardContent').style.display = 'none';
+            document.getElementById('instruction').style.display = 'block';
+            destroyCharts();
+        });
+
+        // Load sample data on page load
+        window.addEventListener('load', () => {
+            document.getElementById('jsonInput').value = JSON.stringify(sampleData, null, 2);
+            loadData(sampleData);
+        });
+    </script>
+</body>
+</html>

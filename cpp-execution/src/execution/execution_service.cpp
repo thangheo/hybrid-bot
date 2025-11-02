@@ -411,27 +411,84 @@ ExecutionResponse ExecutionService::executeSignal(const TradingSignal& signal) {
             std::cout << "   Required: " << balanceResult.requiredBalance << std::endl;
             std::cout << "   Available: " << balanceResult.availableBalance << std::endl;
             std::cout << "   Reason: " << balanceResult.reason << std::endl;
-            
+
             // Suggest quantity adjustment if possible
             if (balanceResult.canAdjust && balanceResult.suggestedQuantity > 0) {
                 std::cout << "   💡 Suggested quantity: " << balanceResult.suggestedQuantity << std::endl;
+
+                // Attempt to adjust the order quantity to suggestedQuantity and re-run validation.
+                try {
+                    double origQty = exchange_order->getQuantity();
+                    exchange_order->setQuantity(balanceResult.suggestedQuantity);
+
+                    std::cout << "[BALANCE] Attempting adjusted quantity " << balanceResult.suggestedQuantity
+                              << " for order " << exchange_order->getClientOrderId() << std::endl;
+
+                    auto adjResult = balanceValidator_->validateOrder(*exchange_order, exchangeId, false);
+                    if (adjResult.isValid) {
+                        std::cout << "✅ Adjusted quantity passed balance validation; proceeding with adjusted order." << std::endl;
+                        // update lifecycle tracker with new quantity (best-effort)
+                        order_lifecycle_tracker_->updateOrderState(
+                            exchange_order->getClientOrderId(),
+                            models::OrderState::PENDING
+                        );
+                        // continue to submission with adjusted quantity
+                    } else {
+                        // restore original quantity for reporting
+                        exchange_order->setQuantity(origQty);
+                        std::cout << "Adjusted quantity still insufficient: " << adjResult.reason << std::endl;
+                        order_lifecycle_tracker_->updateOrderState(
+                            exchange_order->getClientOrderId(),
+                            models::OrderState::REJECTED,
+                            exchange_order->getExchangeOrderId(),
+                            adjResult.reason
+                        );
+
+                        return ExecutionResponse{
+                            exchange_order->getClientOrderId(),
+                            "",
+                            false,
+                            adjResult.reason,
+                            std::chrono::system_clock::now(),
+                            "REJECTED_INSUFFICIENT_BALANCE"
+                        };
+                    }
+                } catch (const std::exception& e) {
+                    std::cerr << "Warning: failed to attempt suggested quantity adjustment: " << e.what() << std::endl;
+                    // Fallback to original rejection path below
+                    order_lifecycle_tracker_->updateOrderState(
+                        exchange_order->getClientOrderId(),
+                        models::OrderState::REJECTED,
+                        exchange_order->getExchangeOrderId(),
+                        balanceResult.reason
+                    );
+
+                    return ExecutionResponse{
+                        exchange_order->getClientOrderId(),
+                        "",
+                        false,
+                        balanceResult.reason,
+                        std::chrono::system_clock::now(),
+                        "REJECTED_INSUFFICIENT_BALANCE"
+                    };
+                }
+            } else {
+                order_lifecycle_tracker_->updateOrderState(
+                    exchange_order->getClientOrderId(),
+                    models::OrderState::REJECTED,
+                    exchange_order->getExchangeOrderId(),
+                    balanceResult.reason
+                );
+
+                return ExecutionResponse{
+                    exchange_order->getClientOrderId(),
+                    "",
+                    false,
+                    balanceResult.reason,
+                    std::chrono::system_clock::now(),
+                    "REJECTED_INSUFFICIENT_BALANCE"
+                };
             }
-
-            order_lifecycle_tracker_->updateOrderState(
-                exchange_order->getClientOrderId(),
-                models::OrderState::REJECTED,
-                exchange_order->getExchangeOrderId(),
-                balanceResult.reason
-            );
-
-            return ExecutionResponse{
-                exchange_order->getClientOrderId(),
-                "",
-                false,
-                balanceResult.reason,
-                std::chrono::system_clock::now(),
-                "REJECTED_INSUFFICIENT_BALANCE"
-            };
         }
         
         // Log successful validation

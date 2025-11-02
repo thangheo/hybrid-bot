@@ -36,6 +36,16 @@ PortfolioManager::PortfolioManager(const RiskConfig& config,
     m_dataInterface = std::move(dataInterface);
 }
 
+// New constructor that accepts an injected PositionTracker
+PortfolioManager::PortfolioManager(const RiskConfig& config,
+                                   std::shared_ptr<DataInterface> dataInterface,
+                                   std::shared_ptr<PositionTracker> positionTracker)
+    : m_config(config), m_portfolioValue(0.0), m_dataInterface(std::move(dataInterface)), m_positionTracker(std::move(positionTracker)) {
+    if (!m_dataInterface) {
+        throw std::invalid_argument("DataInterface cannot be null");
+    }
+}
+
 
 //this overlap with risk_manager.cpp
 bool PortfolioManager::initialize() {

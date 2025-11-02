@@ -171,9 +171,19 @@ bool RiskManager::initialize() {
             LOG_ERROR("RiskManager: failed to register market data callback: {}", e.what());
         }
 
+        // Create a single shared PositionTracker early so it can be injected into other components
+        std::shared_ptr<PositionTracker> sharedPositionTracker = std::make_shared<PositionTracker>(m_config, m_dataInterface);
+        LOG_INFO(std::format("{} {}", "RiskManager", "About to initialize shared PositionTracker..."));
+        if (!sharedPositionTracker->initialize()) {
+            LOG_ERROR(std::format("{} {}", "RiskManager", "Failed to initialize shared PositionTracker"));
+            return false;
+        }
+        LOG_INFO(std::format("{} {}", "RiskManager", "Initialized shared PositionTracker successfully"));
+
         // Initialize portfolio manager first (only if not injected by tests)
         if (!m_portfolioManager) {
-            m_portfolioManager = std::make_unique<PortfolioManager>(m_config);
+            // Construct PortfolioManager using the shared PositionTracker to avoid duplicate trackers
+            m_portfolioManager = std::make_unique<PortfolioManager>(m_config, m_dataInterface, sharedPositionTracker);
             if (!m_portfolioManager->initialize()) {
                 LOG_ERROR("RiskManager", "Failed to initialize PortfolioManager");
                 return false;
@@ -201,7 +211,7 @@ bool RiskManager::initialize() {
         }
 
         if (!m_postTradeMonitor) {
-            m_postTradeMonitor = std::make_unique<PostTradeMonitor>(m_config, m_portfolioManager.get(), m_dataInterface);
+            m_postTradeMonitor = std::make_unique<PostTradeMonitor>(m_config, m_portfolioManager.get(), m_dataInterface, m_executionInterface, sharedPositionTracker);
             if (!m_postTradeMonitor->initialize()) {
                 LOG_ERROR(std::format("{} {}", "RiskManager", "Failed to initialize PostTradeMonitor"));
                 return false;
@@ -209,38 +219,14 @@ bool RiskManager::initialize() {
         }
         LOG_INFO(std::format("{} {}", "RiskManager", "Initialized PostTradeMonitor successfully"));
         
-    std::shared_ptr<PositionTracker> positionTracker = std::make_shared<PositionTracker>(m_config, m_dataInterface);
-        
-        // ✅ Add debug logging before PositionTracker initialization
-        LOG_INFO(std::format("{} {}", "RiskManager", "About to initialize PositionTracker..."));
-        LOG_INFO(std::format("{} {}", "RiskManager", "DataInterface state before PositionTracker init:"));
-
-        std::string dataInterfaceStatus = m_dataInterface ? "VALID" : "NULL";
-        LOG_INFO(std::format("{} {}", "RiskManager", "  - DataInterface ptr: {}", dataInterfaceStatus));
-
-        std::string dataInterfaceConnected = (m_dataInterface && m_dataInterface->isConnected()) ? "YES" : "NO";
-        LOG_INFO(std::format("{} {}", "RiskManager", "  - DataInterface connected: {}", dataInterfaceConnected));
-
-    // shared wrapper replaced by m_dataInterface
-    std::string mDataInterfaceStatus = m_dataInterface ? "VALID" : "NULL";
-    LOG_INFO(std::format("{} {}", "RiskManager", "  - Shared DataInterface ptr: {}", mDataInterfaceStatus));
-
-    std::string mDataInterfaceConnected = (m_dataInterface && m_dataInterface->isConnected()) ? "YES" : "NO";
-    LOG_INFO(std::format("{} {}", "RiskManager", "  - Shared DataInterface connected: {}", mDataInterfaceConnected));
-
-        if (!positionTracker->initialize()) {
-            LOG_ERROR(std::format("{} {}", "RiskManager", "Failed to initialize PositionTracker"));
-            return false;
-        }
-        LOG_INFO(std::format("{} {}", "RiskManager", "Initialized PositionTracker successfully"));
-
-        // ✅ Pass shared wrapper to CollateralManager
-        m_collateralManager = std::make_unique<CollateralManager>(
-            m_config,
-            positionTracker,
-            m_executionInterface,
-            m_dataInterface  // ✅ Reuse same DataInterface
-        );
+    // Create a single shared PositionTracker instance and inject it into components
+    // Pass shared tracker into collateral manager (and later into portfolio/post-trade components)
+    m_collateralManager = std::make_unique<CollateralManager>(
+        m_config,
+        sharedPositionTracker,
+        m_executionInterface,
+        m_dataInterface
+    );
         
         if(!m_collateralManager) {
             LOG_ERROR(std::format("{} {}", "RiskManager", "Failed to create CollateralManager"));

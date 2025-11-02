@@ -103,8 +103,9 @@ PostTradeMonitor::PostTradeMonitor(const RiskConfig& config, PortfolioManager* p
 PostTradeMonitor::PostTradeMonitor(const RiskConfig& config,
                                    PortfolioManager* portfolioManager,
                                    std::shared_ptr<DataInterface> dataInterface,
-                                   std::shared_ptr<ExecutionInterface> executionInterface)
-    : config_(config), portfolioManager_(portfolioManager), dataInterface_(std::move(dataInterface)), executionInterface_(std::move(executionInterface)) {
+                                   std::shared_ptr<ExecutionInterface> executionInterface,
+                                   std::shared_ptr<PositionTracker> positionTracker)
+    : config_(config), portfolioManager_(portfolioManager), dataInterface_(std::move(dataInterface)), executionInterface_(std::move(executionInterface)), injectedPositionTracker_(std::move(positionTracker)) {
 
     if (!dataInterface_) {
         LOG_WARN("PostTradeMonitor: no DataInterface provided, creating one internally (this may cause duplicate MarketDataInterface instances). Provide a shared DataInterface to avoid this.");
@@ -119,7 +120,12 @@ PostTradeMonitor::PostTradeMonitor(const RiskConfig& config,
     }
 
     // Initialize shared dependencies with actual interfaces
-    positionTracker_ = std::make_shared<PositionTracker>(config_, dataInterface_);
+    // Use injected PositionTracker if provided (to avoid duplicate instances)
+    if (injectedPositionTracker_) {
+        positionTracker_ = injectedPositionTracker_;
+    } else {
+        positionTracker_ = std::make_shared<PositionTracker>(config_, dataInterface_);
+    }
     stopLossManager_ = std::make_unique<StopLossManager>(config_, positionTracker_, dataInterface_, executionInterface_);
     drawdownMonitor_ = std::make_unique<DrawdownMonitor>(config_);
 
@@ -939,7 +945,7 @@ void PostTradeMonitor::performScheduledTasks() {
 
 int64_t PostTradeMonitor::calculateDynamicTTL(double currentVolatility) {
     const int64_t BASE_TTL = 5000;  // 5 seconds base
-    const int64_t MAX_TTL = 30000;  // 30 seconds max
+    const int64_t MAX_TTL = 300000;  // 30 seconds max
 
     // Low volatility → longer TTL
     // High volatility → shorter TTL
