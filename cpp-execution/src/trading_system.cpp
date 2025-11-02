@@ -937,6 +937,7 @@ void Trading_system::signalWorkerLoop(size_t workerId) {
                 execSignal.direction = signal.direction;
                 execSignal.strength = adjustedStrength;
                 execSignal.targetSize = signal.targetSize;
+                execSignal.quantity = signal.quantity; //price * size = USD value
                 execSignal.strategyId = signal.strategyId;
                 execSignal.confidence = signal.confidence;
                 execSignal.quality = signal.quality;
@@ -1087,7 +1088,7 @@ void Trading_system::execWorkerLoop(size_t workerId) {
             // task.targetSize is a fractional multiplier (e.g. 0.05) coming from the strategy
             // Compute the USD notional to allocate for this execution, then convert to
             // asset quantity by dividing by current market price.
-            double notionalUsd = positionSize * task.targetSize;
+            double notionalUsd = positionSize * task.quantity; // quantity holds the fractional size from strategy
 
             // Ensure we have a recent price before converting to quantity
             std::optional<double> currentPriceOpt = dataIngestionService_->getLastPrice(task.exchangeId, task.symbol);
