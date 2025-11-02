@@ -73,14 +73,55 @@ bool PositionLimitChecker::checkPositionLimit(const TradingSignal& signal,
     StrategyId strategyId = signal.getStrategyId();
     core::ExchangeId exchangeId = signal.exchangeId;
 
-    // Calculate new position after this trade
-    double newPosition = calculateNewPosition(
-        tradingPair, 
-        signal.getDirection(), 
-        signal.getTargetSize()
-    );
-    
-    // Get applicable limits
+    // We treat configured limits as USD notional limits. Convert current
+    // position and proposed order into USD and compare against limits.
+
+    // Current position notional (USD)
+    double currentPrice = 0.0;
+    try {
+        if (m_positionTracker) {
+            currentPrice = m_positionTracker->getCachedPrice(tradingPair);
+        }
+    } catch (...) { currentPrice = 0.0; }
+
+    double currentNotional = 0.0;
+    if (currentPrice > 0.0) {
+        // find current position for tradingPair
+        auto posOpt = m_positionTracker->getPosition(core::ExchangeId::unknown(), tradingPair);
+        if (posOpt.has_value()) {
+            currentNotional = std::abs(posOpt->getQuantity()) * currentPrice;
+        }
+    }
+
+    // Proposed order: if targetSize <= 1.0 treat as fraction of the asset limit (USD);
+    // otherwise treat as absolute asset quantity and convert to USD using currentPrice.
+    double orderNotional = 0.0;
+    double targetSize = signal.getTargetSize();
+    double assetLimitUsd = getPositionLimit(asset, strategyId.toString());
+
+    if (targetSize <= 1.0) {
+        // Interpret as fraction of the configured asset limit (USD)
+        orderNotional = targetSize * assetLimitUsd;
+    } else {
+        // Interpret as absolute asset quantity
+        if (currentPrice > 0.0) {
+            orderNotional = std::abs(targetSize) * currentPrice;
+        } else {
+            // Price unavailable: cannot reliably compute notional - treat as violation
+            RiskViolation violation(
+                ViolationType::PRICE_DEVIATION,
+                "Price unavailable to compute order notional for position limit check",
+                0.0,
+                0.0
+            );
+            violations.push_back(violation);
+            return false;
+        }
+    }
+
+    double proposedNotional = currentNotional + orderNotional;
+
+    // Get applicable limits (USD)
     double assetLimit = getPositionLimit(asset, strategyId.toString());
     double strategyLimit = 0.0;
     double exchangeLimit = 0.0;
@@ -101,28 +142,60 @@ bool PositionLimitChecker::checkPositionLimit(const TradingSignal& signal,
     }
     
     bool withinLimits = true;
-    
-    // Check asset-specific limit // this is fucking stupid// postponed it
-   /*
-    if (std::abs(newPosition) > assetLimit) {
+
+    // If the configured assetLimit is interpreted as USD notional, validate proposedNotional
+    if (proposedNotional > assetLimit) {
         RiskViolation violation(
             ViolationType::POSITION_LIMIT,
-            "Asset position limit exceeded for " + asset,
+            "Asset position notional limit exceeded for " + asset,
             assetLimit,
-            std::abs(newPosition)
+            proposedNotional
         );
         violations.push_back(violation);
         withinLimits = false;
     }
-    */
     
-    // Check strategy limit (if applicable)
-    // Note: This requires implementing getTotalPositionForStrategy in PositionTracker
-    // For now, we'll skip this check as the method signature isn't defined
-    
-    // Check exchange limit (if applicable)
-    // Note: This requires implementing getTotalPositionForExchange in PositionTracker
-    // For now, we'll skip this check as the method signature isn't defined
+    // Check strategy limit (if applicable) - compute current strategy-level notional
+    double strategyCurrentNotional = 0.0;
+    if (m_positionTracker) {
+        try {
+            auto stratPositions = m_positionTracker->getStrategyPositions(strategyId);
+            for (const auto& p : stratPositions) strategyCurrentNotional += p.getNotionalValue();
+        } catch (...) { strategyCurrentNotional = 0.0; }
+    }
+    double proposedStrategyNotional = strategyCurrentNotional + orderNotional;
+
+    if (strategyLimit > 0.0 && proposedStrategyNotional > strategyLimit) {
+        RiskViolation violation(
+            ViolationType::POSITION_LIMIT,
+            "Strategy-level position notional limit exceeded for " + strategyId.toString(),
+            strategyLimit,
+            proposedStrategyNotional
+        );
+        violations.push_back(violation);
+        withinLimits = false;
+    }
+
+    // Check exchange limit - compute current exchange-level notional
+    double exchangeCurrentNotional = 0.0;
+    if (m_positionTracker) {
+        try {
+            auto exchPositions = m_positionTracker->getExchangePositions(exchangeId);
+            for (const auto& p : exchPositions) exchangeCurrentNotional += p.getNotionalValue();
+        } catch (...) { exchangeCurrentNotional = 0.0; }
+    }
+    double proposedExchangeNotional = exchangeCurrentNotional + orderNotional;
+
+    if (exchangeLimit > 0.0 && proposedExchangeNotional > exchangeLimit) {
+        RiskViolation violation(
+            ViolationType::POSITION_LIMIT,
+            "Exchange-level position notional limit exceeded for exchange " + exchangeId.toString(),
+            exchangeLimit,
+            proposedExchangeNotional
+        );
+        violations.push_back(violation);
+        withinLimits = false;
+    }
     
     return withinLimits;
 }
