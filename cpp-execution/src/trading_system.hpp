@@ -205,8 +205,8 @@ private:
     std::atomic<bool> systemHealthy_;
     std::chrono::steady_clock::time_point startTime_;
     // Warm-up period: do not send real orders during the initial warmupDuration_
-    // Default to 5 minutes (300 seconds)
-    std::chrono::seconds warmupDuration_{300};
+    // Default to 2 minutes (120 seconds)
+    std::chrono::seconds warmupDuration_{120};
     // Count how many orders were suppressed during warmup for diagnostics
     std::atomic<size_t> suppressedOrdersDuringWarmup_{0};
     
