@@ -1082,16 +1082,37 @@ void Trading_system::execWorkerLoop(size_t workerId) {
             // allowedSize is in usdt, so clamp it from 10$(min order size) to 5000$ (max order size)
             allowedSize = std::clamp(allowedSize, 10.0, 5000.0);
             double positionSize = allowedSize * sizerFraction;
-            // clamp this to
-            double finalQty = positionSize * task.targetSize;
 
-            // clamp to limit exposure or it will be rejected by risk
-            // finalQty = std::clamp(finalQty, 0.0, allowedSize);
+            // positionSize is in USD (notional available for this trade after sizing)
+            // task.targetSize is a fractional multiplier (e.g. 0.05) coming from the strategy
+            // Compute the USD notional to allocate for this execution, then convert to
+            // asset quantity by dividing by current market price.
+            double notionalUsd = positionSize * task.targetSize;
+
+            // Ensure we have a recent price before converting to quantity
             std::optional<double> currentPriceOpt = dataIngestionService_->getLastPrice(task.exchangeId, task.symbol);
             double currentPrice = currentPriceOpt.has_value() ? currentPriceOpt.value() : 0.0;
-          
-            if (finalQty * currentPrice < 10.0) {
-                finalQty = 12.0 / currentPrice;
+
+            double finalQty = 0.0;
+            if (currentPrice > 0.0) {
+                finalQty = notionalUsd / currentPrice;
+            } else {
+                // If price unavailable, fall back to treating notional as quantity to preserve
+                // previous behavior (but log the situation). This is a degraded fallback.
+                LOG_WARN("ExecWorker: current price unavailable for {} - falling back to raw notional as qty", task.symbol.toString());
+                finalQty = notionalUsd;
+            }
+
+            // If the USD notional is below the minimum order notional, bump to a small default
+            // using the current price to compute quantity. Use notionalUsd for the comparison.
+            const double minNotionalUsd = 10.0;
+            if (notionalUsd < minNotionalUsd) {
+                if (currentPrice > 0.0) {
+                    finalQty = 12.0 / currentPrice; // ensure at least ~$12 executed
+                } else {
+                    // As a last resort, keep finalQty as-is (degraded behavior)
+                    LOG_WARN("ExecWorker: cannot enforce min notional for {} because price is unavailable", task.symbol.toString());
+                }
             }
             report.setQuantity(finalQty);
             report.setFilledQuantity(finalQty);
