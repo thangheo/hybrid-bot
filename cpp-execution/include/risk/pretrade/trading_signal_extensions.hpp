@@ -28,7 +28,12 @@ inline core::Symbol getSymbol(const TradingSignal& signal) noexcept {
 }
 
 inline double getQuantity(const TradingSignal& signal) noexcept {
-    return signal.getTargetSize();
+    // If targetSize is > 1, interpret as absolute asset quantity and return it.
+    // If targetSize <= 1, this is a fractional target and callers should
+    // resolve notional/quantity using allowed USD budget and market price.
+    double ts = signal.getTargetSize();
+    if (ts > 1.0) return ts;
+    return 0.0;
 }
 
 inline StrategyId getStrategyId(const TradingSignal& signal) noexcept {

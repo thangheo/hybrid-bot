@@ -79,8 +79,33 @@ bool OrderValidator::validateOrder(const execution::TradingSignal& signal,
     }
     
     // Validate order size using the extension functions
-    if (!isOrderSizeValid(getExchangeId(signal), getSymbol(signal), getQuantity(signal), violations)) {
-        return false;
+    // Note: trading signals may express targetSize as a fraction (<=1.0) or
+    // an absolute asset quantity (>1.0). The low-level isOrderSizeValid expects
+    // an asset quantity. If the signal provided a fractional target we cannot
+    // reliably convert it to an absolute quantity here (missing allowed USD
+    // budget). In that case, perform lightweight validation and defer exact
+    // notional/min-trade checks until order creation when the notional is
+    // resolved.
+    double target = signal.getTargetSize();
+    if (target > 1.0) {
+        // Interpret as absolute asset quantity
+        double qty = target;
+        if (!isOrderSizeValid(getExchangeId(signal), getSymbol(signal), qty, violations)) {
+            return false;
+        }
+    } else {
+        // Fractional target: basic sanity checks only
+        if (target <= 0.0) {
+            RiskViolation violation;
+            violation.type = ViolationType::ORDER_SIZE_LIMIT;
+            violation.description = "Target size must be positive";
+            violation.limitValue = 0.0;
+            violation.actualValue = target;
+            violations.push_back(violation);
+            return false;
+        }
+        // Defer notional/min trade value checks until we have a concrete order
+        LOG_DEBUG("Signal target is fractional ({}). Deferring notional checks until order creation", target);
     }
     
     // For signals, we don't have a price to check yet

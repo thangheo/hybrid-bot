@@ -158,6 +158,7 @@ struct TradingSignal {
     double getPrice() const { return price; }
     // setPrice
     void setPrice(double p) { price = p; }
+    void setQuantity(double q) { quantity = q; }
     /**
      * Reserve internal containers to avoid repeated reallocations during bulk operations.
      * Call this before heavy push_back/emplace operations.
@@ -175,7 +176,7 @@ struct TradingSignal {
     core::Direction getDirection() const { return direction; }
     double getStrength() const { return strength; }
     double getTargetSize() const { return targetSize; }
-    double getQuantity() const { return targetSize*price; } // assuming quantity = size * price
+    double getQuantity() const { return quantity; } 
     const core::ExchangeId& getExchangeId() const { return exchangeId; }
     std::chrono::milliseconds getSignalTtl() const { 
         return std::chrono::duration_cast<std::chrono::milliseconds>(ttl); 
