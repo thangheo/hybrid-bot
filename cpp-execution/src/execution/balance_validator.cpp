@@ -92,9 +92,10 @@ BalanceValidationResult BalanceValidator::validateOrder(
             result.requiredBalance = calculateRequiredBalance(order, exchangeName);
             result.estimatedFees = result.requiredBalance - (order.getPrice() * order.getQuantity());
             
-            // Add safety buffer
+            // Add safety buffer + safety margin
             double bufferAmount = result.requiredBalance * config_.balanceBufferPercent;
-            double totalRequired = result.requiredBalance + bufferAmount;
+            double safetyAmount = result.requiredBalance * config_.safetyMarginPercent;
+            double totalRequired = result.requiredBalance + bufferAmount + safetyAmount;
             
             if (result.availableBalance < totalRequired) {
                 result.isValid = false;
@@ -118,8 +119,10 @@ BalanceValidationResult BalanceValidator::validateOrder(
             
             // For sell orders, fees are typically deducted from the quote asset received,
             // but we need to ensure we have enough base asset to sell
+            // Add safety buffer + safety margin for sell checks
             double bufferAmount = result.requiredBalance * config_.balanceBufferPercent;
-            double totalRequired = result.requiredBalance + bufferAmount;
+            double safetyAmount = result.requiredBalance * config_.safetyMarginPercent;
+            double totalRequired = result.requiredBalance + bufferAmount + safetyAmount;
             
             if (result.availableBalance < totalRequired) {
                 result.isValid = false;
@@ -128,7 +131,8 @@ BalanceValidationResult BalanceValidator::validateOrder(
                 // Calculate suggested quantity
                 if (result.availableBalance > 0) {
                     result.canAdjust = true;
-                    result.suggestedQuantity = result.availableBalance * (1.0 - config_.balanceBufferPercent);
+                    // suggested quantity should also account for safety margin
+                    result.suggestedQuantity = result.availableBalance * (1.0 - config_.balanceBufferPercent - config_.safetyMarginPercent);
                 }
             } else {
                 result.isValid = true;

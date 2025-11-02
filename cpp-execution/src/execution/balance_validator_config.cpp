@@ -49,6 +49,7 @@ BalanceValidatorConfig BalanceValidatorConfigLoader::createDefault() {
     config.balanceCacheExpiry = std::chrono::milliseconds(30000); // 30 seconds
     config.enableRealTimeValidation = true;
     config.minNotionalValue = 10.0; // $10 minimum
+    config.safetyMarginPercent = 0.001; // 0.1% default safety margin
     
     return config;
 }
@@ -90,6 +91,10 @@ BalanceValidatorConfig BalanceValidatorConfigLoader::parseJson(const nlohmann::j
             if (bv.contains("balanceBufferPercent")) {
                 config.balanceBufferPercent = bv["balanceBufferPercent"].get<double>();
             }
+
+            if (bv.contains("safetyMarginPercent")) {
+                config.safetyMarginPercent = bv["safetyMarginPercent"].get<double>();
+            }
             
             if (bv.contains("balanceCacheExpiryMs")) {
                 int expiry = bv["balanceCacheExpiryMs"].get<int>();
@@ -117,6 +122,12 @@ BalanceValidatorConfig BalanceValidatorConfigLoader::parseJson(const nlohmann::j
                       << "). Using 0.01" << std::endl;
             config.balanceBufferPercent = 0.01;
         }
+
+        if (config.safetyMarginPercent < 0.0 || config.safetyMarginPercent > 0.01) {
+            std::cerr << "Warning: Invalid safetyMarginPercent (" << config.safetyMarginPercent 
+                      << "). Using 0.001" << std::endl;
+            config.safetyMarginPercent = 0.001;
+        }
         
         if (config.minNotionalValue < 0.0) {
             std::cerr << "Warning: Invalid minNotionalValue (" << config.minNotionalValue 
@@ -138,6 +149,7 @@ nlohmann::json BalanceValidatorConfigLoader::configToJson(const BalanceValidator
     j["balanceValidation"]["defaultTradingFee"] = config.defaultTradingFee;
     j["balanceValidation"]["exchangeTradingFees"] = config.exchangeTradingFees;
     j["balanceValidation"]["balanceBufferPercent"] = config.balanceBufferPercent;
+    j["balanceValidation"]["safetyMarginPercent"] = config.safetyMarginPercent;
     j["balanceValidation"]["balanceCacheExpiryMs"] = config.balanceCacheExpiry.count();
     j["balanceValidation"]["enableRealTimeValidation"] = config.enableRealTimeValidation;
     j["balanceValidation"]["minNotionalValue"] = config.minNotionalValue;

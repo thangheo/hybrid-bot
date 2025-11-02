@@ -24,6 +24,7 @@ struct BalanceValidatorConfig {
     double defaultTradingFee = 0.001; // 0.1% default
     std::map<std::string, double> exchangeTradingFees; // exchange-specific fees
     double balanceBufferPercent = 0.01; // 1% safety buffer
+    double safetyMarginPercent = 0.001; // additional safety margin (default 0.1%)
     std::chrono::milliseconds balanceCacheExpiry{30000}; // 30 seconds
     bool enableRealTimeValidation = true;
     double minNotionalValue = 10.0;
