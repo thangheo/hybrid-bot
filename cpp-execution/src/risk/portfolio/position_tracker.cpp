@@ -262,6 +262,16 @@ bool PositionTracker::shutdown() {
 // }
 void PositionTracker::processExecutionReport(const ExecutionReport& executionReport) {
     try {
+        // Lightweight debug logging to help diagnose missing positions
+        try {
+            std::ostringstream _pt_oss;
+            _pt_oss << "[POSITION_TRACKER_DBG] processExecutionReport: exchange=" << executionReport.exchangeId().toString()
+                    << " symbol=" << executionReport.symbol().toString()
+                    << " fills=" << executionReport.fills().size();
+            LOG_INFO("PositionTracker", _pt_oss.str());
+        } catch (...) {
+            // fall through if logging formatting fails
+        }
         if (executionReport.fills().empty()) {
             return;
         }
@@ -316,6 +326,13 @@ void PositionTracker::processExecutionReport(const ExecutionReport& executionRep
                 // Update existing position
                 it->second.updatePosition(totalFillQuantity, weightedAvgPrice);
                 updatePositionCurrentPrice(it->second);
+                try {
+                    std::ostringstream _pt_upd;
+                    _pt_upd << "[POSITION_TRACKER_DBG] updated position: key=" << positionKey
+                            << " qty=" << it->second.getQuantity()
+                            << " avgPrice=" << it->second.getAverageEntryPrice();
+                    LOG_INFO("PositionTracker", _pt_upd.str());
+                } catch (...) {}
                 // make a copy to notify outside the lock
                 toNotify = it->second;
                 notifyType = "modified";
@@ -326,6 +343,12 @@ void PositionTracker::processExecutionReport(const ExecutionReport& executionRep
                 updatePositionCurrentPrice(newPosition);
                 auto [it2, inserted] = m_positions.emplace(positionKey, std::move(newPosition));
                 if (inserted) {
+                    try {
+                        std::ostringstream _pt_new;
+                        _pt_new << "[POSITION_TRACKER_DBG] created position: key=" << positionKey
+                                << " qty=" << totalFillQuantity << " price=" << weightedAvgPrice;
+                        LOG_INFO("PositionTracker", _pt_new.str());
+                    } catch (...) {}
                     toNotify = it2->second;
                     notifyType = "new";
                 }
@@ -412,6 +435,12 @@ std::vector<Position> PositionTracker::getAllPositions() const {
     for (const auto& [key, position] : m_positions) {
         positions.push_back(position);
     }
+
+    try {
+        std::ostringstream _pt_gall;
+        _pt_gall << "[POSITION_TRACKER_DBG] getAllPositions returning count=" << positions.size();
+        LOG_INFO("PositionTracker", _pt_gall.str());
+    } catch (...) {}
     
     return positions;
 }

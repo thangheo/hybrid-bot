@@ -39,9 +39,13 @@ public:
      * @param config Risk configuration containing portfolio management settings
      */
     explicit PortfolioManager(const RiskConfig& config);
-    //new constructor with market data interface
+    // new constructor with market data interface
     explicit PortfolioManager(const RiskConfig& config,
-                     std::shared_ptr<DataInterface> dataInterface); 
+                     std::shared_ptr<DataInterface> dataInterface);
+    // new constructor allowing injection of a shared PositionTracker to avoid duplicate instances
+    PortfolioManager(const RiskConfig& config,
+                     std::shared_ptr<DataInterface> dataInterface,
+                     std::shared_ptr<PositionTracker> positionTracker);
     /**
      * Initialize the portfolio manager and its components
      * @return true if initialization was successful, false otherwise

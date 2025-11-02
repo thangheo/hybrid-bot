@@ -181,7 +181,7 @@ struct PostTradeMonitorConfig {
     bool enableDetailedLogging{true};
 
     // Position TTL (time-to-live) settings
-    std::chrono::milliseconds defaultPositionTTL{std::chrono::milliseconds(1500)}; // 1.5s default
+    std::chrono::milliseconds defaultPositionTTL{std::chrono::milliseconds(5000)}; // 5s default
     std::chrono::milliseconds positionTtlCheckIntervalMs{std::chrono::milliseconds(200)}; // check interval
     bool enableDynamicTtl{true};
     std::string volatilityTimeframe{"1m"};
@@ -235,10 +235,14 @@ public:
     PostTradeMonitor(const RiskConfig& config, PortfolioManager* portfolioManager = nullptr);
     // New ctor that allows dependency injection of shared interfaces to avoid
     // creating duplicate DataInterface/MarketDataInterface instances.
+    // Constructor that allows dependency injection, with optional PositionTracker to avoid
+    // creating duplicate instances. If positionTracker is null, PostTradeMonitor will
+    // create its own PositionTracker.
     PostTradeMonitor(const RiskConfig& config,
                      PortfolioManager* portfolioManager,
                      std::shared_ptr<DataInterface> dataInterface,
-                     std::shared_ptr<ExecutionInterface> executionInterface = nullptr);
+                     std::shared_ptr<ExecutionInterface> executionInterface = nullptr,
+                     std::shared_ptr<PositionTracker> positionTracker = nullptr);
     /**
      * Destructor ensures proper cleanup
      */
@@ -385,6 +389,8 @@ public:
 private:
     // Optional portfolio manager for integrated risk management
     PortfolioManager* portfolioManager_{nullptr};
+    // Allow injection of a shared PositionTracker to avoid duplicate instances
+    std::shared_ptr<PositionTracker> injectedPositionTracker_;
     // Configuration
     mutable std::shared_mutex configMutex_;
     RiskConfig config_;

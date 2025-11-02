@@ -339,7 +339,7 @@
     "momentumCorrelator": {
       "parameters": {
         "correlationWindowMs": 120000,
-        "predictionHorizonMs": 30000
+        "predictionHorizonMs": 5000
       }
     },
     "thresholdManager": {

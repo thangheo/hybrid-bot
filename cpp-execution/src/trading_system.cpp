@@ -524,60 +524,61 @@ void Trading_system::createRiskConfig() {
         std::cerr << "Invalid risk configuration!" << std::endl;
     }
     auto& positionConfig = const_cast<PositionLimitConfig&>(riskConfig_.getPositionLimitConfig());
-    
+    //this is a stupid implementation but just for testing because different asset have different price level and this make no sense
+    //increase everything to 100000
     positionConfig.assetLimits["BTC"] = 0.001;
     positionConfig.assetLimits["ETH"] = 0.1;
     positionConfig.assetLimits["BNB"] = 0.1;
     positionConfig.assetLimits["ADA"] = 10.0;
-    positionConfig.assetLimits["DOGE"] = 100.0;
-    positionConfig.assetLimits["USDT"] = 50.0;
-    positionConfig.assetLimits["USDC"] = 50.0;
-    positionConfig.assetLimits["XRP"] = 10.0;
-    positionConfig.assetLimits["SOL"] = 1.0;
-    positionConfig.assetLimits["LTC"] = 0.1;
-    positionConfig.assetLimits["DOT"] = 1.0;
-    positionConfig.assetLimits["MATIC"] = 10.0;
-    positionConfig.assetLimits["AVAX"] = 1.0;
-    positionConfig.assetLimits["SHIB"] = 1000.0;
-    positionConfig.assetLimits["TRX"] = 100.0;
-    positionConfig.assetLimits["UNI"] = 1.0;
-    positionConfig.assetLimits["LINK"] = 1.0;
-    positionConfig.assetLimits["BCH"] = 0.1;
-    positionConfig.assetLimits["XLM"] = 10.0;
-    positionConfig.assetLimits["ATOM"] = 1.0;
-    positionConfig.assetLimits["VET"] = 100.0;
-    positionConfig.assetLimits["FIL"] = 1.0;
-    positionConfig.assetLimits["ICP"] = 0.5;
-    positionConfig.assetLimits["ALGO"] = 10.0;
-    positionConfig.assetLimits["XTZ"] = 1.0;
-    positionConfig.assetLimits["AAVE"] = 0.5;
-    positionConfig.assetLimits["EGLD"] = 0.1;
-    positionConfig.assetLimits["SAND"] = 5.0;
-    positionConfig.assetLimits["MANA"] = 5.0;
-    positionConfig.assetLimits["GALA"] = 10.0;
-    positionConfig.assetLimits["AXS"] = 1.0;
-    positionConfig.assetLimits["SUI"] = 5.0;
-    positionConfig.assetLimits["APT"] = 5.0;
-    positionConfig.assetLimits["KAS"] = 50.0;
-    positionConfig.assetLimits["XMR"] = 0.1;
-    positionConfig.assetLimits["ZEC"] = 0.1;
-    positionConfig.assetLimits["PEPE"] = 1000.0;
-    positionConfig.assetLimits["FTM"] = 5.0;
-    positionConfig.assetLimits["HBAR"] = 50.0;
-    positionConfig.assetLimits["PAXG"] = 0.01;
-    positionConfig.assetLimits["ONDO"] = 50.0;
-    positionConfig.assetLimits["BONK"] = 1000.0;
-    positionConfig.assetLimits["FLOKI"] = 1000.0;
-    positionConfig.assetLimits["AGIX"] = 5.0;
-    positionConfig.assetLimits["FET"] = 10.0;
-    positionConfig.assetLimits["INJ"] = 1.0;
-    positionConfig.assetLimits["OP"] = 5.0;
-    positionConfig.assetLimits["ARB"] = 5.0;
-    positionConfig.assetLimits["STARK"] = 1.0;
-    positionConfig.assetLimits["TIA"] = 5.0;
-    positionConfig.assetLimits["XRP"] = 10.0;
-    positionConfig.assetLimits["SOL"] = 1.0;
-    positionConfig.assetLimits["ADA"] = 10.0;
+    positionConfig.assetLimits["DOGE"] = 10000.0;
+    positionConfig.assetLimits["USDT"] = 500.0;
+    positionConfig.assetLimits["USDC"] = 500.0;
+    positionConfig.assetLimits["XRP"] = 100.0;
+    positionConfig.assetLimits["SOL"] = 100.0;
+    positionConfig.assetLimits["LTC"] = 111111;
+    positionConfig.assetLimits["DOT"] = 1.0*100;
+    positionConfig.assetLimits["MATIC"] = 10.0*100;
+    positionConfig.assetLimits["AVAX"] = 1.0*100;
+    positionConfig.assetLimits["SHIB"] = 1000.0*100;
+    positionConfig.assetLimits["TRX"] = 100.0*100;
+    positionConfig.assetLimits["UNI"] = 1.0*100;
+    positionConfig.assetLimits["LINK"] = 1.0*100;
+    positionConfig.assetLimits["BCH"] = 0.1*100;
+    positionConfig.assetLimits["XLM"] = 10.0*100;
+    positionConfig.assetLimits["ATOM"] = 1.0*100;
+    positionConfig.assetLimits["VET"] = 100.0*100;
+    positionConfig.assetLimits["FIL"] = 1.0*100;
+    positionConfig.assetLimits["ICP"] = 0.5*100;
+    positionConfig.assetLimits["ALGO"] = 10.0*100;
+    positionConfig.assetLimits["XTZ"] = 1.0*100 ;
+    positionConfig.assetLimits["AAVE"] = 0.5*100;
+    positionConfig.assetLimits["EGLD"] = 0.1*100;
+    positionConfig.assetLimits["SAND"] = 5.0*100;
+    positionConfig.assetLimits["MANA"] = 5.0*100;
+    positionConfig.assetLimits["GALA"] = 10.0*100;
+    positionConfig.assetLimits["AXS"] = 1.0*100;
+    positionConfig.assetLimits["SUI"] = 5.0*100;
+    positionConfig.assetLimits["APT"] = 5.0*100;
+    positionConfig.assetLimits["KAS"] = 50.0*100;
+    positionConfig.assetLimits["XMR"] = 0.1*100;
+    positionConfig.assetLimits["ZEC"] = 10.0*100;
+    positionConfig.assetLimits["PEPE"] = 10000.0*100;
+    positionConfig.assetLimits["FTM"] = 500.0*100;
+    positionConfig.assetLimits["HBAR"] = 50000.0*100;
+    positionConfig.assetLimits["PAXG"] = 0.01*100;
+    positionConfig.assetLimits["ONDO"] = 50.0*100;
+    positionConfig.assetLimits["BONK"] = 1000.0*100;
+    positionConfig.assetLimits["FLOKI"] = 1000.0*100;
+    positionConfig.assetLimits["AGIX"] = 5.0*100;
+    positionConfig.assetLimits["FET"] = 10.0*100;
+    positionConfig.assetLimits["INJ"] = 1.0*100;
+    positionConfig.assetLimits["OP"] = 5.0*100;
+    positionConfig.assetLimits["ARB"] = 5.0*100;
+    positionConfig.assetLimits["STARK"] = 1.0*100;
+    positionConfig.assetLimits["TIA"] = 5.0*100;
+    positionConfig.assetLimits["XRP"] = 10.0*100;
+    positionConfig.assetLimits["SOL"] = 1.0*100;
+    positionConfig.assetLimits["ADA"] = 10.0*100;
     positionConfig.defaultLimit = 500000; // dont care because btc =110k while doge or other maybe 0.001,
     positionConfig.enforceStrictly = false;
     
@@ -1057,8 +1058,9 @@ void Trading_system::execWorkerLoop(size_t workerId) {
                 std::map<std::string, double> portfolio;
                 sizerFraction = positionSizer_->calculateSize(task.symbol.toString(), metrics, portfolio);
             }
-            //allowedSize = usd? DO NOT USE THE ASSET QUANTITY BS HERE BECAUSE IT IS MESSED UP. convert everything to usd first to usd
-
+            //allowedSize = std::max(allowedSize, 0.0);
+            // allowedSize is in usdt, so clamp it from 10$(min order size) to 5000$ (max order size)
+            allowedSize = std::clamp(allowedSize, 10.0, 5000.0);
             double positionSize = allowedSize * sizerFraction;
             // clamp this to
             double finalQty = positionSize * task.targetSize;
