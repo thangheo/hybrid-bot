@@ -48,8 +48,8 @@ public:
         bool use_expected_value = true;    // Use EV instead of threshold
         double payoff_long = 1.0;          // Expected payoff for long position
         double payoff_short = 1.0;         // Expected payoff for short position
-        double forgetting_factor = 0.97;    // Discount factor for prior precision (1.0 = no forgetting)
-        double process_noise = 0.0001;        // Additive diagonal process noise per update (helps prevent overconfidence)
+        double forgetting_factor = 0.99;    // Discount factor for prior precision (1.0 = no forgetting)
+        double process_noise = 0.00001;        // Additive diagonal process noise per update (helps prevent overconfidence)
     };
 
 private:
