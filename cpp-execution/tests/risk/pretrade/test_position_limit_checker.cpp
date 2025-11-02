@@ -15,7 +15,7 @@
  using namespace trading::risk;
  using ::testing::Return;
  using ::testing::_;
- 
+ using namespace trading;
  // Mock position tracker for testing - override relevant methods
  class MockPositionTracker : public PositionTracker {
  public:
@@ -49,7 +49,7 @@
          limitConfig.exchangeLimits["exchange1"] = 500000.0; // $500k
          limitConfig.exchangeLimits["exchange2"] = 300000.0; // $300k
          
-         config.setPositionLimits(limitConfig);
+         config.setPositionLimitConfig(limitConfig);
          
          // Create mock position tracker
          mockPositionTracker = std::make_shared<MockPositionTracker>();
@@ -68,11 +68,11 @@
      // Create a trading signal
      TradingSignal signal;
      signal.id = "test-signal-1";
-     signal.tradingPair = TradingPair("BTC/USDT");
+     signal.setTradingPair(TradingPair("BTC/USDT"));
      signal.direction = Direction::BUY;
      signal.targetSize = 2.0;
-     signal.strategyId = "strategy1";
-     signal.exchangeId = "exchange1";
+     signal.setStrategyId(StrategyId("strategy1", "1.0"));
+     signal.exchangeId = ExchangeId::fromString("exchange1");
      
      // Mock: current BTC position 0.5 BTC at $40k => $20k current notional
      Position p(core::ExchangeId::fromString("exchange1"), TradingPair("BTC/USDT"), StrategyId("strategy1"), 0.5, 40000.0);
@@ -98,12 +98,12 @@
      // Create a trading signal for BTC (limit 5.0)
      TradingSignal signal;
      signal.id = "test-signal-2";
-     signal.tradingPair = TradingPair("BTC/USDT");
-     signal.direction = Direction::BUY;
-    signal.targetSize = 3.0;  // interpreted as absolute qty -> 3 BTC
-     signal.strategyId = "strategy1";
-     signal.exchangeId = "exchange1";
-     
+     signal.setTradingPair(TradingPair("BTC/USDT"));
+     signal.setDirection(Direction::BUY);
+     signal.setTargetSize(3.0);  // interpreted as absolute qty -> 3 BTC
+     signal.setStrategyId(StrategyId("strategy1", "1.0"));
+     signal.setExchangeId(ExchangeId::fromString("exchange1"));
+
      // Current position = 4 BTC at $10k => $40k notional; adding 3 BTC at $10k => +$30k => $70k > BTC limit $50k
      Position p2(core::ExchangeId::fromString("exchange1"), TradingPair("BTC/USDT"), StrategyId("strategy1"), 4.0, 10000.0);
      EXPECT_CALL(*mockPositionTracker, getPosition(_, _)).WillOnce(Return(p2));
@@ -129,11 +129,11 @@
      // Create a trading signal
      TradingSignal signal;
      signal.id = "test-signal-3";
-     signal.tradingPair = TradingPair("ETH/USDT");
+     signal.setTradingPair(TradingPair("ETH/USDT"));
      signal.direction = Direction::BUY;
     signal.targetSize = 20.0; // absolute qty -> 20 ETH
-     signal.strategyId = "strategy1";  // Limit 200.0
-     signal.exchangeId = "exchange1";
+     signal.setStrategyId(StrategyId("strategy1", "1.0"));
+     signal.exchangeId = ExchangeId::fromString("exchange1");
      
      // Set up mock to return current position
      // Current ETH position 10 ETH at $100 -> $1k
@@ -161,12 +161,12 @@
      // Create a trading signal
      TradingSignal signal;
      signal.id = "test-signal-4";
-     signal.tradingPair = TradingPair("ETH/USDT");
-     signal.direction = Direction::BUY;
-    signal.targetSize = 50.0; // 50 ETH
-     signal.strategyId = "strategy1";
-     signal.exchangeId = "exchange2";  // Limit 300.0
-     
+     signal.setTradingPair(TradingPair("ETH/USDT"));
+     signal.setDirection(Direction::BUY);
+     signal.setTargetSize(50.0); // 50 ETH
+     signal.setStrategyId(StrategyId("strategy1", "1.0"));
+     signal.setExchangeId(ExchangeId::fromString("exchange2"));  // Limit 300.0
+
      // Set up mock to return current position
      Position p4(core::ExchangeId::fromString("exchange1"), TradingPair("ETH/USDT"), StrategyId("strategy1"), 10.0, 100.0);
      EXPECT_CALL(*mockPositionTracker, getPosition(_, _)).WillOnce(Return(p4));
@@ -191,54 +191,57 @@
     EXPECT_EQ(violations[0].limitValue, 300000.0);
  }
  
- // Test with OrderRequest instead of TradingSignal
- TEST_F(PositionLimitCheckerTest, CheckPositionLimitWithOrderRequest) {
-     // Create an order request
-     OrderRequest orderRequest;
-     orderRequest.clientOrderId = "test-order-1";
-     orderRequest.tradingPair = TradingPair("BTC/USDT");
-     orderRequest.side = OrderSide::BUY;
-     orderRequest.quantity = 2.0;
-     orderRequest.strategyId = "strategy1";
-     orderRequest.exchangeId = "exchange1";
-     
-     // Set up mock to return current position
-     EXPECT_CALL(*mockPositionTracker, getPosition("BTC"))
-         .WillOnce(Return(2.0));
-     
-     // Set up mock to return strategy position
-     EXPECT_CALL(*mockPositionTracker, getTotalPositionForStrategy("strategy1"))
-         .WillOnce(Return(50.0));
-     
-     // Set up mock to return exchange position
-     EXPECT_CALL(*mockPositionTracker, getTotalPositionForExchange("exchange1"))
-         .WillOnce(Return(100.0));
-     
-     // Check the position limit
-     std::vector<RiskViolation> violations;
-     bool result = positionLimitChecker->checkPositionLimit(orderRequest, violations);
-     
-     // Should pass all checks
-     EXPECT_TRUE(result);
-     EXPECT_TRUE(violations.empty());
- }
+// Test with OrderRequest instead of TradingSignal
+TEST_F(PositionLimitCheckerTest, CheckPositionLimitWithOrderRequest) {
+    // Create an order request
+    OrderRequest orderRequest;
+    orderRequest.clientOrderId = "test-order-1";
+    orderRequest.tradingPair = TradingPair("BTC/USDT");
+    orderRequest.side = OrderSide::BUY;
+    orderRequest.quantity = 2.0;
+    orderRequest.strategyId = "strategy1";
+    orderRequest.exchangeId = ExchangeId::fromString("exchange1");
+    
+    // Set up mock to return current position (use existing getPosition(exchange, pair) mock)
+    Position currentPos(core::ExchangeId::fromString("exchange1"), TradingPair("BTC/USDT"), StrategyId("strategy1"), 2.0, 10000.0);
+    EXPECT_CALL(*mockPositionTracker, getPosition(_, _))
+        .WillOnce(Return(currentPos));
+    
+    // Set up mock to return strategy positions (use existing getStrategyPositions mock)
+    Position stratPos(core::ExchangeId::fromString("exchange1"), TradingPair("BTC/USDT"), StrategyId("strategy1"), 10.0, 1000.0);
+    EXPECT_CALL(*mockPositionTracker, getStrategyPositions(_))
+        .WillOnce(Return(std::vector<Position>{stratPos}));
+    
+    // Set up mock to return exchange positions (use existing getExchangePositions mock)
+    Position exchPos(core::ExchangeId::fromString("exchange1"), TradingPair("BTC/USDT"), StrategyId("strategyX"), 20.0, 1000.0);
+    EXPECT_CALL(*mockPositionTracker, getExchangePositions(_))
+        .WillOnce(Return(std::vector<Position>{exchPos}));
+    
+    // Check the position limit
+    std::vector<RiskViolation> violations;
+    bool result = positionLimitChecker->checkPositionLimit(orderRequest, violations);
+    
+    // Should pass all checks
+    EXPECT_TRUE(result);
+    EXPECT_TRUE(violations.empty());
+}
  
  // Test updating position limits
  TEST_F(PositionLimitCheckerTest, UpdatePositionLimit) {
      // Update position limit for BTC
-     bool result = positionLimitChecker->updatePositionLimit("BTC", "", 10.0);
+     bool result = positionLimitChecker->updatePositionLimit("BTC", core::StrategyId(), 10.0);
      EXPECT_TRUE(result);
      
      // Check that the limit was updated
-     double limit = positionLimitChecker->getPositionLimit("BTC", "");
+     double limit = positionLimitChecker->getPositionLimit("BTC", core::StrategyId().toString());
      EXPECT_EQ(limit, 10.0);
      
      // Update position limit for a strategy
-     result = positionLimitChecker->updatePositionLimit("", "strategy1", 250.0);
+     result = positionLimitChecker->updatePositionLimit("", core::StrategyId("strategy1"), 250.0);
      EXPECT_TRUE(result);
      
      // Check that the limit was updated
-     limit = positionLimitChecker->getPositionLimit("", "strategy1");
+     limit = positionLimitChecker->getPositionLimit("", core::StrategyId("strategy1").toString());
      EXPECT_EQ(limit, 250.0);
  }
  

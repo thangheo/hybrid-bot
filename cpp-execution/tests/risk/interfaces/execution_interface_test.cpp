@@ -11,6 +11,8 @@
  #include <memory>
  #include <thread>
  #include <chrono>
+ using namespace trading::execution::models;
+ using namespace trading::risk;
  
  // Mock for ZeroMQ client
  namespace trading {
@@ -132,7 +134,7 @@
              
              nlohmann::json request = {
                  {"action", "cancel_all_orders"},
-                 {"exchange_id", exchangeId}
+                 {"exchange_id", exchangeId.toString()}
              };
              
              std::string response = mockClient_->sendAndReceive(request.dump());
@@ -150,8 +152,8 @@
              
              nlohmann::json request = {
                  {"action", "cancel_all_orders"},
-                 {"exchange_id", exchangeId},
-                 {"trading_pair", tradingPair}
+                 {"exchange_id", exchangeId.toString()},
+                 {"trading_pair", tradingPair.toString()}
              };
              
              std::string response = mockClient_->sendAndReceive(request.dump());
@@ -217,7 +219,7 @@
              
              nlohmann::json request = {
                  {"action", "is_exchange_available"},
-                 {"exchange_id", exchangeId}
+                 {"exchange_id", exchangeId.toString()}
              };
              
              std::string response = mockClient_->sendAndReceive(request.dump());
@@ -235,7 +237,7 @@
              
              nlohmann::json request = {
                  {"action", "get_exchange_status"},
-                 {"exchange_id", exchangeId}
+                 {"exchange_id", exchangeId.toString()}
              };
              
              std::string response = mockClient_->sendAndReceive(request.dump());
@@ -273,10 +275,10 @@
          risk::OrderRequest order;
          order.orderId = "test_order_123";
          order.clientOrderId = "client_order_123";
-         order.exchangeId = "binance";
-         order.tradingPair = "BTC/USDT";
+         order.exchangeId = ExchangeId::fromString("binance");
+         order.tradingPair = TradingPair::fromString("BTC/USDT");
          order.side = risk::OrderSide::BUY;
-         order.type = "LIMIT";
+         order.type = models::OrderType::LIMIT;
          order.getQuantity() = 1.0;
          order.getPrice() = 50000.0;
          order.timeInForce = "GTC";
@@ -398,15 +400,15 @@
      risk::OrderRequest order1 = createSampleOrderRequest();
      risk::OrderRequest order2 = createSampleOrderRequest();
      order2.orderId = "test_order_456";
-     order2.tradingPair = "ETH/USDT";
+     order2.tradingPair = TradingPair::fromString("ETH/USDT");
      
      // Convert to JSON for the mock response
      nlohmann::json ordersJson = nlohmann::json::array();
      ordersJson.push_back({
          {"order_id", order1.orderId},
          {"client_order_id", order1.clientOrderId},
-         {"exchange_id", order1.exchangeId},
-         {"trading_pair", order1.tradingPair},
+         {"exchange_id", order1.exchangeId.toString()},
+         {"trading_pair", order1.tradingPair.toString()},
          {"side", "buy"},
          {"type", order1.type},
          {"quantity", order1.quantity},
@@ -420,8 +422,8 @@
      ordersJson.push_back({
          {"order_id", order2.orderId},
          {"client_order_id", order2.clientOrderId},
-         {"exchange_id", order2.exchangeId},
-         {"trading_pair", order2.tradingPair},
+         {"exchange_id", order2.exchangeId.toString()},
+         {"trading_pair", order2.tradingPair.toString()},
          {"side", "buy"},
          {"type", order2.type},
          {"quantity", order2.quantity},

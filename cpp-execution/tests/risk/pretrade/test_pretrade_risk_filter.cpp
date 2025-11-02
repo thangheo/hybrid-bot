@@ -115,7 +115,7 @@
      signal.tradingPair = TradingPair("BTC/USDT");
      signal.direction = Direction::BUY;
      signal.targetSize = 0.1;
-     signal.exchangeId = "exchange1";
+     signal.exchangeId = ExchangeId::fromString("exchange1");
      signal.strategyId = "strategy1";
      
      // Set up mocks to pass all checks
@@ -146,7 +146,7 @@
      signal.tradingPair = TradingPair("BTC/USDT");
      signal.direction = Direction::BUY;
      signal.targetSize = 0.1;
-     signal.exchangeId = "exchange1";
+     signal.exchangeId = ExchangeId::fromString("exchange1");
      signal.strategyId = "strategy1";
      
      // Set up mock to fail position limit check
@@ -190,7 +190,7 @@
      signal.tradingPair = TradingPair("BTC/USDT");
      signal.direction = Direction::BUY;
      signal.targetSize = 0.1;
-     signal.exchangeId = "exchange1";
+     signal.exchangeId = ExchangeId::fromString("exchange1");
      signal.strategyId = "strategy1";
      
      // No checks should be called in emergency mode
@@ -226,7 +226,7 @@
 //      orderRequest.type = OrderType::LIMIT;
 //      orderRequest.quantity = 0.1;
 //      orderRequest.price = 50000.0;
-//      orderRequest.exchangeId = "exchange1";
+//      orderRequest.exchangeId = ExchangeId::fromString("exchange1");
 //      orderRequest.strategyId = "strategy1";
      
 //      // Set up mocks to pass all checks
@@ -244,7 +244,7 @@ TEST_F(PreTradeRiskFilterTest, ValidateOrderAllPass) {
     orderRequest.type = OrderType::LIMIT;
     orderRequest.quantity = 0.1;
     orderRequest.price = 50000.0;
-    orderRequest.exchangeId = "exchange1";
+    orderRequest.exchangeId = ExchangeId::fromString("exchange1");
     orderRequest.strategyId = "strategy1";
     
     // Set up mocks to pass all checks
@@ -277,7 +277,7 @@ TEST_F(PreTradeRiskFilterTest, ValidateOrderMultipleFailures) {
     orderRequest.type = OrderType::LIMIT;
     orderRequest.quantity = 10.0;  // Very large
     orderRequest.price = 40000.0;  // Far from market
-    orderRequest.exchangeId = "exchange1";
+    orderRequest.exchangeId = ExchangeId::fromString("exchange1");
     orderRequest.strategyId = "strategy1";
     
     // Set up mocks to fail exposure and fat finger checks
@@ -328,7 +328,7 @@ TEST_F(PreTradeRiskFilterTest, InvalidOrderRequest) {
     orderRequest.type = OrderType::LIMIT;
     orderRequest.quantity = 0.1;
     orderRequest.price = 50000.0;
-    orderRequest.exchangeId = "exchange1";
+    orderRequest.exchangeId = ExchangeId::fromString("exchange1");
     
     // No component checks should be called for invalid order
     EXPECT_CALL(*mockPositionLimitChecker, checkPositionLimit(_, _))
@@ -353,7 +353,7 @@ TEST_F(PreTradeRiskFilterTest, InvalidOrderRequest) {
 TEST_F(PreTradeRiskFilterTest, UpdateRiskParameters) {
     // Create risk parameters to update
     RiskParameters params;
-    params.exchangeId = "exchange1";
+    params.exchangeId = ExchangeId::fromString("exchange1");
     params.tradingPair = TradingPair("BTC/USDT");
     params.strategyId = "strategy1";
     params.maxPositionSize = 10.0;
@@ -443,7 +443,7 @@ TEST_F(PreTradeRiskFilterTest, SellCappedToAvailableBalance) {
     signal.setTradingPair("BTC/USDT");
     signal.direction = Direction::SELL;
     signal.targetSize = 5.0; // request to sell 5
-    signal.exchangeId = "exchange1";
+    signal.exchangeId = ExchangeId::fromString("exchange1");
     signal.strategyId = "strategy1";
 
     // Exposure validator will return not approved
@@ -485,7 +485,7 @@ TEST_F(PreTradeRiskFilterTest, SellRejectedWhenNoBalance) {
     signal.setTradingPair("BTC/USDT");
     signal.direction = Direction::SELL;
     signal.targetSize = 1.0; // request to sell 1
-    signal.exchangeId = "exchange1";
+    signal.exchangeId = ExchangeId::fromString("exchange1");
     signal.strategyId = "strategy1";
 
     EXPECT_CALL(*mockExposureCalculator, validateExposure(_))

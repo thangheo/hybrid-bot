@@ -28,7 +28,7 @@ file(GLOB_RECURSE EXECUTION_SOURCES
 list(FILTER EXECUTION_SOURCES EXCLUDE REGEX ".*test.*\\.cpp$")
 
 # Define library
-add_library(execution ${EXECUTION_SOURCES})
+add_library(execution STATIC ${EXECUTION_SOURCES})
 
 # Include directories
 target_include_directories(execution

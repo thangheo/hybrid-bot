@@ -8,6 +8,7 @@
 #pragma once
 
 #include "risk/risk_types.hpp"
+#include "risk/risk_config.hpp"
 #include <string>
 #include <vector>
 #include <map>
@@ -27,6 +28,8 @@ public:
      * Constructor
      */
     DataInterface();
+    // Backwards-compatible constructor used by older tests/code
+    DataInterface(const trading::risk::RiskConfig& /*cfg*/);
     
     /**
      * Virtual destructor
@@ -38,13 +41,11 @@ public:
      * 
      * @return true if successful, false otherwise
      */
-    virtual bool initialize() = 0;
+    virtual bool initialize() { return true; }
     // isConnected
-    virtual bool isConnected() const = 0;
+    virtual bool isConnected() const { return true; }
     // isHealthy
-    virtual bool isHealthy() const {
-        return true; // Default implementation, can be overridden
-    }
+    virtual bool isHealthy() const { return true; }
     /**
      * Get market data for a trading pair
      * 
@@ -53,7 +54,7 @@ public:
      * @return MarketData structure wrapped in optional
      */
     virtual std::optional<MarketData> getMarketData(const core::Symbol& tradingPair,
-                                               const std::optional<std::string>& exchangeId = std::nullopt) = 0;
+                                               const std::optional<std::string>& exchangeId = std::nullopt) { return std::nullopt; }
     
     /**
      * Get current price for a trading pair
@@ -62,7 +63,7 @@ public:
      * @param exchangeId Optional exchange ID
      * @return Current price
      */
-    virtual double getCurrentPrice(const core::Symbol& tradingPair, const std::optional<std::string>& exchangeId = std::nullopt) = 0;
+    virtual double getCurrentPrice(const core::Symbol& tradingPair, const std::optional<std::string>& exchangeId = std::nullopt) { return 0.0; }
     
     /**
      * Get price for a trading pair (alias for getCurrentPrice for compatibility)
@@ -70,17 +71,13 @@ public:
      * @param tradingPair The trading pair
      * @return Current price
      */
-    virtual double getPrice(const core::Symbol& tradingPair) {
-        return getCurrentPrice(tradingPair);
-    }
+    virtual double getPrice(const core::Symbol& tradingPair) { return getCurrentPrice(tradingPair); }
+    // Backwards-compatible string-based price accessor used by older tests/mocks
+    virtual double getPrice(const std::string& /*tradingPair*/) const { return 0.0; }
     // fetchCurrentPositions
-    virtual std::vector<Position> fetchCurrentPositions() {
-        return {}; // Default empty implementation
-    }
+    virtual std::vector<Position> fetchCurrentPositions() { return {}; }
     // setZmqClient
-    virtual void setZmqClient(std::shared_ptr<zmq::socket_t> zmqClient) {
-        // Default implementation does nothing
-    }
+    virtual void setZmqClient(std::shared_ptr<zmq::socket_t> zmqClient) { (void)zmqClient; }
     /**
      * Get historical prices for a trading pair
      * 
@@ -94,7 +91,7 @@ public:
         const core::Symbol& tradingPair,
         const std::string& interval,
         int count,
-        const std::optional<std::string>& exchangeId = std::nullopt) = 0;
+        const std::optional<std::string>& exchangeId = std::nullopt) { return {}; }
     
     /**
      * Get volatility for a trading pair
@@ -104,12 +101,10 @@ public:
      * @param exchangeId Optional exchange ID
      * @return Volatility value
      */
-    virtual double getVolatility(const core::Symbol& tradingPair, const std::string& timeframe, const std::optional<std::string>& exchangeId = std::nullopt) = 0;
+    virtual double getVolatility(const core::Symbol& tradingPair, const std::string& timeframe, const std::optional<std::string>& exchangeId = std::nullopt) { return 0.0; }
     
     // shutdown
-    virtual void shutdown() {
-        // Default implementation does nothing
-    }
+    virtual void shutdown() { }
     /**
      * Get order history for a trading pair
      * 
@@ -118,7 +113,7 @@ public:
      * @param limit Maximum number of orders to retrieve
      * @return Vector of order requests
      */
-    virtual std::vector<OrderRequest> getOrderHistory(const core::ExchangeId& exchangeId, const core::Symbol& tradingPair, int limit) = 0;
+    virtual std::vector<OrderRequest> getOrderHistory(const core::ExchangeId& exchangeId, const core::Symbol& tradingPair, int limit) { return {}; }
     
     /**
      * Get exchange balances
@@ -126,14 +121,14 @@ public:
      * @param exchangeId Exchange ID
      * @return Map of asset to balance
      */
-    virtual std::map<std::string, double> getExchangeBalances(const core::ExchangeId& exchangeId) = 0;
+    virtual std::map<std::string, double> getExchangeBalances(const core::ExchangeId& exchangeId) { return {}; }
     
     /**
      * Register callback for market data updates
      * 
      * @param callback Function to call when market data is updated
      */
-    virtual void registerMarketDataCallback(const std::function<void(const MarketData&)>& callback) = 0;
+    virtual void registerMarketDataCallback(const std::function<void(const MarketData&)>& callback) { (void)callback; }
     
     /**
      * Subscribe to market data updates
@@ -142,7 +137,7 @@ public:
      * @param exchangeId Optional exchange ID
      * @return true if successful, false otherwise
      */
-    virtual bool subscribeMarketData(const core::Symbol& tradingPair, const std::optional<std::string>& exchangeId = std::nullopt) = 0;
+    virtual bool subscribeMarketData(const core::Symbol& tradingPair, const std::optional<std::string>& exchangeId = std::nullopt) { (void)tradingPair; (void)exchangeId; return true; }
     
     /**
      * Unsubscribe from market data updates
@@ -151,7 +146,7 @@ public:
      * @param exchangeId Optional exchange ID
      * @return true if successful, false otherwise
      */
-    virtual bool unsubscribeMarketData(const core::Symbol& tradingPair, const std::optional<std::string>& exchangeId = std::nullopt) = 0;
+    virtual bool unsubscribeMarketData(const core::Symbol& tradingPair, const std::optional<std::string>& exchangeId = std::nullopt) { (void)tradingPair; (void)exchangeId; return true; }
     
     /**
      * Get trading fees
@@ -160,7 +155,7 @@ public:
      * @param tradingPair Optional trading pair
      * @return Map of fee types to fee values
      */
-    virtual std::map<std::string, double> getTradingFees(const core::ExchangeId& exchangeId, const std::optional<std::string>& tradingPair = std::nullopt) = 0;
+    virtual std::map<std::string, double> getTradingFees(const core::ExchangeId& exchangeId, const std::optional<std::string>& tradingPair = std::nullopt) { return {}; }
     
         /**
          * REST fallback: ask the underlying REST client for a current price (may be rate-limited)

@@ -3,8 +3,8 @@
 #include <string>
 #include <optional>
 #include <chrono>
-#include "risk_events.hpp"
-
+#include "risk/storage/event_store.hpp"
+#include "risk/risk_events.hpp"
 namespace trading::risk::storage {
 
 class EventStore {

@@ -106,6 +106,23 @@ public:
         std::shared_ptr<DataInterface> dataInterface,
         const Config& config
     );
+
+    // Backwards-compatible constructor used by older tests/code that pass a
+    // RiskConfig and a DataInterface. It extracts the FatFingerConfig from the
+    // provided RiskConfig.
+    explicit FatFingerProtection(const RiskConfig& riskConfig, std::shared_ptr<DataInterface> dataInterface) {
+        dataInterface_ = std::move(dataInterface);
+        // Copy fields individually to avoid requiring an assignment operator
+        // between potentially different config types returned by RiskConfig.
+        auto ff = riskConfig.getFatFingerConfig();
+        config_.priceDeviationThreshold = ff.priceDeviationThreshold;
+        config_.sizeAnomalyThreshold = ff.sizeAnomalyThreshold;
+        config_.notionalValueThreshold = ff.notionalValueThreshold;
+        config_.minimumHistorySize = ff.defaultTypicalSize;
+        config_.rejectHighNotionalOrders = ff.rejectHighNotionalOrders;
+        totalValidations_ = 0;
+        rejectedOrders_ = 0;
+    }
     
     bool initialize();
     // isHealthy

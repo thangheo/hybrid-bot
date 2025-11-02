@@ -75,8 +75,8 @@
          ExecutionReport report;
          report.orderId = "test-order-1";
          report.exchangeOrderId = "binance-12345";
-         report.exchangeId = "binance";
-         report.tradingPair = "BTC/USDT";
+         report.exchangeId = ExchangeId::fromString("binance");
+         report.tradingPair = TradingPair::fromString("BTC/USDT");
          report.side = "buy";
          report.status = "filled";
          report.filledQuantity = 1.0;

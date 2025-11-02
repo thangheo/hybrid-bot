@@ -75,7 +75,7 @@
          btcPosition.tradingPair = TradingPair("BTC/USDT");
          btcPosition.quantity = 1.0;
          btcPosition.averageEntryPrice = 48000.0;
-         btcPosition.exchangeId = "exchange1";
+         btcPosition.exchangeId = ExchangeId::fromString("exchange1");
          btcPosition.strategyId = "strategy1";
          
          Position ethPosition;
@@ -83,7 +83,7 @@
          ethPosition.tradingPair = TradingPair("ETH/USDT");
          ethPosition.quantity = 10.0;
          ethPosition.averageEntryPrice = 2800.0;
-         ethPosition.exchangeId = "exchange1";
+         ethPosition.exchangeId = ExchangeId::fromString("exchange1");
          ethPosition.strategyId = "strategy1";
          
          positions.push_back(btcPosition);
@@ -216,7 +216,7 @@
      orderRequest.quantity = 0.5;  // Below position limit
      orderRequest.price = 49000.0;  // Within 10% of market price
      orderRequest.timeInForce = "GTC";
-     orderRequest.exchangeId = "exchange1";
+     orderRequest.exchangeId = ExchangeId::fromString("exchange1");
      orderRequest.strategyId = "strategy1";
      
      // Validate the order
@@ -239,7 +239,7 @@
      orderRequest.quantity = 1.5;  // Would result in position of 1.0 + 1.5 = 2.5 > limit of 2.0
      orderRequest.price = 49000.0;
      orderRequest.timeInForce = "GTC";
-     orderRequest.exchangeId = "exchange1";
+     orderRequest.exchangeId = ExchangeId::fromString("exchange1");
      orderRequest.strategyId = "strategy1";
      
      // Validate the order
@@ -262,7 +262,7 @@
      orderRequest.quantity = 2.0;  // Valid position
      orderRequest.price = 2500.0;  // More than 10% below market price of 3000
      orderRequest.timeInForce = "GTC";
-     orderRequest.exchangeId = "exchange1";
+     orderRequest.exchangeId = ExchangeId::fromString("exchange1");
      orderRequest.strategyId = "strategy1";
      
      // Validate the order
@@ -285,7 +285,7 @@
      orderRequest.quantity = 100.0;
      orderRequest.price = 0.5;
      orderRequest.timeInForce = "GTC";
-     orderRequest.exchangeId = "exchange1";
+     orderRequest.exchangeId = ExchangeId::fromString("exchange1");
      orderRequest.strategyId = "strategy1";
      
      // Validate the order
@@ -308,7 +308,7 @@
      orderRequest.quantity = 5.0;  // $250k at price of 50k
      orderRequest.price = 50000.0;
      orderRequest.timeInForce = "GTC";
-     orderRequest.exchangeId = "exchange1";
+     orderRequest.exchangeId = ExchangeId::fromString("exchange1");
      orderRequest.strategyId = "strategy1";
      
      // Validate the order
@@ -333,11 +333,11 @@
      // Create a trading signal
      TradingSignal signal;
      signal.id = "integration-signal-1";
-     signal.tradingPair = TradingPair("BTC/USDT");
+     signal.setTradingPair(TradingPair("BTC/USDT"));
      signal.direction = Direction::BUY;
      signal.targetSize = 0.5;
-     signal.strategyId = "strategy1";
-     signal.exchangeId = "exchange1";
+     signal.setStrategyId(StrategyId("strategy1"));
+     signal.exchangeId = ExchangeId::fromString("exchange1");
      
      // Validate the signal
      ValidationResult result = riskFilter->validateSignal(signal);

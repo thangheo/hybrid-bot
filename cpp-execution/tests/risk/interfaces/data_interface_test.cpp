@@ -11,7 +11,7 @@
  #include <memory>
  #include <thread>
  #include <chrono>
- 
+ using namespace trading;
  // Mock for ZeroMQ client
  namespace trading {
  namespace common {
@@ -38,9 +38,9 @@
          // Helper method to generate subscription key
          std::string generateSubscriptionKey(const risk::TradingPair& tradingPair, 
                                            const std::optional<risk::ExchangeId>& exchangeId) {
-             std::string key = tradingPair;
-             if (exchangeId) {
-                 key += ":" + *exchangeId;
+             std::string key = tradingPair.toString();
+             if (exchangeId.has_value()) {
+                 key += ":" + exchangeId->toString();
              }
              return key;
          }
@@ -50,8 +50,8 @@
              nlohmann::json json;
              json["order_id"] = request.orderId;
              json["client_order_id"] = request.clientOrderId;
-             json["exchange_id"] = request.exchangeId;
-             json["trading_pair"] = request.tradingPair;
+             json["exchange_id"] = request.exchangeId.toString();
+             json["trading_pair"] = request.tradingPair.toString();
              json["side"] = request.side == risk::OrderSide::BUY ? "buy" : "sell";
              json["type"] = request.type;
              json["quantity"] = request.quantity;
@@ -59,7 +59,7 @@
              json["time_in_force"] = request.timeInForce;
              json["strategy_id"] = request.strategyId;
              json["signal_id"] = request.signalId;
-             json["timestamp"] = request.timestamp;
+             json["timestamp"] = std::chrono::duration_cast<std::chrono::milliseconds>(request.timestamp.time_since_epoch()).count();
              
              if (!request.params.empty()) {
                  json["params"] = nlohmann::json::object();
@@ -74,10 +74,10 @@
          // Helper to parse OrderRequest from JSON
          risk::OrderRequest jsonToOrderRequest(const nlohmann::json& json) {
              risk::OrderRequest request;
-             request.orderId = json["order_id"];
-             request.clientOrderId = json["client_order_id"];
-             request.exchangeId = json["exchange_id"];
-             request.tradingPair = json["trading_pair"];
+             request.orderId = json["order_id"].get<std::string>();
+             request.clientOrderId = json["client_order_id"].get<std::string>();
+             request.exchangeId = risk::ExchangeId::fromString(json["exchange_id"].get<std::string>());
+             request.tradingPair = risk::TradingPair::fromString(json["trading_pair"].get<std::string>());
              request.side = json["side"] == "buy" ? risk::OrderSide::BUY : risk::OrderSide::SELL;
              request.type = json["type"];
              request.quantity = json["quantity"];
@@ -85,8 +85,8 @@
              request.timeInForce = json["time_in_force"];
              request.strategyId = json["strategy_id"];
              request.signalId = json["signal_id"];
-             request.timestamp = json["timestamp"];
-             
+             request.timestamp = std::chrono::system_clock::time_point(std::chrono::milliseconds(json["timestamp"].get<long long>()));
+
              if (json.contains("params") && json["params"].is_object()) {
                  for (auto it = json["params"].begin(); it != json["params"].end(); ++it) {
                      request.params[it.key()] = it.value();
@@ -113,11 +113,11 @@
              
              nlohmann::json request = {
                  {"action", "get_market_data"},
-                 {"trading_pair", tradingPair}
+                 {"trading_pair", tradingPair.toString()}
              };
-             
+
              if (exchangeId) {
-                 request["exchange_id"] = *exchangeId;
+                 request["exchange_id"] = exchangeId->toString();
              }
              
              std::string response = mockClient_->sendAndReceive(request.dump());
@@ -125,15 +125,15 @@
              
              if (responseJson["success"].get<bool>()) {
                  risk::MarketData marketData;
-                 marketData.tradingPair = responseJson["data"]["trading_pair"];
-                 marketData.exchangeId = responseJson["data"]["exchange_id"];
-                 marketData.timestamp = responseJson["data"]["timestamp"];
-                 marketData.price = responseJson["data"]["price"];
-                 marketData.volume = responseJson["data"]["volume"];
-                 marketData.bid = responseJson["data"]["bid"];
-                 marketData.ask = responseJson["data"]["ask"];
-                 marketData.lastTradePrice = responseJson["data"]["last_trade_price"];
-                 marketData.lastTradeQuantity = responseJson["data"]["last_trade_quantity"];
+                 marketData.tradingPair = risk::TradingPair::fromString(responseJson["data"]["trading_pair"].get<std::string>());
+                 marketData.exchangeId = risk::ExchangeId::fromString(responseJson["data"]["exchange_id"].get<std::string>());
+                 marketData.timestamp = std::chrono::system_clock::time_point(std::chrono::milliseconds(responseJson["data"]["timestamp"].get<long long>()));
+                 marketData.price = responseJson["data"]["price"].get<double>();
+                 marketData.volume = responseJson["data"]["volume"].get<double>();
+                 marketData.bid = responseJson["data"]["bid"].get<double>();
+                 marketData.ask = responseJson["data"]["ask"].get<double>();
+                 marketData.lastTradePrice = responseJson["data"]["last_trade_price"].get<double>();
+                 marketData.lastTradeQuantity = responseJson["data"]["last_trade_quantity"].get<double>();
                  return marketData;
              }
              
@@ -146,11 +146,11 @@
              
              nlohmann::json request = {
                  {"action", "get_current_price"},
-                 {"trading_pair", tradingPair}
+                 {"trading_pair", tradingPair.toString()}
              };
-             
+
              if (exchangeId) {
-                 request["exchange_id"] = *exchangeId;
+                 request["exchange_id"] = exchangeId->toString();
              }
              
              std::string response = mockClient_->sendAndReceive(request.dump());
@@ -173,13 +173,13 @@
              
              nlohmann::json request = {
                  {"action", "get_historical_prices"},
-                 {"trading_pair", tradingPair},
+                 {"trading_pair", tradingPair.toString()},
                  {"interval", interval},
                  {"count", count}
              };
-             
+
              if (exchangeId) {
-                 request["exchange_id"] = *exchangeId;
+                 request["exchange_id"] = exchangeId->toString();
              }
              
              std::string response = mockClient_->sendAndReceive(request.dump());
@@ -188,7 +188,8 @@
              if (responseJson["success"].get<bool>()) {
                  std::vector<std::pair<risk::Timestamp, double>> prices;
                  for (const auto& price : responseJson["prices"]) {
-                     prices.emplace_back(price["timestamp"].get<risk::Timestamp>(), price["price"].get<double>());
+                     auto ts = std::chrono::system_clock::time_point(std::chrono::milliseconds(price["timestamp"].get<long long>()));
+                     prices.emplace_back(ts, price["price"].get<double>());
                  }
                  return prices;
              }
@@ -203,12 +204,12 @@
              
              nlohmann::json request = {
                  {"action", "get_volatility"},
-                 {"trading_pair", tradingPair},
+                 {"trading_pair", tradingPair.toString()},
                  {"timeframe", timeframe}
              };
-             
+
              if (exchangeId) {
-                 request["exchange_id"] = *exchangeId;
+                 request["exchange_id"] = exchangeId->toString();
              }
              
              std::string response = mockClient_->sendAndReceive(request.dump());
@@ -228,8 +229,8 @@
              
              nlohmann::json request = {
                  {"action", "get_order_history"},
-                 {"exchange_id", exchangeId},
-                 {"trading_pair", tradingPair},
+                 {"exchange_id", exchangeId.toString()},
+                 {"trading_pair", tradingPair.toString()},
                  {"limit", limit}
              };
              
@@ -252,7 +253,7 @@
              
              nlohmann::json request = {
                  {"action", "get_exchange_balances"},
-                 {"exchange_id", exchangeId}
+                 {"exchange_id", exchangeId.toString()}
              };
              
              std::string response = mockClient_->sendAndReceive(request.dump());
@@ -286,11 +287,11 @@
              
              nlohmann::json request = {
                  {"action", "subscribe_market_data"},
-                 {"trading_pair", tradingPair}
+                 {"trading_pair", tradingPair.toString()}
              };
-             
+
              if (exchangeId) {
-                 request["exchange_id"] = *exchangeId;
+                 request["exchange_id"] = exchangeId->toString();
              }
              
              std::string response = mockClient_->sendAndReceive(request.dump());
@@ -317,11 +318,11 @@
              
              nlohmann::json request = {
                  {"action", "unsubscribe_market_data"},
-                 {"trading_pair", tradingPair}
+                 {"trading_pair", tradingPair.toString()}
              };
-             
+
              if (exchangeId) {
-                 request["exchange_id"] = *exchangeId;
+                 request["exchange_id"] = exchangeId->toString();
              }
              
              std::string response = mockClient_->sendAndReceive(request.dump());
@@ -341,11 +342,11 @@
              
              nlohmann::json request = {
                  {"action", "get_trading_fees"},
-                 {"exchange_id", exchangeId}
+                 {"exchange_id", exchangeId.toString()}
              };
-             
+
              if (tradingPair) {
-                 request["trading_pair"] = *tradingPair;
+                 request["trading_pair"] = tradingPair->toString();
              }
              
              std::string response = mockClient_->sendAndReceive(request.dump());
@@ -387,16 +388,16 @@
          risk::OrderRequest order;
          order.orderId = "test_order_123";
          order.clientOrderId = "client_order_123";
-         order.exchangeId = "binance";
-         order.tradingPair = "BTC/USDT";
+         order.exchangeId = risk::ExchangeId::fromString("binance");
+         order.tradingPair = risk::TradingPair::fromString("BTC/USDT");
          order.side = risk::OrderSide::BUY;
-         order.type = "LIMIT";
-         order.getQuantity() = 1.0;
-         order.getPrice() = 50000.0;
+         order.type = models::OrderType::LIMIT;
+         order.quantity = 1.0;
+         order.price = 50000.0;
          order.timeInForce = "GTC";
          order.strategyId = "strategy1";
          order.signalId = "signal123";
-         order.timestamp = 1619817600000;
+         order.timestamp = std::chrono::system_clock::time_point(std::chrono::milliseconds(1619817600000));
          order.params["post_only"] = "true";
          return order;
      }
@@ -521,8 +522,8 @@
      ordersJson.push_back({
          {"order_id", order1.orderId},
          {"client_order_id", order1.clientOrderId},
-         {"exchange_id", order1.exchangeId},
-         {"trading_pair", order1.tradingPair},
+        {"exchange_id", order1.exchangeId.toString()},
+        {"trading_pair", order1.tradingPair.toString()},
          {"side", "buy"},
          {"type", order1.type},
          {"quantity", order1.quantity},
@@ -536,8 +537,8 @@
      ordersJson.push_back({
          {"order_id", order2.orderId},
          {"client_order_id", order2.clientOrderId},
-         {"exchange_id", order2.exchangeId},
-         {"trading_pair", order2.tradingPair},
+        {"exchange_id", order2.exchangeId.toString()},
+        {"trading_pair", order2.tradingPair.toString()},
          {"side", "buy"},
          {"type", order2.type},
          {"quantity", order2.quantity},

@@ -85,7 +85,7 @@ protected:
 // Test complete pipeline for a market buy order
 // TEST_F(OrderPipelineIntegrationTest, MarketBuyOrderPipeline) {
 //     OrderGenerationParams params;
-//     params.tradingPair = "BTC/USDT";
+//     params.tradingPair = TradingPair::fromString("BTC/USDT");
 //     params.side = OrderSide::BUY;
 //     params.type = OrderType::MARKET;
 //     params.quantity = 0.1;
@@ -107,7 +107,7 @@ protected:
 // Test complete pipeline for a limit sell order
 TEST_F(OrderPipelineIntegrationTest, LimitSellOrderPipeline) {
     OrderGenerationParams params;
-    params.tradingPair = "ETH/USDT";
+    params.tradingPair = TradingPair::fromString("ETH/USDT");
     params.side = OrderSide::SELL;
     params.type = OrderType::LIMIT;
     params.quantity = 1.0;
@@ -173,7 +173,7 @@ TEST_F(OrderPipelineIntegrationTest, CustomizedPipeline) {
     
     // Process an order through the customized pipeline
     OrderGenerationParams params;
-    params.tradingPair = "BTC/USDT";
+    params.tradingPair = TradingPair::fromString("BTC/USDT");
     params.side = OrderSide::BUY;
     params.type = OrderType::MARKET;  // Should be converted to limit
     params.quantity = 0.2;
@@ -193,7 +193,7 @@ TEST_F(OrderPipelineIntegrationTest, CustomizedPipeline) {
 TEST_F(OrderPipelineIntegrationTest, ErrorHandlingInPipeline) {
     // Invalid order params (zero quantity)
     OrderGenerationParams invalid_params;
-    invalid_params.tradingPair = "BTC/USDT";
+    invalid_params.tradingPair = TradingPair::fromString("BTC/USDT");
     invalid_params.side = OrderSide::BUY;
     invalid_params.quantity = 0.0;  // Invalid
     
@@ -201,7 +201,7 @@ TEST_F(OrderPipelineIntegrationTest, ErrorHandlingInPipeline) {
     
     // Unknown trading pair
     OrderGenerationParams unknown_pair;
-    unknown_pair.tradingPair = "UNKNOWN/USDT";
+    unknown_pair.tradingPair = TradingPair::fromString("UNKNOWN/USDT");
     unknown_pair.side = OrderSide::BUY;
     unknown_pair.quantity = 1.0;
     
