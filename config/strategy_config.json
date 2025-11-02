@@ -1,5 +1,5 @@
 {
-  "strategy_id": "order_imbalance_btc_usdt",
+  "strategy_id": "order_imbalance",
   "version": "1.2.0",
   
   "tradingPairs": [
@@ -338,8 +338,9 @@
     },
     "momentumCorrelator": {
       "parameters": {
-        "correlationWindowMs": 120000,
-        "predictionHorizonMs": 5000
+        "correlationWindowMs": 60000,
+        "predictionHorizonMs": 5000,
+        "ewmaHalfLifeMs": 10000
       }
     },
     "thresholdManager": {

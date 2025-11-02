@@ -45,6 +45,15 @@ MomentumCorrelation::MomentumCorrelation(const MomentumCorrelationConfig& config
     //  int predictionHorizonMs = 5000;        // Prediction horizon in milliseconds
     }
 
+// Helper: compute EWMA alpha from half-life (milliseconds) and dt (milliseconds)
+static double ewma_alpha(double half_life_ms, double dt_ms) {
+    if (half_life_ms <= 0.0) return 1.0;
+    // alpha such that after dt, weight = 2^{-dt/half_life}
+    double exponent = - (dt_ms / half_life_ms) * std::log(2.0);
+    double decay = std::exp(exponent);
+    return 1.0 - decay; // blending factor for new value
+}
+
 void MomentumCorrelation::updateCorrelationModel(
     const OrderBookMetrics& metrics, const PriceMovement& movement) {
     
@@ -150,6 +159,7 @@ void MomentumCorrelation::updateParameters(const ParameterSet& params) {
     params_.strong_correlation_threshold = params.getDouble("strong_correlation_threshold", params_.strong_correlation_threshold);
     params_.max_level_depth = params.getInt("max_level_depth", params_.max_level_depth);
     params_.top_metrics_count = params.getInt("top_metrics_count", params_.top_metrics_count);
+    params_.ewma_half_life_ms = params.getDouble("ewma_half_life_ms", params_.ewma_half_life_ms);
     // Update the timestamp to reflect the last update
 }
 
@@ -282,13 +292,25 @@ void MomentumCorrelation::calculateCorrelations() {
                 double correlation = weightSum > 0 ? covariance / weightSum : 0.0;
                 correlation = std::clamp(correlation, -1.0, 1.0);
 
-                // Apply decay if exists
+                // Time-aware EWMA smoothing using configured half-life (ms)
+                uint64_t now_ms = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::system_clock::now().time_since_epoch()).count());
+
+                double blended = correlation;
                 if (correlation_coefficients_.count(metric.name)) {
-                    correlation = params_.correlation_decay_rate * correlation_coefficients_[metric.name] +
-                                  (1.0 - params_.correlation_decay_rate) * correlation;
+                    uint64_t last_ms = 0;
+                    auto itlu = last_update_ms_.find(metric.name);
+                    if (itlu != last_update_ms_.end()) last_ms = itlu->second;
+                    double dt_ms = static_cast<double>(now_ms > last_ms ? (now_ms - last_ms) : 0);
+
+                    double half_life = params_.ewma_half_life_ms > 0.0 ? params_.ewma_half_life_ms : 10000.0;
+                    double alpha = ewma_alpha(half_life, dt_ms);
+                    blended = (1.0 - alpha) * correlation_coefficients_[metric.name] + alpha * correlation;
                 }
 
-                newCorrelationCoeffs[metric.name] = correlation;
+                newCorrelationCoeffs[metric.name] = blended;
+                last_update_ms_[metric.name] = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::system_clock::now().time_since_epoch()).count());
                 newCorrelationStrengths[metric.name] = std::abs(correlation);
             }
             catch (const std::bad_alloc& e) {
