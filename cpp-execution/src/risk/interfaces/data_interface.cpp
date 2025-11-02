@@ -294,6 +294,60 @@ public:
             return {};
         }
     }
+
+    // Fetch current positions by querying exchange balances and mapping them to Position objects
+    std::vector<Position> fetchCurrentPositions() override {
+        std::vector<Position> positions;
+
+        if (!initialized_ || !marketDataInterface_owner_) {
+            LOG_WARN("DataInterface", "fetchCurrentPositions called before initialization or without underlying interface");
+            return positions;
+        }
+
+        try {
+            // Iterate over supported exchanges and collect balances
+            auto exchanges = core::ExchangeId::getAllSupported();
+            for (const auto& ex : exchanges) {
+                try {
+                    auto balances = marketDataInterface_owner_->getExchangeBalances(ex);
+                    for (const auto& [asset, balance] : balances) {
+                        if (std::abs(balance) < 1e-12) continue;
+
+                        // Map asset balance to a TradingPair like "ASSET/USDT" as a reasonable default
+                        core::Symbol tradingPairSym(asset + "/USDT");
+                        TradingPair tradingPair = TradingPair(tradingPairSym);
+
+                        core::StrategyId strategyId;
+                        strategyId.id = "reconciliation";
+                        strategyId.version = "1.0";
+
+                        // Try to fetch a current market price for the implied pair
+                        double avgPrice = 0.0;
+                        try {
+                            avgPrice = marketDataInterface_owner_->getCurrentPrice(tradingPairSym, std::optional<std::string>(ex.toString()));
+                        } catch (...) {
+                            // ignore - leave avgPrice as 0.0
+                        }
+
+                        Position pos(ex, tradingPair, strategyId, balance, avgPrice);
+                        if (avgPrice > 0.0) {
+                            pos.setCurrentPrice(avgPrice);
+                        }
+                        pos.setUnrealizedPnl(0.0);
+                        pos.setRealizedPnl(0.0);
+                        positions.push_back(std::move(pos));
+                    }
+                } catch (const std::exception& e) {
+                    LOG_WARN("DataInterface", std::string("Failed to fetch balances for ") + ex.toString() + ": " + e.what());
+                    continue;
+                }
+            }
+        } catch (const std::exception& e) {
+            LOG_ERROR(std::string("DataInterface::fetchCurrentPositions exception: ") + e.what());
+        }
+
+        return positions;
+    }
     
     // Additional helper methods for enhanced functionality
     void updateBalance(const core::ExchangeId& exchangeId, const std::string& asset, double balance) {

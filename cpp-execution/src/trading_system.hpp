@@ -204,6 +204,11 @@ private:
     std::atomic<bool> running_;
     std::atomic<bool> systemHealthy_;
     std::chrono::steady_clock::time_point startTime_;
+    // Warm-up period: do not send real orders during the initial warmupDuration_
+    // Default to 5 minutes (300 seconds)
+    std::chrono::seconds warmupDuration_{300};
+    // Count how many orders were suppressed during warmup for diagnostics
+    std::atomic<size_t> suppressedOrdersDuringWarmup_{0};
     
     // Monitoring threads
     std::vector<std::thread> monitoringThreads_;
@@ -264,6 +269,8 @@ private:
     void setupComponentConnections() ;
     
     void realExecution(const execution::TradingSignal& signal) ;
+    // Returns true if the system is still in its warm-up period after start()
+    bool isWarmupActive() const;
 
 };
 
