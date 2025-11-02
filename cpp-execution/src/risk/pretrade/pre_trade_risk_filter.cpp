@@ -208,10 +208,10 @@ ValidationResult PreTradeRiskFilter::validateSignal(const TradingSignal& signal)
     // Start timing the validation
     auto startTime = std::chrono::high_resolution_clock::now();
 
-    LOG_DEBUG("Validating signal: id={}, pair={}, direction={}, size={}, quantity={}",
+    LOG_DEBUG("Validating signal: id={}, pair={}, direction={}, size={}",
               signal.getSignalId(), signal.getTradingPair(),
               (signal.getDirection() == core::Direction::BUY ? "BUY" : "SELL"),
-                signal.getTargetSize(), signal.getQuantity());
+              signal.getTargetSize());
 
     // Check if we're in emergency mode - reject all signals
     if (m_activeMode == RiskManagerMode::EMERGENCY) {
@@ -409,8 +409,11 @@ ValidationResult PreTradeRiskFilter::performAllChecks(const TradingSignal& signa
             // Compute allowed size based on current exposure and limits
             // We'll use getAllowedPositionSize which factors asset exposure and position limits
             double allowedSize = getAllowedPositionSize(signal.getTradingPair());
-            // Ensure we don't increase size accidentally
-            allowedSize = std::min(allowedSize, signal.getTargetSize());
+            // allowedSize returned in USD. Do NOT compare/min with signal.getTargetSize()
+            // because signal.getTargetSize() may be a fractional value (<=1). Instead
+            // when targetSize is fractional, we compute an adjusted quantity from
+            // the allowed USD using a mild tilt so the signal still modulates
+            // allocation but does not double-scale.
 
             auto exposureViolations = m_exposureCalculator->getViolationDetails(signal);
             result.violations.insert(result.violations.end(), 
@@ -428,14 +431,17 @@ ValidationResult PreTradeRiskFilter::performAllChecks(const TradingSignal& signa
                     result.violations.push_back(v);
                     LOG_WARN("Signal {} rejected: price unavailable for capping", signal.getSignalId());
                 } else {
-                    double cappedQty = allowedSize / currentPrice; // quantity in asset units
-                    double adjustedSize = signal.getTargetSize();
-                    if (signal.getTargetSize() <= 1.0) {
-                        // interpret targetSize as fraction of some nominal; map fraction = qty / (qty + currentPosition)
-                        // We don't have the denominator here; instead, return capped quantity as absolute quantity in adjustedSize
-                        adjustedSize = cappedQty;
+                    double cappedQty = allowedSize / currentPrice; // maximum quantity we can buy with allowed USD
+                    double adjustedSize = 0.0;
+                    double target = signal.getTargetSize();
+                    if (target <= 1.0) {
+                        // Fractional target: apply mild tilt so signal modulates allocation
+                        double clampedTarget = std::clamp(target, 0.0, 1.0);
+                        double targetMultiplier = 0.5 + 0.5 * clampedTarget; // 0.5..1.0
+                        adjustedSize = cappedQty * targetMultiplier;
                     } else {
-                        adjustedSize = std::min(signal.getTargetSize(), cappedQty);
+                        // Absolute quantity: ensure we do not exceed cappedQty
+                        adjustedSize = std::min(target, cappedQty);
                     }
 
                     result.approved = true;

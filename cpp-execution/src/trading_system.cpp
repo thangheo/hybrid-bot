@@ -1070,7 +1070,8 @@ void Trading_system::execWorkerLoop(size_t workerId) {
                 LOG_WARN("ExecWorker: current price unavailable for {} - falling back to raw notional as qty", task.symbol.toString());
                 finalQty = notionalUsd;
             }
-
+            //set quantity to 6 decimal places for task
+            task.setQuantity(std::round(finalQty * 1e6) / 1e6);
             // If the USD notional is below the minimum order notional, bump to a small default
             // using the current price to compute quantity. Use notionalUsd for the comparison.
             const double minNotionalUsd = 10.0;
