@@ -1047,9 +1047,15 @@ void Trading_system::execWorkerLoop(size_t workerId) {
             allowedSize = std::clamp(allowedSize, 10.0, 5000.0);
             double positionSize = allowedSize * sizerFraction;
 
-            
-
-            double notionalUsd = positionSize * task.targetSize;
+            // `task.targetSize` is a fractional signal strength in [0,1]. Instead
+            // of multiplying it directly (which causes double-scaling when both
+            // it and the position sizer output are fractions), apply it as a
+            // mild tilting multiplier in the range [0.5, 1.0]. This preserves
+            // the position sizer as the primary risk controller while letting
+            // the signal modulate allocation.
+            double clampedTarget = std::clamp(task.targetSize, 0.0, 1.0);
+            double targetMultiplier = 0.5 + 0.5 * clampedTarget; // 0.5..1.0
+            double notionalUsd = positionSize * targetMultiplier;
 
             // Ensure we have a recent price before converting to quantity
             std::optional<double> currentPriceOpt = dataIngestionService_->getLastPrice(task.exchangeId, task.symbol);
