@@ -203,6 +203,11 @@ public:
      * @param performanceTracker Pointer to performance tracker
      */
     void setSignalPerformanceTracker(std::shared_ptr<SignalPerformanceTracker> performanceTracker);
+    /**
+     * @brief Set the StrategyId to tag generated signals with
+     * @param strategyId Strategy identifier (id + version)
+     */
+    void setStrategyId(const core::StrategyId& strategyId);
 
 private:
   // volatilityEstimator_
@@ -229,6 +234,9 @@ private:
     
     // Thread safety
     mutable std::mutex mutex_;
+    // Optional strategy identifier to tag generated signals. If empty/invalid,
+    // generator will not override the signal's own value.
+    core::StrategyId strategyId_;
     
     // Core signal generation methods
     /**
