@@ -1056,7 +1056,11 @@ void Trading_system::execWorkerLoop(size_t workerId) {
                 }
                 metrics["volatility"] = vol;
                 std::map<std::string, double> portfolio;
-                sizerFraction = positionSizer_->calculateSize(task.symbol.toString(), metrics, portfolio);
+                //only calculate for buy orders
+                if (task.direction == core::Direction::BUY) {                    
+                    //why calculate sizer for sell orders? we are not increasing position size
+                    sizerFraction = positionSizer_->calculateSize(task.symbol.toString(), metrics, portfolio);
+                }
             }
             //allowedSize = std::max(allowedSize, 0.0);
             // allowedSize is in usdt, so clamp it from 10$(min order size) to 5000$ (max order size)
@@ -1072,7 +1076,7 @@ void Trading_system::execWorkerLoop(size_t workerId) {
           
             if (finalQty * currentPrice < 10.0) {
                 finalQty = 12.0 / currentPrice;
-            }// yes. fuck u
+            }
             report.setQuantity(finalQty);
             report.setFilledQuantity(finalQty);
             report.setStatus(execution::models::OrderState::FILLED);

@@ -17,6 +17,8 @@ double PositionSizer::calculateSize(const std::string& symbol,
                                    const std::map<std::string, double>& portfolio) const {
     double base = cfg_.base_risk_per_trade;
     double size = base;
+    //do you even know what the fuck is this size?
+    //size is the fucking fraction of fucking capital. size 0 mean you hold till dead. fucking trash
 
     if (cfg_.method == "kelly_criterion") {
         size = kellySizing(signalMetrics);

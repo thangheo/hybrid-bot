@@ -427,6 +427,9 @@ ExecutionResponse ExecutionService::executeSignal(const TradingSignal& signal) {
                     auto adjResult = balanceValidator_->validateOrder(*exchange_order, exchangeId, false);
                     if (adjResult.isValid) {
                         std::cout << "✅ Adjusted quantity passed balance validation; proceeding with adjusted order." << std::endl;
+                        // overwrite balanceResult so subsequent logging reflects adjusted quantity/requirements
+                        balanceResult = adjResult;
+
                         // update lifecycle tracker with new quantity (best-effort)
                         order_lifecycle_tracker_->updateOrderState(
                             exchange_order->getClientOrderId(),
@@ -532,17 +535,57 @@ ExecutionResponse ExecutionService::executeSignal(const TradingSignal& signal) {
         std::cout << "✅ Final balance check passed - proceeding to submit order" << std::endl;
     }
 
-    if (exchangeGateway_) {
-        // NEW: Use ExchangeGateway (with caching and rate limiting)
-        auto executionFuture = exchangeGateway_->placeOrder(order);
-        executionReport = executionFuture.get();
-    } else {
-        // EXISTING: Use direct API client (legacy mode)
-        auto exchangeId = order.getExchangeId();
-        auto client = api_client_manager_->getClient(exchangeId);
-        auto executionFuture = client->placeOrder(order);
-        executionReport = executionFuture.get();
-    }
+        // Before submitting, perform a forced fresh validation to avoid cached-stale passes
+        try {
+            auto finalValidation = balanceValidator_->validateOrder(*exchange_order, exchangeId, true);
+            if (!finalValidation.isValid) {
+                std::cout << "❌ Final forced balance validation failed before submit: " << finalValidation.reason << std::endl;
+                order_lifecycle_tracker_->updateOrderState(
+                    exchange_order->getClientOrderId(),
+                    models::OrderState::REJECTED,
+                    exchange_order->getExchangeOrderId(),
+                    "Final balance validation failed before submit: " + finalValidation.reason
+                );
+
+                return ExecutionResponse{
+                    exchange_order->getClientOrderId(),
+                    "",
+                    false,
+                    std::string("Final balance validation failed before submit: ") + finalValidation.reason,
+                    std::chrono::system_clock::now(),
+                    "REJECTED_FINAL_BALANCE_CHECK"
+                };
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "Warning: exception during final balance validation: " << e.what() << " - proceeding to submit (best-effort)" << std::endl;
+        }
+
+        if (exchangeGateway_) {
+            // NEW: Use ExchangeGateway (with caching and rate limiting)
+            auto executionFuture = exchangeGateway_->placeOrder(*exchange_order);
+            executionReport = executionFuture.get();
+        } else {
+            // EXISTING: Use direct API client (legacy mode)
+            auto client = api_client_manager_->getClient(exchange_order->getExchangeId());
+            if (!client) {
+                order_lifecycle_tracker_->updateOrderState(
+                    exchange_order->getClientOrderId(),
+                    models::OrderState::REJECTED,
+                    exchange_order->getExchangeOrderId(),
+                    "Exchange API client not available"
+                );
+
+                return ExecutionResponse{
+                    exchange_order->getClientOrderId(), "", false,
+                    "Exchange API client not available",
+                    std::chrono::system_clock::now(),
+                    ""
+                };
+            }
+
+            auto executionFuture = client->placeOrder(*exchange_order);
+            executionReport = executionFuture.get();
+        }
     
     // Wait for the result
     models::ExecutionReport result;
@@ -604,20 +647,20 @@ ExecutionResponse ExecutionService::executeSignal(const TradingSignal& signal) {
                         auto freshValidation = balanceValidator_->validateOrder(*exchange_order, exchangeId, true);
                         if (freshValidation.isValid) {
                             std::cout << "[BALANCE] Fresh validation PASSED, attempting one retry submit for " << exchange_order->getClientOrderId() << std::endl;
-                            try {
-                                // perform one resubmit attempt
-                                if (exchangeGateway_) {
-                                    auto retryFuture = exchangeGateway_->placeOrder(order);
-                                    executionReport = retryFuture.get();
-                                } else {
-                                    auto client = api_client_manager_->getClient(exchangeId);
-                                    if (client) {
-                                        auto retryFuture = client->placeOrder(order);
+                                try {
+                                    // perform one resubmit attempt using the possibly-adjusted exchange_order
+                                    if (exchangeGateway_) {
+                                        auto retryFuture = exchangeGateway_->placeOrder(*exchange_order);
                                         executionReport = retryFuture.get();
                                     } else {
-                                        std::cerr << "Warning: cannot retry submit - api client unavailable for exchange: " << exchangeId.toString() << std::endl;
+                                        auto client = api_client_manager_->getClient(exchangeId);
+                                        if (client) {
+                                            auto retryFuture = client->placeOrder(*exchange_order);
+                                            executionReport = retryFuture.get();
+                                        } else {
+                                            std::cerr << "Warning: cannot retry submit - api client unavailable for exchange: " << exchangeId.toString() << std::endl;
+                                        }
                                     }
-                                }
 
                                 // Refresh our result to the retry outcome
                                 try {
