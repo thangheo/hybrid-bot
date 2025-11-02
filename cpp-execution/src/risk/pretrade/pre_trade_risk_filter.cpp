@@ -174,31 +174,34 @@ bool PreTradeRiskFilter::shutdown() {
 
 // getAllowedPositionSize
 double PreTradeRiskFilter::getAllowedPositionSize(const TradingPair& tradingPair) const {
-    // Query position limit checker for max position size
-    double maxPosition = m_positionLimitChecker->getPositionLimit(tradingPair.base, "default_strategy");
-    
-    // Query exposure calculator for current exposure
+    // Return allowed position size expressed as USD notional.
+    // Compute: allowed = min(assetLimitUsd - currentExposureUsd, exposureLimit.maxAssetExposure - currentExposureUsd)
+    // All values are USD.
+    std::string baseAsset = tradingPair.base;
+
+    double assetLimitUsd = m_positionLimitChecker->getPositionLimit(baseAsset, "default_strategy");
+
+    // Query exposure calculator for current exposure in USD for this asset
     TradingSignal tempSignal;
     tempSignal.setId("temp_signal");
     tempSignal.setTradingPair(tradingPair.toString());
     tempSignal.setDirection(core::Direction::BUY);
     tempSignal.setTargetSize(0.0);
     tempSignal.setStrategyId(StrategyId("default_strategy"));
-    double currentExposure = m_exposureCalculator->getCurrentExposure(tempSignal).value_or(0.0);
-    
-    // Get max asset exposure from config
+    double currentExposureUsd = m_exposureCalculator->getCurrentExposure(tempSignal).value_or(0.0);
+
+    // Get max asset exposure from exposure limits (USD)
     double maxAssetExposure = m_exposureCalculator->getExposureLimits().maxAssetExposure;
-    
-    // Calculate allowed size based on position and exposure limits
-    double allowedByPosition = maxPosition; // Assuming no current position for simplicity
-    double allowedByExposure = (maxAssetExposure > currentExposure) ? (maxAssetExposure - currentExposure) : 0.0;
-    
-    double allowedSize = std::min(allowedByPosition, allowedByExposure);
-    
-    LOG_DEBUG("Allowed position size for {}: byPosition={}, byExposure={}, final={}",
-              tradingPair.toString(), allowedByPosition, allowedByExposure, allowedSize);
-    
-    return allowedSize;
+
+    double allowedByPositionUsd = std::max(0.0, assetLimitUsd - currentExposureUsd);
+    double allowedByExposureUsd = std::max(0.0, maxAssetExposure - currentExposureUsd);
+
+    double allowedUsd = std::min(allowedByPositionUsd, allowedByExposureUsd);
+
+    LOG_DEBUG("Allowed USD position for {}: assetLimitUsd={} currentExposureUsd={} maxAssetExposure={} finalAllowedUsd={}",
+              tradingPair.toString(), assetLimitUsd, currentExposureUsd, maxAssetExposure, allowedUsd);
+
+    return allowedUsd;
 }
 
 ValidationResult PreTradeRiskFilter::validateSignal(const TradingSignal& signal) {
@@ -415,10 +418,31 @@ ValidationResult PreTradeRiskFilter::performAllChecks(const TradingSignal& signa
                                     exposureViolations.end());
 
             if (allowedSize > 0.0) {
-                result.approved = true;
-                result.adjustedSize = allowedSize;
-                LOG_WARN("Signal {} exposure would exceed limits; capping BUY size from {} to {}",
-                         signal.getSignalId(), signal.getTargetSize(), allowedSize);
+                // Convert allowed USD to signal units. signal.getTargetSize() is a fraction (<=1) or absolute qty (>1)
+                double currentPrice = m_positionTracker->getCachedPrice(signal.getTradingPair());
+                if (currentPrice <= 0.0) {
+                    result.approved = false;
+                    RiskViolation v(ViolationType::PRICE_DEVIATION,
+                                    "Price unavailable for capping BUY; rejecting signal",
+                                    0.0, 0.0);
+                    result.violations.push_back(v);
+                    LOG_WARN("Signal {} rejected: price unavailable for capping", signal.getSignalId());
+                } else {
+                    double cappedQty = allowedSize / currentPrice; // quantity in asset units
+                    double adjustedSize = signal.getTargetSize();
+                    if (signal.getTargetSize() <= 1.0) {
+                        // interpret targetSize as fraction of some nominal; map fraction = qty / (qty + currentPosition)
+                        // We don't have the denominator here; instead, return capped quantity as absolute quantity in adjustedSize
+                        adjustedSize = cappedQty;
+                    } else {
+                        adjustedSize = std::min(signal.getTargetSize(), cappedQty);
+                    }
+
+                    result.approved = true;
+                    result.adjustedSize = adjustedSize;
+                    LOG_WARN("Signal {} exposure would exceed limits; capping BUY from {} to {} (qty {})",
+                             signal.getSignalId(), signal.getTargetSize(), adjustedSize, cappedQty);
+                }
             } else {
                 result.approved = false;
                 LOG_WARN("Signal {} rejected: failed exposure check and no allowed BUY size available", signal.getSignalId());
@@ -515,10 +539,24 @@ ValidationResult PreTradeRiskFilter::performAllChecks(const OrderRequest& orderR
             allowedSize = std::min(allowedSize, orderRequest.quantity);
 
             if (allowedSize > 0.0) {
-                result.approved = true;
-                result.adjustedSize = allowedSize;
-                LOG_INFO("Order {} exposure would exceed limits; capping BUY qty from {} to {}",
-                         orderRequest.clientOrderId, orderRequest.quantity, allowedSize);
+                // allowedSize is USD; convert to asset qty using current price
+                double currentPrice = m_positionTracker->getCachedPrice(orderRequest.tradingPair);
+                if (currentPrice <= 0.0) {
+                    result.approved = false;
+                    RiskViolation v(ViolationType::PRICE_DEVIATION,
+                                    "Price unavailable for capping BUY order; rejecting order",
+                                    0.0, 0.0);
+                    result.violations.push_back(v);
+                    LOG_INFO("Order {} rejected: price unavailable for capping", orderRequest.clientOrderId);
+                } else {
+                    double cappedQty = allowedSize / currentPrice;
+                    double adjustedQty = std::min(allowedSize, orderRequest.quantity);
+                    adjustedQty = std::min(orderRequest.quantity, cappedQty);
+                    result.approved = true;
+                    result.adjustedSize = adjustedQty;
+                    LOG_INFO("Order {} exposure would exceed limits; capping BUY qty from {} to {} (cappedQty={})",
+                             orderRequest.clientOrderId, orderRequest.quantity, adjustedQty, cappedQty);
+                }
             } else {
                 result.approved = false;
                 LOG_INFO("Order {} rejected: failed exposure check and no allowed BUY quantity available", orderRequest.clientOrderId);

@@ -152,6 +152,11 @@ public:
      */
     void clearPositions();
 
+    /**
+     * Get last cached price for a trading pair (returns 0.0 if unavailable)
+     */
+    double getCachedPrice(const TradingPair& tradingPair) const;
+
 private:
     std::shared_ptr<DataInterface> m_dataInterface;
     RiskConfig m_config;

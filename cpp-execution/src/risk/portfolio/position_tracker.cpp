@@ -594,6 +594,23 @@ double PositionTracker::calculateTotalExposure() const {
     return totalExposure;
 }
 
+double PositionTracker::getCachedPrice(const TradingPair& tradingPair) const {
+    std::lock_guard<std::mutex> lk(m_marketDataMutex);
+    const std::string key = tradingPair.toString();
+    auto it = m_priceCache.find(key);
+    if (it != m_priceCache.end()) return it->second;
+    // Attempt to query data interface if available
+    try {
+        if (m_dataInterface) {
+            double p = m_dataInterface->getCurrentPrice(tradingPair.toString());
+            if (p > 0.0) return p;
+        }
+    } catch (...) {
+        // ignore
+    }
+    return 0.0;
+}
+
 void PositionTracker::registerPositionUpdateCallback(const PositionUpdateCallback& callback) {
     std::lock_guard<std::mutex> lock(m_callbackMutex);
     m_updateCallbacks.push_back(callback);
