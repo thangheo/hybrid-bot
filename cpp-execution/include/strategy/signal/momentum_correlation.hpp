@@ -156,6 +156,8 @@ private:
     std::map<std::string, double> correlation_coefficients_;
     // correlation_strengths_
     std::map<std::string, double> correlation_strengths_;
+    // Last update times (milliseconds since epoch) for EWMA smoothing per metric
+    std::map<std::string, uint64_t> last_update_ms_;
     std::map<std::string, double> feature_importance_;
     MarketRegime current_regime_ = MarketRegime::NORMAL;
     // Lock-free snapshots published for fast read access by predictPriceMovement()

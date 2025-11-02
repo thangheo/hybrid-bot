@@ -542,62 +542,25 @@ void Trading_system::createRiskConfig() {
     if (!riskConfig_.validate()) {
         std::cerr << "Invalid risk configuration!" << std::endl;
     }
+    // Use `risk_config.json` as the single source of truth for position limits.
+    // Historically the code here injected a large list of hard-coded per-asset
+    // overrides for testing. That was confusing and prevented the JSON file
+    // from being authoritative. Remove those hard-coded overrides so operators
+    // can control limits from `config/risk_config.json` instead.
     auto& positionConfig = const_cast<PositionLimitConfig&>(riskConfig_.getPositionLimitConfig());
-    //this is a stupid implementation but just for testing because different asset have different price level and this make no sense
-    //increase everything to 100000
-    positionConfig.assetLimits["BTC"] = 0.001;
-    positionConfig.assetLimits["ETH"] = 0.1;
-    positionConfig.assetLimits["BNB"] = 0.1;
-    positionConfig.assetLimits["ADA"] = 10.0;
-    positionConfig.assetLimits["DOGE"] = 10000.0;
-    positionConfig.assetLimits["USDT"] = 500.0;
-    positionConfig.assetLimits["USDC"] = 500.0;
-    positionConfig.assetLimits["XRP"] = 100.0;
-    positionConfig.assetLimits["SOL"] = 100.0;
-    positionConfig.assetLimits["LTC"] = 111111;
-    positionConfig.assetLimits["DOT"] = 1.0*100;
-    positionConfig.assetLimits["MATIC"] = 10.0*100;
-    positionConfig.assetLimits["AVAX"] = 1.0*100;
-    positionConfig.assetLimits["SHIB"] = 1000.0*100;
-    positionConfig.assetLimits["TRX"] = 100.0*100;
-    positionConfig.assetLimits["UNI"] = 1.0*100;
-    positionConfig.assetLimits["LINK"] = 1.0*100;
-    positionConfig.assetLimits["BCH"] = 0.1*100;
-    positionConfig.assetLimits["XLM"] = 10.0*100;
-    positionConfig.assetLimits["ATOM"] = 1.0*100;
-    positionConfig.assetLimits["VET"] = 100.0*100;
-    positionConfig.assetLimits["FIL"] = 1.0*100;
-    positionConfig.assetLimits["ICP"] = 0.5*100;
-    positionConfig.assetLimits["ALGO"] = 10.0*100;
-    positionConfig.assetLimits["XTZ"] = 1.0*100 ;
-    positionConfig.assetLimits["AAVE"] = 0.5*100;
-    positionConfig.assetLimits["EGLD"] = 0.1*100;
-    positionConfig.assetLimits["SAND"] = 5.0*100;
-    positionConfig.assetLimits["MANA"] = 5.0*100;
-    positionConfig.assetLimits["GALA"] = 10.0*100;
-    positionConfig.assetLimits["AXS"] = 1.0*100;
-    positionConfig.assetLimits["SUI"] = 5.0*100;
-    positionConfig.assetLimits["APT"] = 5.0*100;
-    positionConfig.assetLimits["KAS"] = 50.0*100;
-    positionConfig.assetLimits["XMR"] = 0.1*100;
-    positionConfig.assetLimits["ZEC"] = 10.0*100;
-    positionConfig.assetLimits["PEPE"] = 10000.0*100;
-    positionConfig.assetLimits["FTM"] = 500.0*100;
-    positionConfig.assetLimits["HBAR"] = 50000.0*100;
-    positionConfig.assetLimits["PAXG"] = 0.01*100;
-    positionConfig.assetLimits["ONDO"] = 50.0*100;
-    positionConfig.assetLimits["BONK"] = 1000.0*100;
-    positionConfig.assetLimits["FLOKI"] = 1000.0*100;
-    positionConfig.assetLimits["AGIX"] = 5.0*100;
-    positionConfig.assetLimits["FET"] = 10.0*100;
-    positionConfig.assetLimits["INJ"] = 1.0*100;
-    positionConfig.assetLimits["OP"] = 5.0*100;
-    positionConfig.assetLimits["ARB"] = 5.0*100;
-    positionConfig.assetLimits["STARK"] = 1.0*100;
-    positionConfig.assetLimits["TIA"] = 5.0*100;
-    positionConfig.assetLimits["XRP"] = 10.0*100;
-    positionConfig.assetLimits["SOL"] = 1.0*100;
-    positionConfig.assetLimits["ADA"] = 10.0*100;
+
+    // Ensure every configured trading pair has at least a default limit entry
+    // (convert pair like "BTC/USDT" -> base asset "BTC") so missing keys in
+    // the JSON don't result in absent lookups. We defer to the JSON values if
+    // present and only set the defaultLimit when missing.
+    const double fallbackDefault = positionConfig.defaultLimit > 0.0 ? positionConfig.defaultLimit : 1000000.0;
+    for (const auto& [symbol, exchange] : strategyConfig_.tradingPairs) {
+        std::string base = symbol.base;
+        if (base.empty()) continue;
+        if (positionConfig.assetLimits.find(base) == positionConfig.assetLimits.end()) {
+            positionConfig.assetLimits[base] = fallbackDefault;
+        }
+    }
     positionConfig.defaultLimit = 500000; // dont care because btc =110k while doge or other maybe 0.001,
     positionConfig.enforceStrictly = false;
     
@@ -936,8 +899,8 @@ void Trading_system::signalWorkerLoop(size_t workerId) {
                 execSignal.symbol = signal.symbol;
                 execSignal.direction = signal.direction;
                 execSignal.strength = adjustedStrength;
+                // strategy provides targetSize as a fractional multiplier (0..1)
                 execSignal.targetSize = signal.targetSize;
-                execSignal.quantity = signal.quantity; //price * size = USD value
                 execSignal.strategyId = signal.strategyId;
                 execSignal.confidence = signal.confidence;
                 execSignal.quality = signal.quality;
@@ -1084,11 +1047,9 @@ void Trading_system::execWorkerLoop(size_t workerId) {
             allowedSize = std::clamp(allowedSize, 10.0, 5000.0);
             double positionSize = allowedSize * sizerFraction;
 
-            // positionSize is in USD (notional available for this trade after sizing)
-            // task.targetSize is a fractional multiplier (e.g. 0.05) coming from the strategy
-            // Compute the USD notional to allocate for this execution, then convert to
-            // asset quantity by dividing by current market price.
-            double notionalUsd = positionSize * task.quantity; // quantity holds the fractional size from strategy
+            
+
+            double notionalUsd = positionSize * task.targetSize;
 
             // Ensure we have a recent price before converting to quantity
             std::optional<double> currentPriceOpt = dataIngestionService_->getLastPrice(task.exchangeId, task.symbol);

@@ -1,20 +1,20 @@
 {
   "positionLimit": {
     "assetLimits": {
-      "BTC": 5.0,
-      "ETH": 50.0,
-      "USDT": 100000.0
+      "BTC": 1000.0,
+      "ETH": 1000.0,      
+      "USDT": 1000000000.0
     },
     "strategyLimits": {
-      "order_imbalance": 10000.0,
-      "arbitrage": 5000.0
+      "order_imbalance": 1000000.0,
+      "arbitrage": 1000000.0
     },
     "exchangeLimits": {
-      "binance": 50000.0,
-      "coinbase": 30000.0
+      "binance": 1000000000.0,
+      "coinbase": 1000000000.0
     },
-    "defaultLimit": 10000.0,
-    "enforceStrictly": true
+    "defaultLimit": 1000000000.0,
+    "enforceStrictly": false
   },
   "exposureLimit": {
     "maxTotalExposure": 100000.0,
