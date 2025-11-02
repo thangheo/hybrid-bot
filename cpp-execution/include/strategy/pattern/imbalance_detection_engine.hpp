@@ -274,7 +274,7 @@ public:
     mutable std::mutex pendingTrainingMutex_;
 
     // Labeling configuration (milliseconds to wait before labelling a prediction)
-    std::chrono::milliseconds labelingDelay_{5000};
+    std::chrono::milliseconds labelingDelay_{50000};
     // Increased buffer to hold samples while labelingDelay is long (e.g., 60s)
     // Default enlarged to avoid dropping samples: ~65k
     size_t maxPendingTraining_ = 65536;

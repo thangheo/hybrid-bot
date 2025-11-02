@@ -80,7 +80,7 @@
     // If empty, persistence is disabled. Set via configuration to enable.
     std::string bayesModelPath = "";
     // Labeling delay in milliseconds for online training buffer
-    int labelingDelayMs = 60000;
+    int labelingDelayMs = 5000;
     // Warmup / gating for online training: delay (ms) to wait after startup
     // before allowing training to begin. If 0, no delay-based gating is applied.
     int trainingStartDelayMs = 0;

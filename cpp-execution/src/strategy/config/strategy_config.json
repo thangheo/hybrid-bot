@@ -188,7 +188,7 @@
     },
     "volumeProfileAnalyzer": {
       "parameters": {
-        "timeWindowMs": 60000,
+        "timeWindowMs": 50000,
         "priceLevels": 50,
         "exchangeId": "BINANCE",
         "tradingPair": "BTC/USDT",
