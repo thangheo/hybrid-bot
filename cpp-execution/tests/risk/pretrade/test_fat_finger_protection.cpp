@@ -7,6 +7,7 @@
 
  #include <gtest/gtest.h>
  #include <gmock/gmock.h>
+ #include <memory>
  
  #include "risk/pretrade/fat_finger_protection.hpp"
  #include "risk/interfaces/data_interface.hpp"
@@ -16,19 +17,19 @@
  using ::testing::Return;
  using ::testing::_;
  
- // Mock data interface for testing
- class MockDataInterface : public DataInterface {
- public:
-     MockDataInterface() : DataInterface(RiskConfig()) {}
-     
-     MOCK_METHOD(double, getPrice, (const std::string&), (const));
- };
+// Mock data interface for testing
+class MockDataInterfaceMock : public DataInterface {
+public:
+    MockDataInterfaceMock() : DataInterface(risk::RiskConfig()) {}
+    
+    MOCK_METHOD(double, getPrice, (const std::string&), (const));
+};
  
  class FatFingerProtectionTest : public ::testing::Test {
  protected:
      void SetUp() override {
          // Create a risk config with test settings
-         RiskConfig config;
+         risk::RiskConfig config;
          FatFingerConfig ffConfig;
          
          // Set thresholds
@@ -41,7 +42,7 @@
          config.setFatFingerConfig(ffConfig);
          
          // Create mock data interface
-         mockDataInterface = std::make_shared<MockDataInterface>();
+         mockDataInterface = std::make_shared<MockDataInterfaceMock>();
          
          // Create fat finger protection
          fatFingerProtection = std::make_unique<FatFingerProtection>(config, mockDataInterface);
@@ -76,7 +77,7 @@
          fatFingerProtection->recordOrder(ethOrder2);
      }
      
-     std::shared_ptr<MockDataInterface> mockDataInterface;
+     std::shared_ptr<MockDataInterfaceMock> mockDataInterface;
      std::unique_ptr<FatFingerProtection> fatFingerProtection;
  };
  
@@ -185,11 +186,11 @@
      // Create a trading signal with large size
      TradingSignal signal;
      signal.id = "test-signal-1";
-     signal.tradingPair = TradingPair("BTC/USDT");
+     signal.setTradingPair(TradingPair("BTC/USDT"));
      signal.direction = Direction::BUY;
      signal.targetSize = 0.8;  // 8x typical size
-     signal.strategyId = "strategy1";
-     signal.exchangeId = "exchange1";
+     signal.setStrategyId(StrategyId("test-strategy", "1.0"));
+     signal.exchangeId = ExchangeId::fromString("exchange1");
      
      // Check for fat finger issues
      std::vector<RiskViolation> violations;
@@ -221,16 +222,16 @@
      EXPECT_GT(typicalSizeAfter, typicalSizeBefore);
  }
  
- // Test updating settings
+// Test updating settings
  TEST_F(FatFingerProtectionTest, UpdateSettings) {
      // Update fat finger protection settings
-     FatFingerConfig newConfig;
+     FatFingerProtection::Config newConfig;
      newConfig.priceDeviationThreshold = 0.15;  // 15% instead of 10%
      newConfig.sizeAnomalyThreshold = 10.0;  // 10x instead of 5x
      newConfig.notionalValueThreshold = 500000.0;  // $500k instead of $250k
      newConfig.rejectHighNotionalOrders = true;  // Reject instead of verify
      
-     bool result = fatFingerProtection->updateSettings(newConfig);
+     bool result = fatFingerProtection->updateConfig(newConfig);
      EXPECT_TRUE(result);
      
      // Test with an order that would have failed before but passes now

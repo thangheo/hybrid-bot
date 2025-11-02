@@ -51,7 +51,7 @@ target_include_directories(risk
 target_link_libraries(risk
     PUBLIC
         common
-        # execution
+        execution
     PRIVATE
         strategy
         data_ingestion

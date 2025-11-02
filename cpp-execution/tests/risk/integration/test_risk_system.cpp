@@ -74,8 +74,8 @@ TEST_F(RiskSystemIntegrationTest, CompleteOrderFlowTest) {
     // 1. Create and validate a signal
     TradingSignal signal;
     signal.id = "signal1";
-    signal.exchangeId = "binance";
-    signal.tradingPair = "BTC-USDT";
+    signal.exchangeId = ExchangeId::fromString("binance");
+    signal.tradingPair = TradingPair::fromString("BTC-USDT");
     signal.strategy = "strategy1";
     signal.direction = "buy";
     signal.strength = 0.7;
@@ -87,8 +87,8 @@ TEST_F(RiskSystemIntegrationTest, CompleteOrderFlowTest) {
     // 2. Create and validate an order
     OrderRequest order;
     order.orderId = "order1";
-    order.exchangeId = "binance";
-    order.tradingPair = "BTC-USDT";
+    order.exchangeId = ExchangeId::fromString("binance");
+    order.tradingPair = TradingPair::fromString("BTC-USDT");
     order.strategy = "strategy1";
     order.side = OrderSide::BUY;
     order.getQuantity() = 0.5;
@@ -101,8 +101,8 @@ TEST_F(RiskSystemIntegrationTest, CompleteOrderFlowTest) {
     // 3. Process a partial fill
     ExecutionReport partialFill;
     partialFill.orderId = "order1";
-    partialFill.exchangeId = "binance";
-    partialFill.tradingPair = "BTC-USDT";
+    partialFill.exchangeId = ExchangeId::fromString("binance");
+    partialFill.tradingPair = TradingPair::fromString("BTC-USDT");
     partialFill.strategyId = "strategy1";
     partialFill.side = OrderSide::BUY;
     partialFill.quantity = 0.2;
@@ -119,8 +119,8 @@ TEST_F(RiskSystemIntegrationTest, CompleteOrderFlowTest) {
     // 5. Complete the fill
     ExecutionReport completeFill;
     completeFill.orderId = "order1";
-    completeFill.exchangeId = "binance";
-    completeFill.tradingPair = "BTC-USDT";
+    completeFill.exchangeId = ExchangeId::fromString("binance");
+    completeFill.tradingPair = TradingPair::fromString("BTC-USDT");
     completeFill.strategyId = "strategy1";
     completeFill.side = OrderSide::BUY;
     completeFill.quantity = 0.5;
@@ -137,8 +137,8 @@ TEST_F(RiskSystemIntegrationTest, CompleteOrderFlowTest) {
     // 7. Try to place an order that would exceed position limit
     OrderRequest largeOrder;
     largeOrder.orderId = "order2";
-    largeOrder.exchangeId = "binance";
-    largeOrder.tradingPair = "BTC-USDT";
+    largeOrder.exchangeId = ExchangeId::fromString("binance");
+    largeOrder.tradingPair = TradingPair::fromString("BTC-USDT");
     largeOrder.strategy = "strategy1";
     largeOrder.side = OrderSide::BUY;
     largeOrder.quantity = 1.0; // Would bring position to 2.5, exceeding 2.0 limit
@@ -150,8 +150,8 @@ TEST_F(RiskSystemIntegrationTest, CompleteOrderFlowTest) {
     // 8. Place a sell order
     OrderRequest sellOrder;
     sellOrder.orderId = "order3";
-    sellOrder.exchangeId = "binance";
-    sellOrder.tradingPair = "BTC-USDT";
+    sellOrder.exchangeId = ExchangeId::fromString("binance");
+    sellOrder.tradingPair = TradingPair::fromString("BTC-USDT");
     sellOrder.strategy = "strategy1";
     sellOrder.side = OrderSide::SELL;
     sellOrder.quantity = 0.5;
@@ -163,8 +163,8 @@ TEST_F(RiskSystemIntegrationTest, CompleteOrderFlowTest) {
     // 9. Process sell order fill
     ExecutionReport sellFill;
     sellFill.orderId = "order3";
-    sellFill.exchangeId = "binance";
-    sellFill.tradingPair = "BTC-USDT";
+    sellFill.exchangeId = ExchangeId::fromString("binance");
+    sellFill.tradingPair = TradingPair::fromString("BTC-USDT");
     sellFill.strategyId = "strategy1";
     sellFill.side = OrderSide::SELL;
     sellFill.quantity = 0.5;

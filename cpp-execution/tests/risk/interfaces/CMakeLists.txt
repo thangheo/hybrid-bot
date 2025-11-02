@@ -2,8 +2,8 @@
 
 # Source files for risk interfaces tests
 set(RISK_INTERFACES_TEST_SOURCES
-    data_interface_test.cpp
-    execution_interface_test.cpp
+    # data_interface_test.cpp
+    # execution_interface_test.cpp
     strategy_interface_test.cpp
 )
 

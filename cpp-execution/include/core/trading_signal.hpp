@@ -128,6 +128,25 @@ struct TradingSignal {
           sourceType(ImbalanceType::VOLUME_IMBALANCE),
           decayRate(0.0),
           expectedPriceImpact(0.0) {}
+
+    /**
+     * Constructor overload matching initializer list usage:
+     * TradingSignal signal{ SignalId, Symbol, ExchangeId, Direction };
+     * This constructor forwards to the main constructor and sets the symbol
+     * and exchangeId. Optional strength (defaults to 0.0) and generationTime
+     * (defaults to now) can be provided.
+     */
+    TradingSignal(
+        const core::SignalId& sid,
+        const core::Symbol& sym,
+        const core::ExchangeId& exId,
+        core::Direction d,
+        double s = 0.0,
+        const core::Timestamp& gt = core::Timestamp()
+    ) : TradingSignal(sid, d, s, gt) {
+        this->symbol = sym;
+        this->exchangeId = exId;
+    }
     
     // Use defaulted copy/move semantics. We explicitly mark moves as noexcept
     // so containers can rely on noexcept move operations (avoids fallback to copies).

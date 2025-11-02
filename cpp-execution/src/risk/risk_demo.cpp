@@ -106,7 +106,7 @@ public:
 
 private:
     std::shared_ptr<RiskManager> riskManager_;
-    RiskConfig config_;
+    risk::RiskConfig config_;
     std::atomic<bool> running_;
     std::mt19937 gen_;
     // marketDataInterface_ 

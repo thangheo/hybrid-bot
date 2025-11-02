@@ -29,6 +29,7 @@ using TradingPair = trading::core::Symbol;
 namespace trading {
 namespace risk {
 
+
 /**
  * Enum for different types of risk violations
  */
@@ -46,6 +47,9 @@ enum class ViolationType {
     OTHER
 };
 
+// Forward declaration for helper used in RiskViolation constructor
+std::string toString(ViolationType type);
+
 /**
  * Struct to represent a risk violation (RESTORED ORIGINAL FORMAT)
  */
@@ -54,15 +58,19 @@ struct RiskViolation {
     std::string description;
     double limitValue;
     double actualValue;
-    
-    RiskViolation() : type(ViolationType::OTHER), limitValue(0.0), actualValue(0.0) {}
-    
+    // Backwards-compatible string label used in older tests
+    std::string violationType;
+
+    RiskViolation() : type(ViolationType::OTHER), description(""), limitValue(0.0), actualValue(0.0), violationType("UNKNOWN") {}
+
     RiskViolation(ViolationType vType, const std::string& desc, double limit, double actual)
-        : type(vType), description(desc), limitValue(limit), actualValue(actual) {}
+        : type(vType), description(desc), limitValue(limit), actualValue(actual), violationType(toString(vType)) {}
 };
 
 using OrderType = trading::execution::models::OrderType;
 using ExchangeId = trading::core::ExchangeId;
+using TradingPair = trading::core::Symbol;
+
 // Forward declarations
 // class ValidationResult;
 class ThresholdSet;
@@ -236,6 +244,10 @@ struct OrderRequest {
     OrderRequest() 
         : side(OrderSide::BUY), type(OrderType::MARKET), quantity(0.0), price(0.0),
           timestamp(std::chrono::system_clock::now()) {}
+    
+    // Backwards-compatible getter used by tests
+    double getQuantity() const { return quantity; }
+    double& getQuantity() { return quantity; }
 };
 
 

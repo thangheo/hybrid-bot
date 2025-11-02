@@ -53,8 +53,8 @@
      TradingSignal createSampleSignal() {
          TradingSignal signal;
          signal.id = "test-signal-1";
-         signal.exchangeId = "binance";
-         signal.tradingPair = "BTC/USDT";
+         signal.exchangeId = ExchangeId::fromString("binance");
+         signal.tradingPair = TradingPair::fromString("BTC/USDT");
          signal.direction = Direction::BUY;
          signal.strength = 0.8;
          signal.targetSize = 1.0;
@@ -149,8 +149,8 @@
  TEST_F(RiskValidationServiceTest, GetRiskParameters) {
      // Create expected parameters
      RiskParameters expectedParams;
-     expectedParams.exchangeId = "binance";
-     expectedParams.tradingPair = "BTC/USDT";
+     expectedParams.exchangeId = ExchangeId::fromString("binance");
+     expectedParams.tradingPair = TradingPair::fromString("BTC/USDT");
      expectedParams.maxPositionSize = 10.0;
      
      // Configure mock to return the expected parameters

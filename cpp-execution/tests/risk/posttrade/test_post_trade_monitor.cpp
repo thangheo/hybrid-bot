@@ -110,8 +110,8 @@ TEST_F(PostTradeMonitorTest, ProcessExecutionReport) {
     
     // Create execution report
     ExecutionReport report;
-    report.exchangeId = "binance";
-    report.tradingPair = "BTC/USDT";
+    report.setExchangeId(ExchangeId::fromString("binance"));
+    report.setSymbol(TradingPair::fromString("BTC/USDT"));
     
     // Process report
     postTradeMonitor->processExecutionReport(report);
@@ -127,9 +127,9 @@ TEST_F(PostTradeMonitorTest, ProcessExecutionReportWhenCircuitBreakerTriggered) 
     
     // Create execution report
     ExecutionReport report;
-    report.exchangeId = "binance";
-    report.tradingPair = "BTC/USDT";
-    
+    report.setExchangeId(ExchangeId::fromString("binance"));
+    report.setSymbol(TradingPair::fromString("BTC/USDT"));
+
     // Register a callback to detect risk events
     bool eventTriggered = false;
     postTradeMonitor->registerRiskEventCallback([&](const RiskEvent& event) {
@@ -156,7 +156,7 @@ TEST_F(PostTradeMonitorTest, UpdateMarketData) {
     
     // Create market data
     MarketData marketData;
-    marketData.exchangeId = "binance";
+    marketData.exchangeId = ExchangeId::fromString("binance");
     marketData.symbol = "BTC/USDT";
     marketData.lastPrice = 50000.0;
     
@@ -193,8 +193,8 @@ TEST_F(PostTradeMonitorTest, UpdatePerformanceMetrics) {
 TEST_F(PostTradeMonitorTest, StopLossTriggered) {
     // Setup stop loss event
     StopLossEvent stopLossEvent;
-    stopLossEvent.exchangeId = "binance";
-    stopLossEvent.tradingPair = "BTC/USDT";
+    stopLossEvent.exchangeId = ExchangeId::fromString("binance");
+    stopLossEvent.tradingPair = TradingPair::fromString("BTC/USDT");
     stopLossEvent.positionSize = 1.0;
     stopLossEvent.entryPrice = 50000.0;
     stopLossEvent.triggerPrice = 47500.0;
@@ -227,8 +227,8 @@ TEST_F(PostTradeMonitorTest, StopLossTriggered) {
     
     // Process an execution report (which will trigger the stop loss check)
     ExecutionReport report;
-    report.exchangeId = "binance";
-    report.tradingPair = "BTC/USDT";
+    report.exchangeId = ExchangeId::fromString("binance");
+    report.tradingPair = TradingPair::fromString("BTC/USDT");
     
     postTradeMonitor->processExecutionReport(report);
     

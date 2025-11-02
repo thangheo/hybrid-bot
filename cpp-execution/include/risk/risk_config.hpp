@@ -170,12 +170,25 @@ struct DrawdownConfig {
  * Configuration structure for fat finger protection
  */
 struct FatFingerConfig {
+    // Backwards-compatible names expected by tests and legacy code
+    double priceDeviationThreshold = 0.05;
+    double sizeAnomalyThreshold = 3.0;
+    double notionalValueThreshold = 10000.0;
+    double defaultTypicalSize = 1.0;
+    bool rejectHighNotionalOrders = false;
+
+    // Legacy field names (kept for compatibility with older code that still
+    // refers to these identifiers). They are independent members but have
+    // the same default values and should be kept in sync by callers when
+    // updating config programmatically.
     double maxPriceDeviation = 0.05;
     double maxOrderSize = 10.0;
     double typicalOrderSize = 1.0;
     double notionalValueLimit = 10000.0;
     bool enforceAdditionalVerification = true;
 };
+
+// (Removed accidental top-level RiskConfig wrapper to avoid ambiguity)
  
 /**
  * Configuration structure for balance reconciliation

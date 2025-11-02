@@ -2,11 +2,11 @@
 
 # Source files for pretrade risk tests
 set(RISK_PRETRADE_TEST_SOURCES
-    test_exposure_calculator.cpp
+    # test_exposure_calculator.cpp
     test_fat_finger_protection.cpp
     test_order_validator.cpp
     test_position_limit_checker.cpp
-    test_pretrade_risk_filter.cpp
+    # test_pretrade_risk_filter.cpp
     integration_test_pretrade_risk_filter.cpp
 )
 

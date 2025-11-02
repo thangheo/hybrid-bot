@@ -428,7 +428,8 @@ TradingSignal ImbalanceSignalGenerator::createSignalFromImbalance(
     // UNKNOWN strategy identifiers.
     if (!strategyId_.isEmpty() && !signal.strategyId.isValid()) {
         signal.strategyId = strategyId_;
-        if (signal.strategyId.version.empty()) signal.strategyId.version = config_.version;
+        // SignalGeneratorConfig does not expose a `version` member; avoid accessing it.
+        // Preserve any existing version in strategyId or let the owner set it explicitly if needed.
     }
     
     return signal;

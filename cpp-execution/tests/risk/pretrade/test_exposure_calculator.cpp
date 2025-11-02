@@ -12,6 +12,7 @@
 #include <gmock/gmock.h>
 #include "risk/pretrade/exposure_calculator.hpp"
 #include "core/market_types.hpp"  // For the existing TradingSignal
+#include <format>
 #include <thread>
 #include <vector>
 #include <atomic>
@@ -111,15 +112,18 @@ TEST_F(ExposureCalculatorTest, InitializationSuccess) {
 // Test basic exposure validation
 TEST_F(ExposureCalculatorTest, ValidateExposure_WithinLimits) {
     TradingSignal signal{
-        "signal_1",
-        "BTC/USDT", 
-        Direction::BUY,
-        0.8  // 80% strength
+        core::SignalId{"signal_1"},
+        core::Symbol::fromString("BTC/USDT"),
+        core::ExchangeId::binance(),
+        core::Direction::BUY,
+        0.8,  // 0.8 BTC
+        // ts
+        core::Timestamp()
     };
-    signal.target_size = 1.0;  // 1 BTC
-    signal.strategy_id = "strategy_1";
-    signal.exchange = ExchangeId::binance();
-    
+    signal.setTargetSize(0.8);  // 0.8 BTC
+    signal.setStrategyId(core::StrategyId{"strategy_1", "v1"});
+    signal.setExchangeId(core::ExchangeId::binance());
+
     EXPECT_CALL(*mockDataInterface, getCurrentPrice("BTC/USDT", _))
         .WillOnce(Return(50000.0));
     EXPECT_CALL(*mockDataInterface, getVolatility("BTC/USDT", "1d", _))
@@ -170,16 +174,24 @@ TEST_F(ExposureCalculatorTest, ValidateExposure_TotalLimitExceeded) {
     auto result = exposureCalculator->validateExposure(signal);
     EXPECT_EQ(result, ExposureValidationResult::TOTAL_LIMIT_EXCEEDED);
 }
-
+//  TradingSignal(
+//         const core::SignalId& sid,
+//         const core::Symbol& sym,
+//         const core::ExchangeId& exId,
+//         core::Direction d,
+//         double s = 0.0,
+//         const core::Timestamp& gt = core::Timestamp()
+//     ) 
 // Test caching functionality
 TEST_F(ExposureCalculatorTest, CachingWorks) {
     TradingSignal signal{
-        "signal_3",
-        "ETH/USDT",
+        core::SignalId{"signal_cache_test"},
+        core::Symbol::fromString("ETH/USDT"),
         core::ExchangeId::coinbase(),
         core::Direction::SELL,
         10.0,  // 10 ETH
-        "strategy_2"
+        // ts
+        core::Timestamp()
     };
     
     EXPECT_CALL(*mockDataInterface, getCurrentPrice("ETH/USDT", _))
@@ -265,12 +277,12 @@ TEST_F(ExposureCalculatorTest, PerformanceBenchmark) {
     
     for (int i = 0; i < numValidations; ++i) {
         TradingSignal signal{
-            std::format("signal_{}", i),
-            "BTC/USDT",
+            core::SignalId{"signal_{}", i},
+            core::Symbol::fromString("BTC/USDT"),
             core::ExchangeId::binance(),
             core::Direction::BUY,
             1.0,
-            "strategy_benchmark"
+            core::Timestamp()
         };
         
         auto result = exposureCalculator->validateExposure(signal);
@@ -298,7 +310,7 @@ TEST_F(ExposureCalculatorTest, PerformanceBenchmark) {
 TEST_F(ExposureCalculatorTest, SIMDOptimizationPerformance) {
     // Create a large number of positions to trigger SIMD path
     std::vector<Position> positions;
-    TradingPair btcPair{"BTC", "USDT", "BTC/USDT"};
+    TradingPair btcPair = core::Symbol::fromString("BTC/USDT");
     StrategyId strategy{"strategy_simd", "v1"};
     
     for (int i = 0; i < 100; ++i) {
@@ -339,12 +351,12 @@ TEST_F(ExposureCalculatorTest, SIMDOptimizationPerformance) {
 // Test cache expiry
 TEST_F(ExposureCalculatorTest, CacheExpiry) {
     TradingSignal signal{
-        "signal_cache_test",
-        "BTC/USDT",
+        core::SignalId{"signal_cache_test"},
+        core::Symbol::fromString("BTC/USDT"),
         core::ExchangeId::binance(),
         core::Direction::BUY,
         1.0,
-        "strategy_cache"
+        core::Timestamp()
     };
     
     EXPECT_CALL(*mockDataInterface, getCurrentPrice("BTC/USDT", _))
@@ -402,7 +414,7 @@ TEST_F(ExposureCalculatorTest, DifferentViolationTypes) {
 // Test async market data updates
 TEST_F(ExposureCalculatorTest, AsyncMarketDataUpdate) {
     core::MarketData marketData;
-    marketData.tradingPair = "BTC/USDT";
+    marketData.tradingPair = TradingPair::fromString("BTC/USDT");
     marketData.price = 55000.0;  // Updated price
     marketData.priceChangePercent24h = 10.0;  // 10% change
     
@@ -414,12 +426,12 @@ TEST_F(ExposureCalculatorTest, AsyncMarketDataUpdate) {
     
     // Verify the new price is cached
     TradingSignal signal{
-        "signal_async_test",
-        "BTC/USDT",
+        core::SignalId{"signal_async_test"},
+        core::Symbol::fromString("BTC/USDT"),
         core::ExchangeId::binance(),
         core::Direction::BUY,
         1.0,
-        "strategy_async"
+        core::Timestamp()
     };
     
     // Should use cached price, not call data interface
@@ -439,12 +451,12 @@ TEST_F(ExposureCalculatorTest, ErrorHandling) {
         .WillOnce(Throw(std::runtime_error("Price service unavailable")));
     
     TradingSignal signal{
-        "signal_error_test",
-        "INVALID/PAIR",
+        core::SignalId{"signal_error_test"},
+        core::Symbol::fromString("INVALID/PAIR"),
         core::ExchangeId::binance(),
         core::Direction::BUY,
         1.0,
-        "strategy_error"
+        core::Timestamp()
     };
     
     // Should handle error gracefully and return calculation error
@@ -475,14 +487,13 @@ TEST_F(ExposureCalculatorTest, LimitsUpdate) {
 }
 
 // Test cache clearing
+ 
 TEST_F(ExposureCalculatorTest, CacheClearing) {
     TradingSignal signal{
-        "signal_clear_test",
-        "BTC/USDT",
+        core::SignalId{"signal_cache_clear"},
+        core::Symbol::fromString("BTC/USDT"),
         core::ExchangeId::binance(),
-        core::Direction::BUY,
-        1.0,
-        "strategy_clear"
+        core::Direction::BUY
     };
     
     EXPECT_CALL(*mockDataInterface, getCurrentPrice("BTC/USDT", _))
@@ -514,15 +525,16 @@ TEST_F(ExposureCalculatorTest, MemoryUsage) {
     // Here we just ensure no obvious leaks by creating many objects
     
     for (int i = 0; i < 10000; ++i) {
-        TradingSignal signal{
-            std::format("signal_{}", i),
-            "BTC/USDT",
-            core::ExchangeId::binance(),
-            core::Direction::BUY,
-            0.1,
-            std::format("strategy_{}", i % 10)
-        };
-        
+        // Construct TradingSignal using explicit member assignments to avoid
+        // ambiguous/incorrect aggregate initialization ordering.
+        TradingSignal signal{};
+        signal.id = std::format("signal_{}", i);
+        signal.setTradingPair(core::Symbol::fromString("BTC/USDT"));
+        signal.setExchangeId(core::ExchangeId::binance());
+        signal.setDirection(core::Direction::BUY);
+        signal.setTargetSize(0.1);
+        signal.setStrategyId(std::format("strategy_{}", i % 10));
+
         EXPECT_CALL(*mockDataInterface, getCurrentPrice(_, _))
             .WillRepeatedly(Return(50000.0));
         EXPECT_CALL(*mockDataInterface, getVolatility(_, _, _))
