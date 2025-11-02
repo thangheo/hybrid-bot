@@ -16,124 +16,92 @@
  using namespace trading::risk;
  
  // Test DataInterface implementation for integration testing
- class TestDataInterface : public DataInterface {
- public:
-     TestDataInterface() : DataInterface(RiskConfig()) {}
-     
-     bool initialize() override { return true; }
-     
-     double getPrice(const core::Symbol& symbol) const override {
-         if (symbol == "BTC/USDT") return 50000.0;
-         if (symbol == "ETH/USDT") return 3000.0;
-         return 1.0;  // Default
-     }
-     
-     double getVolatility(const core::Symbol& symbol) const override {
-         if (symbol == "BTC/USDT") return 0.2;  // 20%
-         if (symbol == "ETH/USDT") return 0.15;  // 15%
-         return 0.1;  // Default
-     }
-     
-     MarketData getMarketData() const override {
-         MarketData data;
-         data.prices["BTC/USDT"] = 50000.0;
-         data.prices["ETH/USDT"] = 3000.0;
-         data.volatilities["BTC/USDT"] = 0.2;
-         data.volatilities["ETH/USDT"] = 0.15;
-         return data;
-     }
- };
- 
- // Test PositionTracker implementation for integration testing
- class TestPositionTracker : public PositionTracker {
- public:
-     TestPositionTracker() : PositionTracker(RiskConfig()) {}
-     
-     bool initialize() override { return true; }
-     
-     double getPosition(const std::string& asset) const override {
-         if (asset == "BTC") return 1.0;
-         if (asset == "ETH") return 10.0;
-         return 0.0;
-     }
-     
-     double getTotalPositionForStrategy(const std::string& strategyId) const override {
-         if (strategyId == "strategy1") return 100000.0;  // In USD equivalent
-         return 0.0;
-     }
-     
-     double getTotalPositionForExchange(const core::ExchangeId& exchangeId) const override {
-         if (exchangeId == "exchange1") return 200000.0;  // In USD equivalent
-         return 0.0;
-     }
-     
-     std::vector<Position> getAllPositions() const override {
-         std::vector<Position> positions;
-         
-         Position btcPosition;
-         btcPosition.asset = "BTC";
-         btcPosition.tradingPair = TradingPair("BTC/USDT");
-         btcPosition.quantity = 1.0;
-         btcPosition.averageEntryPrice = 48000.0;
-         btcPosition.exchangeId = ExchangeId::fromString("exchange1");
-         btcPosition.strategyId = "strategy1";
-         
-         Position ethPosition;
-         ethPosition.asset = "ETH";
-         ethPosition.tradingPair = TradingPair("ETH/USDT");
-         ethPosition.quantity = 10.0;
-         ethPosition.averageEntryPrice = 2800.0;
-         ethPosition.exchangeId = ExchangeId::fromString("exchange1");
-         ethPosition.strategyId = "strategy1";
-         
-         positions.push_back(btcPosition);
-         positions.push_back(ethPosition);
-         
-         return positions;
-     }
-     
-     std::vector<Position> getPositionsForAsset(const std::string& asset) const override {
-         std::vector<Position> positions = getAllPositions();
-         std::vector<Position> result;
-         
-         for (const auto& position : positions) {
-             if (position.asset == asset) {
-                 result.push_back(position);
-             }
-         }
-         
-         return result;
-     }
-     
-     std::vector<Position> getPositionsForStrategy(const std::string& strategyId) const override {
-         std::vector<Position> positions = getAllPositions();
-         std::vector<Position> result;
-         
-         for (const auto& position : positions) {
-             if (position.strategyId == strategyId) {
-                 result.push_back(position);
-             }
-         }
-         
-         return result;
-     }
-     
-     std::vector<Position> getPositionsForExchange(const core::ExchangeId& exchangeId) const override {
-         std::vector<Position> positions = getAllPositions();
-         std::vector<Position> result;
-         
-         for (const auto& position : positions) {
-             if (position.exchangeId == exchangeId) {
-                 result.push_back(position);
-             }
-         }
-         
-         return result;
-     }
- };
- 
- class PreTradeRiskIntegrationTest : public ::testing::Test {
- protected:
+class TestDataInterface : public DataInterface {
+public:
+    TestDataInterface() : DataInterface() {}
+
+    bool initialize() override { return true; }
+
+    // match DataInterface signature: non-const getPrice
+    double getPrice(const core::Symbol& symbol) override {
+        if (symbol.toString() == "BTC/USDT") return 50000.0;
+        if (symbol.toString() == "ETH/USDT") return 3000.0;
+        return 1.0;  // Default
+    }
+
+    // match DataInterface signature for volatility
+    double getVolatility(const core::Symbol& tradingPair, const std::string& /*timeframe*/, const std::optional<std::string>& /*exchangeId*/ = std::nullopt) override {
+        if (tradingPair.toString() == "BTC/USDT") return 0.2;  // 20%
+        if (tradingPair.toString() == "ETH/USDT") return 0.15;  // 15%
+        return 0.1;  // Default
+    }
+
+    // match DataInterface signature: return optional<MarketData>
+    std::optional<MarketData> getMarketData(const core::Symbol& tradingPair, const std::optional<std::string>& /*exchangeId*/ = std::nullopt) override {
+        MarketData data;
+        data.tradingPair = tradingPair;
+        if (tradingPair.toString() == "BTC/USDT") data.price = 50000.0;
+        if (tradingPair.toString() == "ETH/USDT") data.price = 3000.0;
+        return data;
+    }
+};
+    class TestPositionTracker : public PositionTracker {
+    public:
+        // PositionTracker requires (const RiskConfig&, shared_ptr<DataInterface>)
+        TestPositionTracker() : PositionTracker(RiskConfig(), nullptr) {}
+
+        // Note: PositionTracker methods are not virtual in the current API,
+        // so do not use 'override' here.
+        bool initialize() { return true; }
+
+        // Provide a few helper methods that PositionTracker exposes
+        std::vector<Position> getAllPositions() const {
+            std::vector<Position> positions;
+
+            // Use Position constructor: (ExchangeId, TradingPair, StrategyId, quantity, avgPrice)
+            positions.emplace_back(ExchangeId::fromString("exchange1"), TradingPair("BTC/USDT"), StrategyId("strategy1"), 1.0, 48000.0);
+            positions.emplace_back(ExchangeId::fromString("exchange1"), TradingPair("ETH/USDT"), StrategyId("strategy1"), 10.0, 2800.0);
+
+            return positions;
+        }
+
+        std::vector<Position> getExchangePositions(const core::ExchangeId& exchangeId) const {
+            std::vector<Position> all = getAllPositions();
+            std::vector<Position> res;
+            for (const auto& p : all) {
+                if (p.getExchangeId() == exchangeId) res.push_back(p);
+            }
+            return res;
+        }
+
+        std::vector<Position> getPositionsByTradingPair(const TradingPair& tradingPair) const {
+            std::vector<Position> all = getAllPositions();
+            std::vector<Position> res;
+            for (const auto& p : all) {
+                if (p.getTradingPair() == tradingPair) res.push_back(p);
+            }
+            return res;
+        }
+
+        std::optional<Position> getPosition(const core::ExchangeId& exchangeId, const TradingPair& tradingPair) const {
+            for (const auto& p : getAllPositions()) {
+                if (p.getExchangeId() == exchangeId && p.getTradingPair() == tradingPair) return p;
+            }
+            return std::nullopt;
+        }
+
+        std::vector<Position> getStrategyPositions(const StrategyId& strategyId) const {
+            std::vector<Position> res;
+            for (const auto& p : getAllPositions()) {
+                if (p.getStrategyId() == strategyId) res.push_back(p);
+            }
+            return res;
+            }
+        };
+
+// Test fixture for pre-trade integration
+class PreTradeRiskIntegrationTest : public ::testing::Test {
+protected:
      void SetUp() override {
          // Create a comprehensive risk config for integration testing
          RiskConfig config;
@@ -145,17 +113,17 @@
          positionLimits.assetLimits["ETH"] = 20.0;
          positionLimits.strategyLimits["strategy1"] = 300000.0;
          positionLimits.exchangeLimits["exchange1"] = 500000.0;
-         config.setPositionLimits(positionLimits);
+         config.setPositionLimitConfig(positionLimits);
          
          // Exposure limits
          ExposureLimitConfig exposureLimits;
-         exposureLimits.totalExposureLimit = 1000000.0;
-         exposureLimits.defaultAssetExposureLimit = 100000.0;
-         exposureLimits.defaultStrategyExposureLimit = 300000.0;
-         exposureLimits.defaultExchangeExposureLimit = 600000.0;
-         exposureLimits.assetExposureLimits["BTC"] = 150000.0;
-         exposureLimits.riskFactor = 2.0;
-         config.setExposureLimits(exposureLimits);
+         exposureLimits.maxTotalExposure = 1000000.0;
+         exposureLimits.maxAssetExposure = 100000.0;
+         exposureLimits.maxStrategyExposure = 300000.0;
+         exposureLimits.maxExchangeExposure = 600000.0;
+         exposureLimits.maxAssetExposure = 150000.0; // adjust to desired value
+         exposureLimits.volatilityMultiplier = 2.0;
+         config.setExposureLimitConfig(exposureLimits);
          
          // Order validation config
          OrderValidationConfig validationConfig;
@@ -163,11 +131,13 @@
          validationConfig.maxOrderSize = 5.0;
          validationConfig.maxPriceDeviationPercent = 10.0;
          validationConfig.allowedOrderTypes = {
-             OrderType::MARKET, OrderType::LIMIT, OrderType::STOP_LIMIT
+             trading::common::OrderType::MARKET,
+             trading::common::OrderType::LIMIT,
+             trading::common::OrderType::STOP_LIMIT
          };
          validationConfig.allowedTimeInForce = {"GTC", "IOC", "FOK"};
          validationConfig.symbolWhitelist = {"BTC/USDT", "ETH/USDT"};
-         validationConfig.enforceWhitelist = true;
+         // Note: OrderValidationConfig has no 'enforceWhitelist' member; remove the invalid assignment.
          config.setOrderValidationConfig(validationConfig);
          
          // Fat finger config
@@ -180,24 +150,13 @@
          config.setFatFingerConfig(ffConfig);
          
          // Create test data interface and position tracker
-         testDataInterface = std::make_shared<TestDataInterface>();
-         testPositionTracker = std::make_shared<TestPositionTracker>();
-         
-         // Create the pre-trade risk filter
-         riskFilter = std::make_unique<PreTradeRiskFilter>(config);
-         
-         // Initialize manually with our test implementations
-         riskFilter->m_positionLimitChecker = std::make_unique<PositionLimitChecker>(config, testPositionTracker);
-         riskFilter->m_positionLimitChecker->initialize();
-         
-         riskFilter->m_exposureCalculator = std::make_unique<ExposureCalculator>(config, testPositionTracker, testDataInterface);
-         riskFilter->m_exposureCalculator->initialize();
-         
-         riskFilter->m_orderValidator = std::make_unique<OrderValidator>(config, testDataInterface);
-         riskFilter->m_orderValidator->initialize();
-         
-         riskFilter->m_fatFingerProtection = std::make_unique<FatFingerProtection>(config, testDataInterface);
-         riskFilter->m_fatFingerProtection->initialize();
+    testDataInterface = std::make_shared<TestDataInterface>();
+    testPositionTracker = std::make_shared<TestPositionTracker>();
+
+    // Create the pre-trade risk filter using the data interface; let it initialize components
+    riskFilter = std::make_unique<PreTradeRiskFilter>(config, testDataInterface);
+    // initialize will set up subcomponents internally
+    riskFilter->initialize();
      }
      
      std::unique_ptr<PreTradeRiskFilter> riskFilter;

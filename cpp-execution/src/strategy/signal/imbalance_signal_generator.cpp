@@ -580,8 +580,22 @@ SignalQualityMetrics ImbalanceSignalGenerator::calculateSignalQuality(
 double ImbalanceSignalGenerator::calculateTargetSize(
     const ImbalanceEvent& imbalance, double strength, double confidence, double quality, double volatility) const {
     
-    // Base size calculation with quality emphasis
-    double baseSize = std::pow(strength * confidence * quality, 0.9); // Slight compression
+    // Normalize strength to avoid absolute price / depth bias across symbols.
+    // If `strength` is already in [0,1] this is effectively a clamp; if it's
+    // an absolute quantity (e.g. volume) we normalize by midPrice to get a
+    // relative USD-normalized measure. We defensively guard against zero.
+    double midPrice = imbalance.getSupportingMetric("midPrice", 0.0001);
+    double normStrength = strength;
+    if (normStrength > 1.0) {
+        // Heuristic: treat >1 as an absolute size and normalize by price to
+        // obtain a relative metric. This keeps small-price tokens from being
+        // starved compared to large-price tokens.
+        normStrength = normStrength / std::max(midPrice, 0.0001);
+    }
+    normStrength = std::clamp(normStrength, 0.0, 1.0);
+
+    // Base size calculation with quality emphasis (operate on normalized strength)
+    double baseSize = std::pow(normStrength * confidence * quality, 0.9); // Slight compression
     
     // Regime-aware scaling
     auto regime = getCurrentMarketRegime(imbalance);
@@ -641,18 +655,27 @@ double ImbalanceSignalGenerator::calculateTargetSize(
 
     // Determine volatility to use: prefer explicit parameter if > 0, otherwise
     // fall back to the supporting metric inside the event. Use a small positive
-    // default to avoid divide-by-zero or overly aggressive scaling.
+    // default to avoid divide-by-zero.
     double currentVol = volatility;
     if (currentVol <= 0.0) {
         currentVol = imbalance.getSupportingMetric("volatility", 0.001);
     }
 
-    // Apply volatility-based conservative adjustment: higher volatility reduces size.
-    // Clamp influence so we don't zero out allocation completely.
-    double volAdjustment = 1.0 - std::min(0.5, currentVol * 10.0); // reduces size up to 50%
+    // Normalize volatility cross-symbol. We avoid raw volatility values which
+    // can differ dramatically between assets. Use a smoothing rule based on
+    // square-root scaling which is stable across magnitudes and then clamp to
+    // a reasonable band so adjustments are not extreme.
+    double volNorm = std::max(0.0001, currentVol);
+    // Smoother adjustment: smaller effect around typical vol, reduce ~30% for
+    // assets with vol ~4x typical (tunable offline).
+    double volAdjustment = 1.0 / std::sqrt(volNorm * 100.0); // heuristic smoothing
+    volAdjustment = std::clamp(volAdjustment, 0.5, 1.2);
     finalSize *= volAdjustment;
 
-    return std::clamp(finalSize, 0.0, 1.0);
+    // Ensure we return a cross-symbol-stable fraction. Enforce a small minimum
+    // allocation so low-price tokens are not always starved; this floor can be
+    // tuned per deployment. Keep upper bound at 1.0.
+    return std::clamp(finalSize, 0.05, 1.0);
 }
 
 // Enhanced TTL calculation
