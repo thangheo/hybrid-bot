@@ -390,7 +390,26 @@ void Trading_system::printStatus() {
         // ignore
     }
 
-    std::cout << "=========================================" << std::endl;
+                // Warmup diagnostics
+                if (isWarmupActive()) {
+                    auto now = std::chrono::steady_clock::now();
+                    auto remaining = std::chrono::duration_cast<std::chrono::seconds>(warmupDuration_ - (now - startTime_)).count();
+                    std::cout << "Warmup active - time remaining: " << remaining << "s" << std::endl;
+                    std::cout << "Suppressed orders during warmup: " << suppressedOrdersDuringWarmup_.load() << std::endl;
+                }
+
+                std::cout << "=========================================" << std::endl;
+}
+
+bool Trading_system::isWarmupActive() const {
+    try {
+        if (!running_) return false;
+        auto now = std::chrono::steady_clock::now();
+        auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - startTime_);
+        return elapsed < warmupDuration_;
+    } catch (...) {
+        return false;
+    }
 }
  
 
@@ -907,10 +926,7 @@ void Trading_system::signalWorkerLoop(size_t workerId) {
                 //if signal is neutral, skip
                 if (signal.direction == core::Direction::NEUTRAL) continue;
                 signalsGenerated_++;
-             
-                // std::cout << "PTCA recommendation for signal " << signal.id 
-                //           << ": " << ptcaRecommendation << std::endl;
-                double adjustedStrength = signal.strength;
+                             double adjustedStrength = signal.strength;
               
 
                 // convert and validate
@@ -1179,6 +1195,14 @@ void Trading_system::setupComponentConnections() {
 }
 
 void Trading_system::realExecution(const execution::TradingSignal& signal) {
+    // If we're in the warmup period, suppress sending real orders. Count them
+    // for diagnostics and return early. This prevents large orders at startup.
+    if (isWarmupActive()) {
+        suppressedOrdersDuringWarmup_.fetch_add(1);
+        LOG_INFO("Warmup", "Suppressing execution for signal {} (warmup active)", signal.id);
+        return;
+    }
+
     // Enqueue execution task to worker pool to avoid thread explosion
     ordersExecuted_++;
     std::unique_lock<std::mutex> lk(execQueueMutex_);

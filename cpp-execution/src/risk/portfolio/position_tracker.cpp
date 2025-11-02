@@ -68,46 +68,82 @@ void Position::setLastUpdated(Timestamp timestamp) {
 }
 
 // Position operations
+// void Position::updatePosition(double quantity, double price) {
+//     if (quantity == 0.0 || price <= 0.0) {
+//         return;
+//     }
+    
+//     // Determine if we're adding to or reducing the position
+//     bool sameDirection = (m_quantity >= 0 && quantity >= 0) || (m_quantity < 0 && quantity < 0);
+    
+//     if (sameDirection || m_quantity == 0.0) {
+//         // Adding to position or establishing new position
+//         double totalCost = (m_quantity * m_averageEntryPrice) + (quantity * price);
+//         m_quantity += quantity;
+        
+//         if (std::abs(m_quantity) > 1e-8) { // Avoid division by very small numbers
+//             m_averageEntryPrice = totalCost / m_quantity;
+//         }
+//     } else {
+//         // Reducing or reversing position
+//         double closeQuantity = std::min(std::abs(quantity), std::abs(m_quantity));
+        
+//         if (m_quantity > 0) {
+//             closeQuantity = -closeQuantity; // We're selling
+//         } else {
+//             closeQuantity = closeQuantity; // We're buying back
+//         }
+        
+//         // Calculate realized PnL for the closed portion
+//         m_realizedPnl += closeQuantity * (price - m_averageEntryPrice);
+        
+//         // Update position
+//         m_quantity += quantity;
+        
+//         // If position reversed, update average entry price for the new portion
+//         if ((m_quantity > 0 && quantity > 0 && (quantity + closeQuantity) > 0) ||
+//             (m_quantity < 0 && quantity < 0 && (quantity + closeQuantity) < 0)) {
+//             double remainingQuantity = quantity + closeQuantity;
+//             if (std::abs(remainingQuantity) > 1e-8) {
+//                 m_averageEntryPrice = price;
+//             }
+//         }
+//     }
+    
+//     m_currentPrice = price;
+//     updateUnrealizedPnl();
+//     m_lastUpdated = std::chrono::system_clock::now();
+// }
 void Position::updatePosition(double quantity, double price) {
-    if (quantity == 0.0 || price <= 0.0) {
-        return;
-    }
+    if (quantity == 0.0 || price <= 0.0) return;
     
-    // Determine if we're adding to or reducing the position
-    bool sameDirection = (m_quantity >= 0 && quantity >= 0) || (m_quantity < 0 && quantity < 0);
+    double oldQuantity = m_quantity;
+    double newQuantity = m_quantity + quantity;
     
-    if (sameDirection || m_quantity == 0.0) {
-        // Adding to position or establishing new position
+    // Case 1: Increasing position size (same direction)
+    if ((oldQuantity >= 0 && newQuantity >= 0 && newQuantity > oldQuantity) ||
+        (oldQuantity <= 0 && newQuantity <= 0 && newQuantity < oldQuantity)) {
+        // Calculate weighted average
         double totalCost = (m_quantity * m_averageEntryPrice) + (quantity * price);
-        m_quantity += quantity;
+        m_quantity = newQuantity;
+        m_averageEntryPrice = totalCost / m_quantity;
+    }
+    // Case 2: Reducing/closing position
+    else if ((oldQuantity > 0 && newQuantity >= 0) ||
+             (oldQuantity < 0 && newQuantity <= 0)) {
+        double closedQuantity = quantity;
+        m_realizedPnl += closedQuantity * (price - m_averageEntryPrice);
+        m_quantity = newQuantity;
+        // Average price stays the same (only closing)
+    }
+    // Case 3: Reversing position (cross zero)
+    else {
+        // Close entire old position
+        m_realizedPnl += (-oldQuantity) * (price - m_averageEntryPrice);
         
-        if (std::abs(m_quantity) > 1e-8) { // Avoid division by very small numbers
-            m_averageEntryPrice = totalCost / m_quantity;
-        }
-    } else {
-        // Reducing or reversing position
-        double closeQuantity = std::min(std::abs(quantity), std::abs(m_quantity));
-        
-        if (m_quantity > 0) {
-            closeQuantity = -closeQuantity; // We're selling
-        } else {
-            closeQuantity = closeQuantity; // We're buying back
-        }
-        
-        // Calculate realized PnL for the closed portion
-        m_realizedPnl += closeQuantity * (price - m_averageEntryPrice);
-        
-        // Update position
-        m_quantity += quantity;
-        
-        // If position reversed, update average entry price for the new portion
-        if ((m_quantity > 0 && quantity > 0 && (quantity + closeQuantity) > 0) ||
-            (m_quantity < 0 && quantity < 0 && (quantity + closeQuantity) < 0)) {
-            double remainingQuantity = quantity + closeQuantity;
-            if (std::abs(remainingQuantity) > 1e-8) {
-                m_averageEntryPrice = price;
-            }
-        }
+        // Open new position in opposite direction
+        m_quantity = newQuantity;
+        m_averageEntryPrice = price;
     }
     
     m_currentPrice = price;
@@ -146,6 +182,10 @@ bool PositionTracker::initialize() {
         // Ensure initialize is idempotent
         bool expected = false;
         if (!m_initialized.compare_exchange_strong(expected, true)) {
+            //  while (!m_initializationComplete.load()) {
+            //     std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            // }
+            // return m_initializationSuccessful.load();
             // Already initialized
             LOG_WARN("PositionTracker", "initialize() called, but already initialized");
             return true;
@@ -174,22 +214,23 @@ bool PositionTracker::initialize() {
         // when MarketDataInterface invokes callbacks from worker threads.
         // Register for market data updates if supported. Capture a weak_ptr to avoid
         // calling into a PositionTracker that has been destroyed.
-        try {
-            std::weak_ptr<PositionTracker> weak_self = shared_from_this();
-            m_dataInterface->registerMarketDataCallback(
-                [weak_self](const MarketData& marketData) {
-                    if (auto self = weak_self.lock()) {
-                        try {
-                            self->updateMarketData(marketData);
-                        } catch (...) {
-                            // swallow exceptions from callback to avoid crashing caller
-                        }
-                    }
-                }
-            );
-        } catch (const std::exception& e) {
-            LOG_WARN("PositionTracker", std::format("Failed to register market data callback: {}", e.what()));
-        }
+        // --> already init in RiskManager.cpp so not needed here
+        // try {
+        //     std::weak_ptr<PositionTracker> weak_self = shared_from_this();
+        //     m_dataInterface->registerMarketDataCallback(
+        //         [weak_self](const MarketData& marketData) {
+        //             if (auto self = weak_self.lock()) {
+        //                 try {
+        //                     self->updateMarketData(marketData);
+        //                 } catch (...) {
+        //                     // swallow exceptions from callback to avoid crashing caller
+        //                 }
+        //             }
+        //         }
+        //     );
+        // } catch (const std::exception& e) {
+        //     LOG_WARN("PositionTracker", std::format("Failed to register market data callback: {}", e.what()));
+        // }
         
         
         return true;
@@ -225,41 +266,7 @@ bool PositionTracker::shutdown() {
         return false;
     }
 }
-
-// // reconcilePositions
-// bool PositionTracker::reconcilePositions() {
-//     try {
-//         // Fetch latest positions from external source (e.g. exchange API)
-//         auto externalPositions = m_dataInterface->fetchCurrentPositions();
-        
-//         std::lock_guard<std::mutex> lock(m_positionsMutex);
-        
-//         // Clear current positions and rebuild from external data
-//         m_positions.clear();
-        
-//         for (const auto& extPos : externalPositions) {
-//             Position position(
-//                 extPos.exchangeId,
-//                 extPos.tradingPair,
-//                 extPos.strategyId,
-//                 extPos.quantity,
-//                 extPos.averageEntryPrice
-//             );
-//             position.setCurrentPrice(extPos.currentPrice);
-//             position.setUnrealizedPnl(extPos.unrealizedPnl);
-//             position.setRealizedPnl(extPos.realizedPnl);
-//             position.setLastUpdated(std::chrono::system_clock::now());
-            
-//             std::string key = createPositionKey(extPos.exchangeId, extPos.tradingPair);
-//             m_positions.emplace(key, std::move(position));
-//         }
-        
-//         return true;
-//     } catch (const std::exception& e) {
-//         std::cerr << "Error reconciling positions: " << e.what() << std::endl;
-//         return false;
-//     }
-// }
+ 
 void PositionTracker::processExecutionReport(const ExecutionReport& executionReport) {
     try {
         // Lightweight debug logging to help diagnose missing positions
@@ -372,7 +379,16 @@ bool PositionTracker::reconcilePositions(ExchangeId exchangeId) {
         std::lock_guard<std::mutex> lock(m_positionsMutex);
         
         // Clear current positions and rebuild from external data
-        m_positions.clear();
+        // m_positions.clear();
+        // Only clear positions for THIS exchange
+        auto it = m_positions.begin();
+        while (it != m_positions.end()) {
+            if (it->second.getExchangeId() == exchangeId) {
+                it = m_positions.erase(it);
+            } else {
+                ++it;
+            }
+        }
         
         for (const auto& extPos : externalPositions) {
             Position position(
