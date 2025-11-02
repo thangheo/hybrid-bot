@@ -70,7 +70,8 @@ struct TradingSignal {
     core::Symbol symbol;                              // Trading pair symbol
     core::ExchangeId exchangeId;                      // Exchange identifier
     double targetSize;                                // Suggested position size (from execution)
-    std::vector<PriceTarget> targets;                 // Price targets /what the fuck is this?
+    double quantity;                                  // Quantity to trade (from execution)
+    std::vector<PriceTarget> targets;                 // Price targets
     double price;                                     // Price at which to execute the order
     // Strategy information
     StrategyId strategyId;                            // Strategy identifier
@@ -155,6 +156,8 @@ struct TradingSignal {
     core::Direction getDirection() const { return direction; }
     double getStrength() const { return strength; }
     double getTargetSize() const { return targetSize; }
+    double getQuantity() const { return targetSize*price; } // assuming quantity = size * price
+    const core::ExchangeId& getExchangeId() const { return exchangeId; }
     std::chrono::milliseconds getSignalTtl() const { 
         return std::chrono::duration_cast<std::chrono::milliseconds>(ttl); 
     }

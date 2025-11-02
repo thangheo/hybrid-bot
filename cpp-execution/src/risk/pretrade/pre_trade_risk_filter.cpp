@@ -204,12 +204,12 @@ double PreTradeRiskFilter::getAllowedPositionSize(const TradingPair& tradingPair
 ValidationResult PreTradeRiskFilter::validateSignal(const TradingSignal& signal) {
     // Start timing the validation
     auto startTime = std::chrono::high_resolution_clock::now();
-    
-    LOG_DEBUG("Validating signal: id={}, pair={}, direction={}, size={}",
-              signal.getSignalId(), signal.getTradingPair(), 
-              (signal.getDirection() == core::Direction::BUY ? "BUY" : "SELL"), 
-              signal.getTargetSize());
-    
+
+    LOG_DEBUG("Validating signal: id={}, pair={}, direction={}, size={}, quantity={}",
+              signal.getSignalId(), signal.getTradingPair(),
+              (signal.getDirection() == core::Direction::BUY ? "BUY" : "SELL"),
+                signal.getTargetSize(), signal.getQuantity());
+
     // Check if we're in emergency mode - reject all signals
     if (m_activeMode == RiskManagerMode::EMERGENCY) {
         ValidationResult result;
