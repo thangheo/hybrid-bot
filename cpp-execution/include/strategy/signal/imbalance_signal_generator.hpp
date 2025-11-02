@@ -277,7 +277,12 @@ private:
      * @param strength Signal strength
      * @param confidence Signal confidence
      * @param quality Signal quality
-     * @return Optimal target size
+     * @param volatility Optional externally-provided volatility estimate (if <=0 the generator will
+     *        fall back to searching for a supporting metric named "volatility" inside the
+     *        ImbalanceEvent). This value is used to scale the target size conservatively.
+     * @return Optimal target size as a fraction in [0.0, 1.0]. This represents the fraction
+     *         of the USD notional (position size) the strategy should allocate for this signal —
+     *         it is NOT an asset quantity.
      */
     double calculateTargetSize(
         const ImbalanceEvent& imbalance, 

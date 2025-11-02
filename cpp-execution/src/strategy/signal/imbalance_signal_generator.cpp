@@ -560,6 +560,10 @@ SignalQualityMetrics ImbalanceSignalGenerator::calculateSignalQuality(
 }
 
 // Enhanced target size calculation
+// Returns a fractional target in [0,1] that represents the portion of the USD
+// notional (positionSize) to allocate for this signal. This function uses the
+// optional `volatility` parameter if provided (volatility > 0), otherwise it
+// falls back to reading the "volatility" supporting metric from the imbalance.
 double ImbalanceSignalGenerator::calculateTargetSize(
     const ImbalanceEvent& imbalance, double strength, double confidence, double quality, double volatility) const {
     
@@ -621,15 +625,20 @@ double ImbalanceSignalGenerator::calculateTargetSize(
     }
     
     double finalSize = baseSize * regimeScaling * typeScaling;
-    
-    // Apply volatility-based adjustments
-    // if (volatilityEstimator_) {
-        // double currentVol = volatilityEstimator_->getCurrentVolatility(imbalance.symbol);
-        double currentVol = imbalance.getSupportingMetric("volatility", 0.001);
-        double volAdjustment = 1.0 - std::min(0.5, currentVol * 10.0); // Reduce size with high volatility
-    //     finalSize *= volAdjustment;
-    // }
-    
+
+    // Determine volatility to use: prefer explicit parameter if > 0, otherwise
+    // fall back to the supporting metric inside the event. Use a small positive
+    // default to avoid divide-by-zero or overly aggressive scaling.
+    double currentVol = volatility;
+    if (currentVol <= 0.0) {
+        currentVol = imbalance.getSupportingMetric("volatility", 0.001);
+    }
+
+    // Apply volatility-based conservative adjustment: higher volatility reduces size.
+    // Clamp influence so we don't zero out allocation completely.
+    double volAdjustment = 1.0 - std::min(0.5, currentVol * 10.0); // reduces size up to 50%
+    finalSize *= volAdjustment;
+
     return std::clamp(finalSize, 0.0, 1.0);
 }
 
