@@ -77,6 +77,13 @@ using namespace trading::core;
         // volumeProfileAnalyzer_ = std::make_shared<VolumeProfileAnalyzer>(config_.volumeProfileConfig);
      
         signalGenerator_ = std::make_shared<ImbalanceSignalGenerator>(config_.signalGeneratorConfig);
+        // Provide the top-level strategy id to the generator so it can tag signals
+        // that were created without an explicit StrategyId.
+        try {
+            signalGenerator_->setStrategyId(config_.strategy_id);
+        } catch (const std::exception& e) {
+            LOG_WARN("Failed to set strategy id on signal generator: {}", e.what());
+        }
         momentumCorrelator_ = std::make_shared<MomentumCorrelation>(config_.momentumCorrelationConfig);
         thresholdManager_ = std::make_shared<ThresholdManager>(config_.thresholdManagerConfig);
         // signalDecayModel_ = std::make_shared<SignalDecayModel>(config_.signalDecayConfig);
@@ -165,10 +172,22 @@ void StrategyEngine::handleSignalGenerated(const TradingSignal& signal) {
         // LOG_WARN("Could not acquire lock in handleSignalGenerated - queued signal {}", signal.id);
         return;
     }
-    activeSignals_[signal.id] = signal;
+    // Ensure the signal carries a valid strategy id/version. Some generators
+    // create signals without populating strategy information (left as the
+    // default StrategyId which is "UNKNOWN:1.0"). Fill it from the
+    // engine's configured strategy id when missing to keep downstream
+    // components (execution, risk) informed.
+    TradingSignal s = signal; // make a mutable copy
+    if (!s.strategyId.isValid()) {
+        s.strategyId = config_.strategy_id;
+        // keep the config_.version string in sync if necessary
+        if (s.strategyId.version.empty()) s.strategyId.version = config_.version;
+    }
+
+    activeSignals_[s.id] = s;
     for (const auto& [id, callback] : signalCallbacks_) {
         try {
-            callback(signal);
+            callback(s);
         } catch (const std::exception& e) {
             LOG_ERROR("Exception in signal callback {}: {}", id, e.what());
         }

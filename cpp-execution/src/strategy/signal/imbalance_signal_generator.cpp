@@ -135,6 +135,11 @@ bool ImbalanceSignalGenerator::initialize(const SignalGeneratorConfig& config) {
     return true;
 }
 
+void ImbalanceSignalGenerator::setStrategyId(const core::StrategyId& strategyId) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    strategyId_ = strategyId;
+}
+
 // Core processing methods
 int ImbalanceSignalGenerator::processImbalances(const std::vector<ImbalanceEvent>& imbalances) {
     auto t0 = std::chrono::steady_clock::now();
@@ -417,6 +422,13 @@ TradingSignal ImbalanceSignalGenerator::createSignalFromImbalance(
         // LOG_WARN("createSignalFromImbalance: id={} total={}us (t1={}us, t2={}us, t3={}us, t4={}us, t5={}us, t6={}us)",
         //           signal.id, dur_us, dur_us1, dur_us2, dur_us3, dur_us4, dur_us5, dur_us6);
 
+    }
+    // If the generator has a configured strategy id, ensure the signal carries it
+    // when the creator didn't set one. This avoids downstream components seeing
+    // UNKNOWN strategy identifiers.
+    if (!strategyId_.isEmpty() && !signal.strategyId.isValid()) {
+        signal.strategyId = strategyId_;
+        if (signal.strategyId.version.empty()) signal.strategyId.version = config_.version;
     }
     
     return signal;
