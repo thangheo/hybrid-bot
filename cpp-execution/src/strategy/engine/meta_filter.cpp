@@ -3,6 +3,7 @@
 #include "common/logger.hpp"
 #include <nlohmann/json.hpp>
 #include <iomanip>
+#include <algorithm>
 
 namespace trading::strategy::engine {
 
@@ -38,10 +39,29 @@ MetaFilterResult MetaFilter::checkEntryAllowed(
         return result;
     }
 
-    // Get regime information
+    // Try both symbol formats: with slash (BTC/USDT) and without (BTCUSDT)
     core_analysis::RegimeInfo regime_info;
-    if (!regime_subscriber->get(symbol, regime_info)) {
-        LOG_DEBUG("MetaFilter: No regime info available for symbol {}", symbol);
+    std::string lookup_symbol = symbol;
+    
+    // First try the symbol as-is
+    bool found_regime = regime_subscriber->get(symbol, regime_info);
+    
+    // If not found, try converting format
+    if (!found_regime) {
+        // Convert BTC/USDT -> BTCUSDT for regime lookup
+        std::string converted_symbol = symbol;
+        // Remove slash and dash characters
+        converted_symbol.erase(std::remove(converted_symbol.begin(), converted_symbol.end(), '/'), converted_symbol.end());
+        converted_symbol.erase(std::remove(converted_symbol.begin(), converted_symbol.end(), '-'), converted_symbol.end());
+        
+        found_regime = regime_subscriber->get(converted_symbol, regime_info);
+        if (found_regime) {
+            lookup_symbol = converted_symbol;
+        }
+    }
+    
+    if (!found_regime) {
+        LOG_DEBUG("MetaFilter: No regime info available for symbol {} (tried: {} and converted)", symbol, lookup_symbol);
         result.allow_entry = true; // Default to allow when no data
         result.block_reason = "regime_info_unavailable";
         allowed_entries_++;

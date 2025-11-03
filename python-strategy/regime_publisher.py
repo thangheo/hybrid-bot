@@ -82,6 +82,22 @@ def symbol_filename(symbol):
     return symbol.replace('/', '_').replace('-', '_')
 
 
+def symbol_to_trading_format(symbol):
+    """Convert symbol from config format (BTCUSDT) to trading format (BTC/USDT)"""
+    # If already has slash, return as-is
+    if '/' in symbol:
+        return symbol
+    
+    # Common patterns: most crypto pairs end with USDT, USDC, BTC, ETH
+    for quote in ['USDT', 'USDC', 'BTC', 'ETH', 'BNB']:
+        if symbol.endswith(quote):
+            base = symbol[:-len(quote)]
+            return f"{base}/{quote}"
+    
+    # Fallback: assume it's already correct or unknown format
+    return symbol
+
+
 def load_models(data_dir):
     """Load tất cả models đã train"""
     models = {}
@@ -336,6 +352,9 @@ def publish_regimes(symbols, data_dir, socket, interval=600, probs_decimals: int
                 key = symbol_filename(symbol)
                 model_entry = models.get(key)
                 
+                # Use trading format for publishing (with slash) while keeping filename format for model lookup
+                publish_symbol = symbol_to_trading_format(symbol)
+                
                 entry: dict[str, Any] = {
                     'regime': None,
                     'probs': None,
@@ -347,7 +366,7 @@ def publish_regimes(symbols, data_dir, socket, interval=600, probs_decimals: int
                     # Be explicit: use -1 as the "unknown" sentinel (matches C++ RegimeInfo)
                     entry['regime'] = -1
                     entry['probs'] = []
-                    payload['regimes'][symbol] = entry
+                    payload['regimes'][publish_symbol] = entry
                     continue
                 
                 try:
@@ -534,7 +553,7 @@ def publish_regimes(symbols, data_dir, socket, interval=600, probs_decimals: int
                     entry['probs'] = []
                     print(f"{symbol:12} ERROR: {e}")
                 
-                payload['regimes'][symbol] = entry
+                payload['regimes'][publish_symbol] = entry
             
             # Publish
             try:
