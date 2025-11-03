@@ -233,7 +233,7 @@
     },
     "imbalanceDetector": {
       "parameters": {
-        "strategy_id": "order_imbalance_btc_usdt",
+        "strategy_id": "order_imbalance",
         "version": "1.2.0",
         "volumeImbalanceThreshold": 0.35,
         "priceLevelImbalanceThreshold": 0.25,
@@ -261,11 +261,11 @@
         },
         "bayesModelPath": "models/bayesian/",
         "labelingDelayMs": 5000,
-        "bayesSaveAfterUpdates": 200,
+        "bayesSaveAfterUpdates": 100,
         "requireModelReadyUpdates": 400,
         "bayesMinSaveIntervalMs": 60000,
         "bayesSaveIntervalMs": 360000,
-        "beta": 0.1
+        "beta": 0.02
       }
     },
     "liquidityMonitor": {
