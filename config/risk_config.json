@@ -227,7 +227,6 @@
       "APT": { "minOrderSize": 0.1, "minNotional": 10.0, "maxDeviation": 0.1, "slippageTolerance": 0.03 },
       "TIA": { "minOrderSize": 0.1, "minNotional": 10.0, "maxDeviation": 0.1, "slippageTolerance": 0.03 },
       "SHIB": { "minOrderSize": 1000.0, "minNotional": 5.0, "maxDeviation": 0.15, "slippageTolerance": 0.05 },
-      "PEPE": { "minOrderSize": 1000.0, "minNotional": 5.0, "maxDeviation": 0.15, "slippageTolerance": 0.05 },
       "FLOKI": { "minOrderSize": 1000.0, "minNotional": 5.0, "maxDeviation": 0.15, "slippageTolerance": 0.05 },
       "ATOM": { "minOrderSize": 0.01, "minNotional": 10.0, "maxDeviation": 0.09, "slippageTolerance": 0.03 },
       "ALGO": { "minOrderSize": 1.0, "minNotional": 10.0, "maxDeviation": 0.1, "slippageTolerance": 0.035 },

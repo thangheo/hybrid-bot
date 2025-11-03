@@ -125,7 +125,7 @@ data_ingestion:
 
     # Meme Coins with Utility Potential
     - "SHIBUSDT"   # Shiba Inu - Ecosystem expansion
-    - "PEPEUSDT"   # Pepe - Leading meme with strong community
+    # - "PEPEUSDT"   # Pepe - Leading meme with strong community
     - "FLOKIUSDT"  # Floki - Gaming and utility expansion
     # - "BONKUSDT"   # Bonk - Solana-based meme leader
 

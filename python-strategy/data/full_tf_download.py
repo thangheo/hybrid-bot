@@ -111,27 +111,34 @@ def main():
     print("=" * 60)
     
     # Nhập thông tin từ người dùng
-    symbol = input("Nhập symbol (vd: BTC/USDT): ").strip() or "BTC/USDT"
-    timeframe = input("Nhập timeframe (vd: 1h, 5m, 1d): ").strip() or "1h"
+    # symbol = input("Nhập symbol (vd: BTC/USDT): ").strip() or "BTC/USDT"
+    # timeframe = input("Nhập timeframe (vd: 1h, 5m, 1d): ").strip() or "1h"
     
-    while True:
-        try:
-            length_input = input("Nhập số lượng nến cần lấy (mặc định 500): ").strip()
-            length = int(length_input) if length_input else 500
-            if length <= 0:
-                print("❌ Số lượng nến phải lớn hơn 0")
-                continue
-            break
-        except ValueError:
-            print("❌ Vui lòng nhập số hợp lệ")
+    # while True:
+    #     try:
+    #         length_input = input("Nhập số lượng nến cần lấy (mặc định 500): ").strip()
+    #         length = int(length_input) if length_input else 500
+    #         if length <= 0:
+    #             print("❌ Số lượng nến phải lớn hơn 0")
+    #             continue
+    #         break
+    #     except ValueError:
+    #         print("❌ Vui lòng nhập số hợp lệ")
     
-    exchange_name = input("Nhập tên sàn (mặc định binance): ").strip() or "binance"
-    
+    # exchange_name = input("Nhập tên sàn (mặc định binance): ").strip() or "binance"
+    # use argparse instead of input for script usage
+    import argparse
+    parser = argparse.ArgumentParser(description="Tải dữ liệu OHLCV từ sàn crypto")
+    parser.add_argument("--symbol", type=str, default="BTC/USDT", help="Cặp giao dịch (vd: BTC/USDT)")
+    parser.add_argument("--timeframe", type=str, default="1h", help="Khung thời gian (vd: 1h, 5m, 1d)")
+    parser.add_argument("--length", type=int, default=500, help="Số nến cần lấy")
+    parser.add_argument("--exchange", type=str, default="binance", help="Tên sàn giao dịch")
+    args = parser.parse_args()
     print("\n" + "=" * 60)
     
     try:
         # Tải dữ liệu
-        df = download_crypto_data(symbol, timeframe, length, exchange_name)
+        df = download_crypto_data(args.symbol, args.timeframe, args.length, args.exchange)
         
         print(f"\n📊 Tổng số nến đã tải: {len(df)}")
         print(f"📅 Từ: {df['datetime'].iloc[0]}")
@@ -144,7 +151,7 @@ def main():
         print(df.tail(10).to_string(index=False))
         
         # Lưu ra file CSV
-        filename = f"{symbol.replace('/', '_')}_{timeframe}_{length}candles.csv"
+        filename = f"{args.symbol.replace('/', '_')}_{args.timeframe}_{args.length}candles.csv"
         df.to_csv(filename, index=False)
         print(f"\n✅ Đã lưu {len(df)} nến vào {filename}")
         
