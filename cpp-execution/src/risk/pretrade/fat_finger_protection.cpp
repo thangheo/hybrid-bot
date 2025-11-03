@@ -149,6 +149,12 @@ bool FatFingerProtection::checkFatFinger(const execution::TradingSignal& signal,
     ++totalValidations_;
     
     // For signals, we only check size (no price available yet)
+    // Prefer explicit resolved quantity if set on the signal. If not set, fall back
+    // to targetSize (which may be fractional) and treat it as a relative size.
+    double sigQty = signal.getQuantity();
+    if (sigQty > 0.0) {
+        return checkSizeAnomaly(signal.getTradingPair(), sigQty, violations);
+    }
     return checkSizeAnomaly(signal.getTradingPair(), signal.getTargetSize(), violations);
 }
 

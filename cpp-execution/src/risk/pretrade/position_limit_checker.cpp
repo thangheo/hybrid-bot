@@ -98,16 +98,40 @@ bool PositionLimitChecker::checkPositionLimit(const TradingSignal& signal,
     double orderNotional = 0.0;
     double targetSize = signal.getTargetSize();
     double assetLimitUsd = getPositionLimit(asset, strategyId.toString());
+    double orderQuantity = std::abs(signal.getQuantity());
 
-    if (targetSize <= 1.0) {
+    if (orderQuantity > 0.0) {
+        // Explicit absolute quantity provided on the signal -> convert to USD using current price
+        if (currentPrice > 0.0) {
+            orderNotional = orderQuantity * currentPrice;
+        } else {
+            RiskViolation violation(
+                ViolationType::PRICE_DEVIATION,
+                "Price unavailable to compute order notional for position limit check",
+                0.0,
+                0.0
+            );
+            violations.push_back(violation);
+            return false;
+        }
+    } else if (targetSize <= 1.0) {
         // Interpret as fraction of the configured asset limit (USD)
+        if (assetLimitUsd <= 0.0) {
+            RiskViolation violation(
+                ViolationType::POSITION_LIMIT,
+                "Asset position limit too low to interpret targetSize fractionally for " + asset,
+                assetLimitUsd,
+                0.0
+            );
+            violations.push_back(violation);
+            return false;
+        }
         orderNotional = targetSize * assetLimitUsd;
     } else {
-        // Interpret as absolute asset quantity
+        // targetSize > 1.0: treat as absolute asset quantity
         if (currentPrice > 0.0) {
             orderNotional = std::abs(targetSize) * currentPrice;
         } else {
-            // Price unavailable: cannot reliably compute notional - treat as violation
             RiskViolation violation(
                 ViolationType::PRICE_DEVIATION,
                 "Price unavailable to compute order notional for position limit check",

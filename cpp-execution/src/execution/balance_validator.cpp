@@ -53,55 +53,81 @@ BalanceValidationResult BalanceValidator::validateOrder(
     bool forceRefresh
 ) {
     BalanceValidationResult result;
-    
+
     try {
-        // Validate minimum notional first (quick check)
-        if (!validateMinNotional(order)) {
-            result.isValid = false;
-            result.reason = "Order value below minimum notional requirement";
-            return result;
+        // Determine a price to use for notional checks. Prefer the order's price; if
+        // it's a market order (price==0) attempt to fetch a recent market price.
+        double priceForNotional = order.getPrice();
+        if (priceForNotional <= 0.0) {
+            try {
+                if (exchangeGateway_) {
+                    priceForNotional = exchangeGateway_->getCurrentPrice(exchangeId, order.getTradingPair(), false).get();
+                } else if (apiClient_) {
+                    priceForNotional = apiClient_->getCurrentPrice(order.getTradingPair()).get();
+                }
+            } catch (const std::exception& e) {
+                std::cerr << "BalanceValidator: failed to fetch market price for notional checks: " << e.what() << std::endl;
+                priceForNotional = 0.0;
+            }
         }
-        
-        // Get balances
+
+        // Quick min-notional check only when we have a usable price
+        if (priceForNotional > 0.0) {
+            double notionalValueQuick = priceForNotional * order.getQuantity();
+            if (notionalValueQuick < config_.minNotionalValue) {
+                result.isValid = false;
+                result.reason = "Order value below minimum notional requirement";
+                std::cerr << "validateMinNotional(quick): notional=" << notionalValueQuick
+                          << " min=" << config_.minNotionalValue << " (priceForNotional=" << priceForNotional << ")" << std::endl;
+                return result;
+            }
+        } else {
+            // Price not available; log and continue without quick min-notional rejection
+            std::cerr << "validateMinNotional: price unavailable, skipping quick notional check for "
+                      << order.getTradingPair().toString() << std::endl;
+        }
+
+        // Retrieve balances (may use cached values)
         auto balancesFuture = getBalances(exchangeId, forceRefresh);
         auto balances = balancesFuture.get();
-        
         if (balances.empty()) {
             result.isValid = false;
             result.reason = "Unable to fetch account balances";
             return result;
         }
-        
-        // Parse symbol to get base/quote assets
+
+        // Parse symbol into base/quote for balance checks
         auto [baseAsset, quoteAsset] = parseSymbol(order.getTradingPair().toString());
-        
         if (baseAsset.empty() || quoteAsset.empty()) {
             result.isValid = false;
             result.reason = "Unable to parse trading pair: " + order.getTradingPair().toString();
             return result;
         }
-        
-        // Calculate required balance based on order side
+
+        // Normalize exchange name for fee lookup
         std::string exchangeName = exchangeId.toString();
         std::transform(exchangeName.begin(), exchangeName.end(), exchangeName.begin(), ::tolower);
-        
+
         if (order.getSide() == models::OrderSide::BUY) {
-            // For buy orders, check quote asset balance
+            // BUY: check quote asset (e.g., USDT) balance
             result.asset = quoteAsset;
             result.availableBalance = findAssetBalance(balances, quoteAsset);
-            result.requiredBalance = calculateRequiredBalance(order, exchangeName);
-            result.estimatedFees = result.requiredBalance - (order.getPrice() * order.getQuantity());
-            
+
+            // Compute required balance using the best available price
+            double priceUsed = (priceForNotional > 0.0) ? priceForNotional : order.getPrice();
+            double orderValue = priceUsed * order.getQuantity();
+            double tradingFee = getTradingFee(exchangeName);
+            result.requiredBalance = orderValue * (1.0 + tradingFee);
+            result.estimatedFees = result.requiredBalance - (priceUsed * order.getQuantity());
+
             // Add safety buffer + safety margin
             double bufferAmount = result.requiredBalance * config_.balanceBufferPercent;
             double safetyAmount = result.requiredBalance * config_.safetyMarginPercent;
             double totalRequired = result.requiredBalance + bufferAmount + safetyAmount;
-            
+
             if (result.availableBalance < totalRequired) {
                 result.isValid = false;
                 result.reason = "Insufficient " + quoteAsset + " balance for BUY order";
-                
-                // Calculate suggested quantity
                 if (result.availableBalance > 0) {
                     result.canAdjust = true;
                     result.suggestedQuantity = calculateSuggestedQuantity(order, result.availableBalance, exchangeName);
@@ -110,28 +136,22 @@ BalanceValidationResult BalanceValidator::validateOrder(
                 result.isValid = true;
                 result.reason = "Sufficient balance available";
             }
-            
-        } else { // SELL order
-            // For sell orders, check base asset balance
+
+        } else {
+            // SELL: check base asset balance
             result.asset = baseAsset;
             result.availableBalance = findAssetBalance(balances, baseAsset);
             result.requiredBalance = order.getQuantity();
-            
-            // For sell orders, fees are typically deducted from the quote asset received,
-            // but we need to ensure we have enough base asset to sell
-            // Add safety buffer + safety margin for sell checks
+
             double bufferAmount = result.requiredBalance * config_.balanceBufferPercent;
             double safetyAmount = result.requiredBalance * config_.safetyMarginPercent;
             double totalRequired = result.requiredBalance + bufferAmount + safetyAmount;
-            
+
             if (result.availableBalance < totalRequired) {
                 result.isValid = false;
                 result.reason = "Insufficient " + baseAsset + " balance for SELL order";
-                
-                // Calculate suggested quantity
                 if (result.availableBalance > 0) {
                     result.canAdjust = true;
-                    // suggested quantity should also account for safety margin
                     result.suggestedQuantity = result.availableBalance * (1.0 - config_.balanceBufferPercent - config_.safetyMarginPercent);
                 }
             } else {
@@ -139,13 +159,13 @@ BalanceValidationResult BalanceValidator::validateOrder(
                 result.reason = "Sufficient balance available";
             }
         }
-        
+
     } catch (const std::exception& e) {
         result.isValid = false;
         result.reason = "Balance validation failed: " + std::string(e.what());
         std::cerr << "BalanceValidator error: " << e.what() << std::endl;
     }
-    
+
     return result;
 }
 
@@ -320,7 +340,18 @@ double BalanceValidator::calculateSuggestedQuantity(
         double tradingFee = getTradingFee(exchangeName);
         double usableBalance = availableBalance * (1.0 - config_.balanceBufferPercent);
         double maxOrderValue = usableBalance / (1.0 + tradingFee);
-        return maxOrderValue / order.getPrice();
+            double priceForNotional = order.getPrice();
+            if (priceForNotional <= 0.0) {
+                try {
+                    if (exchangeGateway_) {
+                        priceForNotional = exchangeGateway_->getCurrentPrice(core::ExchangeId::fromString(exchangeName), order.getTradingPair(), false).get();
+                    } else if (apiClient_) {
+                        priceForNotional = apiClient_->getCurrentPrice(order.getTradingPair()).get();
+                    }
+                } catch (...) { priceForNotional = 0.0; }
+            }
+            if (priceForNotional <= 0.0) return 0.0;
+            return maxOrderValue / priceForNotional;
     } else {
         // For sell orders, max quantity is the available base balance minus buffer
         return availableBalance * (1.0 - config_.balanceBufferPercent);
@@ -329,7 +360,15 @@ double BalanceValidator::calculateSuggestedQuantity(
 
 bool BalanceValidator::validateMinNotional(const models::Order& order) const {
     double notionalValue = order.getPrice() * order.getQuantity();
-    return notionalValue >= config_.minNotionalValue;
+    bool ok = notionalValue >= config_.minNotionalValue;
+    if (!ok) {
+        std::ostringstream oss;
+        oss << "validateMinNotional: computed notional=" << notionalValue
+            << " < minNotionalValue=" << config_.minNotionalValue
+            << " for order (price=" << order.getPrice() << ", qty=" << order.getQuantity() << ")";
+        std::cerr << oss.str() << std::endl;
+    }
+    return ok;
 }
 
 std::map<std::string, double> BalanceValidator::getCachedBalances(const core::ExchangeId& exchangeId) const {

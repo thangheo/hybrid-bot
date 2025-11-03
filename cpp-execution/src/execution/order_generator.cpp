@@ -84,7 +84,9 @@ models::OrderPtr OrderGenerator::createOrderFromSignal(const std::shared_ptr<Tra
     // Basic signal to order conversion
     params.tradingPair = signal->getTradingPair();
     params.side = signal->getDirection();  // Already a models::OrderSide, no conversion needed
-    params.quantity = signal->getTargetSize();
+    // Prefer absolute quantity if the signal has one set (after exec sizing). Otherwise fall back to targetSize.
+    double sigQty = signal->getQuantity();
+    if (sigQty > 0.0) params.quantity = sigQty; else params.quantity = signal->getTargetSize();
     params.strategy_id = signal->getStrategyId();
     params.signal_id = signal->getSignalId();
     params.signal_strength = signal->getStrength();
