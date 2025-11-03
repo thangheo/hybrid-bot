@@ -21,6 +21,8 @@
 #include "strategy/signal/threshold_manager.hpp"
 #include "strategy/optimization/exchange_calibration.hpp"
 #include "strategy/optimization/adaptive_mechanism.hpp"
+#include "strategy/engine/meta_filter.hpp"
+#include "strategy/engine/shock_detector.hpp"
 #include "data_ingestion/orderbook/order_book.hpp"
 
 #include <string>
@@ -150,6 +152,30 @@ public:
      */
     bool recordSignalResult(const std::string& signalId, const SignalExecutionResult& result);
 
+    /**
+     * @brief Update MetaFilter configuration
+     * @param config New MetaFilter configuration
+     */
+    void updateMetaFilterConfig(const engine::MetaFilterConfig& config);
+
+    /**
+     * @brief Update ShockDetector configuration  
+     * @param config New ShockDetector configuration
+     */
+    void updateShockDetectorConfig(const engine::ShockDetectorConfig& config);
+
+    /**
+     * @brief Get MetaFilter statistics
+     * @return JSON string with MetaFilter statistics
+     */
+    std::string getMetaFilterStatistics() const;
+
+    /**
+     * @brief Get ShockDetector statistics
+     * @return JSON string with ShockDetector statistics
+     */
+    std::string getShockDetectorStatistics() const;
+
 private:
     // Strategy identification
     StrategyId strategyId_;
@@ -175,6 +201,10 @@ private:
     SignalDecayModelPtr signalDecayModel_;
     ExchangeCalibrationPtr exchangeCalibration_;
     AdaptiveMechanismPtr adaptiveMechanism_;
+    
+    // Signal filtering components
+    std::unique_ptr<engine::MetaFilter> meta_filter_;
+    std::unique_ptr<engine::ShockDetector> shock_detector_;
     
     // Strategy state
     StrategyConfig config_;
@@ -212,6 +242,10 @@ private:
     std::optional<ImbalanceEvent> findSourceEvent(
     const TradingSignal& signal, 
     const std::vector<ImbalanceEvent>& events) const;
+
+    // Signal filtering methods
+    bool applySignalFilters(const TradingSignal& signal) const;
+    void updateShockDetectorPrice(const std::string& symbol, double price) const;
 
     // Optimization methods
     void performAdaptiveAdjustments();
