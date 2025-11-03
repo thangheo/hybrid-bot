@@ -1268,15 +1268,19 @@ models::Order ExecutionService::createOrderFromSignal(const TradingSignal& signa
             throw std::invalid_argument("Signal strength must be between 0.0 and 1.0: " + std::to_string(signal.getStrength()));
         }
 
-        // Create order generation parameters
-        OrderGenerationParams params;
-        params.tradingPair = signal.getTradingPair();
-        params.side = signal.getDirection();
-        params.quantity = signal.getTargetSize();
-        params.strategy_id = signal.getStrategyId();
-        params.signal_id = signal.getSignalId();
-        params.signal_strength = signal.getStrength();
-        params.target_size = signal.getTargetSize();
+    // Create order generation parameters
+    OrderGenerationParams params;
+    params.tradingPair = signal.getTradingPair();
+    params.side = signal.getDirection();
+    // Prefer an explicit absolute quantity resolved earlier (signal.quantity). If not set,
+    // fall back to the targetSize (which may be fractional) so downstream components
+    // can decide how to interpret it.
+    double sigQty = signal.getQuantity();
+    if (sigQty > 0.0) params.quantity = sigQty; else params.quantity = signal.getTargetSize();
+    params.strategy_id = signal.getStrategyId();
+    params.signal_id = signal.getSignalId();
+    params.signal_strength = signal.getStrength();
+    params.target_size = signal.getTargetSize();
         params.signal_ttl = signal.getTtl();
         // Default to MARKET; OrderTypeSelector will convert to LIMIT and provide a price when appropriate
         params.type = models::OrderType::MARKET;

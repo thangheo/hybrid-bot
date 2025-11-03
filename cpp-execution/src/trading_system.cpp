@@ -971,7 +971,6 @@ void Trading_system::stopExecWorkerPool() {
     }
     std::cout << "Exec worker pool stopped" << std::endl;
 }
-
 void Trading_system::execWorkerLoop(size_t workerId) {
     while (execWorkersRunning_.load()) {
         execution::TradingSignal task;
@@ -985,49 +984,34 @@ void Trading_system::execWorkerLoop(size_t workerId) {
             task = std::move(execQueue_.front());
             execQueue_.pop_front();
         }
+        
         try {
-            std::this_thread::sleep_for(1ms); // simulate delay .why?
+            std::this_thread::sleep_for(1ms); // simulate network/processing delay
+            
             if (!executionService_) {
                 std::cerr << "Execution service not initialized!" << std::endl;
                 continue;
             }
-            ExecutionResponse response = executionService_->executeSignal(task);
-            if (!response.success) {
-                std::cout << "❌ Execution failed for signal " << task.id 
-                            << ": " << response.error_message << std::endl;
-                // print all of data in this failed order/signal
-                std::cout << "Signal details - Symbol: " << task.symbol.toString()
-                            << ", Direction: " << (task.direction == core::Direction::BUY ? "BUY" : (task.direction == core::Direction::SELL ? "SELL" : "NEUTRAL"))
-                            << ", Strength: " << task.strength
-                            << ", Confidence: " << task.confidence
-                            << ", Quality: " << task.quality
-                            << ", TargetSize: " << task.targetSize
-                            << ", StrategyId: " << task.strategyId
-                            << ", ExchangeId: " << task.exchangeId.toString()
-                            << std::endl;
-                continue;
-            }
-            execution::models::ExecutionReport report;
-            report.setOrderId("ORDER_" + task.id);
-            report.setSymbol(task.symbol);
-            report.setSide(task.direction == core::Direction::BUY ? execution::models::OrderSide::BUY : execution::models::OrderSide::SELL);
+
+            // --- Step 1: Get allowed position size from risk manager ---
             double allowedSize = 0.0;
             if (riskManager_) {
                 allowedSize = riskManager_->getAllowedPositionSize(task.symbol);
             }
+            // Clamp allowed USD budget to min/max order size
+            allowedSize = std::clamp(allowedSize, 10.0, 5000.0);
 
+            // --- Step 2: Apply position sizing (only for BUY orders) ---
             double sizerFraction = 1.0;
-            // Apply position sizing only for BUY (spot-only trading). For SELL/NEUTRAL, we unwind or use fixed logic.
             if (positionSizer_ && task.direction == core::Direction::BUY) {
                 std::map<std::string, double> metrics;
-                // Minimal metrics: use confidence as a rough proxy for win_rate
                 metrics["win_rate"] = task.confidence;
-                // attempt to fetch real volatility from MarketDataInterface (1d timeframe)
+                
+                // Fetch real volatility from market data
                 double vol = 0.05;
                 try {
                     if (marketDataInterface_) {
                         vol = marketDataInterface_->getVolatility(task.symbol, "1d", task.exchangeId.toString());
-                        // normalize / clamp to sensible range
                         vol = std::clamp(vol, 0.0001, 1.0);
                     }
                 } catch (const std::exception& e) {
@@ -1035,63 +1019,91 @@ void Trading_system::execWorkerLoop(size_t workerId) {
                     vol = 0.05;
                 }
                 metrics["volatility"] = vol;
+                
                 std::map<std::string, double> portfolio;
-                //only calculate for buy orders
-                if (task.direction == core::Direction::BUY) {                    
-                    //why calculate sizer for sell orders? we are not increasing position size
-                    sizerFraction = positionSizer_->calculateSize(task.symbol.toString(), metrics, portfolio);
-                }
+                sizerFraction = positionSizer_->calculateSize(task.symbol.toString(), metrics, portfolio);
             }
-            //allowedSize = std::max(allowedSize, 0.0);
-            // allowedSize is in usdt, so clamp it from 10$(min order size) to 5000$ (max order size)
-            allowedSize = std::clamp(allowedSize, 10.0, 5000.0);
-            double positionSize = allowedSize * sizerFraction;
 
-            // `task.targetSize` is a fractional signal strength in [0,1]. Instead
-            // of multiplying it directly (which causes double-scaling when both
-            // it and the position sizer output are fractions), apply it as a
-            // mild tilting multiplier in the range [0.5, 1.0]. This preserves
-            // the position sizer as the primary risk controller while letting
-            // the signal modulate allocation.
+            // --- Step 3: Calculate position size with signal strength tilt ---
+            double positionSize = allowedSize * sizerFraction;
+            
+            // Apply target tilt as a mild multiplier [0.5, 1.0]
             double clampedTarget = std::clamp(task.targetSize, 0.0, 1.0);
-            double targetMultiplier = 0.5 + 0.5 * clampedTarget; // 0.5..1.0
+            double targetMultiplier = 0.5 + 0.5 * clampedTarget;
             double notionalUsd = positionSize * targetMultiplier;
 
-            // Ensure we have a recent price before converting to quantity
+            // --- Step 4: Get current price and convert to quantity ---
             std::optional<double> currentPriceOpt = dataIngestionService_->getLastPrice(task.exchangeId, task.symbol);
-            double currentPrice = currentPriceOpt.has_value() ? currentPriceOpt.value() : 0.0;
-
-            double finalQty = 0.0;
-            if (currentPrice > 0.0) {
-                finalQty = notionalUsd / currentPrice;
-            } else {
-                // If price unavailable, fall back to treating notional as quantity to preserve
-                // previous behavior (but log the situation). This is a degraded fallback.
-                LOG_WARN("ExecWorker: current price unavailable for {} - falling back to raw notional as qty", task.symbol.toString());
-                finalQty = notionalUsd;
+            
+            if (!currentPriceOpt.has_value() || currentPriceOpt.value() <= 0.0) {
+                LOG_WARN("ExecWorker: current price unavailable for {} - skipping order", task.symbol.toString());
+                std::cout << "❌ Execution skipped for signal " << task.id 
+                          << ": Price unavailable" << std::endl;
+                continue;
             }
-            //set quantity to 6 decimal places for task
-            task.setQuantity(std::round(finalQty * 1e6) / 1e6);
-            // If the USD notional is below the minimum order notional, bump to a small default
-            // using the current price to compute quantity. Use notionalUsd for the comparison.
+            
+            double currentPrice = currentPriceOpt.value();
+            double finalQty = notionalUsd / currentPrice;
+
+            // --- Step 5: Enforce minimum notional ---
             const double minNotionalUsd = 10.0;
             if (notionalUsd < minNotionalUsd) {
-                if (currentPrice > 0.0) {
-                    finalQty = 12.0 / currentPrice; // ensure at least ~$12 executed
-                } else {
-                    // As a last resort, keep finalQty as-is (degraded behavior)
-                    LOG_WARN("ExecWorker: cannot enforce min notional for {} because price is unavailable", task.symbol.toString());
-                }
+                finalQty = 12.0 / currentPrice; // Bump to $12 minimum
+                notionalUsd = 12.0;
             }
+
+            // Round quantity to 6 decimal places
+            finalQty = std::round(finalQty * 1e6) / 1e6;
+            task.setQuantity(finalQty);
+
+            // --- Step 6: Log resolved sizing before execution ---
+            std::cout << "[EXEC] Prepared order: symbol=" << task.symbol.toString()
+                      << " qty=" << finalQty 
+                      << " price=" << currentPrice
+                      << " notionalUsd=" << (currentPrice * finalQty)
+                      << " minNotionalUsd=" << minNotionalUsd 
+                      << std::endl;
+
+            // --- Step 7: Execute the signal ---
+            ExecutionResponse response = executionService_->executeSignal(task);
+            
+            if (!response.success) {
+                std::cout << "❌ Execution failed for signal " << task.id 
+                          << ": " << response.error_message << std::endl;
+                std::cout << "Signal details - Symbol: " << task.symbol.toString()
+                          << ", Direction: " << (task.direction == core::Direction::BUY ? "BUY" : 
+                                                 (task.direction == core::Direction::SELL ? "SELL" : "NEUTRAL"))
+                          << ", Strength: " << task.strength
+                          << ", Confidence: " << task.confidence
+                          << ", Quality: " << task.quality
+                          << ", TargetSize: " << task.targetSize
+                          << ", StrategyId: " << task.strategyId
+                          << ", ExchangeId: " << task.exchangeId.toString()
+                          << std::endl;
+                continue;
+            }
+
+            // --- Step 8: Create and process execution report ---
+            execution::models::ExecutionReport report;
+            report.setOrderId("ORDER_" + task.id);
+            report.setSymbol(task.symbol);
+            report.setSide(task.direction == core::Direction::BUY ? 
+                          execution::models::OrderSide::BUY : 
+                          execution::models::OrderSide::SELL);
             report.setQuantity(finalQty);
             report.setFilledQuantity(finalQty);
             report.setStatus(execution::models::OrderState::FILLED);
+            
             if (riskManager_) {
                 riskManager_->processExecutionReport(report);
             }
+
             std::cout << "📈 Executed: " << task.symbol.toString() << " " 
-                        << (task.direction == core::Direction::BUY ? "BUY" : "SELL") 
-                        << " " << task.targetSize << std::endl;
+                      << (task.direction == core::Direction::BUY ? "BUY" : "SELL") 
+                      << " qty=" << finalQty
+                      << " notional=$" << (currentPrice * finalQty)
+                      << std::endl;
+                      
         } catch (const std::exception &e) {
             std::cerr << "Exec worker " << workerId << " error: " << e.what() << std::endl;
         }
