@@ -160,12 +160,6 @@
        "description": "Shiba Inu - Ecosystem expansion"
      },
      {
-       "symbol": "PEPE/USDT",
-       "exchange": "BINANCE",
-       "category": "meme",
-       "description": "Pepe - Leading meme coin"
-     },
-     {
        "symbol": "FLOKI/USDT",
        "exchange": "BINANCE", 
        "category": "meme_utility",
@@ -265,7 +259,7 @@
         "requireModelReadyUpdates": 400,
         "bayesMinSaveIntervalMs": 60000,
         "bayesSaveIntervalMs": 360000,
-        "beta": 0.02
+        "beta": 0.08
       }
     },
     "liquidityMonitor": {
