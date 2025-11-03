@@ -12,11 +12,12 @@
  #include <memory>
  #include <chrono>
  #include <thread>
- 
  namespace trading {
  namespace risk {
  namespace test {
- 
+  using namespace trading;
+    using namespace trading::core;
+    using namespace trading::execution;
  class RiskSystemIntegrationTest : public ::testing::Test {
  protected:
      void SetUp() override {
@@ -60,29 +61,31 @@
      TradingSignal createSampleSignal() {
          TradingSignal signal;
          signal.id = "test-signal-1";
-         signal.exchangeId = ExchangeId::binance().toString();
-         signal.tradingPair = core::Symbol("BTC/USDT");
+         signal.exchangeId = ExchangeId::fromString("binance");
+         signal.setTradingPair(core::Symbol("BTC/USDT"));
          signal.direction = Direction::BUY;
          signal.strength = 0.8;
          signal.targetSize = 1.0;
-         signal.strategyId = "order-imbalance";
+         signal.setStrategyId(StrategyId("test-strategy", "1.0"));
          signal.setTtl(std::chrono::milliseconds(10000)); // 10 seconds TTL
          return signal;
      }
      
-     // Helper method to create a sample execution report
-     ExecutionReport createSampleExecutionReport() {
-         ExecutionReport report;
-         report.orderId = "test-order-1";
-         report.exchangeOrderId = "binance-12345";
-         report.exchangeId = ExchangeId::fromString("binance");
-         report.tradingPair = TradingPair::fromString("BTC/USDT");
-         report.side = "buy";
-         report.status = "filled";
-         report.filledQuantity = 1.0;
-         report.averagePrice = 50000.0;
-         return report;
-     }
+    // Helper method to create a sample execution report
+    ExecutionReport createSampleExecutionReport() {
+        ExecutionReport report;
+        // report.orderId = core::OrderId("order-12345");
+        report.setOrderId("order-12345");
+        report.setExchangeId(ExchangeId::fromString("binance"));
+        report.setSymbol(TradingPair::fromString("BTC/USDT"));
+        report.setSide(models::OrderSide::BUY);
+        report.setType(models::OrderType::LIMIT);
+        report.setQuantity(1.0);
+        report.setStatus(models::OrderState::FILLED);
+        report.setFilledQuantity(1.0);
+        report.setPrice(50000.0);
+        return report;
+    }
      
      std::shared_ptr<RiskConfig> config;
      std::shared_ptr<RiskManager> riskManager;
@@ -110,7 +113,7 @@
  // Test risk parameters flow
  TEST_F(RiskSystemIntegrationTest, RiskParametersFlow) {
      // Get parameters through the service
-     RiskParameters params = riskService->getRiskParameters("binance", "BTC/USDT", "order-imbalance");
+     RiskParameters params = riskService->getRiskParameters(ExchangeId::fromString("binance"), TradingPair::fromString("BTC/USDT"), core::StrategyId("order-imbalance"));
      
      // Update parameters
      params.maxPositionSize = params.maxPositionSize * 1.1; // Increase by 10%
@@ -120,7 +123,7 @@
      EXPECT_TRUE(updateResult);
      
      // Get updated parameters
-     RiskParameters updatedParams = riskService->getRiskParameters("binance", "BTC/USDT", "order-imbalance");
+     RiskParameters updatedParams = riskService->getRiskParameters(ExchangeId::fromString("binance"), TradingPair::fromString("BTC/USDT"), core::StrategyId("order-imbalance"));
      
      // Verify the update was applied
      EXPECT_EQ(updatedParams.maxPositionSize, params.maxPositionSize);
@@ -140,8 +143,9 @@
      
      // As a simplified test, we can check that getting risk parameters still works
      // after processing an execution
-     RiskParameters params = riskService->getRiskParameters(report.exchangeId, report.tradingPair, "order-imbalance");
-     EXPECT_FALSE(params.exchangeId.empty());
+     // Use the same exchange and symbol used when creating the sample report
+     RiskParameters params = riskService->getRiskParameters(ExchangeId::fromString("binance"), TradingPair::fromString("BTC/USDT"), core::StrategyId("order-imbalance"));
+     EXPECT_FALSE(params.exchangeId.toString().empty());
  }
  
  // Test risk event propagation

@@ -7,10 +7,10 @@
 #include <gmock/gmock.h>
 #include <memory>
 #include <chrono>
+#include <thread>
 #include <map>
 
-namespace risk {
-namespace test {
+namespace trading::risk::test {
 
 // Test fixture
 class CircuitBreakerTest : public ::testing::Test {
@@ -40,10 +40,11 @@ protected:
         cbConfig.metricThresholds["sharpe_ratio"] = sharpeThreshold;
         
         // Create test instance
+        config.setCircuitBreakerConfig(cbConfig);
         circuitBreaker = std::make_unique<CircuitBreaker>(config);
-        circuitBreaker->updateConfiguration(cbConfig);
         circuitBreaker->initialize();
     }
+    
     RiskConfig config;
     CircuitBreakerConfig cbConfig;
     std::unique_ptr<CircuitBreaker> circuitBreaker;
@@ -77,13 +78,6 @@ TEST_F(CircuitBreakerTest, TriggeredStateWhenMetricExceedsCriticalThreshold) {
     
     // Setup callback to detect state change
     bool stateChangeTriggered = false;
-    //  if (circuitBreaker_) {
-    //     circuitBreaker_->registerStateChangeCallback([this](CircuitBreakerState oldState, 
-    //                                                        CircuitBreakerState newState, 
-    //                                                        std::string_view reason) {
-    //         handleCircuitBreakerEvent(oldState, newState, reason);
-    //     });
-    // }
     circuitBreaker->registerStateChangeCallback(
         [&stateChangeTriggered](CircuitBreakerState oldState, 
                                CircuitBreakerState newState, 
@@ -143,11 +137,13 @@ TEST_F(CircuitBreakerTest, ManualTrigger) {
         EXPECT_EQ(history[0].triggerMetric, "MANUAL");
     }
 }
+
 TEST_F(CircuitBreakerTest, ResetAfterHaltPeriod) {
     // Modify config for shorter halt period (for testing)
-    // Modify config for shorter halt period (for testing)
     cbConfig.mandatoryHaltPeriodSeconds = 1;
+    cbConfig.coolingPeriodSeconds = 1;
     circuitBreaker->updateConfiguration(cbConfig);
+    
     // Trigger circuit breaker
     circuitBreaker->manualTrigger("Testing reset");
     EXPECT_EQ(circuitBreaker->getState(), CircuitBreakerState::TRIGGERED);
@@ -162,11 +158,7 @@ TEST_F(CircuitBreakerTest, ResetAfterHaltPeriod) {
     // Should be in cooling state
     EXPECT_EQ(circuitBreaker->getState(), CircuitBreakerState::COOLING);
     
-    // There's no public API to query remaining seconds until reset; rely on state checks and timing instead.
-    // Ensure we are still in COOLING state before waiting for completion.
-    EXPECT_EQ(circuitBreaker->getState(), CircuitBreakerState::COOLING);
-    
-    // Wait for cooling period
+    // Wait for cooling period to complete
     std::this_thread::sleep_for(std::chrono::milliseconds(1200));
     
     // Reset again
@@ -177,17 +169,18 @@ TEST_F(CircuitBreakerTest, ResetAfterHaltPeriod) {
     EXPECT_EQ(circuitBreaker->getState(), CircuitBreakerState::OFF);
     EXPECT_TRUE(circuitBreaker->isTradingAllowed());
 }
+
 TEST_F(CircuitBreakerTest, AutoResetAfterCoolingPeriod) {
     // Modify config for shorter periods (for testing)
     cbConfig.mandatoryHaltPeriodSeconds = 1;
     cbConfig.coolingPeriodSeconds = 1;
-    // Modify config for shorter periods (for testing)
-    cbConfig.mandatoryHaltPeriodSeconds = 1;
-    cbConfig.coolingPeriodSeconds = 1;
     circuitBreaker->updateConfiguration(cbConfig);
+    
+    // Trigger circuit breaker so the auto-reset path is exercised
+    circuitBreaker->manualTrigger("Testing auto reset");
     EXPECT_EQ(circuitBreaker->getState(), CircuitBreakerState::TRIGGERED);
     
-    // Wait for circuit breaker to auto-reset
+    // Wait for circuit breaker to auto-reset to cooling state
     std::this_thread::sleep_for(std::chrono::milliseconds(1200));
     
     // Evaluate empty metrics to trigger state check
@@ -197,7 +190,7 @@ TEST_F(CircuitBreakerTest, AutoResetAfterCoolingPeriod) {
     // Should be in cooling state
     EXPECT_EQ(state, CircuitBreakerState::COOLING);
     
-    // Wait for cooling period
+    // Wait for cooling period to complete
     std::this_thread::sleep_for(std::chrono::milliseconds(1200));
     
     // Evaluate empty metrics again
@@ -216,24 +209,29 @@ TEST_F(CircuitBreakerTest, UpdateMetric) {
     EXPECT_EQ(state, CircuitBreakerState::TRIGGERED);
     EXPECT_FALSE(circuitBreaker->isTradingAllowed());
 }
+
 TEST_F(CircuitBreakerTest, ExtendedHaltAfterMultipleTriggers) {
     // Modify config for testing
     cbConfig.mandatoryHaltPeriodSeconds = 1;
     cbConfig.maxTriggersBeforeExtendedHalt = 1;
     cbConfig.extendedHaltMultiplier = 2;
     circuitBreaker->updateConfiguration(cbConfig);
-    // Modify config for testing
-    cbConfig.mandatoryHaltPeriodSeconds = 1;
-    cbConfig.maxTriggersBeforeExtendedHalt = 1;
-    cbConfig.extendedHaltMultiplier = 2;
-    circuitBreaker->updateConfiguration(cbConfig);
+    
+    // First trigger
+    circuitBreaker->manualTrigger("First trigger");
+    EXPECT_EQ(circuitBreaker->getState(), CircuitBreakerState::TRIGGERED);
+    
     // Wait for halt period
     std::this_thread::sleep_for(std::chrono::milliseconds(1200));
     
     // Reset
     circuitBreaker->reset();
     
-    // Should be in OFF state now
+    // Wait for cooling to complete
+    std::this_thread::sleep_for(std::chrono::milliseconds(1200));
+    
+    // Reset to OFF
+    circuitBreaker->reset();
     EXPECT_EQ(circuitBreaker->getState(), CircuitBreakerState::OFF);
     
     // Second trigger (should have extended halt period)
@@ -256,7 +254,117 @@ TEST_F(CircuitBreakerTest, ExtendedHaltAfterMultipleTriggers) {
     // Now should be able to reset
     result = circuitBreaker->reset();
     EXPECT_TRUE(result);
+    EXPECT_EQ(circuitBreaker->getState(), CircuitBreakerState::COOLING);
 }
 
-} // namespace test
-} // namespace risk
+TEST_F(CircuitBreakerTest, MetricUpdateDuringWarningState) {
+    // Put circuit breaker in warning state
+    CircuitBreaker::MetricMap metrics;
+    metrics["drawdown"] = 0.06;  // Above warning but below critical
+    metrics["sharpe_ratio"] = 1.0;
+    
+    auto state = circuitBreaker->evaluateMetrics(metrics);
+    EXPECT_EQ(state, CircuitBreakerState::WARNING);
+    
+    // Now update to all metrics below warning
+    metrics["drawdown"] = 0.03;  // Below warning
+    metrics["sharpe_ratio"] = 1.5;  // Well above warning
+    
+    state = circuitBreaker->evaluateMetrics(metrics);
+    
+    // Should return to OFF state
+    EXPECT_EQ(state, CircuitBreakerState::OFF);
+}
+
+TEST_F(CircuitBreakerTest, TriggerCountReset) {
+    // Modify config for very short reset period
+    cbConfig.triggerCountResetMinutes = 1;
+    cbConfig.mandatoryHaltPeriodSeconds = 1;
+    circuitBreaker->updateConfiguration(cbConfig);
+    
+    // Trigger multiple times
+    circuitBreaker->manualTrigger("First trigger");
+    std::this_thread::sleep_for(std::chrono::milliseconds(1200));
+    circuitBreaker->reset();
+    
+    // Get history to confirm trigger count
+    auto history = circuitBreaker->getTriggerHistory();
+    EXPECT_GE(history.size(), 1);
+    
+    // Wait for trigger count reset time
+    std::this_thread::sleep_for(std::chrono::seconds(61));
+    
+    // Trigger again - should be considered first trigger after reset
+    circuitBreaker->manualTrigger("Trigger after reset");
+    
+    // Verify circuit breaker is still functional
+    EXPECT_EQ(circuitBreaker->getState(), CircuitBreakerState::TRIGGERED);
+}
+
+TEST_F(CircuitBreakerTest, ConcurrentMetricUpdates) {
+    // Test thread safety with concurrent updates
+    std::vector<std::thread> threads;
+    
+    // Start multiple threads updating different metrics
+    for (int i = 0; i < 10; ++i) {
+        threads.emplace_back([this, i]() {
+            for (int j = 0; j < 100; ++j) {
+                std::string metricName = "metric_" + std::to_string(i);
+                double value = 0.01 * j;  // Values from 0.0 to 0.99
+                circuitBreaker->updateMetric(metricName, value);
+                std::this_thread::sleep_for(std::chrono::microseconds(100));
+            }
+        });
+    }
+    
+    // Wait for all threads to complete
+    for (auto& t : threads) {
+        t.join();
+    }
+    
+    // Circuit breaker should still be in a valid state
+    auto state = circuitBreaker->getState();
+    EXPECT_TRUE(state == CircuitBreakerState::OFF || 
+                state == CircuitBreakerState::WARNING || 
+                state == CircuitBreakerState::TRIGGERED ||
+                state == CircuitBreakerState::COOLING);
+}
+
+TEST_F(CircuitBreakerTest, HealthCheck) {
+    // Test isHealthy() method
+    EXPECT_TRUE(circuitBreaker->isHealthy());  // Initially OFF
+    
+    // Put in warning state
+    CircuitBreaker::MetricMap metrics;
+    metrics["drawdown"] = 0.06;
+    circuitBreaker->evaluateMetrics(metrics);
+    EXPECT_EQ(circuitBreaker->getState(), CircuitBreakerState::WARNING);
+    EXPECT_TRUE(circuitBreaker->isHealthy());  // WARNING is still healthy
+    
+    // Trigger circuit breaker
+    metrics["drawdown"] = 0.12;
+    circuitBreaker->evaluateMetrics(metrics);
+    EXPECT_EQ(circuitBreaker->getState(), CircuitBreakerState::TRIGGERED);
+    EXPECT_FALSE(circuitBreaker->isHealthy());  // TRIGGERED is not healthy
+}
+
+TEST_F(CircuitBreakerTest, DetailedStatusOutput) {
+    // Add some metrics
+    CircuitBreaker::MetricMap metrics;
+    metrics["drawdown"] = 0.04;
+    metrics["sharpe_ratio"] = 1.2;
+    circuitBreaker->evaluateMetrics(metrics);
+    
+    // Get detailed status
+    std::string status = circuitBreaker->getDetailedStatus();
+    
+    // Verify status contains expected information
+    EXPECT_TRUE(status.find("CircuitBreaker Status:") != std::string::npos);
+    EXPECT_TRUE(status.find("State:") != std::string::npos);
+    EXPECT_TRUE(status.find("Trading Allowed:") != std::string::npos);
+    EXPECT_TRUE(status.find("Current Metrics:") != std::string::npos);
+    EXPECT_TRUE(status.find("drawdown") != std::string::npos);
+    EXPECT_TRUE(status.find("sharpe_ratio") != std::string::npos);
+}
+
+} // namespace trading::risk::test

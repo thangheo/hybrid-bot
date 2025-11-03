@@ -29,6 +29,7 @@
 #include <ranges>
 #include <algorithm>
 #include <shared_mutex>
+#include <chrono>
 
 namespace trading::risk {
 
@@ -52,6 +53,7 @@ class CircuitBreaker {
 public:
     using StateChangeCallback = std::function<void(CircuitBreakerState, CircuitBreakerState, std::string_view)>;
     using MetricMap = std::unordered_map<std::string, double>;
+    using TimePoint = std::chrono::system_clock::time_point;
     
     /**
      * @brief Constructor with configuration
@@ -87,11 +89,16 @@ public:
     [[nodiscard]] CircuitBreakerState getState() const noexcept {
         return state_.load(std::memory_order_acquire);
     }
-    // isHealthy
+    
+    /**
+     * @brief Check if circuit breaker is healthy
+     * @return true if in OFF or WARNING state
+     */
     [[nodiscard]] bool isHealthy() const noexcept {
         auto state = state_.load(std::memory_order_acquire);
         return state == CircuitBreakerState::OFF || state == CircuitBreakerState::WARNING;
     }
+    
     /**
      * @brief Manually trigger the circuit breaker
      * @param reason Reason for manual triggering
@@ -168,10 +175,14 @@ private:
     
     // Atomic state for lockless reads
     std::atomic<CircuitBreakerState> state_{CircuitBreakerState::OFF};
-    std::atomic<std::chrono::system_clock::time_point> triggerTime_;
-    std::atomic<std::chrono::system_clock::time_point> coolingStartTime_;
+    
+    // Use non-atomic time points with mutex protection for consistency
+    mutable std::mutex timeMutex_;
+    TimePoint triggerTime_;
+    TimePoint coolingStartTime_;
+    TimePoint triggerCountResetTime_;
+    
     std::atomic<int> triggerCount_{0};
-    std::atomic<std::chrono::system_clock::time_point> triggerCountResetTime_;
     
     // Protected data with fine-grained locking
     mutable std::shared_mutex metricsMutex_;

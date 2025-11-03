@@ -5,18 +5,19 @@
 namespace trading {
 namespace common {
 
-const std::unordered_set<std::string> ExchangeId::supportedExchanges_ = {
-    "BINANCE", "COINBASE", "KRAKEN", "FTX", "BITFINEX"
-};
+const std::unordered_set<std::string>& ExchangeId::supportedExchanges() {
+    static const std::unordered_set<std::string> s = {"BINANCE", "COINBASE", "KRAKEN", "FTX", "BITFINEX"};
+    return s;
+}
 
 ExchangeId ExchangeId::fromString(const std::string& exchangeStr) {
     //try with both lower and upper case
     std::string upperStr = exchangeStr;
     std::transform(upperStr.begin(), upperStr.end(), upperStr.begin(), ::toupper);
-    if (supportedExchanges_.find(upperStr) != supportedExchanges_.end()) {
+    if (supportedExchanges().find(upperStr) != supportedExchanges().end()) {
         return ExchangeId(upperStr);
     }
-    if (supportedExchanges_.find(exchangeStr) == supportedExchanges_.end()) {
+    if (supportedExchanges().find(exchangeStr) == supportedExchanges().end()) {
         throw std::invalid_argument("Unsupported exchange: " + exchangeStr);
     }
     return ExchangeId(exchangeStr);
@@ -25,7 +26,7 @@ ExchangeId ExchangeId::fromString(const std::string& exchangeStr) {
 //exchangeIdToString
 std::unordered_set<ExchangeId> ExchangeId::getAllSupported() {
     std::unordered_set<ExchangeId> result;
-    for (const auto& exchange : supportedExchanges_) {
+    for (const auto& exchange : supportedExchanges()) {
         result.insert(ExchangeId(exchange));
     }
     return result;

@@ -6,9 +6,23 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # Collect all source files
 file(GLOB_RECURSE DATA_INTERFACE_SOURCES
     "*.cpp"
-    "tests/data_interface_integration_test.cpp"
-    "tests/data_interface_unit_test.cpp"
 )
+# Exclude test sources from the library build. Tests are built as separate
+# executables below and must not be compiled into the static library because
+# some test files define a standalone main() (integration tests) which can
+# be accidentally linked into other test binaries.
+file(GLOB_RECURSE DATA_INTERFACE_SOURCES
+    "*.cpp"
+)
+
+# Exclude test sources from the library sources so test mains don't end up
+# inside the static library. Tests are added as separate executables below.
+file(GLOB_RECURSE DATA_INTERFACE_TEST_SOURCES
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/*.cpp"
+)
+if(DATA_INTERFACE_TEST_SOURCES)
+    list(REMOVE_ITEM DATA_INTERFACE_SOURCES ${DATA_INTERFACE_TEST_SOURCES})
+endif()
 # find protobuf
 find_package(Protobuf REQUIRED)
 if(NOT Protobuf_FOUND)

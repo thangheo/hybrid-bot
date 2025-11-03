@@ -388,6 +388,14 @@ DataInterface::DataInterface() {
     // Base constructor
 }
 
+// Backwards-compatible constructor that accepts a RiskConfig
+DataInterface::DataInterface(const trading::risk::RiskConfig& /*cfg*/) {
+    // Historically some callers passed a RiskConfig to construct a DataInterface.
+    // For compatibility we keep this constructor and delegate to the default
+    // initialization path. Any config-specific wiring should be done in
+    // initialize() if required.
+}
+
  
 // Factory function to create DataInterface
 std::unique_ptr<DataInterface> createDataInterface() {

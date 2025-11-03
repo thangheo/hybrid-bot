@@ -13,6 +13,8 @@
  #include <string>
  #include <chrono>
  #include <functional>
+// JSON support for StrategyId serialization
+#include <nlohmann/json.hpp>
  
 //  #include <core/confidence.hpp>
 // #include <core/exchange_types.hpp>
@@ -84,3 +86,24 @@ struct StrategyId {
 
 } // namespace core
 } // namespace trading
+
+// nlohmann::json support for StrategyId (serializes as string "id:version")
+namespace nlohmann {
+template<>
+struct adl_serializer<trading::core::StrategyId> {
+    static trading::core::StrategyId from_json(const nlohmann::json& j) {
+        if (j.is_string()) return trading::core::StrategyId::fromString(j.get<std::string>());
+        // If object with id/version provided
+        if (j.is_object()) {
+            std::string id = j.value("id", "UNKNOWN");
+            std::string ver = j.value("version", "1.0");
+            return trading::core::StrategyId(id, ver);
+        }
+        return trading::core::StrategyId();
+    }
+
+    static void to_json(nlohmann::json& j, const trading::core::StrategyId& s) {
+        j = s.toString();
+    }
+};
+} // namespace nlohmann

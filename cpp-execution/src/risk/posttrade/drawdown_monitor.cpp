@@ -432,6 +432,7 @@ bool DrawdownMonitor::resetPortfolioHighWaterMark(std::optional<double> value) {
     portfolioDrawdown_.breachCount.store(0);
     
     // LOG_INFO(std::format("DrawdownMonitor: Reset portfolio high water mark to {}", newHwm));
+    return true;
 }
 
 std::map<std::string, double> DrawdownMonitor::getPerformanceStatistics() const {

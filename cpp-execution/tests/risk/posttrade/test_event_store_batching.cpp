@@ -34,15 +34,15 @@ TEST(EventStoreBatchingTest, EnqueueAndDeduplicate) {
     // Enqueue 12 events, with two duplicates (same external id)
     int64_t baseTs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
     for (int i = 0; i < 10; ++i) {
-        auto ev = makeEvent("EX1", "BTCUSD", baseTs + i, 1.0 + i, 1.0 + i + 0.1, "ev" + std::to_string(i));
+        auto ev = makeEvent("binance", "BTCUSD", baseTs + i, 1.0 + i, 1.0 + i + 0.1, "ev" + std::to_string(i));
         bool ok = store.enqueueReconciliationEvent(ev);
         ASSERT_TRUE(ok);
     }
     // duplicate of event 3
-    auto dup = makeEvent("EX1", "BTCUSD", baseTs + 3, 4.0, 4.1, "dup");
+    auto dup = makeEvent("binance", "BTCUSD", baseTs + 3, 4.0, 4.1, "dup");
     ASSERT_TRUE(store.enqueueReconciliationEvent(dup));
     // duplicate of event 7
-    auto dup2 = makeEvent("EX1", "BTCUSD", baseTs + 7, 8.0, 8.1, "dup2");
+    auto dup2 = makeEvent("binance", "BTCUSD", baseTs + 7, 8.0, 8.1, "dup2");
     ASSERT_TRUE(store.enqueueReconciliationEvent(dup2));
 
     // Wait for worker to process queue (polling)
