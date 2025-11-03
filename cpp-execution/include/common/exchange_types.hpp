@@ -88,7 +88,8 @@ private:
     explicit ExchangeId(const std::string& id) : id_(id) {}
     std::string id_;
     
-    static const std::unordered_set<std::string> supportedExchanges_;
+    // Accessor for supported exchanges to avoid static destruction order issues
+    static const std::unordered_set<std::string>& supportedExchanges();
 };
 
 } // namespace common

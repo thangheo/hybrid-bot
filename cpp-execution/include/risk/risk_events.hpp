@@ -38,6 +38,36 @@ enum class RiskEventType {
     SYSTEM_ERROR
 };
 
+// Helper to convert string to RiskEventType
+inline RiskEventType stringToRiskEventType(const std::string& s) {
+    if (s == "limit_breach" || s == "position_limit_breach") return RiskEventType::LIMIT_BREACH;
+    if (s == "circuit_breaker" || s == "circuit_breaker_triggered") return RiskEventType::CIRCUIT_BREAKER_TRIGGERED;
+    if (s == "stop_loss" || s == "stop_loss_triggered") return RiskEventType::STOP_LOSS_TRIGGERED;
+    if (s == "drawdown_alert") return RiskEventType::DRAWDOWN_ALERT;
+    if (s == "position_reconciliation_mismatch") return RiskEventType::POSITION_RECONCILIATION_MISMATCH;
+    if (s == "balance_reconciliation_mismatch") return RiskEventType::BALANCE_RECONCILIATION_MISMATCH;
+    if (s == "risk_mode_change") return RiskEventType::RISK_MODE_CHANGE;
+    if (s == "parameter_update") return RiskEventType::PARAMETER_UPDATE;
+    if (s == "emergency_action") return RiskEventType::EMERGENCY_ACTION;
+    return RiskEventType::SYSTEM_ERROR;
+}
+
+// Wrapper type used for the event.type field to accept assignments from strings in tests
+struct RiskEventTypeWrapper {
+    RiskEventType value = RiskEventType::SYSTEM_ERROR;
+    RiskEventTypeWrapper() = default;
+    RiskEventTypeWrapper(RiskEventType v) : value(v) {}
+    // implicit conversion to enum
+    operator RiskEventType() const { return value; }
+    // implicit conversion to int for serialization convenience
+    operator int() const { return static_cast<int>(value); }
+    // assignment from enum
+    RiskEventTypeWrapper& operator=(RiskEventType v) { value = v; return *this; }
+    // assignment from string (backwards-compatible with tests)
+    RiskEventTypeWrapper& operator=(const std::string& s) { value = stringToRiskEventType(s); return *this; }
+    RiskEventTypeWrapper& operator=(const char* s) { value = stringToRiskEventType(std::string(s)); return *this; }
+};
+
 /**
  * BASE RiskEvent structure - MUST BE DEFINED FIRST
  */
@@ -46,34 +76,35 @@ struct RiskEvent {
     enum class Severity { INFO, WARNING, CRITICAL, ERROR };
 
     // Core event information
-    RiskEventType type;
+    RiskEventTypeWrapper type;
     core::Timestamp timestamp;
     std::string description;
     std::string severity;
     std::string eventId;        // Unique identifier
     std::string eventSource;    // Source (e.g., "system", "user")
     std::string message;        // Additional message
+    std::string data;           // JSON string payload (backwards-compatible)
     
     // Enhanced features
     std::map<std::string, std::string> metadata;  // Additional context
 
     // Constructors
     RiskEvent(RiskEventType eventType, core::Timestamp eventTime, std::string desc,
-              std::string sev = "info", std::string eventData = "{}")
-        : type(eventType), timestamp(eventTime), description(std::move(desc)),
-          severity(std::move(sev)), eventId(generateEventId()), eventSource("system"),
-          message("") {}
+          std::string sev = "info", std::string eventData = "{}")
+      : type(eventType), timestamp(eventTime), description(std::move(desc)),
+        severity(std::move(sev)), eventId(generateEventId()), eventSource("system"),
+        message(""), data(std::move(eventData)) {}
 
             // Default constructor (backwards-compatible)
             RiskEvent()
                     : type(RiskEventType::SYSTEM_ERROR), timestamp(core::now()), description(""),
                         severity("info"), eventId(generateEventId()), eventSource("system"),
-                        message("") {}
+                        message(""), data("{}") {}
     
-    RiskEvent(RiskEventType eventType, std::string desc, std::string sev = "info")
-        : type(eventType), timestamp(core::now()), description(std::move(desc)),
-          severity(std::move(sev)), eventId(generateEventId()), eventSource("system"),
-          message("") {}
+        RiskEvent(RiskEventType eventType, std::string desc, std::string sev = "info")
+                : type(eventType), timestamp(core::now()), description(std::move(desc)),
+                    severity(std::move(sev)), eventId(generateEventId()), eventSource("system"),
+                    message(""), data("{}") {}
     
     virtual ~RiskEvent() = default;
     
@@ -91,6 +122,18 @@ struct RiskEvent {
     std::string getMetadata(const std::string& key) const {
         auto it = metadata.find(key);
         return (it != metadata.end()) ? it->second : "";
+    }
+
+    // Backwards-compatible assignment from string for tests that set event.type = "..."
+    RiskEvent& operator=(const std::string& typeStr) {
+        // Try to map well-known strings to enum values
+        if (typeStr == "limit_breach" || typeStr == "position_limit_breach") type = RiskEventType::LIMIT_BREACH;
+        else if (typeStr == "circuit_breaker" || typeStr == "circuit_breaker_triggered") type = RiskEventType::CIRCUIT_BREAKER_TRIGGERED;
+        else if (typeStr == "stop_loss" || typeStr == "stop_loss_triggered") type = RiskEventType::STOP_LOSS_TRIGGERED;
+        else if (typeStr == "drawdown_alert") type = RiskEventType::DRAWDOWN_ALERT;
+        else if (typeStr == "risk_mode_change") type = RiskEventType::RISK_MODE_CHANGE;
+        else type = RiskEventType::SYSTEM_ERROR;
+        return *this;
     }
 
 private:

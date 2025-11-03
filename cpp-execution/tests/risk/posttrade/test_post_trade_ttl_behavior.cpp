@@ -44,6 +44,12 @@ public:
 
 TEST(PostTradeMonitorTTLBehavior, SlidingRenewalAndExpiryTriggersExit) {
     RiskConfig cfg;
+    // Fix default circuit breaker thresholds which may be invalid for the validator
+    CircuitBreakerConfig cbCfg = cfg.getCircuitBreakerConfig();
+    // Ensure "higher is better" metrics have warning > critical and vice-versa
+    cbCfg.metricThresholds["pnl_drawdown"] = MetricThreshold(0.06, 0.05, true); // warning > critical for higher-is-better
+    cbCfg.metricThresholds["order_rejection_rate"] = MetricThreshold(0.02, 0.05, false);
+    cfg.setCircuitBreakerConfig(cbCfg);
     auto dataInterface = std::make_shared<SimpleMockDataInterface>();
     auto execInterface = std::make_shared<MockExecutionInterface>();
 

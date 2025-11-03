@@ -184,6 +184,8 @@ struct MarketData {
           lastTradePrice(0.0), lastTradeQuantity(0.0),
           open24h(0.0), high24h(0.0), low24h(0.0), volumeQuote24h(0.0) {}
 };
+// HistoricalPrice and MarketDepth moved below PriceLevel declaration to avoid
+// using PriceLevel before it is declared (fix compile ordering issues).
 struct TradeData {
     std::string symbol;
     double price;
@@ -305,6 +307,25 @@ struct PriceLevel {
      TRADE,
      TICKER
  };
+ 
+/**
+ * HistoricalPrice helper used in older tests (timestamp, price)
+ */
+struct HistoricalPrice {
+    core::Timestamp timestamp;
+    double price;
+    HistoricalPrice() : timestamp(std::chrono::system_clock::now()), price(0.0) {}
+    HistoricalPrice(core::Timestamp t, double p) : timestamp(t), price(p) {}
+};
+
+/**
+ * Simplified MarketDepth representation used by tests/mocks
+ */
+struct MarketDepth {
+    std::vector<PriceLevel> bids;
+    std::vector<PriceLevel> asks;
+    MarketDepth() = default;
+};
  
  
  /**

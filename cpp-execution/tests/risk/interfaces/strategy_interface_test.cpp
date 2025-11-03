@@ -8,6 +8,7 @@
  #include "risk/interfaces/strategy_interface.hpp"
  #include <gtest/gtest.h>
  #include <gmock/gmock.h>
+ #include <nlohmann/json.hpp>
  #include <memory>
  #include <thread>
  #include <chrono>
@@ -46,15 +47,23 @@
              initialized_ = true;
              return true;
          }
+
+         bool isConnected() const override {
+             return initialized_;
+         }
+
+         bool notifyEmergencyState(const std::string& reason) override {
+             (void)reason;
+             // For tests, just accept the notification
+             return true;
+         }
          
          bool sendRiskFeedback(const risk::StrategyId& strategyId, const std::string& feedback) override {
              if (!initialized_) return false;
-             
-             nlohmann::json request = {
-                 {"action", "risk_feedback"},
-                 {"strategy_id", strategyId},
-                 {"feedback", nlohmann::json::parse(feedback)}
-             };
+            nlohmann::json request;
+            request["action"] = "risk_feedback";
+            request["strategy_id"] = strategyId;
+            request["feedback"] = nlohmann::json::parse(feedback);
              
              std::string response = mockClient_->sendAndReceive(request.dump());
              auto responseJson = nlohmann::json::parse(response);
@@ -63,12 +72,9 @@
          
          std::string getStrategyParameters(const risk::StrategyId& strategyId) override {
              if (!initialized_) return "{}";
-             
-             nlohmann::json request = {
-                 {"action", "get_parameters"},
-                 {"strategy_id", strategyId}
-             };
-             
+            nlohmann::json request;
+            request["action"] = "get_parameters";
+            request["strategy_id"] = strategyId;
              std::string response = mockClient_->sendAndReceive(request.dump());
              auto responseJson = nlohmann::json::parse(response);
              
@@ -81,12 +87,11 @@
          
          bool updateStrategyParameters(const risk::StrategyId& strategyId, const std::string& parameters) override {
              if (!initialized_) return false;
-             
-             nlohmann::json request = {
-                 {"action", "update_parameters"},
-                 {"strategy_id", strategyId},
-                 {"parameters", nlohmann::json::parse(parameters)}
-             };
+
+            nlohmann::json request;
+            request["action"] = "update_parameters";
+            request["strategy_id"] = strategyId;
+            request["parameters"] = nlohmann::json::parse(parameters);
              
              std::string response = mockClient_->sendAndReceive(request.dump());
              auto responseJson = nlohmann::json::parse(response);
@@ -95,15 +100,14 @@
          
          bool notifyRiskEvent(const risk::StrategyId& strategyId, const risk::RiskEvent& event) override {
              if (!initialized_) return false;
-             
-             nlohmann::json request = {
-                 {"action", "risk_event"},
-                 {"strategy_id", strategyId},
-                 {"event_type", event.type},
-                 {"event_severity", event.severity},
-                 {"event_message", event.message},
-                 {"event_data", nlohmann::json::parse(event.data)}
-             };
+
+            nlohmann::json request;
+            request["action"] = "risk_event";
+            request["strategy_id"] = strategyId;
+            request["event_type"] = static_cast<int>(event.type);
+            request["event_severity"] = event.severity;
+            request["event_message"] = event.message;
+            request["event_data"] = nlohmann::json::parse(event.data);
              
              std::string response = mockClient_->sendAndReceive(request.dump());
              auto responseJson = nlohmann::json::parse(response);
@@ -112,10 +116,9 @@
          
          std::vector<risk::StrategyId> getActiveStrategies() override {
              if (!initialized_) return {};
-             
-             nlohmann::json request = {
-                 {"action", "get_active_strategies"}
-             };
+
+            nlohmann::json request;
+            request["action"] = "get_active_strategies";
              
              std::string response = mockClient_->sendAndReceive(request.dump());
              auto responseJson = nlohmann::json::parse(response);
@@ -133,11 +136,10 @@
          
          bool isStrategyActive(const risk::StrategyId& strategyId) override {
              if (!initialized_) return false;
-             
-             nlohmann::json request = {
-                 {"action", "is_strategy_active"},
-                 {"strategy_id", strategyId}
-             };
+
+            nlohmann::json request;
+            request["action"] = "is_strategy_active";
+            request["strategy_id"] = strategyId;
              
              std::string response = mockClient_->sendAndReceive(request.dump());
              auto responseJson = nlohmann::json::parse(response);
@@ -244,15 +246,15 @@
      EXPECT_CALL(*mockClient_, sendAndReceive(::testing::_))
          .WillOnce(::testing::Return(response.dump()));
      
-     // Test notifying risk event
-     risk::RiskEvent event;
-     event.type = "position_limit_breach";
-     event.severity = "high";
-     event.message = "Position limit exceeded";
-     event.data = "{\"current\": 2.5, \"limit\": 2.0}";
-     
-     bool result = strategyInterface_->notifyRiskEvent(StrategyId("strategy1"), event);
-     EXPECT_TRUE(result);
+    // Test notifying risk event
+    risk::RiskEvent event;
+    event.type = "position_limit_breach";
+    event.severity = "high";
+    event.message = "Position limit exceeded";
+    event.data = "{\"current\": 2.5, \"limit\": 2.0}";
+    
+    bool result = strategyInterface_->notifyRiskEvent(risk::StrategyId("strategy1"), event);
+    EXPECT_TRUE(result);
  }
  
  // Test getting active strategies
@@ -263,7 +265,7 @@
      // Setup mock response
      nlohmann::json response = {
          {"success", true},
-         {"strategies", {StrategyId("strategy1"), "strategy2", "strategy3"}}
+        {"strategies", {risk::StrategyId("strategy1"), risk::StrategyId("strategy2"), risk::StrategyId("strategy3")}}
      };
      EXPECT_CALL(*mockClient_, sendAndReceive(::testing::_))
          .WillOnce(::testing::Return(response.dump()));
@@ -271,9 +273,9 @@
      // Test getting active strategies
      auto strategies = strategyInterface_->getActiveStrategies();
      EXPECT_EQ(strategies.size(), 3);
-     EXPECT_EQ(strategies[0], StrategyId("strategy1"));
-     EXPECT_EQ(strategies[1], "strategy2");
-     EXPECT_EQ(strategies[2], "strategy3");
+    EXPECT_EQ(strategies[0], risk::StrategyId("strategy1"));
+    EXPECT_EQ(strategies[1], risk::StrategyId("strategy2"));
+    EXPECT_EQ(strategies[2], risk::StrategyId("strategy3"));
  }
  
  // Test checking if strategy is active
@@ -289,8 +291,8 @@
      EXPECT_CALL(*mockClient_, sendAndReceive(::testing::_))
          .WillOnce(::testing::Return(response.dump()));
      
-     // Test checking if strategy is active
-     bool result = strategyInterface_->isStrategyActive(StrategyId("strategy1"));
+    // Test checking if strategy is active
+    bool result = strategyInterface_->isStrategyActive(risk::StrategyId("strategy1"));
      EXPECT_TRUE(result);
  }
  
@@ -307,8 +309,8 @@
      EXPECT_CALL(*mockClient_, sendAndReceive(::testing::_))
          .WillOnce(::testing::Return(response.dump()));
      
-     // Test getting parameters with error
-     std::string result = strategyInterface_->getStrategyParameters("invalid_strategy");
+    // Test getting parameters with error
+    std::string result = strategyInterface_->getStrategyParameters(risk::StrategyId("unknown_strategy"));
      EXPECT_EQ(result, "{}");
  }
  

@@ -14,6 +14,27 @@ file(GLOB_RECURSE RISK_SOURCES
     "utils/*.cpp"
     "storage/*.cpp"
 )
+
+# Exclude any test sources under interfaces/tests or other tests folders so
+# the static library does not accidentally contain test mains (integration
+# tests) which would be pulled into other test executables via linking.
+file(GLOB_RECURSE RISK_TEST_SOURCES
+    "${CMAKE_CURRENT_SOURCE_DIR}/interfaces/tests/*.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../tests/risk/**/*.cpp"
+)
+
+# Also exclude demo files that contain main functions
+set(RISK_DEMO_SOURCES
+    "${CMAKE_CURRENT_SOURCE_DIR}/risk_demo.cpp"
+)
+
+# Remove test sources and demo sources from the library
+if(RISK_TEST_SOURCES)
+    list(REMOVE_ITEM RISK_SOURCES ${RISK_TEST_SOURCES})
+endif()
+if(RISK_DEMO_SOURCES)
+    list(REMOVE_ITEM RISK_SOURCES ${RISK_DEMO_SOURCES})
+endif()
 #find libsqlite3
 find_package(SQLite3 REQUIRED)
 if(NOT SQLite3_FOUND)
@@ -82,17 +103,17 @@ endif()
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../../bin)
 
 # create executable for risk demo
-add_executable(risk_demo risk_demo.cpp)
-target_link_libraries(risk_demo PRIVATE 
-        risk
-        data_ingestion
-        strategy
-        execution
-        common
-        nlohmann_json::nlohmann_json
-        protobuf::libprotobuf
-        SQLite::SQLite3
-        )
+# add_executable(risk_demo risk_demo.cpp)
+# target_link_libraries(risk_demo PRIVATE 
+#         risk
+#         data_ingestion
+#         strategy
+#         execution
+#         common
+#         nlohmann_json::nlohmann_json
+#         protobuf::libprotobuf
+#         SQLite::SQLite3
+#         )
 
 # Add format library for std::format (if using GCC < 13)
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS "13.0")

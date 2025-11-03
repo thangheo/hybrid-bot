@@ -3,9 +3,13 @@
 # Source files for posttrade risk tests
 set(RISK_POSTTRADE_TEST_SOURCES
     test_circuit_breaker.cpp
-    # test_post_trade_monitor.cpp
+    # Uncomment additional tests gradually after circuit breaker passes
+    test_post_trade_monitor.cpp
     test_post_trade_ttl_behavior.cpp
     test_event_store_batching.cpp
+    test_stop_loss_manager_fixed.cpp
+    test_circuit_breaker.cpp
+    test_drawdown_monitor.cpp
 )
 
 # Posttrade risk test executable

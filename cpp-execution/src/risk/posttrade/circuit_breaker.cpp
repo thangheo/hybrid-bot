@@ -13,6 +13,7 @@
 #include <sstream>
 #include <format>
 #include <random>
+#include <chrono>
 
 namespace trading::risk {
 
@@ -20,12 +21,12 @@ CircuitBreaker::CircuitBreaker(const RiskConfig& config)
     : config_(config.getCircuitBreakerConfig()) {
     
     auto now = std::chrono::system_clock::now();
-    triggerTime_.store(now, std::memory_order_relaxed);
-    coolingStartTime_.store(now, std::memory_order_relaxed);
-    triggerCountResetTime_.store(
-        now + std::chrono::minutes(config_.triggerCountResetMinutes), 
-        std::memory_order_relaxed
-    );
+    {
+        std::lock_guard<std::mutex> lock(timeMutex_);
+        triggerTime_ = now;
+        coolingStartTime_ = now;
+        triggerCountResetTime_ = now + std::chrono::minutes(config_.triggerCountResetMinutes);
+    }
 }
 
 bool CircuitBreaker::initialize() noexcept {
@@ -35,12 +36,12 @@ bool CircuitBreaker::initialize() noexcept {
         triggerCount_.store(0, std::memory_order_relaxed);
         
         auto now = std::chrono::system_clock::now();
-        triggerTime_.store(now, std::memory_order_relaxed);
-        coolingStartTime_.store(now, std::memory_order_relaxed);
-        triggerCountResetTime_.store(
-            now + std::chrono::minutes(config_.triggerCountResetMinutes),
-            std::memory_order_relaxed
-        );
+        {
+            std::lock_guard<std::mutex> lock(timeMutex_);
+            triggerTime_ = now;
+            coolingStartTime_ = now;
+            triggerCountResetTime_ = now + std::chrono::minutes(config_.triggerCountResetMinutes);
+        }
         
         lastTriggerReason_.clear();
         
@@ -84,10 +85,14 @@ CircuitBreakerState CircuitBreaker::evaluateMetrics(const MetricMap& metrics) no
         // Handle COOLING state - check for completion
         if (currentState == CircuitBreakerState::COOLING) {
             auto now = std::chrono::system_clock::now();
-            auto coolingStart = coolingStartTime_.load(std::memory_order_relaxed);
+            TimePoint coolingStart;
+            {
+                std::lock_guard<std::mutex> lock(timeMutex_);
+                coolingStart = coolingStartTime_;
+            }
             auto coolingElapsed = std::chrono::duration_cast<std::chrono::seconds>(now - coolingStart);
             
-            if (coolingElapsed >= config_.coolingPeriod) {
+            if (coolingElapsed >= std::chrono::seconds(config_.coolingPeriodSeconds)) {
                 setState(CircuitBreakerState::OFF, "Cooling period completed");
             }
             return state_.load(std::memory_order_acquire);
@@ -213,20 +218,42 @@ bool CircuitBreaker::reset() noexcept {
         // Check if reset is allowed from TRIGGERED state
         if (currentState == CircuitBreakerState::TRIGGERED) {
             auto now = std::chrono::system_clock::now();
-            auto triggerTime = triggerTime_.load(std::memory_order_relaxed);
+            TimePoint triggerTime;
+            {
+                std::lock_guard<std::mutex> lock(timeMutex_);
+                triggerTime = triggerTime_;
+            }
             auto haltElapsed = std::chrono::duration_cast<std::chrono::seconds>(now - triggerTime);
+
+            // Calculate required halt period based on trigger count
+            int requiredHaltPeriod = config_.mandatoryHaltPeriodSeconds;
+            int currentTriggerCount = triggerCount_.load(std::memory_order_relaxed);
             
-            if (haltElapsed.count() < config_.mandatoryHaltPeriodSeconds) {
+            if (currentTriggerCount > config_.maxTriggersBeforeExtendedHalt) {
+                requiredHaltPeriod *= config_.extendedHaltMultiplier;
+            }
+
+            if (haltElapsed.count() < requiredHaltPeriod) {
                 return false; // Must wait for mandatory halt period
             }
             
-            // Move to cooling state first
-            setState(CircuitBreakerState::COOLING, "Manual reset from TRIGGERED to COOLING");
+            setState(CircuitBreakerState::COOLING, "Manual reset to cooling state");
+            return true;
         }
         
-        // Reset to OFF state
-        setState(CircuitBreakerState::OFF, "Manual reset");
-        return true;
+        // Reset from COOLING state
+        if (currentState == CircuitBreakerState::COOLING) {
+            setState(CircuitBreakerState::OFF, "Manual reset to OFF state");
+            return true;
+        }
+        
+        // Reset from WARNING state
+        if (currentState == CircuitBreakerState::WARNING) {
+            setState(CircuitBreakerState::OFF, "Manual reset to OFF state");
+            return true;
+        }
+        
+        return false; // Already OFF
         
     } catch (...) {
         return false;
@@ -235,55 +262,29 @@ bool CircuitBreaker::reset() noexcept {
 
 bool CircuitBreaker::isTradingAllowed() const noexcept {
     auto currentState = state_.load(std::memory_order_acquire);
-    
-    switch (currentState) {
-        case CircuitBreakerState::OFF:
-        case CircuitBreakerState::WARNING:
-            return true;
-            
-        case CircuitBreakerState::TRIGGERED:
-            return false;
-            
-        case CircuitBreakerState::COOLING: {
-            if (!config_.gradualTradingResumption) {
-                return false; // Binary resumption - no trading during cooling
-            }
-            
-            // Gradual resumption based on cooling progress
-            auto now = std::chrono::system_clock::now();
-            auto coolingStart = coolingStartTime_.load(std::memory_order_relaxed);
-            auto coolingElapsed = std::chrono::duration_cast<std::chrono::seconds>(now - coolingStart);
-            
-            double progress = std::min(1.0, 
-                static_cast<double>(coolingElapsed.count()) / config_.coolingPeriod.count());
-            
-            // Use deterministic approach instead of random for consistency
-            static thread_local std::random_device rd;
-            static thread_local std::mt19937 gen(rd());
-            static thread_local std::uniform_real_distribution<> dis(0.0, 1.0);
-            
-            return dis(gen) < progress;
-        }
-    }
-    
-    return false; // Default to safe behavior
+    return currentState == CircuitBreakerState::OFF || 
+           currentState == CircuitBreakerState::WARNING ||
+           (currentState == CircuitBreakerState::COOLING && config_.gradualTradingResumption);
 }
 
 void CircuitBreaker::registerStateChangeCallback(StateChangeCallback callback) {
     std::unique_lock lock(callbackMutex_);
-    stateChangeCallbacks_.emplace_back(std::move(callback));
+    stateChangeCallbacks_.push_back(std::move(callback));
 }
 
 bool CircuitBreaker::updateConfiguration(const CircuitBreakerConfig& newConfig) noexcept {
     try {
-        if (!newConfig.isValid()) {
-            return false;
-        }
-        
         std::unique_lock lock(configMutex_);
         config_ = newConfig;
-        return true;
         
+        // Update trigger count reset time if needed
+        auto now = std::chrono::system_clock::now();
+        {
+            std::lock_guard<std::mutex> timeLock(timeMutex_);
+            triggerCountResetTime_ = now + std::chrono::minutes(newConfig.triggerCountResetMinutes);
+        }
+        
+        return true;
     } catch (...) {
         return false;
     }
@@ -299,15 +300,32 @@ std::chrono::seconds CircuitBreaker::getTimeUntilReset() const noexcept {
     auto now = std::chrono::system_clock::now();
     
     if (currentState == CircuitBreakerState::TRIGGERED) {
-        auto triggerTime = triggerTime_.load(std::memory_order_relaxed);
+        TimePoint triggerTime;
+        {
+            std::lock_guard<std::mutex> lock(timeMutex_);
+            triggerTime = triggerTime_;
+        }
         auto haltElapsed = std::chrono::duration_cast<std::chrono::seconds>(now - triggerTime);
-        auto remainingSeconds = config_.mandatoryHaltPeriodSeconds - haltElapsed.count();
+        
+        // Calculate required halt period based on trigger count
+        int requiredHaltPeriod = config_.mandatoryHaltPeriodSeconds;
+        int currentTriggerCount = triggerCount_.load(std::memory_order_relaxed);
+        
+        if (currentTriggerCount > config_.maxTriggersBeforeExtendedHalt) {
+            requiredHaltPeriod *= config_.extendedHaltMultiplier;
+        }
+        
+        auto remainingSeconds = requiredHaltPeriod - haltElapsed.count();
         return std::chrono::seconds(std::max(0L, remainingSeconds));
         
     } else if (currentState == CircuitBreakerState::COOLING) {
-        auto coolingStart = coolingStartTime_.load(std::memory_order_relaxed);
+        TimePoint coolingStart;
+        {
+            std::lock_guard<std::mutex> lock(timeMutex_);
+            coolingStart = coolingStartTime_;
+        }
         auto coolingElapsed = std::chrono::duration_cast<std::chrono::seconds>(now - coolingStart);
-        auto remainingSeconds = config_.coolingPeriod.count() - coolingElapsed.count();
+        auto remainingSeconds = config_.coolingPeriodSeconds - coolingElapsed.count();
         return std::chrono::seconds(std::max(0L, remainingSeconds));
     }
     
@@ -423,10 +441,12 @@ void CircuitBreaker::setState(CircuitBreakerState newState, std::string_view rea
         auto now = std::chrono::system_clock::now();
         
         if (newState == CircuitBreakerState::TRIGGERED) {
-            triggerTime_.store(now, std::memory_order_relaxed);
+            std::lock_guard<std::mutex> lock(timeMutex_);
+            triggerTime_ = now;
             lastTriggerReason_ = reason;
         } else if (newState == CircuitBreakerState::COOLING) {
-            coolingStartTime_.store(now, std::memory_order_relaxed);
+            std::lock_guard<std::mutex> lock(timeMutex_);
+            coolingStartTime_ = now;
         }
         
         // Notify callbacks
@@ -440,7 +460,11 @@ void CircuitBreaker::setState(CircuitBreakerState newState, std::string_view rea
 bool CircuitBreaker::shouldAutoReset() const noexcept {
     try {
         auto now = std::chrono::system_clock::now();
-        auto triggerTime = triggerTime_.load(std::memory_order_relaxed);
+        TimePoint triggerTime;
+        {
+            std::lock_guard<std::mutex> lock(timeMutex_);
+            triggerTime = triggerTime_;
+        }
         auto haltElapsed = std::chrono::duration_cast<std::chrono::seconds>(now - triggerTime);
         
         // Calculate required halt period based on trigger count
@@ -461,14 +485,16 @@ bool CircuitBreaker::shouldAutoReset() const noexcept {
 void CircuitBreaker::checkTriggerCount() noexcept {
     try {
         auto now = std::chrono::system_clock::now();
-        auto resetTime = triggerCountResetTime_.load(std::memory_order_relaxed);
+        TimePoint resetTime;
+        {
+            std::lock_guard<std::mutex> lock(timeMutex_);
+            resetTime = triggerCountResetTime_;
+        }
         
         if (now > resetTime) {
             triggerCount_.store(1, std::memory_order_relaxed); // Reset to 1 (current trigger)
-            triggerCountResetTime_.store(
-                now + std::chrono::minutes(config_.triggerCountResetMinutes),
-                std::memory_order_relaxed
-            );
+            std::lock_guard<std::mutex> lock(timeMutex_);
+            triggerCountResetTime_ = now + std::chrono::minutes(config_.triggerCountResetMinutes);
         }
     } catch (...) {
         // Failed to check trigger count
