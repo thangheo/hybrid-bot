@@ -263,8 +263,8 @@
         "labelingDelayMs": 5000,
         "bayesSaveAfterUpdates": 200,
         "requireModelReadyUpdates": 400,
-        "bayesMinSaveIntervalMs": 600000,
-        "bayesSaveIntervalMs": 3600000,
+        "bayesMinSaveIntervalMs": 60000,
+        "bayesSaveIntervalMs": 360000,
         "beta": 0.1
       }
     },

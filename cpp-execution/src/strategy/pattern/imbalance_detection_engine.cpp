@@ -506,65 +506,90 @@ ImbalanceDetectionEngine::~ImbalanceDetectionEngine() {
     }
     // Persist bayesian model if configured and destroy adapter handle
     try {
-        std::lock_guard<std::mutex> lk(bayesMutex_);
+        // First, if a legacy single-file handle exists, save it while holding a minimal scope for the path
+        {
+            std::lock_guard<std::mutex> lk(bayesMutex_);
+            if (bayes_handle_ && !bayesModelPath_.empty()) {
+                try {
+                    // Ensure parent directory exists
+                    try {
+                        std::filesystem::path fp(bayesModelPath_);
+                        if (fp.has_parent_path()) std::filesystem::create_directories(fp.parent_path());
+                    } catch (const std::exception &ex) {
+                        LOG_WARN("ImbalanceDetectionEngine: failed to create model directory for {}: {}", bayesModelPath_, ex.what());
+                    }
+                } catch (...) {}
+            }
+        }
+
+        // Save legacy single-file model without holding bayesMutex_
         if (bayes_handle_ && !bayesModelPath_.empty()) {
             try {
-                // Ensure parent directory exists
-                try {
-                    std::filesystem::path fp(bayesModelPath_);
-                    if (fp.has_parent_path()) std::filesystem::create_directories(fp.parent_path());
-                } catch (const std::exception &ex) {
-                    LOG_WARN("ImbalanceDetectionEngine: failed to create model directory for {}: {}", bayesModelPath_, ex.what());
+                if (trading::perception::bayes_save(bayes_handle_, bayesModelPath_)) {
+                    LOG_INFO("ImbalanceDetectionEngine: saved bayes model to {}", bayesModelPath_);
+                } else {
+                    LOG_WARN("ImbalanceDetectionEngine: bayes_save returned false for {}", bayesModelPath_);
                 }
-
-                trading::perception::bayes_save(bayes_handle_, bayesModelPath_);
-                LOG_INFO("ImbalanceDetectionEngine: saved bayes model to {}", bayesModelPath_);
             } catch (const std::exception &ex) {
                 LOG_WARN("ImbalanceDetectionEngine: failed to save bayes model {}: {}", bayesModelPath_, ex.what());
             } catch (...) {
                 LOG_WARN("ImbalanceDetectionEngine: unknown error while saving bayes model {}", bayesModelPath_);
             }
         }
-        // Save and destroy any per-symbol handles
+
+        // Collect per-symbol handles and filenames while holding bayesHandlesMutex_, but do the I/O after
+        std::vector<std::pair<std::string, std::array<trading::perception::BayesHandle, ImbalanceDetectionEngine::NUMBER_OF_REGIMES>>> handlesToSave;
         {
             std::lock_guard<std::mutex> lk2(bayesHandlesMutex_);
-                for (auto &pr : bayesHandles_) {
-                    auto &symKey = pr.first;
-                    auto harray = pr.second;
-                    try {
-                        if (!bayesModelDirectory_.empty()) {
-                            // Save three files per symbol, one per regime index
-                            for (int i = 0; i < NUMBER_OF_REGIMES; ++i) {
-                                auto h = harray[i];
-                                if (!h) continue;
-                                std::string filename = bayesModelDirectory_;
-                                if (!filename.empty() && filename.back() != '/' && filename.back() != '\\') filename += '/';
-                                filename += symKey + "_regime" + std::to_string(i) + ".json";
-                                trading::perception::bayes_save(h, filename);
-                                LOG_INFO("ImbalanceDetectionEngine: saved per-symbol bayes model {}", filename);
-                            }
-                        }
-                    } catch (...) {
-                        LOG_WARN("ImbalanceDetectionEngine: failed to save per-symbol bayes model for {}", symKey);
-                    }
-                    // destroy handles
+            for (auto &pr : bayesHandles_) {
+                handlesToSave.emplace_back(pr.first, pr.second);
+            }
+            bayesHandles_.clear();
+        }
+
+        // Perform per-symbol saves and destroy handles outside of bayesHandlesMutex_
+        for (auto &pr : handlesToSave) {
+            const auto &symKey = pr.first;
+            auto harray = pr.second; // copy of array of handles
+            try {
+                if (!bayesModelDirectory_.empty()) {
                     for (int i = 0; i < NUMBER_OF_REGIMES; ++i) {
-                        try { if (harray[i]) trading::perception::bayes_destroy(harray[i]); } catch(...) {}
+                        auto h = harray[i];
+                        if (!h) continue;
+                        try {
+                            std::string filename = bayesModelDirectory_;
+                            if (!filename.empty() && filename.back() != '/' && filename.back() != '\\') filename += '/';
+                            filename += symKey + "_regime" + std::to_string(i) + ".json";
+                            trading::perception::bayes_save(h, filename);
+                            LOG_INFO("ImbalanceDetectionEngine: saved per-symbol bayes model {}", filename);
+                        } catch (const std::exception &ex) {
+                            LOG_WARN("ImbalanceDetectionEngine: failed to save per-symbol bayes model {}: {}", symKey, ex.what());
+                        } catch (...) {
+                            LOG_WARN("ImbalanceDetectionEngine: failed to save per-symbol bayes model {} (unknown error)", symKey);
+                        }
                     }
                 }
-            bayesHandles_.clear();
+            } catch (...) {
+                LOG_WARN("ImbalanceDetectionEngine: failed to save per-symbol bayes model for {}", symKey);
+            }
+            // destroy handles
+            for (int i = 0; i < NUMBER_OF_REGIMES; ++i) {
+                try { if (harray[i]) trading::perception::bayes_destroy(harray[i]); } catch(const std::exception &ex) { LOG_WARN("bayes_destroy failed: {}", ex.what()); } catch(...) { LOG_WARN("bayes_destroy failed with unknown error"); }
+            }
         }
 
         if (bayes_handle_) {
             try {
                 trading::perception::bayes_destroy(bayes_handle_);
-            } catch (...) {}
+            } catch (const std::exception &ex) { LOG_WARN("bayes_destroy failed for legacy handle: {}", ex.what()); } catch(...) { LOG_WARN("bayes_destroy failed for legacy handle (unknown error)"); }
             bayes_handle_ = nullptr;
             bayesInitialized_.store(false);
             LOG_DEBUG("ImbalanceDetectionEngine: destroyed bayes adapter handle");
         }
+    } catch (const std::exception &ex) {
+        LOG_WARN("ImbalanceDetectionEngine: exception in destructor persistence: {}", ex.what());
     } catch (...) {
-        // swallow
+        LOG_WARN("ImbalanceDetectionEngine: unknown exception in destructor persistence");
     }
 }
 
@@ -616,7 +641,7 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
 
                 // Buffer features for later labeling/training
                 {
-                    std::lock_guard<std::mutex> pl(pendingTrainingMutex_);
+                    std::lock_guard<std::mutex> lk_pending(pendingTrainingMutex_);
                     if (pendingTraining_.size() >= maxPendingTraining_) pendingTraining_.pop_front();
                     double vwap_snap = 0.0;
                     double sma_snap = 0.0;
@@ -679,6 +704,8 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                         }
                         // run predictions for each handle and combine
                         trading::perception::BayesSignal combined{};
+                        double weightedDirSum = 0.0;
+                        double weightTotal = 0.0;
                         for (int i=0;i<ImbalanceDetectionEngine::NUMBER_OF_REGIMES;i++) {
                             if (!handles[i]) continue;
                             try {
@@ -687,17 +714,43 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                                 combined.expected_value += probs[i] * s.expected_value;
                                 combined.position_size += probs[i] * s.position_size;
                                 combined.uncertainty += probs[i] * s.uncertainty;
-                                // direction: weighted by probability*direction
+                                // direction: accumulate signed weight
                                 double dir = 0.0;
                                 if (s.direction == core::Direction::BUY) dir = 1.0;
                                 else if (s.direction == core::Direction::SELL) dir = -1.0;
-                                combined.direction = (combined.direction==core::Direction::NEUTRAL) ? s.direction : combined.direction; // keep simple
-                                // Should_trade heuristic: weighted by probs
+                                weightedDirSum += probs[i] * s.probability * dir;
+                                weightTotal += probs[i] * s.probability;
+                                // Should_trade heuristic: OR across regimes
                                 combined.should_trade = combined.should_trade || s.should_trade;
-                            } catch (...) {}
+                            } catch (const std::exception &ex) {
+                                LOG_WARN("bayes_predict threw exception: {}", ex.what());
+                            } catch (...) {
+                                LOG_WARN("bayes_predict threw unknown exception");
+                            }
+                        }
+                        // Decide combined direction by sign of weightedDirSum (fallback to NEUTRAL)
+                        if (weightTotal > 0.0) {
+                            if (weightedDirSum > 0.0) combined.direction = core::Direction::BUY;
+                            else if (weightedDirSum < 0.0) combined.direction = core::Direction::SELL;
+                            else combined.direction = core::Direction::NEUTRAL;
+                        } else {
+                            combined.direction = core::Direction::NEUTRAL;
                         }
                         signal = combined;
-                        if (signal.should_trade and signal.position_size > 0.0) {
+                        // Enforce minimum model updates before allowing Bayes-driven trades
+                        int maxModelUpdates = 0;
+                        for (int i=0;i<ImbalanceDetectionEngine::NUMBER_OF_REGIMES;i++) {
+                            if (!handles[i]) continue;
+                            try {
+                                int mu = trading::perception::bayes_get_num_updates(handles[i]);
+                                if (mu > maxModelUpdates) maxModelUpdates = mu;
+                            } catch (const std::exception &ex) { LOG_WARN("bayes_get_num_updates threw: {}", ex.what()); } catch (...) { LOG_WARN("bayes_get_num_updates threw unknown"); }
+                        }
+
+                        if (maxModelUpdates < bayesMinUpdatesToTrade_) {
+                            // not enough training yet — don't trade
+                            LOG_DEBUG("ImbalanceDetectionEngine: bayes model updates too low (max={} < min={}), skipping trade", maxModelUpdates, bayesMinUpdatesToTrade_);
+                        } else if (signal.should_trade and signal.position_size > 0.0) {
                             core::Direction dir = signal.direction;
                             OrderBookMetrics mcopy = m;
                             mcopy.metrics["bayes_probability"] = signal.probability;
@@ -720,7 +773,7 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                 try {
                     std::vector<std::tuple<std::vector<double>, int, core::ExchangeId, core::Symbol>> toTrain;
                     {
-                        std::lock_guard<std::mutex> pl(pendingTrainingMutex_);
+                        std::lock_guard<std::mutex> lk_pending2(pendingTrainingMutex_);
                         auto now = m.timestamp;
                         while (!pendingTraining_.empty()) {
                             const auto &pt = pendingTraining_.front();
@@ -813,14 +866,25 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                             }
 
                             auto handle = handles[updateIdx];
-                            if (!handle) continue;
+                            if (!handle) {
+                                // fallback: pick first available handle and log
+                                for (int ii = 0; ii < ImbalanceDetectionEngine::NUMBER_OF_REGIMES; ++ii) {
+                                    if (handles[ii]) { handle = handles[ii]; updateIdx = ii; break; }
+                                }
+                                if (!handle) {
+                                    LOG_DEBUG("ImbalanceDetectionEngine: no bayes handle available for {}:{}, skipping update", exch.toString(), sym.toString());
+                                    continue;
+                                } else {
+                                    LOG_DEBUG("ImbalanceDetectionEngine: fallback to regime {} for update of {}:{}", updateIdx, exch.toString(), sym.toString());
+                                }
+                            }
                             trading::perception::bayes_update(handle, features, label);
 
                             // Runtime persistence policy: increment update counter and
                             // save model when thresholds / intervals are reached.
                             try {
                                 // Update counters atomically with bayes mutex to avoid races
-                                std::lock_guard<std::mutex> lk(bayesMutex_);
+                                std::lock_guard<std::mutex> lk_bayes(bayesMutex_);
                                 updatesSinceLastSave_++;
                                 auto now = std::chrono::steady_clock::now();
                                 bool minIntervalPassed = (now - lastSaveTime_) >= bayesMinSaveInterval_;
@@ -832,43 +896,49 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                                 bool modelReady = (modelUpdates >= requireModelReadyUpdates_) || trading::perception::bayes_is_ready(handle);
 
                                 if (modelReady && minIntervalPassed && (enoughUpdates || intervalPassed)) {
-                                    try {
-                                        if (!bayesModelDirectory_.empty()) {
-                                            // Per-symbol persistence: save all three regime files
-                                            try {
-                                                std::string base = bayesModelDirectory_;
-                                                if (!base.empty() && base.back() != '/' && base.back() != '\\') base += '/';
-                                                std::string name;
-                                                // sanitize key
-                                                auto sanitize = [](const std::string &s){ std::string out; for (char c: s) { if (std::isalnum((unsigned char)c) || c=='_' || c=='-') out.push_back(c); else out.push_back('_'); } return out; };
-                                                name = sanitize(exch.toString()) + "_" + sanitize(sym.toString());
-                                                for (int i = 0; i < NUMBER_OF_REGIMES; ++i) {
-                                                    auto h = handles[i];
-                                                    if (!h) continue;
-                                                    std::string filename = base + name + "_regime" + std::to_string(i) + ".json";
-                                                    trading::perception::bayes_save(h, filename);
-                                                }
-                                            } catch (...) {}
-                                        } else if (!bayesModelPath_.empty() && bayes_handle_) {
-                                            // Legacy single-file mode: save shared handle
-                                            if (trading::perception::bayes_save(bayes_handle_, bayesModelPath_)) {
-                                                LOG_INFO("ImbalanceDetectionEngine: auto-saved bayes model to {}", bayesModelPath_);
-                                            } else {
-                                                LOG_WARN("ImbalanceDetectionEngine: auto-save failed for bayes model {}", bayesModelPath_);
+                                    // Collect save tasks while holding lock then perform I/O outside
+                                    std::vector<std::pair<trading::perception::BayesHandle, std::string>> saveTasks;
+                                    if (!bayesModelDirectory_.empty()) {
+                                        try {
+                                            std::string base = bayesModelDirectory_;
+                                            if (!base.empty() && base.back() != '/' && base.back() != '\\') base += '/';
+                                            auto sanitize = [](const std::string &s){ std::string out; for (char c: s) { if (std::isalnum((unsigned char)c) || c=='_' || c=='-') out.push_back(c); else out.push_back('_'); } return out; };
+                                            std::string name = sanitize(exch.toString()) + "_" + sanitize(sym.toString());
+                                            for (int i = 0; i < NUMBER_OF_REGIMES; ++i) {
+                                                auto h = handles[i];
+                                                if (!h) continue;
+                                                std::string filename = base + name + "_regime" + std::to_string(i) + ".json";
+                                                saveTasks.emplace_back(h, filename);
                                             }
-                                        }
-                                    } catch (const std::exception &ex) {
-                                        LOG_WARN("ImbalanceDetectionEngine: exception during auto-save: {}", ex.what());
-                                    } catch (...) {
-                                        LOG_WARN("ImbalanceDetectionEngine: unknown error during auto-save");
+                                        } catch (const std::exception &ex) { LOG_WARN("error preparing per-symbol save tasks: {}", ex.what()); } catch(...) { LOG_WARN("error preparing per-symbol save tasks (unknown)"); }
+                                    } else if (!bayesModelPath_.empty() && bayes_handle_) {
+                                        saveTasks.emplace_back(bayes_handle_, bayesModelPath_);
                                     }
 
-                                    // Reset counters / timestamp
+                                    // Reset counters / timestamp now while still holding lock
                                     lastSaveTime_ = now;
                                     updatesSinceLastSave_ = 0;
+
+                                    // release lock scope here
+                                    // Perform I/O for save tasks outside of bayesMutex_
+                                    for (auto &st : saveTasks) {
+                                        try {
+                                            if (trading::perception::bayes_save(st.first, st.second)) {
+                                                LOG_INFO("ImbalanceDetectionEngine: auto-saved bayes model to {}", st.second);
+                                            } else {
+                                                LOG_WARN("ImbalanceDetectionEngine: auto-save returned false for {}", st.second);
+                                            }
+                                        } catch (const std::exception &ex) {
+                                            LOG_WARN("ImbalanceDetectionEngine: exception during auto-save for {}: {}", st.second, ex.what());
+                                        } catch (...) {
+                                            LOG_WARN("ImbalanceDetectionEngine: unknown error during auto-save for {}", st.second);
+                                        }
+                                    }
                                 }
+                            } catch (const std::exception &ex) {
+                                LOG_WARN("save bookkeeping threw: {}", ex.what());
                             } catch (...) {
-                                // swallow any issues in save bookkeeping
+                                LOG_WARN("save bookkeeping threw unknown");
                             }
                         } catch (...) {}
                     }
