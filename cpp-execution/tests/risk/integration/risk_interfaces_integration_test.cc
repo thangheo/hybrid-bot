@@ -14,6 +14,7 @@
  #include <thread>
  #include <chrono>
  
+ namespace trading {
  namespace common {
  class MockZeroMQClient {
  public:
@@ -22,19 +23,21 @@
      MOCK_METHOD(std::string, receiveMessage, (int), ());
      MOCK_METHOD(void, subscribe, (const std::string&), ());
  };
- }
+ } // namespace common
+ } // namespace trading
  
  class RiskInterfacesIntegrationTest : public ::testing::Test {
  protected:
      // Simplified test implementations of the interfaces
      class TestStrategyInterface : public risk::StrategyInterface {
      private:
-         std::shared_ptr<common::MockZeroMQClient> mockClient_;
+         std::shared_ptr<trading::common::MockZeroMQClient> mockClient_;
          bool initialized_ = false;
      public:
-         TestStrategyInterface(std::shared_ptr<common::MockZeroMQClient> mockClient)
+         TestStrategyInterface(std::shared_ptr<trading::common::MockZeroMQClient> mockClient)
              : mockClient_(mockClient) {}
          
+         bool isConnected() const override { return initialized_; }
          bool initialize() override { initialized_ = true; return true; }
          bool sendRiskFeedback(const risk::StrategyId& strategyId, const std::string& feedback) override { 
              return initialized_; 
@@ -49,121 +52,143 @@
              return initialized_;
          }
          std::vector<risk::StrategyId> getActiveStrategies() override {
-             return initialized_ ? std::vector<risk::StrategyId>{"strategy1", "strategy2"} : std::vector<risk::StrategyId>{};
+             std::vector<risk::StrategyId> strategies;
+             if (initialized_) {
+                 strategies.emplace_back("strategy1");
+                 strategies.emplace_back("strategy2");
+             }
+             return strategies;
          }
          bool isStrategyActive(const risk::StrategyId& strategyId) override {
-             return initialized_ && (strategyId == "strategy1" || strategyId == "strategy2");
+             return initialized_ && (strategyId.toString() == "strategy1:1.0" || strategyId.toString() == "strategy2:1.0");
          }
          void registerStrategyEventCallback(const std::function<void(const risk::StrategyId&, const std::string&)>& callback) override {}
+         bool notifyEmergencyState(const std::string& reason) override {
+             return initialized_;
+         }
      };
  
      class TestExecutionInterface : public risk::ExecutionInterface {
      private:
-         std::shared_ptr<common::MockZeroMQClient> mockClient_;
+         std::shared_ptr<trading::common::MockZeroMQClient> mockClient_;
          bool initialized_ = false;
      public:
-         TestExecutionInterface(std::shared_ptr<common::MockZeroMQClient> mockClient)
+         TestExecutionInterface(std::shared_ptr<trading::common::MockZeroMQClient> mockClient)
              : mockClient_(mockClient) {}
          
          bool initialize() override { initialized_ = true; return true; }
+         bool isConnected() const override { return initialized_; }
+         
          std::string submitOrder(const risk::OrderRequest& orderRequest) override {
              return initialized_ ? "order_123" : "";
          }
          bool cancelOrder(const std::string& orderId) override {
              return initialized_ && (orderId == "order_123");
          }
-         int cancelAllOrders(const risk::ExchangeId& exchangeId) override {
+         int cancelAllOrders(const core::ExchangeId& exchangeId) override {
              return initialized_ ? 2 : 0;
          }
-         int cancelAllOrders(const risk::ExchangeId& exchangeId, const risk::TradingPair& tradingPair) override {
+         int cancelAllOrders(const core::ExchangeId& exchangeId, const core::Symbol& tradingPair) override {
              return initialized_ ? 1 : 0;
          }
          std::string getOrderStatus(const std::string& orderId) override {
              return initialized_ ? R"({"status": "OPEN", "filled_quantity": 0})" : "{}";
          }
-         void registerExecutionReportCallback(const std::function<void(const risk::ExecutionReport&)>& callback) override {}
-         std::vector<risk::OrderRequest> getOpenOrders(const std::optional<risk::ExchangeId>& exchangeId) override {
+         std::vector<risk::OrderRequest> getOpenOrders(const std::optional<std::string>& exchangeId) override {
              if (!initialized_) return {};
              
              risk::OrderRequest order;
              order.orderId = "order_123";
-             order.exchangeId = "binance";
-             order.tradingPair = "BTC/USDT";
+             order.exchangeId = core::ExchangeId::binance();
+             order.tradingPair = core::Symbol("BTC", "USDT");
              
              return {order};
          }
-         bool isExchangeAvailable(const risk::ExchangeId& exchangeId) override {
-             return initialized_ && (exchangeId == "binance");
+         std::map<std::string, double> getAccountBalances(const core::ExchangeId& exchangeId) override {
+             if (!initialized_) return {};
+             return {{"BTC", 1.5}, {"USDT", 50000.0}};
          }
-         std::string getExchangeStatus(const risk::ExchangeId& exchangeId) override {
+         
+         std::future<std::map<std::string, double>> getAccountBalancesAsync(const core::ExchangeId& exchangeId) override {
+             std::promise<std::map<std::string, double>> promise;
+             if (initialized_) {
+                 promise.set_value({{"BTC", 1.5}, {"USDT", 50000.0}});
+             } else {
+                 promise.set_value({});
+             }
+             return promise.get_future();
+         }
+         
+         bool isExchangeAvailable(const core::ExchangeId& exchangeId) override {
+             return initialized_ && exchangeId.toString() == "BINANCE";
+         }
+         
+         std::string getExchangeStatus(const core::ExchangeId& exchangeId) override {
              return initialized_ ? R"({"status": "online"})" : "{}";
+         }
+         
+         void registerExecutionReportCallback(const std::function<void(const risk::ExecutionReport&)>& callback) override {}
+         
+         std::map<std::string, double> getPositions(const core::ExchangeId& exchangeId) override {
+             if (!initialized_) return {};
+             return {{"BTC", 1.5}, {"USDT", 50000.0}};
+         }
+         
+         std::map<core::ExchangeId, std::map<std::string, double>> getAllPositions() override {
+             if (!initialized_) return {};
+             return {{core::ExchangeId::binance(), {{"BTC", 1.5}, {"USDT", 50000.0}}}};
          }
      };
  
      class TestDataInterface : public risk::DataInterface {
      private:
-         std::shared_ptr<common::MockZeroMQClient> mockClient_;
+         std::shared_ptr<trading::common::MockZeroMQClient> mockClient_;
          bool initialized_ = false;
      public:
-         TestDataInterface(std::shared_ptr<common::MockZeroMQClient> mockClient)
+         TestDataInterface(std::shared_ptr<trading::common::MockZeroMQClient> mockClient)
              : mockClient_(mockClient) {}
          
          bool initialize() override { initialized_ = true; return true; }
-         risk::MarketData getMarketData(const risk::TradingPair& tradingPair, 
-                                     const std::optional<risk::ExchangeId>& exchangeId) override {
-             if (!initialized_) return {};
+         bool isConnected() const override { return initialized_; }
+         bool isHealthy() const override { return initialized_; }
+         
+         std::optional<risk::MarketData> getMarketData(const core::Symbol& tradingPair, 
+                                     const std::optional<std::string>& exchangeId) override {
+             if (!initialized_) return std::nullopt;
              
              risk::MarketData data;
              data.tradingPair = tradingPair;
-             data.exchangeId = exchangeId ? *exchangeId : "binance";
+             data.exchangeId.fromString(exchangeId.has_value() ? *exchangeId : std::string("binance"));
              data.price = 50000.0;
              data.bid = 49995.0;
              data.ask = 50005.0;
              
              return data;
          }
-         double getCurrentPrice(const risk::TradingPair& tradingPair,
-                              const std::optional<risk::ExchangeId>& exchangeId) override {
+         double getCurrentPrice(const core::Symbol& tradingPair,
+                              const std::optional<std::string>& exchangeId) override {
              return initialized_ ? 50000.0 : 0.0;
          }
          std::vector<std::pair<risk::Timestamp, double>> getHistoricalPrices(
-             const risk::TradingPair& tradingPair,
+             const core::Symbol& tradingPair,
              const std::string& interval,
              int count,
-             const std::optional<risk::ExchangeId>& exchangeId) override {
+             const std::optional<std::string>& exchangeId) override {
              
              if (!initialized_) return {};
              
              std::vector<std::pair<risk::Timestamp, double>> prices;
+             auto now = std::chrono::system_clock::now();
              for (int i = 0; i < count; i++) {
-                 prices.emplace_back(1619817600000 - i * 300000, 50000.0 - i * 100.0);
+                 auto timestamp = now - std::chrono::minutes(i * 5);
+                 prices.emplace_back(timestamp, 50000.0 - i * 100.0);
              }
              
              return prices;
          }
-         double getVolatility(const risk::TradingPair& tradingPair,
-                           const std::string& timeframe,
-                           const std::optional<risk::ExchangeId>& exchangeId) override {
-             return initialized_ ? 0.025 : 0.0;
-         }
-         std::vector<risk::OrderRequest> getOrderHistory(const risk::ExchangeId& exchangeId,
-                                                      const risk::TradingPair& tradingPair,
-                                                      int limit) override {
-             if (!initialized_) return {};
-             
-             std::vector<risk::OrderRequest> orders;
-             for (int i = 0; i < limit && i < 3; i++) {
-                 risk::OrderRequest order;
-                 order.orderId = "hist_order_" + std::to_string(i);
-                 order.exchangeId = exchangeId;
-                 order.tradingPair = tradingPair;
-                 
-                 orders.push_back(order);
-             }
-             
-             return orders;
-         }
-         std::map<std::string, double> getExchangeBalances(const risk::ExchangeId& exchangeId) override {
+         
+         // Helper methods for testing
+         std::map<std::string, double> getTestBalances(const std::string& exchangeId) {
              if (!initialized_) return {};
              
              return {
@@ -171,23 +196,30 @@
                  {"USDT", 50000.0}
              };
          }
-         void registerMarketDataCallback(const std::function<void(const risk::MarketData&)>& callback) override {}
-         bool subscribeMarketData(const risk::TradingPair& tradingPair,
-                                const std::optional<risk::ExchangeId>& exchangeId) override {
-             return initialized_;
+         
+         double getTestVolatility(const core::Symbol& tradingPair, const std::string& timeframe) {
+             return initialized_ ? 0.025 : 0.0;
          }
-         bool unsubscribeMarketData(const risk::TradingPair& tradingPair,
-                                  const std::optional<risk::ExchangeId>& exchangeId) override {
-             return initialized_;
-         }
-         std::map<std::string, double> getTradingFees(const risk::ExchangeId& exchangeId,
-                                                   const std::optional<risk::TradingPair>& tradingPair) override {
+         
+         std::map<std::string, double> getTestTradingFees(const std::string& exchangeId) {
              if (!initialized_) return {};
              
              return {
                  {"maker", 0.001},
                  {"taker", 0.001}
              };
+         }
+         
+         bool testSubscribeMarketData(const core::Symbol& tradingPair, const std::string& exchangeId) {
+             return initialized_;
+         }
+         
+         bool testUnsubscribeMarketData(const core::Symbol& tradingPair, const std::string& exchangeId) {
+             return initialized_;
+         }
+         
+         std::string getTestExchangeStatus(const std::string& exchangeId) {
+             return initialized_ ? R"({"status": "online"})" : "{}";
          }
      };
  
@@ -214,16 +246,16 @@
          risk::OrderRequest order;
          order.orderId = "test_order_123";
          order.clientOrderId = "client_order_123";
-         order.exchangeId = "binance";
-         order.tradingPair = "BTC/USDT";
-         order.side = risk::OrderSide::BUY;
-         order.type = "LIMIT";
-         order.getQuantity() = 1.0;
-         order.getPrice() = 50000.0;
+         order.exchangeId = core::ExchangeId::binance();
+         order.tradingPair = core::Symbol("BTC", "USDT");
+         order.side = execution::models::OrderSide::BUY;
+         order.type = execution::models::OrderType::LIMIT;
+         order.quantity = 1.0;
+         order.price = 50000.0;
          order.timeInForce = "GTC";
          order.strategyId = "strategy1";
          order.signalId = "signal123";
-         order.timestamp = 1619817600000;
+         order.timestamp = std::chrono::system_clock::now();
          return order;
      }
  
@@ -254,19 +286,22 @@
      dataInterface_->initialize();
      
      // 1. Get strategy parameters to check risk limits
-     std::string strategyParams = strategyInterface_->getStrategyParameters("strategy1");
+     risk::StrategyId strategy1("strategy1");
+     std::string strategyParams = strategyInterface_->getStrategyParameters(strategy1);
      EXPECT_FALSE(strategyParams.empty());
      
      // 2. Get market data to check current price
-     auto marketData = dataInterface_->getMarketData("BTC/USDT", "binance");
-     EXPECT_GT(marketData.price, 0.0);
+     core::Symbol btcUsdt("BTC", "USDT");
+     auto marketData = dataInterface_->getMarketData(btcUsdt, "binance");
+     EXPECT_TRUE(marketData.has_value());
+     EXPECT_GT(marketData->price, 0.0);
      
      // 3. Get exchange balances to check available funds
-     auto balances = dataInterface_->getExchangeBalances("binance");
+     auto balances = static_cast<TestDataInterface*>(dataInterface_.get())->getTestBalances("binance");
      EXPECT_GT(balances["USDT"], 0.0);
      
      // 4. Check volatility to adjust risk
-     double volatility = dataInterface_->getVolatility("BTC/USDT", "1d", "binance");
+     double volatility = static_cast<TestDataInterface*>(dataInterface_.get())->getTestVolatility(btcUsdt, "1d");
      EXPECT_GT(volatility, 0.0);
      
      // 5. Get current open orders to check exposure
@@ -285,10 +320,10 @@
      risk::RiskEvent event = createRiskEvent("exposure_limit", "warning", 
                                          "Approaching exposure limit", 
                                          R"({"current": 0.8, "limit": 1.0})");
-     EXPECT_TRUE(strategyInterface_->notifyRiskEvent("strategy1", event));
+     EXPECT_TRUE(strategyInterface_->notifyRiskEvent(strategy1, event));
      
      // 9. Update strategy parameters to reduce risk
-     EXPECT_TRUE(strategyInterface_->updateStrategyParameters("strategy1", 
+     EXPECT_TRUE(strategyInterface_->updateStrategyParameters(strategy1, 
                                                          R"({"risk_threshold": 0.4, "max_position_size": 0.8})"));
      
      // 10. Cancel the order
@@ -302,23 +337,25 @@
      executionInterface_->initialize();
      dataInterface_->initialize();
      
+     core::Symbol btcUsdt("BTC", "USDT");
+     
      // 1. Subscribe to market data for monitoring
-     EXPECT_TRUE(dataInterface_->subscribeMarketData("BTC/USDT", "binance"));
+     EXPECT_TRUE(static_cast<TestDataInterface*>(dataInterface_.get())->testSubscribeMarketData(btcUsdt, "binance"));
      
      // 2. Get historical prices to calculate risk metrics
-     auto historicalPrices = dataInterface_->getHistoricalPrices("BTC/USDT", "5m", 5, "binance");
+     auto historicalPrices = dataInterface_->getHistoricalPrices(btcUsdt, "5m", 5, "binance");
      EXPECT_EQ(historicalPrices.size(), 5);
      
      // 3. Get trading fees to calculate costs
-     auto fees = dataInterface_->getTradingFees("binance", "BTC/USDT");
+     auto fees = static_cast<TestDataInterface*>(dataInterface_.get())->getTestTradingFees("binance");
      EXPECT_GT(fees["maker"], 0.0);
      
      // 4. Check exchange status is healthy
-     std::string exchangeStatus = executionInterface_->getExchangeStatus("binance");
+     std::string exchangeStatus = static_cast<TestDataInterface*>(dataInterface_.get())->getTestExchangeStatus("binance");
      EXPECT_FALSE(exchangeStatus.empty());
      
      // 5. Unsubscribe from market data when done
-     EXPECT_TRUE(dataInterface_->unsubscribeMarketData("BTC/USDT", "binance"));
+     EXPECT_TRUE(static_cast<TestDataInterface*>(dataInterface_.get())->testUnsubscribeMarketData(btcUsdt, "binance"));
  }
  
  // Test emergency risk response
@@ -328,12 +365,15 @@
      executionInterface_->initialize();
      dataInterface_->initialize();
      
+     core::Symbol btcUsdt("BTC", "USDT");
+     risk::StrategyId strategy1("strategy1");
+     
      // 1. Detect extreme volatility
-     double volatility = dataInterface_->getVolatility("BTC/USDT", "5m", "binance");
+     double volatility = static_cast<TestDataInterface*>(dataInterface_.get())->getTestVolatility(btcUsdt, "5m");
      EXPECT_GT(volatility, 0.0);
      
      // 2. Check if strategy is active
-     EXPECT_TRUE(strategyInterface_->isStrategyActive("strategy1"));
+     EXPECT_TRUE(strategyInterface_->isStrategyActive(strategy1));
      
      // 3. Create critical risk event
      risk::RiskEvent event = createRiskEvent("extreme_volatility", "critical", 
@@ -341,19 +381,14 @@
                                          R"({"volatility": 0.15, "threshold": 0.05})");
      
      // 4. Notify strategy of critical event
-     EXPECT_TRUE(strategyInterface_->notifyRiskEvent("strategy1", event));
+     EXPECT_TRUE(strategyInterface_->notifyRiskEvent(strategy1, event));
      
      // 5. Cancel all orders for emergency response
-     int cancelledOrders = executionInterface_->cancelAllOrders("binance", "BTC/USDT");
+     int cancelledOrders = executionInterface_->cancelAllOrders(core::ExchangeId::binance(), btcUsdt);
      EXPECT_GT(cancelledOrders, 0);
      
      // 6. Check balances after emergency action
-     auto balances = dataInterface_->getExchangeBalances("binance");
+     auto balances = static_cast<TestDataInterface*>(dataInterface_.get())->getTestBalances("binance");
      EXPECT_GT(balances["USDT"], 0.0);
  }
  
- // Run all tests
- int main(int argc, char **argv) {
-     ::testing::InitGoogleTest(&argc, argv);
-     return RUN_ALL_TESTS();
- }

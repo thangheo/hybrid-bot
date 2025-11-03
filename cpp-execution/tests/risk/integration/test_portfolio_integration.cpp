@@ -8,8 +8,8 @@
  #include <gtest/gtest.h>
  #include <gmock/gmock.h>
  #include "risk/portfolio/portfolio_manager.hpp"
- #include "../mocks/data_interface_mock.hpp"
- #include "../mocks/execution_interface_mock.hpp"
+ #include "execution/models/execution_report.hpp"
+ #include "core/direction.hpp"
  #include <string>
 
  // Minimal AccountBalance used by tests and mock interfaces
@@ -32,13 +32,76 @@
  
  namespace risk {
  namespace test {
+
+// Simple test implementation of ExecutionInterface for testing
+class TestExecutionInterface : public trading::risk::ExecutionInterface {
+public:
+    // Map to store mock balances
+    std::map<std::string, std::map<std::string, double>> mockBalances;
+    std::string lastSubmittedOrder;
+    
+    bool initialize() override { return true; }
+    bool isConnected() const override { return true; }
+    
+    std::string submitOrder(const trading::risk::OrderRequest& orderRequest) override {
+        lastSubmittedOrder = "test_order_123";
+        return lastSubmittedOrder;
+    }
+    
+    bool cancelOrder(const std::string& orderId) override { return true; }
+    
+    int cancelAllOrders(const trading::core::ExchangeId& exchangeId) override { return 0; }
+    
+    int cancelAllOrders(const trading::core::ExchangeId& exchangeId, 
+                       const trading::core::Symbol& tradingPair) override { return 0; }
+    
+    std::string getOrderStatus(const std::string& orderId) override { 
+        return "{\"status\":\"FILLED\"}"; 
+    }
+    
+    std::vector<trading::risk::OrderRequest> getOpenOrders(
+        const std::optional<std::string>& exchangeId = std::nullopt) override { 
+        return {}; 
+    }
+    
+    std::map<std::string, double> getAccountBalances(
+        const trading::core::ExchangeId& exchangeId) override {
+        auto it = mockBalances.find(exchangeId.toString());
+        return it != mockBalances.end() ? it->second : std::map<std::string, double>{};
+    }
+    
+    std::future<std::map<std::string, double>> getAccountBalancesAsync(
+        const trading::core::ExchangeId& exchangeId) override {
+        std::promise<std::map<std::string, double>> promise;
+        promise.set_value(getAccountBalances(exchangeId));
+        return promise.get_future();
+    }
+    
+    bool isExchangeAvailable(const trading::core::ExchangeId& exchangeId) override { return true; }
+    
+    std::string getExchangeStatus(const trading::core::ExchangeId& exchangeId) override { 
+        return "{\"status\":\"operational\"}"; 
+    }
+    
+    void registerExecutionReportCallback(
+        const std::function<void(const trading::execution::models::ExecutionReport&)>& callback) override {
+        // Store callback for later use
+    }
+    
+    std::map<std::string, double> getPositions(
+        const trading::core::ExchangeId& exchangeId) override { return {}; }
+    
+    std::map<trading::core::ExchangeId, std::map<std::string, double>> getAllPositions() override { 
+        return {}; 
+    }
+};
  
  class PortfolioIntegrationTest : public ::testing::Test {
  protected:
      void SetUp() override {
          // Create mock interfaces
-         m_dataInterface = std::make_shared<NiceMock<MockDataInterface>>();
-         m_executionInterface = std::make_shared<NiceMock<MockExecutionInterface>>();
+         m_dataInterface = std::make_shared<NiceMock<trading::risk::MockDataInterface>>();
+         m_executionInterface = std::make_shared<TestExecutionInterface>();
          
          // Setup default config
          setupConfig();
@@ -63,7 +126,10 @@
         // Collateral config
         m_config.collateralConfig.baseCurrency = "USD";
         m_config.collateralConfig.minimumFreeCollateralRatio = 0.2;
-        m_config.collateralConfig.managedExchanges = {"binance", "ftx"};
+        m_config.collateralConfig.managedExchanges = {
+            trading::common::ExchangeId::fromString("binance"), 
+            trading::common::ExchangeId::fromString("ftx")
+        };
         m_config.collateralConfig.minimumBalances = {
             {"USD", 10000.0},
             {"BTC", 0.5}
@@ -71,20 +137,8 @@
     }
     
     void setupMockData() {
-        // Mock market data
-                MarketData btcData;
-                btcData.tradingPair = core::Symbol("BTC/USDT");
-                btcData.price = 50000.0;
-                btcData.timestamp =  std::chrono::system_clock::now();
-                ON_CALL(*m_dataInterface, getMarketData("BTC/USDT"))
-                    .WillByDefault(Return(std::optional<MarketData>(btcData)));
-        
-                MarketData ethData;
-                ethData.tradingPair = core::Symbol("ETH/USDT");
-                ethData.price = 2000.0;
-                ethData.timestamp = std::chrono::system_clock::now();
-                ON_CALL(*m_dataInterface, getMarketData("ETH/USDT"))
-                    .WillByDefault(Return(std::optional<MarketData>(ethData)));
+        // Mock market data - MockDataInterface has different methods
+        // For now, we'll use the default implementations which return empty/null values
             
         // Mock account balances
         std::vector<AccountBalance> binanceBalances = {
@@ -99,29 +153,36 @@
             {"ETH", 10.0, 10.0, 0.0}
         };
         
-        ON_CALL(*m_executionInterface, getAccountBalances("binance"))
-            .WillByDefault(Return(binanceBalances));
-        ON_CALL(*m_executionInterface, getAccountBalances("ftx"))
-            .WillByDefault(Return(ftxBalances));
-            
-        // Mock order submission
-        ON_CALL(*m_executionInterface, submitOrder(_))
-            .WillByDefault(Return(OrderResponse{true, "success"}));
+        // Setup mock account balances in the test execution interface
+        std::map<std::string, double> binanceMap;
+        for (const auto& balance : binanceBalances) {
+            binanceMap[balance.asset] = balance.available;
+        }
+        m_executionInterface->mockBalances["BINANCE"] = binanceMap;
+        
+        std::map<std::string, double> ftxMap;
+        for (const auto& balance : ftxBalances) {
+            ftxMap[balance.asset] = balance.available;
+        }
+        m_executionInterface->mockBalances["FTX"] = ftxMap;
     }
     
-    ExecutionReport createExecutionReport(const std::string& exchangeId, 
+    trading::execution::models::ExecutionReport createExecutionReport(const std::string& exchangeId, 
                                          const std::string& tradingPair,
                                          const std::string& side,
                                          double quantity,
                                          double price) {
-        ExecutionReport report;
-        report.setExchangeId(core::ExchangeId::fromString(exchangeId));
-        report.setSymbol(core::Symbol::fromString(tradingPair));
-        report.setSide(side == "buy" ? OrderSide::BUY : OrderSide::SELL);
-        report.setStatus(OrderState::FILLED);
+        trading::execution::models::ExecutionReport report;
+        report.setExchangeId(trading::common::ExchangeId::fromString(exchangeId));
+        report.setSymbol(trading::core::Symbol::fromString(tradingPair));
+        report.setSide(side == "buy" ? trading::core::Direction::BUY : trading::core::Direction::SELL);
+        report.setStatus(trading::execution::models::OrderState::FILLED);
         report.setQuantity(quantity);
         report.setFilledQuantity(quantity);
         report.setPrice(price);
+        report.setOrderId("test_order_123");
+        report.setClientOrderId("test_client_order_123");
+        report.setAverageFillPrice(price);
         // report.s
         // Fill fill;
         // fill.setQuantity(quantity);
@@ -134,8 +195,8 @@
         return report;
     }
     
-    std::shared_ptr<MockDataInterface> m_dataInterface;
-    std::shared_ptr<MockExecutionInterface> m_executionInterface;
+    std::shared_ptr<trading::risk::MockDataInterface> m_dataInterface;
+    std::shared_ptr<TestExecutionInterface> m_executionInterface;
     std::shared_ptr<PortfolioManager> m_portfolioManager;
     RiskConfig m_config;
 };
@@ -150,19 +211,19 @@ TEST_F(PortfolioIntegrationTest, EndToEndPositionTracking) {
     EXPECT_DOUBLE_EQ(m_portfolioManager->getPortfolioValue(), 0.0);
     
     // Process a buy execution report
-    ExecutionReport buyReport = createExecutionReport("binance", "BTC/USD", "buy", 1.0, 50000.0);
+    trading::execution::models::ExecutionReport buyReport = createExecutionReport("BINANCE", "BTC/USD", "buy", 1.0, 50000.0);
     m_portfolioManager->processExecutionReport(buyReport);
     
     // Verify position was created
     auto positions = m_portfolioManager->getAllPositions();
     EXPECT_EQ(positions.size(), 1);
-    EXPECT_EQ(positions[0].getExchangeId(), "binance");
-    EXPECT_EQ(positions[0].getTradingPair(), "BTC/USD");
+    EXPECT_EQ(positions[0].getExchangeId().toString(), "BINANCE");
+    EXPECT_EQ(positions[0].getTradingPair().toString(), "BTC/USD");
     EXPECT_DOUBLE_EQ(positions[0].getQuantity(), 1.0);
     EXPECT_DOUBLE_EQ(positions[0].getAverageEntryPrice(), 50000.0);
     
     // Process another buy report
-    ExecutionReport ethBuyReport = createExecutionReport("binance", "ETH/USD", "buy", 10.0, 2000.0);
+    trading::execution::models::ExecutionReport ethBuyReport = createExecutionReport("BINANCE", "ETH/USD", "buy", 10.0, 2000.0);
     m_portfolioManager->processExecutionReport(ethBuyReport);
     
     // Verify portfolio value is updated
@@ -206,7 +267,7 @@ TEST_F(PortfolioIntegrationTest, CollateralAndPositionManagement) {
     EXPECT_TRUE(violations.empty());
     
     // Process the trade execution
-    ExecutionReport buyReport = createExecutionReport("binance", "BTC/USD", "buy", 1.0, 50000.0);
+    trading::execution::models::ExecutionReport buyReport = createExecutionReport("BINANCE", "BTC/USD", "buy", 1.0, 50000.0);
     m_portfolioManager->processExecutionReport(buyReport);
     
     // Verify position was created

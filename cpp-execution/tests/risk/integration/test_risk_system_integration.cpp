@@ -25,7 +25,7 @@
          
          // Load configuration from file
          config = std::make_shared<RiskConfig>();
-         config->loadFromFile("test_config.json");
+         config->loadFromFile("/home/e8/works/hybrid-bot/cpp-execution/build/config/risk_config.json");
          
          // Create the risk manager
          riskManager = std::make_shared<RiskManager>(*config);
