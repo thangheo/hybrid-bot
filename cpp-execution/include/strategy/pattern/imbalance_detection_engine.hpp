@@ -301,6 +301,9 @@ public:
     // Set the RegimeSubscriber so the engine can snapshot regime probabilities at capture time and weight predictions
     void setRegimeSubscriber(trading::strategy::core_analysis::RegimeSubscriber* sub) { regime_subscriber_ = sub; }
 
+    // Configure minimum bayes model updates required before emitting trades
+    void setBayesMinUpdatesToTrade(int v) { bayesMinUpdatesToTrade_ = v; }
+
     // Helpers for per-symbol model management
     // Return an array of NUMBER_OF_REGIMES handles (one per regime). Null entries allowed.
     std::array<trading::perception::BayesHandle, NUMBER_OF_REGIMES> getBayesHandlesForSymbol(const core::ExchangeId &exch, const core::Symbol &sym);
@@ -316,6 +319,8 @@ public:
     std::chrono::milliseconds bayesSaveInterval_{60 * 60 * 1000};
     // Require model to have at least this many updates before saving (protect against saving untrained model)
     int requireModelReadyUpdates_ = 100;
+    // Minimum number of model updates required before allowing the model to trigger trades
+    int bayesMinUpdatesToTrade_ = 5000;
     // Minimum interval between saves (debounce)
     std::chrono::milliseconds bayesMinSaveInterval_{30000};
     // Runtime counter for updates since last save
