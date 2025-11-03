@@ -144,11 +144,22 @@ using namespace trading::core;
          
         // Load default parameters
         loadDefaultParameters();
+        
         // Create regime subscriber (non-blocking) - will be started in start()
         try {
             regime_subscriber_ = std::make_unique<trading::strategy::core_analysis::RegimeSubscriber>();
         } catch (const std::exception& e) {
             LOG_WARN("Failed to create RegimeSubscriber: {}", e.what());
+        }
+        
+        // Initialize signal filters
+        try {
+            meta_filter_ = std::make_unique<engine::MetaFilter>();
+            shock_detector_ = std::make_unique<engine::ShockDetector>();
+            LOG_INFO("Signal filters initialized successfully");
+        } catch (const std::exception& e) {
+            LOG_ERROR("Failed to initialize signal filters: {}", e.what());
+            return false;
         }
         
         state_ = StrategyState::INITIALIZED;
@@ -370,6 +381,10 @@ bool StrategyEngine::getRegimeInfo(const std::string& symbol, trading::strategy:
          std::string pairId = orderBook.getExchangeId().toString() + ":" + orderBook.getSymbol().toString();
          auto currentTime = std::chrono::system_clock::now();
          double currentPrice = orderBook.getMidPrice();
+         
+         // Update shock detector with current price
+         updateShockDetectorPrice(symbol.toString(), currentPrice);
+         
          //print exchange and symbol
          // Variables to store data for processing outside the lock
          bool shouldUpdateCorrelation = false;
@@ -722,8 +737,14 @@ void StrategyEngine::processImbalanceEvents(const std::vector<ImbalanceEvent>& e
             auto sourceEvent = findSourceEvent(signal, events);
             if (sourceEvent) {
                 auto enhancedSignal = enhanceSignalWithEventContext(signal, *sourceEvent);
-                activeSignals_[enhancedSignal.id] = enhancedSignal;
-                notifySignalCallbacks(enhancedSignal);
+                
+                // Apply signal filters before processing
+                if (applySignalFilters(enhancedSignal)) {
+                    activeSignals_[enhancedSignal.id] = enhancedSignal;
+                    notifySignalCallbacks(enhancedSignal);
+                } else {
+                    LOG_INFO("Signal {} blocked by filters", enhancedSignal.id);
+                }
             } else {
                 LOG_WARN("Could not correlate signal {} to source event", signal.id);
             }
@@ -982,6 +1003,77 @@ bool StrategyEngine::initializeTradingPair(const core::Symbol& symbol, ExchangeI
      // This would be used to record detailed performance data for later analysis
      // Could store to a database or other persistent storage
  }
+
+// Signal filtering implementation
+bool StrategyEngine::applySignalFilters(const TradingSignal& signal) const {
+    // Only filter buy/entry signals, allow sell/exit signals to pass through
+    if (signal.direction != core::Direction::BUY) {
+        return true;
+    }
+    
+    std::string symbol = signal.symbol.toString();
+    
+    // Apply MetaFilter (regime-based filter)
+    if (meta_filter_) {
+        auto meta_result = meta_filter_->checkEntryAllowed(symbol, regime_subscriber_.get());
+        if (!meta_result.allow_entry) {
+            LOG_WARN("MetaFilter BLOCKED entry signal {} for {}: {} (p_trend_up={:.3f}, regime_confidence={:.3f})",
+                     signal.id, symbol, meta_result.block_reason, 
+                     meta_result.p_trend_up_value, meta_result.regime_confidence_value);
+            return false;
+        }
+    }
+    
+    // Apply ShockDetector (volatility-based filter)  
+    if (shock_detector_) {
+        auto shock_result = shock_detector_->checkTradingSuspended(symbol);
+        if (shock_result.suspend_trading) {
+            LOG_WARN("ShockDetector BLOCKED entry signal {} for {}: {} (recent_vol={:.6f}, baseline_vol={:.6f}, ratio={:.2f})",
+                     signal.id, symbol, shock_result.suspend_reason,
+                     shock_result.recent_volatility, shock_result.baseline_volatility, shock_result.volatility_ratio);
+            return false;
+        }
+    }
+    
+    // All filters passed
+    return true;
+}
+
+void StrategyEngine::updateShockDetectorPrice(const std::string& symbol, double price) const {
+    if (shock_detector_) {
+        shock_detector_->updatePrice(symbol, price);
+    }
+}
+
+// Configuration update methods
+void StrategyEngine::updateMetaFilterConfig(const engine::MetaFilterConfig& config) {
+    if (meta_filter_) {
+        meta_filter_->updateConfig(config);
+        LOG_INFO("MetaFilter configuration updated");
+    }
+}
+
+void StrategyEngine::updateShockDetectorConfig(const engine::ShockDetectorConfig& config) {
+    if (shock_detector_) {
+        shock_detector_->updateConfig(config);
+        LOG_INFO("ShockDetector configuration updated");
+    }
+}
+
+// Statistics methods  
+std::string StrategyEngine::getMetaFilterStatistics() const {
+    if (meta_filter_) {
+        return meta_filter_->getStatistics();
+    }
+    return "{}";
+}
+
+std::string StrategyEngine::getShockDetectorStatistics() const {
+    if (shock_detector_) {
+        return shock_detector_->getStatistics();
+    }
+    return "{}";
+}
  
  } // namespace strategy
  } // namespace trading
