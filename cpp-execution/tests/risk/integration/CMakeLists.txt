@@ -2,12 +2,9 @@
 
 # Source files for risk integration tests
 set(RISK_INTEGRATION_TEST_SOURCES
-    # risk_interfaces_integration_test.cpp
-    # test_portfolio_integration.cpp
-    # test_portfolio_manager.cpp
-    # test_post_trade_monitor.cpp
-    # test_pretrade_risk_filter.cpp
-    # test_risk_service.cpp
+    risk_interfaces_integration_test.cc
+    test_portfolio_integration.cpp
+    # Skip empty modules: test_portfolio_manager.cpp, test_post_trade_monitor.cpp, test_pretrade_risk_filter.cpp, test_risk_service.cpp
     test_risk_system.cpp
     test_risk_system_integration.cpp
 )
