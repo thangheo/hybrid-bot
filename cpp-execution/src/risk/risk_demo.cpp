@@ -449,7 +449,7 @@ private:
         signal.signalMetrics["market_price"] = price * 0.999; // Slightly different
         signal.strategyId = StrategyId("demo_strategy", "1.0");
         signal.generationTime = std::chrono::system_clock::now();
-        signal.ttl = 10000ms; // 10 seconds
+        signal.ttl = 60000ms; // 60 seconds
         signal.expirationTime = signal.generationTime + signal.ttl;
         return signal;
     }
