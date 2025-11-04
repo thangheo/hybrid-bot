@@ -640,8 +640,17 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                 // Build feature vector from detectors + raw metrics (extracted via helper)
                 std::vector<double> features = buildFeatures(m, results);
 
-                // Buffer features for later labeling/training
-                {
+                // Check if regime info is available before buffering training data
+                bool hasRegimeInfo = false;
+                if (regime_subscriber_) {
+                    trading::strategy::core_analysis::RegimeInfo rinfo;
+                    hasRegimeInfo = regime_subscriber_->get(m.symbol.toString(), rinfo) && 
+                                   rinfo.probs.size() == ImbalanceDetectionEngine::NUMBER_OF_REGIMES &&
+                                   rinfo.regime >= 0; // Valid regime (not -1)
+                }
+                
+                // Buffer features for later labeling/training - only if regime info is available
+                if (hasRegimeInfo) {
                     std::lock_guard<std::mutex> lk_pending(pendingTrainingMutex_);
                     if (pendingTraining_.size() >= maxPendingTraining_) pendingTraining_.pop_front();
                     double vwap_snap = 0.0;
@@ -686,6 +695,15 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                             }
                         }
 
+                } else {
+                    // Skip training data buffering if no regime info available yet
+                    static std::chrono::steady_clock::time_point lastLogTime;
+                    auto now = std::chrono::steady_clock::now();
+                    if (now - lastLogTime > std::chrono::seconds(60)) {  // Log every 60 seconds to avoid spam
+                        LOG_DEBUG("ImbalanceDetectionEngine: skipping training buffer - no regime info available for {}:{}", 
+                                 m.exchangeId.toString(), m.symbol.toString());
+                        lastLogTime = now;
+                    }
                 }
 
                 // Predict with Bayesian model and emit event if needed
