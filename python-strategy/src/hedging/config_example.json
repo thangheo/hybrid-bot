@@ -1,0 +1,18 @@
+{
+  "api_key": "your_binance_api_key_here",
+  "api_secret": "your_binance_api_secret_here",
+  "testnet": true,
+  "settings": {
+    "leverage": 10,
+    "hedge_ratio": 1.0,
+    "auto_hedge_enabled": false,
+    "price_drop_trigger_pct": -2.0,
+    "price_recovery_trigger_pct": 1.0,
+    "monitoring_interval_seconds": 60
+  },
+  "risk_management": {
+    "max_position_size_btc": 1.0,
+    "stop_loss_pct": 5.0,
+    "take_profit_pct": 3.0
+  }
+}
