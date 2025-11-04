@@ -15,8 +15,8 @@ struct MetaFilterConfig {
     
     // Emergency exit settings
     bool enable_emergency_exit = true;     // Enable emergency position liquidation
-    double emergency_p_trend_threshold = 0.1;  // P_trend_up threshold for emergency exit
-    double emergency_regime_threshold = 0.05;  // Regime confidence threshold for emergency exit
+    double emergency_p_trend_threshold = 0.01;  // P_trend_up threshold for emergency exit (1% - very conservative)
+    double emergency_regime_threshold = 0.01;  // Regime confidence threshold for emergency exit
 };
 
 struct MetaFilterResult {
