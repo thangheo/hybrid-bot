@@ -255,7 +255,23 @@ void PostTradeMonitor::processExecutionReport(const execution::models::Execution
     
     // Update position tracker
     if (positionTracker_) {
+        LOG_INFO(formatString("[TTL_DEBUG] Updating positionTracker with execution: {} qty={} status={}", 
+                 executionReport.symbol().toString(), 
+                 executionReport.quantity(),
+                 static_cast<int>(executionReport.status())));
         positionTracker_->processExecutionReport(executionReport);
+        
+        // Verify position was updated
+        auto positions = positionTracker_->getAllPositions();
+        LOG_INFO(formatString("[TTL_DEBUG] After update, positionTracker has {} positions", positions.size()));
+        for (const auto& pos : positions) {
+            if (pos.getTradingPair().toString() == executionReport.symbol().toString()) {
+                LOG_INFO(formatString("[TTL_DEBUG] Found matching position: {} qty={}", 
+                         pos.getTradingPair().toString(), pos.getQuantity()));
+            }
+        }
+    } else {
+        LOG_INFO("[TTL_DEBUG] ERROR: positionTracker_ is NULL!");
     }
     
     // Perform health checks after processing
