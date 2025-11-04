@@ -31,39 +31,17 @@ public:
             LOG_CRITICAL("🚨 EMERGENCY EXIT TRIGGERED: {} - Reason: {}", symbol, reason);
             
             // Get all positions for this symbol across all exchanges
-            auto positions = portfolio_manager_->getPositionsForSymbol(core::Symbol::fromString(symbol));
-            
-            bool all_success = true;
-            for (const auto& pos : positions) {
-                if (pos.getQuantity() != 0.0) {
-                    LOG_WARN("LIQUIDATING POSITION: {} {} qty={:.8f}", 
-                             pos.getExchangeId().toString(), symbol, pos.getQuantity());
-                    
-                    // Send market sell order to close position immediately
-                    try {
-                        auto order_id = portfolio_manager_->liquidatePosition(
-                            pos.getExchangeId(), 
-                            pos.getTradingPair()
-                        );
-                        
-                        if (order_id.has_value()) {
-                            LOG_INFO("Emergency liquidation order sent: {} for {}", 
-                                     order_id.value(), symbol);
-                        } else {
-                            LOG_ERROR("Failed to send emergency liquidation order for {}", symbol);
-                            all_success = false;
-                        }
-                    } catch (const std::exception& e) {
-                        LOG_ERROR("Exception during emergency liquidation of {}: {}", symbol, e.what());
-                        all_success = false;
-                    }
-                }
-            }
+            // PortfolioManager does not expose a getPositionsForSymbol API in the current interface;
+            // fallback: log that position inspection is not supported and skip automatic liquidation.
+            bool all_success = false;
+            size_t positions_count = 0;
+            LOG_WARN("PortfolioManager::getPositionsForSymbol(...) not available; skipping automatic position liquidation for {}", symbol);
 
             // Additional safety: Cancel all pending buy orders for this symbol
             try {
-                portfolio_manager_->cancelAllOrdersForSymbol(core::Symbol::fromString(symbol));
-                LOG_INFO("Cancelled all pending orders for {}", symbol);
+                // TODO: Implement order cancellation when PortfolioManager supports it
+                // portfolio_manager_->cancelAllOrdersForSymbol(core::Symbol::fromString(symbol));
+                LOG_INFO("Order cancellation skipped - method not available for {}", symbol);
             } catch (const std::exception& e) {
                 LOG_ERROR("Failed to cancel orders for {}: {}", symbol, e.what());
                 all_success = false;
@@ -73,7 +51,7 @@ public:
                 LOG_CRITICAL("✅ EMERGENCY EXIT COMPLETED: {}", symbol);
                 
                 // Optional: Send alert notification
-                sendEmergencyAlert(symbol, reason, positions.size());
+                sendEmergencyAlert(symbol, reason, positions_count);
                 return true;
             } else {
                 LOG_ERROR("❌ EMERGENCY EXIT PARTIAL FAILURE: {}", symbol);
@@ -87,17 +65,13 @@ public:
     }
 
 private:
-    risk::PortfolioManager* portfolio_manager_;
-    
-    void sendEmergencyAlert(const std::string& symbol, const std::string& reason, size_t positions_closed) {
-        // Optional: Integrate with alerting system
-        LOG_CRITICAL("📱 ALERT: Emergency exit executed for {} (reason: {}, positions: {})", 
-                     symbol, reason, positions_closed);
-        
-        // TODO: Send to Slack/Discord/Email/SMS
-        // alerting_system_->sendCriticalAlert(
-        //     fmt::format("🚨 EMERGENCY EXIT: {} - {}", symbol, reason)
-        // );
+    // Pointer to the portfolio manager used to inspect/cancel positions/orders
+    risk::PortfolioManager* portfolio_manager_ = nullptr;
+
+    // Minimal alert helper (stub) — replace with real alerting integration as needed
+    void sendEmergencyAlert(const std::string& symbol, const std::string& reason, size_t positions_count) {
+        LOG_WARN("Emergency alert: {} - {} ({} positions)", symbol, reason, positions_count);
+        // TODO: integrate with Slack/Discord/Email/SMS alerting system
     }
 };
 
