@@ -284,6 +284,30 @@ ImbalanceDetectionConfig parseImbalanceDetectionConfig(const json& componentJson
     // Optional warmup gating: delay before training starts and minimum orderbook levels
     if (params.contains("trainingStartDelayMs")) config.trainingStartDelayMs = params["trainingStartDelayMs"].get<int>();
     if (params.contains("minOrderbookLevels")) config.minOrderbookLevels = params["minOrderbookLevels"].get<int>();
+        
+        // Parse log transform configuration
+        if (params.contains("logTransformConfig") && params["logTransformConfig"].is_object()) {
+            const auto& logConfig = params["logTransformConfig"];
+            if (logConfig.contains("enable_log_transform")) {
+                config.parameters["enable_log_transform"] = logConfig["enable_log_transform"].get<bool>() ? 1.0 : 0.0;
+            }
+            if (logConfig.contains("log_transform_threshold")) {
+                config.parameters["log_transform_threshold"] = logConfig["log_transform_threshold"].get<double>();
+            }
+            if (logConfig.contains("log_transform_indices") && logConfig["log_transform_indices"].is_array()) {
+                // Store as comma-separated string for now (or handle as array if config supports it)
+                std::string indices;
+                for (size_t i = 0; i < logConfig["log_transform_indices"].size(); ++i) {
+                    if (i > 0) indices += ",";
+                    indices += std::to_string(logConfig["log_transform_indices"][i].get<int>());
+                }
+                config.string_parameters["log_transform_indices"] = indices;
+            }
+            if (logConfig.contains("comment")) {
+                config.string_parameters["log_transform_comment"] = logConfig["comment"].get<std::string>();
+            }
+        }
+        
         // Parse thresholds map
         if (params.contains("thresholds") && params["thresholds"].is_object()) {
             for (auto it = params["thresholds"].begin(); it != params["thresholds"].end(); ++it) {
@@ -795,9 +819,53 @@ json imbalanceDetectionConfigToJson(const ImbalanceDetectionConfig& config) {
         params[key] = value;
     }
     
-    // Add string parameters
+    // Add string parameters (excluding log transform ones which we handle separately)
     for (const auto& [key, value] : config.string_parameters) {
-        params[key] = value;
+        if (key != "log_transform_indices" && key != "log_transform_comment") {
+            params[key] = value;
+        }
+    }
+    
+    // Reconstruct log transform config
+    json logTransformConfig;
+    bool hasLogConfig = false;
+    
+    // Check if we have log transform parameters
+    auto enableIt = config.parameters.find("enable_log_transform");
+    if (enableIt != config.parameters.end()) {
+        logTransformConfig["enable_log_transform"] = (enableIt->second > 0.5);
+        hasLogConfig = true;
+    }
+    
+    auto thresholdIt = config.parameters.find("log_transform_threshold");
+    if (thresholdIt != config.parameters.end()) {
+        logTransformConfig["log_transform_threshold"] = thresholdIt->second;
+        hasLogConfig = true;
+    }
+    
+    auto indicesIt = config.string_parameters.find("log_transform_indices");
+    if (indicesIt != config.string_parameters.end()) {
+        // Parse comma-separated indices back to array
+        json indicesArray = json::array();
+        std::stringstream ss(indicesIt->second);
+        std::string item;
+        while (std::getline(ss, item, ',')) {
+            if (!item.empty()) {
+                indicesArray.push_back(std::stoi(item));
+            }
+        }
+        logTransformConfig["log_transform_indices"] = indicesArray;
+        hasLogConfig = true;
+    }
+    
+    auto commentIt = config.string_parameters.find("log_transform_comment");
+    if (commentIt != config.string_parameters.end()) {
+        logTransformConfig["comment"] = commentIt->second;
+        hasLogConfig = true;
+    }
+    
+    if (hasLogConfig) {
+        params["logTransformConfig"] = logTransformConfig;
     }
 
     // Add warmup gating parameters
