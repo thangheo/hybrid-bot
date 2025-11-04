@@ -712,59 +712,53 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                 if (bayesInitialized_.load()) {
                     try {
                         trading::perception::BayesSignal signal;
-                        // Get per-regime handles and perform weighted ensemble prediction
+                        // Get per-regime handles and use only the active regime for prediction
                         auto handles = getBayesHandlesForSymbol(m.exchangeId, m.symbol);
-                        // default uniform probs
-                        std::array<double, ImbalanceDetectionEngine::NUMBER_OF_REGIMES> probs;
-                        probs.fill(1.0 / static_cast<double>(ImbalanceDetectionEngine::NUMBER_OF_REGIMES));
+                        
+                        // Determine active regime (highest probability)
+                        int activeRegime = 0;
+                        double maxProb = 0.25; // minimum threshold
+                        bool hasRegimeData = false;
+                        
                         if (regime_subscriber_) {
                             trading::strategy::core_analysis::RegimeInfo rinfo;
                             std::string lookup_symbol = m.symbol.toString();
                             LOG_DEBUG("ImbalanceDetectionEngine: Looking up regime for symbol: '{}'", lookup_symbol);
                             if (regime_subscriber_->get(lookup_symbol, rinfo) && rinfo.probs.size() == ImbalanceDetectionEngine::NUMBER_OF_REGIMES) {
-                                for (int i=0;i<ImbalanceDetectionEngine::NUMBER_OF_REGIMES;i++) probs[i] = rinfo.probs[i];
-                                LOG_DEBUG("ImbalanceDetectionEngine: Found regime data for '{}': probs=[{:.3f}, {:.3f}, {:.3f}, {:.3f}]", 
-                                         lookup_symbol, probs[0], probs[1], probs[2], probs[3]);
+                                hasRegimeData = true;
+                                // Find most probable regime
+                                for (int i = 0; i < ImbalanceDetectionEngine::NUMBER_OF_REGIMES; ++i) {
+                                    if (rinfo.probs[i] > maxProb) {
+                                        maxProb = rinfo.probs[i];
+                                        activeRegime = i;
+                                    }
+                                }
+                                LOG_DEBUG("ImbalanceDetectionEngine: Found regime data for '{}': active_regime={} (prob={:.3f})", 
+                                         lookup_symbol, activeRegime, maxProb);
                             } else {
                                 LOG_DEBUG("ImbalanceDetectionEngine: No regime data found for '{}' (rinfo.valid={}, probs.size={})", 
                                          lookup_symbol, rinfo.valid, rinfo.probs.size());
                             }
                         }
-                        // run predictions for each handle and combine
-                        trading::perception::BayesSignal combined{};
-                        double weightedDirSum = 0.0;
-                        double weightTotal = 0.0;
-                        for (int i=0;i<ImbalanceDetectionEngine::NUMBER_OF_REGIMES;i++) {
-                            if (!handles[i]) continue;
+                        
+                        // Use only the active regime model for prediction
+                        trading::perception::BayesSignal activeSignal{};
+                        auto activeHandle = handles[activeRegime];
+                        if (activeHandle) {
                             try {
-                                auto s = trading::perception::bayes_predict(handles[i], features);
-                                combined.probability += probs[i] * s.probability;
-                                combined.expected_value += probs[i] * s.expected_value;
-                                combined.position_size += probs[i] * s.position_size;
-                                combined.uncertainty += probs[i] * s.uncertainty;
-                                // direction: accumulate signed weight
-                                double dir = 0.0;
-                                if (s.direction == core::Direction::BUY) dir = 1.0;
-                                else if (s.direction == core::Direction::SELL) dir = -1.0;
-                                weightedDirSum += probs[i] * s.probability * dir;
-                                weightTotal += probs[i] * s.probability;
-                                // Should_trade heuristic: OR across regimes
-                                combined.should_trade = combined.should_trade || s.should_trade;
+                                activeSignal = trading::perception::bayes_predict(activeHandle, features);
+                                LOG_DEBUG("ImbalanceDetectionEngine: Active regime {} prediction: prob={:.3f}, dir={}, should_trade={}", 
+                                         activeRegime, activeSignal.probability, 
+                                         (activeSignal.direction == core::Direction::BUY ? "BUY" : 
+                                          activeSignal.direction == core::Direction::SELL ? "SELL" : "NEUTRAL"),
+                                         activeSignal.should_trade);
                             } catch (const std::exception &ex) {
-                                LOG_WARN("bayes_predict threw exception: {}", ex.what());
+                                LOG_WARN("bayes_predict threw exception for regime {}: {}", activeRegime, ex.what());
                             } catch (...) {
-                                LOG_WARN("bayes_predict threw unknown exception");
+                                LOG_WARN("bayes_predict threw unknown exception for regime {}", activeRegime);
                             }
                         }
-                        // Decide combined direction by sign of weightedDirSum (fallback to NEUTRAL)
-                        if (weightTotal > 0.0) {
-                            if (weightedDirSum > 0.0) combined.direction = core::Direction::BUY;
-                            else if (weightedDirSum < 0.0) combined.direction = core::Direction::SELL;
-                            else combined.direction = core::Direction::NEUTRAL;
-                        } else {
-                            combined.direction = core::Direction::NEUTRAL;
-                        }
-                        signal = combined;
+                        signal = activeSignal;
                         // Enforce minimum model updates before allowing Bayes-driven trades
                         int maxModelUpdates = 0;
                         for (int i=0;i<ImbalanceDetectionEngine::NUMBER_OF_REGIMES;i++) {
@@ -880,55 +874,44 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                             for (int i = 0; i < ImbalanceDetectionEngine::NUMBER_OF_REGIMES; ++i) if (handles[i]) { anyHandle = true; break; }
                             if (!anyHandle) continue;
 
-                            // Weighted update strategy: update all regimes with probability-based weights
-                            std::vector<double> regimeProbs(ImbalanceDetectionEngine::NUMBER_OF_REGIMES, 1.0 / ImbalanceDetectionEngine::NUMBER_OF_REGIMES);
+                            // Active regime training: update ONLY the currently most probable regime
+                            int activeRegime = 0; // default to regime 0
+                            double maxProb = 0.0;
+                            bool hasRegimeData = false;
+                            
                             if (regime_subscriber_) {
                                 trading::strategy::core_analysis::RegimeInfo rinfo;
                                 if (regime_subscriber_->get(sym.toString(), rinfo) && rinfo.probs.size() == ImbalanceDetectionEngine::NUMBER_OF_REGIMES) {
+                                    hasRegimeData = true;
+                                    // Find the regime with highest probability
                                     for (int i = 0; i < ImbalanceDetectionEngine::NUMBER_OF_REGIMES; ++i) {
-                                        regimeProbs[i] = rinfo.probs[i];
+                                        if (rinfo.probs[i] > maxProb) {
+                                            maxProb = rinfo.probs[i];
+                                            activeRegime = i;
+                                        }
                                     }
                                 }
                             }
 
-                            // Update all regimes with weighted updates based on their probabilities
+                            // Update ONLY the active regime to keep models distinct
                             bool anyUpdated = false;
-                            for (int i = 0; i < ImbalanceDetectionEngine::NUMBER_OF_REGIMES; ++i) {
-                                auto handle = handles[i];
-                                if (!handle) continue;
-                                
-                                // Use probability threshold to decide whether to update this regime
-                                // Always update if probability > 10%, or occasionally update others to prevent starvation
-                                double threshold = 0.1; // 10% threshold
-                                bool shouldUpdate = regimeProbs[i] > threshold;
-                                
-                                // Occasional updates for low-probability regimes to prevent learning starvation
-                                if (!shouldUpdate && regimeProbs[i] > 0.01) { // > 1%
-                                    // Randomly update with probability proportional to regime probability
-                                    static std::random_device rd;
-                                    static std::mt19937 gen(rd());
-                                    std::uniform_real_distribution<> dis(0.0, 1.0);
-                                    shouldUpdate = (dis(gen) < regimeProbs[i] * 5.0); // 5x boost for low-prob regimes
-                                }
+                            auto handle = handles[activeRegime];
+                            if (handle) {
+                                // Only update if we have clear regime data (> 40% probability) or as fallback
+                                bool shouldUpdate = !hasRegimeData || maxProb > 0.4;
                                 
                                 if (shouldUpdate) {
                                     trading::perception::bayes_update(handle, features, label);
                                     anyUpdated = true;
-                                    // LOG_DEBUG("ImbalanceDetectionEngine: updated regime {} for {}:{} (prob={:.3f})", 
-                                    //          i, exch.toString(), sym.toString(), regimeProbs[i]);
+                                    LOG_DEBUG("ImbalanceDetectionEngine: updated regime {} for {}:{} (prob={:.3f})", 
+                                             activeRegime, exch.toString(), sym.toString(), maxProb);
                                 }
                             }
                             
                             if (!anyUpdated) {
-                                // Fallback: update regime 0 if nothing was updated
-                                auto handle = handles[0];
-                                if (handle) {
-                                    trading::perception::bayes_update(handle, features, label);
-                                    LOG_DEBUG("ImbalanceDetectionEngine: fallback update to regime 0 for {}:{}", exch.toString(), sym.toString());
-                                } else {
-                                    LOG_DEBUG("ImbalanceDetectionEngine: no bayes handle available for {}:{}, skipping update", exch.toString(), sym.toString());
-                                    continue;
-                                }
+                                LOG_DEBUG("ImbalanceDetectionEngine: no bayes handle available for active regime {} ({}:{}), skipping update", 
+                                         activeRegime, exch.toString(), sym.toString());
+                                continue;
                             }
 
                             // Runtime persistence policy: increment update counter and
