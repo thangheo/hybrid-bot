@@ -678,14 +678,25 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                             bool enable = false;
                             try {
                                 auto now_tp = std::chrono::steady_clock::now();
-                                if (config_.trainingStartDelayMs > 0) {
+
+                                // If configured delay is zero or negative, treat as immediate enable
+                                if (config_.trainingStartDelayMs <= 0) {
+                                    enable = true;
+                                } else {
                                     auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now_tp - trainingStartTime_).count();
                                     if (elapsed >= config_.trainingStartDelayMs) enable = true;
                                 }
-                                if (!enable && config_.minOrderbookLevels > 0) {
-                                    if (m.bidVolumesByLevel.size() >= static_cast<size_t>(config_.minOrderbookLevels) &&
-                                        m.askVolumesByLevel.size() >= static_cast<size_t>(config_.minOrderbookLevels)) {
+
+                                // If not enabled yet, evaluate orderbook depth condition.
+                                // A zero or negative minOrderbookLevels means 'no minimum' -> enable immediately.
+                                if (!enable) {
+                                    if (config_.minOrderbookLevels <= 0) {
                                         enable = true;
+                                    } else {
+                                        if (m.bidVolumesByLevel.size() >= static_cast<size_t>(config_.minOrderbookLevels) &&
+                                            m.askVolumesByLevel.size() >= static_cast<size_t>(config_.minOrderbookLevels)) {
+                                            enable = true;
+                                        }
                                     }
                                 }
                             } catch (...) {}
