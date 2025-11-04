@@ -89,6 +89,19 @@ class RegimeHedgingManager:
             self.symbol = 'BTC/USDT'
             self.exchange.load_markets()
             
+            # Check if symbol exists and find correct format
+            markets = self.exchange.markets or {}
+            if self.symbol not in markets:
+                # Try alternative formats for Binance Futures
+                alt_symbols = ['BTCUSDT', 'BTC/USDT:USDT', 'BTC-USDT']
+                for alt in alt_symbols:
+                    if alt in markets:
+                        self.symbol = alt
+                        logger.info(f"Using symbol: {self.symbol}")
+                        break
+                else:
+                    logger.warning(f"Symbol not found in markets, using default: {self.symbol}")
+            
             # Set leverage
             self._set_leverage(self.leverage)
             
@@ -162,10 +175,7 @@ class RegimeHedgingManager:
             # Open SHORT position
             order = self.exchange.create_market_sell_order(
                 symbol=self.symbol,
-                amount=self.hedge_amount,
-                params={
-                    'positionSide': 'SHORT'
-                }
+                amount=self.hedge_amount
             )
             
             with self.lock:
@@ -230,7 +240,6 @@ class RegimeHedgingManager:
                 symbol=self.symbol,
                 amount=amount,
                 params={
-                    'positionSide': 'SHORT',
                     'reduceOnly': True
                 }
             )
