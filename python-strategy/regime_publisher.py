@@ -190,7 +190,7 @@ class DataCache:
         import pandas as _pd
         rows = []
         for k in klines:
-            ts = datetime.fromtimestamp(k[0] / 1000, tz=timezone.utc)
+            ts = datetime.utcfromtimestamp(k[0] / 1000)
             rows.append([ts, float(k[1]), float(k[2]), float(k[3]), float(k[4]), float(k[5])])
         df = _pd.DataFrame(rows, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
         df['timestamp'] = _pd.to_datetime(df['timestamp'])
