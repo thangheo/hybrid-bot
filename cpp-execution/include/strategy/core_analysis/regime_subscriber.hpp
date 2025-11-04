@@ -26,6 +26,16 @@ struct RegimeInfo {
     std::optional<bool> micro_ok;
     std::string recommendation_reason;
     std::optional<int> suggested_time_cap_min;
+    
+    // Hedging information from regime_publisher
+    struct HedgingInfo {
+        std::string action;      // "open_short", "close", etc.
+        bool success = false;
+        std::string reason;
+        bool is_hedged = false;
+        std::string timestamp;
+    };
+    std::optional<HedgingInfo> hedging;
 };
 
 class RegimeSubscriber {
