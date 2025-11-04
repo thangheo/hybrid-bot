@@ -35,6 +35,15 @@ if str(HERE) not in sys.path:
 
 from src.regime.market_regime import Regime
 
+# Import hedging manager
+try:
+    from src.hedging.regime_hedging_manager import RegimeHedgingManager
+    HEDGING_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: Hedging not available: {e}")
+    HEDGING_AVAILABLE = False
+    RegimeHedgingManager = None
+
 
 def format_probs(probs, decimals: int = 4, n_states: int | None = None):
     """Round probabilities to `decimals` and pad/truncate to `n_states` if provided.
@@ -75,6 +84,37 @@ def load_config(config_path=None):
                 return yaml.safe_load(f)
     
     raise FileNotFoundError("Không tìm thấy trading_bot.yaml")
+
+
+def load_hedging_config():
+    """Load hedging configuration"""
+    hedging_config_paths = [
+        HERE / 'src' / 'hedging' / 'hedging_config.json',
+        HERE / 'config' / 'hedging_config.json',
+        HERE / 'hedging_config.json'
+    ]
+    
+    for path in hedging_config_paths:
+        if path.exists():
+            try:
+                with open(path, 'r') as f:
+                    config = json.load(f)
+                return config.get('hedging', {})
+            except Exception as e:
+                print(f"Error loading hedging config from {path}: {e}")
+    
+    # Return default config if no file found
+    return {
+        'enabled': False,
+        'api_key': os.getenv('BINANCE_API_KEY', ''),
+        'api_secret': os.getenv('BINANCE_API_SECRET', ''),
+        'testnet': True,
+        'emergency_p_trend_threshold': 0.01,
+        'close_p_trend_threshold': 0.9,
+        'hedge_amount': 0.01,
+        'leverage': 10,
+        'symbols': ['BTC/USDT']
+    }
 
 
 def symbol_filename(symbol):
@@ -150,7 +190,7 @@ class DataCache:
         import pandas as _pd
         rows = []
         for k in klines:
-            ts = datetime.utcfromtimestamp(k[0] / 1000)
+            ts = datetime.fromtimestamp(k[0] / 1000, tz=timezone.utc)
             rows.append([ts, float(k[1]), float(k[2]), float(k[3]), float(k[4]), float(k[5])])
         df = _pd.DataFrame(rows, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
         df['timestamp'] = _pd.to_datetime(df['timestamp'])
@@ -321,11 +361,28 @@ def publish_regimes(symbols, data_dir, socket, interval=600, probs_decimals: int
         print("  Chạy training trước khi dùng publisher!")
         return
     
+    # Initialize hedging manager if available and enabled
+    hedging_manager = None
+    if HEDGING_AVAILABLE:
+        try:
+            hedging_config = load_hedging_config()
+            if hedging_config.get('enabled', False):
+                hedging_manager = RegimeHedgingManager(hedging_config)
+                print(f"✅ Hedging Manager initialized (testnet={hedging_config.get('testnet', True)})")
+            else:
+                print("ℹ️ Hedging disabled in config")
+        except Exception as e:
+            print(f"❌ Failed to initialize hedging manager: {e}")
+    else:
+        print("ℹ️ Hedging not available (missing dependencies)")
+    
     print(f"\n{'='*60}")
     print(f"Regime Publisher started")
     print(f"ZMQ: tcp://*:5555")
     print(f"Interval: {interval}s")
     print(f"Symbols: {len(symbols)}")
+    if hedging_manager:
+        print(f"🛡️ Hedging: ENABLED")
     print(f"{'='*60}\n")
     
     topic = 'regimes_update'
@@ -545,6 +602,23 @@ def publish_regimes(symbols, data_dir, socket, interval=600, probs_decimals: int
                     entry['should_extend'] = bool(should_extend)
 
                     print(f"{symbol:12} regime={regime} probs={entry['probs']} trend={entry['p_trend_up']} stay={entry['stay_prob']} rec={entry['recommended_action']}")
+                    
+                    # Process hedging for BTC only
+                    if hedging_manager and publish_symbol in ['BTC/USDT', 'BTCUSDT']:
+                        try:
+                            hedging_result = hedging_manager.process_regime_signal(entry)
+                            entry['hedging'] = {
+                                'action': hedging_result['action'],
+                                'success': hedging_result['success'],
+                                'reason': hedging_result['reason'],
+                                'is_hedged': hedging_result['is_hedged'],
+                                'timestamp': hedging_result['timestamp']
+                            }
+                            if hedging_result['action'] != 'none' and hedging_result['action'] != 'wait':
+                                print(f"🛡️  HEDGE: {hedging_result['action']} - {hedging_result['reason']}")
+                        except Exception as hedge_error:
+                            print(f"❌ Hedging error for {symbol}: {hedge_error}")
+                            entry['hedging'] = {'error': str(hedge_error)}
                     
                 except Exception as e:
                     entry['error'] = str(e)

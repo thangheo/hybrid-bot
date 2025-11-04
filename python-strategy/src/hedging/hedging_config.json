@@ -1,0 +1,19 @@
+{
+  "hedging": {
+    "enabled": false,
+    "api_key": "",
+    "api_secret": "",
+    "testnet": true,
+    "emergency_p_trend_threshold": 0.01,
+    "close_p_trend_threshold": 0.9,
+    "hedge_amount": 0.01,
+    "leverage": 10,
+    "symbols": ["BTC/USDT"],
+    "description": {
+      "emergency_p_trend_threshold": "Khi p_trend_up <= 0.01 thì mở short hedge (market dump)",
+      "close_p_trend_threshold": "Khi p_trend_up >= 0.9 thì đóng short hedge (market recovery)",
+      "hedge_amount": "Số lượng BTC để hedge (0.01 BTC)",
+      "leverage": "Đòn bẩy sử dụng (10x)"
+    }
+  }
+}

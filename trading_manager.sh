@@ -355,6 +355,15 @@ show_logs() {
                 print_status "$RED" "Python log file not found: $PYTHON_LOG_FILE"
             fi
             ;;
+        "hedging"|"hedge")
+            # Show hedging-specific logs by filtering Python logs
+            if [[ -f "$PYTHON_LOG_FILE" ]]; then
+                print_status "$BLUE" "=== Hedging Logs (last $lines lines) ==="
+                tail -n 1000 "$PYTHON_LOG_FILE" | grep -i "hedge\|HEDGE\|🛡️\|🔴\|✅" | tail -n "$lines"
+            else
+                print_status "$RED" "Python log file not found: $PYTHON_LOG_FILE"
+            fi
+            ;;
         "all"|"")
             show_logs "build" "$lines"
             echo ""
@@ -363,9 +372,97 @@ show_logs() {
             show_logs "python" "$lines"
             ;;
         *)
-            print_status "$RED" "Unknown service: $service. Use 'cpp', 'python', 'build', or 'all'"
+            print_status "$RED" "Unknown service: $service. Use 'cpp', 'python', 'build', 'hedging', or 'all'"
             ;;
     esac
+}
+
+# Function to check hedging configuration
+check_hedging_config() {
+    local hedging_config_path="python-strategy/hedging_config.json"
+    
+    print_status "$BLUE" "=== Hedging Configuration Check ==="
+    
+    if [[ ! -f "$hedging_config_path" ]]; then
+        print_status "$RED" "ERROR: Hedging config not found: $hedging_config_path"
+        return 1
+    fi
+    
+    # Check if jq is available for JSON parsing
+    if ! command -v jq &> /dev/null; then
+        print_status "$YELLOW" "WARNING: 'jq' not installed. Install with: apt-get install jq"
+        print_status "$BLUE" "Raw config content:"
+        cat "$hedging_config_path"
+        return 0
+    fi
+    
+    # Parse and display config
+    local enabled=$(jq -r '.hedging.enabled' "$hedging_config_path" 2>/dev/null)
+    local testnet=$(jq -r '.hedging.testnet' "$hedging_config_path" 2>/dev/null)
+    local emergency_threshold=$(jq -r '.hedging.emergency_p_trend_threshold' "$hedging_config_path" 2>/dev/null)
+    local close_threshold=$(jq -r '.hedging.close_p_trend_threshold' "$hedging_config_path" 2>/dev/null)
+    local hedge_amount=$(jq -r '.hedging.hedge_amount' "$hedging_config_path" 2>/dev/null)
+    local leverage=$(jq -r '.hedging.leverage' "$hedging_config_path" 2>/dev/null)
+    
+    print_status "$NC" "Hedging Status: $([[ "$enabled" == "true" ]] && echo -e "${GREEN}ENABLED${NC}" || echo -e "${RED}DISABLED${NC}")"
+    print_status "$NC" "Trading Mode: $([[ "$testnet" == "true" ]] && echo -e "${YELLOW}TESTNET${NC}" || echo -e "${RED}MAINNET${NC}")"
+    print_status "$NC" "Emergency Threshold: $emergency_threshold"
+    print_status "$NC" "Close Threshold: $close_threshold"
+    print_status "$NC" "Hedge Amount: $hedge_amount BTC"
+    print_status "$NC" "Leverage: ${leverage}x"
+    
+    # Check API keys
+    local api_key=$(jq -r '.hedging.api_key' "$hedging_config_path" 2>/dev/null)
+    local api_secret=$(jq -r '.hedging.api_secret' "$hedging_config_path" 2>/dev/null)
+    
+    if [[ "$enabled" == "true" ]]; then
+        if [[ -z "$api_key" || "$api_key" == "" || "$api_key" == "null" ]]; then
+            print_status "$RED" "ERROR: API key is empty but hedging is enabled"
+            return 1
+        fi
+        if [[ -z "$api_secret" || "$api_secret" == "" || "$api_secret" == "null" ]]; then
+            print_status "$RED" "ERROR: API secret is empty but hedging is enabled"
+            return 1
+        fi
+        print_status "$GREEN" "API credentials are configured"
+    fi
+    
+    return 0
+}
+
+# Function to enable/disable hedging
+toggle_hedging() {
+    local action=$1  # "enable" or "disable"
+    local hedging_config_path="python-strategy/hedging_config.json"
+    
+    if [[ ! -f "$hedging_config_path" ]]; then
+        print_status "$RED" "ERROR: Hedging config not found: $hedging_config_path"
+        return 1
+    fi
+    
+    if ! command -v jq &> /dev/null; then
+        print_status "$RED" "ERROR: 'jq' required for config modification. Install with: apt-get install jq"
+        return 1
+    fi
+    
+    case "$action" in
+        "enable")
+            jq '.hedging.enabled = true' "$hedging_config_path" > "${hedging_config_path}.tmp" && \
+            mv "${hedging_config_path}.tmp" "$hedging_config_path"
+            print_status "$GREEN" "Hedging ENABLED in config"
+            ;;
+        "disable")
+            jq '.hedging.enabled = false' "$hedging_config_path" > "${hedging_config_path}.tmp" && \
+            mv "${hedging_config_path}.tmp" "$hedging_config_path"
+            print_status "$YELLOW" "Hedging DISABLED in config"
+            ;;
+        *)
+            print_status "$RED" "Invalid action: $action. Use 'enable' or 'disable'"
+            return 1
+            ;;
+    esac
+    
+    print_status "$BLUE" "Note: Restart the system for changes to take effect"
 }
 
 # Main script logic
@@ -463,26 +560,57 @@ case "$1" in
         esac
         ;;
         
+    "hedge-config")
+        check_hedging_config
+        ;;
+        
+    "hedge-enable")
+        toggle_hedging "enable"
+        ;;
+        
+    "hedge-disable")
+        toggle_hedging "disable"
+        ;;
+        
     *)
-    echo "Usage: $0 {start|start-monitored|stop|restart|monitor|stop-monitor|build|status|logs|follow} [options]"
+    echo "Usage: $0 {start|start-monitored|stop|restart|monitor|stop-monitor|build|status|logs|follow|hedge-config|hedge-enable|hedge-disable} [options]"
     echo ""
-    echo "Commands:"
+    echo "Main Commands:"
     echo "  start          - Build C++ project, then start both components"
     echo "  start-monitored- Start with C++ auto-restart monitoring"
     echo "  stop           - Stop both processes and monitor gracefully"
     echo "  restart        - Stop and start both processes (includes rebuild)"
+    echo "  build          - Build C++ project only (without starting services)"
+    echo "  status         - Show current status of both processes"
+    echo ""
+    echo "Monitoring Commands:"
     echo "  monitor        - Start monitoring existing C++ process"
     echo "                   Usage: $0 monitor [max_restarts_per_hour]"
     echo "  stop-monitor   - Stop the monitoring process only"
-    echo "  build          - Build C++ project only (without starting services)"
-    echo "  status         - Show current status of both processes"
-    echo "  logs           - Show recent logs"
-    echo "  follow         - Follow logs in real-time"
+    echo ""
+    echo "Log Commands:"
+    echo "  logs           - Show recent logs [service] [lines]"
+    echo "                   Services: cpp, python, build, hedging, all"
+    echo "  follow         - Follow logs in real-time [service]"
+    echo ""
+    echo "Hedging Commands:"
+    echo "  hedge-config   - Show current hedging configuration"
+    echo "  hedge-enable   - Enable hedging in config"
+    echo "  hedge-disable  - Disable hedging in config"
     echo ""
     echo "Examples:"
     echo "  $0 start-monitored      # Start with auto-restart (5 restarts/hour max)"
     echo "  $0 monitor 10           # Monitor existing C++ with 10 restarts/hour max"
-    echo "  $0 stop-monitor         # Stop monitoring only"
+    echo "  $0 logs hedging 20      # Show last 20 hedging log entries"
+    echo "  $0 hedge-config         # Check hedging configuration"
+    echo "  $0 hedge-enable         # Enable hedging"
+    echo ""
+    echo "💡 Hedging Integration:"
+    echo "  - Configure API keys in python-strategy/hedging_config.json"
+    echo "  - Set BINANCE_API_KEY and BINANCE_API_SECRET env vars (optional)"
+    echo "  - Use testnet=true for testing before going live"
+    echo "  - BTC regime p_trend_up <= 0.01 triggers short hedge"
+    echo "  - p_trend_up >= 0.9 closes the hedge"
     exit 1
     ;;
 esac
