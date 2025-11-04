@@ -135,6 +135,118 @@ MetaFilterResult MetaFilter::checkEntryAllowed(
     return result;
 }
 
+MetaFilterResult MetaFilter::checkEmergencyExit(
+    const std::string& symbol,
+    const core_analysis::RegimeSubscriber* regime_subscriber) const {
+    
+    MetaFilterResult result;
+    total_checks_++;
+
+    // If emergency exit is disabled, never trigger
+    if (!config_.enable_emergency_exit) {
+        result.trigger_emergency_exit = false;
+        return result;
+    }
+
+    // Check if regime subscriber is available
+    if (!regime_subscriber) {
+        LOG_DEBUG("MetaFilter Emergency: No regime subscriber available for symbol {}", symbol);
+        result.trigger_emergency_exit = false;
+        result.emergency_reason = "no_regime_data";
+        return result;
+    }
+
+    // Try both symbol formats: with slash (BTC/USDT) and without (BTCUSDT)
+    core_analysis::RegimeInfo regime_info;
+    std::string lookup_symbol = symbol;
+    
+    // First try the symbol as-is
+    bool found_regime = regime_subscriber->get(symbol, regime_info);
+    
+    // If not found, try converting format
+    if (!found_regime) {
+        // Convert BTC/USDT -> BTCUSDT for regime lookup
+        std::string converted_symbol = symbol;
+        // Remove slash and dash characters
+        converted_symbol.erase(std::remove(converted_symbol.begin(), converted_symbol.end(), '/'), converted_symbol.end());
+        converted_symbol.erase(std::remove(converted_symbol.begin(), converted_symbol.end(), '-'), converted_symbol.end());
+        
+        found_regime = regime_subscriber->get(converted_symbol, regime_info);
+        if (found_regime) {
+            lookup_symbol = converted_symbol;
+        }
+    }
+    
+    if (!found_regime) {
+        LOG_DEBUG("MetaFilter Emergency: No regime info available for symbol {} (tried: {} and converted)", symbol, lookup_symbol);
+        result.trigger_emergency_exit = false;
+        result.emergency_reason = "regime_info_unavailable";
+        return result;
+    }
+
+    // Check if regime info is valid
+    if (!regime_info.valid) {
+        LOG_DEBUG("MetaFilter Emergency: Invalid regime info for symbol {}", symbol);
+        result.trigger_emergency_exit = false;
+        result.emergency_reason = "regime_info_invalid";
+        return result;
+    }
+
+    // Extract p_trend_up
+    if (!regime_info.p_trend_up.has_value()) {
+        LOG_DEBUG("MetaFilter Emergency: No p_trend_up available for symbol {}", symbol);
+        result.trigger_emergency_exit = false;
+        result.emergency_reason = "p_trend_up_unavailable";
+        return result;
+    }
+
+    result.p_trend_up_value = regime_info.p_trend_up.value();
+
+    // Check emergency p_trend_up threshold
+    if (result.p_trend_up_value <= config_.emergency_p_trend_threshold) {
+        result.trigger_emergency_exit = true;
+        result.emergency_reason = "market_dump_detected";
+        result.trend_confidence = result.p_trend_up_value;
+        emergency_exits_triggered_++;
+        
+        LOG_WARN("MetaFilter EMERGENCY EXIT: {} - p_trend_up={:.3f} <= {:.3f} (MARKET DUMP DETECTED!)",
+                 symbol, result.p_trend_up_value, config_.emergency_p_trend_threshold);
+        return result;
+    }
+
+    // Calculate regime confidence if stay_prob is available for additional check
+    if (regime_info.stay_prob.has_value()) {
+        result.regime_confidence_value = result.p_trend_up_value * regime_info.stay_prob.value();
+        
+        // Check emergency regime confidence threshold
+        if (result.regime_confidence_value <= config_.emergency_regime_threshold) {
+            result.trigger_emergency_exit = true;
+            result.emergency_reason = "regime_collapse_detected";
+            result.trend_confidence = result.regime_confidence_value;
+            emergency_exits_triggered_++;
+            
+            LOG_WARN("MetaFilter EMERGENCY EXIT: {} - regime_confidence={:.3f} (p_trend_up={:.3f} * stay_prob={:.3f}) <= {:.3f} (REGIME COLLAPSE!)",
+                     symbol, result.regime_confidence_value, result.p_trend_up_value, 
+                     regime_info.stay_prob.value(), config_.emergency_regime_threshold);
+            return result;
+        }
+        
+        result.trend_confidence = result.regime_confidence_value;
+    } else {
+        result.trend_confidence = result.p_trend_up_value;
+        result.regime_confidence_value = result.p_trend_up_value;
+    }
+
+    // No emergency exit needed
+    result.trigger_emergency_exit = false;
+    result.emergency_reason = "";
+    
+    LOG_DEBUG("MetaFilter Emergency OK: {} - p_trend_up={:.3f}, regime_confidence={:.3f}",
+              symbol, result.p_trend_up_value, result.regime_confidence_value);
+    
+    return result;
+}
+
 void MetaFilter::updateConfig(const MetaFilterConfig& config) {
     config_ = config;
     LOG_INFO("MetaFilter config updated - min_p_trend_up: {:.3f}, min_regime_confidence: {:.3f}, enable_trend_filter: {}",
@@ -147,6 +259,7 @@ std::string MetaFilter::getStatistics() const {
     stats["allowed_entries"] = allowed_entries_;
     stats["blocked_trend_low"] = blocked_trend_low_;
     stats["blocked_regime_confidence"] = blocked_regime_confidence_;
+    stats["emergency_exits_triggered"] = emergency_exits_triggered_;
     
     if (total_checks_ > 0) {
         stats["allow_rate"] = static_cast<double>(allowed_entries_) / total_checks_;
@@ -161,7 +274,10 @@ std::string MetaFilter::getStatistics() const {
     stats["config"] = {
         {"min_p_trend_up", config_.min_p_trend_up},
         {"min_regime_confidence", config_.min_regime_confidence},
-        {"enable_trend_filter", config_.enable_trend_filter}
+        {"enable_trend_filter", config_.enable_trend_filter},
+        {"enable_emergency_exit", config_.enable_emergency_exit},
+        {"emergency_p_trend_threshold", config_.emergency_p_trend_threshold},
+        {"emergency_regime_threshold", config_.emergency_regime_threshold}
     };
     
     return stats.dump(2);
