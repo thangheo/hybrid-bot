@@ -265,7 +265,9 @@
           "log_transform_indices": [2],
           "log_transform_threshold": 0.0,
           "comment": "Critical fix for extreme feature values (e.g., FLOKI feature_2 mean=202k)"
-        }
+        },
+        "trainingStartDelayMs": 1,
+        "minOrderbookLevels": 0
       }
     },
     "liquidityMonitor": {
