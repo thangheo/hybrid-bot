@@ -6,7 +6,7 @@
     "testnet": false,
     "emergency_p_trend_threshold": 0.01,
     "close_p_trend_threshold": 0.9,
-    "hedge_amount": 0.01,
+    "hedge_amount": 0.02,
     "leverage": 10,
     "symbols": ["BTC/USDT"],
     "description": {

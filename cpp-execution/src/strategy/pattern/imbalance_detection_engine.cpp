@@ -895,6 +895,8 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                                 trading::strategy::core_analysis::RegimeInfo rinfo;
                                 std::string lookup_symbol = sym.toString();
                                 
+                                LOG_DEBUG("ImbalanceDetectionEngine: Training lookup for symbol: '{}'", lookup_symbol);
+                                
                                 // First try the symbol as-is
                                 bool found_regime = regime_subscriber_->get(lookup_symbol, rinfo);
                                 
@@ -904,11 +906,16 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                                     // Remove slash and dash characters
                                     converted_symbol.erase(std::remove(converted_symbol.begin(), converted_symbol.end(), '/'), converted_symbol.end());
                                     converted_symbol.erase(std::remove(converted_symbol.begin(), converted_symbol.end(), '-'), converted_symbol.end());
+                                    LOG_DEBUG("ImbalanceDetectionEngine: Trying converted symbol: '{}' -> '{}'", lookup_symbol, converted_symbol);
                                     found_regime = regime_subscriber_->get(converted_symbol, rinfo);
                                 }
                                 
                                 if (found_regime && rinfo.probs.size() == ImbalanceDetectionEngine::NUMBER_OF_REGIMES) {
                                     hasRegimeData = true;
+                                    // Log the probabilities we found
+                                    LOG_DEBUG("ImbalanceDetectionEngine: Found regime data - probs=[{:.1f}, {:.1f}, {:.1f}, {:.1f}], regime={}", 
+                                             rinfo.probs[0], rinfo.probs[1], rinfo.probs[2], rinfo.probs[3], rinfo.regime);
+                                    
                                     // Find the regime with highest probability
                                     for (int i = 0; i < ImbalanceDetectionEngine::NUMBER_OF_REGIMES; ++i) {
                                         if (rinfo.probs[i] > maxProb) {
@@ -916,6 +923,9 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                                             activeRegime = i;
                                         }
                                     }
+                                } else {
+                                    LOG_DEBUG("ImbalanceDetectionEngine: No valid regime data found for '{}' (found={}, probs.size={})", 
+                                             lookup_symbol, found_regime, rinfo.probs.size());
                                 }
                             }
 
@@ -943,6 +953,9 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                             if (handle) {
                                 // Only update if we have clear regime data (> 40% probability) or as fallback
                                 bool shouldUpdate = !hasRegimeData || maxProb > 0.4;
+                                
+                                LOG_DEBUG("ImbalanceDetectionEngine: Training decision for {}:{} - hasRegimeData={}, maxProb={:.3f}, activeRegime={}, shouldUpdate={}", 
+                                         exch.toString(), sym.toString(), hasRegimeData, maxProb, activeRegime, shouldUpdate);
                                 
                                 if (shouldUpdate) {
                                     trading::perception::bayes_update(handle, features, label);
