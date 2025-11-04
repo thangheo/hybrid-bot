@@ -267,7 +267,8 @@
           "comment": "Critical fix for extreme feature values (e.g., FLOKI feature_2 mean=202k)"
         },
         "trainingStartDelayMs": 1,
-        "minOrderbookLevels": 0
+        "minOrderbookLevels": 0,
+        "bayesMinUpdatesToTrade": 3000
       }
     },
     "liquidityMonitor": {

@@ -284,6 +284,8 @@ ImbalanceDetectionConfig parseImbalanceDetectionConfig(const json& componentJson
     // Optional warmup gating: delay before training starts and minimum orderbook levels
     if (params.contains("trainingStartDelayMs")) config.trainingStartDelayMs = params["trainingStartDelayMs"].get<int>();
     if (params.contains("minOrderbookLevels")) config.minOrderbookLevels = params["minOrderbookLevels"].get<int>();
+    // Optional: minimum model updates required before allowing trades
+    if (params.contains("bayesMinUpdatesToTrade")) config.bayesMinUpdatesToTrade = params["bayesMinUpdatesToTrade"].get<int>();
         
         // Parse log transform configuration
         if (params.contains("logTransformConfig") && params["logTransformConfig"].is_object()) {
