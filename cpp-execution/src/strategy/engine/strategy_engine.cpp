@@ -148,6 +148,11 @@ using namespace trading::core;
         // Create regime subscriber (non-blocking) - will be started in start()
         try {
             regime_subscriber_ = std::make_unique<trading::strategy::core_analysis::RegimeSubscriber>();
+            // Connect regime subscriber to imbalance detector
+            if (imbalanceDetector_) {
+                imbalanceDetector_->setRegimeSubscriber(regime_subscriber_.get());
+                LOG_INFO("Connected RegimeSubscriber to ImbalanceDetectionEngine");
+            }
         } catch (const std::exception& e) {
             LOG_WARN("Failed to create RegimeSubscriber: {}", e.what());
         }
