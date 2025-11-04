@@ -244,7 +244,7 @@
         "tradeImbalanceThreshold": 0.6,
         "cancellationImbalanceThreshold": 0.6,
         "priceVolatilityImbalanceThreshold": 0.3,      
-        "detectionWindowMs": 5000,
+        "detectionWindowMs": 30000,
         "maxHistorySize": 500,
         "global_sensitivity": 0.75,
         "thresholds": {
@@ -254,12 +254,18 @@
           "order_flow": 0.3
         },
         "bayesModelPath": "models/bayesian/",
-        "labelingDelayMs": 5000,
+        "labelingDelayMs": 30000,
         "bayesSaveAfterUpdates": 100,
         "requireModelReadyUpdates": 400,
         "bayesMinSaveIntervalMs": 60000,
         "bayesSaveIntervalMs": 360000,
-        "beta": 0.08
+        "beta": 0.05,
+        "logTransformConfig": {
+          "enable_log_transform": true,
+          "log_transform_indices": [2],
+          "log_transform_threshold": 0.0,
+          "comment": "Critical fix for extreme feature values (e.g., FLOKI feature_2 mean=202k)"
+        }
       }
     },
     "liquidityMonitor": {
@@ -333,8 +339,8 @@
     "momentumCorrelator": {
       "parameters": {
         "correlationWindowMs": 60000,
-        "predictionHorizonMs": 5000,
-        "ewmaHalfLifeMs": 10000
+        "predictionHorizonMs": 30000,
+        "ewmaHalfLifeMs": 15000
       }
     },
     "thresholdManager": {

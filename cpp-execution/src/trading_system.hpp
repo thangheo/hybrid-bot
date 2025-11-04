@@ -23,6 +23,8 @@
 #include <deque>
 #include <condition_variable>
 #include <mutex>
+#include <iomanip>
+#include <sstream>
 
 // Common includes
 #include "common/event_bus.hpp"
