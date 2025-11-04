@@ -486,13 +486,15 @@ case "$1" in
     "start")
         print_status "$BLUE" "=== Starting Trading System ==="
         
-        # Start C++ first (includes build step, Python depends on it)
-        if start_cpp; then
+        # Start C++ first (includes build step, Python depends on it). 
+        #fucking stupid. start the fucking python first because it pull the fucking data alot.
+
+        if start_python ; then
             print_status "$BLUE" "Waiting 5 seconds for C++ to initialize..."
-            sleep 15
+            sleep 60
             
-            # Start Python
-            start_python
+            # Start 
+            start_cpp
         else
             print_status "$RED" "Failed to start C++ bridge. Aborting."
             exit 1
