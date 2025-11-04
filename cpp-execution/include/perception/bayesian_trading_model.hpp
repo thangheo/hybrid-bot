@@ -42,14 +42,19 @@ public:
     struct ModelConfig {
         double initial_sigma = 1.0;        // Initial weight uncertainty
     double beta = 0.081;                 // Bayesian update strength (learning rate)
-        double min_probability = 0.6;      // Threshold for trading decision
+        double min_probability = 0.65;      // Threshold for trading decision
         double base_position_size = 0.1;   // Base position size
         double uncertainty_penalty = 0.5;  // Reduce size when uncertain
         bool use_expected_value = true;    // Use EV instead of threshold
         double payoff_long = 1.0;          // Expected payoff for long position
         double payoff_short = 1.0;         // Expected payoff for short position
-        double forgetting_factor = 0.97;    // Discount factor for prior precision (1.0 = no forgetting)
+        double forgetting_factor = 0.95;    // Discount factor for prior precision (1.0 = no forgetting)
         double process_noise = 0.0001;        // Additive diagonal process noise per update (helps prevent overconfidence)
+        
+        // Feature preprocessing options
+        bool enable_log_transform = true;     // Enable log transformation for skewed features
+        std::vector<int> log_transform_indices = {2}; // Indices of features to apply log transform
+        double log_transform_threshold = 0.0; // Only apply log transform if feature value > threshold
     };
 
 private:

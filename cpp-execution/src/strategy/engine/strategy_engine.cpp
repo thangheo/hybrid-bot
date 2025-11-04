@@ -1104,7 +1104,7 @@ void StrategyEngine::checkEmergencyExit(const std::string& symbol) const {
                 LOG_ERROR("Exception during emergency exit for {}: {}", symbol, e.what());
             }
         } else {
-            LOG_WARN("EMERGENCY EXIT NEEDED but no callback registered: {} - {}", symbol, exit_result.emergency_reason);
+            LOG_DEBUG("EMERGENCY EXIT NEEDED but no callback registered: {} - {}", symbol, exit_result.emergency_reason);
         }
     }
 }

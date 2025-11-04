@@ -44,9 +44,27 @@ void BayesianTradingModel::update_feature_stats(const Eigen::VectorXd& features)
     num_updates_++;
     
     for (int i = 0; i < num_features_; ++i) {
-        double delta = features(i) - feature_mean_(i);
+        double raw_val = features(i);
+        
+        // Apply same log transformation during stats update as in normalize_features
+        bool should_log_transform = config_.enable_log_transform && 
+                                   raw_val > config_.log_transform_threshold &&
+                                   std::find(config_.log_transform_indices.begin(), 
+                                           config_.log_transform_indices.end(), i) != 
+                                   config_.log_transform_indices.end();
+        
+        if (should_log_transform) {
+            raw_val = std::log1p(std::abs(raw_val));
+            
+            // Additional safety for extreme cases
+            if (!std::isfinite(raw_val)) {
+                raw_val = 0.0;
+            }
+        }
+        
+        double delta = raw_val - feature_mean_(i);
         feature_mean_(i) += delta / num_updates_;
-        double delta2 = features(i) - feature_mean_(i);
+        double delta2 = raw_val - feature_mean_(i);
         feature_m2_(i) += delta * delta2;
         
         if (num_updates_ > 1) {
@@ -69,8 +87,35 @@ Eigen::VectorXd BayesianTradingModel::normalize_features(const Eigen::VectorXd& 
 
     Eigen::VectorXd normalized(num_features_);
     for (int i = 0; i < num_features_; ++i) {
-        normalized(i) = (features(i) - feature_mean_(i)) / feature_std_(i);
-        // Clip outliers to [-3, 3] sigma
+        double raw_val = features(i);
+        
+        // Apply log transformation for configured features to prevent overflow
+        // and handle extremely skewed distributions (like FLOKI feature 2: ~10^17)
+        bool should_log_transform = config_.enable_log_transform && 
+                                   raw_val > config_.log_transform_threshold &&
+                                   std::find(config_.log_transform_indices.begin(), 
+                                           config_.log_transform_indices.end(), i) != 
+                                   config_.log_transform_indices.end();
+        
+        if (should_log_transform) {
+            // Use log1p for numerical stability: log(1 + x)
+            // This handles extreme cases like FLOKI (mean=202k, std=3.6M)
+            raw_val = std::log1p(std::abs(raw_val));
+            
+            // Additional safety: handle potential -inf/inf cases
+            if (!std::isfinite(raw_val)) {
+                raw_val = 0.0;
+            }
+        }        // Standard normalization with overflow protection
+        double mean_val = feature_mean_(i);
+        double std_val = feature_std_(i);
+        
+        // Add small epsilon to prevent division by zero
+        if (std_val < 1e-8) std_val = 1e-8;
+        
+        normalized(i) = (raw_val - mean_val) / std_val;
+        
+        // Clip outliers to [-3, 3] sigma for numerical stability
         normalized(i) = std::max(-3.0, std::min(3.0, normalized(i)));
     }
     
@@ -324,6 +369,16 @@ bool BayesianTradingModel::save_model(const std::string& filepath) const {
         config_json["payoff_short"] = config_.payoff_short;
     config_json["forgetting_factor"] = config_.forgetting_factor;
     config_json["process_noise"] = config_.process_noise;
+        
+        // Log transformation settings
+        config_json["enable_log_transform"] = config_.enable_log_transform;
+        config_json["log_transform_threshold"] = config_.log_transform_threshold;
+        Json::Value log_indices_json(Json::arrayValue);
+        for (int idx : config_.log_transform_indices) {
+            log_indices_json.append(idx);
+        }
+        config_json["log_transform_indices"] = log_indices_json;
+        
         root["config"] = config_json;
         
         // Model state
@@ -412,6 +467,20 @@ bool BayesianTradingModel::load_model(const std::string& filepath) {
         config_.payoff_short = config_json.get("payoff_short", 1.0).asDouble();
         config_.forgetting_factor = config_json.get("forgetting_factor", 1.0).asDouble();
     config_.process_noise = config_json.get("process_noise", 0.0).asDouble();
+        
+        // Load log transformation settings
+        config_.enable_log_transform = config_json.get("enable_log_transform", true).asBool();
+        config_.log_transform_threshold = config_json.get("log_transform_threshold", 0.0).asDouble();
+        config_.log_transform_indices.clear();
+        if (config_json.isMember("log_transform_indices")) {
+            const Json::Value& indices_json = config_json["log_transform_indices"];
+            for (const auto& idx : indices_json) {
+                config_.log_transform_indices.push_back(idx.asInt());
+            }
+        } else {
+            // Default to feature 2 for backward compatibility
+            config_.log_transform_indices = {2};
+        }
         
         // Load model state
         num_features_ = root["num_features"].asInt();

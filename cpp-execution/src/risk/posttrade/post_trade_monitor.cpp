@@ -255,9 +255,10 @@ void PostTradeMonitor::processExecutionReport(const execution::models::Execution
     
     // Update position tracker
     if (positionTracker_) {
-        LOG_INFO(formatString("[TTL_DEBUG] Updating positionTracker with execution: {} qty={} status={}", 
+        LOG_INFO(formatString("[TTL_DEBUG] Updating positionTracker with execution: {} qty={} filledQty={} status={}", 
                  executionReport.symbol().toString(), 
                  executionReport.quantity(),
+                 executionReport.filledQuantity(),
                  static_cast<int>(executionReport.status())));
         positionTracker_->processExecutionReport(executionReport);
         

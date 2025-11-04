@@ -1,0 +1,70 @@
+{
+  "floki_optimization_patch": {
+    "description": "Optimized settings for FLOKI extreme values (feature_2 mean=202k, std=3.6M)",
+    "changes": {
+      "prediction_window": {
+        "from": "5000ms",
+        "to": "10000ms", 
+        "reason": "Reduce noise with extreme volatility"
+      },
+      "model_params": {
+        "beta": {
+          "from": 0.081,
+          "to": 0.05,
+          "reason": "Slower learning rate for extreme values"
+        },
+        "min_probability": {
+          "from": 0.6,
+          "to": 0.65,
+          "reason": "Higher confidence threshold"
+        },
+        "forgetting_factor": {
+          "from": 0.97,
+          "to": 0.95,
+          "reason": "Faster adaptation to regime changes"
+        }
+      }
+    }
+  },
+  
+  "imbalance_detection": {
+    "parameters": {
+      "labelingDelayMs": 10000,
+      "predictionHorizonMs": 10000,
+      "detectionWindowMs": 10000,
+      "bayesSaveIntervalMs": 300000,
+      "bayesMinUpdatesToTrade": 3000,
+      
+      "log_transform_config": {
+        "enable_log_transform": true,
+        "log_transform_indices": [2],
+        "log_transform_threshold": 0.0,
+        "comment": "Critical fix for FLOKI feature_2 overflow (mean=202k, std=3.6M)"
+      },
+      
+      "model_config": {
+        "beta": 0.05,
+        "min_probability": 0.65,
+        "forgetting_factor": 0.95,
+        "process_noise": 0.001,
+        "uncertainty_penalty": 0.6,
+        "comment": "Conservative params for extreme value assets"
+      }
+    }
+  },
+  
+  "deployment_steps": [
+    "1. Deploy log transformation fix (numerical stability)",
+    "2. Update model config for FLOKI symbol", 
+    "3. Monitor feature_m2 values (expect significant reduction)",
+    "4. Test extended prediction window on paper trading",
+    "5. Full deployment if improvements confirmed"
+  ],
+  
+  "rollback_plan": {
+    "config_backup": "Save current config before changes",
+    "model_backup": "Backup existing FLOKI model files",
+    "monitoring": "Watch for degraded performance metrics",
+    "revert_time": "< 5 minutes to rollback config changes"
+  }
+}
