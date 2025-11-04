@@ -96,6 +96,8 @@
     int requireModelReadyUpdates = 100;       // do not save until model has >= 100 updates
     // Minimum milliseconds between saves (debounce)
     int bayesMinSaveIntervalMs = 600000;       // 30 seconds debounce between saves
+    // Minimum model updates required before allowing trades
+    int bayesMinUpdatesToTrade = 5000;         // Default 5000 updates required
      
      ImbalanceDetectionConfig() = default;
      
