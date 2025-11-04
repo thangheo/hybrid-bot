@@ -1095,7 +1095,11 @@ void Trading_system::execWorkerLoop(size_t workerId) {
             report.setStatus(execution::models::OrderState::FILLED);
             
             if (riskManager_) {
+                std::cout << "[TTL_DEBUG] Sending ExecutionReport to RiskManager: " 
+                         << task.symbol.toString() << " qty=" << finalQty << std::endl;
                 riskManager_->processExecutionReport(report);
+            } else {
+                std::cout << "[TTL_DEBUG] ERROR: riskManager_ is NULL - ExecutionReport NOT sent!" << std::endl;
             }
 
             std::cout << "📈 Executed: " << task.symbol.toString() << " " 
