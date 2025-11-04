@@ -32,8 +32,8 @@ class RegimeHedgingManager:
             config: Dictionary chứa cấu hình hedging
         """
         self.config = config
-        self.api_key = config.get('api_key')
-        self.api_secret = config.get('api_secret')
+        self.api_key = os.getenv('BINANCE_API_KEY') or config.get('api_key')
+        self.api_secret = os.getenv('BINANCE_API_SECRET') or config.get('api_secret')
         self.testnet = config.get('testnet', True)
         
         # Thresholds
