@@ -14,7 +14,7 @@ BUILD_LOG_FILE="$LOG_DIR/cpp_build.log"
 PID_DIR="pids"
 CPP_PID_FILE="$PID_DIR/semi_hft.pid"
 PYTHON_PID_FILE="$PID_DIR/python_strategy.pid"
-
+ENV_FILE=`pwd`/python-strategy/.env
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -27,7 +27,6 @@ mkdir -p "$LOG_DIR" "$PID_DIR"
 
 #source environment
 source venv/bin/activate
-source python-strategy/.env
 # Add this function after the existing functions in trading_manager.sh:
 
 # Function to monitor and auto-restart C++ if it crashes
@@ -243,7 +242,7 @@ start_python() {
     
     print_status "$BLUE" "Starting Python strategy with config: $config_path"
         
-    source .env
+    source "$ENV_FILE"
     # Start Python process with nohup and config parameter
     cd "$(dirname "$PYTHON_SCRIPT_PATH")" || exit 1
     nohup python3 "$(basename "$PYTHON_SCRIPT_PATH")" --config "../$config_path" > "$PYTHON_LOG_FILE" 2>&1 &
