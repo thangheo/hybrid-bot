@@ -719,9 +719,30 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                         if (regime_subscriber_) {
                             trading::strategy::core_analysis::RegimeInfo rinfo;
                             std::string lookup_symbol = m.symbol.toString();
-                            LOG_DEBUG("ImbalanceDetectionEngine: Looking up regime for symbol: '{}'", lookup_symbol);
-                            if (regime_subscriber_->get(lookup_symbol, rinfo) && rinfo.probs.size() == ImbalanceDetectionEngine::NUMBER_OF_REGIMES) {
+                            LOG_DEBUG("ImbalanceDetectionEngine: regime_subscriber_ is valid, looking up regime for symbol: '{}'", lookup_symbol);
+                            
+
+                            
+                            // First try the symbol as-is
+                            bool found_regime = regime_subscriber_->get(lookup_symbol, rinfo);
+                            LOG_DEBUG("ImbalanceDetectionEngine: First lookup '{}' found={}", lookup_symbol, found_regime);
+                            
+                            // If not found, try converting format (BTC/USDT -> BTCUSDT)
+                            if (!found_regime) {
+                                std::string converted_symbol = lookup_symbol;
+                                // Remove slash and dash characters
+                                converted_symbol.erase(std::remove(converted_symbol.begin(), converted_symbol.end(), '/'), converted_symbol.end());
+                                converted_symbol.erase(std::remove(converted_symbol.begin(), converted_symbol.end(), '-'), converted_symbol.end());
+                                LOG_DEBUG("ImbalanceDetectionEngine: Trying converted symbol: '{}' -> '{}'", lookup_symbol, converted_symbol);
+                                found_regime = regime_subscriber_->get(converted_symbol, rinfo);
+                            }
+                            
+                            if (found_regime && rinfo.probs.size() == ImbalanceDetectionEngine::NUMBER_OF_REGIMES) {
                                 hasRegimeData = true;
+                                // Log the probabilities we found
+                                LOG_DEBUG("ImbalanceDetectionEngine: Found regime data - probs=[{:.1f}, {:.1f}, {:.1f}, {:.1f}], regime={}", 
+                                         rinfo.probs[0], rinfo.probs[1], rinfo.probs[2], rinfo.probs[3], rinfo.regime); 
+                                
                                 // Find most probable regime
                                 for (int i = 0; i < ImbalanceDetectionEngine::NUMBER_OF_REGIMES; ++i) {
                                     if (rinfo.probs[i] > maxProb) {
@@ -732,8 +753,8 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                                 LOG_DEBUG("ImbalanceDetectionEngine: Found regime data for '{}': active_regime={} (prob={:.3f})", 
                                          lookup_symbol, activeRegime, maxProb);
                             } else {
-                                LOG_DEBUG("ImbalanceDetectionEngine: No regime data found for '{}' (rinfo.valid={}, probs.size={})", 
-                                         lookup_symbol, rinfo.valid, rinfo.probs.size());
+                                LOG_DEBUG("ImbalanceDetectionEngine: No valid regime data found for '{}' (found={}, probs.size={})", 
+                                         lookup_symbol, found_regime, rinfo.probs.size());
                             }
                         }
                         
@@ -899,6 +920,7 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                                 
                                 // First try the symbol as-is
                                 bool found_regime = regime_subscriber_->get(lookup_symbol, rinfo);
+                                LOG_DEBUG("ImbalanceDetectionEngine: First lookup '{}' found={}", lookup_symbol, found_regime);
                                 
                                 // If not found, try converting format (BTC/USDT -> BTCUSDT)
                                 if (!found_regime) {
@@ -914,7 +936,7 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                                     hasRegimeData = true;
                                     // Log the probabilities we found
                                     LOG_DEBUG("ImbalanceDetectionEngine: Found regime data - probs=[{:.1f}, {:.1f}, {:.1f}, {:.1f}], regime={}", 
-                                             rinfo.probs[0], rinfo.probs[1], rinfo.probs[2], rinfo.probs[3], rinfo.regime);
+                                             rinfo.probs[0], rinfo.probs[1], rinfo.probs[2], rinfo.probs[3], rinfo.regime); 
                                     
                                     // Find the regime with highest probability
                                     for (int i = 0; i < ImbalanceDetectionEngine::NUMBER_OF_REGIMES; ++i) {
