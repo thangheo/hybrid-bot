@@ -203,13 +203,9 @@ std::array<trading::perception::BayesHandle, ImbalanceDetectionEngine::NUMBER_OF
         if (it != bayesHandles_.end()) return it->second;
     }
 
-    // Create NUMBER_OF_REGIMES handles
+    // Initialize all handles as null - create them lazily when needed
     for (int i = 0; i < ImbalanceDetectionEngine::NUMBER_OF_REGIMES; ++i) {
-        try {
-            out[i] = trading::perception::bayes_create();
-        } catch (...) {
-            out[i] = nullptr;
-        }
+        out[i] = nullptr;
     }
 
     // Try load per-regime files if directory configured
@@ -743,6 +739,22 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                         
                         // Use only the active regime model for prediction
                         trading::perception::BayesSignal activeSignal{};
+                        
+                        // Lazy create handle for active regime if needed
+                        if (!handles[activeRegime]) {
+                            try {
+                                handles[activeRegime] = trading::perception::bayes_create();
+                                // Update the cached handles
+                                {
+                                    std::lock_guard<std::mutex> lk(bayesHandlesMutex_);
+                                    bayesHandles_[m.exchangeId.toString() + "_" + m.symbol.toString()] = handles;
+                                }
+                                LOG_DEBUG("ImbalanceDetectionEngine: lazy created bayes handle for regime {}", activeRegime);
+                            } catch (...) {
+                                handles[activeRegime] = nullptr;
+                            }
+                        }
+                        
                         auto activeHandle = handles[activeRegime];
                         if (activeHandle) {
                             try {
@@ -881,7 +893,21 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                             
                             if (regime_subscriber_) {
                                 trading::strategy::core_analysis::RegimeInfo rinfo;
-                                if (regime_subscriber_->get(sym.toString(), rinfo) && rinfo.probs.size() == ImbalanceDetectionEngine::NUMBER_OF_REGIMES) {
+                                std::string lookup_symbol = sym.toString();
+                                
+                                // First try the symbol as-is
+                                bool found_regime = regime_subscriber_->get(lookup_symbol, rinfo);
+                                
+                                // If not found, try converting format (BTC/USDT -> BTCUSDT)
+                                if (!found_regime) {
+                                    std::string converted_symbol = lookup_symbol;
+                                    // Remove slash and dash characters
+                                    converted_symbol.erase(std::remove(converted_symbol.begin(), converted_symbol.end(), '/'), converted_symbol.end());
+                                    converted_symbol.erase(std::remove(converted_symbol.begin(), converted_symbol.end(), '-'), converted_symbol.end());
+                                    found_regime = regime_subscriber_->get(converted_symbol, rinfo);
+                                }
+                                
+                                if (found_regime && rinfo.probs.size() == ImbalanceDetectionEngine::NUMBER_OF_REGIMES) {
                                     hasRegimeData = true;
                                     // Find the regime with highest probability
                                     for (int i = 0; i < ImbalanceDetectionEngine::NUMBER_OF_REGIMES; ++i) {
@@ -895,6 +921,24 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
 
                             // Update ONLY the active regime to keep models distinct
                             bool anyUpdated = false;
+                            
+                            // Lazy create handle for active regime if needed
+                            if (!handles[activeRegime]) {
+                                try {
+                                    handles[activeRegime] = trading::perception::bayes_create();
+                                    // Update cached handles
+                                    {
+                                        std::lock_guard<std::mutex> lk(bayesHandlesMutex_);
+                                        std::string key = exch.toString() + "_" + sym.toString();
+                                        bayesHandles_[key] = handles;
+                                    }
+                                    LOG_DEBUG("ImbalanceDetectionEngine: lazy created bayes handle for training regime {} ({}:{})", 
+                                             activeRegime, exch.toString(), sym.toString());
+                                } catch (...) {
+                                    handles[activeRegime] = nullptr;
+                                }
+                            }
+                            
                             auto handle = handles[activeRegime];
                             if (handle) {
                                 // Only update if we have clear regime data (> 40% probability) or as fallback
@@ -949,7 +993,7 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                                             std::string name = sanitize(exch.toString()) + "_" + sanitize(sym.toString());
                                             for (int i = 0; i < NUMBER_OF_REGIMES; ++i) {
                                                 auto h = handles[i];
-                                                if (!h) continue;
+                                                if (!h) continue; // Skip null handles - no warning needed
                                                 std::string filename = base + name + "_regime" + std::to_string(i) + ".json";
                                                 saveTasks.emplace_back(h, filename);
                                             }
