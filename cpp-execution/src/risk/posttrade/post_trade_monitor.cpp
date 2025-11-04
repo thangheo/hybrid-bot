@@ -227,6 +227,12 @@ void PostTradeMonitor::shutdown() {
 void PostTradeMonitor::processExecutionReport(const execution::models::ExecutionReport& executionReport) {
     totalExecutionReports_.fetch_add(1);
     
+    // Debug log to verify execution reports are received
+    LOG_INFO(formatString("[TTL_DEBUG] processExecutionReport: symbol={} orderId={} status={}", 
+             executionReport.symbol().toString(), 
+             executionReport.orderId(),
+             static_cast<int>(executionReport.status())));
+    
     // Check if trading is allowed
     if (!isTradingAllowed()) {
         RiskEvent event(
@@ -955,21 +961,34 @@ int64_t PostTradeMonitor::calculateDynamicTTL(double currentVolatility) {
 }
 
 void PostTradeMonitor::enforcePositionTTL() {
-    if (!positionTracker_ || !dataInterface_) return;
+    if (!positionTracker_ || !dataInterface_) {
+        LOG_INFO(formatString("[TTL_DEBUG] enforcePositionTTL early return: positionTracker_={} dataInterface_={}", 
+                 (positionTracker_ ? "valid" : "null"), (dataInterface_ ? "valid" : "null")));
+        return;
+    }
 
     // Get snapshot of positions
     auto positions = positionTracker_->getAllPositions();
+    
+    LOG_INFO(formatString("[TTL_DEBUG] enforcePositionTTL: found {} positions", positions.size()));
 
     // Build set of currently active position keys (only non-zero quantity positions)
     std::unordered_set<std::string> currentKeys;
+    int nonZeroCount = 0;
     for (const auto& p : positions) {
         try {
-            if (std::abs(p.getQuantity()) < 1e-8) continue;
+            double qty = p.getQuantity();
+            LOG_INFO(formatString("[TTL_DEBUG] Position: {}:{} qty={}", 
+                     p.getExchangeId().toString(), p.getTradingPair().toString(), qty));
+            if (std::abs(qty) < 1e-8) continue;
             currentKeys.insert(p.getExchangeId().toString() + ":" + p.getTradingPair().toString());
+            nonZeroCount++;
         } catch (...) {
             // ignore malformed entries
         }
     }
+    
+    LOG_INFO(formatString("[TTL_DEBUG] Non-zero positions: {}", nonZeroCount));
 
     // Clean up stale entries from positionsBeingClosed_ that are no longer present
     {

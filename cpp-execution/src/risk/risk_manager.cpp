@@ -366,14 +366,23 @@ ValidationResult RiskManager::validateSignal(const TradingSignal& signal) {
 
 void RiskManager::processExecutionReport(const ExecutionReport& executionReport) {
     try {
+        std::cout << "[TTL_DEBUG] RiskManager::processExecutionReport: " 
+                  << executionReport.symbol().toString() 
+                  << " status=" << static_cast<int>(executionReport.status()) << std::endl;
+        
         // Update portfolio with execution information
         if (m_portfolioManager) {
             m_portfolioManager->processExecution(executionReport);
+        } else {
+            std::cout << "[TTL_DEBUG] ERROR: m_portfolioManager is NULL!" << std::endl;
         }
         
         // Pass to post-trade monitoring
         if (m_postTradeMonitor) {
+            std::cout << "[TTL_DEBUG] Forwarding to PostTradeMonitor..." << std::endl;
             m_postTradeMonitor->processExecutionReport(executionReport);
+        } else {
+            std::cout << "[TTL_DEBUG] ERROR: m_postTradeMonitor is NULL!" << std::endl;
         }
     } catch (const std::exception& e) {
         std::cerr << "Exception during execution report processing: " << e.what() << std::endl;
