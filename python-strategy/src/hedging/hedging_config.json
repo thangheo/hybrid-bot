@@ -1,9 +1,9 @@
 {
   "hedging": {
-    "enabled": false,
+    "enabled": true,
     "api_key": "",
     "api_secret": "",
-    "testnet": true,
+    "testnet": false,
     "emergency_p_trend_threshold": 0.01,
     "close_p_trend_threshold": 0.9,
     "hedge_amount": 0.01,
