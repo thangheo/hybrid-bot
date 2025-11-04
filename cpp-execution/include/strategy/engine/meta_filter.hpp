@@ -12,6 +12,11 @@ struct MetaFilterConfig {
     double min_p_trend_up = 0.3;           // Minimum p_trend_up threshold
     double min_regime_confidence = 0.2;    // Minimum regime_confidence threshold
     bool enable_trend_filter = true;       // Enable trend confidence filtering
+    
+    // Emergency exit settings
+    bool enable_emergency_exit = true;     // Enable emergency position liquidation
+    double emergency_p_trend_threshold = 0.1;  // P_trend_up threshold for emergency exit
+    double emergency_regime_threshold = 0.05;  // Regime confidence threshold for emergency exit
 };
 
 struct MetaFilterResult {
@@ -20,6 +25,10 @@ struct MetaFilterResult {
     double trend_confidence = 0.0;         // Calculated trend confidence
     double p_trend_up_value = 0.0;         // Current p_trend_up value
     double regime_confidence_value = 0.0;  // Calculated regime confidence
+    
+    // Emergency exit fields
+    bool trigger_emergency_exit = false;   // Whether to liquidate all positions for this symbol
+    std::string emergency_reason;          // Reason for emergency exit
 };
 
 /**
@@ -52,6 +61,16 @@ public:
         const core_analysis::RegimeSubscriber* regime_subscriber) const;
 
     /**
+     * @brief Check if emergency exit should be triggered for a symbol
+     * @param symbol Trading symbol to check
+     * @param regime_subscriber Regime subscriber to get regime data from
+     * @return MetaFilterResult with emergency exit decision
+     */
+    MetaFilterResult checkEmergencyExit(
+        const std::string& symbol,
+        const core_analysis::RegimeSubscriber* regime_subscriber) const;
+
+    /**
      * @brief Update filter configuration
      * @param config New configuration
      */
@@ -77,6 +96,7 @@ private:
     mutable size_t blocked_trend_low_ = 0;
     mutable size_t blocked_regime_confidence_ = 0;
     mutable size_t allowed_entries_ = 0;
+    mutable size_t emergency_exits_triggered_ = 0;
     mutable std::chrono::system_clock::time_point last_stats_reset_;
 };
 

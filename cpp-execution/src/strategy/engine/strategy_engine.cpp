@@ -385,6 +385,9 @@ bool StrategyEngine::getRegimeInfo(const std::string& symbol, trading::strategy:
          // Update shock detector with current price
          updateShockDetectorPrice(symbol.toString(), currentPrice);
          
+         // Check for emergency exit conditions on every price update
+         checkEmergencyExit(symbol.toString());
+         
          //print exchange and symbol
          // Variables to store data for processing outside the lock
          bool shouldUpdateCorrelation = false;
@@ -1073,6 +1076,37 @@ std::string StrategyEngine::getShockDetectorStatistics() const {
         return shock_detector_->getStatistics();
     }
     return "{}";
+}
+
+void StrategyEngine::registerEmergencyExitCallback(const EmergencyExitCallback& callback) {
+    std::lock_guard<std::mutex> lock(emergency_callback_mutex_);
+    emergency_exit_callback_ = callback;
+    LOG_INFO("Emergency exit callback registered");
+}
+
+void StrategyEngine::checkEmergencyExit(const std::string& symbol) const {
+    if (!meta_filter_) {
+        return;
+    }
+    
+    auto exit_result = meta_filter_->checkEmergencyExit(symbol, regime_subscriber_.get());
+    if (exit_result.trigger_emergency_exit) {
+        std::lock_guard<std::mutex> lock(emergency_callback_mutex_);
+        if (emergency_exit_callback_) {
+            try {
+                bool success = emergency_exit_callback_(symbol, exit_result.emergency_reason);
+                if (success) {
+                    LOG_CRITICAL("EMERGENCY EXIT EXECUTED: {} - {}", symbol, exit_result.emergency_reason);
+                } else {
+                    LOG_ERROR("EMERGENCY EXIT FAILED: {} - {}", symbol, exit_result.emergency_reason);
+                }
+            } catch (const std::exception& e) {
+                LOG_ERROR("Exception during emergency exit for {}: {}", symbol, e.what());
+            }
+        } else {
+            LOG_WARN("EMERGENCY EXIT NEEDED but no callback registered: {} - {}", symbol, exit_result.emergency_reason);
+        }
+    }
 }
  
  } // namespace strategy

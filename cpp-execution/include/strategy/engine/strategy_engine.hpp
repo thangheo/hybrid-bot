@@ -176,6 +176,19 @@ public:
      */
     std::string getShockDetectorStatistics() const;
 
+    /**
+     * @brief Emergency exit callback type for liquidating positions
+     * @param symbol Symbol to liquidate
+     * @param reason Reason for emergency exit
+     */
+    using EmergencyExitCallback = std::function<bool(const std::string& symbol, const std::string& reason)>;
+
+    /**
+     * @brief Register callback for emergency position liquidation
+     * @param callback Function to call when emergency exit is needed
+     */
+    void registerEmergencyExitCallback(const EmergencyExitCallback& callback);
+
 private:
     // Strategy identification
     StrategyId strategyId_;
@@ -246,6 +259,11 @@ private:
     // Signal filtering methods
     bool applySignalFilters(const TradingSignal& signal) const;
     void updateShockDetectorPrice(const std::string& symbol, double price) const;
+    void checkEmergencyExit(const std::string& symbol) const;
+
+    // Emergency exit callback
+    mutable std::mutex emergency_callback_mutex_;
+    EmergencyExitCallback emergency_exit_callback_;
 
     // Optimization methods
     void performAdaptiveAdjustments();
