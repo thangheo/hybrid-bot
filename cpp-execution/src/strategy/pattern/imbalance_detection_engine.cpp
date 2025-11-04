@@ -22,6 +22,7 @@
 #include <condition_variable>
 #include <queue>
 #include <atomic>
+#include <random>
  #include <sstream>
 #include <filesystem>
 #include <logger.hpp>
@@ -852,33 +853,56 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                             for (int i = 0; i < ImbalanceDetectionEngine::NUMBER_OF_REGIMES; ++i) if (handles[i]) { anyHandle = true; break; }
                             if (!anyHandle) continue;
 
-                            // Choose regime to update: argmax of regime_subscriber_ probs if available, otherwise default to regime 0
-                            int updateIdx = 0;
+                            // Weighted update strategy: update all regimes with probability-based weights
+                            std::vector<double> regimeProbs(ImbalanceDetectionEngine::NUMBER_OF_REGIMES, 1.0 / ImbalanceDetectionEngine::NUMBER_OF_REGIMES);
                             if (regime_subscriber_) {
                                 trading::strategy::core_analysis::RegimeInfo rinfo;
                                 if (regime_subscriber_->get(sym.toString(), rinfo) && rinfo.probs.size() == ImbalanceDetectionEngine::NUMBER_OF_REGIMES) {
-                                    double best = -1.0; int bi = 0;
                                     for (int i = 0; i < ImbalanceDetectionEngine::NUMBER_OF_REGIMES; ++i) {
-                                        if (rinfo.probs[i] > best) { best = rinfo.probs[i]; bi = i; }
+                                        regimeProbs[i] = rinfo.probs[i];
                                     }
-                                    updateIdx = bi;
                                 }
                             }
 
-                            auto handle = handles[updateIdx];
-                            if (!handle) {
-                                // fallback: pick first available handle and log
-                                for (int ii = 0; ii < ImbalanceDetectionEngine::NUMBER_OF_REGIMES; ++ii) {
-                                    if (handles[ii]) { handle = handles[ii]; updateIdx = ii; break; }
+                            // Update all regimes with weighted updates based on their probabilities
+                            bool anyUpdated = false;
+                            for (int i = 0; i < ImbalanceDetectionEngine::NUMBER_OF_REGIMES; ++i) {
+                                auto handle = handles[i];
+                                if (!handle) continue;
+                                
+                                // Use probability threshold to decide whether to update this regime
+                                // Always update if probability > 10%, or occasionally update others to prevent starvation
+                                double threshold = 0.1; // 10% threshold
+                                bool shouldUpdate = regimeProbs[i] > threshold;
+                                
+                                // Occasional updates for low-probability regimes to prevent learning starvation
+                                if (!shouldUpdate && regimeProbs[i] > 0.01) { // > 1%
+                                    // Randomly update with probability proportional to regime probability
+                                    static std::random_device rd;
+                                    static std::mt19937 gen(rd());
+                                    std::uniform_real_distribution<> dis(0.0, 1.0);
+                                    shouldUpdate = (dis(gen) < regimeProbs[i] * 5.0); // 5x boost for low-prob regimes
                                 }
-                                if (!handle) {
-                                    LOG_DEBUG("ImbalanceDetectionEngine: no bayes handle available for {}:{}, skipping update", exch.toString(), sym.toString());
-                                    continue;
-                                } else {
-                                    LOG_DEBUG("ImbalanceDetectionEngine: fallback to regime {} for update of {}:{}", updateIdx, exch.toString(), sym.toString());
+                                
+                                if (shouldUpdate) {
+                                    trading::perception::bayes_update(handle, features, label);
+                                    anyUpdated = true;
+                                    LOG_DEBUG("ImbalanceDetectionEngine: updated regime {} for {}:{} (prob={:.3f})", 
+                                             i, exch.toString(), sym.toString(), regimeProbs[i]);
                                 }
                             }
-                            trading::perception::bayes_update(handle, features, label);
+                            
+                            if (!anyUpdated) {
+                                // Fallback: update regime 0 if nothing was updated
+                                auto handle = handles[0];
+                                if (handle) {
+                                    trading::perception::bayes_update(handle, features, label);
+                                    LOG_DEBUG("ImbalanceDetectionEngine: fallback update to regime 0 for {}:{}", exch.toString(), sym.toString());
+                                } else {
+                                    LOG_DEBUG("ImbalanceDetectionEngine: no bayes handle available for {}:{}, skipping update", exch.toString(), sym.toString());
+                                    continue;
+                                }
+                            }
 
                             // Runtime persistence policy: increment update counter and
                             // save model when thresholds / intervals are reached.
@@ -891,9 +915,18 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                                 bool intervalPassed = (bayesSaveInterval_.count() > 0) && ((now - lastSaveTime_) >= bayesSaveInterval_);
                                 bool enoughUpdates = (bayesSaveAfterUpdates_ > 0) && (updatesSinceLastSave_ >= bayesSaveAfterUpdates_);
 
-                                // Check model readiness if configured
-                                int modelUpdates = trading::perception::bayes_get_num_updates(handle);
-                                bool modelReady = (modelUpdates >= requireModelReadyUpdates_) || trading::perception::bayes_is_ready(handle);
+                                // Check model readiness if configured - use maximum updates across all handles
+                                int maxModelUpdates = 0;
+                                bool anyModelReady = false;
+                                for (int i = 0; i < ImbalanceDetectionEngine::NUMBER_OF_REGIMES; ++i) {
+                                    if (!handles[i]) continue;
+                                    try {
+                                        int mu = trading::perception::bayes_get_num_updates(handles[i]);
+                                        if (mu > maxModelUpdates) maxModelUpdates = mu;
+                                        if (trading::perception::bayes_is_ready(handles[i])) anyModelReady = true;
+                                    } catch (...) {}
+                                }
+                                bool modelReady = (maxModelUpdates >= requireModelReadyUpdates_) || anyModelReady;
 
                                 if (modelReady && minIntervalPassed && (enoughUpdates || intervalPassed)) {
                                     // Collect save tasks while holding lock then perform I/O outside
