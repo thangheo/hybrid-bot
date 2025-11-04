@@ -719,8 +719,15 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                         probs.fill(1.0 / static_cast<double>(ImbalanceDetectionEngine::NUMBER_OF_REGIMES));
                         if (regime_subscriber_) {
                             trading::strategy::core_analysis::RegimeInfo rinfo;
-                            if (regime_subscriber_->get(m.symbol.toString(), rinfo) && rinfo.probs.size() == ImbalanceDetectionEngine::NUMBER_OF_REGIMES) {
+                            std::string lookup_symbol = m.symbol.toString();
+                            LOG_DEBUG("ImbalanceDetectionEngine: Looking up regime for symbol: '{}'", lookup_symbol);
+                            if (regime_subscriber_->get(lookup_symbol, rinfo) && rinfo.probs.size() == ImbalanceDetectionEngine::NUMBER_OF_REGIMES) {
                                 for (int i=0;i<ImbalanceDetectionEngine::NUMBER_OF_REGIMES;i++) probs[i] = rinfo.probs[i];
+                                LOG_DEBUG("ImbalanceDetectionEngine: Found regime data for '{}': probs=[{:.3f}, {:.3f}, {:.3f}, {:.3f}]", 
+                                         lookup_symbol, probs[0], probs[1], probs[2], probs[3]);
+                            } else {
+                                LOG_DEBUG("ImbalanceDetectionEngine: No regime data found for '{}' (rinfo.valid={}, probs.size={})", 
+                                         lookup_symbol, rinfo.valid, rinfo.probs.size());
                             }
                         }
                         // run predictions for each handle and combine
@@ -907,8 +914,8 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                                 if (shouldUpdate) {
                                     trading::perception::bayes_update(handle, features, label);
                                     anyUpdated = true;
-                                    LOG_DEBUG("ImbalanceDetectionEngine: updated regime {} for {}:{} (prob={:.3f})", 
-                                             i, exch.toString(), sym.toString(), regimeProbs[i]);
+                                    // LOG_DEBUG("ImbalanceDetectionEngine: updated regime {} for {}:{} (prob={:.3f})", 
+                                    //          i, exch.toString(), sym.toString(), regimeProbs[i]);
                                 }
                             }
                             

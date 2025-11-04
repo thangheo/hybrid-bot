@@ -69,7 +69,7 @@ monitor_cpp() {
                 print_status "$GREEN" "✅ C++ bridge restarted successfully after crash"
             else
                 print_status "$RED" "❌ Failed to restart C++ bridge"
-                sleep 60  # Wait longer before next attempt
+                sleep 5  # Wait longer before next attempt
             fi
         fi
         
