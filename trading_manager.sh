@@ -25,6 +25,9 @@ NC='\033[0m' # No Color
 # Create directories if they don't exist
 mkdir -p "$LOG_DIR" "$PID_DIR"
 
+#source environment
+source venv/bin/activate
+source python-strategy/.env
 # Add this function after the existing functions in trading_manager.sh:
 
 # Function to monitor and auto-restart C++ if it crashes
@@ -130,8 +133,6 @@ print_status() {
     echo -e "${color}[$(date '+%Y-%m-%d %H:%M:%S')] ${message}${NC}"
 }
 
-#source environment
-source venv/bin/activate
 
 # Function to check if a process is running
 is_running() {
@@ -241,7 +242,8 @@ start_python() {
     fi
     
     print_status "$BLUE" "Starting Python strategy with config: $config_path"
-    
+        
+    source .env
     # Start Python process with nohup and config parameter
     cd "$(dirname "$PYTHON_SCRIPT_PATH")" || exit 1
     nohup python3 "$(basename "$PYTHON_SCRIPT_PATH")" --config "../$config_path" > "$PYTHON_LOG_FILE" 2>&1 &
@@ -490,6 +492,7 @@ case "$1" in
         #fucking stupid. start the fucking python first because it pull the fucking data alot.
 
         if start_python ; then
+            
             print_status "$BLUE" "Waiting 5 seconds for C++ to initialize..."
             sleep 60
             
