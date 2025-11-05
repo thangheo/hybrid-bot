@@ -1,5 +1,8 @@
 #include "trading_system.hpp"
 #include "strategy/core_analysis/regime_subscriber.hpp"
+#include "common/quantity_precision.hpp" // symbol precision helper for exchange-compliant quantities
+
+// Use fully-qualified ::execution::SymbolPrecisionManager to avoid ambiguity
 
 using namespace trading;
 
@@ -971,6 +974,7 @@ void Trading_system::stopExecWorkerPool() {
     }
     std::cout << "Exec worker pool stopped" << std::endl;
 }
+
 void Trading_system::execWorkerLoop(size_t workerId) {
     while (execWorkersRunning_.load()) {
         execution::TradingSignal task;
@@ -1052,32 +1056,47 @@ void Trading_system::execWorkerLoop(size_t workerId) {
                 notionalUsd = 12.0;
             }
 
-            // Determine appropriate precision based on symbol and price range
-            int precision = 6; // default
-            
-            // Get base symbol for symbol-specific precision rules
-            std::string baseSymbol = task.symbol.base;
-            
-            if (baseSymbol == "BTC") {
-                precision = 5; // BTC typically allows 5 decimal places on Binance (0.00001)
-            } else if (baseSymbol == "ETH") {
-                precision = 4; // ETH typically allows 4 decimal places (0.0001)  
-            } else if (currentPrice < 0.001) {
-                precision = 8; // for very low price tokens (micro-cap altcoins)
-            } else if (currentPrice < 0.01) {
-                precision = 7; // for very low price tokens
-            } else if (currentPrice < 1.0) {
-                precision = 6; // for sub-dollar tokens like ARB, ADA, etc.
-            } else if (currentPrice < 100.0) {
-                precision = 4; // for mid-range tokens like SOL, AVAX
-            } else {
-                precision = 3; // for high-value tokens (but not BTC/ETH)
-            }
+            // Use the centralized symbol precision manager to quantize quantity
+            // This replaces the ad-hoc precision selection logic and ensures
+            // the quantity adheres to exchange LOT_SIZE (stepSize), min/max
+            // and decimal precision rules. The helper lives in
+            // include/common/quantity_precision.hpp
+            try {
+                // Use symbol.toString() which yields e.g. "XRP/USDT"; the
+                // precision helper will normalize it internally (remove '/').
+                std::string symStr = task.symbol.toString();
 
-            // Use proper rounding with format control to avoid floating-point errors
-            std::ostringstream oss;
-            oss << std::fixed << std::setprecision(precision) << finalQty;
-            finalQty = std::stod(oss.str());
+                // Round to the nearest valid increment and precision for this symbol
+                double roundedQty = ::execution::SymbolPrecisionManager::roundQuantity(symStr, finalQty);
+
+                // If rounding produced an invalid quantity (e.g., below minQty),
+                // attempt to bump to minQty if that's acceptable by notional.
+                if (!::execution::SymbolPrecisionManager::isValidQuantity(symStr, roundedQty)) {
+                    // Fetch symbol precision to inspect minQty
+                    // (getPrecision is internal to the header; reuse by calling
+                    // roundQuantity with a small adjustment if necessary).
+                    // Try using a small epsilon bump and re-round.
+                    double bumped = roundedQty;
+                    bumped = std::max(bumped, 0.0);
+                    for (int attempt = 0; attempt < 3 && !::execution::SymbolPrecisionManager::isValidQuantity(symStr, bumped); ++attempt) {
+                        // increase by one stepSize worth implicitly by adding a tiny amount
+                        bumped = roundedQty + std::pow(10.0, -8 + attempt);
+                        bumped = ::execution::SymbolPrecisionManager::roundQuantity(symStr, bumped);
+                    }
+                    if (::execution::SymbolPrecisionManager::isValidQuantity(symStr, bumped)) {
+                        roundedQty = bumped;
+                    } else {
+                        // Fall back to roundedQty even if invalid; the exchange will
+                        // respond and we already log details below.
+                        LOG_WARN("Exec", "Rounded qty for {} still invalid (qty={})", symStr, roundedQty);
+                    }
+                }
+
+                finalQty = roundedQty;
+            } catch (const std::exception &e) {
+                // Best-effort: keep previous finalQty if helper fails.
+                LOG_WARN("Exec", "Quantity precision helper failed for {}: {}", task.symbol.toString(), e.what());
+            }
             
             task.setQuantity(finalQty);
 
@@ -1138,6 +1157,8 @@ void Trading_system::execWorkerLoop(size_t workerId) {
         }
     }
 }
+
+
 void Trading_system::setupComponentConnections() {        
     // Minimal callback: validate & enqueue update to worker queue
     dataIngestionService_->setOrderBookCallback([this](auto update) {

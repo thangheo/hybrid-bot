@@ -740,8 +740,8 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                             if (found_regime && rinfo.probs.size() == ImbalanceDetectionEngine::NUMBER_OF_REGIMES) {
                                 hasRegimeData = true;
                                 // Log the probabilities we found
-                                LOG_DEBUG("ImbalanceDetectionEngine: Found regime data - probs=[{:.1f}, {:.1f}, {:.1f}, {:.1f}], regime={}", 
-                                         rinfo.probs[0], rinfo.probs[1], rinfo.probs[2], rinfo.probs[3], rinfo.regime); 
+                                // LOG_DEBUG("ImbalanceDetectionEngine: Found regime data - probs=[{:.1f}, {:.1f}, {:.1f}, {:.1f}], regime={}", 
+                                //          rinfo.probs[0], rinfo.probs[1], rinfo.probs[2], rinfo.probs[3], rinfo.regime); 
                                 
                                 // Find most probable regime
                                 for (int i = 0; i < ImbalanceDetectionEngine::NUMBER_OF_REGIMES; ++i) {
@@ -750,11 +750,11 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                                         activeRegime = i;
                                     }
                                 }
-                                LOG_DEBUG("ImbalanceDetectionEngine: Found regime data for '{}': active_regime={} (prob={:.3f})", 
-                                         lookup_symbol, activeRegime, maxProb);
+                                // LOG_DEBUG("ImbalanceDetectionEngine: Found regime data for '{}': active_regime={} (prob={:.3f})", 
+                                //          lookup_symbol, activeRegime, maxProb);
                             } else {
-                                LOG_DEBUG("ImbalanceDetectionEngine: No valid regime data found for '{}' (found={}, probs.size={})", 
-                                         lookup_symbol, found_regime, rinfo.probs.size());
+                                // LOG_DEBUG("ImbalanceDetectionEngine: No valid regime data found for '{}' (found={}, probs.size={})", 
+                                //          lookup_symbol, found_regime, rinfo.probs.size());
                             }
                         }
                         
