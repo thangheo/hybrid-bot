@@ -5,6 +5,19 @@
 
 namespace trading {
     namespace perception {
+
+// PRODUCTION FIX: Use unified Direction enum instead of duplicate BayesianClass
+// Direction enum now has explicit values: BUY=0, SELL=1, NEUTRAL=2
+// This ensures perfect alignment with Bayesian model classes
+
+// Utility functions for Direction enum
+constexpr int direction_to_class_index(Direction dir) {
+    return static_cast<int>(dir);
+}
+
+constexpr Direction class_index_to_direction(int class_idx) {
+    return static_cast<Direction>(class_idx);
+}
 BayesianTradingModel::BayesianTradingModel()
     : BayesianTradingModel(ModelConfig{}) {
 }
@@ -210,44 +223,48 @@ std::tuple<double, double, double> BayesianTradingModel::predict_multiclass(cons
  
 
 BayesianTradingModel::TradingSignal BayesianTradingModel::predict(const std::vector<double>& features) {
-    auto [prob_sell, prob_neutral, prob_buy] = predict_multiclass(features);
+    auto [prob_class0, prob_class1, prob_class2] = predict_multiclass(features);
     
     // Validate probability distribution
-    assert(std::abs(prob_sell + prob_neutral + prob_buy - 1.0) < 1e-6);
+    assert(std::abs(prob_class0 + prob_class1 + prob_class2 - 1.0) < 1e-6);
     
     TradingSignal signal;
     
     // High neutral probability vetoes trading
-    if (prob_neutral > neutral_veto_threshold_) {
+    if (prob_class2 > neutral_veto_threshold_) {
         return createNeutralSignal();
     }
     
-    // CRITICAL FIX: Direction enum mapping correction
-    // Direction enum: BUY=0, SELL=1, NEUTRAL=2 
-    // But Bayesian classes: 0=SELL, 1=NEUTRAL, 2=BUY
-    // So we need to map correctly!
+    // PRODUCTION FIX: Use proper enum mapping instead of hard-coded assumptions
+    // Class mapping is now explicit and type-safe
     
-    // Buy signal (class 2 in Bayesian model)
-    if (prob_buy > prob_sell && prob_buy > min_confidence_threshold_) {
-        signal.direction = Direction::BUY;  // This maps correctly to enum value 0
-        signal.should_trade = true;
-        signal.probability = prob_buy;
-        signal.position_size = calculatePositionSize(prob_buy, prob_neutral);
+    // Find the class with highest probability (excluding neutral if below threshold)
+    Direction predicted_direction = Direction::NEUTRAL;
+    double max_prob = 0.0;
+    
+    if (prob_class0 > max_prob && prob_class0 > min_confidence_threshold_) {
+        predicted_direction = Direction::BUY;  // Class 0 = BUY
+        max_prob = prob_class0;
     }
-    // Sell signal (class 0 in Bayesian model) 
-    else if (prob_sell > prob_buy && prob_sell > min_confidence_threshold_) {
-        signal.direction = Direction::SELL;  // This maps correctly to enum value 1
-        signal.should_trade = true;
-        signal.probability = prob_sell;
-        signal.position_size = calculatePositionSize(prob_sell, prob_neutral);
+    
+    if (prob_class1 > max_prob && prob_class1 > min_confidence_threshold_) {
+        predicted_direction = Direction::SELL;  // Class 1 = SELL
+        max_prob = prob_class1;
     }
-    // Insufficient confidence
-    else {
+    
+    // Check if we have a confident prediction
+    if (max_prob <= min_confidence_threshold_) {
         return createNeutralSignal();
     }
     
-    // Calculate entropy-based uncertainty
-    signal.uncertainty = calculateEntropy(prob_sell, prob_neutral, prob_buy);
+    // Direct assignment - no conversion needed
+    signal.direction = predicted_direction;
+    signal.should_trade = true;
+    signal.probability = max_prob;
+    signal.position_size = calculatePositionSize(prob_class0, prob_class1);
+    
+    // Calculate entropy-based uncertainty  
+    signal.uncertainty = calculateEntropy(prob_class0, prob_class1, prob_class2);
     
     return signal;
 }

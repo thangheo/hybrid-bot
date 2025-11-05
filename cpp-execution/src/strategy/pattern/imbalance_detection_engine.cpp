@@ -891,34 +891,20 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
 
                                     auto dyn = g_statThresholdAdapter.calculateThresholds(regimeIdx, vol);
 
-                                    // CRITICAL FIX: Correct mapping to match Direction enum values
-                                    // Direction enum: BUY=0, SELL=1, NEUTRAL=2
-                                    // So labels must be: 0=BUY, 1=SELL, 2=NEUTRAL
-                                    int label = 2; // NEUTRAL (Direction::NEUTRAL = 2)
-                                    if (normalizedReturn > dyn.buyThreshold) label = 0; // BUY (Direction::BUY = 0) 
-                                    else if (normalizedReturn < dyn.sellThreshold) label = 1; // SELL (Direction::SELL = 1)
-
-                                    // Enhanced logging for label verification and statistics tracking
-                                    static std::atomic<int> labelCount{0};
-                                    static std::atomic<int> buyLabels{0}, sellLabels{0}, neutralLabels{0};
-                                    
-                                    int count = labelCount.fetch_add(1);
-                                    if (label == 0) buyLabels.fetch_add(1);    // BUY = 0
-                                    else if (label == 1) sellLabels.fetch_add(1);  // SELL = 1
-                                    else neutralLabels.fetch_add(1);               // NEUTRAL = 2
-                                    
-                                    if (count % 100 == 0) { // Log every 100th label with distribution stats
-                                        int totalLabels = count + 1;
-                                        double buyPct = (double)buyLabels.load() / totalLabels * 100.0;
-                                        double sellPct = (double)sellLabels.load() / totalLabels * 100.0;
-                                        double neutralPct = (double)neutralLabels.load() / totalLabels * 100.0;
-                                        
-                                        LOG_INFO("LabelingStats", "Total={} BUY={:.1f}% SELL={:.1f}% NEUTRAL={:.1f}% | Current: Symbol={} ret={:.4f} label={} delay={}ms", 
-                                                totalLabels, buyPct, sellPct, neutralPct,
-                                                pt.symbol.toString(), normalizedReturn, 
-                                                (label == 0 ? "BUY" : (label == 1 ? "SELL" : "NEUTRAL")), 
-                                                std::chrono::duration_cast<std::chrono::milliseconds>(now - pt.timestamp).count());
+                                    // PRODUCTION FIX: Type-safe enum-based labeling
+                                    core::Direction labelDirection = core::Direction::NEUTRAL;  // Default to NEUTRAL
+                                    if (normalizedReturn > dyn.buyThreshold) {
+                                        labelDirection = core::Direction::BUY;
+                                    } else if (normalizedReturn < dyn.sellThreshold) {
+                                        labelDirection = core::Direction::SELL;
                                     }
+                                    
+                                    // Type-safe conversion to integer label
+                                    int label = static_cast<int>(labelDirection);
+
+                                    // Thread-safe statistics tracking with proper logging
+                                    trackLabelingEvent(labelDirection, pt.symbol.toString(), normalizedReturn, 
+                                                     std::chrono::duration_cast<std::chrono::milliseconds>(now - pt.timestamp));
 
                                     // record for training and update stats with realized (non-normalized) absolute return
                                     toTrain.emplace_back(pt.features, label, pt.exchangeId, pt.symbol);
@@ -3494,5 +3480,46 @@ void ImbalanceDetectionEngine::createImbalanceEventForBayesModel(ImbalanceType t
      return ++nextId;
  } 
  
- } // namespace strategy
- } // namespace trading
+// PRODUCTION FIX: Thread-safe labeling statistics implementation
+void ImbalanceDetectionEngine::trackLabelingEvent(core::Direction labelDirection, 
+                                                 const std::string& symbol,
+                                                 double normalizedReturn, 
+                                                 std::chrono::milliseconds delay) {
+    // Type-safe statistics update
+    size_t totalCount = labelingStats_.totalLabels.fetch_add(1) + 1;
+    
+    switch (labelDirection) {
+        case core::Direction::BUY:
+            labelingStats_.buyLabels.fetch_add(1);
+            break;
+        case core::Direction::SELL:
+            labelingStats_.sellLabels.fetch_add(1);
+            break;
+        case core::Direction::NEUTRAL:
+            labelingStats_.neutralLabels.fetch_add(1);
+            break;
+    }
+    
+    // Periodic logging with proper enum-to-string conversion
+    if (totalCount % 100 == 0) {
+        double buyPct = (double)labelingStats_.buyLabels.load() / totalCount * 100.0;
+        double sellPct = (double)labelingStats_.sellLabels.load() / totalCount * 100.0;
+        double neutralPct = (double)labelingStats_.neutralLabels.load() / totalCount * 100.0;
+        
+        // Type-safe direction string conversion
+        const char* directionStr = "";
+        switch (labelDirection) {
+            case core::Direction::BUY: directionStr = "BUY"; break;
+            case core::Direction::SELL: directionStr = "SELL"; break; 
+            case core::Direction::NEUTRAL: directionStr = "NEUTRAL"; break;
+        }
+        
+        LOG_INFO("LabelingStats [PRODUCTION]", 
+                "Total={} BUY={:.1f}% SELL={:.1f}% NEUTRAL={:.1f}% | Current: Symbol={} ret={:.4f} label={} delay={}ms", 
+                totalCount, buyPct, sellPct, neutralPct,
+                symbol, normalizedReturn, directionStr, delay.count());
+    }
+}
+
+} // namespace strategy
+} // namespace trading

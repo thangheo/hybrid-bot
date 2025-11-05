@@ -19,11 +19,12 @@
  
  /**
   * Represents the direction of a trade, order, signal, or imbalance
+  * PRODUCTION FIX: Explicit values ensure consistent mapping with Bayesian classes
   */
- enum class Direction {
-     BUY,      // Buy/long/bid direction
-     SELL,     // Sell/short/ask direction
-     NEUTRAL   // No clear direction
+ enum class Direction : int {
+     BUY = 0,      // Buy/long/bid direction - matches BayesianClass::BUY
+     SELL = 1,     // Sell/short/ask direction - matches BayesianClass::SELL  
+     NEUTRAL = 2   // No clear direction - matches BayesianClass::NEUTRAL
  };
  
  /**
