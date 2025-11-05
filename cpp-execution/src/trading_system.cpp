@@ -1049,13 +1049,6 @@ void Trading_system::execWorkerLoop(size_t workerId) {
             double currentPrice = currentPriceOpt.value();
             double finalQty = notionalUsd / currentPrice;
 
-            // --- Step 5: Enforce minimum notional ---
-            const double minNotionalUsd = 10.0;
-            if (notionalUsd < minNotionalUsd) {
-                finalQty = 12.0 / currentPrice; // Bump to $12 minimum
-                notionalUsd = 12.0;
-            }
-
             // Use the centralized symbol precision manager to quantize quantity
             // This replaces the ad-hoc precision selection logic and ensures
             // the quantity adheres to exchange LOT_SIZE (stepSize), min/max
@@ -1097,6 +1090,24 @@ void Trading_system::execWorkerLoop(size_t workerId) {
                 // Best-effort: keep previous finalQty if helper fails.
                 LOG_WARN("Exec", "Quantity precision helper failed for {}: {}", task.symbol.toString(), e.what());
             }
+
+            // --- Step 5: Enforce minimum notional AFTER precision rounding ---
+            const double minNotionalUsd = 10.0;
+            double finalNotionalUsd = currentPrice * finalQty;
+            if (finalNotionalUsd < minNotionalUsd) {
+                // Recalculate quantity for $12 minimum and apply precision again
+                double minQtyForNotional = 12.0 / currentPrice;
+                std::string symStr = task.symbol.toString();
+                finalQty = ::execution::SymbolPrecisionManager::roundQuantity(symStr, minQtyForNotional);
+                finalNotionalUsd = currentPrice * finalQty;
+                
+                // If still below minimum after rounding, increase by one step
+                if (finalNotionalUsd < minNotionalUsd) {
+                    LOG_WARN("Exec", "Adjusted quantity still insufficient: {}", "Order value below minimum notional requirement");
+                    std::cout << "❌ Adjusted quantity still insufficient: Order value below minimum notional requirement" << std::endl;
+                    continue; // Skip this order
+                }
+            }
             
             task.setQuantity(finalQty);
 
@@ -1104,7 +1115,7 @@ void Trading_system::execWorkerLoop(size_t workerId) {
             std::cout << "[EXEC] Prepared order: symbol=" << task.symbol.toString()
                       << " qty=" << finalQty 
                       << " price=" << currentPrice
-                      << " notionalUsd=" << (currentPrice * finalQty)
+                      << " notionalUsd=" << finalNotionalUsd
                       << " minNotionalUsd=" << minNotionalUsd 
                       << std::endl;
 

@@ -4,6 +4,8 @@
 #include <unordered_map>
 #include <cmath>
 #include <algorithm>
+#include <cstdio>
+#include <cstdlib>
 
 namespace execution {
 
@@ -44,12 +46,22 @@ public:
         if (prec.stepSize <= 0.0)
             return quantity;
 
-        double steps = std::floor(quantity / prec.stepSize + 1e-9);
+        // Use more robust rounding to avoid floating-point artifacts
+        double steps = std::floor(quantity / prec.stepSize + 0.5);
         double q = steps * prec.stepSize;
         q = std::clamp(q, prec.minQty, prec.maxQty);
 
-        // Handle floating-point noise
-        double rounded = std::round(q * std::pow(10, prec.precision)) / std::pow(10, prec.precision);
+        // Apply precision rounding with better floating-point cleanup
+        double multiplier = std::pow(10.0, prec.precision);
+        double rounded = std::floor(q * multiplier + 0.5) / multiplier;
+        
+        // Final cleanup to eliminate tiny floating-point errors
+        if (prec.precision <= 8) {
+            char buffer[32];
+            snprintf(buffer, sizeof(buffer), "%.*f", prec.precision, rounded);
+            rounded = std::strtod(buffer, nullptr);
+        }
+        
         return rounded;
     }
 
