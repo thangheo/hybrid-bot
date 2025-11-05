@@ -198,6 +198,18 @@ private:
     DetectorResult detectCustomImbalance(const OrderBookMetrics& metrics);
     bool checkVolumeConcentration(const OrderBookMetrics& metrics) ;
     bool detectSpreadPersistence(const OrderBookMetrics& metrics) ;
+    
+    // PRODUCTION FIX: Thread-safe labeling statistics
+    struct LabelingStats {
+        std::atomic<size_t> totalLabels{0};
+        std::atomic<size_t> buyLabels{0};
+        std::atomic<size_t> sellLabels{0}; 
+        std::atomic<size_t> neutralLabels{0};
+    };
+    LabelingStats labelingStats_;
+    
+    void trackLabelingEvent(core::Direction labelDirection, const std::string& symbol, 
+                          double normalizedReturn, std::chrono::milliseconds delay);
     bool detectDepthVolumeInconsistency(const OrderBookMetrics& metrics) ;
     bool detectVolatilitySuppression(const OrderBookMetrics& metrics) ;
     bool detectHiddenLiquidityPatterns(const OrderBookMetrics& metrics) ;
@@ -325,6 +337,15 @@ public:
     std::chrono::milliseconds bayesMinSaveInterval_{30000};
     // Runtime counter for updates since last save
     int updatesSinceLastSave_ = 0;
+    
+    // PRODUCTION FIX: Thread-safe labeling statistics (instance-based)
+    struct LabelingStats {
+        std::atomic<size_t> totalLabels{0};
+        std::atomic<size_t> buyLabels{0};
+        std::atomic<size_t> sellLabels{0}; 
+        std::atomic<size_t> neutralLabels{0};
+    };
+    LabelingStats labelingStats_;
 };
 
 // Type alias
