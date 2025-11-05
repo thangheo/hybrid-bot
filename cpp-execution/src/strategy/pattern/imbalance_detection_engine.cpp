@@ -67,11 +67,11 @@ public:
         std::lock_guard<std::mutex> lk(mu_);
         auto &stats = regimeStats_[regime];
 
-        // Tuned percentiles
-        const double P75 = 0.80; // use 80th percentile for buy
-        const double P25 = 0.20; // use 20th percentile for sell
-        const double MIN_ABS_PCT = 0.35; // 35th percentile for min profitable move
-        const double VOL_ADJUST_MULT = 0.25; // stronger volatility scaling
+        // Rebalanced percentiles for more balanced learning
+        const double P75 = 0.65; // use 65th percentile for buy (was 80th)
+        const double P25 = 0.35; // use 35th percentile for sell (was 20th)
+        const double MIN_ABS_PCT = 0.30; // 30th percentile for min profitable move
+        const double VOL_ADJUST_MULT = 0.20; // reduced volatility scaling
 
         // The stored recentReturns are normalized returns (logRet / vol) so percentiles are in z-space
         double p75_return = stats.percentile(stats.recentReturns, P75);
@@ -85,9 +85,9 @@ public:
         double volAdjust = currentVol / volRef;
         volAdjust = std::clamp(volAdjust, 0.5, 2.0); // limit extreme scaling
 
-    // Ensure reasonable minimum magnitudes for thresholds in normalized (z) space
-    // Lower the floor to allow more sensitive SELL detection (smaller negative z)
-    const double MIN_Z_MAG = 0.35; // was 0.5, reduce to 0.35 to increase SELL sensitivity
+    // More balanced minimum magnitudes for thresholds in normalized (z) space
+    // Reduced to allow more frequent but better quality labels
+    const double MIN_Z_MAG = 0.25; // reduced from 0.35 to increase label frequency
 
         // Scale percentile thresholds by volatility regime; they are z-like so remain comparable to normalized returns
     out.buyThreshold = std::max(MIN_Z_MAG, p75_return * (1.0 + VOL_ADJUST_MULT * (volAdjust - 1.0)));
@@ -891,10 +891,34 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
 
                                     auto dyn = g_statThresholdAdapter.calculateThresholds(regimeIdx, vol);
 
-                                    // The adapter returns absolute-like thresholds; compare normalized return to them
-                                    int label = 1; // NEUTRAL
-                                    if (normalizedReturn > dyn.buyThreshold) label = 2; // BUY
-                                    else if (normalizedReturn < dyn.sellThreshold) label = 0; // SELL
+                                    // CRITICAL FIX: Correct mapping to match Direction enum values
+                                    // Direction enum: BUY=0, SELL=1, NEUTRAL=2
+                                    // So labels must be: 0=BUY, 1=SELL, 2=NEUTRAL
+                                    int label = 2; // NEUTRAL (Direction::NEUTRAL = 2)
+                                    if (normalizedReturn > dyn.buyThreshold) label = 0; // BUY (Direction::BUY = 0) 
+                                    else if (normalizedReturn < dyn.sellThreshold) label = 1; // SELL (Direction::SELL = 1)
+
+                                    // Enhanced logging for label verification and statistics tracking
+                                    static std::atomic<int> labelCount{0};
+                                    static std::atomic<int> buyLabels{0}, sellLabels{0}, neutralLabels{0};
+                                    
+                                    int count = labelCount.fetch_add(1);
+                                    if (label == 0) buyLabels.fetch_add(1);    // BUY = 0
+                                    else if (label == 1) sellLabels.fetch_add(1);  // SELL = 1
+                                    else neutralLabels.fetch_add(1);               // NEUTRAL = 2
+                                    
+                                    if (count % 100 == 0) { // Log every 100th label with distribution stats
+                                        int totalLabels = count + 1;
+                                        double buyPct = (double)buyLabels.load() / totalLabels * 100.0;
+                                        double sellPct = (double)sellLabels.load() / totalLabels * 100.0;
+                                        double neutralPct = (double)neutralLabels.load() / totalLabels * 100.0;
+                                        
+                                        LOG_INFO("LabelingStats", "Total={} BUY={:.1f}% SELL={:.1f}% NEUTRAL={:.1f}% | Current: Symbol={} ret={:.4f} label={} delay={}ms", 
+                                                totalLabels, buyPct, sellPct, neutralPct,
+                                                pt.symbol.toString(), normalizedReturn, 
+                                                (label == 0 ? "BUY" : (label == 1 ? "SELL" : "NEUTRAL")), 
+                                                std::chrono::duration_cast<std::chrono::milliseconds>(now - pt.timestamp).count());
+                                    }
 
                                     // record for training and update stats with realized (non-normalized) absolute return
                                     toTrain.emplace_back(pt.features, label, pt.exchangeId, pt.symbol);
