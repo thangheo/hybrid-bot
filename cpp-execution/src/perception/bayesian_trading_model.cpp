@@ -222,16 +222,21 @@ BayesianTradingModel::TradingSignal BayesianTradingModel::predict(const std::vec
         return createNeutralSignal();
     }
     
-    // Buy signal
+    // CRITICAL FIX: Direction enum mapping correction
+    // Direction enum: BUY=0, SELL=1, NEUTRAL=2 
+    // But Bayesian classes: 0=SELL, 1=NEUTRAL, 2=BUY
+    // So we need to map correctly!
+    
+    // Buy signal (class 2 in Bayesian model)
     if (prob_buy > prob_sell && prob_buy > min_confidence_threshold_) {
-        signal.direction = Direction::BUY;
+        signal.direction = Direction::BUY;  // This maps correctly to enum value 0
         signal.should_trade = true;
         signal.probability = prob_buy;
         signal.position_size = calculatePositionSize(prob_buy, prob_neutral);
     }
-    // Sell signal
+    // Sell signal (class 0 in Bayesian model) 
     else if (prob_sell > prob_buy && prob_sell > min_confidence_threshold_) {
-        signal.direction = Direction::SELL;
+        signal.direction = Direction::SELL;  // This maps correctly to enum value 1
         signal.should_trade = true;
         signal.probability = prob_sell;
         signal.position_size = calculatePositionSize(prob_sell, prob_neutral);

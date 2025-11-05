@@ -29,7 +29,7 @@ namespace perception {
 
 class BayesianTradingModel {
 public:
-    static constexpr int NUM_CLASSES = 3; // 0: SELL, 1: NEUTRAL, 2: BUY
+    static constexpr int NUM_CLASSES = 3; // 0: BUY, 1: SELL, 2: NEUTRAL (matches Direction enum)
     struct TradingSignal {
         double probability;      // P(price_up) ∈ [0,1]
         double expected_value;   // Expected value of trade

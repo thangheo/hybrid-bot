@@ -209,7 +209,7 @@
     },
     "array": {
       "price_levels": [5, 10, 20, 50],
-      "time_windows": [1000, 5000, 15000, 30000],
+      "time_windows": [1000, 2000, 5000, 10000],
       "volume_thresholds": [0.1, 0.25, 0.5, 1.0]
     }
   },
@@ -244,7 +244,7 @@
         "tradeImbalanceThreshold": 0.6,
         "cancellationImbalanceThreshold": 0.6,
         "priceVolatilityImbalanceThreshold": 0.3,      
-        "detectionWindowMs": 30000,
+        "detectionWindowMs": 5000,
         "maxHistorySize": 500,
         "global_sensitivity": 0.75,
         "thresholds": {
@@ -254,7 +254,7 @@
           "order_flow": 0.3
         },
         "bayesModelPath": "models/bayesian/",
-        "labelingDelayMs": 30000,
+        "labelingDelayMs": 2000,
         "bayesSaveAfterUpdates": 25,
         "requireModelReadyUpdates": 50,
         "bayesMinSaveIntervalMs": 30000,
@@ -268,7 +268,7 @@
         },
         "trainingStartDelayMs": 1,
         "minOrderbookLevels": 0,
-        "bayesMinUpdatesToTrade": 3000
+        "bayesMinUpdatesToTrade": 500
       }
     },
     "liquidityMonitor": {
@@ -327,7 +327,7 @@
             "enable_value_area_calculation": true
           },
           "array": {
-            "profile_intervals": [5, 15, 30, 60]
+            "profile_intervals": [2, 5, 10, 20]
           }
         }
       }
@@ -336,14 +336,14 @@
       "parameters": {
         "minSignalStrength": 0.6,
         "confidenceThreshold": 0.7,
-        "signalTtlMs": 30000
+        "signalTtlMs": 5000
       }
     },
     "momentumCorrelator": {
       "parameters": {
-        "correlationWindowMs": 60000,
-        "predictionHorizonMs": 30000,
-        "ewmaHalfLifeMs": 15000
+        "correlationWindowMs": 10000,
+        "predictionHorizonMs": 2000,
+        "ewmaHalfLifeMs": 3000
       }
     },
     "thresholdManager": {
