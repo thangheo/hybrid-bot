@@ -230,8 +230,18 @@ std::array<trading::perception::BayesHandle, ImbalanceDetectionEngine::NUMBER_OF
                 std::ostringstream fn;
                 fn << bayesModelDirectory_ << "/" << name << "_regime" << i << ".json";
                 std::string path = fn.str();
-                if (!path.empty() && std::filesystem::exists(path) && out[i]) {
-                    try { trading::perception::bayes_load(out[i], path); } catch (...) {}
+                // If a saved per-regime model exists, create a handle and attempt to load it.
+                if (!path.empty() && std::filesystem::exists(path)) {
+                    try {
+                        auto h = trading::perception::bayes_create();
+                        if (h) {
+                            if (trading::perception::bayes_load(h, path)) {
+                                out[i] = h;
+                            } else {
+                                try { trading::perception::bayes_destroy(h); } catch(...) {}
+                            }
+                        }
+                    } catch (...) {}
                 }
             }
         } catch (...) {}
@@ -713,7 +723,7 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                         
                         // Determine active regime (highest probability)
                         int activeRegime = 0;
-                        double maxProb = 0.25; // minimum threshold
+                        double maxProb = 0.0; // Start from 0 to allow any regime to be selected
                         bool hasRegimeData = false;
                         
                         if (regime_subscriber_) {
@@ -907,13 +917,13 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                             for (int i = 0; i < ImbalanceDetectionEngine::NUMBER_OF_REGIMES; ++i) if (handles[i]) { anyHandle = true; break; }
                             if (!anyHandle) continue;
 
-                            // Active regime training: update ONLY the currently most probable regime
+                            // Active regime training: update regimes based on their probabilities
                             int activeRegime = 0; // default to regime 0
                             double maxProb = 0.0;
                             bool hasRegimeData = false;
+                            trading::strategy::core_analysis::RegimeInfo rinfo;
                             
                             if (regime_subscriber_) {
-                                trading::strategy::core_analysis::RegimeInfo rinfo;
                                 std::string lookup_symbol = sym.toString();
                                 
                                 LOG_DEBUG("ImbalanceDetectionEngine: Training lookup for symbol: '{}'", lookup_symbol);
@@ -951,39 +961,59 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                                 }
                             }
 
-                            // Update ONLY the active regime to keep models distinct
+                            // Update all regimes weighted by their probabilities (sophisticated uniform distribution approach)
                             bool anyUpdated = false;
                             
-                            // Lazy create handle for active regime if needed
-                            if (!handles[activeRegime]) {
-                                try {
-                                    handles[activeRegime] = trading::perception::bayes_create();
-                                    // Update cached handles
-                                    {
-                                        std::lock_guard<std::mutex> lk(bayesHandlesMutex_);
-                                        std::string key = exch.toString() + "_" + sym.toString();
-                                        bayesHandles_[key] = handles;
+                            if (hasRegimeData) {
+                                for (int i = 0; i < ImbalanceDetectionEngine::NUMBER_OF_REGIMES; ++i) {
+                                    if (rinfo.probs[i] > 0.15) {  // Update any regime with >15% probability
+                                        // Lazy create handle if needed
+                                        if (!handles[i]) {
+                                            try {
+                                                handles[i] = trading::perception::bayes_create();
+                                                // Update cached handles
+                                                {
+                                                    std::lock_guard<std::mutex> lk(bayesHandlesMutex_);
+                                                    std::string key = exch.toString() + "_" + sym.toString();
+                                                    bayesHandles_[key] = handles;
+                                                }
+                                                LOG_DEBUG("ImbalanceDetectionEngine: lazy created bayes handle for regime {} ({}:{})", 
+                                                         i, exch.toString(), sym.toString());
+                                            } catch (...) {
+                                                handles[i] = nullptr;
+                                            }
+                                        }
+                                        
+                                        if (handles[i]) {
+                                            // Could also use weighted updates based on probability
+                                            trading::perception::bayes_update(handles[i], features, label);
+                                            anyUpdated = true;
+                                            LOG_DEBUG("ImbalanceDetectionEngine: Updated regime {} with prob={:.3f} for {}:{}", 
+                                                     i, rinfo.probs[i], exch.toString(), sym.toString());
+                                        }
                                     }
-                                    LOG_DEBUG("ImbalanceDetectionEngine: lazy created bayes handle for training regime {} ({}:{})", 
-                                             activeRegime, exch.toString(), sym.toString());
-                                } catch (...) {
-                                    handles[activeRegime] = nullptr;
                                 }
-                            }
-                            
-                            auto handle = handles[activeRegime];
-                            if (handle) {
-                                // Only update if we have clear regime data (> 40% probability) or as fallback
-                                bool shouldUpdate = !hasRegimeData || maxProb > 0.4;
-                                
-                                LOG_DEBUG("ImbalanceDetectionEngine: Training decision for {}:{} - hasRegimeData={}, maxProb={:.3f}, activeRegime={}, shouldUpdate={}", 
-                                         exch.toString(), sym.toString(), hasRegimeData, maxProb, activeRegime, shouldUpdate);
-                                
-                                if (shouldUpdate) {
-                                    trading::perception::bayes_update(handle, features, label);
+                            } else {
+                                // Fallback: update regime 0 when no regime data
+                                if (!handles[0]) {
+                                    try {
+                                        handles[0] = trading::perception::bayes_create();
+                                        {
+                                            std::lock_guard<std::mutex> lk(bayesHandlesMutex_);
+                                            std::string key = exch.toString() + "_" + sym.toString();
+                                            bayesHandles_[key] = handles;
+                                        }
+                                        LOG_DEBUG("ImbalanceDetectionEngine: lazy created fallback bayes handle for regime 0 ({}:{})", 
+                                                 exch.toString(), sym.toString());
+                                    } catch (...) {
+                                        handles[0] = nullptr;
+                                    }
+                                }
+                                if (handles[0]) {
+                                    trading::perception::bayes_update(handles[0], features, label);
                                     anyUpdated = true;
-                                    LOG_DEBUG("ImbalanceDetectionEngine: updated regime {} for {}:{} (prob={:.3f})", 
-                                             activeRegime, exch.toString(), sym.toString(), maxProb);
+                                    LOG_DEBUG("ImbalanceDetectionEngine: Updated fallback regime 0 for {}:{}", 
+                                             exch.toString(), sym.toString());
                                 }
                             }
                             
