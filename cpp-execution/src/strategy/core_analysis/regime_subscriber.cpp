@@ -9,6 +9,7 @@
 #include <sstream>
 #include <iomanip>
 #include <csignal>
+#include <chrono>
 
 using json = nlohmann::json;
 using namespace trading::strategy::core_analysis;
@@ -19,6 +20,7 @@ struct trading::strategy::core_analysis::RegimeSubscriber::Impl {
     mutable std::mutex mtx;
 
     std::unordered_map<std::string, RegimeInfo> store;
+    std::unordered_map<std::string, std::chrono::steady_clock::time_point> last_update_time;
 
     std::atomic<bool> running{false};
     std::thread thread;
@@ -172,6 +174,7 @@ struct trading::strategy::core_analysis::RegimeSubscriber::Impl {
                         if (it->second.regime != info.regime) changed = true;
                     }
                     store[symbol] = info;
+                    last_update_time[symbol] = std::chrono::steady_clock::now(); // Track update time
                     if (changed) {
                         std::cout << ">>> REGIME CHANGE: " << symbol << " -> " << info.regime << std::endl;
                     }
@@ -287,6 +290,43 @@ bool RegimeSubscriber::get(const std::string& symbol, RegimeInfo& out) const {
     if (it == impl_->store.end()) return false;
     out = it->second;
     return true;
+}
+
+bool RegimeSubscriber::isFresh(const std::string& symbol, int max_age_seconds) const {
+    if (!impl_) return false;
+    std::lock_guard<std::mutex> lk(impl_->mtx);
+    
+    auto it = impl_->store.find(symbol);
+    if (it == impl_->store.end()) return false;
+    
+    auto time_it = impl_->last_update_time.find(symbol);
+    if (time_it == impl_->last_update_time.end()) return false;
+    
+    auto now = std::chrono::steady_clock::now();
+    auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - time_it->second);
+    
+    return elapsed.count() <= max_age_seconds;
+}
+
+void RegimeSubscriber::cleanupOldEntries(int max_age_seconds) {
+    if (!impl_) return;
+    std::lock_guard<std::mutex> lk(impl_->mtx);
+    
+    auto now = std::chrono::steady_clock::now();
+    std::vector<std::string> to_remove;
+    
+    for (const auto& kv : impl_->last_update_time) {
+        auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - kv.second);
+        if (elapsed.count() > max_age_seconds) {
+            to_remove.push_back(kv.first);
+        }
+    }
+    
+    for (const auto& symbol : to_remove) {
+        impl_->store.erase(symbol);
+        impl_->last_update_time.erase(symbol);
+        std::cout << "Cleaned up old cache entry for symbol: " << symbol << std::endl;
+    }
 }
 
 void RegimeSubscriber::dump() const {

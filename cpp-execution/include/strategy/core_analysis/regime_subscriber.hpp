@@ -52,6 +52,13 @@ public:
     bool running() const;
 
     bool get(const std::string& symbol, RegimeInfo& out) const;
+    
+    // Check if cached data is fresh (within max_age_seconds)
+    bool isFresh(const std::string& symbol, int max_age_seconds = 300) const;
+    
+    // Clean up old cache entries (older than max_age_seconds)
+    void cleanupOldEntries(int max_age_seconds = 3600);
+    
     void dump() const;
 // interactive_loop
     
