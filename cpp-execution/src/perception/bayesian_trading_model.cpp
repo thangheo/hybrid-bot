@@ -230,26 +230,27 @@ BayesianTradingModel::TradingSignal BayesianTradingModel::predict(const std::vec
     
     TradingSignal signal;
     
-    // High neutral probability vetoes trading
-    if (prob_class2 > neutral_veto_threshold_) {
+    // CRITICAL FIX: Class 1 is NEUTRAL, not class 2!
+    // Correct mapping: 0=SELL, 1=NEUTRAL, 2=BUY (matches training labels)
+    if (prob_class1 > neutral_veto_threshold_) {
         return createNeutralSignal();
     }
     
-    // PRODUCTION FIX: Use proper enum mapping instead of hard-coded assumptions
-    // Class mapping is now explicit and type-safe
+    // PRODUCTION FIX: Use correct enum mapping to match training labels
+    // Class mapping: 0=SELL, 1=NEUTRAL, 2=BUY (consistent with training)
     
     // Find the class with highest probability (excluding neutral if below threshold)
     Direction predicted_direction = Direction::NEUTRAL;
     double max_prob = 0.0;
     
     if (prob_class0 > max_prob && prob_class0 > min_confidence_threshold_) {
-        predicted_direction = Direction::BUY;  // Class 0 = BUY
+        predicted_direction = Direction::SELL;  // Class 0 = SELL (CORRECTED)
         max_prob = prob_class0;
     }
     
-    if (prob_class1 > max_prob && prob_class1 > min_confidence_threshold_) {
-        predicted_direction = Direction::SELL;  // Class 1 = SELL
-        max_prob = prob_class1;
+    if (prob_class2 > max_prob && prob_class2 > min_confidence_threshold_) {
+        predicted_direction = Direction::BUY;   // Class 2 = BUY (CORRECTED)
+        max_prob = prob_class2;
     }
     
     // Check if we have a confident prediction
@@ -261,9 +262,10 @@ BayesianTradingModel::TradingSignal BayesianTradingModel::predict(const std::vec
     signal.direction = predicted_direction;
     signal.should_trade = true;
     signal.probability = max_prob;
-    signal.position_size = calculatePositionSize(prob_class0, prob_class1);
+    // CORRECTED: Use BUY (class 2) and SELL (class 0) probabilities for position sizing
+    signal.position_size = calculatePositionSize(prob_class2, prob_class0);
     
-    // Calculate entropy-based uncertainty  
+    // Calculate entropy-based uncertainty (order doesn't matter for entropy)
     signal.uncertainty = calculateEntropy(prob_class0, prob_class1, prob_class2);
     
     return signal;
