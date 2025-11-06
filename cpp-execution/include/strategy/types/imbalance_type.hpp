@@ -38,6 +38,7 @@
     CANCELLATION_IMBALANCE,        // one-sided cancellations
     PRICE_VOLATILITY_IMBALANCE,    // volatility surge
     HIDDEN_LIQUIDITY_IMBALANCE,    // iceberg / hidden liquidity
+    REGIME_BASED_IMBALANCE,        // regime-based signals
     CUSTOM                         // strategy-defined
 };
 

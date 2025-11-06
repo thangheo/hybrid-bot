@@ -17,6 +17,7 @@
  #include <sstream>
  #include <iomanip>
 #include <iostream>
+#include <set>
 #include <common/logger.hpp>
 using namespace trading::core;
  namespace trading {
@@ -301,6 +302,12 @@ bool StrategyEngine::getRegimeInfo(const std::string& symbol, trading::strategy:
      }
      if (!validateOrderBook(orderBook)) {
          return false;
+     }
+     
+     // Add symbol to monitored list for regime-based sell signals
+     {
+         std::lock_guard<std::mutex> lock(regime_tracking_mutex_);
+         monitored_symbols_.insert(orderBook.getSymbol().toString());
      }
      
      try {
@@ -849,6 +856,8 @@ std::optional<ImbalanceEvent> StrategyEngine::findSourceEvent(
              maintainSignals();
              // Process any queued signals
              processQueuedSignals();
+             // Check for regime-based sell opportunities
+             checkRegimeBasedSellOpportunities();
              // Update strategy state
              updateStrategyState();
              // Sleep for a bit
@@ -1014,22 +1023,73 @@ bool StrategyEngine::initializeTradingPair(const core::Symbol& symbol, ExchangeI
 
 // Signal filtering implementation
 bool StrategyEngine::applySignalFilters(const TradingSignal& signal) const {
-    // Only filter buy/entry signals, allow sell/exit signals to pass through
-    if (signal.direction != core::Direction::BUY) {
-        return true;
-    }
-    
     std::string symbol = signal.symbol.toString();
     
-    // Apply MetaFilter (regime-based filter)
-    if (meta_filter_) {
-        auto meta_result = meta_filter_->checkEntryAllowed(symbol, regime_subscriber_.get());
-        if (!meta_result.allow_entry) {
-            LOG_WARN("MetaFilter BLOCKED entry signal {} for {}: {} (p_trend_up={:.3f}, regime_confidence={:.3f})",
-                     signal.id, symbol, meta_result.block_reason, 
-                     meta_result.p_trend_up_value, meta_result.regime_confidence_value);
-            return false;
+    // Get regime info for both BUY and SELL signals
+    core_analysis::RegimeInfo regime_info;
+    bool has_regime_info = false;
+    
+    if (regime_subscriber_) {
+        has_regime_info = regime_subscriber_->get(symbol, regime_info);
+        if (!has_regime_info) {
+            // Try converting symbol format (BTC/USDT -> BTCUSDT)
+            std::string converted_symbol = symbol;
+            converted_symbol.erase(std::remove(converted_symbol.begin(), converted_symbol.end(), '/'), converted_symbol.end());
+            converted_symbol.erase(std::remove(converted_symbol.begin(), converted_symbol.end(), '-'), converted_symbol.end());
+            has_regime_info = regime_subscriber_->get(converted_symbol, regime_info);
         }
+    }
+    
+    // Handle BUY signals - STRICT regime-based filtering
+    if (signal.direction == core::Direction::BUY) {
+        // Apply MetaFilter (regime-based filter) - NOW MUCH MORE STRICT
+        if (meta_filter_) {
+            auto meta_result = meta_filter_->checkEntryAllowed(symbol, regime_subscriber_.get());
+            if (!meta_result.allow_entry) {
+                LOG_INFO("MetaFilter BLOCKED BUY signal {} for {}: {} (p_trend_up={:.3f}, regime_confidence={:.3f})",
+                         signal.id, symbol, meta_result.block_reason, 
+                         meta_result.p_trend_up_value, meta_result.regime_confidence_value);
+                return false;
+            }
+            
+            // Additional check: Require STRONG uptrend for BUY
+            if (has_regime_info && regime_info.valid && regime_info.p_trend_up.has_value()) {
+                double p_trend = regime_info.p_trend_up.value();
+                if (p_trend < 0.6) {  // Chỉ mua khi p_trend_up >= 60%
+                    LOG_INFO("REGIME BLOCKED BUY signal {} for {}: p_trend_up={:.3f} < 0.6 (uptrend yếu)",
+                             signal.id, symbol, p_trend);
+                    return false;
+                }
+                
+                LOG_INFO("REGIME ALLOWED BUY signal {} for {}: p_trend_up={:.3f} >= 0.6 (uptrend mạnh)", 
+                         signal.id, symbol, p_trend);
+            }
+        }
+    }
+    
+    // Handle SELL signals - Allow based on regime downtrend OR imbalance
+    else if (signal.direction == core::Direction::SELL) {
+        // Check if we should sell based on regime info
+        if (has_regime_info && regime_info.valid && regime_info.p_trend_up.has_value()) {
+            double p_trend = regime_info.p_trend_up.value();
+            
+            // Allow SELL if regime shows downtrend (p_trend_up < 0.4)
+            if (p_trend < 0.4) {
+                LOG_INFO("REGIME ALLOWED SELL signal {} for {}: p_trend_up={:.3f} < 0.4 (downtrend detected)",
+                         signal.id, symbol, p_trend);
+                return true;  // Luôn cho phép sell khi có downtrend
+            }
+            
+            // For neutral/uptrend (p_trend >= 0.4), only allow SELL if signal strength is high
+            if (signal.confidence < 0.7) {  // Require high confidence (>= 0.7)
+                LOG_INFO("REGIME BLOCKED SELL signal {} for {}: p_trend_up={:.3f} >= 0.4 but confidence too low ({:.3f})",
+                         signal.id, symbol, p_trend, signal.confidence);
+                return false;
+            }
+        }
+        
+        // Allow SELL signals to pass (either regime-based or high-confidence imbalance-based)
+        return true;
     }
     
     // Apply ShockDetector (volatility-based filter)  
@@ -1110,6 +1170,95 @@ void StrategyEngine::checkEmergencyExit(const std::string& symbol) const {
             }
         } else {
             LOG_DEBUG("EMERGENCY EXIT NEEDED but no callback registered: {} - {}", symbol, exit_result.emergency_reason);
+        }
+    }
+}
+
+// Generate regime-based sell signals when Python regime indicates strong downtrend
+void StrategyEngine::generateRegimeBasedSellSignals(const std::string& symbol) {
+    if (!regime_subscriber_ || !signalGenerator_) {
+        return;
+    }
+    
+    // Get regime info for symbol
+    core_analysis::RegimeInfo regime_info;
+    bool has_regime_info = regime_subscriber_->get(symbol, regime_info);
+    
+    if (!has_regime_info) {
+        // Try converting symbol format
+        std::string converted_symbol = symbol;
+        converted_symbol.erase(std::remove(converted_symbol.begin(), converted_symbol.end(), '/'), converted_symbol.end());
+        converted_symbol.erase(std::remove(converted_symbol.begin(), converted_symbol.end(), '-'), converted_symbol.end());
+        has_regime_info = regime_subscriber_->get(converted_symbol, regime_info);
+    }
+    
+    if (!has_regime_info || !regime_info.valid || !regime_info.p_trend_up.has_value()) {
+        return;
+    }
+    
+    double p_trend = regime_info.p_trend_up.value();
+    
+    // Generate SELL signal when regime shows strong downtrend (p_trend_up < 0.25)
+    if (p_trend < 0.25) {
+        // Create a regime-based trading signal
+        TradingSignal regime_sell_signal;
+        regime_sell_signal.id = "regime_sell_" + std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count());
+        regime_sell_signal.strategyId = strategyId_;
+        regime_sell_signal.symbol = core::Symbol(symbol);
+        regime_sell_signal.direction = core::Direction::SELL;
+        regime_sell_signal.confidence = 0.9;  // High confidence regime-based signals (0.9)
+        regime_sell_signal.strength = 1.0 - p_trend;  // Strength inversely related to p_trend_up
+        regime_sell_signal.targetSize = 0.0;  // Will be determined by position manager
+        regime_sell_signal.generationTime = std::chrono::system_clock::now();
+        regime_sell_signal.expirationTime = regime_sell_signal.generationTime + std::chrono::minutes(5);  // 5-minute expiration
+        regime_sell_signal.sourceType = trading::strategy::ImbalanceType::REGIME_BASED_IMBALANCE;  // Use ImbalanceType to indicate source
+        
+        // Add regime context to signal metadata
+        std::ostringstream ss;
+        ss << "Regime-based SELL signal: p_trend_up=" << std::fixed << std::setprecision(3) << p_trend 
+           << " < 0.25 (strong downtrend detected)";
+        
+        if (regime_info.stay_prob.has_value()) {
+            ss << ", stay_prob=" << std::fixed << std::setprecision(3) << regime_info.stay_prob.value();
+        }
+        
+        // Signal metadata (if available in TradingSignal structure)
+        // regime_sell_signal.metadata = ss.str();
+        
+        LOG_INFO("REGIME SELL SIGNAL GENERATED: {} - p_trend_up={:.3f} < 0.25 (strong downtrend)", 
+                 symbol, p_trend);
+        
+        // Send signal through the normal pipeline
+        handleSignalGenerated(regime_sell_signal);
+    }
+    
+    // Also check for emergency exit conditions (handled by existing emergency exit logic)
+    checkEmergencyExit(symbol);
+}
+
+// Check all monitored symbols for regime-based sell opportunities
+void StrategyEngine::checkRegimeBasedSellOpportunities() {
+    std::lock_guard<std::mutex> lock(regime_tracking_mutex_);
+    
+    auto now = std::chrono::system_clock::now();
+    
+    // Check each monitored symbol every 30 seconds
+    for (const auto& symbol : monitored_symbols_) {
+        auto last_check_it = last_regime_check_time_.find(symbol);
+        
+        bool should_check = false;
+        if (last_check_it == last_regime_check_time_.end()) {
+            should_check = true;  // First time checking this symbol
+        } else {
+            auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - last_check_it->second);
+            if (elapsed.count() >= 30) {  // Check every 30 seconds
+                should_check = true;
+            }
+        }
+        
+        if (should_check) {
+            generateRegimeBasedSellSignals(symbol);
+            last_regime_check_time_[symbol] = now;
         }
     }
 }

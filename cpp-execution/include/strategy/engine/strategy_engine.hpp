@@ -23,6 +23,7 @@
 #include "strategy/optimization/adaptive_mechanism.hpp"
 #include "strategy/engine/meta_filter.hpp"
 #include "strategy/engine/shock_detector.hpp"
+#include <set>
 #include "data_ingestion/orderbook/order_book.hpp"
 
 #include <string>
@@ -157,6 +158,17 @@ public:
      * @param config New MetaFilter configuration
      */
     void updateMetaFilterConfig(const engine::MetaFilterConfig& config);
+    
+    /**
+     * @brief Generate regime-based sell signals when Python regime indicates downtrend
+     * @param symbol Trading symbol to check for sell signals
+     */
+    void generateRegimeBasedSellSignals(const std::string& symbol);
+    
+    /**
+     * @brief Check all active symbols for regime-based sell opportunities
+     */
+    void checkRegimeBasedSellOpportunities();
 
     /**
      * @brief Update ShockDetector configuration  
@@ -281,6 +293,11 @@ private:
     // std::shared_ptr<LogisticRegressionSignalGenerator> logistic_regression_signal_generator_;
     // Regime subscriber (receives regimes from Python publisher)
     std::unique_ptr<trading::strategy::core_analysis::RegimeSubscriber> regime_subscriber_;
+    
+    // Regime-based signal tracking
+    std::set<std::string> monitored_symbols_;
+    std::map<std::string, std::chrono::system_clock::time_point> last_regime_check_time_;
+    mutable std::mutex regime_tracking_mutex_;
 
 public:
     // Query latest regime info for a symbol (thread-safe). Returns true if symbol exists.

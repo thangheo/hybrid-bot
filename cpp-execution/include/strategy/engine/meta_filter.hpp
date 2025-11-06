@@ -9,14 +9,14 @@
 namespace trading::strategy::engine {
 
 struct MetaFilterConfig {
-    double min_p_trend_up = 0.3;           // Minimum p_trend_up threshold
-    double min_regime_confidence = 0.2;    // Minimum regime_confidence threshold
+    double min_p_trend_up = 0.6;           // Minimum p_trend_up threshold (TĂNG LÊN 60% để chỉ mua khi uptrend mạnh)
+    double min_regime_confidence = 0.4;    // Minimum regime_confidence threshold (tăng từ 0.2 lên 0.4)
     bool enable_trend_filter = true;       // Enable trend confidence filtering
     
     // Emergency exit settings
     bool enable_emergency_exit = true;     // Enable emergency position liquidation
-    double emergency_p_trend_threshold = 0.01;  // P_trend_up threshold for emergency exit (1% - very conservative)
-    double emergency_regime_threshold = 0.01;  // Regime confidence threshold for emergency exit
+    double emergency_p_trend_threshold = 0.15;  // P_trend_up threshold for emergency exit (TĂNG từ 1% lên 15% để sell nhanh hơn)
+    double emergency_regime_threshold = 0.05;  // Regime confidence threshold for emergency exit (tăng từ 1% lên 5%)
 };
 
 struct MetaFilterResult {

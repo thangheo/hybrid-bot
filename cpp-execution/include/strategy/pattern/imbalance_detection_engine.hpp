@@ -339,13 +339,13 @@ public:
     int updatesSinceLastSave_ = 0;
     
     // PRODUCTION FIX: Thread-safe labeling statistics (instance-based)
-    struct LabelingStats {
-        std::atomic<size_t> totalLabels{0};
-        std::atomic<size_t> buyLabels{0};
-        std::atomic<size_t> sellLabels{0}; 
-        std::atomic<size_t> neutralLabels{0};
-    };
-    LabelingStats labelingStats_;
+    // struct LabelingStats {
+    //     std::atomic<size_t> totalLabels{0};
+    //     std::atomic<size_t> buyLabels{0};
+    //     std::atomic<size_t> sellLabels{0}; 
+    //     std::atomic<size_t> neutralLabels{0};
+    // };
+    // LabelingStats labelingStats_;
 };
 
 // Type alias

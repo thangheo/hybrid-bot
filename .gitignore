@@ -32,3 +32,5 @@ models/*
 build/
 *.pkl
 *.png
+#  ignore this trade_analysis.json
+*trade_analysis.json
