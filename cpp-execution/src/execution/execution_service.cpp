@@ -20,7 +20,7 @@
 #include <util/parse_safe.hpp>
 #include <mutex>
 #include "execution/http_balance_client.hpp"
-
+#include "common/logger.hpp"
  using namespace trading::core;
  namespace trading {
  namespace execution {
@@ -1417,11 +1417,20 @@ models::Order ExecutionService::createOrderFromSignal(const TradingSignal& signa
                 market_condition.askPrice = params.price;
             }
         }
-        std::cout << "DEBUG: Market Condition - Bid Price: " << market_condition.bidPrice << std::endl;
-        std::cout << "DEBUG: Market Condition - Ask Price: " << market_condition.askPrice << std::endl;
-        std::cout << "DEBUG: Market Condition - Spread: " << market_condition.spread << std::endl;
-        std::cout << "DEBUG: Market Condition - Volatility: " << market_condition.volatility << std::endl;
-        std::cout << "DEBUG: Market Condition - Volume: " << market_condition.volume << std::endl;
+        // Enhanced debug logging for price issues
+        std::cout << "Market Data for " << order->getTradingPair().toString() 
+                  << ": Bid=" << market_condition.bidPrice 
+                  << ", Ask=" << market_condition.askPrice
+                  << ", Spread=" << market_condition.spread
+                  << ", Vol=" << market_condition.volatility
+                  << ", Side=" << (order->getSide() == models::OrderSide::BUY ? "BUY" : "SELL") << std::endl;
+        
+        if (market_condition.bidPrice <= 0.0 || market_condition.askPrice <= 0.0) {
+            std::cerr << "WARNING: Invalid market data for " << order->getTradingPair().toString()
+                     << ": Bid=" << market_condition.bidPrice
+                     << ", Ask=" << market_condition.askPrice 
+                     << " - this may cause pricing issues!" << std::endl;
+        }
         // Select the most appropriate order type
         OrderTypeSelection selection = order_type_selector_->selectOrderType(order, market_condition);
 
@@ -1531,6 +1540,19 @@ models::Order ExecutionService::createOrderFromSignal(const TradingSignal& signa
             if (selection.type == models::OrderType::LIMIT && selection.price > 0.0) {
                 order->setPrice(selection.price);
             }
+        }
+
+        // CRITICAL SAFETY CHECK: Never allow SELL orders with price = 0
+        if (order->getSide() == models::OrderSide::SELL && 
+            order->getType() == models::OrderType::LIMIT && 
+            order->getPrice() <= 0.0) {
+            
+            std::cerr << "CRITICAL ERROR: SELL order has price = 0! Converting to MARKET order for safety." << std::endl;
+            std::cerr << "PREVENTED SELL ORDER WITH PRICE=0 for " << order->getTradingPair().toString() << std::endl;
+            
+            order->setType(models::OrderType::MARKET);
+            order->setPrice(0.0);  // Market orders have 0 price by design
+            order->setTimeInForce(models::TimeInForce::IOC);
         }
 
         order->setTimeInForce(selection.time_in_force);

@@ -122,19 +122,8 @@
        "exchange": "BINANCE",
        "category": "metaverse",
        "description": "The Sandbox - Gaming metaverse"
-     },
-     {
-       "symbol": "GALA/USDT",
-       "exchange": "BINANCE",
-       "category": "gaming",
-       "description": "Gala Games - Blockchain gaming"
-     },
-     {
-       "symbol": "IMX/USDT",
-       "exchange": "BINANCE",
-       "category": "gaming_nft",
-       "description": "Immutable X - NFT scaling"
-     },
+     }
+     ,
      {
        "symbol": "SUI/USDT",
        "exchange": "BINANCE", 
@@ -159,12 +148,7 @@
        "category": "meme_ecosystem",
        "description": "Shiba Inu - Ecosystem expansion"
      },
-     {
-       "symbol": "FLOKI/USDT",
-       "exchange": "BINANCE", 
-       "category": "meme_utility",
-       "description": "Floki - Gaming utility meme"
-     },
+    
      {
        "symbol": "ATOM/USDT",
        "exchange": "BINANCE",
