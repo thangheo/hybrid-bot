@@ -336,7 +336,7 @@
       "parameters": {
         "minSignalStrength": 0.6,
         "confidenceThreshold": 0.7,
-        "signalTtlMs": 5000
+        "signalTtlMs": 500
       }
     },
     "momentumCorrelator": {

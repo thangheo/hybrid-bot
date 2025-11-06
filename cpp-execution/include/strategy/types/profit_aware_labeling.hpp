@@ -110,23 +110,22 @@ public:
             return core::Direction::NEUTRAL;
         }
         
-        // Calculate expected profit for BUY signal
-        double expectedProfitBuy = calculateExpectedProfit(
-            std::abs(normalizedReturn), regime, confidence
-        );
-        
-        // Calculate expected profit for SELL signal  
-        double expectedProfitSell = calculateExpectedProfit(
-            std::abs(normalizedReturn), regime, confidence
-        );
+        // Calculate expected profit based on signal direction and magnitude
+        double signalMagnitude = std::abs(normalizedReturn);
+        double expectedProfit = calculateExpectedProfit(signalMagnitude, regime, confidence);
         
         // Only label if expected profit > minimum threshold + trading cost
         double minProfitThreshold = thresholds_.minExpectedProfit + thresholds_.tradingCost;
         
-        if (normalizedReturn > 0 && expectedProfitBuy > minProfitThreshold) {
-            return core::Direction::BUY;
-        } else if (normalizedReturn < 0 && expectedProfitSell > minProfitThreshold) {
-            return core::Direction::SELL;
+        // DEBUG: Lower threshold temporarily to allow more signals for debugging
+        minProfitThreshold = std::min(minProfitThreshold, 0.0005); // 0.05% minimum for debugging
+        
+        if (expectedProfit > minProfitThreshold) {
+            if (normalizedReturn > 0) {
+                return core::Direction::BUY;
+            } else if (normalizedReturn < 0) {
+                return core::Direction::SELL;  
+            }
         }
         
         return core::Direction::NEUTRAL;
