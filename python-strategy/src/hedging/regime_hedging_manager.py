@@ -224,27 +224,22 @@ class RegimeHedgingManager:
                 logger.error("Cannot get current price")
                 return False
             
-            # Open SHORT position using LIMIT order for better execution
-            # Set limit price slightly above current price to ensure fill
-            limit_price = current_price * 1.0005  # 0.05% above current price
-            
-            order = self.exchange.create_limit_sell_order(
+            # Open SHORT position using MARKET order for guaranteed execution
+            order = self.exchange.create_market_sell_order(
                 symbol=self.symbol,
-                amount=self.hedge_amount,
-                price=limit_price
+                amount=self.hedge_amount
             )
             
             with self.lock:
                 self.is_hedged = True
                 self.current_short_order = order
                 self.last_hedge_time = datetime.now(timezone.utc)
-                self.entry_price = limit_price  # Track entry price for TP/SL
+                self.entry_price = current_price  # Track entry price for TP/SL
             
-            logger.info(f"🔴 OPENED SHORT HEDGE POSITION (LIMIT ORDER)")
+            logger.info(f"🔴 OPENED SHORT HEDGE POSITION (MARKET ORDER)")
             logger.info(f"📊 Symbol: {self.symbol}")
             logger.info(f"💰 Amount: {self.hedge_amount} BTC")
-            logger.info(f"💵 Market Price: ${current_price:,.2f}")
-            logger.info(f"💵 Limit Price: ${limit_price:,.2f}")
+            logger.info(f"💵 Entry Price: ${current_price:,.2f}")
             logger.info(f"📈 Leverage: {self.leverage}x")
             logger.info(f"🆔 Order ID: {order['id']}")
             

@@ -323,7 +323,32 @@ void PositionTracker::processExecutionReport(const ExecutionReport& executionRep
         } else {
             // PRODUCTION FIX: Create synthetic fill from order data for FILLED orders without fills array
             double fillQuantity = executionReport.filledQuantity();
-            double fillPrice = executionReport.price().value_or(0.0); // May be 0 for MARKET orders
+            double fillPrice = executionReport.price().value_or(0.0);
+            
+            // CRITICAL: For MARKET orders without price, try to get current market price
+            if (fillPrice <= 0.0) {
+                // Try to get current market price from m_dataInterface
+                if (m_dataInterface) {
+                    try {
+                        fillPrice = m_dataInterface->getCurrentPrice(tradingPairSymbol, 
+                                                                    executionReport.exchangeId().toString());
+                        if (fillPrice > 0.0) {
+                            LOG_INFO("PositionTracker: Retrieved market price for MARKET order - symbol={} price={}", 
+                                   tradingPairSymbol.toString(), fillPrice);
+                        } else {
+                            throw std::runtime_error("Market price is zero or negative");
+                        }
+                    } catch (const std::exception& e) {
+                        LOG_WARN("PositionTracker: Failed to get market price for MARKET order - symbol={} qty={} error={} - SKIPPING position update", 
+                               tradingPairSymbol.toString(), fillQuantity, e.what());
+                        return;
+                    }
+                } else {
+                    LOG_WARN("PositionTracker: No m_dataInterface available for MARKET order price - symbol={} qty={} - SKIPPING position update", 
+                           tradingPairSymbol.toString(), fillQuantity);
+                    return;
+                }
+            }
             
             if (executionReport.side() == core::Direction::SELL) {
                 fillQuantity = -fillQuantity;
@@ -340,7 +365,9 @@ void PositionTracker::processExecutionReport(const ExecutionReport& executionRep
             return;
         }
         
-        double weightedAvgPrice = totalValue / std::abs(totalFillQuantity);
+        // SAFETY: Prevent division by zero in weighted average price calculation
+        double weightedAvgPrice = (std::abs(totalFillQuantity) > 1e-8) ? 
+            (totalValue / std::abs(totalFillQuantity)) : 0.0;
         
         // Update or create position
         std::optional<Position> toNotify;
