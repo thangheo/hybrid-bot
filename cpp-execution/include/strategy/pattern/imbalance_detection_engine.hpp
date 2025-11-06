@@ -332,7 +332,7 @@ public:
     // Require model to have at least this many updates before saving (protect against saving untrained model)
     int requireModelReadyUpdates_ = 100;
     // Minimum number of model updates required before allowing the model to trigger trades
-    int bayesMinUpdatesToTrade_ = 3000;
+    int bayesMinUpdatesToTrade_ = 5000;
     // Minimum interval between saves (debounce)
     std::chrono::milliseconds bayesMinSaveInterval_{30000};
     // Runtime counter for updates since last save
