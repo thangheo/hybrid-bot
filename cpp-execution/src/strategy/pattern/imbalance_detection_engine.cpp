@@ -10,6 +10,7 @@
  */
 
  #include "strategy/pattern/imbalance_detection_engine.hpp"
+ #include "strategy/types/profit_aware_labeling.hpp"
  #include <common/event_bus.hpp>
  #include <common/trading_events.hpp>
  #include <algorithm>
@@ -125,6 +126,9 @@ public:
 };
 
 static StatisticalThresholdAdapter g_statThresholdAdapter;
+
+// Global profit-aware labeling instance
+static ProfitAwareLabeling g_profitLabeling;
 
 // Helper: build filesystem-friendly model filename for exchange+symbol
 static std::string buildSymbolModelPath(const std::string &baseDir, const core::ExchangeId &exch, const core::Symbol &sym) {
@@ -891,12 +895,23 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
 
                                     auto dyn = g_statThresholdAdapter.calculateThresholds(regimeIdx, vol);
 
-                                    // PRODUCTION FIX: Type-safe enum-based labeling
-                                    core::Direction labelDirection = core::Direction::NEUTRAL;  // Default to NEUTRAL
-                                    if (normalizedReturn > dyn.buyThreshold) {
-                                        labelDirection = core::Direction::BUY;
-                                    } else if (normalizedReturn < dyn.sellThreshold) {
-                                        labelDirection = core::Direction::SELL;
+                                    // Calculate confidence based on signal strength
+                                    double confidence = 0.5 + 0.3 * std::abs(normalizedReturn) / std::max(vol, 1e-6);
+                                    confidence = std::clamp(confidence, 0.0, 1.0);
+
+                                    // ENHANCED: Profit-aware labeling - only label if expected profit > fees
+                                    core::Direction labelDirection = g_profitLabeling.generateProfitAwareLabel(
+                                        normalizedReturn, regimeIdx, confidence, vol
+                                    );
+                                    
+                                    // Fallback to traditional thresholding if profit-aware doesn't have enough data
+                                    if (labelDirection == core::Direction::NEUTRAL && 
+                                        confidence > 0.7) { // High confidence fallback
+                                        if (normalizedReturn > dyn.buyThreshold) {
+                                            labelDirection = core::Direction::BUY;
+                                        } else if (normalizedReturn < dyn.sellThreshold) {
+                                            labelDirection = core::Direction::SELL;
+                                        }
                                     }
                                     
                                     // Type-safe conversion to integer label
@@ -906,9 +921,17 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                                     trackLabelingEvent(labelDirection, pt.symbol.toString(), normalizedReturn, 
                                                      std::chrono::duration_cast<std::chrono::milliseconds>(now - pt.timestamp));
 
+                                    // Calculate realized profit (after trading fees) 
+                                    double realizedPct = std::abs(std::exp(priceChangeLogRet) - 1.0);
+                                    double tradingFee = 0.001; // 0.1% fee
+                                    double realizedProfit = realizedPct - tradingFee;
+                                    
+                                    // Update profit-aware labeling with realized outcome
+                                    g_profitLabeling.updateHistory(normalizedReturn, realizedProfit, 
+                                                                 regimeIdx, confidence, vol);
+                                    
                                     // record for training and update stats with realized (non-normalized) absolute return
                                     toTrain.emplace_back(pt.features, label, pt.exchangeId, pt.symbol);
-                                    double realizedPct = std::abs(std::exp(priceChangeLogRet) - 1.0);
                                     g_statThresholdAdapter.updateStats(regimeIdx, priceChangeLogRet, vol);
                                     pendingTraining_.pop_front();
                             } else break;
