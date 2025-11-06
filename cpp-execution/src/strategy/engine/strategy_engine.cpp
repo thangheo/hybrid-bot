@@ -1052,16 +1052,16 @@ bool StrategyEngine::applySignalFilters(const TradingSignal& signal) const {
                 return false;
             }
             
-            // Additional check: Require STRONG uptrend for BUY
+            // Additional check: Require VERY STRONG uptrend for BUY
             if (has_regime_info && regime_info.valid && regime_info.p_trend_up.has_value()) {
                 double p_trend = regime_info.p_trend_up.value();
-                if (p_trend < 0.6) {  // Chỉ mua khi p_trend_up >= 60%
-                    LOG_INFO("REGIME BLOCKED BUY signal {} for {}: p_trend_up={:.3f} < 0.6 (uptrend yếu)",
+                if (p_trend < 0.65) {  // TĂNG độ khó: chỉ mua khi p_trend_up >= 65%
+                    LOG_INFO("REGIME BLOCKED BUY signal {} for {}: p_trend_up={:.3f} < 0.65 (uptrend chưa đủ mạnh)",
                              signal.id, symbol, p_trend);
                     return false;
                 }
                 
-                LOG_INFO("REGIME ALLOWED BUY signal {} for {}: p_trend_up={:.3f} >= 0.6 (uptrend mạnh)", 
+                LOG_INFO("REGIME ALLOWED BUY signal {} for {}: p_trend_up={:.3f} >= 0.65 (uptrend rất mạnh)", 
                          signal.id, symbol, p_trend);
             }
         }
@@ -1069,21 +1069,37 @@ bool StrategyEngine::applySignalFilters(const TradingSignal& signal) const {
     
     // Handle SELL signals - Allow based on regime downtrend OR imbalance
     else if (signal.direction == core::Direction::SELL) {
-        // Check if we should sell based on regime info
+        // Check if we should sell based on regime info - DỄ DÀNG HỦN
         if (has_regime_info && regime_info.valid && regime_info.p_trend_up.has_value()) {
             double p_trend = regime_info.p_trend_up.value();
             
-            // Allow SELL if regime shows downtrend (p_trend_up < 0.4)
-            if (p_trend < 0.4) {
-                LOG_INFO("REGIME ALLOWED SELL signal {} for {}: p_trend_up={:.3f} < 0.4 (downtrend detected)",
+            // Allow SELL if regime shows downtrend OR weak uptrend (p_trend_up < 0.5)
+            if (p_trend < 0.5) {  // DỄ HƠN: sell khi p_trend_up < 50% (thay vì 40%)
+                LOG_INFO("REGIME ALLOWED SELL signal {} for {}: p_trend_up={:.3f} < 0.5 (không đủ uptrend để giữ)",
                          signal.id, symbol, p_trend);
-                return true;  // Luôn cho phép sell khi có downtrend
+                return true;  // Luôn cho phép sell khi uptrend yếu
             }
             
-            // For neutral/uptrend (p_trend >= 0.4), only allow SELL if signal strength is high
-            if (signal.confidence < 0.7) {  // Require high confidence (>= 0.7)
-                LOG_INFO("REGIME BLOCKED SELL signal {} for {}: p_trend_up={:.3f} >= 0.4 but confidence too low ({:.3f})",
+            // For strong uptrend (p_trend >= 0.5), only allow SELL if signal strength is decent
+            if (signal.confidence < 0.5) {  // GIẢM requirement: chỉ cần confidence >= 0.5 (thay vì 0.7)
+                LOG_INFO("REGIME BLOCKED SELL signal {} for {}: p_trend_up={:.3f} >= 0.5 but confidence too low ({:.3f})",
                          signal.id, symbol, p_trend, signal.confidence);
+                return false;
+            }
+            
+            LOG_INFO("REGIME ALLOWED SELL signal {} for {}: p_trend_up={:.3f} >= 0.5 nhưng confidence cao ({:.3f})",
+                     signal.id, symbol, p_trend, signal.confidence);
+        }
+        
+        // If no regime info, be MORE AGGRESSIVE with SELL signals (allow all reasonable sells)
+        if (!has_regime_info) {
+            if (signal.confidence >= 0.4) {  // Chỉ cần confidence >= 0.4 khi không có regime data
+                LOG_INFO("NO REGIME DATA - ALLOWED SELL signal {} for {}: confidence={:.3f} >= 0.4",
+                         signal.id, symbol, signal.confidence);
+                return true;
+            } else {
+                LOG_INFO("NO REGIME DATA - BLOCKED SELL signal {} for {}: confidence={:.3f} < 0.4",
+                         signal.id, symbol, signal.confidence);
                 return false;
             }
         }
@@ -1198,8 +1214,8 @@ void StrategyEngine::generateRegimeBasedSellSignals(const std::string& symbol) {
     
     double p_trend = regime_info.p_trend_up.value();
     
-    // Generate SELL signal when regime shows strong downtrend (p_trend_up < 0.25)
-    if (p_trend < 0.25) {
+    // Generate SELL signal when regime shows downtrend or weak uptrend (p_trend_up < 0.35)
+    if (p_trend < 0.35) {  // DỄ HƠN: sell khi p_trend_up < 35% (thay vì 25%)
         // Create a regime-based trading signal
         TradingSignal regime_sell_signal;
         regime_sell_signal.id = "regime_sell_" + std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count());
@@ -1216,7 +1232,7 @@ void StrategyEngine::generateRegimeBasedSellSignals(const std::string& symbol) {
         // Add regime context to signal metadata
         std::ostringstream ss;
         ss << "Regime-based SELL signal: p_trend_up=" << std::fixed << std::setprecision(3) << p_trend 
-           << " < 0.25 (strong downtrend detected)";
+           << " < 0.35 (downtrend/weak uptrend detected)";
         
         if (regime_info.stay_prob.has_value()) {
             ss << ", stay_prob=" << std::fixed << std::setprecision(3) << regime_info.stay_prob.value();
@@ -1225,7 +1241,7 @@ void StrategyEngine::generateRegimeBasedSellSignals(const std::string& symbol) {
         // Signal metadata (if available in TradingSignal structure)
         // regime_sell_signal.metadata = ss.str();
         
-        LOG_INFO("REGIME SELL SIGNAL GENERATED: {} - p_trend_up={:.3f} < 0.25 (strong downtrend)", 
+        LOG_INFO("REGIME SELL SIGNAL GENERATED: {} - p_trend_up={:.3f} < 0.35 (downtrend/weak uptrend)", 
                  symbol, p_trend);
         
         // Send signal through the normal pipeline

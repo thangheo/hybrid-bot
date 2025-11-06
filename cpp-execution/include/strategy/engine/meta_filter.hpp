@@ -9,8 +9,8 @@
 namespace trading::strategy::engine {
 
 struct MetaFilterConfig {
-    double min_p_trend_up = 0.6;           // Minimum p_trend_up threshold (TĂNG LÊN 60% để chỉ mua khi uptrend mạnh)
-    double min_regime_confidence = 0.4;    // Minimum regime_confidence threshold (tăng từ 0.2 lên 0.4)
+    double min_p_trend_up = 0.65;          // Minimum p_trend_up threshold (TĂNG LÊN 65% để chỉ mua khi uptrend rất mạnh)
+    double min_regime_confidence = 0.45;   // Minimum regime_confidence threshold (tăng từ 0.4 lên 0.45)
     bool enable_trend_filter = true;       // Enable trend confidence filtering
     
     // Emergency exit settings
