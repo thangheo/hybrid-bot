@@ -49,24 +49,24 @@ target_link_libraries(strategy
 # Set output directory
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../../bin)
 
-# Create the executable - ONLY link libraries, don't add source files manually
-add_executable(strategy_app strategy_app.cpp)
-
-target_link_libraries(strategy_app
-    PRIVATE
-        strategy          # Your strategy library
-        data_ingestion    # Required dependencies
-        common
-        communication
-        zmq
-        jsoncpp
-        pthread
-        protobuf
-)
-
-# Ensure the executable can find headers
-target_include_directories(strategy_app
-    PRIVATE
-        ${CMAKE_SOURCE_DIR}/include
-
-)
+# Create the executable - DISABLED (test file removed)
+# add_executable(strategy_app strategy_app.cpp)
+# 
+# target_link_libraries(strategy_app
+#     PRIVATE
+#         strategy          # Your strategy library
+#         data_ingestion    # Required dependencies
+#         common
+#         communication
+#         zmq
+#         jsoncpp
+#         pthread
+#         protobuf
+# )
+# 
+# # Ensure the executable can find headers
+# target_include_directories(strategy_app
+#     PRIVATE
+#         ${CMAKE_SOURCE_DIR}/include
+# 
+# )

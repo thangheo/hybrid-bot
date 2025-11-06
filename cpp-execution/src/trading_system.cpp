@@ -1,6 +1,8 @@
 #include "trading_system.hpp"
 #include "strategy/core_analysis/regime_subscriber.hpp"
 #include "common/quantity_precision.hpp" // symbol precision helper for exchange-compliant quantities
+#include <nlohmann/json.hpp>
+#include <fstream>
 
 // Use fully-qualified ::execution::SymbolPrecisionManager to avoid ambiguity
 
@@ -125,6 +127,9 @@ bool Trading_system::initialize() {
         return false;
     }
     std::cout << "=== INITIALIZING FULL TRADING SYSTEM ===" << std::endl;
+    
+    // 🚨 EMERGENCY: Load current PnL state to block losing symbols
+    loadEmergencyState();
     
     // 1. Initialize event bus first
     common::EventBus::getInstance().start();
@@ -891,6 +896,12 @@ void Trading_system::signalWorkerLoop(size_t workerId) {
             try {
                 //if signal is neutral, skip
                 if (signal.direction == core::Direction::NEUTRAL) continue;
+                
+                // 🚨 EMERGENCY FREQUENCY & RISK CHECK
+                if (!emergencyFrequencyCheck(signal.symbol.toString())) {
+                    continue; // Skip if trading too frequently
+                }
+                
                 signalsGenerated_++;
                              double adjustedStrength = signal.strength;
               
@@ -1162,6 +1173,9 @@ void Trading_system::execWorkerLoop(size_t workerId) {
                       << " qty=" << finalQty
                       << " notional=$" << (currentPrice * finalQty)
                       << std::endl;
+            
+            // 🚨 RECORD TRADE FOR EMERGENCY FREQUENCY TRACKING
+            recordTrade(task.symbol.toString());
                       
         } catch (const std::exception &e) {
             std::cerr << "Exec worker " << workerId << " error: " << e.what() << std::endl;
@@ -1276,6 +1290,120 @@ void Trading_system::realExecution(const execution::TradingSignal& signal) {
     execQueue_.push_back(signal);
     lk.unlock();
     execQueueCv_.notify_one();
+}
+
+// 🚨 EMERGENCY RISK & FREQUENCY CONTROLS IMPLEMENTATION
+
+bool Trading_system::emergencyFrequencyCheck(const std::string& symbol) {
+    std::lock_guard<std::mutex> lock(emergencyMutex_);
+    
+    if (emergencyStop_.load()) {
+        std::cout << "🚫 EMERGENCY STOP ACTIVE - Blocking all signals for " << symbol << std::endl;
+        return false;
+    }
+    
+    auto now = std::chrono::system_clock::now();
+    
+    // 1. Check minimum gap between trades
+    auto lastTradeIt = lastTradeTime_.find(symbol);
+    if (lastTradeIt != lastTradeTime_.end()) {
+        auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - lastTradeIt->second);
+        if (elapsed.count() < MIN_GAP_SECONDS) {
+            std::cout << "🚫 FREQUENCY BLOCK: " << symbol << " - " << elapsed.count() 
+                      << "s < " << MIN_GAP_SECONDS << "s required gap" << std::endl;
+            return false;
+        }
+    }
+    
+    // 2. Check hourly trade limit
+    auto currentHour = std::chrono::duration_cast<std::chrono::hours>(now.time_since_epoch()).count();
+    std::string hourKey = symbol + "_" + std::to_string(currentHour);
+    
+    if (hourlyTradeCount_[hourKey] >= MAX_TRADES_PER_HOUR) {
+        std::cout << "🚫 HOURLY LIMIT: " << symbol << " - " << hourlyTradeCount_[hourKey] 
+                  << "/" << MAX_TRADES_PER_HOUR << " trades this hour" << std::endl;
+        return false;
+    }
+    
+    // 3. Check symbol PnL limit
+    auto pnlIt = symbolPnL_.find(symbol);
+    if (pnlIt != symbolPnL_.end() && pnlIt->second < MAX_LOSS_PER_SYMBOL) {
+        std::cout << "🚫 LOSS LIMIT: " << symbol << " - Current PnL " << pnlIt->second 
+                  << " below limit " << MAX_LOSS_PER_SYMBOL << std::endl;
+        return false;
+    }
+    
+    // 4. Check total portfolio loss
+    double totalLoss = 0.0;
+    for (const auto& [sym, pnl] : symbolPnL_) {
+        if (pnl < 0) totalLoss += pnl;
+    }
+    if (totalLoss < MAX_TOTAL_DAILY_LOSS) {
+        emergencyStop_.store(true);
+        std::cout << "🚨 EMERGENCY STOP TRIGGERED: Total loss " << totalLoss 
+                  << " exceeds limit " << MAX_TOTAL_DAILY_LOSS << std::endl;
+        return false;
+    }
+    
+    return true; // All checks passed
+}
+
+bool Trading_system::emergencyRiskCheck(const std::string& symbol, double currentPnL) {
+    std::lock_guard<std::mutex> lock(emergencyMutex_);
+    
+    symbolPnL_[symbol] = currentPnL;
+    
+    if (currentPnL < MAX_LOSS_PER_SYMBOL) {
+        std::cout << "🚫 RISK BLOCK: " << symbol << " PnL " << currentPnL 
+                  << " below safety limit " << MAX_LOSS_PER_SYMBOL << std::endl;
+        return false;
+    }
+    
+    return true;
+}
+
+void Trading_system::recordTrade(const std::string& symbol) {
+    std::lock_guard<std::mutex> lock(emergencyMutex_);
+    
+    auto now = std::chrono::system_clock::now();
+    lastTradeTime_[symbol] = now;
+    
+    // Update hourly counter
+    auto currentHour = std::chrono::duration_cast<std::chrono::hours>(now.time_since_epoch()).count();
+    std::string hourKey = symbol + "_" + std::to_string(currentHour);
+    hourlyTradeCount_[hourKey]++;
+    
+    std::cout << "📊 TRADE RECORDED: " << symbol << " (Hourly count: " 
+              << hourlyTradeCount_[hourKey] << "/" << MAX_TRADES_PER_HOUR << ")" << std::endl;
+}
+
+void Trading_system::loadEmergencyState() {
+    // Load current PnL state from analysis file if available
+    try {
+        std::ifstream file("/home/e8/works/hybrid-bot/tools/pnl_analyzer/trade_analysis.json");
+        if (file.is_open()) {
+            nlohmann::json data;
+            file >> data;
+            
+            if (data.contains("pairs")) {
+                std::lock_guard<std::mutex> lock(emergencyMutex_);
+                
+                for (auto& [symbol, pairData] : data["pairs"].items()) {
+                    double totalPnl = pairData.value("total_pnl", 0.0);
+                    symbolPnL_[symbol] = totalPnl;
+                    
+                    std::cout << "💰 LOADED PnL: " << symbol << " = $" << totalPnl << std::endl;
+                    
+                    // Auto-block symbols already at loss limit
+                    if (totalPnl < MAX_LOSS_PER_SYMBOL) {
+                        std::cout << "🚫 AUTO-BLOCKED: " << symbol << " due to existing losses" << std::endl;
+                    }
+                }
+            }
+        }
+    } catch (const std::exception& e) {
+        std::cout << "⚠️  Could not load PnL state: " << e.what() << std::endl;
+    }
 }
 
         
