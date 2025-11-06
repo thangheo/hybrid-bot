@@ -6,7 +6,9 @@
 #include <mutex>
 #include <algorithm>
 #include <cmath>
+#include <chrono>
 #include "core/types.hpp"
+#include "core/direction.hpp"
 
 namespace trading {
 namespace strategy {
@@ -42,7 +44,9 @@ private:
     static constexpr double MIN_SAMPLES_FOR_ESTIMATION = 50;
 
 public:
-    ProfitAwareLabeling(const ProfitThresholds& thresholds = ProfitThresholds{})
+    ProfitAwareLabeling() : thresholds_{} {}
+    
+    ProfitAwareLabeling(const ProfitThresholds& thresholds) 
         : thresholds_(thresholds) {}
 
     /**
