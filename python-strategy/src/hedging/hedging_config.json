@@ -5,15 +5,21 @@
     "api_secret": "",
     "testnet": false,
     "emergency_p_trend_threshold": 0.01,
-    "close_p_trend_threshold": 0.9,
-    "hedge_amount": 0.02,
+    "close_p_trend_threshold": 0.5,
+    "hedge_amount": 0.03,
     "leverage": 10,
+    "take_profit_pct": 0.01,
+    "stop_loss_pct": 0.02,
+    "max_hold_minutes": 60,
     "symbols": ["BTC/USDT"],
     "description": {
-      "emergency_p_trend_threshold": "Khi p_trend_up <= 0.01 thì mở short hedge (market dump)",
-      "close_p_trend_threshold": "Khi p_trend_up >= 0.9 thì đóng short hedge (market recovery)",
+      "emergency_p_trend_threshold": "Khi p_trend_up <= 0.01 + micro_ok=true + stay_prob>0.5 thì mở short hedge (confirmed market dump)",
+      "close_p_trend_threshold": "Khi p_trend_up >= 0.5 thì đóng short hedge (market recovery)",
       "hedge_amount": "Số lượng BTC để hedge (0.01 BTC)",
-      "leverage": "Đòn bẩy sử dụng (10x)"
+      "leverage": "Đòn bẩy sử dụng (10x)",
+      "take_profit_pct": "Take profit khi có lãi 1% (0.01)",
+      "stop_loss_pct": "Stop loss khi lỗ 2% (0.02)", 
+      "max_hold_minutes": "Tự động đóng position sau 60 phút"
     }
   }
 }
