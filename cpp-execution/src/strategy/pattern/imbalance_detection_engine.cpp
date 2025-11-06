@@ -753,7 +753,7 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                             if (found_regime && rinfo.probs.size() == ImbalanceDetectionEngine::NUMBER_OF_REGIMES) {
                                 hasRegimeData = true;
                                 // Log the probabilities we found
-                                // LOG_DEBUG("ImbalanceDetectionEngine: Found regime data - probs=[{:.1f}, {:.1f}, {:.1f}, {:.1f}], regime={}", 
+                                // LOG_TRACE("ImbalanceDetectionEngine: Found regime data - probs=[{:.1f}, {:.1f}, {:.1f}, {:.1f}], regime={}", 
                                 //          rinfo.probs[0], rinfo.probs[1], rinfo.probs[2], rinfo.probs[3], rinfo.regime); 
                                 
                                 // Find most probable regime
@@ -763,10 +763,10 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                                         activeRegime = i;
                                     }
                                 }
-                                // LOG_DEBUG("ImbalanceDetectionEngine: Found regime data for '{}': active_regime={} (prob={:.3f})", 
+                                // LOG_TRACE("ImbalanceDetectionEngine: Found regime data for '{}': active_regime={} (prob={:.3f})", 
                                 //          lookup_symbol, activeRegime, maxProb);
                             } else {
-                                // LOG_DEBUG("ImbalanceDetectionEngine: No valid regime data found for '{}' (found={}, probs.size={})", 
+                                // LOG_TRACE("ImbalanceDetectionEngine: No valid regime data found for '{}' (found={}, probs.size={})", 
                                 //          lookup_symbol, found_regime, rinfo.probs.size());
                             }
                         }
@@ -783,7 +783,7 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                                     std::lock_guard<std::mutex> lk(bayesHandlesMutex_);
                                     bayesHandles_[m.exchangeId.toString() + "_" + m.symbol.toString()] = handles;
                                 }
-                                LOG_DEBUG("ImbalanceDetectionEngine: lazy created bayes handle for regime {}", activeRegime);
+                                LOG_TRACE("ImbalanceDetectionEngine: lazy created bayes handle for regime {}", activeRegime);
                             } catch (...) {
                                 handles[activeRegime] = nullptr;
                             }
@@ -793,7 +793,7 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                         if (activeHandle) {
                             try {
                                 activeSignal = trading::perception::bayes_predict(activeHandle, features);
-                                LOG_DEBUG("ImbalanceDetectionEngine: Active regime {} prediction: prob={:.3f}, dir={}, should_trade={}", 
+                                LOG_TRACE("ImbalanceDetectionEngine: Active regime {} prediction: prob={:.3f}, dir={}, should_trade={}", 
                                          activeRegime, activeSignal.probability, 
                                          (activeSignal.direction == core::Direction::BUY ? "BUY" : 
                                           activeSignal.direction == core::Direction::SELL ? "SELL" : "NEUTRAL"),
@@ -817,7 +817,7 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
 
                         if (maxModelUpdates < bayesMinUpdatesToTrade_) {
                             // not enough training yet — don't trade
-                            LOG_DEBUG("ImbalanceDetectionEngine: bayes model updates too low (max={} < min={}), skipping trade", maxModelUpdates, bayesMinUpdatesToTrade_);
+                            LOG_TRACE("ImbalanceDetectionEngine: bayes model updates too low (max={} < min={}), skipping trade", maxModelUpdates, bayesMinUpdatesToTrade_);
                         } else if (signal.should_trade and signal.position_size > 0.0) {
                             core::Direction dir = signal.direction;
                             OrderBookMetrics mcopy = m;
@@ -974,11 +974,11 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                             if (regime_subscriber_) {
                                 std::string lookup_symbol = sym.toString();
                                 
-                                // LOG_DEBUG("ImbalanceDetectionEngine: Training lookup for symbol: '{}'", lookup_symbol);
+                                // LOG_TRACE("ImbalanceDetectionEngine: Training lookup for symbol: '{}'", lookup_symbol);
                                 
                                 // First try the symbol as-is
                                 bool found_regime = regime_subscriber_->get(lookup_symbol, rinfo);
-                                LOG_DEBUG("ImbalanceDetectionEngine: First lookup '{}' found={}", lookup_symbol, found_regime);
+                                // LOG_TRACE("ImbalanceDetectionEngine: First lookup '{}' found={}", lookup_symbol, found_regime);
                                 
                                 // If not found, try converting format (BTC/USDT -> BTCUSDT)
                                 if (!found_regime) {
@@ -986,7 +986,7 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                                     // Remove slash and dash characters
                                     converted_symbol.erase(std::remove(converted_symbol.begin(), converted_symbol.end(), '/'), converted_symbol.end());
                                     converted_symbol.erase(std::remove(converted_symbol.begin(), converted_symbol.end(), '-'), converted_symbol.end());
-                                    LOG_DEBUG("ImbalanceDetectionEngine: Trying converted symbol: '{}' -> '{}'", lookup_symbol, converted_symbol);
+                                    LOG_TRACE("ImbalanceDetectionEngine: Trying converted symbol: '{}' -> '{}'", lookup_symbol, converted_symbol);
                                     found_regime = regime_subscriber_->get(converted_symbol, rinfo);
                                 }
                                 

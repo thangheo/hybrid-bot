@@ -75,9 +75,23 @@ OrderTypeSelection OrderTypeSelector::defaultSelectionStrategy(
             // For buy orders: use price slightly above best bid to ensure quick fill
             // For sell orders: use price slightly below best ask to ensure quick fill
             if (order->getSide() == models::OrderSide::BUY) {
-                selection.price = condition.bidPrice * (1.001); // 0.1% above bid
-            } else {
-                selection.price = condition.askPrice * (0.999); // 0.1% below ask
+                if (condition.bidPrice > 0.0) {
+                    selection.price = condition.bidPrice * (1.001); // 0.1% above bid
+                } else {
+                    // Fallback: use a safe default or revert to market
+                    selection.type = models::OrderType::MARKET;
+                    selection.price = 0.0;
+                    selection.reason = "Converted to market - no valid bid price";
+                }
+            } else { // SELL order
+                if (condition.askPrice > 0.0) {
+                    selection.price = condition.askPrice * (0.999); // 0.1% below ask
+                } else {
+                    // CRITICAL FIX: Never set SELL price to 0!
+                    selection.type = models::OrderType::MARKET;
+                    selection.price = 0.0;
+                    selection.reason = "Converted to market - no valid ask price (prevents 0 price SELL)";
+                }
             }
             
             selection.time_in_force = models::TimeInForce::GTC;
@@ -107,15 +121,21 @@ OrderTypeSelection OrderTypeSelector::defaultSelectionStrategy(
             double current_price = order->getPrice();
             
             // Adjust price if needed based on current market conditions
-            if (order->getSide() == models::OrderSide::BUY && current_price < condition.bidPrice) {
+            if (order->getSide() == models::OrderSide::BUY && condition.bidPrice > 0.0 && current_price < condition.bidPrice) {
                 selection.price = condition.bidPrice * (1.001); // 0.1% above bid
                 selection.reason = "Adjusted limit buy price to increase fill probability";
-            } else if (order->getSide() == models::OrderSide::SELL && current_price > condition.askPrice) {
+            } else if (order->getSide() == models::OrderSide::SELL && condition.askPrice > 0.0 && current_price > condition.askPrice) {
                 selection.price = condition.askPrice * (0.999); // 0.1% below ask
                 selection.reason = "Adjusted limit sell price to increase fill probability";
-            } else {
+            } else if (current_price > 0.0) {
                 selection.price = current_price;
                 selection.reason = "Maintained current limit price";
+            } else {
+                // CRITICAL FIX: If no valid prices available, convert to market
+                selection.type = models::OrderType::MARKET;
+                selection.price = 0.0;
+                selection.time_in_force = models::TimeInForce::IOC;
+                selection.reason = "Converted to market - no valid price data available";
             }
             
             selection.time_in_force = models::TimeInForce::GTC;
