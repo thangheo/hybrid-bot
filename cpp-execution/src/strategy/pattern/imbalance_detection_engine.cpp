@@ -594,7 +594,7 @@ ImbalanceDetectionEngine::~ImbalanceDetectionEngine() {
             } catch (const std::exception &ex) { LOG_WARN("bayes_destroy failed for legacy handle: {}", ex.what()); } catch(...) { LOG_WARN("bayes_destroy failed for legacy handle (unknown error)"); }
             bayes_handle_ = nullptr;
             bayesInitialized_.store(false);
-            LOG_DEBUG("ImbalanceDetectionEngine: destroyed bayes adapter handle");
+            LOG_TRACE("ImbalanceDetectionEngine: destroyed bayes adapter handle");
         }
     } catch (const std::exception &ex) {
         LOG_WARN("ImbalanceDetectionEngine: exception in destructor persistence: {}", ex.what());
@@ -732,13 +732,13 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                         if (regime_subscriber_) {
                             trading::strategy::core_analysis::RegimeInfo rinfo;
                             std::string lookup_symbol = m.symbol.toString();
-                            LOG_DEBUG("ImbalanceDetectionEngine: regime_subscriber_ is valid, looking up regime for symbol: '{}'", lookup_symbol);
+                            LOG_TRACE("ImbalanceDetectionEngine: regime_subscriber_ is valid, looking up regime for symbol: '{}'", lookup_symbol);
                             
 
                             
                             // First try the symbol as-is
                             bool found_regime = regime_subscriber_->get(lookup_symbol, rinfo);
-                            LOG_DEBUG("ImbalanceDetectionEngine: First lookup '{}' found={}", lookup_symbol, found_regime);
+                            LOG_TRACE("ImbalanceDetectionEngine: First lookup '{}' found={}", lookup_symbol, found_regime);
                             
                             // If not found, try converting format (BTC/USDT -> BTCUSDT)
                             if (!found_regime) {
@@ -746,7 +746,7 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                                 // Remove slash and dash characters
                                 converted_symbol.erase(std::remove(converted_symbol.begin(), converted_symbol.end(), '/'), converted_symbol.end());
                                 converted_symbol.erase(std::remove(converted_symbol.begin(), converted_symbol.end(), '-'), converted_symbol.end());
-                                LOG_DEBUG("ImbalanceDetectionEngine: Trying converted symbol: '{}' -> '{}'", lookup_symbol, converted_symbol);
+                                LOG_TRACE("ImbalanceDetectionEngine: Trying converted symbol: '{}' -> '{}'", lookup_symbol, converted_symbol);
                                 found_regime = regime_subscriber_->get(converted_symbol, rinfo);
                             }
                             
@@ -974,7 +974,7 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                             if (regime_subscriber_) {
                                 std::string lookup_symbol = sym.toString();
                                 
-                                LOG_DEBUG("ImbalanceDetectionEngine: Training lookup for symbol: '{}'", lookup_symbol);
+                                // LOG_DEBUG("ImbalanceDetectionEngine: Training lookup for symbol: '{}'", lookup_symbol);
                                 
                                 // First try the symbol as-is
                                 bool found_regime = regime_subscriber_->get(lookup_symbol, rinfo);
@@ -993,8 +993,8 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                                 if (found_regime && rinfo.probs.size() == ImbalanceDetectionEngine::NUMBER_OF_REGIMES) {
                                     hasRegimeData = true;
                                     // Log the probabilities we found
-                                    LOG_DEBUG("ImbalanceDetectionEngine: Found regime data - probs=[{:.1f}, {:.1f}, {:.1f}, {:.1f}], regime={}", 
-                                             rinfo.probs[0], rinfo.probs[1], rinfo.probs[2], rinfo.probs[3], rinfo.regime); 
+                                    // LOG_TRACE("ImbalanceDetectionEngine: Found regime data - probs=[{:.1f}, {:.1f}, {:.1f}, {:.1f}], regime={}", 
+                                    //          rinfo.probs[0], rinfo.probs[1], rinfo.probs[2], rinfo.probs[3], rinfo.regime); 
                                     
                                     // Find the regime with highest probability
                                     for (int i = 0; i < ImbalanceDetectionEngine::NUMBER_OF_REGIMES; ++i) {
@@ -1004,7 +1004,7 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                                         }
                                     }
                                 } else {
-                                    LOG_DEBUG("ImbalanceDetectionEngine: No valid regime data found for '{}' (found={}, probs.size={})", 
+                                    LOG_TRACE("ImbalanceDetectionEngine: No valid regime data found for '{}' (found={}, probs.size={})", 
                                              lookup_symbol, found_regime, rinfo.probs.size());
                                 }
                             }
@@ -1025,7 +1025,7 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                                                     std::string key = exch.toString() + "_" + sym.toString();
                                                     bayesHandles_[key] = handles;
                                                 }
-                                                LOG_DEBUG("ImbalanceDetectionEngine: lazy created bayes handle for regime {} ({}:{})", 
+                                                LOG_TRACE("ImbalanceDetectionEngine: lazy created bayes handle for regime {} ({}:{})", 
                                                          i, exch.toString(), sym.toString());
                                             } catch (...) {
                                                 handles[i] = nullptr;
@@ -1036,8 +1036,8 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                                             // Could also use weighted updates based on probability
                                             trading::perception::bayes_update(handles[i], features, label);
                                             anyUpdated = true;
-                                            LOG_DEBUG("ImbalanceDetectionEngine: Updated regime {} with prob={:.3f} for {}:{}", 
-                                                     i, rinfo.probs[i], exch.toString(), sym.toString());
+                                            // LOG_TRACE("ImbalanceDetectionEngine: Updated regime {} with prob={:.3f} for {}:{}", 
+                                            //          i, rinfo.probs[i], exch.toString(), sym.toString());
                                         }
                                     }
                                 }
@@ -1051,7 +1051,7 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                                             std::string key = exch.toString() + "_" + sym.toString();
                                             bayesHandles_[key] = handles;
                                         }
-                                        LOG_DEBUG("ImbalanceDetectionEngine: lazy created fallback bayes handle for regime 0 ({}:{})", 
+                                        LOG_TRACE("ImbalanceDetectionEngine: lazy created fallback bayes handle for regime 0 ({}:{})", 
                                                  exch.toString(), sym.toString());
                                     } catch (...) {
                                         handles[0] = nullptr;
@@ -1060,13 +1060,13 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                                 if (handles[0]) {
                                     trading::perception::bayes_update(handles[0], features, label);
                                     anyUpdated = true;
-                                    LOG_DEBUG("ImbalanceDetectionEngine: Updated fallback regime 0 for {}:{}", 
+                                    LOG_TRACE("ImbalanceDetectionEngine: Updated fallback regime 0 for {}:{}", 
                                              exch.toString(), sym.toString());
                                 }
                             }
                             
                             if (!anyUpdated) {
-                                LOG_DEBUG("ImbalanceDetectionEngine: no bayes handle available for active regime {} ({}:{}), skipping update", 
+                                LOG_TRACE("ImbalanceDetectionEngine: no bayes handle available for active regime {} ({}:{}), skipping update", 
                                          activeRegime, exch.toString(), sym.toString());
                                 continue;
                             }
@@ -1259,7 +1259,7 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
             // legacy single-file mode: create a shared global handle
             if (!bayes_handle_) {
                 bayes_handle_ = trading::perception::bayes_create();
-                LOG_DEBUG("ImbalanceDetectionEngine: created bayes adapter handle (single-file mode)");
+                LOG_TRACE("ImbalanceDetectionEngine: created bayes adapter handle (single-file mode)");
             }
             if (bayes_handle_) {
                 try {
@@ -1280,7 +1280,7 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
         // Initialize lastSaveTime_ to now to avoid treating an uninitialized
         // time_point as long-ago and triggering an immediate interval save.
         lastSaveTime_ = std::chrono::steady_clock::now();
-        LOG_DEBUG("ImbalanceDetectionEngine: bayes lastSaveTime initialized");
+        LOG_TRACE("ImbalanceDetectionEngine: bayes lastSaveTime initialized");
     } catch (const std::exception &ex) {
         LOG_WARN("ImbalanceDetectionEngine: failed to create bayes adapter: {}", ex.what());
     } catch (...) {
@@ -1343,7 +1343,7 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
             if (detectorQueue_.size() < detectorQueueMax_) {
                 detectorQueue_.push_back(metrics);
                 detectorQueueCv_.notify_one();
-                // LOG_DEBUG("ImbalanceDetectionEngine: enqueued metrics for {}:{} (queue size={})", metrics.exchangeId, metrics.symbol, detectorQueue_.size());
+                // LOG_TRACE("ImbalanceDetectionEngine: enqueued metrics for {}:{} (queue size={})", metrics.exchangeId, metrics.symbol, detectorQueue_.size());
                 return false; // enqueued for async processing
             } else {
                 LOG_WARN("ImbalanceDetectionEngine: detector queue full ({}), falling back to synchronous run", detectorQueue_.size());
@@ -3438,7 +3438,7 @@ double ImbalanceDetectionEngine::calculateVariance(const std::vector<double>& da
 
     // Publish to EventBus / callbacks unless publishing is disabled for debugging
     if (!publishEvents_.load()) {
-        LOG_DEBUG("ImbalanceDetectionEngine: publishing disabled, skipping ImbalanceEvent id={}", event.eventId);
+        LOG_TRACE("ImbalanceDetectionEngine: publishing disabled, skipping ImbalanceEvent id={}", event.eventId);
         return;
     }
 
@@ -3496,7 +3496,7 @@ void ImbalanceDetectionEngine::createImbalanceEventForBayesModel(ImbalanceType t
 
     // Publish to EventBus / callbacks unless publishing is disabled for debugging
     if (!publishEvents_.load()) {
-        LOG_DEBUG("ImbalanceDetectionEngine: publishing disabled, skipping ImbalanceEvent id={}", event.eventId);
+        LOG_TRACE("ImbalanceDetectionEngine: publishing disabled, skipping ImbalanceEvent id={}", event.eventId);
         return;
     }
 
@@ -3506,7 +3506,7 @@ void ImbalanceDetectionEngine::createImbalanceEventForBayesModel(ImbalanceType t
 
  void ImbalanceDetectionEngine::notifyImbalanceCallbacks(const ImbalanceEvent& event) {
     if (!publishEvents_.load()) {
-        LOG_DEBUG("ImbalanceDetectionEngine: publishing disabled, skipping callback notify for eventId={}", event.eventId);
+        LOG_TRACE("ImbalanceDetectionEngine: publishing disabled, skipping callback notify for eventId={}", event.eventId);
         return;
     }
     // Simply publish to event bus - no locks, no deadlocks
