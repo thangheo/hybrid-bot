@@ -820,6 +820,16 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                             LOG_TRACE("ImbalanceDetectionEngine: bayes model updates too low (max={} < min={}), skipping trade", maxModelUpdates, bayesMinUpdatesToTrade_);
                         } else if (signal.should_trade and signal.position_size > 0.0) {
                             core::Direction dir = signal.direction;
+                            
+                            // Check for signal transition (BUY->NEUTRAL becomes exit SELL)
+                            bool isTransition = checkAndUpdateSignalTransition(
+                                m.exchangeId, m.symbol, dir, signal.probability, m.timestamp);
+                            
+                            if (isTransition) {
+                                // Generate exit signal on BUY->NEUTRAL transition
+                                generateExitSignalOnTransition(m.exchangeId, m.symbol, m);
+                            }
+                            
                             OrderBookMetrics mcopy = m;
                             mcopy.metrics["bayes_probability"] = signal.probability;
                             mcopy.metrics["bayes_expected_value"] = signal.expected_value;
@@ -3584,6 +3594,68 @@ void ImbalanceDetectionEngine::trackLabelingEvent(core::Direction labelDirection
                 totalCount, buyPct, sellPct, neutralPct,
                 symbol, normalizedReturn, directionStr, delay.count());
     }
+}
+
+// Signal transition tracking for NEUTRAL = SELL exit logic
+bool ImbalanceDetectionEngine::checkAndUpdateSignalTransition(
+    const core::ExchangeId& exchangeId, const core::Symbol& symbol, 
+    core::Direction newDirection, double probability, core::Timestamp timestamp) {
+    
+    std::lock_guard<std::mutex> lock(signalStatesMutex_);
+    auto key = std::make_pair(exchangeId, symbol);
+    auto& state = signalStates_[key];
+    
+    bool isExitTransition = false;
+    
+    // Check for BUY->NEUTRAL transition (exit signal)
+    if (state.lastDirection == core::Direction::BUY && 
+        (newDirection == core::Direction::NEUTRAL || newDirection == core::Direction::SELL) &&
+        state.hasActivePosition) {
+        
+        isExitTransition = true;
+        LOG_INFO("Signal transition detected: BUY->EXIT for {}:{}, prob={:.3f}", 
+                exchangeId.toString(), symbol.toString(), probability);
+    }
+    
+    // Update state
+    state.lastDirection = newDirection;
+    state.lastProbability = probability;
+    state.lastTimestamp = timestamp;
+    
+    // Track position state
+    if (newDirection == core::Direction::BUY) {
+        state.hasActivePosition = true;
+    } else if (newDirection == core::Direction::SELL) {
+        state.hasActivePosition = false; // Exit position
+    }
+    
+    return isExitTransition;
+}
+
+void ImbalanceDetectionEngine::generateExitSignalOnTransition(
+    const core::ExchangeId& exchangeId, const core::Symbol& symbol, 
+    const OrderBookMetrics& metrics) {
+    
+    // Create exit signal with moderate strength
+    double exitStrength = 0.3; // Moderate exit signal
+    
+    // Create SELL signal for exit
+    OrderBookMetrics exitMetrics = metrics;
+    exitMetrics.metrics["exit_signal"] = 1.0;
+    exitMetrics.metrics["transition_type"] = 1.0; // BUY->NEUTRAL transition
+    
+    LOG_INFO("Generating EXIT signal on BUY->NEUTRAL transition for {}:{}", 
+            exchangeId.toString(), symbol.toString());
+    
+    // Generate exit event
+    createImbalanceEventForBayesModel(
+        ImbalanceType::CUSTOM, 
+        exitStrength,
+        core::Direction::SELL,  // Exit = SELL
+        exitMetrics, 
+        0.7,  // High confidence for exit
+        0.2   // Low uncertainty for exit
+    );
 }
 
 } // namespace strategy

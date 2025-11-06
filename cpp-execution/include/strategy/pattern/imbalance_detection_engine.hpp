@@ -164,6 +164,12 @@ private:
     uint64_t generateEventId();
     double calculateImbalanceConfidence(ImbalanceType type, double strength, const OrderBookMetrics& metrics);
     double calculateImbalanceStrength(double volumeRatio, double threshold);
+    
+    // Signal transition tracking methods
+    bool checkAndUpdateSignalTransition(const core::ExchangeId& exchangeId, const core::Symbol& symbol, 
+                                      core::Direction newDirection, double probability, core::Timestamp timestamp);
+    void generateExitSignalOnTransition(const core::ExchangeId& exchangeId, const core::Symbol& symbol, 
+                                      const OrderBookMetrics& metrics);
 
     // Configuration
     ImbalanceDetectionConfig config_;
@@ -342,10 +348,19 @@ public:
     // struct LabelingStats {
     //     std::atomic<size_t> totalLabels{0};
     //     std::atomic<size_t> buyLabels{0};
-    //     std::atomic<size_t> sellLabels{0}; 
-    //     std::atomic<size_t> neutralLabels{0};
+    //     std::     std::atomic<size_t> neutralLabels{0};
     // };
     // LabelingStats labelingStats_;
+    
+    // Signal transition tracking for exit logic (NEUTRAL = SELL for short-term)
+    struct SignalState {
+        core::Direction lastDirection = core::Direction::NEUTRAL;
+        double lastProbability = 0.0;
+        core::Timestamp lastTimestamp = core::Timestamp{};
+        bool hasActivePosition = false;
+    };
+    std::map<std::pair<core::ExchangeId, core::Symbol>, SignalState> signalStates_;
+    mutable std::mutex signalStatesMutex_;
 };
 
 // Type alias
