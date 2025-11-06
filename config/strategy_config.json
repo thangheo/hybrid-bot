@@ -268,7 +268,7 @@
         },
         "trainingStartDelayMs": 1,
         "minOrderbookLevels": 0,
-        "bayesMinUpdatesToTrade": 500
+        "bayesMinUpdatesToTrade": 5000
       }
     },
     "liquidityMonitor": {
