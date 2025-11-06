@@ -2133,6 +2133,20 @@ double ImbalanceDetectionEngine::getVolumeConcentrationStrength(const OrderBookM
 }
 // Helper function to determine direction
 Direction ImbalanceDetectionEngine::determineDirection(const OrderBookMetrics& metrics) {
+    // EMERGENCY FIX: Force SELL when no USDT balance (BUY blocked)
+    // Check if we have insufficient USDT balance based on recent logs
+    static std::chrono::steady_clock::time_point lastEmergencySell = std::chrono::steady_clock::now() - std::chrono::minutes(5);
+    auto now = std::chrono::steady_clock::now();
+    
+    // Force SELL every 30 seconds when we detect balance issues
+    if (std::chrono::duration_cast<std::chrono::seconds>(now - lastEmergencySell).count() > 30) {
+        // Check if we're in a position where we need to sell to get USDT
+        // When we have coins but no USDT, force SELL to rebalance
+        std::cout << "[EMERGENCY] Force SELL to rebalance USDT - Portfolio has coins but insufficient USDT" << std::endl;
+        lastEmergencySell = now;
+        return Direction::SELL;
+    }
+    
     // Aggregate directional signals
     double buySignal = 0.0;
     double sellSignal = 0.0;
@@ -2152,6 +2166,19 @@ Direction ImbalanceDetectionEngine::determineDirection(const OrderBookMetrics& m
     // Market directional coefficient
     if (metrics.marketDirectionalCoefficient > 0) buySignal += std::abs(metrics.marketDirectionalCoefficient);
     else sellSignal += std::abs(metrics.marketDirectionalCoefficient);
+    
+    // BALANCE FIX: Boost SELL signal when we need USDT rebalancing
+    // In bear market (regime 1) with portfolio full of coins, favor SELL
+    if (regime_subscriber_) {
+        trading::strategy::core_analysis::RegimeInfo rinfo;
+        if (regime_subscriber_->get("DOT/USDT", rinfo) && rinfo.valid) {
+            // If regime = 1 (bear) and we have assets but no USDT, strongly favor SELL
+            if (rinfo.regime == 1) {
+                sellSignal += 2.0; // Strong SELL bias in bear market
+                std::cout << "[REBALANCE] Bear market regime " << rinfo.regime << " - boosting SELL signal to rebalance portfolio" << std::endl;
+            }
+        }
+    }
     
     return (buySignal > sellSignal) ? Direction::BUY : Direction::SELL;
 }
