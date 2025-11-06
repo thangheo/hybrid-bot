@@ -68,11 +68,11 @@ public:
         std::lock_guard<std::mutex> lk(mu_);
         auto &stats = regimeStats_[regime];
 
-        // Rebalanced percentiles for more balanced learning
-        const double P75 = 0.65; // use 65th percentile for buy (was 80th)
-        const double P25 = 0.35; // use 35th percentile for sell (was 20th)
+        // MORE BALANCED percentiles for equal BUY/SELL opportunity
+        const double P75 = 0.60; // use 60th percentile for buy (reduced from 65th)
+        const double P25 = 0.40; // use 40th percentile for sell (increased from 35th) 
         const double MIN_ABS_PCT = 0.30; // 30th percentile for min profitable move
-        const double VOL_ADJUST_MULT = 0.20; // reduced volatility scaling
+        const double VOL_ADJUST_MULT = 0.15; // further reduced volatility scaling
 
         // The stored recentReturns are normalized returns (logRet / vol) so percentiles are in z-space
         double p75_return = stats.percentile(stats.recentReturns, P75);
@@ -86,16 +86,15 @@ public:
         double volAdjust = currentVol / volRef;
         volAdjust = std::clamp(volAdjust, 0.5, 2.0); // limit extreme scaling
 
-    // More balanced minimum magnitudes for thresholds in normalized (z) space
-    // Reduced to allow more frequent but better quality labels
-    const double MIN_Z_MAG = 0.25; // reduced from 0.35 to increase label frequency
+    // BALANCED minimum magnitudes for equal BUY/SELL labeling opportunity
+    const double MIN_Z_MAG = 0.20; // further reduced to increase both BUY and SELL frequency
 
         // Scale percentile thresholds by volatility regime; they are z-like so remain comparable to normalized returns
     out.buyThreshold = std::max(MIN_Z_MAG, p75_return * (1.0 + VOL_ADJUST_MULT * (volAdjust - 1.0)));
-    // For sell threshold we want it to be less negative (higher) so SELL labels become
-    // easier to trigger. Use std::max between the scaled percentile and -MIN_Z_MAG
-    // (which is a negative value) so we don't force an overly-negative threshold.
-    out.sellThreshold = std::max(p25_return * (1.0 + VOL_ADJUST_MULT * (volAdjust - 1.0)), -MIN_Z_MAG);
+    
+    // FIXED: Make sell threshold more symmetric - easier to trigger SELL signals
+    // Use negative MIN_Z_MAG directly, or scaled percentile if it's MORE NEGATIVE (easier to trigger)
+    out.sellThreshold = std::min(-MIN_Z_MAG, p25_return * (1.0 + VOL_ADJUST_MULT * (volAdjust - 1.0)));
 
         // min profitable return: use percentile of absolute normalized moves, convert back to absolute pct by multiplying by volRef
         double minAbsNorm = 0.0;
@@ -904,14 +903,30 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                                         normalizedReturn, regimeIdx, confidence, vol
                                     );
                                     
+                                    // DEBUG: Track labeling attempts
+                                    static int labelCount = 0;
+                                    static int buyCount = 0, sellCount = 0, neutralCount = 0;
+                                    labelCount++;
+                                    
                                     // Fallback to traditional thresholding if profit-aware doesn't have enough data
                                     if (labelDirection == core::Direction::NEUTRAL && 
-                                        confidence > 0.7) { // High confidence fallback
+                                        confidence > 0.6) { // Reduced fallback threshold from 0.7 to 0.6
                                         if (normalizedReturn > dyn.buyThreshold) {
                                             labelDirection = core::Direction::BUY;
                                         } else if (normalizedReturn < dyn.sellThreshold) {
                                             labelDirection = core::Direction::SELL;
                                         }
+                                    }
+                                    
+                                    // Count labels for debugging
+                                    if (labelDirection == core::Direction::BUY) buyCount++;
+                                    else if (labelDirection == core::Direction::SELL) sellCount++;
+                                    else neutralCount++;
+                                    
+                                    // Debug output every 100 labels
+                                    if (labelCount % 100 == 0) {
+                                        LOG_INFO("Label stats: BUY={}, SELL={}, NEUTRAL={}, BuyThresh={:.3f}, SellThresh={:.3f}, NormRet={:.3f}", 
+                                               buyCount, sellCount, neutralCount, dyn.buyThreshold, dyn.sellThreshold, normalizedReturn);
                                     }
                                     
                                     // Type-safe conversion to integer label
