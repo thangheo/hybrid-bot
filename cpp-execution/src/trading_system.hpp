@@ -105,6 +105,11 @@ public:
     std::vector<strategy::TradingSignal> getCurrentSignalsForSymbol(const core::Symbol& symbol) ;
     // void reportPTCAStats() ;
 
+    // 🚨 EMERGENCY RISK & FREQUENCY CONTROLS
+    bool emergencyFrequencyCheck(const std::string& symbol);
+    bool emergencyRiskCheck(const std::string& symbol, double currentPnL);
+    void recordTrade(const std::string& symbol);
+    void loadEmergencyState();
 
     void printStatus();
     
@@ -271,9 +276,23 @@ private:
     void setupComponentConnections() ;
     
     void realExecution(const execution::TradingSignal& signal) ;
-    // Returns true if the system is still in its warm-up period after start()
+        // Returns true if the system is still in its warm-up period after start()
+    bool isInWarmupPeriod() const ;
     bool isWarmupActive() const;
-
+    
+    // 🚨 EMERGENCY CONTROLS - Private members
+    std::unordered_map<std::string, std::chrono::system_clock::time_point> lastTradeTime_;
+    std::unordered_map<std::string, double> symbolPnL_;
+    std::unordered_map<std::string, int> hourlyTradeCount_;
+    std::mutex emergencyMutex_;
+    std::atomic<bool> emergencyStop_{false};
+    
+    // Emergency limits
+    static constexpr int MAX_TRADES_PER_HOUR = 20;
+    static constexpr int MIN_GAP_SECONDS = 30;
+    static constexpr double MAX_LOSS_PER_SYMBOL = -50.0;
+    static constexpr double MAX_TOTAL_DAILY_LOSS = -200.0;
+    
 };
 
 } // namespace trading

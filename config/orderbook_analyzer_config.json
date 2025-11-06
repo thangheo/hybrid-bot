@@ -1,0 +1,16 @@
+{
+  "description": "Emergency orderbook analyzer config with higher thresholds",
+  "depth": 20,
+  "historySize": 50,
+  "priceWeightFactor": 0.5,
+  "volumeWeightFactor": 0.5,
+  "imbalanceThreshold": 0.8,
+  "liquidityPressureThreshold": 0.9,
+  "orderFlowThreshold": 0.8,
+  "priceGroupingFactor": 0.0001,
+  "minSamplesForStability": 10,
+  "emaAlpha": 0.1,
+  "emergencyMode": true,
+  "minTradeGapSeconds": 30,
+  "lastUpdated": "2025-11-06T21:33:37.446995"
+}

@@ -1,0 +1,12 @@
+{
+  "description": "Emergency signal deduplication config to reduce trading frequency",
+  "debounceWindowMs": 15000,
+  "relativeStrengthThreshold": 0.25,
+  "absoluteStrengthThreshold": 0.1,
+  "flipStrengthThreshold": 0.8,
+  "aggressiveDelta": 0.3,
+  "includeExchangeInKey": true,
+  "enabled": true,
+  "emergencyMode": true,
+  "lastUpdated": "2025-11-06T21:33:37.446860"
+}
