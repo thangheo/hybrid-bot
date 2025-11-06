@@ -279,8 +279,13 @@ void PositionTracker::processExecutionReport(const ExecutionReport& executionRep
         } catch (...) {
             // fall through if logging formatting fails
         }
+        // PRODUCTION FIX: Process FILLED orders even without fills array (Binance timeout/parsing issues)
         if (executionReport.fills().empty()) {
-            return;
+            // Only skip if order is not FILLED or has no filled quantity
+            if (executionReport.status() != execution::models::OrderState::FILLED || executionReport.filledQuantity() <= 0.0) {
+                return;
+            }
+            // For FILLED orders without fills array, create synthetic fill from order data
         }
         
         // Convert ExecutionReport data to our internal types
@@ -303,15 +308,32 @@ void PositionTracker::processExecutionReport(const ExecutionReport& executionRep
         double totalFillQuantity = 0.0;
         double totalValue = 0.0;
         
-        for (const auto& fill : executionReport.fills()) {
-            double signedQuantity = fill.quantity;
-            // Convert OrderSide (which is core::Direction) to signed quantity
+        if (!executionReport.fills().empty()) {
+            // Process actual fills
+            for (const auto& fill : executionReport.fills()) {
+                double signedQuantity = fill.quantity;
+                // Convert OrderSide (which is core::Direction) to signed quantity
+                if (executionReport.side() == core::Direction::SELL) {
+                    signedQuantity = -signedQuantity;
+                }
+                
+                totalFillQuantity += signedQuantity;
+                totalValue += fill.quantity * fill.price;
+            }
+        } else {
+            // PRODUCTION FIX: Create synthetic fill from order data for FILLED orders without fills array
+            double fillQuantity = executionReport.filledQuantity();
+            double fillPrice = executionReport.price().value_or(0.0); // May be 0 for MARKET orders
+            
             if (executionReport.side() == core::Direction::SELL) {
-                signedQuantity = -signedQuantity;
+                fillQuantity = -fillQuantity;
             }
             
-            totalFillQuantity += signedQuantity;
-            totalValue += fill.quantity * fill.price;
+            totalFillQuantity = fillQuantity;
+            totalValue = std::abs(fillQuantity) * fillPrice; // Use abs for value calculation
+            
+            LOG_INFO("PositionTracker: Processing FILLED order without fills array - symbol={} qty={} price={}", 
+                     tradingPairSymbol.toString(), fillQuantity, fillPrice);
         }
         
         if (std::abs(totalFillQuantity) < 1e-8) {
