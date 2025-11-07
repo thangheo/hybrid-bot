@@ -56,8 +56,20 @@ private:
             if (data.empty()) return 0.0;
             std::vector<double> sorted(data.begin(), data.end());
             std::sort(sorted.begin(), sorted.end());
-            size_t idx = static_cast<size_t>(pct * sorted.size());
-            return sorted[std::min(idx, sorted.size() - 1)];
+            
+            // FIX: Correct percentile calculation with interpolation
+            // For pct=0.5 (median) with 10 elements, we want index between 4 and 5, not 5
+            double exactIdx = pct * (sorted.size() - 1);
+            size_t lowerIdx = static_cast<size_t>(std::floor(exactIdx));
+            size_t upperIdx = static_cast<size_t>(std::ceil(exactIdx));
+            
+            if (lowerIdx == upperIdx || upperIdx >= sorted.size()) {
+                return sorted[lowerIdx];
+            }
+            
+            // Linear interpolation between two nearest values
+            double fraction = exactIdx - lowerIdx;
+            return sorted[lowerIdx] * (1.0 - fraction) + sorted[upperIdx] * fraction;
         }
     };
 
@@ -68,60 +80,145 @@ public:
     DynamicThresholds calculateThresholds(int regime, double currentVol) {
         std::lock_guard<std::mutex> lk(mu_);
         auto &stats = regimeStats_[regime];
-
-        // MORE BALANCED percentiles for equal BUY/SELL opportunity
-        const double P75 = 0.60; // use 60th percentile for buy (reduced from 65th)
-        const double P25 = 0.40; // use 40th percentile for sell (increased from 35th) 
-        const double MIN_ABS_PCT = 0.30; // 30th percentile for min profitable move
-        const double VOL_ADJUST_MULT = 0.15; // further reduced volatility scaling
-
-        // The stored recentReturns are normalized returns (logRet / vol) so percentiles are in z-space
+        
+        DynamicThresholds out;
+        
+        // FIX: Return default thresholds if insufficient data
+        if (stats.recentReturns.size() < 10) {
+            LOG_TRACE("calculateThresholds: Insufficient data ({}), using defaults", 
+                     stats.recentReturns.size());
+            return out; // Returns default values
+        }
+        
+        const double P75 = 0.60; 
+        const double P25 = 0.40;
+        const double MIN_ABS_PCT = 0.30;
+        const double VOL_ADJUST_MULT = 0.15;
+        
         double p75_return = stats.percentile(stats.recentReturns, P75);
         double p25_return = stats.percentile(stats.recentReturns, P25);
         double median_vol = stats.percentile(stats.recentVolatilities, 0.50);
-
-        DynamicThresholds out;
-
-        // avoid division by tiny median vol
-        double volRef = std::max(median_vol, 1e-6);
-        double volAdjust = currentVol / volRef;
-        volAdjust = std::clamp(volAdjust, 0.5, 2.0); // limit extreme scaling
-
-    // BALANCED minimum magnitudes for equal BUY/SELL labeling opportunity
-    const double MIN_Z_MAG = 0.20; // further reduced to increase both BUY and SELL frequency
-
-        // Scale percentile thresholds by volatility regime; they are z-like so remain comparable to normalized returns
-    out.buyThreshold = std::max(MIN_Z_MAG, p75_return * (1.0 + VOL_ADJUST_MULT * (volAdjust - 1.0)));
-    
-    // FIXED: Make sell threshold more symmetric - easier to trigger SELL signals
-    // Use negative MIN_Z_MAG directly, or scaled percentile if it's MORE NEGATIVE (easier to trigger)
-    out.sellThreshold = std::min(-MIN_Z_MAG, p25_return * (1.0 + VOL_ADJUST_MULT * (volAdjust - 1.0)));
-
-        // min profitable return: use percentile of absolute normalized moves, convert back to absolute pct by multiplying by volRef
-        double minAbsNorm = 0.0;
-        std::deque<double> absvals;
-        for (double r : stats.recentReturns) absvals.push_back(std::abs(r));
-        if (!absvals.empty()) {
-            ThresholdStats tmp{absvals, stats.recentVolatilities, stats.maxHistory};
-            minAbsNorm = tmp.percentile(absvals, MIN_ABS_PCT);
+        
+        // FIX: Validate percentile results
+        if (!std::isfinite(p75_return) || !std::isfinite(p25_return) || !std::isfinite(median_vol)) {
+            LOG_ERROR("calculateThresholds: Invalid percentiles p75={}, p25={}, medVol={}", 
+                     p75_return, p25_return, median_vol);
+            return out; // Return defaults
         }
-        // Convert normalized magnitude back to absolute log-return via volRef and add trading cost buffer
-        out.minProfitableReturn = std::max(0.0005, minAbsNorm * volRef) + 0.003; // keep a small floor plus cost
+        
+        // FIX: Clamp percentile values to reasonable ranges
+        p75_return = std::clamp(p75_return, -10.0, 10.0);
+        p25_return = std::clamp(p25_return, -10.0, 10.0);
+        
+        double volRef = std::max(median_vol, 1e-6);
+        double volAdjust = std::clamp(currentVol / volRef, 0.5, 2.0);
+        
+        const double MIN_Z_MAG = 0.20;
+        
+        double scaledBuyThreshold = p75_return * (1.0 + VOL_ADJUST_MULT * (volAdjust - 1.0));
+        double scaledSellThreshold = p25_return * (1.0 + VOL_ADJUST_MULT * (volAdjust - 1.0));
+        
+        // These clamps should now actually work since input values are bounded
+        out.buyThreshold = std::clamp(std::max(MIN_Z_MAG, scaledBuyThreshold), 0.1, 3.0);
+        out.sellThreshold = std::clamp(std::min(-MIN_Z_MAG, scaledSellThreshold), -3.0, -0.1);
 
+        // Calculate min profitable return
+        std::deque<double> absvals;
+        for (double r : stats.recentReturns) {
+            absvals.push_back(std::abs(r));
+        }
+        
+        if (!absvals.empty()) {
+            double minAbsNorm = stats.percentile(absvals, MIN_ABS_PCT);
+            out.minProfitableReturn = std::max(0.0005, minAbsNorm * volRef) + 0.003;
+        }
+        
+        // FIX: Final validation before returning
+        if (!std::isfinite(out.buyThreshold) || !std::isfinite(out.sellThreshold) || 
+            !std::isfinite(out.minProfitableReturn)) {
+            LOG_ERROR("calculateThresholds: Invalid output thresholds, using defaults");
+            out.buyThreshold = 0.55;
+            out.sellThreshold = -0.35;
+            out.minProfitableReturn = 0.003;
+        }
+        
         return out;
     }
 
     void updateStats(int regime, double return_, double volatility) {
         std::lock_guard<std::mutex> lk(mu_);
         auto &s = regimeStats_[regime];
-        // Store normalized return (z-like): log-return divided by volatility
-        double volRef = std::max(volatility, 1e-6);
-        double norm = 0.0;
-        if (std::isfinite(return_) && std::isfinite(volRef) && volRef > 0.0) norm = return_ / volRef;
+        
+        // FIX: Check if existing data is corrupted and reset if needed
+        if (!s.recentReturns.empty()) {
+            double maxAbs = 0.0;
+            for (double r : s.recentReturns) {
+                maxAbs = std::max(maxAbs, std::abs(r));
+            }
+            
+            // If we have extreme values, reset the statistics
+            if (maxAbs > 100.0) {
+                LOG_ERROR("Extreme values detected in regime {} (max={}), resetting statistics", 
+                         regime, maxAbs);
+                s.recentReturns.clear();
+                s.recentVolatilities.clear();
+            }
+        }
+        
+        // FIX: Validate inputs before processing
+        if (!std::isfinite(return_) || !std::isfinite(volatility)) {
+            LOG_WARN("updateStats: Invalid input return={}, vol={}", return_, volatility);
+            return;
+        }
+        
+        // FIX: Clamp volatility to reasonable range before using  
+        // Vol between 0.0001% and 100% - prevents division by tiny numbers
+        double volRef = std::clamp(volatility, 1e-6, 1.0);
+        
+        // Store normalized return (z-like): log-return divided by volatility  
+        double norm = return_ / volRef;
+        
+        // FIX: Clamp normalized return to prevent accumulation of extreme values
+        // Z-scores beyond ±20 are practically impossible in real markets
+        norm = std::clamp(norm, -20.0, 20.0);
+        
         s.recentReturns.push_back(norm);
-        s.recentVolatilities.push_back(volatility);
+        s.recentVolatilities.push_back(volRef); // Store clamped volatility
+        
         while (s.recentReturns.size() > s.maxHistory) s.recentReturns.pop_front();
         while (s.recentVolatilities.size() > s.maxHistory) s.recentVolatilities.pop_front();
+    }
+    
+    // FIX: Add reset mechanism when extreme values are detected
+    void resetRegimeStats(int regime) {
+        std::lock_guard<std::mutex> lk(mu_);
+        LOG_WARN("Resetting statistics for regime {} due to data corruption", regime);
+        regimeStats_[regime].recentReturns.clear();
+        regimeStats_[regime].recentVolatilities.clear();
+    }
+    
+    // FIX: Add method to get data range for diagnostics
+    std::pair<double, double> getDataRange(int regime) const {
+        std::lock_guard<std::mutex> lk(mu_);
+        const auto &stats = regimeStats_.find(regime);
+        if (stats == regimeStats_.end() || stats->second.recentReturns.empty()) {
+            return {0.0, 0.0};
+        }
+        
+        const auto &returns = stats->second.recentReturns;
+        double minReturn = *std::min_element(returns.begin(), returns.end());
+        double maxReturn = *std::max_element(returns.begin(), returns.end());
+        return {minReturn, maxReturn};
+    }
+    
+    // FIX: Add method to get data size for diagnostics
+    size_t getDataSize(int regime) const {
+        std::lock_guard<std::mutex> lk(mu_);
+        const auto &stats = regimeStats_.find(regime);
+        if (stats == regimeStats_.end()) {
+            return 0;
+        }
+        return stats->second.recentReturns.size();
     }
 };
 
@@ -926,10 +1023,14 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                                         priceChangeLogRet = std::log(target) - std::log(baseRef);
                                     }
 
-                                    // normalize by realized volatility (clamp to reasonable range)
-                                    double vol = std::clamp(m.realizedVolatility, 0.0001, 0.5);
+                                    // FIXED: More robust volatility normalization with strict bounds
+                                    double vol = std::clamp(m.realizedVolatility, 0.001, 0.1); // Tighter vol range: 0.1% - 10%
                                     double normalizedReturn = 0.0;
-                                    if (vol > 0.0 && std::isfinite(vol) && std::isfinite(priceChangeLogRet)) normalizedReturn = priceChangeLogRet / vol;
+                                    if (vol > 0.0 && std::isfinite(vol) && std::isfinite(priceChangeLogRet)) {
+                                        normalizedReturn = priceChangeLogRet / vol;
+                                        // CRITICAL: Clamp normalized return to prevent extreme outliers
+                                        normalizedReturn = std::clamp(normalizedReturn, -10.0, 10.0);
+                                    }
 
                                     // Use statistical thresholds computed per-regime (if regime info not available default to regime 0)
                                     int regimeIdx = 0;
@@ -976,10 +1077,34 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                                     else if (labelDirection == core::Direction::SELL) sellCount++;
                                     else neutralCount++;
                                     
-                                    // Debug output every 100 labels
-                                    if (labelCount % 100 == 0) {
-                                        LOG_INFO("Label stats: BUY={}, SELL={}, NEUTRAL={}, BuyThresh={:.3f}, SellThresh={:.3f}, NormRet={:.3f}", 
-                                               buyCount, sellCount, neutralCount, dyn.buyThreshold, dyn.sellThreshold, normalizedReturn);
+                                    // FIX 4: Add diagnostic logging to track the issue
+                                    if (labelCount % 10 == 0) {
+                                        // Add diagnostic info about the data distribution
+                                        auto dataRange = g_statThresholdAdapter.getDataRange(regimeIdx);
+                                        size_t dataPoints = g_statThresholdAdapter.getDataSize(regimeIdx);
+                                        double minReturn = dataRange.first;
+                                        double maxReturn = dataRange.second;
+                                        
+                                        // Check for data quality issues
+                                        bool dataIssue = (std::abs(dyn.buyThreshold) > 10.0 || 
+                                                          std::abs(dyn.sellThreshold) > 10.0 || 
+                                                          std::abs(normalizedReturn) > 20.0 ||
+                                                          std::abs(minReturn) > 100.0 ||
+                                                          std::abs(maxReturn) > 100.0);
+                                        
+                                        if (dataIssue) {
+                                            LOG_WARN("DATA ISSUE: BUY={}, SELL={}, NEUTRAL={}, "
+                                                   "BuyThresh={:.3f}, SellThresh={:.3f}, NormRet={:.3f}, "
+                                                   "DataRange=[{:.3f}, {:.3f}], DataPoints={}", 
+                                                   buyCount, sellCount, neutralCount, 
+                                                   dyn.buyThreshold, dyn.sellThreshold, normalizedReturn,
+                                                   minReturn, maxReturn, dataPoints);
+                                        } else {
+                                            LOG_INFO("Label stats: BUY={}, SELL={}, NEUTRAL={}, "
+                                                   "BuyThresh={:.3f}, SellThresh={:.3f}, NormRet={:.3f}", 
+                                                   buyCount, sellCount, neutralCount, 
+                                                   dyn.buyThreshold, dyn.sellThreshold, normalizedReturn);
+                                        }
                                     }
                                     
                                     // Type-safe conversion to integer label
