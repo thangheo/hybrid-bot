@@ -830,5 +830,9 @@ RiskManager::~RiskManager() {
     }
 }
 
+std::shared_ptr<ExecutionInterface> RiskManager::getExecutionInterface() const {
+    return m_executionInterface;
+}
+
 } // namespace risk
 } // namespace trading

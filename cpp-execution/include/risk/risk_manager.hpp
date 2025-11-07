@@ -192,6 +192,12 @@ public:
     bool emergencyAction(const std::string& reason);
     // getAllowedPositionSize
     double getAllowedPositionSize(const TradingPair& tradingPair) const;
+    
+    /**
+     * Get the ExecutionInterface for order submission
+     * @return shared_ptr to ExecutionInterface, may be nullptr if not initialized
+     */
+    std::shared_ptr<ExecutionInterface> getExecutionInterface() const;
 private:
     std::shared_ptr<trading::execution::ExecutionService> m_execService;
     std::shared_ptr<trading::execution::ExecutionService> m_executionService;

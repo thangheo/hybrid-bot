@@ -3763,5 +3763,10 @@ void ImbalanceDetectionEngine::trackLabelingEvent(core::Direction labelDirection
 // Optimal exit strategy methods replaced the old transition tracking
 // Old methods removed - now using OptimalExitStrategy for better HFT performance
 
+// Global function to allow external registration of exit callback on g_optimalExit
+void registerGlobalOptimalExitCallback(const OptimalExitStrategy::ExitCallback& callback) {
+    g_optimalExit.registerExitCallback(callback);
+}
+
 } // namespace strategy
 } // namespace trading
