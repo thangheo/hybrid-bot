@@ -107,9 +107,15 @@ public:
 
     // 🚨 EMERGENCY RISK & FREQUENCY CONTROLS
     bool emergencyFrequencyCheck(const std::string& symbol);
+    bool emergencyFrequencyCheckWithType(const std::string& symbol, const std::string& orderType);
     bool emergencyRiskCheck(const std::string& symbol, double currentPnL);
     void recordTrade(const std::string& symbol);
+    void recordTradeWithType(const std::string& symbol, const std::string& orderType);
     void loadEmergencyState();
+    
+    // 🚨 EXIT ORDER HANDLING 
+    void executeExitOrder(const std::string& symbol, core::Direction direction, double quantity, const std::string& reason);
+    void handleExitSignal(const std::string& symbol, core::Direction exitDirection, double currentPrice, const std::string& exitReason);
 
     void printStatus();
     

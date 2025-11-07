@@ -6,6 +6,8 @@
 #include <string>
 #include <map>
 #include <mutex>
+#include <filesystem>
+#include <functional>
 
 namespace trading {
 namespace strategy {
@@ -60,6 +62,11 @@ private:
     
     // Per-symbol exit parameters (based on volatility config)
     std::map<std::string, ExitParams> symbolParams_;
+    mutable std::mutex configMutex_;  // Thread-safe config operations
+    
+    // Runtime reload tracking
+    std::string configPath_;
+    std::filesystem::file_time_type lastLoadedTime_;
     
     // Active trades tracking
     std::map<std::string, TradeState> activeTrades_;
@@ -85,7 +92,7 @@ public:
     /**
      * Evaluate exit decision for active position
      */
-    ExitDecision evaluateExit(const std::string& symbol,
+    [[nodiscard]] ExitDecision evaluateExit(const std::string& symbol,
                              double current_price,
                              double current_spread_ratio,
                              core::Direction current_signal_direction,
@@ -117,6 +124,20 @@ public:
      * Update parameters for symbol category
      */
     void updateParameters(const std::string& category, const ExitParams& params);
+    
+    /**
+     * Reload configuration if file has been modified
+     */
+    void reloadIfStale();
+    
+    /**
+     * Register callback for exit execution
+     */
+    using ExitCallback = std::function<void(const std::string& symbol, core::Direction exitDirection, double currentPrice, const std::string& reason)>;
+    void registerExitCallback(const ExitCallback& callback);
+
+private:
+    ExitCallback exitCallback_;
 };
 
 } // namespace strategy

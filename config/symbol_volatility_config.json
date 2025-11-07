@@ -28,13 +28,13 @@
         "description": "Solana - High-speed blockchain, DeFi/NFT hub"
       },
       "ADAUSDT": {
-        "threshold": 0.0008,
-        "category": "crypto_major",
+        "threshold": 0.0013,
+        "category": "crypto_minor",
         "description": "Cardano - Academic approach, sustainability"
       },
       "AVAXUSDT": {
-        "threshold": 0.0008,
-        "category": "crypto_major",
+        "threshold": 0.0013,
+        "category": "crypto_minor",
         "description": "Avalanche - Fast consensus, subnet flexibility"
       },
       "DOGEUSDT": {
@@ -43,8 +43,8 @@
         "description": "Dogecoin - Meme king with utility potential"
       },
       "DOTUSDT": {
-        "threshold": 0.0005,
-        "category": "crypto_major",
+        "threshold": 0.0013,
+        "category": "crypto_minor",
         "description": "Polkadot - Interoperability leader"
       },
       "LINKUSDT": {

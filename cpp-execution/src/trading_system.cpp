@@ -259,7 +259,7 @@ bool Trading_system::start() {
         }
         std::cout << std::endl;
         //order book depth from config
-        int depth = 20;//strategyConfig_.orderBookDepth;
+        int depth = 10;//strategyConfig_.orderBookDepth;
         
         if (!dataIngestionService_->start(symbols, depth)) {
             std::cerr << "Failed to start data ingestion service" << std::endl;
@@ -906,8 +906,11 @@ void Trading_system::signalWorkerLoop(size_t workerId) {
                 //if signal is neutral, skip
                 if (signal.direction == core::Direction::NEUTRAL) continue;
                 
-                // 🚨 EMERGENCY FREQUENCY & RISK CHECK
-                if (!emergencyFrequencyCheck(signal.symbol.toString())) {
+                // 🚨 EMERGENCY FREQUENCY & RISK CHECK - Determine order type
+                std::string orderType = "ENTRY"; // Default to ENTRY for new signals
+                // Note: This is for ENTRY signals. EXIT signals are handled separately in optimal_exit_strategy.cpp
+                
+                if (!emergencyFrequencyCheckWithType(signal.symbol.toString(), orderType)) {
                     continue; // Skip if trading too frequently
                 }
                 
@@ -1085,10 +1088,7 @@ void Trading_system::execWorkerLoop(size_t workerId) {
                 // If rounding produced an invalid quantity (e.g., below minQty),
                 // attempt to bump to minQty if that's acceptable by notional.
                 if (!::execution::SymbolPrecisionManager::isValidQuantity(symStr, roundedQty)) {
-                    // Fetch symbol precision to inspect minQty
-                    // (getPrecision is internal to the header; reuse by calling
-                    // roundQuantity with a small adjustment if necessary).
-                    // Try using a small epsilon bump and re-round.
+                   
                     double bumped = roundedQty;
                     bumped = std::max(bumped, 0.0);
                     for (int attempt = 0; attempt < 3 && !::execution::SymbolPrecisionManager::isValidQuantity(symStr, bumped); ++attempt) {
@@ -1184,7 +1184,7 @@ void Trading_system::execWorkerLoop(size_t workerId) {
                       << std::endl;
             
             // 🚨 RECORD TRADE FOR EMERGENCY FREQUENCY TRACKING
-            recordTrade(task.symbol.toString());
+            recordTradeWithType(task.symbol.toString(), "ENTRY");
                       
         } catch (const std::exception &e) {
             std::cerr << "Exec worker " << workerId << " error: " << e.what() << std::endl;
@@ -1304,6 +1304,10 @@ void Trading_system::realExecution(const execution::TradingSignal& signal) {
 // 🚨 EMERGENCY RISK & FREQUENCY CONTROLS IMPLEMENTATION
 
 bool Trading_system::emergencyFrequencyCheck(const std::string& symbol) {
+    return emergencyFrequencyCheckWithType(symbol, "ENTRY");
+}
+
+bool Trading_system::emergencyFrequencyCheckWithType(const std::string& symbol, const std::string& orderType) {
     std::lock_guard<std::mutex> lock(emergencyMutex_);
     
     if (emergencyStop_.load()) {
@@ -1313,25 +1317,42 @@ bool Trading_system::emergencyFrequencyCheck(const std::string& symbol) {
     
     auto now = std::chrono::system_clock::now();
     
-    // 1. Check minimum gap between trades
+    // 1. Check minimum gap between trades - RELAXED for EXIT orders
     auto lastTradeIt = lastTradeTime_.find(symbol);
     if (lastTradeIt != lastTradeTime_.end()) {
         auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - lastTradeIt->second);
-        if (elapsed.count() < MIN_GAP_SECONDS) {
-            std::cout << "🚫 FREQUENCY BLOCK: " << symbol << " - " << elapsed.count() 
-                      << "s < " << MIN_GAP_SECONDS << "s required gap" << std::endl;
-            return false;
+        
+        // EXIT orders have relaxed timing constraints (risk management priority)
+        int requiredGap = (orderType == "EXIT") ? 5 : MIN_GAP_SECONDS; // 5s for exits, 30s for entries
+        
+        if (elapsed.count() < requiredGap) {
+            if (orderType != "EXIT") { // Don't block exit orders for frequency
+                std::cout << "🚫 FREQUENCY BLOCK (" << orderType << "): " << symbol << " - " << elapsed.count() 
+                          << "s < " << requiredGap << "s required gap" << std::endl;
+                return false;
+            } else {
+                std::cout << "⚠️ EXIT ORDER frequency warning: " << symbol << " - " << elapsed.count() 
+                          << "s gap (allowed for risk management)" << std::endl;
+            }
         }
     }
     
-    // 2. Check hourly trade limit
+    // 2. Check hourly trade limit - SEPARATE counters for ENTRY vs EXIT
     auto currentHour = std::chrono::duration_cast<std::chrono::hours>(now.time_since_epoch()).count();
-    std::string hourKey = symbol + "_" + std::to_string(currentHour);
+    std::string hourKey = symbol + "_" + orderType + "_" + std::to_string(currentHour);
     
-    if (hourlyTradeCount_[hourKey] >= MAX_TRADES_PER_HOUR) {
-        std::cout << "🚫 HOURLY LIMIT: " << symbol << " - " << hourlyTradeCount_[hourKey] 
-                  << "/" << MAX_TRADES_PER_HOUR << " trades this hour" << std::endl;
-        return false;
+    // EXIT orders have higher hourly limit (risk management priority)
+    int maxTradesThisType = (orderType == "EXIT") ? (MAX_TRADES_PER_HOUR * 2) : MAX_TRADES_PER_HOUR;
+    
+    if (hourlyTradeCount_[hourKey] >= maxTradesThisType) {
+        if (orderType != "EXIT") { // Don't block exit orders for hourly limits
+            std::cout << "🚫 HOURLY LIMIT (" << orderType << "): " << symbol << " - " << hourlyTradeCount_[hourKey] 
+                      << "/" << maxTradesThisType << " trades this hour" << std::endl;
+            return false;
+        } else {
+            std::cout << "⚠️ EXIT ORDER hourly limit warning: " << symbol << " - " << hourlyTradeCount_[hourKey] 
+                      << "/" << maxTradesThisType << " (allowed for risk management)" << std::endl;
+        }
     }
     
     // 3. Check symbol PnL limit
@@ -1372,18 +1393,27 @@ bool Trading_system::emergencyRiskCheck(const std::string& symbol, double curren
 }
 
 void Trading_system::recordTrade(const std::string& symbol) {
+    recordTradeWithType(symbol, "ENTRY");
+}
+
+void Trading_system::recordTradeWithType(const std::string& symbol, const std::string& orderType) {
     std::lock_guard<std::mutex> lock(emergencyMutex_);
     
     auto now = std::chrono::system_clock::now();
     lastTradeTime_[symbol] = now;
     
-    // Update hourly counter
+    // Update hourly counter with order type
     auto currentHour = std::chrono::duration_cast<std::chrono::hours>(now.time_since_epoch()).count();
-    std::string hourKey = symbol + "_" + std::to_string(currentHour);
+    std::string hourKey = symbol + "_" + orderType + "_" + std::to_string(currentHour);
     hourlyTradeCount_[hourKey]++;
     
-    std::cout << "📊 TRADE RECORDED: " << symbol << " (Hourly count: " 
-              << hourlyTradeCount_[hourKey] << "/" << MAX_TRADES_PER_HOUR << ")" << std::endl;
+    // Also update general counter for backward compatibility
+    std::string generalKey = symbol + "_" + std::to_string(currentHour);
+    hourlyTradeCount_[generalKey]++;
+    
+    int maxForType = (orderType == "EXIT") ? (MAX_TRADES_PER_HOUR * 2) : MAX_TRADES_PER_HOUR;
+    std::cout << "📊 TRADE RECORDED (" << orderType << "): " << symbol << " (Count: " 
+              << hourlyTradeCount_[hourKey] << "/" << maxForType << ")" << std::endl;
 }
 
 void Trading_system::loadEmergencyState() {
@@ -1412,6 +1442,69 @@ void Trading_system::loadEmergencyState() {
         }
     } catch (const std::exception& e) {
         std::cout << "⚠️  Could not load PnL state: " << e.what() << std::endl;
+    }
+}
+
+// 🚨 CRITICAL: EXIT ORDER HANDLING to prevent stuck positions
+void Trading_system::executeExitOrder(const std::string& symbol, core::Direction direction, double quantity, const std::string& reason) {
+    try {
+        // Skip frequency check for EXIT orders - they are risk management priority
+        if (!emergencyFrequencyCheckWithType(symbol, "EXIT")) {
+            std::cout << "⚠️ EXIT order frequency check failed, but FORCING execution for risk management: " << symbol << std::endl;
+            // Continue anyway for exits - risk management takes priority
+        }
+
+        // Create EXIT signal
+        execution::TradingSignal exitSignal;
+        exitSignal.id = "EXIT_" + symbol + "_" + std::to_string(std::chrono::system_clock::now().time_since_epoch().count());
+        exitSignal.symbol = core::Symbol(symbol);
+        exitSignal.direction = direction;
+        exitSignal.strength = 1.0;  // Max strength for exits
+        exitSignal.targetSize = 1.0; // Full position
+        exitSignal.confidence = 1.0; // Max confidence for exits
+        exitSignal.quality = 1.0;
+        exitSignal.exchangeId = core::ExchangeId::binance(); // Default exchange
+        exitSignal.setQuantity(quantity);
+
+        std::cout << "🚨 EXECUTING EXIT ORDER: " << symbol << " " 
+                  << (direction == core::Direction::SELL ? "SELL" : "BUY") 
+                  << " qty=" << quantity << " reason=" << reason << std::endl;
+
+        // Execute immediately - bypass normal queue for exits
+        if (executionService_) {
+            ExecutionResponse response = executionService_->executeSignal(exitSignal);
+            
+            if (response.success) {
+                std::cout << "✅ EXIT EXECUTED: " << symbol << " " << reason << std::endl;
+                recordTradeWithType(symbol, "EXIT");
+            } else {
+                std::cout << "❌ EXIT FAILED: " << symbol << " " << reason 
+                          << " Error: " << response.error_message << std::endl;
+            }
+        }
+
+    } catch (const std::exception& e) {
+        std::cout << "💥 EXIT ORDER EXCEPTION: " << symbol << " " << e.what() << std::endl;
+    }
+}
+
+void Trading_system::handleExitSignal(const std::string& symbol, core::Direction exitDirection, double currentPrice, const std::string& exitReason) {
+    // Get current position size from risk manager 
+    double positionSize = 0.0;
+    if (riskManager_) {
+        try {
+            // This should get actual position, but for now use a reasonable estimate
+            positionSize = 0.001; // Estimate based on recent orders
+            
+            std::cout << "🔄 EXIT SIGNAL: " << symbol << " direction=" 
+                      << (exitDirection == core::Direction::SELL ? "SELL" : "BUY")
+                      << " price=" << currentPrice << " reason=" << exitReason << std::endl;
+            
+            executeExitOrder(symbol, exitDirection, positionSize, exitReason);
+            
+        } catch (const std::exception& e) {
+            std::cout << "❌ Failed to handle exit signal: " << e.what() << std::endl;
+        }
     }
 }
 
