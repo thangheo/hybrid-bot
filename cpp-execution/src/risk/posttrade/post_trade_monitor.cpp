@@ -9,6 +9,7 @@
 #include "risk/posttrade/post_trade_monitor.hpp"
 #include <algorithm>
 #include <sstream>
+#include <iostream>
 #include "common/logger.hpp"
 #include <unordered_set>
 // Persistence and alerting
@@ -723,10 +724,21 @@ void PostTradeMonitor::shutdownComponents() {
 }
 
 void PostTradeMonitor::connectComponentCallbacks() {
+    // CRASH FIX: Add safe callback handling with validation
     // Connect stop loss callbacks
     if (stopLossManager_) {
         stopLossManager_->registerStopLossCallback([this](const EnhancedStopLossEvent& event) {
-            handleStopLossEvent(event);
+            try {
+                // Validate object state before processing
+                if (shutdownRequested_.load()) {
+                    return;  // Skip if shutting down
+                }
+                handleStopLossEvent(event);
+            } catch (const std::exception& e) {
+                std::cerr << "PostTradeMonitor: Stop loss callback failed: " << e.what() << std::endl;
+            } catch (...) {
+                std::cerr << "PostTradeMonitor: Stop loss callback failed with unknown error" << std::endl;
+            }
         });
     }
     
@@ -735,38 +747,78 @@ void PostTradeMonitor::connectComponentCallbacks() {
         circuitBreaker_->registerStateChangeCallback([this](CircuitBreakerState oldState, 
                                                            CircuitBreakerState newState, 
                                                            std::string_view reason) {
-            handleCircuitBreakerEvent(oldState, newState, reason);
+            try {
+                // Validate object state before processing
+                if (shutdownRequested_.load()) {
+                    return;  // Skip if shutting down
+                }
+                handleCircuitBreakerEvent(oldState, newState, reason);
+            } catch (const std::exception& e) {
+                std::cerr << "PostTradeMonitor: Circuit breaker callback failed: " << e.what() << std::endl;
+            } catch (...) {
+                std::cerr << "PostTradeMonitor: Circuit breaker callback failed with unknown error" << std::endl;
+            }
         });
     }
     
     // Connect drawdown callbacks
     if (drawdownMonitor_) {
         drawdownMonitor_->registerDrawdownCallback([this](const DrawdownEvent& event) {
-            handleDrawdownEvent(event);
+            try {
+                // Validate object state before processing
+                if (shutdownRequested_.load()) {
+                    return;  // Skip if shutting down
+                }
+                handleDrawdownEvent(event);
+            } catch (const std::exception& e) {
+                std::cerr << "PostTradeMonitor: Drawdown callback failed: " << e.what() << std::endl;
+            } catch (...) {
+                std::cerr << "PostTradeMonitor: Drawdown callback failed with unknown error" << std::endl;
+            }
         });
     }
     
     // Connect reconciliation callbacks
     if (balanceReconciliation_) {
         balanceReconciliation_->registerReconciliationCallback([this](const PositionReconciliationEvent& event) {
-            handleReconciliationEvent(event);
+            try {
+                // Validate object state before processing
+                if (shutdownRequested_.load()) {
+                    return;  // Skip if shutting down
+                }
+                handleReconciliationEvent(event);
+            } catch (const std::exception& e) {
+                std::cerr << "PostTradeMonitor: Reconciliation callback failed: " << e.what() << std::endl;
+            } catch (...) {
+                std::cerr << "PostTradeMonitor: Reconciliation callback failed with unknown error" << std::endl;
+            }
         });
     }
 }
 
 void PostTradeMonitor::handleStopLossEvent(const EnhancedStopLossEvent& event) {
-    RiskEvent riskEvent(
-        RiskEventType::STOP_LOSS_TRIGGERED,
-        formatString("Stop loss triggered for {}:{} at price {}", 
-                   event.exchangeId.toString(), event.tradingPair.toString(), event.triggerPrice),
-        event.isCriticalLoss() ? "critical" : "warning"
-    );
-    
-    notifyRiskEvent(riskEvent);
-    
-    // Update mode if critical loss
-    if (event.isCriticalLoss(config_.getStopLossConfig().maxLossPercentage * 0.8)) {
-        setMode(RiskManagerMode::HEIGHTENED_RISK, "Critical stop loss triggered");
+    try {
+        RiskEvent riskEvent(
+            RiskEventType::STOP_LOSS_TRIGGERED,
+            formatString("Stop loss triggered for {}:{} at price {}", 
+                       event.exchangeId.toString(), event.tradingPair.toString(), event.triggerPrice),
+            event.isCriticalLoss() ? "critical" : "warning"
+        );
+        
+        notifyRiskEvent(riskEvent);
+        
+        // Update mode if critical loss - add safe validation
+        try {
+            if (event.isCriticalLoss(config_.getStopLossConfig().maxLossPercentage * 0.8)) {
+                setMode(RiskManagerMode::HEIGHTENED_RISK, "Critical stop loss triggered");
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "PostTradeMonitor: Error updating mode in stop loss handler: " << e.what() << std::endl;
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "PostTradeMonitor: Critical error in handleStopLossEvent: " << e.what() << std::endl;
+    } catch (...) {
+        std::cerr << "PostTradeMonitor: Critical unknown error in handleStopLossEvent" << std::endl;
     }
 }
 
@@ -870,46 +922,97 @@ void PostTradeMonitor::handleReconciliationEvent(const PositionReconciliationEve
 }
 
 void PostTradeMonitor::notifyRiskEvent(const RiskEvent& event) {
-    // Update system health statistics
-    systemHealth_.totalRiskEvents.fetch_add(1);
-    if (event.isCritical()) {
-        systemHealth_.criticalEvents.fetch_add(1);
-    }
-    systemHealth_.setLastEventTime(event.timestamp);
-    
-    // Add to event history
-    addToEventHistory(const_cast<RiskEvent&>(event));
-    
-    // Notify callbacks
-    std::shared_lock<std::shared_mutex> lock(callbackMutex_);
-    for (const auto& callback : riskEventCallbacks_) {
-        try {
-            callback(event);
-        } catch (...) {
-            // Log error but continue
+    try {
+        // Update system health statistics
+        systemHealth_.totalRiskEvents.fetch_add(1);
+        if (event.isCritical()) {
+            systemHealth_.criticalEvents.fetch_add(1);
         }
+        systemHealth_.setLastEventTime(event.timestamp);
+        
+        // Add to event history safely
+        try {
+            addToEventHistory(const_cast<RiskEvent&>(event));
+        } catch (const std::exception& e) {
+            std::cerr << "PostTradeMonitor: Failed to add event to history: " << e.what() << std::endl;
+        } catch (...) {
+            std::cerr << "PostTradeMonitor: Unknown error adding event to history" << std::endl;
+        }
+        
+        // Notify callbacks with proper error handling
+        std::vector<PostTradeRiskEventCallback> callbacksCopy;
+        {
+            std::shared_lock<std::shared_mutex> lock(callbackMutex_);
+            callbacksCopy = riskEventCallbacks_;
+        }
+        
+        for (size_t i = 0; i < callbacksCopy.size(); ++i) {
+            try {
+                callbacksCopy[i](event);
+            } catch (const std::exception& e) {
+                std::cerr << "PostTradeMonitor: Risk event callback " << i 
+                          << " failed: " << e.what() << std::endl;
+            } catch (...) {
+                std::cerr << "PostTradeMonitor: Risk event callback " << i 
+                          << " failed with unknown error" << std::endl;
+            }
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "PostTradeMonitor: Critical error in notifyRiskEvent: " << e.what() << std::endl;
+    } catch (...) {
+        std::cerr << "PostTradeMonitor: Critical unknown error in notifyRiskEvent" << std::endl;
     }
 }
 
 void PostTradeMonitor::notifyModeChange(RiskManagerMode oldMode, RiskManagerMode newMode, std::string_view reason) {
-    std::shared_lock<std::shared_mutex> lock(callbackMutex_);
-    for (const auto& callback : modeChangeCallbacks_) {
-        try {
-            callback(oldMode, newMode, reason);
-        } catch (...) {
-            // Log error but continue
+    try {
+        std::vector<ModeChangeCallback> callbacksCopy;
+        {
+            std::shared_lock<std::shared_mutex> lock(callbackMutex_);
+            callbacksCopy = modeChangeCallbacks_;
         }
+        
+        for (size_t i = 0; i < callbacksCopy.size(); ++i) {
+            try {
+                callbacksCopy[i](oldMode, newMode, reason);
+            } catch (const std::exception& e) {
+                std::cerr << "PostTradeMonitor: Mode change callback " << i 
+                          << " failed: " << e.what() << std::endl;
+            } catch (...) {
+                std::cerr << "PostTradeMonitor: Mode change callback " << i 
+                          << " failed with unknown error" << std::endl;
+            }
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "PostTradeMonitor: Critical error in notifyModeChange: " << e.what() << std::endl;
+    } catch (...) {
+        std::cerr << "PostTradeMonitor: Critical unknown error in notifyModeChange" << std::endl;
     }
 }
 
 void PostTradeMonitor::notifyHealthStatus(const SystemHealthStatus& status) {
-    std::shared_lock<std::shared_mutex> lock(callbackMutex_);
-    for (const auto& callback : healthStatusCallbacks_) {
-        try {
-            callback(status);
-        } catch (...) {
-            // Log error but continue
+    try {
+        std::vector<HealthStatusCallback> callbacksCopy;
+        {
+            std::shared_lock<std::shared_mutex> lock(callbackMutex_);
+            callbacksCopy = healthStatusCallbacks_;
         }
+        
+        for (size_t i = 0; i < callbacksCopy.size(); ++i) {
+            try {
+                callbacksCopy[i](status);
+            } catch (const std::exception& e) {
+                std::cerr << "PostTradeMonitor: Health status callback " << i 
+                          << " failed: " << e.what() << std::endl;
+            } catch (...) {
+                std::cerr << "PostTradeMonitor: Health status callback " << i 
+                          << " failed with unknown error" << std::endl;
+            }
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "PostTradeMonitor: Critical error in notifyHealthStatus: " << e.what() << std::endl;
+    } catch (...) {
+        std::cerr << "PostTradeMonitor: Critical unknown error in notifyHealthStatus" << std::endl;
     }
 }
 
