@@ -61,7 +61,7 @@ MetaFilterResult MetaFilter::checkEntryAllowed(
     }
     
     if (!found_regime) {
-        LOG_DEBUG("MetaFilter: No regime info available for symbol {} (tried: {} and converted)", symbol, lookup_symbol);
+        LOG_TRACE("MetaFilter: No regime info available for symbol {} (tried: {} and converted)", symbol, lookup_symbol);
         result.allow_entry = true; // Default to allow when no data
         result.block_reason = "regime_info_unavailable";
         allowed_entries_++;
@@ -70,7 +70,7 @@ MetaFilterResult MetaFilter::checkEntryAllowed(
 
     // Check if regime info is valid
     if (!regime_info.valid) {
-        LOG_DEBUG("MetaFilter: Invalid regime info for symbol {}", symbol);
+        LOG_TRACE("MetaFilter: Invalid regime info for symbol {}", symbol);
         result.allow_entry = true; // Default to allow when invalid
         result.block_reason = "regime_info_invalid";
         allowed_entries_++;
@@ -79,7 +79,7 @@ MetaFilterResult MetaFilter::checkEntryAllowed(
 
     // Extract p_trend_up
     if (!regime_info.p_trend_up.has_value()) {
-        LOG_DEBUG("MetaFilter: No p_trend_up available for symbol {}", symbol);
+        LOG_TRACE("MetaFilter: No p_trend_up available for symbol {}", symbol);
         result.allow_entry = true; // Default to allow when no data
         result.block_reason = "p_trend_up_unavailable";
         allowed_entries_++;
@@ -129,7 +129,7 @@ MetaFilterResult MetaFilter::checkEntryAllowed(
     result.block_reason = "";
     allowed_entries_++;
     
-    LOG_DEBUG("MetaFilter ALLOWED: {} - p_trend_up={:.3f}, regime_confidence={:.3f}",
+    LOG_TRACE("MetaFilter ALLOWED: {} - p_trend_up={:.3f}, regime_confidence={:.3f}",
               symbol, result.p_trend_up_value, result.regime_confidence_value);
     
     return result;
@@ -150,7 +150,7 @@ MetaFilterResult MetaFilter::checkEmergencyExit(
 
     // Check if regime subscriber is available
     if (!regime_subscriber) {
-        LOG_DEBUG("MetaFilter Emergency: No regime subscriber available for symbol {}", symbol);
+        LOG_TRACE("MetaFilter Emergency: No regime subscriber available for symbol {}", symbol);
         result.trigger_emergency_exit = false;
         result.emergency_reason = "no_regime_data";
         return result;
@@ -178,7 +178,7 @@ MetaFilterResult MetaFilter::checkEmergencyExit(
     }
     
     if (!found_regime) {
-        LOG_DEBUG("MetaFilter Emergency: No regime info available for symbol {} (tried: {} and converted)", symbol, lookup_symbol);
+        LOG_TRACE("MetaFilter Emergency: No regime info available for symbol {} (tried: {} and converted)", symbol, lookup_symbol);
         result.trigger_emergency_exit = false;
         result.emergency_reason = "regime_info_unavailable";
         return result;
@@ -186,7 +186,7 @@ MetaFilterResult MetaFilter::checkEmergencyExit(
 
     // Check if regime info is valid
     if (!regime_info.valid) {
-        LOG_DEBUG("MetaFilter Emergency: Invalid regime info for symbol {}", symbol);
+        LOG_TRACE("MetaFilter Emergency: Invalid regime info for symbol {}", symbol);
         result.trigger_emergency_exit = false;
         result.emergency_reason = "regime_info_invalid";
         return result;
@@ -194,7 +194,7 @@ MetaFilterResult MetaFilter::checkEmergencyExit(
 
     // Extract p_trend_up
     if (!regime_info.p_trend_up.has_value()) {
-        LOG_DEBUG("MetaFilter Emergency: No p_trend_up available for symbol {}", symbol);
+        LOG_TRACE("MetaFilter Emergency: No p_trend_up available for symbol {}", symbol);
         result.trigger_emergency_exit = false;
         result.emergency_reason = "p_trend_up_unavailable";
         return result;
@@ -241,7 +241,7 @@ MetaFilterResult MetaFilter::checkEmergencyExit(
     result.trigger_emergency_exit = false;
     result.emergency_reason = "";
     
-    LOG_DEBUG("MetaFilter Emergency OK: {} - p_trend_up={:.3f}, regime_confidence={:.3f}",
+    LOG_TRACE("MetaFilter Emergency OK: {} - p_trend_up={:.3f}, regime_confidence={:.3f}",
               symbol, result.p_trend_up_value, result.regime_confidence_value);
     
     return result;

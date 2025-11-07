@@ -371,7 +371,14 @@ std::future<models::ExecutionReport> BinanceApiClient::placeOrder(const models::
 
             params["quantity"] = formatDoubleWithStep(alignedQty, step);
         } else {
-            params["quantity"] = std::to_string(quantity);
+            // Use safe precision formatting instead of std::to_string to avoid long decimals
+            std::ostringstream oss;
+            oss << std::fixed << std::setprecision(8) << quantity;
+            std::string qtyStr = oss.str();
+            // Remove trailing zeros
+            qtyStr.erase(qtyStr.find_last_not_of('0') + 1, std::string::npos);
+            if (qtyStr.back() == '.') qtyStr.pop_back();
+            params["quantity"] = qtyStr;
         }
 
         if (type != models::OrderType::MARKET) {
