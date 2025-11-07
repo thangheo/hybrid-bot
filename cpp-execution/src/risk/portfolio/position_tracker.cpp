@@ -276,7 +276,7 @@ void PositionTracker::processExecutionReport(const ExecutionReport& executionRep
             _pt_oss << "[POSITION_TRACKER_DBG] processExecutionReport: exchange=" << executionReport.exchangeId().toString()
                     << " symbol=" << executionReport.symbol().toString()
                     << " fills=" << executionReport.fills().size();
-            LOG_INFO("PositionTracker", _pt_oss.str());
+            LOG_TRACE("PositionTracker", _pt_oss.str());
         } catch (...) {
             // fall through if logging formatting fails
         }
@@ -407,41 +407,78 @@ void PositionTracker::processExecutionReport(const ExecutionReport& executionRep
         std::optional<Position> toNotify;
         std::string notifyType;
 
+        bool needReconcile = false;
         {
             std::lock_guard<std::mutex> lock(m_positionsMutex);
             std::string positionKey = createPositionKey(exchangeId, tradingPair);
 
             auto it = m_positions.find(positionKey);
             if (it != m_positions.end()) {
-                // Update existing position
-                it->second.updatePosition(totalFillQuantity, weightedAvgPrice);
-                updatePositionCurrentPrice(it->second);
-                try {
-                    std::ostringstream _pt_upd;
-                    _pt_upd << "[POSITION_TRACKER_DBG] updated position: key=" << positionKey
-                            << " qty=" << it->second.getQuantity()
-                            << " avgPrice=" << it->second.getAverageEntryPrice();
-                    LOG_INFO("PositionTracker", _pt_upd.str());
-                } catch (...) {}
-                // make a copy to notify outside the lock
-                toNotify = it->second;
-                notifyType = "modified";
+                // Spot-only safeguard: if applying this fill would produce a negative net
+                // position (i.e. prospective short) then don't apply the fill locally —
+                // instead request reconciliation from exchange to get authoritative state.
+                double currentQty = it->second.getQuantity();
+                double prospectiveQty = currentQty + totalFillQuantity;
+                if (prospectiveQty < -1e-8) {
+                    try {
+                        LOG_WARN("PositionTracker", "Prospective negative position detected for {} on {} (current={}, delta={}) - scheduling reconciliation and skipping update",
+                                 tradingPairSymbol.toString(), exchangeId.toString(), currentQty, totalFillQuantity);
+                    } catch (...) {}
+                    needReconcile = true;
+                } else {
+                    // Safe to apply update
+                    it->second.updatePosition(totalFillQuantity, weightedAvgPrice);
+                    updatePositionCurrentPrice(it->second);
+                    try {
+                        std::ostringstream _pt_upd;
+                        _pt_upd << "[POSITION_TRACKER_DBG] updated position: key=" << positionKey
+                                << " qty=" << it->second.getQuantity()
+                                << " avgPrice=" << it->second.getAverageEntryPrice();
+                        LOG_TRACE("PositionTracker", _pt_upd.str());
+                    } catch (...) {}
+                    // make a copy to notify outside the lock
+                    toNotify = it->second;
+                    notifyType = "modified";
+                }
             } else {
                 // Create new position
-                Position newPosition(exchangeId, tradingPair, strategyId, 
-                                   totalFillQuantity, weightedAvgPrice);
-                updatePositionCurrentPrice(newPosition);
-                auto [it2, inserted] = m_positions.emplace(positionKey, std::move(newPosition));
-                if (inserted) {
+                // If the fill itself is negative (a short) and we only trade spot, skip and reconcile
+                if (totalFillQuantity < -1e-8) {
                     try {
-                        std::ostringstream _pt_new;
-                        _pt_new << "[POSITION_TRACKER_DBG] created position: key=" << positionKey
-                                << " qty=" << totalFillQuantity << " price=" << weightedAvgPrice;
-                        LOG_INFO("PositionTracker", _pt_new.str());
-                    } catch (...) {}
-                    toNotify = it2->second;
-                    notifyType = "new";
+                        LOG_WARN("PositionTracker", "Received negative fill for new spot position {} on {} (delta={}) - scheduling reconciliation and skipping creation",
+                                 tradingPairSymbol.toString(), exchangeId.toString(), totalFillQuantity);
+                    } catch(...) {}
+                    needReconcile = true;
+                } else {
+                    Position newPosition(exchangeId, tradingPair, strategyId, 
+                                       totalFillQuantity, weightedAvgPrice);
+                    updatePositionCurrentPrice(newPosition);
+                    auto [it2, inserted] = m_positions.emplace(positionKey, std::move(newPosition));
+                    if (inserted) {
+                        try {
+                            std::ostringstream _pt_new;
+                            _pt_new << "[POSITION_TRACKER_DBG] created position: key=" << positionKey
+                                    << " qty=" << totalFillQuantity << " price=" << weightedAvgPrice;
+                            LOG_TRACE("PositionTracker", _pt_new.str());
+                        } catch (...) {}
+                        toNotify = it2->second;
+                        notifyType = "new";
+                    }
                 }
+            }
+        }
+
+        // If we flagged a need to reconcile, perform reconciliation outside the positions mutex
+        if (needReconcile) {
+            try {
+                if (m_dataInterface) {
+                    // Best-effort: fetch authoritative positions for this exchange
+                    reconcilePositions(exchangeId);
+                } else {
+                    try { LOG_WARN("PositionTracker", "No DataInterface available to reconcile positions for {}", exchangeId.toString()); } catch(...) {}
+                }
+            } catch (const std::exception& e) {
+                try { LOG_WARN("PositionTracker", "reconcilePositions failed for {}: {}", exchangeId.toString(), e.what()); } catch(...) {}
             }
         }
 
@@ -538,7 +575,7 @@ std::vector<Position> PositionTracker::getAllPositions() const {
     try {
         std::ostringstream _pt_gall;
         _pt_gall << "[POSITION_TRACKER_DBG] getAllPositions returning count=" << positions.size();
-        LOG_INFO("PositionTracker", _pt_gall.str());
+        LOG_TRACE("PositionTracker", _pt_gall.str());
     } catch (...) {}
     
     return positions;

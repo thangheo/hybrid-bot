@@ -978,9 +978,34 @@ int64_t PostTradeMonitor::calculateDynamicTTL(double currentVolatility) {
 }
 
 void PostTradeMonitor::enforcePositionTTL() {
+    // Prevent concurrent runs of this function - enforce non-reentrancy
+    bool expected = false;
+    if (!enforceTtlRunning_.compare_exchange_strong(expected, true)) {
+        if (kPostTradeTtlDebug) LOG_INFO("[TTL_DEBUG] enforcePositionTTL already running - skipping overlapping invocation");
+        return;
+    }
+
+    // Throttle frequent invocations: ensure at least monitorConfig_.positionTtlCheckIntervalMs has passed
+    try {
+        auto now = core::now();
+        int64_t nowNanos = now.time_since_epoch().count();
+        int64_t last = lastEnforceTtlNanos_.load();
+        int64_t minIntervalNanos = std::chrono::duration_cast<std::chrono::nanoseconds>(monitorConfig_.positionTtlCheckIntervalMs).count();
+        if (last != 0 && (nowNanos - last) < minIntervalNanos) {
+            // release guard before returning
+            enforceTtlRunning_.store(false);
+            if (kPostTradeTtlDebug) LOG_INFO("[TTL_DEBUG] enforcePositionTTL invoked too soon - skipping");
+            return;
+        }
+        lastEnforceTtlNanos_.store(nowNanos);
+    } catch (...) {
+        // Ignore timing errors and proceed
+    }
+
     if (!positionTracker_ || !dataInterface_) {
         LOG_INFO(formatString("[TTL_DEBUG] enforcePositionTTL early return: positionTracker_={} dataInterface_={}", 
                  (positionTracker_ ? "valid" : "null"), (dataInterface_ ? "valid" : "null")));
+        enforceTtlRunning_.store(false);
         return;
     }
 
@@ -1025,7 +1050,8 @@ void PostTradeMonitor::enforcePositionTTL() {
         try {
             if (std::abs(pos.getQuantity()) < 1e-8) continue;
 
-            // create a stable key for the position
+    // done - release running flag
+    enforceTtlRunning_.store(false);
             std::string key = pos.getExchangeId().toString() + ":" + pos.getTradingPair().toString();
 
             // Skip if already being closed

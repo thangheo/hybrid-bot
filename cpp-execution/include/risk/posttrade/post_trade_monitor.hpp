@@ -511,6 +511,9 @@ private:
     void healthCheckLoop();
     void performScheduledTasks();
     void performMaintenanceTasks();
+    // Guarding enforcePositionTTL to avoid re-entrancy and high CPU usage
+    std::atomic<bool> enforceTtlRunning_{false};
+    std::atomic<int64_t> lastEnforceTtlNanos_{0};
     
     // Mode management
     bool shouldTransitionMode(RiskManagerMode currentMode) const;

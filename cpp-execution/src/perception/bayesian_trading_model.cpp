@@ -46,6 +46,8 @@ void BayesianTradingModel::initialize_model(int num_features) {
     feature_mean_ = Eigen::VectorXd::Zero(num_features);
     feature_std_ = Eigen::VectorXd::Ones(num_features);
     feature_m2_ = Eigen::VectorXd::Zero(num_features);
+    // initialize feature active mask (assume active until stats say otherwise)
+    feature_active_.assign(num_features, 1);
     
     is_initialized_ = true;
     
@@ -82,9 +84,10 @@ void BayesianTradingModel::update_feature_stats(const Eigen::VectorXd& features)
         
         if (num_updates_ > 1) {
             feature_std_(i) = std::sqrt(feature_m2_(i) / (num_updates_ - 1));
-            // Prevent division by zero
-            if (feature_std_(i) < 1e-8) {
+            // If variance is effectively zero, mark feature as inactive and set std to 1.0
+            if (!std::isfinite(feature_std_(i)) || feature_std_(i) < 1e-12) {
                 feature_std_(i) = 1.0;
+                feature_active_[i] = 0; // ignore constant feature
             }
         }
     }
@@ -125,8 +128,13 @@ Eigen::VectorXd BayesianTradingModel::normalize_features(const Eigen::VectorXd& 
         
         // Add small epsilon to prevent division by zero
         if (std_val < 1e-8) std_val = 1e-8;
-        
-        normalized(i) = (raw_val - mean_val) / std_val;
+
+        // If feature is inactive (constant), set normalized to zero and skip
+        if (i < static_cast<int>(feature_active_.size()) && feature_active_[i] == 0) {
+            normalized(i) = 0.0;
+        } else {
+            normalized(i) = (raw_val - mean_val) / std_val;
+        }
         
         // Clip outliers to [-3, 3] sigma for numerical stability
         normalized(i) = std::max(-3.0, std::min(3.0, normalized(i)));
@@ -142,7 +150,13 @@ void BayesianTradingModel::update_bayesian_weights(const Eigen::VectorXd& normal
         double t = (label == c) ? 1.0 : 0.0;
 
         // Using diagonal approximation: sigma_inv_new = sigma_inv + beta * x^2 (elementwise)
+        // Zero-out inactive features so they don't affect precision updates
         Eigen::VectorXd x2 = normalized_features.array().square();
+        for (int i = 0; i < x2.size(); ++i) {
+            if (i < static_cast<int>(feature_active_.size()) && feature_active_[i] == 0) {
+                x2(i) = 0.0;
+            }
+        }
 
         // Apply forgetting: discount previous precision (larger precision => more certain).
         // If forgetting_factor < 1, we reduce the contribution of the previous precision to allow
@@ -152,6 +166,22 @@ void BayesianTradingModel::update_bayesian_weights(const Eigen::VectorXd& normal
         Eigen::VectorXd prev_sigma_inv = sigma_inv_diag_[c] * ff; 
 
         Eigen::VectorXd sigma_inv_new = prev_sigma_inv.array() + config_.beta * x2.array();
+        
+        // Validate sigma_inv_new to prevent numerical issues
+        for (int i = 0; i < sigma_inv_new.size(); ++i) {
+            if (!std::isfinite(sigma_inv_new(i)) || sigma_inv_new(i) <= 0.0) {
+                sigma_inv_new(i) = 1.0 / config_.initial_sigma; // Reset to initial value
+            }
+            // Prevent extremely large precision (small variance)
+            const double MAX_PRECISION = 1e4; // tightened from 1e6
+            if (sigma_inv_new(i) > MAX_PRECISION) {
+                sigma_inv_new(i) = MAX_PRECISION;
+            }
+            // If feature inactive, keep precision at prior
+            if (i < static_cast<int>(feature_active_.size()) && feature_active_[i] == 0) {
+                sigma_inv_new(i) = 1.0 / config_.initial_sigma;
+            }
+        }
 
         // Update mean: mu_new = mu + config_.beta * (sigma_new * x) * (t - sigmoid(mu.dot(x)))
         // sigma_new (diag) = 1 / sigma_inv_new
@@ -160,17 +190,67 @@ void BayesianTradingModel::update_bayesian_weights(const Eigen::VectorXd& normal
         // Process noise: inflate diagonal covariance slightly to model parameter drift.
         if (config_.process_noise > 0.0) {
             sigma_new.array() += config_.process_noise;
+            // Validate after adding process noise
+            for (int i = 0; i < sigma_new.size(); ++i) {
+                if (!std::isfinite(sigma_new(i)) || sigma_new(i) <= 0.0) {
+                    sigma_new(i) = config_.initial_sigma;
+                }
+            }
             // Recompute inverse after adding process noise
             sigma_inv_new = sigma_new.array().inverse();
         }
 
         double pred_logit = mu_[c].dot(normalized_features);
+        
+        // Validate pred_logit before sigmoid
+        if (!std::isfinite(pred_logit)) {
+            std::cerr << "[BayesianTradingModel] Warning: pred_logit NaN/Inf for class " << c << " - skipping update" << std::endl;
+            continue;
+        }
+        
         double pred = sigmoid(pred_logit);
         double error = t - pred;
+        
+        // Validate error before computing delta
+        if (!std::isfinite(error)) {
+            std::cerr << "[BayesianTradingModel] Warning: error NaN/Inf for class " << c << " - skipping update" << std::endl;
+            continue;
+        }
 
         // delta_mu = sigma_new * (config_.beta * x * error) elementwise
         Eigen::VectorXd delta = (sigma_new.array() * (config_.beta * normalized_features.array() * error)).matrix();
+        
+        // Validate delta before applying
+        bool delta_valid = true;
+        for (int i = 0; i < delta.size(); ++i) {
+            if (!std::isfinite(delta(i))) {
+                delta_valid = false;
+                break;
+            }
+        }
+        
+        if (!delta_valid) {
+            std::cerr << "[BayesianTradingModel] Warning: delta contains NaN/Inf for class " << c << " - skipping update" << std::endl;
+            continue;
+        }
+        
+        // Clamp delta to prevent explosive updates
+        const double DELTA_CLAMP = 10.0;
+        for (int i = 0; i < delta.size(); ++i) {
+            delta(i) = std::max(-DELTA_CLAMP, std::min(DELTA_CLAMP, delta(i)));
+        }
+        
         mu_[c] += delta;
+        
+        // Clamp mu_ weights to prevent extreme values
+        const double MU_CLAMP = 100.0;
+        for (int i = 0; i < mu_[c].size(); ++i) {
+            if (!std::isfinite(mu_[c](i))) {
+                mu_[c](i) = 0.0;
+            } else {
+                mu_[c](i) = std::max(-MU_CLAMP, std::min(MU_CLAMP, mu_[c](i)));
+            }
+        }
 
         // Store back diagonal covariances and inverses
         sigma_diag_[c] = sigma_new;
@@ -206,14 +286,67 @@ std::tuple<double, double, double> BayesianTradingModel::predict_multiclass(cons
     Eigen::VectorXd feature_vec = Eigen::Map<const Eigen::VectorXd>(features.data(), features.size());
     Eigen::VectorXd normalized = normalize_features(feature_vec);
 
+    // Defensive: ensure normalized features are finite. If not, log and fallback.
+    for (int i = 0; i < normalized.size(); ++i) {
+        if (!std::isfinite(normalized(i))) {
+            std::cerr << "[BayesianTradingModel] Warning: normalized features contain NaN/Inf - zeroing features and returning uniform probs" << std::endl;
+            return {1.0/3.0, 1.0/3.0, 1.0/3.0};
+        }
+    }
+
     // Compute logits for each class
     Eigen::VectorXd logits(NUM_CLASSES);
+    bool logits_invalid = false;
+    
     for (int c = 0; c < NUM_CLASSES; ++c) {
-        logits(c) = mu_[c].dot(normalized);
+        // Check if mu_[c] contains any non-finite values
+        bool mu_valid = true;
+        for (int i = 0; i < mu_[c].size(); ++i) {
+            if (!std::isfinite(mu_[c](i))) {
+                mu_valid = false;
+                break;
+            }
+        }
+        
+        if (!mu_valid) {
+            std::cerr << "[BayesianTradingModel] Warning: mu_[" << c << "] contains NaN/Inf values - zeroing" << std::endl;
+            logits(c) = 0.0;
+            logits_invalid = true;
+            continue;
+        }
+        
+        double val = mu_[c].dot(normalized);
+        if (!std::isfinite(val)) {
+            std::cerr << "[BayesianTradingModel] Warning: dot product for class " << c << " is NaN/Inf (" << val << ") - zeroing" << std::endl;
+            val = 0.0;
+            logits_invalid = true;
+        }
+        logits(c) = val;
+    }
+    
+    // If any logits are problematic, return uniform probabilities immediately
+    if (logits_invalid) {
+        std::cerr << "[BayesianTradingModel] Warning: logits computation unstable - returning uniform probs" << std::endl;
+        return {1.0/3.0, 1.0/3.0, 1.0/3.0};
+    }
+
+    // Clamp logits to a safe numeric range before softmax to avoid overflow/NaN
+    const double LOGIT_CLAMP = 700.0; // exp(700) is huge but still below overflow on double
+    for (int c = 0; c < NUM_CLASSES; ++c) {
+        if (!std::isfinite(logits(c))) logits(c) = 0.0;
+        if (logits(c) > LOGIT_CLAMP) logits(c) = LOGIT_CLAMP;
+        if (logits(c) < -LOGIT_CLAMP) logits(c) = -LOGIT_CLAMP;
     }
 
     // Softmax to probabilities (stable)
     double max_logit = logits.maxCoeff();
+    
+    // Additional safety: ensure max_logit is finite
+    if (!std::isfinite(max_logit)) {
+        std::cerr << "[BayesianTradingModel] Warning: max_logit is NaN/Inf (" << max_logit << ") - using uniform probs" << std::endl;
+        return {1.0/3.0, 1.0/3.0, 1.0/3.0};
+    }
+    
     Eigen::VectorXd exps = (logits.array() - max_logit).exp();
     double sum_exps = exps.sum();
     Eigen::VectorXd probs(NUM_CLASSES);
@@ -572,6 +705,12 @@ bool BayesianTradingModel::load_model(const std::string& filepath) {
             for (int i = 0; i < num_features_; ++i) {
                 v(i) = class_arr[i].asDouble();
             }
+            // Sanitize loaded variances: clamp to reasonable range
+            for (int i = 0; i < v.size(); ++i) {
+                if (!std::isfinite(v(i)) || v(i) <= 0.0) v(i) = config_.initial_sigma;
+                const double MAX_VARIANCE = 1e6; // prevent astronomic variances
+                if (v(i) > MAX_VARIANCE) v(i) = MAX_VARIANCE;
+            }
             sigma_diag_.push_back(v);
             Eigen::VectorXd inv = v.array().inverse();
             sigma_inv_diag_.push_back(inv);
@@ -581,18 +720,24 @@ bool BayesianTradingModel::load_model(const std::string& filepath) {
         const Json::Value& feat_mean_json = root["feature_mean"];
         const Json::Value& feat_std_json = root["feature_std"];
         const Json::Value& feat_m2_json = root["feature_m2"];
-        
+
         feature_mean_ = Eigen::VectorXd(num_features_);
         feature_std_ = Eigen::VectorXd(num_features_);
         feature_m2_ = Eigen::VectorXd(num_features_);
-        
+
+        // initialize feature_active_ mask and sanitize feature stds
+        feature_active_.assign(num_features_, 1);
+
         for (int i = 0; i < num_features_; ++i) {
             feature_mean_(i) = feat_mean_json[i].asDouble();
             feature_std_(i) = feat_std_json[i].asDouble();
             feature_m2_(i) = feat_m2_json[i].asDouble();
+
+            if (!std::isfinite(feature_std_(i)) || feature_std_(i) < 1e-12) {
+                feature_std_(i) = 1.0;
+                feature_active_[i] = 0;
+            }
         }
-        
-        is_initialized_ = true;
         
         std::cout << "[BayesianTradingModel] Model loaded from: " << filepath << std::endl;
         return true;
