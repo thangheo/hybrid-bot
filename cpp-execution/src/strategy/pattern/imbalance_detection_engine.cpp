@@ -27,7 +27,7 @@
 #include <random>
  #include <sstream>
 #include <filesystem>
-#include <logger.hpp>
+#include <common/logger.hpp>
 #include "perception/bayesian_trading_adapter.hpp"
 #include "core_analysis/regime_subscriber.hpp"
 
@@ -3763,10 +3763,12 @@ void ImbalanceDetectionEngine::trackLabelingEvent(core::Direction labelDirection
 // Optimal exit strategy methods replaced the old transition tracking
 // Old methods removed - now using OptimalExitStrategy for better HFT performance
 
-// Global function to allow external registration of exit callback on g_optimalExit
-void registerGlobalOptimalExitCallback(const OptimalExitStrategy::ExitCallback& callback) {
-    g_optimalExit.registerExitCallback(callback);
-}
-
 } // namespace strategy
 } // namespace trading
+
+// Define the global registration function in the global namespace so it
+// matches the declaration in the public header
+void registerGlobalOptimalExitCallback(const trading::strategy::OptimalExitStrategy::ExitCallback& callback) {
+    // Forward to the internal global instance defined in this translation unit
+    trading::strategy::g_optimalExit.registerExitCallback(callback);
+}
