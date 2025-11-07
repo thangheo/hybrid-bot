@@ -327,25 +327,58 @@ void PositionTracker::processExecutionReport(const ExecutionReport& executionRep
             
             // CRITICAL: For MARKET orders without price, try to get current market price
             if (fillPrice <= 0.0) {
-                // Try to get current market price from m_dataInterface
-                if (m_dataInterface) {
-                    try {
-                        fillPrice = m_dataInterface->getCurrentPrice(tradingPairSymbol, 
-                                                                    executionReport.exchangeId().toString());
-                        if (fillPrice > 0.0) {
-                            LOG_INFO("PositionTracker: Retrieved market price for MARKET order - symbol={} price={}", 
-                                   tradingPairSymbol.toString(), fillPrice);
-                        } else {
-                            throw std::runtime_error("Market price is zero or negative");
+                if (!m_dataInterface) {
+                    LOG_WARN("PositionTracker: No m_dataInterface available for MARKET order price - symbol={} qty={} - SKIPPING position update", 
+                             tradingPairSymbol.toString(), fillQuantity);
+                    return;
+                }
+
+                try {
+                    // Prefer exchange-specific lookup if exchange is known
+                    std::string exchStr = executionReport.exchangeId().toString();
+                    if (!exchStr.empty() && exchStr != "UNKNOWN") {
+                        try {
+                            fillPrice = m_dataInterface->getCurrentPrice(tradingPairSymbol, exchStr);
+                            if (fillPrice > 0.0) {
+                                LOG_INFO("PositionTracker: Retrieved market price (exchange) for MARKET order - symbol={} exchange={} price={}",
+                                         tradingPairSymbol.toString(), exchStr, fillPrice);
+                            }
+                        } catch (const std::exception& /*e*/) {
+                            // fall through to generic lookup
+                            fillPrice = 0.0;
                         }
-                    } catch (const std::exception& e) {
-                        LOG_WARN("PositionTracker: Failed to get market price for MARKET order - symbol={} qty={} error={} - SKIPPING position update", 
-                               tradingPairSymbol.toString(), fillQuantity, e.what());
+                    }
+
+                    // Fallback: try generic lookup (no exchange)
+                    if (fillPrice <= 0.0) {
+                        fillPrice = m_dataInterface->getCurrentPrice(tradingPairSymbol);
+                        if (fillPrice > 0.0) {
+                            LOG_INFO("PositionTracker: Retrieved market price (generic) for MARKET order - symbol={} price={}",
+                                     tradingPairSymbol.toString(), fillPrice);
+                        }
+                    }
+
+                    // Last resort: REST lookup which may be rate-limited
+                    if (fillPrice <= 0.0) {
+                        try {
+                            fillPrice = m_dataInterface->getPriceFromRest(tradingPairSymbol, std::nullopt);
+                            if (fillPrice > 0.0) {
+                                LOG_INFO("PositionTracker: Retrieved market price (REST fallback) for MARKET order - symbol={} price={}",
+                                         tradingPairSymbol.toString(), fillPrice);
+                            }
+                        } catch (const std::exception& /*e*/) {
+                            // ignore and handle below
+                        }
+                    }
+
+                    if (fillPrice <= 0.0) {
+                        LOG_WARN("PositionTracker: Failed to get market price for MARKET order after fallbacks - symbol={} qty={} - SKIPPING position update",
+                                 tradingPairSymbol.toString(), fillQuantity);
                         return;
                     }
-                } else {
-                    LOG_WARN("PositionTracker: No m_dataInterface available for MARKET order price - symbol={} qty={} - SKIPPING position update", 
-                           tradingPairSymbol.toString(), fillQuantity);
+                } catch (const std::exception& e) {
+                    LOG_WARN("PositionTracker: Failed to get market price for MARKET order - symbol={} qty={} error={} - SKIPPING position update",
+                             tradingPairSymbol.toString(), fillQuantity, e.what());
                     return;
                 }
             }

@@ -1169,6 +1169,7 @@ void Trading_system::execWorkerLoop(size_t workerId) {
             // --- Step 8: Create and process execution report ---
             execution::models::ExecutionReport report;
             report.setOrderId("ORDER_" + task.id);
+            report.setExchangeId(task.exchangeId);
             report.setSymbol(task.symbol);
             report.setSide(task.direction == core::Direction::BUY ? 
                           execution::models::OrderSide::BUY : 
