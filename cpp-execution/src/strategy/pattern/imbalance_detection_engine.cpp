@@ -746,7 +746,7 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                     results.push_back(detectTrendReversal(m));
                     results.push_back(detectTradeImbalance(m));
                     // results.push_back(detectCancellationImbalance(m)); 
-                    results.push_back(detectPriceVolatilityImbalance(m));
+                    // results.push_back(detectPriceVolatilityImbalance(m));
                     // results.push_back(detectHiddenLiquidityImbalance(m));
                     // results.push_back(detectCustomImbalance(m));
                 } catch (...) {

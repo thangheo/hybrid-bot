@@ -1359,15 +1359,53 @@ void Trading_system::setupComponentConnections() {
                             LOG_WARN("ExitCallback", "Error fetching positions for {}: {} - will attempt exit with fallback values", symbol, e.what());
                         }
 
+                        double signedPosQty = 0.0; // signed quantity as reported by ExecutionInterface
+
                         if (exitQuantity <= 0.0) {
                             LOG_WARN("ExitCallback", "No non-zero position found for {} - skipping exit", symbol);
                             return;
+                        }
+
+                        // At this point exitQuantity is absolute value; attempt to fetch the signed quantity
+                        try {
+                            auto positions = executionInterface->getPositions(targetExchange);
+                            auto pit = positions.find(symbol);
+                            if (pit != positions.end()) {
+                                signedPosQty = pit->second;
+                            } else {
+                                try {
+                                    auto allPos = executionInterface->getAllPositions();
+                                    auto itx = allPos.find(targetExchange);
+                                    if (itx != allPos.end()) {
+                                        auto p2 = itx->second.find(symbol);
+                                        if (p2 != itx->second.end()) signedPosQty = p2->second;
+                                    }
+                                } catch (...) {
+                                    // ignore
+                                }
+                            }
+                        } catch (...) {
+                            // leave signedPosQty as 0.0 (best-effort)
+                        }
+
+                        // Decide final exit side based on signedPosQty: negative => short => BUY to close; positive => long => SELL to close
+                        core::Direction finalSide = exitDirection; // default to strategy suggestion
+                        if (std::abs(signedPosQty) > 1e-12) {
+                            if (signedPosQty < 0.0) finalSide = core::Direction::BUY;
+                            else finalSide = core::Direction::SELL;
+
+                            if (finalSide != exitDirection) {
+                                LOG_WARN("ExitCallback", "Requested exit direction ({}) differs from position sign (qty={}) - overriding to {}",
+                                         (exitDirection == core::Direction::SELL ? "SELL" : "BUY"), signedPosQty,
+                                         (finalSide == core::Direction::SELL ? "SELL" : "BUY"));
+                            }
                         }
 
                         // Use MARKET type for immediate exit to avoid limit hangs; can be tuned via config
                         exitOrder.set_exchange_id(targetExchange);
                         exitOrder.quantity = exitQuantity;
                         exitOrder.set_order_type(models::OrderType::MARKET);
+                        exitOrder.set_side(finalSide);
 
                         // Submit the exit order
                         std::string orderId;

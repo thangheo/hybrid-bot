@@ -67,6 +67,8 @@ private:
     Eigen::VectorXd feature_mean_;    // Running mean
     Eigen::VectorXd feature_std_;     // Running std
     Eigen::VectorXd feature_m2_;      // For Welford's online variance
+    // Mask for near-constant features: 1 = active, 0 = constant/ignored
+    std::vector<char> feature_active_;
     
     // Configuration and state
     ModelConfig config_;
