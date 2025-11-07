@@ -270,12 +270,32 @@ bool PositionTracker::shutdown() {
  
 void PositionTracker::processExecutionReport(const ExecutionReport& executionReport) {
     try {
+        // CRASH FIX: Validate input data before processing
+        if (executionReport.symbol().toString().empty()) {
+            std::cerr << "PositionTracker: Empty symbol in execution report - skipping" << std::endl;
+            return;
+        }
+        
+        if (!std::isfinite(executionReport.quantity()) || executionReport.quantity() <= 0.0) {
+            std::cerr << "PositionTracker: Invalid quantity in execution report: " 
+                      << executionReport.quantity() << " - skipping" << std::endl;
+            return;
+        }
+        
+        if (!std::isfinite(executionReport.filledQuantity()) || executionReport.filledQuantity() < 0.0) {
+            std::cerr << "PositionTracker: Invalid filled quantity in execution report: " 
+                      << executionReport.filledQuantity() << " - skipping" << std::endl;
+            return;
+        }
+
         // Lightweight debug logging to help diagnose missing positions
         try {
             std::ostringstream _pt_oss;
             _pt_oss << "[POSITION_TRACKER_DBG] processExecutionReport: exchange=" << executionReport.exchangeId().toString()
                     << " symbol=" << executionReport.symbol().toString()
-                    << " fills=" << executionReport.fills().size();
+                    << " fills=" << executionReport.fills().size()
+                    << " qty=" << executionReport.quantity()
+                    << " filledQty=" << executionReport.filledQuantity();
             LOG_TRACE("PositionTracker", _pt_oss.str());
         } catch (...) {
             // fall through if logging formatting fails
@@ -751,13 +771,31 @@ void PositionTracker::notifyPositionUpdate(const Position& position, const std::
         callbacksCopy = m_updateCallbacks;
     }
 
+    // CRASH FIX: Limit concurrent callback threads to prevent resource exhaustion
+    static std::atomic<int> activeCallbackThreads{0};
+    const int MAX_CALLBACK_THREADS = 10;
+
     // Invoke callbacks asynchronously to ensure a slow/blocking callback
     // cannot stall the PositionTracker's processing thread.
     for (const auto& callback : callbacksCopy) {
         try {
+            // Check thread limit before spawning
+            if (activeCallbackThreads.load() >= MAX_CALLBACK_THREADS) {
+                try {
+                    LOG_WARN("PositionTracker: Callback thread limit reached ({}), executing synchronously", MAX_CALLBACK_THREADS);
+                    callback(position, updateType);
+                } catch (const std::exception& e) {
+                    std::cerr << "Error in synchronous position update callback: " << e.what() << std::endl;
+                } catch (...) {
+                    std::cerr << "Unknown error in synchronous position update callback" << std::endl;
+                }
+                continue;
+            }
+
             // Capture by value: copy callback and position so background
             // thread owns its data and cannot reference stack locals.
             std::thread([callback, position, updateType]() {
+                activeCallbackThreads.fetch_add(1);
                 try {
                     callback(position, updateType);
                 } catch (const std::exception& e) {
@@ -765,17 +803,33 @@ void PositionTracker::notifyPositionUpdate(const Position& position, const std::
                 } catch (...) {
                     std::cerr << "Unknown error in async position update callback" << std::endl;
                 }
+                activeCallbackThreads.fetch_sub(1);
             }).detach();
         } catch (const std::exception& e) {
             std::cerr << "Failed to spawn thread for position update callback: " << e.what() << std::endl;
+            // Fall back to synchronous execution
+            try {
+                callback(position, updateType);
+            } catch (const std::exception& cb_e) {
+                std::cerr << "Error in fallback synchronous position update callback: " << cb_e.what() << std::endl;
+            } catch (...) {
+                std::cerr << "Unknown error in fallback synchronous position update callback" << std::endl;
+            }
         }
     }
 }
 
 void PositionTracker::updatePositionCurrentPrice(Position& position) {
-    double currentPrice = getCurrentPrice(position.getTradingPair());
-    if (currentPrice > 0.0) {
-        position.setCurrentPrice(currentPrice);
+    try {
+        double currentPrice = getCurrentPrice(position.getTradingPair());
+        if (currentPrice > 0.0 && std::isfinite(currentPrice)) {
+            position.setCurrentPrice(currentPrice);
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "Error updating position current price for " << position.getTradingPair().toString() 
+                  << ": " << e.what() << std::endl;
+    } catch (...) {
+        std::cerr << "Unknown error updating position current price for " << position.getTradingPair().toString() << std::endl;
     }
 }
 
@@ -787,29 +841,44 @@ std::string PositionTracker::createPositionKey(const ExchangeId& exchangeId,
 }
 
 double PositionTracker::getCurrentPrice(const TradingPair& tradingPair) const {
-    // First check cache
-    {
-        std::lock_guard<std::mutex> lock(m_marketDataMutex);
-        auto it = m_priceCache.find(tradingPair.toString());
-        if (it != m_priceCache.end()) {
-            return it->second;
-        }
-    }
-    
-    // If not in cache, try to get from data interface
-    if (m_dataInterface) {
-        try {
-            core::Symbol sym(tradingPair.toString());
-            auto marketData = m_dataInterface->getMarketData(sym);
-            if (marketData.has_value()) {
-                // Update cache
-                std::lock_guard<std::mutex> lock(m_marketDataMutex);
-                m_priceCache[tradingPair.toString()] = marketData->price;
-                return marketData->price;
+    try {
+        // First check cache
+        {
+            std::lock_guard<std::mutex> lock(m_marketDataMutex);
+            auto it = m_priceCache.find(tradingPair.toString());
+            if (it != m_priceCache.end() && std::isfinite(it->second) && it->second > 0.0) {
+                return it->second;
             }
-        } catch (const std::exception& e) {
-            std::cerr << "Error getting current price from data interface: " << e.what() << std::endl;
         }
+        
+        // If not in cache, try to get from data interface
+        if (m_dataInterface) {
+            try {
+                core::Symbol sym(tradingPair.toString());
+                auto marketData = m_dataInterface->getMarketData(sym);
+                if (marketData.has_value() && std::isfinite(marketData->price) && marketData->price > 0.0) {
+                    // Update cache safely
+                    try {
+                        std::lock_guard<std::mutex> lock(m_marketDataMutex);
+                        m_priceCache[tradingPair.toString()] = marketData->price;
+                    } catch (...) {
+                        // Cache update failed, but we still have the price
+                    }
+                    return marketData->price;
+                }
+            } catch (const std::exception& e) {
+                std::cerr << "Error getting current price from data interface for " 
+                          << tradingPair.toString() << ": " << e.what() << std::endl;
+            } catch (...) {
+                std::cerr << "Unknown error getting current price from data interface for " 
+                          << tradingPair.toString() << std::endl;
+            }
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "Critical error in getCurrentPrice for " << tradingPair.toString() 
+                  << ": " << e.what() << std::endl;
+    } catch (...) {
+        std::cerr << "Critical unknown error in getCurrentPrice for " << tradingPair.toString() << std::endl;
     }
     
     return 0.0; // Price not available
