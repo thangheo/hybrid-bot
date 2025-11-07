@@ -2022,36 +2022,61 @@ DetectorResult ImbalanceDetectionEngine::detectLiquidityFlowImbalance(const Orde
     DetectorResult result;
     result.type = ImbalanceType::LIQUIDITY_FLOW_IMBALANCE;
     
-    auto bidFlowIt = metrics.metrics.find("bidFlow");
-    auto askFlowIt = metrics.metrics.find("askFlow");
-    
-    if (bidFlowIt == metrics.metrics.end() || askFlowIt == metrics.metrics.end()) {
-        return result;
+    try {
+        auto bidFlowIt = metrics.metrics.find("bidFlow");
+        auto askFlowIt = metrics.metrics.find("askFlow");
+        
+        if (bidFlowIt == metrics.metrics.end() || askFlowIt == metrics.metrics.end()) {
+            return result;
+        }
+        
+        double bidFlow = bidFlowIt->second;
+        double askFlow = askFlowIt->second;
+        double totalFlow = std::abs(bidFlow) + std::abs(askFlow);
+        
+        if (totalFlow < 1e-10) {
+            return result;
+        }
+        
+        // Safe division - avoid division by zero
+        double flowRatio = 1.0;
+        if (bidFlow > askFlow) {
+            if (std::abs(askFlow) > 1e-10) {
+                flowRatio = bidFlow / askFlow;
+            } else {
+                flowRatio = bidFlow > 0 ? 1000.0 : 1.0; // Cap extreme ratios
+            }
+        } else {
+            if (std::abs(bidFlow) > 1e-10) {
+                flowRatio = askFlow / bidFlow;
+            } else {
+                flowRatio = askFlow > 0 ? 1000.0 : 1.0; // Cap extreme ratios
+            }
+        }
+        
+        // Clamp ratio to reasonable bounds
+        flowRatio = std::min(1000.0, std::max(1.0, flowRatio));
+        result.imbalanceValue = flowRatio;
+        
+        // Get threshold safely
+        double threshold = 1.5; // Default fallback
+        try {
+            std::lock_guard<std::mutex> lock(mutex_);
+            threshold = thresholds_.getTypeThreshold(ImbalanceType::LIQUIDITY_FLOW_IMBALANCE).activation_threshold;
+        } catch (...) {
+            // Use default if threshold access fails
+        }
+        
+        // Use existing calculateImbalanceStrength function
+        result.strength = calculateImbalanceStrength(flowRatio, threshold);
+        result.direction = (bidFlow > askFlow) ? Direction::BUY : Direction::SELL;
+        result.shouldEmitEvent = (result.strength > 0.2);
+        
+    } catch (const std::exception& ex) {
+        std::cerr << "Exception in detectLiquidityFlowImbalance: " << ex.what() << std::endl;
+    } catch (...) {
+        std::cerr << "Unknown exception in detectLiquidityFlowImbalance." << std::endl;
     }
-    
-    double bidFlow = bidFlowIt->second;
-    double askFlow = askFlowIt->second;
-    double totalFlow = std::abs(bidFlow) + std::abs(askFlow);
-    
-    if (totalFlow < 1e-10) {
-        return result;
-    }
-    
-    // Calculate flow ratio (like volume ratio in your existing function)
-    double flowRatio = (bidFlow > askFlow) ? bidFlow / askFlow : askFlow / bidFlow;
-    result.imbalanceValue = flowRatio;
-    
-    // Get threshold
-    double threshold;
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        threshold = thresholds_.getTypeThreshold(ImbalanceType::LIQUIDITY_FLOW_IMBALANCE).activation_threshold;
-    }
-    
-    // Use existing calculateImbalanceStrength function
-    result.strength = calculateImbalanceStrength(flowRatio, threshold);
-    result.direction = (bidFlow > askFlow) ? Direction::BUY : Direction::SELL;
-    result.shouldEmitEvent = (result.strength > 0.2);
     
     return result;
 }
@@ -2202,8 +2227,11 @@ DetectorResult ImbalanceDetectionEngine::detectLargeOrderAppearance(const OrderB
     strengths.push_back(calculateImbalanceStrength(pressureRatio, PRESSURE_IMBALANCE_THRESHOLD));
     ratios.push_back(pressureRatio);
     
-    // 5. Bid-ask volume ratio strength
-    double bidAskRatio = std::max(metrics.bidAskVolumeRatio, 1.0 / metrics.bidAskVolumeRatio);
+    // 5. Bid-ask volume ratio strength - safe division
+    double bidAskRatio = 1.0;
+    if (metrics.bidAskVolumeRatio > 1e-10) {
+        bidAskRatio = std::max(metrics.bidAskVolumeRatio, 1.0 / metrics.bidAskVolumeRatio);
+    }
     strengths.push_back(calculateImbalanceStrength(bidAskRatio, BID_ASK_RATIO_THRESHOLD));
     ratios.push_back(bidAskRatio);
     
@@ -2345,9 +2373,12 @@ Direction ImbalanceDetectionEngine::determineDirection(const OrderBookMetrics& m
     if (metrics.weightedVolumeImbalance > 0) buySignal += std::abs(metrics.weightedVolumeImbalance);
     else sellSignal += std::abs(metrics.weightedVolumeImbalance);
     
-    // Bid-ask ratio direction
-    if (metrics.bidAskVolumeRatio > 1.0) buySignal += (metrics.bidAskVolumeRatio - 1.0);
-    else sellSignal += (1.0 / metrics.bidAskVolumeRatio - 1.0);
+    // Bid-ask ratio direction - safe division
+    if (metrics.bidAskVolumeRatio > 1.0) {
+        buySignal += (metrics.bidAskVolumeRatio - 1.0);
+    } else if (metrics.bidAskVolumeRatio > 1e-10) {
+        sellSignal += (1.0 / metrics.bidAskVolumeRatio - 1.0);
+    }
     
     // Market directional coefficient
     if (metrics.marketDirectionalCoefficient > 0) buySignal += std::abs(metrics.marketDirectionalCoefficient);

@@ -27,7 +27,7 @@ int main(int argc, char* argv[]) {
         if (s == "ERROR" || s == "error") return trading::common::LogLevel::ERROR;
         if (s == "CRITICAL" || s == "critical") return trading::common::LogLevel::CRITICAL;
         if (s == "OFF" || s == "off") return trading::common::LogLevel::OFF;
-        return trading::common::LogLevel::INFO;
+        return trading::common::LogLevel::DEBUG;
     };
 
     const char* envLevel = std::getenv("HYBRID_LOG_LEVEL");
