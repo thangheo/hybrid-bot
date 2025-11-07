@@ -1,6 +1,9 @@
 #include "trading_system.hpp"
 #include "strategy/core_analysis/regime_subscriber.hpp"
 #include "common/quantity_precision.hpp" // symbol precision helper for exchange-compliant quantities
+#include "strategy/pattern/imbalance_detection_engine.hpp"
+#include "risk/interfaces/execution_interface.hpp"
+#include "common/order_request.hpp"
 #include <nlohmann/json.hpp>
 #include <fstream>
 
@@ -1277,6 +1280,59 @@ void Trading_system::setupComponentConnections() {
 
             return false;
         });
+    }
+
+    // 4. Register exit callback for OptimalExitStrategy
+    if (riskManager_) {
+        auto executionInterface = riskManager_->getExecutionInterface();
+        if (executionInterface) {
+            LOG_INFO("ExitCallback", "Registering exit callback for OptimalExitStrategy");
+            
+            registerGlobalOptimalExitCallback(
+                [executionInterface](const std::string& symbol, core::Direction exitDirection, double currentPrice, const std::string& reason) {
+                    try {
+                        LOG_INFO("ExitCallback", "🔥 EXIT SIGNAL: {} {} at price {} (reason: {})", 
+                                symbol, 
+                                (exitDirection == core::Direction::SELL ? "SELL" : "BUY"), 
+                                currentPrice, 
+                                reason);
+
+                        // Create OrderRequest for exit
+                        OrderRequest exitOrder;
+                        exitOrder.clientOrderId = "exit_" + symbol + "_" + std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
+                            std::chrono::system_clock::now().time_since_epoch()).count());
+                        exitOrder.exchangeId = "binance";  // TODO: Get from position or config
+                        exitOrder.tradingPair = TradingPair(symbol);
+                        exitOrder.type = OrderType::MARKET;  // Use market order for quick exit
+                        exitOrder.side = exitDirection;
+                        exitOrder.timeInForce = TimeInForce::IOC;  // Immediate or Cancel
+                        exitOrder.strategyId = "exit_strategy";
+                        exitOrder.signalId = exitOrder.clientOrderId;
+                        
+                        // For now, use a small fixed quantity - in production this should come from position tracker
+                        // TODO: Get actual position size from position tracker
+                        exitOrder.quantity = 0.001; // Small test quantity
+                        
+                        // Market order doesn't need price, but set current price for reference
+                        exitOrder.price = currentPrice;
+
+                        // Submit the exit order
+                        std::string orderId = executionInterface->submitOrder(exitOrder);
+                        
+                        LOG_INFO("ExitCallback", "✅ EXIT ORDER SUBMITTED: {} (order_id: {})", exitOrder.clientOrderId, orderId);
+                        
+                    } catch (const std::exception& e) {
+                        LOG_ERROR("ExitCallback", "❌ FAILED to submit exit order for {}: {}", symbol, e.what());
+                    }
+                }
+            );
+            
+            LOG_INFO("ExitCallback", "✅ OptimalExitStrategy exit callback registered successfully");
+        } else {
+            LOG_ERROR("ExitCallback", "❌ Cannot register exit callback: ExecutionInterface is null");
+        }
+    } else {
+        LOG_ERROR("ExitCallback", "❌ Cannot register exit callback: RiskManager is null");
     }
 }
 
