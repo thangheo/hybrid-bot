@@ -11,6 +11,7 @@
 
  #include "strategy/pattern/imbalance_detection_engine.hpp"
  #include "strategy/types/profit_aware_labeling.hpp"
+#include "strategy/exit/optimal_exit_strategy.hpp"
  #include <common/event_bus.hpp>
  #include <common/trading_events.hpp>
  #include <algorithm>
@@ -128,6 +129,9 @@ static StatisticalThresholdAdapter g_statThresholdAdapter;
 
 // Global profit-aware labeling instance
 static ProfitAwareLabeling g_profitLabeling;
+
+// Global optimal exit strategy instance
+static OptimalExitStrategy g_optimalExit;
 
 // Helper: build filesystem-friendly model filename for exchange+symbol
 static std::string buildSymbolModelPath(const std::string &baseDir, const core::ExchangeId &exch, const core::Symbol &sym) {
@@ -820,24 +824,63 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                             LOG_TRACE("ImbalanceDetectionEngine: bayes model updates too low (max={} < min={}), skipping trade", maxModelUpdates, bayesMinUpdatesToTrade_);
                         } else if (signal.should_trade and signal.position_size > 0.0) {
                             core::Direction dir = signal.direction;
+                            std::string symbol_str = m.symbol.toString();
                             
-                            // Check for signal transition (BUY->NEUTRAL becomes exit SELL)
-                            bool isTransition = checkAndUpdateSignalTransition(
-                                m.exchangeId, m.symbol, dir, signal.probability, m.timestamp);
-                            
-                            if (isTransition) {
-                                // Generate exit signal on BUY->NEUTRAL transition
-                                generateExitSignalOnTransition(m.exchangeId, m.symbol, m);
+                            // OPTIMAL EXIT STRATEGY INTEGRATION
+                            if (g_optimalExit.hasActivePosition(symbol_str)) {
+                                // Check exit conditions for existing position
+                                double current_spread = (m.askPrice - m.bidPrice) / m.midPrice;
+                                auto exitDecision = g_optimalExit.evaluateExit(
+                                    symbol_str, m.midPrice, current_spread, dir, signal.probability);
+                                
+                                if (exitDecision.should_exit) {
+                                    // Generate exit signal
+                                    OrderBookMetrics exitMetrics = m;
+                                    exitMetrics.metrics["exit_reason"] = static_cast<double>(exitDecision.reason);
+                                    exitMetrics.metrics["exit_pnl_bps"] = exitDecision.expected_pnl;
+                                    
+                                    // Create exit event (opposite direction)
+                                    core::Direction exitDirection = (dir == core::Direction::BUY) ? 
+                                                                  core::Direction::SELL : core::Direction::BUY;
+                                    
+                                    createImbalanceEventForBayesModel(ImbalanceType::CUSTOM, 
+                                                                    signal.position_size,
+                                                                    exitDirection, exitMetrics, 
+                                                                    0.8, 0.1); // High confidence exit
+                                    
+                                    // Close position tracking
+                                    g_optimalExit.closePosition(symbol_str, exitDecision.reason, exitDecision.expected_pnl);
+                                    
+                                    LOG_INFO("EXIT TRIGGERED: {} - {} ({:.2f}bps)", 
+                                            symbol_str, 
+                                            OptimalExitStrategy::exitReasonToString(exitDecision.reason),
+                                            exitDecision.expected_pnl);
+                                }
+                            } else {
+                                // No active position - this is entry signal
+                                if (dir != core::Direction::NEUTRAL) {
+                                    double current_spread = (m.askPrice - m.bidPrice) / m.midPrice;
+                                    
+                                    // Start tracking position
+                                    g_optimalExit.startPosition(symbol_str, m.midPrice, dir, 
+                                                              signal.probability, current_spread);
+                                    
+                                    // Create entry event
+                                    OrderBookMetrics mcopy = m;
+                                    mcopy.metrics["bayes_probability"] = signal.probability;
+                                    mcopy.metrics["bayes_expected_value"] = signal.expected_value;
+                                    mcopy.metrics["bayes_position_size"] = signal.position_size;
+                                    mcopy.metrics["bayes_uncertainty"] = signal.uncertainty;
+                                    mcopy.metrics["entry_signal"] = 1.0;
+                                    
+                                    createImbalanceEventForBayesModel(ImbalanceType::CUSTOM, signal.position_size,
+                                                                    dir, mcopy, signal.probability, signal.uncertainty);
+                                    
+                                    LOG_INFO("ENTRY SIGNAL: {} {} @ {:.6f} (conf={:.3f})", 
+                                            symbol_str, (dir == core::Direction::BUY ? "BUY" : "SELL"), 
+                                            m.midPrice, signal.probability);
+                                }
                             }
-                            
-                            OrderBookMetrics mcopy = m;
-                            mcopy.metrics["bayes_probability"] = signal.probability;
-                            mcopy.metrics["bayes_expected_value"] = signal.expected_value;
-                            mcopy.metrics["bayes_position_size"] = signal.position_size;
-                            mcopy.metrics["bayes_uncertainty"] = signal.uncertainty;
-                            double event_strength = signal.position_size;
-                            createImbalanceEventForBayesModel(ImbalanceType::CUSTOM, event_strength,
-                                                            dir, mcopy, signal.probability, signal.uncertainty);
                         }
                     } catch (const std::exception &ex) {
                         LOG_WARN("Bayes predict threw: {}", ex.what());
@@ -3596,67 +3639,8 @@ void ImbalanceDetectionEngine::trackLabelingEvent(core::Direction labelDirection
     }
 }
 
-// Signal transition tracking for NEUTRAL = SELL exit logic
-bool ImbalanceDetectionEngine::checkAndUpdateSignalTransition(
-    const core::ExchangeId& exchangeId, const core::Symbol& symbol, 
-    core::Direction newDirection, double probability, core::Timestamp timestamp) {
-    
-    std::lock_guard<std::mutex> lock(signalStatesMutex_);
-    auto key = std::make_pair(exchangeId, symbol);
-    auto& state = signalStates_[key];
-    
-    bool isExitTransition = false;
-    
-    // Check for BUY->NEUTRAL transition (exit signal)
-    if (state.lastDirection == core::Direction::BUY && 
-        (newDirection == core::Direction::NEUTRAL || newDirection == core::Direction::SELL) &&
-        state.hasActivePosition) {
-        
-        isExitTransition = true;
-        LOG_INFO("Signal transition detected: BUY->EXIT for {}:{}, prob={:.3f}", 
-                exchangeId.toString(), symbol.toString(), probability);
-    }
-    
-    // Update state
-    state.lastDirection = newDirection;
-    state.lastProbability = probability;
-    state.lastTimestamp = timestamp;
-    
-    // Track position state
-    if (newDirection == core::Direction::BUY) {
-        state.hasActivePosition = true;
-    } else if (newDirection == core::Direction::SELL) {
-        state.hasActivePosition = false; // Exit position
-    }
-    
-    return isExitTransition;
-}
-
-void ImbalanceDetectionEngine::generateExitSignalOnTransition(
-    const core::ExchangeId& exchangeId, const core::Symbol& symbol, 
-    const OrderBookMetrics& metrics) {
-    
-    // Create exit signal with moderate strength
-    double exitStrength = 0.3; // Moderate exit signal
-    
-    // Create SELL signal for exit
-    OrderBookMetrics exitMetrics = metrics;
-    exitMetrics.metrics["exit_signal"] = 1.0;
-    exitMetrics.metrics["transition_type"] = 1.0; // BUY->NEUTRAL transition
-    
-    LOG_INFO("Generating EXIT signal on BUY->NEUTRAL transition for {}:{}", 
-            exchangeId.toString(), symbol.toString());
-    
-    // Generate exit event
-    createImbalanceEventForBayesModel(
-        ImbalanceType::CUSTOM, 
-        exitStrength,
-        core::Direction::SELL,  // Exit = SELL
-        exitMetrics, 
-        0.7,  // High confidence for exit
-        0.2   // Low uncertainty for exit
-    );
-}
+// Optimal exit strategy methods replaced the old transition tracking
+// Old methods removed - now using OptimalExitStrategy for better HFT performance
 
 } // namespace strategy
 } // namespace trading
