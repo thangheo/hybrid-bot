@@ -53,6 +53,9 @@ private:
         double max_holding_seconds = 10.0;     // 10s timeout
         double signal_confidence_flip = 0.3;   // signal reversal threshold
         double spread_widening_factor = 2.5;   // exit if spread > 2.5x entry
+        double max_spread_bps = 10.0;          // Guard: max spread = 0.1% = 10 bps
+        double min_stop_distance_bps = 12.0;   // Guard: min stop distance = 12 bps  
+        double stop_spread_multiplier = 2.5;   // Guard: stop distance ≥ 2.5×spread
     };
     
     // Per-symbol exit parameters (based on volatility config)
@@ -86,7 +89,9 @@ public:
                              double current_price,
                              double current_spread_ratio,
                              core::Direction current_signal_direction,
-                             double current_confidence);
+                             double current_confidence,
+                             double bid_price = 0.0,
+                             double ask_price = 0.0);
     
     /**
      * Close position (called after exit)

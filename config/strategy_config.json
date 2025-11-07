@@ -253,6 +253,8 @@
         "trainingStartDelayMs": 1,
         "minOrderbookLevels": 0,
         "bayesMinUpdatesToTrade": 500
+        ,
+        "min_profitable_return": 0.003
       }
     },
     "liquidityMonitor": {

@@ -1086,7 +1086,7 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                                     else neutralCount++;
                                     
                                     // FIX 4: Add diagnostic logging to track the issue
-                                    if (labelCount % 10 == 0) {
+                                    if (labelCount % 100 == 0) {
                                         // Add diagnostic info about the data distribution
                                         auto dataRange = g_statThresholdAdapter.getDataRange(regimeIdx);
                                         size_t dataPoints = g_statThresholdAdapter.getDataSize(regimeIdx);
