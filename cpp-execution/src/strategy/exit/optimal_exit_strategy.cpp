@@ -9,16 +9,20 @@ namespace strategy {
 
 using json = nlohmann::json;
 
-OptimalExitStrategy::OptimalExitStrategy() {
+OptimalExitStrategy::OptimalExitStrategy() 
+    : configPath_("config/symbol_volatility_config.json") {
     // Load default parameters for major crypto pairs
-    loadSymbolParameters("config/symbol_volatility_config.json");
+    loadSymbolParameters(configPath_);
 }
 
-OptimalExitStrategy::OptimalExitStrategy(const std::string& volatility_config_path) {
+OptimalExitStrategy::OptimalExitStrategy(const std::string& volatility_config_path) 
+    : configPath_(volatility_config_path) {
     loadSymbolParameters(volatility_config_path);
 }
 
 void OptimalExitStrategy::loadSymbolParameters(const std::string& config_path) {
+    std::lock_guard<std::mutex> lock(configMutex_);
+    
     try {
         std::ifstream file(config_path);
         if (!file.is_open()) {
@@ -28,6 +32,11 @@ void OptimalExitStrategy::loadSymbolParameters(const std::string& config_path) {
         
         json config;
         file >> config;
+        
+        // Update load timestamp
+        if (std::filesystem::exists(config_path)) {
+            lastLoadedTime_ = std::filesystem::last_write_time(config_path);
+        }
         
         // Load per-symbol parameters
         if (config.contains("symbol_volatility_thresholds") && 
@@ -73,14 +82,22 @@ void OptimalExitStrategy::loadSymbolParameters(const std::string& config_path) {
             }
         }
         
-        LOG_INFO("Loaded exit parameters for {} symbols", symbolParams_.size());
+        LOG_INFO("✅ Successfully loaded exit parameters for {} symbols from {}", 
+                 symbolParams_.size(), config_path);
         
     } catch (const std::exception& e) {
-        LOG_ERROR("Failed to load volatility config: {}", e.what());
+        LOG_ERROR("❌ Failed to load volatility config from {}: {}", config_path, e.what());
+        
+        // Fallback to defaults if config fails
+        if (symbolParams_.empty()) {
+            LOG_WARN("Setting fallback defaults for unknown symbols");
+        }
     }
 }
 
 OptimalExitStrategy::ExitParams OptimalExitStrategy::getParamsForSymbol(const std::string& symbol) const {
+    std::lock_guard<std::mutex> lock(configMutex_);
+    
     auto it = symbolParams_.find(symbol);
     if (it != symbolParams_.end()) {
         return it->second;
@@ -270,6 +287,36 @@ void OptimalExitStrategy::closePosition(const std::string& symbol, ExitReason re
         LOG_INFO("EXIT_STRATEGY: {} | Reason: {} | PnL: {:.2f}bps | Peak: {:.2f}bps | Held: {:.1f}s",
                  symbol, exitReasonToString(reason), pnl, peak_pnl, held_seconds);
         
+        // 🚨 CRITICAL: Trigger actual EXIT order execution
+        if (exitCallback_) {
+            // Determine exit direction (opposite of entry)
+            core::Direction exitDirection = (trade.entry_direction == core::Direction::BUY) ? 
+                                          core::Direction::SELL : core::Direction::BUY;
+            
+            // Use current market price or entry price as fallback
+            double exitPrice = trade.entry_price; // Fallback to entry price
+            
+            std::string reasonStr = std::string(exitReasonToString(reason));
+            
+            LOG_INFO("🚨 TRIGGERING EXIT CALLBACK: {} {} @ {:.6f} reason={}", 
+                     symbol, (exitDirection == core::Direction::SELL ? "SELL" : "BUY"), 
+                     exitPrice, reasonStr);
+            
+            try {
+                exitCallback_(symbol, exitDirection, exitPrice, reasonStr);
+            } catch (const std::exception& e) {
+                LOG_ERROR("❌ EXIT CALLBACK FAILED for {}: {}", symbol, e.what());
+                // Don't remove trade from activeTrades_ if callback fails
+                return;
+            }
+        } else {
+            LOG_ERROR("❌ CRITICAL: EXIT CALLBACK NOT REGISTERED - Position {} will remain stuck!", symbol);
+            LOG_ERROR("❌ This will cause capital to be tied up indefinitely!");
+            
+            // Consider throwing exception in critical systems
+            // throw std::runtime_error("Exit callback not registered - cannot execute exit orders");
+        }
+        
         trade.is_active = false;
         activeTrades_.erase(it);
     }
@@ -306,6 +353,33 @@ void OptimalExitStrategy::updateParameters(const std::string& category, const Ex
     }
     
     LOG_INFO("Updated exit parameters for category: {}", category);
+}
+
+void OptimalExitStrategy::reloadIfStale() {
+    try {
+        if (!std::filesystem::exists(configPath_)) {
+            LOG_WARN("Config file not found for reload: {}", configPath_);
+            return;
+        }
+        
+        auto currentModTime = std::filesystem::last_write_time(configPath_);
+        if (currentModTime != lastLoadedTime_) {
+            LOG_INFO("🔄 Config file modified, reloading: {}", configPath_);
+            
+            size_t oldSize = symbolParams_.size();
+            loadSymbolParameters(configPath_);
+            size_t newSize = symbolParams_.size();
+            
+            LOG_INFO("🔄 Config reload complete: {} -> {} symbols", oldSize, newSize);
+        }
+    } catch (const std::exception& e) {
+        LOG_ERROR("❌ Failed to check/reload config: {}", e.what());
+    }
+}
+
+void OptimalExitStrategy::registerExitCallback(const ExitCallback& callback) {
+    exitCallback_ = callback;
+    LOG_INFO("✅ Exit callback registered successfully");
 }
 
 } // namespace strategy
