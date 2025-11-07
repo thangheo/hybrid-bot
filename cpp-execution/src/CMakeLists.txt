@@ -52,6 +52,7 @@ set(SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../src/main.cpp
             ${CMAKE_CURRENT_SOURCE_DIR}/../src/market_intelligence/adaptive_intelligence.cpp
             ${CMAKE_CURRENT_SOURCE_DIR}/../src/communication/zmq_server.cpp
             ${CMAKE_CURRENT_SOURCE_DIR}/../src/trading_system.cpp
+            ${CMAKE_CURRENT_SOURCE_DIR}/../src/strategy/pattern/imbalance_detection_engine.cpp
             # ${CMAKE_CURRENT_SOURCE_DIR}/../generated/cpp/internal_orderbook.pb.cc
             )
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../generated/cpp/)
