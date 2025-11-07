@@ -1293,9 +1293,12 @@ void Trading_system::setupComponentConnections() {
         auto executionInterface = riskManager_->getExecutionInterface();
         if (executionInterface) {
             LOG_INFO("ExitCallback", "Registering exit callback for OptimalExitStrategy");
-            
+
+            // Capture a weak_ptr so the lambda does not extend the lifetime of the ExecutionInterface
+            std::weak_ptr<trading::risk::ExecutionInterface> execWeak = executionInterface;
+
             registerGlobalOptimalExitCallback(
-                [executionInterface](const std::string& symbol, core::Direction exitDirection, double currentPrice, const std::string& reason) {
+                [execWeak](const std::string& symbol, core::Direction exitDirection, double currentPrice, const std::string& reason) {
                     try {
                         LOG_INFO("ExitCallback", "🔥 EXIT SIGNAL: {} {} at price {} (reason: {})", 
                                 symbol, 
@@ -1303,51 +1306,86 @@ void Trading_system::setupComponentConnections() {
                                 currentPrice, 
                                 reason);
 
+                        // Lock weak_ptr to get shared_ptr for this call
+                        auto executionInterface = execWeak.lock();
+                        if (!executionInterface) {
+                            LOG_ERROR("ExitCallback", "ExecutionInterface expired - skipping exit for {}", symbol);
+                            return;
+                        }
+
+                        // Log pointer address for easier debugging if something later fails
+                        LOG_INFO("ExitCallback", "Using ExecutionInterface ptr={}", static_cast<const void*>(executionInterface.get()));
+
                         // Create OrderRequest for exit
                         ::risk::OrderRequest exitOrder;
                         exitOrder.orderId = "EXIT_" + symbol + "_" + std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
                         std::chrono::system_clock::now().time_since_epoch()).count());
                         exitOrder.clientOrderId = "exit_" + symbol + "_" + std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
                         std::chrono::system_clock::now().time_since_epoch()).count());
-                        exitOrder.set_exchange_id(trading::core::ExchangeId::binance());  // TODO: Get from position or config
                         exitOrder.set_trading_pair(trading::core::Symbol(symbol));
-                        exitOrder.set_order_type(models::OrderType::LIMIT);  // Use limit order for quick exit
                         exitOrder.set_side(exitDirection);
-                        exitOrder.set_price(currentPrice); // * (exitDirection == core::Direction::SELL ? 0.995 : 1.005);
                         exitOrder.set_time_in_force("GTC"); // Good-Til-Canceled
                         exitOrder.set_strategy_id("OptimalExitStrategy");
                         exitOrder.set_signal_id("exit_signal_" + symbol);
-                        
-                        // Get current position from ExecutionInterface
+
+                        // Determine exchange id and quantity from live positions if possible
+                        core::ExchangeId targetExchange = trading::core::ExchangeId::binance(); // fallback
                         double exitQuantity = 0.0;
                         try {
-                            auto positions = executionInterface->getPositions(trading::core::ExchangeId::binance());
+                            // Try to find the symbol across exchanges - prefer binance for now
+                            auto positions = executionInterface->getPositions(targetExchange);
                             auto positionIt = positions.find(symbol);
                             if (positionIt != positions.end() && positionIt->second != 0.0) {
                                 exitQuantity = std::abs(positionIt->second);
-                                LOG_INFO("ExitCallback", "Found position for {}: {} (will exit {})", 
-                                        symbol, positionIt->second, exitQuantity);
+                                LOG_INFO("ExitCallback", "Found position for {} on {}: {} (will exit {})", symbol, targetExchange.toString(), positionIt->second, exitQuantity);
                             } else {
-                                LOG_WARN("ExitCallback", "No position found for {} when creating exit order", symbol);
-                                return; // No position to exit
+                                // fallback: search all exchanges via getAllPositions if available
+                                try {
+                                    auto allPos = executionInterface->getAllPositions();
+                                    for (const auto& [ex, map] : allPos) {
+                                        auto it2 = map.find(symbol);
+                                        if (it2 != map.end() && it2->second != 0.0) {
+                                            exitQuantity = std::abs(it2->second);
+                                            targetExchange = ex;
+                                            LOG_INFO("ExitCallback", "Found position for {} on {}: {} (will exit {})", symbol, ex.toString(), it2->second, exitQuantity);
+                                            break;
+                                        }
+                                    }
+                                } catch (...) {
+                                    // ignore - getAllPositions may not be implemented by all ExecutionInterface
+                                }
                             }
                         } catch (const std::exception& e) {
-                            LOG_ERROR("ExitCallback", "Error fetching positions for {}: {}", symbol, e.what());
-                            return; // Abort exit order creation
+                            LOG_WARN("ExitCallback", "Error fetching positions for {}: {} - will attempt exit with fallback values", symbol, e.what());
                         }
+
+                        if (exitQuantity <= 0.0) {
+                            LOG_WARN("ExitCallback", "No non-zero position found for {} - skipping exit", symbol);
+                            return;
+                        }
+
+                        // Use MARKET type for immediate exit to avoid limit hangs; can be tuned via config
+                        exitOrder.set_exchange_id(targetExchange);
                         exitOrder.quantity = exitQuantity;
+                        exitOrder.set_order_type(models::OrderType::MARKET);
 
                         // Submit the exit order
-                        std::string orderId = executionInterface->submitOrder(exitOrder);
-                        
+                        std::string orderId;
+                        try {
+                            orderId = executionInterface->submitOrder(exitOrder);
+                        } catch (const std::exception& e) {
+                            LOG_ERROR("ExitCallback", "submitOrder threw for {}: {}", symbol, e.what());
+                            return;
+                        }
+
                         LOG_INFO("ExitCallback", "✅ EXIT ORDER SUBMITTED: {} (order_id: {})", exitOrder.clientOrderId, orderId);
-                        
+
                     } catch (const std::exception& e) {
                         LOG_ERROR("ExitCallback", "❌ FAILED to submit exit order for {}: {}", symbol, e.what());
                     }
                 }
             );
-            
+
             LOG_INFO("ExitCallback", "✅ OptimalExitStrategy exit callback registered successfully");
         } else {
             LOG_ERROR("ExitCallback", "❌ Cannot register exit callback: ExecutionInterface is null");

@@ -11,6 +11,7 @@
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
+#include <thread>
 #include <common/logger.hpp>
 namespace trading {
 namespace risk {
@@ -713,11 +714,23 @@ void PositionTracker::notifyPositionUpdate(const Position& position, const std::
         callbacksCopy = m_updateCallbacks;
     }
 
+    // Invoke callbacks asynchronously to ensure a slow/blocking callback
+    // cannot stall the PositionTracker's processing thread.
     for (const auto& callback : callbacksCopy) {
         try {
-            callback(position, updateType);
+            // Capture by value: copy callback and position so background
+            // thread owns its data and cannot reference stack locals.
+            std::thread([callback, position, updateType]() {
+                try {
+                    callback(position, updateType);
+                } catch (const std::exception& e) {
+                    std::cerr << "Error in async position update callback: " << e.what() << std::endl;
+                } catch (...) {
+                    std::cerr << "Unknown error in async position update callback" << std::endl;
+                }
+            }).detach();
         } catch (const std::exception& e) {
-            std::cerr << "Error in position update callback: " << e.what() << std::endl;
+            std::cerr << "Failed to spawn thread for position update callback: " << e.what() << std::endl;
         }
     }
 }
