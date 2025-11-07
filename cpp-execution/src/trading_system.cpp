@@ -1616,7 +1616,7 @@ void Trading_system::executeExitOrder(const std::string& symbol, core::Direction
         exitSignal.targetSize = 1.0; // Full position
         exitSignal.confidence = 1.0; // Max confidence for exits
         exitSignal.quality = 1.0;
-        exitSignal.exchangeId = core::ExchangeId::binance(); // Default exchange
+        exitSignal.setExchangeId(core::ExchangeId::binance()); // Default exchange
         exitSignal.setQuantity(quantity);
 
         std::cout << "🚨 EXECUTING EXIT ORDER: " << symbol << " " 
