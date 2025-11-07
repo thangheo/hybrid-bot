@@ -1,0 +1,184 @@
+{
+  "symbol_volatility_thresholds": {
+    "description": "Per-symbol volatility thresholds based on market characteristics",
+    "symbols": {
+      "BTCUSDT": {
+        "threshold": 0.0005,
+        "category": "crypto_major",
+        "description": "Bitcoin - Digital gold, highest liquidity"
+      },
+      "ETHUSDT": {
+        "threshold": 0.0005,
+        "category": "crypto_major",
+        "description": "Ethereum - Smart contracts, high liquidity"
+      },
+      "BNBUSDT": {
+        "threshold": 0.0005,
+        "category": "crypto_major",
+        "description": "Binance Coin - Largest exchange token"
+      },
+      "XRPUSDT": {
+        "threshold": 0.0005,
+        "category": "crypto_major",
+        "description": "XRP - Cross-border payments, regulatory clarity"
+      },
+      "SOLUSDT": {
+        "threshold": 0.0005,
+        "category": "crypto_major",
+        "description": "Solana - High-speed blockchain, DeFi/NFT hub"
+      },
+      "ADAUSDT": {
+        "threshold": 0.0005,
+        "category": "crypto_major",
+        "description": "Cardano - Academic approach, sustainability"
+      },
+      "AVAXUSDT": {
+        "threshold": 0.0005,
+        "category": "crypto_major",
+        "description": "Avalanche - Fast consensus, subnet flexibility"
+      },
+      "DOGEUSDT": {
+        "threshold": 0.001,
+        "category": "crypto_minor",
+        "description": "Dogecoin - Meme king with utility potential"
+      },
+      "DOTUSDT": {
+        "threshold": 0.0005,
+        "category": "crypto_major",
+        "description": "Polkadot - Interoperability leader"
+      },
+      "LINKUSDT": {
+        "threshold": 0.001,
+        "category": "crypto_minor",
+        "description": "Chainlink - Oracle infrastructure leader"
+      },
+      "UNIUSDT": {
+        "threshold": 0.001,
+        "category": "crypto_minor",
+        "description": "Uniswap - DEX pioneer"
+      },
+      "AAVEUSDT": {
+        "threshold": 0.001,
+        "category": "crypto_minor",
+        "description": "Aave - Lending protocol leader"
+      },
+      "ARBUSDT": {
+        "threshold": 0.001,
+        "category": "crypto_minor",
+        "description": "Arbitrum - Ethereum Layer 2 scaling"
+      },
+      "OPUSDT": {
+        "threshold": 0.001,
+        "category": "crypto_minor",
+        "description": "Optimism - Another major L2 solution"
+      },
+      "FETUSDT": {
+        "threshold": 0.001,
+        "category": "crypto_minor",
+        "description": "Fetch.ai - AI agent marketplace"
+      },
+      "INJUSDT": {
+        "threshold": 0.001,
+        "category": "crypto_minor",
+        "description": "Injective - DeFi-focused blockchain"
+      },
+      "ONDOUSDT": {
+        "threshold": 0.001,
+        "category": "crypto_minor",
+        "description": "Ondo Finance - Tokenized treasuries leader"
+      },
+      "HBARUSDT": {
+        "threshold": 0.001,
+        "category": "crypto_minor",
+        "description": "Hedera - Hashgraph for enterprise RWA"
+      },
+      "PAXGUSDT": {
+        "threshold": 0.0003,
+        "category": "crypto_stable",
+        "description": "Pax Gold - Tokenized gold, very stable"
+      },
+      "SANDUSDT": {
+        "threshold": 0.001,
+        "category": "crypto_minor",
+        "description": "The Sandbox - Gaming metaverse"
+      },
+      "GALAUSDT": {
+        "threshold": 0.001,
+        "category": "crypto_minor",
+        "description": "Gala Games - Blockchain gaming platform"
+      },
+      "IMXUSDT": {
+        "threshold": 0.001,
+        "category": "crypto_minor",
+        "description": "Immutable X - NFT scaling solution"
+      },
+      "SUIUSDT": {
+        "threshold": 0.001,
+        "category": "crypto_minor",
+        "description": "Sui - Move-based high-performance chain"
+      },
+      "APTUSDT": {
+        "threshold": 0.001,
+        "category": "crypto_minor",
+        "description": "Aptos - Another Move language blockchain"
+      },
+      "TIAUSDT": {
+        "threshold": 0.001,
+        "category": "crypto_minor",
+        "description": "Celestia - Modular blockchain pioneer"
+      },
+      "SHIBUSDT": {
+        "threshold": 0.001,
+        "category": "crypto_minor",
+        "description": "Shiba Inu - Ecosystem expansion"
+      },
+      "FLOKIUSDT": {
+        "threshold": 0.001,
+        "category": "crypto_minor",
+        "description": "Floki - Gaming and utility expansion"
+      },
+      "ATOMUSDT": {
+        "threshold": 0.001,
+        "category": "crypto_minor",
+        "description": "Cosmos - Internet of blockchains"
+      },
+      "ALGOUSDT": {
+        "threshold": 0.001,
+        "category": "crypto_minor",
+        "description": "Algorand - Pure proof-of-stake"
+      },
+      "ZECUSDT": {
+        "threshold": 0.001,
+        "category": "crypto_minor",
+        "description": "Zcash - Selective privacy features"
+      }
+    }
+  },
+  "volatility_categories": {
+    "crypto_major": {
+      "description": "Major cryptocurrencies with highest liquidity",
+      "default_threshold": 0.0005,
+      "examples": ["BTCUSDT", "ETHUSDT", "BNBUSDT"]
+    },
+    "crypto_minor": {
+      "description": "Minor cryptocurrencies with good liquidity",
+      "default_threshold": 0.001,
+      "examples": ["LINKUSDT", "UNIUSDT", "AAVEUSDT"]
+    },
+    "crypto_stable": {
+      "description": "Asset-backed tokens with low volatility",
+      "default_threshold": 0.0003,
+      "examples": ["PAXGUSDT"]
+    },
+    "forex_major": {
+      "description": "Major forex pairs (for future use)",
+      "default_threshold": 0.0003,
+      "examples": ["EURUSD", "GBPUSD"]
+    },
+    "stocks": {
+      "description": "Stock market securities (for future use)",
+      "default_threshold": 0.0008,
+      "examples": ["AAPL", "MSFT"]
+    }
+  }
+}

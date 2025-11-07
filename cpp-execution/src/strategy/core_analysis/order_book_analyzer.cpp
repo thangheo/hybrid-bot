@@ -170,6 +170,30 @@ void OrderBookAnalyzer::processOrderBook(const data_ingestion::OrderBook& snapsh
         calculateLevelMetrics(cachedBids_, cachedAsks_);
         calculateImbalanceMetrics(cachedBids_, cachedAsks_);
         
+        // Add volatility snapshot
+        if (!cachedBids_.empty() && !cachedAsks_.empty()) {
+            OrderbookSnapshot volSnapshot(
+                cachedBids_[0].price,    // best_bid
+                cachedAsks_[0].price,    // best_ask
+                cachedBids_[0].quantity, // bid_volume
+                cachedAsks_[0].quantity, // ask_volume
+                std::chrono::duration_cast<std::chrono::microseconds>(
+                    snapshot.getTimestamp().time_since_epoch()).count()
+            );
+            addVolatilitySnapshot(volSnapshot);
+        }
+        
+        // Calculate new volatility metrics
+        if (volatilitySnapshots_.size() >= 2) {
+            double rv_raw = calculateRV();
+            currentMetrics_.realize_volatility_1m = rv_raw;
+            currentMetrics_.rv_weighted = calculateWeightedRV();
+            currentMetrics_.rv_adjusted = calculateAdjustedRV(rv_raw);
+            currentMetrics_.rv_smoothed = getSmoothedRV(currentMetrics_.rv_adjusted);
+            currentMetrics_.spread_volatility = calculateSpreadVolatility();
+            currentMetrics_.trend_ratio = calculateTrendRatio();
+        }
+        
         // Update time series and derived metrics
         updateTimeSeries();
         calculateDerivedMetrics();
@@ -331,6 +355,11 @@ void OrderBookAnalyzer::reset() {
     emaMidPrice_ = 0.0;
     emaSpread_ = 0.0;
     emaVolumeImbalance_ = 0.0;
+    
+    // Reset volatility data
+    volatilitySnapshots_.clear();
+    rv_ema_ = 0.0;
+    ema_initialized_ = false;
     
     // Reset current metrics
     currentMetrics_ = OrderBookMetrics{};
@@ -870,6 +899,257 @@ double OrderBookAnalyzer::calculateRealizedVolatility(double sample_interval_sec
     double sigma_per_sec = sigma / std::sqrt(sample_interval_sec);
     
     return std::clamp(sigma_per_sec, 0.001, 0.05); // 0.1%–5%
+}
+
+// New volatility methods implementation
+
+double OrderBookAnalyzer::calculateRV() const {
+    if (volatilitySnapshots_.size() < 2) return 0.0;
+    
+    double sum_sq_returns = 0.0;
+    
+    for (size_t i = 1; i < volatilitySnapshots_.size(); ++i) {
+        double mid_prev = (volatilitySnapshots_[i-1].best_bid + volatilitySnapshots_[i-1].best_ask) / 2.0;
+        double mid_curr = (volatilitySnapshots_[i].best_bid + volatilitySnapshots_[i].best_ask) / 2.0;
+        
+        if (mid_prev > 0 && mid_curr > 0) {
+            double log_return = std::log(mid_curr / mid_prev);
+            sum_sq_returns += log_return * log_return;
+        }
+    }
+    
+    return std::sqrt(sum_sq_returns);
+}
+
+double OrderBookAnalyzer::calculateWeightedRV() const {
+    if (volatilitySnapshots_.size() < 2) return 0.0;
+    
+    double total_volume = 0.0;
+    for (const auto& snap : volatilitySnapshots_) {
+        total_volume += snap.bid_volume + snap.ask_volume;
+    }
+    
+    if (total_volume < 1e-8) return calculateRV();  // fallback
+    
+    double weighted_sum = 0.0;
+    
+    for (size_t i = 1; i < volatilitySnapshots_.size(); ++i) {
+        double mid_prev = (volatilitySnapshots_[i-1].best_bid + volatilitySnapshots_[i-1].best_ask) / 2.0;
+        double mid_curr = (volatilitySnapshots_[i].best_bid + volatilitySnapshots_[i].best_ask) / 2.0;
+        
+        if (mid_prev > 0 && mid_curr > 0) {
+            double log_return = std::log(mid_curr / mid_prev);
+            double volume = volatilitySnapshots_[i].bid_volume + volatilitySnapshots_[i].ask_volume;
+            double weight = std::min(volume / total_volume, 0.1);  // clip at 0.1
+            
+            weighted_sum += weight * log_return * log_return;
+        }
+    }
+    
+    return std::sqrt(weighted_sum);
+}
+
+double OrderBookAnalyzer::calculateSpreadVolatility() const {
+    if (volatilitySnapshots_.empty()) return 0.0;
+    
+    std::vector<double> spreads;
+    spreads.reserve(volatilitySnapshots_.size());
+    
+    for (const auto& snap : volatilitySnapshots_) {
+        double spread = snap.best_ask - snap.best_bid;
+        spreads.push_back(spread);
+    }
+    
+    double mean_spread = std::accumulate(spreads.begin(), spreads.end(), 0.0) / spreads.size();
+    if (mean_spread < 1e-8) return 0.0;
+    
+    double variance = 0.0;
+    for (double s : spreads) {
+        double diff = s - mean_spread;
+        variance += diff * diff;
+    }
+    variance /= spreads.size();
+    
+    return std::sqrt(variance) / mean_spread;  // normalized
+}
+
+double OrderBookAnalyzer::calculateAdjustedRV(double rv_raw) const {
+    if (volatilitySnapshots_.empty()) return rv_raw;
+    
+    double sum_spread = 0.0;
+    double sum_mid = 0.0;
+    
+    for (const auto& snap : volatilitySnapshots_) {
+        double mid = (snap.best_bid + snap.best_ask) / 2.0;
+        double spread = snap.best_ask - snap.best_bid;
+        sum_spread += spread;
+        sum_mid += mid;
+    }
+    
+    double mean_spread = sum_spread / volatilitySnapshots_.size();
+    double mean_mid = sum_mid / volatilitySnapshots_.size();
+    
+    if (mean_mid < 1e-8) return rv_raw;
+    
+    double spread_ratio = mean_spread / mean_mid;
+    
+    // Multiplicative correction
+    double adjustment = 1.0 - (spread_ratio / 2.0);
+    adjustment = std::max(0.5, std::min(1.0, adjustment));  // clip [0.5, 1.0]
+    
+    return rv_raw * adjustment;
+}
+
+double OrderBookAnalyzer::calculateImbalance() const {
+    if (volatilitySnapshots_.empty()) return 0.0;
+    
+    double sum_bid_vol = 0.0;
+    double sum_ask_vol = 0.0;
+    
+    for (const auto& snap : volatilitySnapshots_) {
+        sum_bid_vol += snap.bid_volume;
+        sum_ask_vol += snap.ask_volume;
+    }
+    
+    double total_vol = sum_bid_vol + sum_ask_vol;
+    if (total_vol < 1e-8) return 0.0;
+    
+    return (sum_bid_vol - sum_ask_vol) / total_vol;
+}
+
+double OrderBookAnalyzer::getSmoothedRV(double rv_current) const {
+    if (!ema_initialized_) {
+        rv_ema_ = rv_current;
+        ema_initialized_ = true;
+        return rv_ema_;
+    }
+    
+    rv_ema_ = EWMA_ALPHA * rv_current + (1.0 - EWMA_ALPHA) * rv_ema_;
+    return rv_ema_;
+}
+
+double OrderBookAnalyzer::calculateSpreadRatio() const {
+    if (volatilitySnapshots_.empty()) return 0.0;
+    
+    double sum_spread_ratio = 0.0;
+    
+    for (const auto& snap : volatilitySnapshots_) {
+        double mid = (snap.best_bid + snap.best_ask) / 2.0;
+        if (mid > 1e-8) {
+            double spread = snap.best_ask - snap.best_bid;
+            sum_spread_ratio += spread / mid;
+        }
+    }
+    
+    return sum_spread_ratio / volatilitySnapshots_.size();
+}
+
+double OrderBookAnalyzer::calculateTrendRatio() const {
+    if (volatilitySnapshots_.size() < 2) return 0.0;
+    
+    std::vector<double> returns;
+    returns.reserve(volatilitySnapshots_.size() - 1);
+    
+    for (size_t i = 1; i < volatilitySnapshots_.size(); ++i) {
+        double mid_prev = (volatilitySnapshots_[i-1].best_bid + volatilitySnapshots_[i-1].best_ask) / 2.0;
+        double mid_curr = (volatilitySnapshots_[i].best_bid + volatilitySnapshots_[i].best_ask) / 2.0;
+        
+        if (mid_prev > 0 && mid_curr > 0) {
+            returns.push_back(std::log(mid_curr / mid_prev));
+        }
+    }
+    
+    if (returns.empty()) return 0.0;
+    
+    double mean_return = std::accumulate(returns.begin(), returns.end(), 0.0) / returns.size();
+    double rv = calculateRV();
+    
+    if (rv < 1e-8) return 0.0;
+    
+    return std::abs(mean_return) / rv;
+}
+
+FilterResult OrderBookAnalyzer::evaluateVolatilityFilter(
+    double rv_threshold,
+    double spread_threshold,
+    double min_volume_usd,
+    double max_imbalance,
+    double max_trend_ratio) const {
+    
+    FilterResult result{};
+    
+    if (volatilitySnapshots_.size() < MAX_VOLATILITY_SAMPLES) {
+        result.should_trade = false;
+        result.reason = "Insufficient samples";
+        return result;
+    }
+    
+    // Calculate metrics
+    double rv_raw = calculateRV();
+    result.rv = rv_raw;
+    result.rv_adjusted = calculateAdjustedRV(rv_raw);
+    
+    result.rv_smoothed = getSmoothedRV(result.rv_adjusted);
+    
+    result.spread_ratio = calculateSpreadRatio();
+    result.imbalance = calculateImbalance();
+    result.trend_ratio = calculateTrendRatio();
+    
+    // Volume check
+    if (!volatilitySnapshots_.empty()) {
+        double mid = (volatilitySnapshots_.back().best_bid + volatilitySnapshots_.back().best_ask) / 2.0;
+        double total_volume_usd = 0.0;
+        for (const auto& snap : volatilitySnapshots_) {
+            total_volume_usd += (snap.bid_volume + snap.ask_volume) * mid;
+        }
+        
+        if (total_volume_usd < min_volume_usd) {
+            result.should_trade = false;
+            result.reason = "Insufficient volume";
+            return result;
+        }
+    }
+    
+    // RV check
+    if (result.rv_smoothed < rv_threshold) {
+        result.should_trade = false;
+        result.reason = "RV too low";
+        return result;
+    }
+    
+    // Spread check
+    if (result.spread_ratio > spread_threshold) {
+        result.should_trade = false;
+        result.reason = "Spread too wide";
+        return result;
+    }
+    
+    // Imbalance check
+    if (std::abs(result.imbalance) > max_imbalance) {
+        result.should_trade = false;
+        result.reason = "Imbalance too high";
+        return result;
+    }
+    
+    // Trend check
+    if (result.trend_ratio > max_trend_ratio) {
+        result.should_trade = false;
+        result.reason = "Too trending";
+        return result;
+    }
+    
+    result.should_trade = true;
+    result.reason = "All filters passed";
+    return result;
+}
+
+void OrderBookAnalyzer::addVolatilitySnapshot(const OrderbookSnapshot& snapshot) {
+    volatilitySnapshots_.push_back(snapshot);
+    
+    // Keep only last MAX_VOLATILITY_SAMPLES
+    while (volatilitySnapshots_.size() > MAX_VOLATILITY_SAMPLES) {
+        volatilitySnapshots_.pop_front();
+    }
 }
 
 

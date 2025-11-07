@@ -74,6 +74,14 @@ struct OrderBookMetrics {
     double realizedVolatility = 0.0;           // Realized volatility based on recent data
     double volatilityPerUnitTime = 0.0; // Volatility normalized by time
     double liquidityPressure = 0.0;            // Pressure from liquidity imbalances
+    
+    // New volatility metrics
+    double realize_volatility_1m = 0.0;        // 1-minute realized volatility
+    double rv_weighted = 0.0;                  // Volume-weighted realized volatility
+    double rv_adjusted = 0.0;                  // Microstructure noise adjusted RV
+    double rv_smoothed = 0.0;                  // EWMA smoothed RV
+    double spread_volatility = 0.0;            // Spread volatility
+    double trend_ratio = 0.0;                  // Trend vs mean-reversion ratio
     // Historical metrics
     double priceVelocity = 0.0;              // Rate of price change
     double volumeVelocity = 0.0;             // Rate of volume change
@@ -133,6 +141,14 @@ struct OrderBookMetrics {
         metrics["liquidityPressure"] = liquidityPressure;
         metrics["volatilityPerUnitTime"] = volatilityPerUnitTime;
         
+        // New volatility metrics
+        metrics["realize_volatility_1m"] = realize_volatility_1m;
+        metrics["rv_weighted"] = rv_weighted;
+        metrics["rv_adjusted"] = rv_adjusted;
+        metrics["rv_smoothed"] = rv_smoothed;
+        metrics["spread_volatility"] = spread_volatility;
+        metrics["trend_ratio"] = trend_ratio;
+        
         // Historical metrics
         metrics["priceVelocity"] = priceVelocity;
         metrics["volumeVelocity"] = volumeVelocity;
@@ -179,6 +195,12 @@ struct OrderBookMetrics {
         else if (name == "askFlow") askFlow = value;
         else if (name == "averageSpreadPercent") metrics["averageSpreadPercent"] = value;
         else if (name == "volatility") volatilityExpectation = value; // Map to existing value
+        else if (name == "realize_volatility_1m") realize_volatility_1m = value;
+        else if (name == "rv_weighted") rv_weighted = value;
+        else if (name == "rv_adjusted") rv_adjusted = value;
+        else if (name == "rv_smoothed") rv_smoothed = value;
+        else if (name == "spread_volatility") spread_volatility = value;
+        else if (name == "trend_ratio") trend_ratio = value;
     }
     
     // Get a specific metric by name
