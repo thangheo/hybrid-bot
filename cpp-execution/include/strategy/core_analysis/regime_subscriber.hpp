@@ -26,6 +26,8 @@ struct RegimeInfo {
     std::optional<bool> micro_ok;
     std::string recommendation_reason;
     std::optional<int> suggested_time_cap_min;
+    // Human-readable regime label published by regime_publisher.py (e.g. "bull", "bear", "sideways")
+    std::optional<std::string> label;
     
     // Hedging information from regime_publisher
     struct HedgingInfo {

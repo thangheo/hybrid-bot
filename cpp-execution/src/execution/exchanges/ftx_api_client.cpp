@@ -237,13 +237,27 @@ std::future<models::ExecutionReport> FtxApiClient::placeOrder(const models::Orde
         
         // Prepare parameters
         std::map<std::string, std::string> params;
-    params["market"] = trading::execution::util::normalizeSymbolForExchange(tradingPair.toString());
+        params["market"] = trading::execution::util::normalizeSymbolForExchange(tradingPair.toString());
         params["side"] = translateOrderSide(side);
         params["type"] = translateOrderType(type);
-        params["size"] = std::to_string(quantity);
+        {
+            std::ostringstream soss;
+            soss << std::fixed << std::setprecision(8) << quantity;
+            std::string sstr = soss.str();
+            sstr.erase(sstr.find_last_not_of('0') + 1, std::string::npos);
+            if (!sstr.empty() && sstr.back() == '.') sstr.pop_back();
+            params["size"] = sstr;
+        }
         
         if (type != models::OrderType::MARKET) {
-            params["price"] = std::to_string(price);
+            {
+                std::ostringstream poss;
+                poss << std::fixed << std::setprecision(8) << price;
+                std::string pstr = poss.str();
+                pstr.erase(pstr.find_last_not_of('0') + 1, std::string::npos);
+                if (!pstr.empty() && pstr.back() == '.') pstr.pop_back();
+                params["price"] = pstr;
+            }
         }
         
         // FTX supports client order IDs via the clientId field
