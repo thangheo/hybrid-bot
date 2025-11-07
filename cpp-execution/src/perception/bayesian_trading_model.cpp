@@ -216,7 +216,35 @@ std::tuple<double, double, double> BayesianTradingModel::predict_multiclass(cons
     double max_logit = logits.maxCoeff();
     Eigen::VectorXd exps = (logits.array() - max_logit).exp();
     double sum_exps = exps.sum();
-    Eigen::VectorXd probs = exps / sum_exps;
+    Eigen::VectorXd probs(NUM_CLASSES);
+
+    // Defensive checks: handle numerical edge cases where exps may contain inf/NaN
+    bool any_nan = false;
+    for (int i = 0; i < NUM_CLASSES; ++i) {
+        if (!std::isfinite(exps(i))) { any_nan = true; break; }
+    }
+
+    if (any_nan || !std::isfinite(sum_exps) || sum_exps <= 0.0) {
+        // Log warning and fallback to uniform probabilities to avoid crash
+        std::cerr << "[BayesianTradingModel] Warning: unstable softmax computation (sum_exps=" << sum_exps << ") - falling back to uniform probs" << std::endl;
+        probs = Eigen::VectorXd::Constant(NUM_CLASSES, 1.0 / static_cast<double>(NUM_CLASSES));
+    } else {
+        probs = exps / sum_exps;
+
+        // Additional guard: clip negatives / NaNs then renormalize
+        double sum_clean = 0.0;
+        for (int i = 0; i < NUM_CLASSES; ++i) {
+            if (!std::isfinite(probs(i)) || probs(i) < 0.0) probs(i) = 0.0;
+            sum_clean += probs(i);
+        }
+
+        if (sum_clean <= 0.0 || !std::isfinite(sum_clean)) {
+            std::cerr << "[BayesianTradingModel] Warning: cleaned probability sum invalid (" << sum_clean << ") - using uniform probs" << std::endl;
+            probs = Eigen::VectorXd::Constant(NUM_CLASSES, 1.0 / static_cast<double>(NUM_CLASSES));
+        } else if (std::abs(sum_clean - 1.0) > 1e-12) {
+            probs = probs / sum_clean; // renormalize
+        }
+    }
 
     return {probs(0), probs(1), probs(2)};
 }
@@ -225,8 +253,16 @@ std::tuple<double, double, double> BayesianTradingModel::predict_multiclass(cons
 BayesianTradingModel::TradingSignal BayesianTradingModel::predict(const std::vector<double>& features) {
     auto [prob_class0, prob_class1, prob_class2] = predict_multiclass(features);
     
-    // Validate probability distribution
-    assert(std::abs(prob_class0 + prob_class1 + prob_class2 - 1.0) < 1e-6);
+    // Validate probability distribution (defensive: do not abort on numerical issues)
+    double prob_sum = prob_class0 + prob_class1 + prob_class2;
+    if (!std::isfinite(prob_sum) || std::abs(prob_sum - 1.0) > 1e-6) {
+        std::cerr << "[BayesianTradingModel] Warning: probability sum invalid (" << prob_sum << ") - continuing with normalized probs" << std::endl;
+        // Normalize if possible
+        double denom = (std::isfinite(prob_sum) && prob_sum > 0.0) ? prob_sum : 1.0;
+        prob_class0 = std::isfinite(prob_class0) ? prob_class0 / denom : 1.0/3.0;
+        prob_class1 = std::isfinite(prob_class1) ? prob_class1 / denom : 1.0/3.0;
+        prob_class2 = std::isfinite(prob_class2) ? prob_class2 / denom : 1.0/3.0;
+    }
     
     TradingSignal signal;
     
