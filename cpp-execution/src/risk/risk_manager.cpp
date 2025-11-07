@@ -369,24 +369,64 @@ void RiskManager::processExecutionReport(const ExecutionReport& executionReport)
         std::cout << "[TTL_DEBUG] RiskManager::processExecutionReport: " 
                   << executionReport.symbol().toString() 
                   << " status=" << static_cast<int>(executionReport.status()) << std::endl;
-        
-        // Update portfolio with execution information
+
+        // Update portfolio with execution information (guarded)
         if (m_portfolioManager) {
-            m_portfolioManager->processExecution(executionReport);
+            try {
+                m_portfolioManager->processExecution(executionReport);
+            } catch (const std::exception& e) {
+                std::cerr << "Exception in PortfolioManager::processExecution: " << e.what() << std::endl;
+                RiskEvent event(
+                    RiskEventType::SYSTEM_ERROR,
+                    std::chrono::system_clock::now(),
+                    std::string("Error in PortfolioManager::processExecution: ") + e.what(),
+                    "high"
+                );
+                notifyRiskEvent(event);
+            } catch (...) {
+                std::cerr << "Unknown exception in PortfolioManager::processExecution" << std::endl;
+                RiskEvent event(
+                    RiskEventType::SYSTEM_ERROR,
+                    std::chrono::system_clock::now(),
+                    std::string("Unknown error in PortfolioManager::processExecution"),
+                    "high"
+                );
+                notifyRiskEvent(event);
+            }
         } else {
             std::cout << "[TTL_DEBUG] ERROR: m_portfolioManager is NULL!" << std::endl;
         }
-        
-        // Pass to post-trade monitoring
+
+        // Pass to post-trade monitoring (guarded)
         if (m_postTradeMonitor) {
-            std::cout << "[TTL_DEBUG] Forwarding to PostTradeMonitor..." << std::endl;
-            m_postTradeMonitor->processExecutionReport(executionReport);
+            std::cout << "[TTL_DEBUG] Forwarding to PostTradeMonitor... ptr=" << static_cast<const void*>(m_postTradeMonitor.get()) << std::endl;
+            try {
+                m_postTradeMonitor->processExecutionReport(executionReport);
+            } catch (const std::exception& e) {
+                std::cerr << "Exception in PostTradeMonitor::processExecutionReport: " << e.what() << std::endl;
+                RiskEvent event(
+                    RiskEventType::SYSTEM_ERROR,
+                    std::chrono::system_clock::now(),
+                    std::string("Error in PostTradeMonitor::processExecutionReport: ") + e.what(),
+                    "high"
+                );
+                notifyRiskEvent(event);
+            } catch (...) {
+                std::cerr << "Unknown exception in PostTradeMonitor::processExecutionReport" << std::endl;
+                RiskEvent event(
+                    RiskEventType::SYSTEM_ERROR,
+                    std::chrono::system_clock::now(),
+                    std::string("Unknown error in PostTradeMonitor::processExecutionReport"),
+                    "high"
+                );
+                notifyRiskEvent(event);
+            }
         } else {
             std::cout << "[TTL_DEBUG] ERROR: m_postTradeMonitor is NULL!" << std::endl;
         }
     } catch (const std::exception& e) {
         std::cerr << "Exception during execution report processing: " << e.what() << std::endl;
-        
+
         // Create and notify risk event for the error
         RiskEvent event(
             RiskEventType::SYSTEM_ERROR,
