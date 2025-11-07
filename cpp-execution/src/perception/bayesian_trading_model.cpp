@@ -230,38 +230,32 @@ BayesianTradingModel::TradingSignal BayesianTradingModel::predict(const std::vec
     
     TradingSignal signal;
     
-    // SHORT-TERM TRADING LOGIC: NEUTRAL = SELL (exit signal)
-    // For short-term features, NEUTRAL means "exit position" = SELL signal
-    // Class mapping: 0=SELL, 1=NEUTRAL (treated as SELL), 2=BUY
+    // OPTIMAL EXIT STRATEGY: Clean 3-class prediction
+    // Let exit strategy handle position management, not model prediction
+    // Class mapping: 0=SELL, 1=NEUTRAL, 2=BUY (clean separation)
     
-    // Find the dominant signal between BUY vs SELL+NEUTRAL
-    double buy_prob = prob_class2;  // Class 2 = BUY
-    double sell_prob = prob_class0 + prob_class1;  // Class 0 (SELL) + Class 1 (NEUTRAL as exit)
+    // High neutral probability suggests uncertainty - reduce confidence
+    if (prob_class1 > neutral_veto_threshold_) {
+        return createNeutralSignal();
+    }
     
+    // Find the class with highest probability (excluding neutral if below threshold)
     Direction predicted_direction = Direction::NEUTRAL;
     double max_prob = 0.0;
     
-    // Only BUY if BUY probability is dominant AND above threshold
-    if (buy_prob > sell_prob && buy_prob > min_confidence_threshold_) {
-        predicted_direction = Direction::BUY;
-        max_prob = buy_prob;
+    if (prob_class0 > max_prob && prob_class0 > min_confidence_threshold_) {
+        predicted_direction = Direction::SELL;  // Class 0 = SELL
+        max_prob = prob_class0;
     }
-    // Otherwise SELL (includes explicit SELL + NEUTRAL exit signals)
-    else if (sell_prob > min_confidence_threshold_) {
-        predicted_direction = Direction::SELL;  // NEUTRAL becomes SELL for exit
-        max_prob = sell_prob;
+    
+    if (prob_class2 > max_prob && prob_class2 > min_confidence_threshold_) {
+        predicted_direction = Direction::BUY;   // Class 2 = BUY
+        max_prob = prob_class2;
     }
     
     // Check if we have a confident prediction
     if (max_prob <= min_confidence_threshold_) {
-        // Even low confidence becomes SELL (exit) in short-term trading
-        TradingSignal neutral_as_sell;
-        neutral_as_sell.direction = Direction::SELL;
-        neutral_as_sell.should_trade = true;
-        neutral_as_sell.probability = 0.6;  // Moderate confidence for exit
-        neutral_as_sell.position_size = 0.1; // Small exit position
-        neutral_as_sell.uncertainty = calculateEntropy(prob_class0, prob_class1, prob_class2);
-        return neutral_as_sell;
+        return createNeutralSignal();
     }
     
     // Direct assignment - no conversion needed
@@ -269,13 +263,8 @@ BayesianTradingModel::TradingSignal BayesianTradingModel::predict(const std::vec
     signal.should_trade = true;
     signal.probability = max_prob;
     
-    // Position sizing: BUY uses full confidence, SELL uses combined exit signal strength
-    if (predicted_direction == Direction::BUY) {
-        signal.position_size = calculatePositionSize(buy_prob, sell_prob);
-    } else {
-        // For SELL (including NEUTRAL->SELL), use moderate position size for exit
-        signal.position_size = std::min(0.5, calculatePositionSize(sell_prob, buy_prob));
-    }
+    // Clean position sizing based on prediction confidence
+    signal.position_size = calculatePositionSize(prob_class2, prob_class0); // BUY vs SELL probabilities
     
     // Calculate entropy-based uncertainty (order doesn't matter for entropy)
     signal.uncertainty = calculateEntropy(prob_class0, prob_class1, prob_class2);

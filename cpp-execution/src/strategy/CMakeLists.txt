@@ -8,6 +8,7 @@ file(GLOB_RECURSE STRATEGY_SOURCES
     "optimization/*.cpp"
     "pattern/*.cpp"
     "signal/*.cpp"
+    "exit/*.cpp"
     # "signal/hawkes/*.cpp"
     "*.cpp"  # Include any cpp files in the strategy root directory
 )
