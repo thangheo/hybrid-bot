@@ -116,6 +116,13 @@ public:
             if (executionReportCallback_) {
                 ExecutionReport report;
                 report.setOrderId(response.client_order_id);
+                // Ensure exchangeId is propagated so downstream components (PositionTracker)
+                // can perform exchange-specific price lookups instead of receiving UNKNOWN.
+                try {
+                    report.setExchangeId(order->getExchangeId());
+                } catch (...) {
+                    // Best-effort: if getExchangeId throws or is invalid, leave default
+                }
                 report.setStatus(response.success ? trading::execution::models::OrderState::FILLED : trading::execution::models::OrderState::REJECTED);
                 // report.setTimestamp(std::chrono::system_clock::now());
                 executionReportCallback_(report);
