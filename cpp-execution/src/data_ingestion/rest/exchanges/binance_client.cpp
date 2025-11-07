@@ -303,7 +303,15 @@ std::string BinanceClient::placeOrder(const std::string& symbol, OrderSide side,
     std::map<std::string, std::string> params;
     params["symbol"] = symbol;
     params["side"] = (side == OrderSide::BUY) ? "BUY" : "SELL";
-    params["quantity"] = std::to_string(quantity);
+    {
+        std::ostringstream qoss;
+        qoss << std::fixed << std::setprecision(8) << quantity;
+        std::string qstr = qoss.str();
+        // Trim trailing zeros and trailing dot
+        qstr.erase(qstr.find_last_not_of('0') + 1, std::string::npos);
+        if (!qstr.empty() && qstr.back() == '.') qstr.pop_back();
+        params["quantity"] = qstr;
+    }
     params["timestamp"] = std::to_string(getCurrentTimestamp());
     
     // Set order type
@@ -314,7 +322,14 @@ std::string BinanceClient::placeOrder(const std::string& symbol, OrderSide side,
         case OrderType::LIMIT:
             params["type"] = "LIMIT";
             params["timeInForce"] = "GTC";
-            params["price"] = std::to_string(price);
+            {
+                std::ostringstream poss;
+                poss << std::fixed << std::setprecision(8) << price;
+                std::string pstr = poss.str();
+                pstr.erase(pstr.find_last_not_of('0') + 1, std::string::npos);
+                if (!pstr.empty() && pstr.back() == '.') pstr.pop_back();
+                params["price"] = pstr;
+            }
             break;
         case OrderType::TAKE_PROFIT:
             params["type"] = "TAKE_PROFIT";

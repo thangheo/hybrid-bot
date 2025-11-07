@@ -233,10 +233,21 @@ class Regime:
         # Align dataframes
         features_aligned = features.reindex(df.index)
         
+        # If labels were computed, use them
+        has_labels = 'regime_label' in features.columns
+
         for state in sorted(features['regime'].unique()):
             mask = features['regime'] == state
             
-            print(f"\n=== REGIME {state} ===")
+            label = None
+            if has_labels:
+                # pick the most common label for this state
+                try:
+                    label = features.loc[mask, 'regime_label'].mode().iloc[0]
+                except Exception:
+                    label = None
+
+            print(f"\n=== REGIME {state} " + (f"({label})" if label is not None else "") + " ===")
             print(f"Frequency: {mask.sum() / len(features) * 100:.1f}%")
             print(f"Avg 1h Vol: {features.loc[mask, 'vol_1h'].mean():.6f}")
             print(f"Avg Trend Strength: {features.loc[mask, 'trend_strength'].mean():.4f}")
@@ -250,25 +261,101 @@ class Regime:
                 fwd_ret_regime = fwd_ret_aligned[mask].mean()
                 print(f"Avg {horizon}m forward return: {fwd_ret_regime*100:.3f}%")
 
+    def label_regimes(self, features, df, forward_horizons=(60, 120, 240), up_thresh=0.002, down_thresh=-0.002):
+        """
+        Assign human-readable labels ('bull', 'bear', 'sideways') to each regime/state.
+
+        Strategy:
+        - For each state, compute mean forward returns at supplied horizons and mean trend_strength.
+        - If mean forward returns across horizons are consistently > up_thresh => 'bull'
+        - If consistently < down_thresh => 'bear'
+        - Else => 'sideways'
+
+        Parameters:
+        - features: DataFrame returned from training containing 'regime'
+        - df: original price DataFrame (used to compute forward returns)
+        - forward_horizons: iterable of integer minute horizons to evaluate
+        - up_thresh / down_thresh: thresholds for forward returns to classify
+
+        Returns:
+        - features with a new column 'regime_label' (in-place and returned)
+        """
+        if 'regime' not in features.columns:
+            raise ValueError("features must contain a 'regime' column. Run the HMM first.")
+
+        # compute forward returns for each horizon and attach
+        fwd_returns = pd.DataFrame(index=features.index)
+        for h in forward_horizons:
+            fwd = df['close'].pct_change(h).shift(-h)
+            fwd_returns[f'fwd_ret_{h}'] = fwd.reindex(features.index)
+
+        labels = pd.Series(index=features.index, dtype=object)
+
+        mapping = {}
+        for state in sorted(features['regime'].unique()):
+            mask = features['regime'] == state
+            # mean forward returns (ignore NaNs)
+            mean_fwd = fwd_returns.loc[mask].mean()
+            mean_all = mean_fwd.mean()
+            mean_trend = features.loc[mask, 'trend_strength'].mean()
+
+            # simple logic: use forward returns primarily, trend as tie-breaker
+            if pd.isna(mean_all):
+                assigned = 'unknown'
+            elif (mean_fwd > up_thresh).all():
+                assigned = 'bull'
+            elif (mean_fwd < down_thresh).all():
+                assigned = 'bear'
+            else:
+                # use trend_strength: positive => bull-like, negative => bear-like, else sideways
+                if mean_trend > 0.1:
+                    assigned = 'bull'
+                elif mean_trend < -0.1:
+                    assigned = 'bear'
+                else:
+                    assigned = 'sideways'
+
+            mapping[state] = assigned
+
+        # apply mapping
+        labels = features['regime'].map(mapping)
+        features['regime_label'] = labels
+        # store mapping on the object for easy lookup
+        self.regime_label_mapping = mapping
+        # keep backward-compatible: return features only
+        return features
+
     def predict_current_regime(self, symbol):
         """Predict current regime for a symbol"""
         if self.model is None:
             raise ValueError("Model not trained. Call train_regime_hmm first.")
+        if self.scaler is None or self.feature_cols is None:
+            raise ValueError("Scaler or feature columns missing. Ensure train_regime_hmm was called and completed successfully.")
         
         # Download recent data
         df = self.download_crypto_data(symbol, days=7)
         
         # Compute features
         features = self.compute_regime_features(df)
+        if features.empty:
+            raise ValueError("No features computed from recent data. Check the input data or use a shorter 'days' parameter.")
         
         # Get last row
         X_current = features[self.feature_cols].iloc[-1:].values
+        # ensure numeric array
+        X_current = np.asarray(X_current, dtype=float)
         X_scaled = self.scaler.transform(X_current)
         
         # Predict
         regime = self.model.predict(X_scaled)[0]
         probs = self.model.predict_proba(X_scaled)[0]
-        
+        # map to human label if available and store on self for downstream consumers
+        if hasattr(self, 'regime_label_mapping') and isinstance(self.regime_label_mapping, dict):
+            self.last_predicted_label = self.regime_label_mapping.get(regime)
+        else:
+            self.last_predicted_label = None
+
+        # return (regime, probs) to preserve existing external interface
         return regime, probs
 
     # function to visualize regimes (optional)
@@ -295,6 +382,15 @@ class Regime:
         plt.savefig('market_regimes' + datetime.now().strftime('%Y%m%d_%H%M%S') + '.png')
         plt.show()
 
+    def get_last_regime_label(self):
+        """Return the last predicted regime label (str) or None if not available.
+
+        This is a small accessor intended for external publishers (ZMQ/IPC) to
+        read the human-readable label without changing the predict_current_regime
+        return signature.
+        """
+        return getattr(self, 'last_predicted_label', None)
+
 if __name__ == "__main__":
     try:
         symbol = 'BTC/USDT'
@@ -316,6 +412,8 @@ if __name__ == "__main__":
         
         current_regime, probs = regime.predict_current_regime(symbol)
         print(f"\nCurrent Regime: {current_regime}")
+        if hasattr(regime, 'last_predicted_label') and regime.last_predicted_label is not None:
+            print(f"Label: {regime.last_predicted_label}")
         print("Probabilities:")
         for i, prob in enumerate(probs):
             print(f"  Regime {i}: {prob*100:.2f}%")

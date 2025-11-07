@@ -77,7 +77,7 @@ private:
     mutable std::mutex mu_;
 
 public:
-    DynamicThresholds calculateThresholds(int regime, double currentVol) {
+    DynamicThresholds calculateThresholds(int regime, double currentVol, double minProfitableOverride = -1.0) {
         std::lock_guard<std::mutex> lk(mu_);
         auto &stats = regimeStats_[regime];
         
@@ -130,7 +130,13 @@ public:
         
         if (!absvals.empty()) {
             double minAbsNorm = stats.percentile(absvals, MIN_ABS_PCT);
-            out.minProfitableReturn = std::max(0.0005, minAbsNorm * volRef) + 0.003;
+            double computed = std::max(0.0005, minAbsNorm * volRef) + 0.003;
+            // If caller provided an override (>=0), ensure minProfitableReturn is at least that
+            if (minProfitableOverride >= 0.0) {
+                out.minProfitableReturn = std::max(computed, minProfitableOverride);
+            } else {
+                out.minProfitableReturn = computed;
+            }
         }
         
         // FIX: Final validation before returning
@@ -1046,7 +1052,9 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                                         }
                                     }
 
-                                    auto dyn = g_statThresholdAdapter.calculateThresholds(regimeIdx, vol);
+                                    // Use configured minimum profitable return (if set) to prevent trading on tiny expected profits
+                                    double cfgMinProf = config_.min_profitable_return;
+                                    auto dyn = g_statThresholdAdapter.calculateThresholds(regimeIdx, vol, cfgMinProf);
 
                                     // Calculate confidence based on signal strength
                                     double confidence = 0.5 + 0.3 * std::abs(normalizedReturn) / std::max(vol, 1e-6);
@@ -2345,18 +2353,6 @@ Direction ImbalanceDetectionEngine::determineDirection(const OrderBookMetrics& m
     if (metrics.marketDirectionalCoefficient > 0) buySignal += std::abs(metrics.marketDirectionalCoefficient);
     else sellSignal += std::abs(metrics.marketDirectionalCoefficient);
     
-    // BALANCE FIX: Boost SELL signal when we need USDT rebalancing
-    // In bear market (regime 1) with portfolio full of coins, favor SELL
-    if (regime_subscriber_) {
-        trading::strategy::core_analysis::RegimeInfo rinfo;
-        if (regime_subscriber_->get("DOT/USDT", rinfo) && rinfo.valid) {
-            // If regime = 1 (bear) and we have assets but no USDT, strongly favor SELL
-            if (rinfo.regime == 1) {
-                sellSignal += 2.0; // Strong SELL bias in bear market
-                std::cout << "[REBALANCE] Bear market regime " << rinfo.regime << " - boosting SELL signal to rebalance portfolio" << std::endl;
-            }
-        }
-    }
     
     return (buySignal > sellSignal) ? Direction::BUY : Direction::SELL;
 }

@@ -331,6 +331,10 @@ ImbalanceDetectionConfig parseImbalanceDetectionConfig(const json& componentJson
             // Store as double or string parameter based on type
             if (it.value().is_number()) {
                 config.parameters[it.key()] = it.value().get<double>();
+                // Special-case common fields
+                if (it.key() == "min_profitable_return") {
+                    config.min_profitable_return = it.value().get<double>();
+                }
             } else if (it.value().is_string()) {
                 config.string_parameters[it.key()] = it.value().get<std::string>();
             }

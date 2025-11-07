@@ -601,7 +601,21 @@ def publish_regimes(symbols, data_dir, socket, interval=600, probs_decimals: int
                     entry['suggested_time_cap_min'] = None if suggested_time_cap_min is None else float(suggested_time_cap_min)
                     entry['should_extend'] = bool(should_extend)
 
-                    print(f"{symbol:12} regime={regime} probs={entry['probs']} trend={entry['p_trend_up']} stay={entry['stay_prob']} rec={entry['recommended_action']}")
+                    # Include human-readable regime label if available (safe fallback)
+                    try:
+                        label = regime_obj.get_last_regime_label()
+                    except Exception:
+                        label = None
+                    # fallback: if mapping exists but accessor wasn't used, look it up
+                    if label is None and hasattr(regime_obj, 'regime_label_mapping'):
+                        try:
+                            label = regime_obj.regime_label_mapping.get(regime)
+                        except Exception:
+                            label = None
+
+                    # attach label to payload (None -> null in JSON)
+                    entry['label'] = label
+                    print(f"{symbol:12} regime={regime} label={label} probs={entry['probs']} trend={entry['p_trend_up']} stay={entry['stay_prob']} rec={entry['recommended_action']}")
                     
                     # Process hedging for BTC only
                     if hedging_manager and publish_symbol in ['BTC/USDT', 'BTCUSDT']:
