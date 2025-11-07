@@ -3,13 +3,18 @@
 #include "common/quantity_precision.hpp" // symbol precision helper for exchange-compliant quantities
 #include "strategy/pattern/imbalance_detection_engine.hpp"
 #include "risk/interfaces/execution_interface.hpp"
-#include "common/order_request.hpp"
+#include "risk/risk_types.hpp"
 #include <nlohmann/json.hpp>
 #include <fstream>
+#include "common/logger.hpp"
+#include "execution/models/order.hpp"
 
 // Use fully-qualified ::execution::SymbolPrecisionManager to avoid ambiguity
-
-using namespace trading;
+using namespace ::trading::core;
+using namespace ::trading::execution;
+using namespace ::trading::risk;
+using namespace ::trading::common;
+// using namespace ::trading::intelligence;
 
 Trading_system::Trading_system() : running_(false), systemHealthy_(true) {
     setupConfigurations();
@@ -1298,23 +1303,38 @@ void Trading_system::setupComponentConnections() {
                                 reason);
 
                         // Create OrderRequest for exit
-                        OrderRequest exitOrder;
+                        ::risk::OrderRequest exitOrder;
+                        exitOrder.orderId = "EXIT_" + symbol + "_" + std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::system_clock::now().time_since_epoch()).count());
                         exitOrder.clientOrderId = "exit_" + symbol + "_" + std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
-                            std::chrono::system_clock::now().time_since_epoch()).count());
-                        exitOrder.exchangeId = "binance";  // TODO: Get from position or config
-                        exitOrder.tradingPair = TradingPair(symbol);
-                        exitOrder.type = OrderType::MARKET;  // Use market order for quick exit
-                        exitOrder.side = exitDirection;
-                        exitOrder.timeInForce = TimeInForce::IOC;  // Immediate or Cancel
-                        exitOrder.strategyId = "exit_strategy";
-                        exitOrder.signalId = exitOrder.clientOrderId;
+                        std::chrono::system_clock::now().time_since_epoch()).count());
+                        exitOrder.set_exchange_id(trading::core::ExchangeId::binance());  // TODO: Get from position or config
+                        exitOrder.set_trading_pair(trading::core::Symbol(symbol));
+                        exitOrder.set_order_type(models::OrderType::LIMIT);  // Use limit order for quick exit
+                        exitOrder.set_side(exitDirection);
+                        exitOrder.set_price(currentPrice); // * (exitDirection == core::Direction::SELL ? 0.995 : 1.005);
+                        exitOrder.set_time_in_force("GTC"); // Good-Til-Canceled
+                        exitOrder.set_strategy_id("OptimalExitStrategy");
+                        exitOrder.set_signal_id("exit_signal_" + symbol);
                         
-                        // For now, use a small fixed quantity - in production this should come from position tracker
-                        // TODO: Get actual position size from position tracker
-                        exitOrder.quantity = 0.001; // Small test quantity
-                        
-                        // Market order doesn't need price, but set current price for reference
-                        exitOrder.price = currentPrice;
+                        // Get current position from ExecutionInterface
+                        double exitQuantity = 0.0;
+                        try {
+                            auto positions = executionInterface->getPositions(trading::core::ExchangeId::binance());
+                            auto positionIt = positions.find(symbol);
+                            if (positionIt != positions.end() && positionIt->second != 0.0) {
+                                exitQuantity = std::abs(positionIt->second);
+                                LOG_INFO("ExitCallback", "Found position for {}: {} (will exit {})", 
+                                        symbol, positionIt->second, exitQuantity);
+                            } else {
+                                LOG_WARN("ExitCallback", "No position found for {} when creating exit order", symbol);
+                                return; // No position to exit
+                            }
+                        } catch (const std::exception& e) {
+                            LOG_ERROR("ExitCallback", "Error fetching positions for {}: {}", symbol, e.what());
+                            return; // Abort exit order creation
+                        }
+                        exitOrder.quantity = exitQuantity;
 
                         // Submit the exit order
                         std::string orderId = executionInterface->submitOrder(exitOrder);
@@ -1563,5 +1583,6 @@ void Trading_system::handleExitSignal(const std::string& symbol, core::Direction
         }
     }
 }
+
 
         

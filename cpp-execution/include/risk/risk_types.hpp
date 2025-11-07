@@ -248,6 +248,20 @@ struct OrderRequest {
     // Backwards-compatible getter used by tests
     double getQuantity() const { return quantity; }
     double& getQuantity() { return quantity; }
+    double getPrice() const { return price; }
+    double& getPrice() { return price; }
+
+    // set
+    void set_price(double p) { price = p; }
+    void set_quantity(double q) { quantity = q; }
+    void set_exchange_id(const core::ExchangeId& eid) { exchangeId = eid; }
+    void set_trading_pair(const TradingPair& tp) { tradingPair = tp; }
+    void set_client_order_id(const std::string& cid) { clientOrderId = cid; }
+    void set_order_type(OrderType ot) { type = ot; }
+    void set_side(OrderSide os) { side = os; }
+    void set_time_in_force(const std::string& tif) { timeInForce = tif; }
+    void set_strategy_id(const std::string& sid) { strategyId = sid; }
+    void set_signal_id(const std::string& sid) { signalId = sid; }
 };
 
 
