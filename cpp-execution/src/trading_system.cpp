@@ -211,6 +211,15 @@ bool Trading_system::initialize() {
         std::cerr << "Failed to initialize strategy engine" << std::endl;
         return false;
     }
+    
+    // Load symbol volatility configuration
+    std::string volatilityConfigPath = "config/symbol_volatility_config.json";
+    if (!strategyEngine_->loadSymbolVolatilityConfig(volatilityConfigPath)) {
+        std::cout << "Warning: Failed to load symbol volatility config from " << volatilityConfigPath << std::endl;
+        std::cout << "Using default volatility thresholds..." << std::endl;
+    } else {
+        std::cout << "Successfully loaded symbol volatility configuration" << std::endl;
+    }
       
     lastPriceUpdate_ = std::chrono::steady_clock::now();
     // 6. Setup component connections

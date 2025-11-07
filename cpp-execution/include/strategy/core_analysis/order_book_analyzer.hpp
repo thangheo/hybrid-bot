@@ -32,6 +32,34 @@ namespace strategy {
 
 using trading::data_ingestion::PriceLevel;
 
+/**
+ * Snapshot structure for volatility calculations
+ */
+struct OrderbookSnapshot {
+    double best_bid = 0.0;
+    double best_ask = 0.0;
+    double bid_volume = 0.0;
+    double ask_volume = 0.0;
+    uint64_t timestamp_us = 0;
+    
+    OrderbookSnapshot() = default;
+    OrderbookSnapshot(double bid, double ask, double bid_vol, double ask_vol, uint64_t ts)
+        : best_bid(bid), best_ask(ask), bid_volume(bid_vol), ask_volume(ask_vol), timestamp_us(ts) {}
+};
+
+/**
+ * Result structure for volatility filtering
+ */
+struct FilterResult {
+    bool should_trade = false;
+    double rv = 0.0;
+    double rv_adjusted = 0.0;
+    double rv_smoothed = 0.0;
+    double spread_ratio = 0.0;
+    double imbalance = 0.0;
+    double trend_ratio = 0.0;
+    std::string reason = "Not evaluated";
+};
 
 /**
  * Callback type for metric updates
@@ -182,6 +210,22 @@ protected:
     virtual double calculateVolatilityExpectation() const;
     virtual double calculateRealizedVolatility(double sample_interval_sec) const;
 
+    // New volatility methods
+    virtual double calculateRV() const;
+    virtual double calculateWeightedRV() const;
+    virtual double calculateSpreadVolatility() const;
+    virtual double calculateAdjustedRV(double rv_raw) const;
+    virtual double calculateImbalance() const;
+    virtual double getSmoothedRV(double rv_current) const;
+    virtual double calculateSpreadRatio() const;
+    virtual double calculateTrendRatio() const;
+    virtual FilterResult evaluateVolatilityFilter(
+        double rv_threshold = 0.02,
+        double spread_threshold = 0.002,
+        double min_volume_usd = 1000.0,
+        double max_imbalance = 0.5,
+        double max_trend_ratio = 0.3) const;
+
     virtual void notifyMetricsUpdated();
 
 private:
@@ -219,12 +263,22 @@ private:
     std::vector<MetricsCallback> metricsCallbacks_;
     core::Timestamp lastUpdateTime_;
     
+    // Volatility filter variables
+    static constexpr double WINDOW_SIZE_SEC = 2.0;
+    static constexpr size_t MAX_VOLATILITY_SAMPLES = 30;  // 60s / 2s
+    static constexpr double EWMA_ALPHA = 0.2;
+    
+    mutable std::deque<OrderbookSnapshot> volatilitySnapshots_;
+    mutable double rv_ema_ = 0.0;
+    mutable bool ema_initialized_ = false;
+    
     // Thread safety
     mutable std::mutex mutex_;
 
     // Helper methods
     void initializeHistoricalData(size_t capacity);
     void trimHistoricalData(size_t maxSize);
+    void addVolatilitySnapshot(const OrderbookSnapshot& snapshot);
 
     // Diagnostics for detecting stale/unchanged snapshots
     size_t lastContentHash_ = 0;

@@ -1,0 +1,10 @@
+{
+    "symbol_volatility_thresholds": {
+        "symbols": {
+            "BTCUSDT": 0.0005,
+            "ETHUSDT": 0.0005,
+            "ADAUSDT": 0.001,
+            "SOLUSDT": 0.001
+        }
+    }
+}

@@ -1,0 +1,51 @@
+{
+  "strategy_config": {
+    "strategy_id": {
+      "id": "volatility_filter_strategy",
+      "version": "1.0"
+    },
+    "defaultParameters": {
+      "numeric_params": {
+        "volatilityThreshold": 0.0005,
+        "imbalanceThreshold": 0.1,
+        "liquidityThreshold": 1000.0,
+        "signalConfidenceThreshold": 0.7,
+        "maxPositionSize": 10000.0,
+        "riskFreeRate": 0.02
+      },
+      "string_params": {
+        "strategy_name": "volatility_filter_strategy",
+        "description": "Strategy with volatility filtering"
+      }
+    },
+    "orderBookAnalyzerConfig": {
+      "depth": 20,
+      "historySize": 1000,
+      "priceWeightFactor": 0.5,
+      "volumeWeightFactor": 0.5,
+      "imbalanceThreshold": 0.6,
+      "liquidityPressureThreshold": 0.7,
+      "orderFlowThreshold": 0.5,
+      "priceGroupingFactor": 0.0001,
+      "minSamplesForStability": 5,
+      "emaAlpha": 0.2
+    }
+  },
+  "volatility_thresholds": {
+    "description": "Volatility threshold configurations",
+    "examples": {
+      "very_low": 0.0001,
+      "low": 0.0005,
+      "medium": 0.001,
+      "high": 0.002,
+      "very_high": 0.005
+    },
+    "recommended": {
+      "crypto_major": 0.0005,
+      "crypto_minor": 0.001,
+      "forex_major": 0.0003,
+      "forex_minor": 0.0007,
+      "stocks": 0.0008
+    }
+  }
+}

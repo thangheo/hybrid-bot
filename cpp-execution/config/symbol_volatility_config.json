@@ -1,0 +1,254 @@
+{
+  "strategy_config": {
+    "strategy_id": {
+      "id": "multi_symbol_volatility_strategy",
+      "version": "1.0"
+    },
+    "defaultParameters": {
+      "numeric_params": {
+        "volatilityThreshold": 0.0005,
+        "imbalanceThreshold": 0.1,
+        "liquidityThreshold": 1000.0,
+        "signalConfidenceThreshold": 0.7,
+        "maxPositionSize": 10000.0,
+        "riskFreeRate": 0.02
+      },
+      "string_params": {
+        "strategy_name": "multi_symbol_volatility_strategy",
+        "description": "Strategy with per-symbol volatility filtering"
+      }
+    }
+  },
+  "symbol_volatility_thresholds": {
+    "description": "Per-symbol volatility thresholds based on market characteristics",
+    "symbols": {
+      "BTCUSDT": {
+        "threshold": 0.0003,
+        "category": "major_bluechip",
+        "reason": "Bitcoin - Most liquid, stable volatility patterns"
+      },
+      "ETHUSDT": {
+        "threshold": 0.0004,
+        "category": "major_bluechip", 
+        "reason": "Ethereum - High liquidity, smart contract ecosystem"
+      },
+      "BNBUSDT": {
+        "threshold": 0.0005,
+        "category": "major_bluechip",
+        "reason": "Binance Coin - Exchange token, good liquidity"
+      },
+      "XRPUSDT": {
+        "threshold": 0.0006,
+        "category": "major_bluechip",
+        "reason": "XRP - Regulatory sensitive, moderate volatility"
+      },
+      "SOLUSDT": {
+        "threshold": 0.0007,
+        "category": "major_bluechip",
+        "reason": "Solana - High growth, higher volatility than BTC/ETH"
+      },
+      "ADAUSDT": {
+        "threshold": 0.0008,
+        "category": "major_bluechip",
+        "reason": "Cardano - Academic project, moderate volatility"
+      },
+      "AVAXUSDT": {
+        "threshold": 0.0007,
+        "category": "major_bluechip",
+        "reason": "Avalanche - Fast growing ecosystem"
+      },
+      "DOGEUSDT": {
+        "threshold": 0.0012,
+        "category": "major_bluechip",
+        "reason": "Dogecoin - Meme coin, higher volatility"
+      },
+      "DOTUSDT": {
+        "threshold": 0.0008,
+        "category": "major_bluechip",
+        "reason": "Polkadot - Interoperability, steady growth"
+      },
+      "LINKUSDT": {
+        "threshold": 0.0009,
+        "category": "defi_layer2",
+        "reason": "Chainlink - Oracle leader, DeFi dependent"
+      },
+      "UNIUSDT": {
+        "threshold": 0.0010,
+        "category": "defi_layer2",
+        "reason": "Uniswap - DEX token, DeFi volatility"
+      },
+      "AAVEUSDT": {
+        "threshold": 0.0011,
+        "category": "defi_layer2",
+        "reason": "Aave - Lending protocol, DeFi sector volatility"
+      },
+      "ARBUSDT": {
+        "threshold": 0.0010,
+        "category": "defi_layer2",
+        "reason": "Arbitrum - Layer 2 solution, newer token"
+      },
+      "OPUSDT": {
+        "threshold": 0.0010,
+        "category": "defi_layer2",
+        "reason": "Optimism - Layer 2 solution, newer token"
+      },
+      "FETUSDT": {
+        "threshold": 0.0015,
+        "category": "ai_technology",
+        "reason": "Fetch.ai - AI sector, higher volatility"
+      },
+      "INJUSDT": {
+        "threshold": 0.0013,
+        "category": "ai_technology", 
+        "reason": "Injective - DeFi focused, moderate volatility"
+      },
+      "ONDOUSDT": {
+        "threshold": 0.0012,
+        "category": "rwa",
+        "reason": "Ondo Finance - RWA sector, growing but volatile"
+      },
+      "HBARUSDT": {
+        "threshold": 0.0010,
+        "category": "rwa",
+        "reason": "Hedera - Enterprise focus, more stable"
+      },
+      "PAXGUSDT": {
+        "threshold": 0.0002,
+        "category": "rwa",
+        "reason": "Pax Gold - Gold-backed, very stable"
+      },
+      "SANDUSDT": {
+        "threshold": 0.0015,
+        "category": "gaming_metaverse",
+        "reason": "The Sandbox - Gaming/metaverse, high volatility"
+      },
+      "GALAUSDT": {
+        "threshold": 0.0018,
+        "category": "gaming_metaverse", 
+        "reason": "Gala Games - Gaming token, very volatile"
+      },
+      "IMXUSDT": {
+        "threshold": 0.0014,
+        "category": "gaming_metaverse",
+        "reason": "Immutable X - NFT/Gaming, emerging sector"
+      },
+      "SUIUSDT": {
+        "threshold": 0.0016,
+        "category": "emerging_altcoins",
+        "reason": "Sui - New Move-based chain, high volatility"
+      },
+      "APTUSDT": {
+        "threshold": 0.0015,
+        "category": "emerging_altcoins",
+        "reason": "Aptos - New Move-based chain, high growth"
+      },
+      "TIAUSDT": {
+        "threshold": 0.0020,
+        "category": "emerging_altcoins", 
+        "reason": "Celestia - Modular blockchain, newer project"
+      },
+      "SHIBUSDT": {
+        "threshold": 0.0020,
+        "category": "meme_coins",
+        "reason": "Shiba Inu - Meme coin, very high volatility"
+      },
+      "FLOKIUSDT": {
+        "threshold": 0.0025,
+        "category": "meme_coins",
+        "reason": "Floki - Smaller meme coin, extremely volatile"
+      },
+      "ATOMUSDT": {
+        "threshold": 0.0009,
+        "category": "infrastructure",
+        "reason": "Cosmos - Interoperability, established project"
+      },
+      "ALGOUSDT": {
+        "threshold": 0.0010,
+        "category": "infrastructure",
+        "reason": "Algorand - PoS blockchain, academic backing"
+      },
+      "ZECUSDT": {
+        "threshold": 0.0012,
+        "category": "privacy",
+        "reason": "Zcash - Privacy coin, regulatory sensitive"
+      }
+    }
+  },
+  "volatility_categories": {
+    "major_bluechip": {
+      "description": "Highest liquidity, most stable",
+      "default_threshold": 0.0005,
+      "range": [0.0003, 0.0008]
+    },
+    "defi_layer2": {
+      "description": "DeFi and Layer 2 tokens",
+      "default_threshold": 0.0010,
+      "range": [0.0009, 0.0011]
+    },
+    "ai_technology": {
+      "description": "AI and technology innovators", 
+      "default_threshold": 0.0014,
+      "range": [0.0013, 0.0015]
+    },
+    "rwa": {
+      "description": "Real World Assets",
+      "default_threshold": 0.0008,
+      "range": [0.0002, 0.0012]
+    },
+    "gaming_metaverse": {
+      "description": "Gaming and Metaverse tokens",
+      "default_threshold": 0.0016,
+      "range": [0.0014, 0.0018]
+    },
+    "emerging_altcoins": {
+      "description": "New high-potential projects",
+      "default_threshold": 0.0017,
+      "range": [0.0015, 0.0020]
+    },
+    "meme_coins": {
+      "description": "Meme tokens with utility potential",
+      "default_threshold": 0.0023,
+      "range": [0.0020, 0.0025]
+    },
+    "infrastructure": {
+      "description": "Blockchain infrastructure",
+      "default_threshold": 0.0010,
+      "range": [0.0009, 0.0010]
+    },
+    "privacy": {
+      "description": "Privacy-focused tokens",
+      "default_threshold": 0.0012,
+      "range": [0.0012, 0.0012]
+    }
+  },
+  "volatility_adjustment_rules": {
+    "market_conditions": {
+      "bull_market": {
+        "multiplier": 0.8,
+        "description": "Reduce thresholds in bull markets"
+      },
+      "bear_market": {
+        "multiplier": 1.2,
+        "description": "Increase thresholds in bear markets"
+      },
+      "sideways_market": {
+        "multiplier": 1.0,
+        "description": "Keep normal thresholds"
+      }
+    },
+    "time_based": {
+      "asian_session": {
+        "multiplier": 1.1,
+        "description": "Lower liquidity in Asian session"
+      },
+      "us_session": {
+        "multiplier": 0.9, 
+        "description": "Higher liquidity in US session"
+      },
+      "european_session": {
+        "multiplier": 0.95,
+        "description": "Good liquidity in European session"
+      }
+    }
+  }
+}

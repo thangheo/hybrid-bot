@@ -94,6 +94,46 @@ public:
     void handleSignalGenerated(const TradingSignal& signal) ;
 
     /**
+     * @brief Set minimum volatility threshold for trading
+     * @param threshold Minimum volatility (e.g., 0.0005 for 0.05%)
+     */
+    void setVolatilityThreshold(double threshold) { volatilityThreshold_ = threshold; }
+    
+    /**
+     * @brief Get current volatility threshold
+     * @return Current volatility threshold
+     */
+    double getVolatilityThreshold() const { return volatilityThreshold_; }
+    
+    /**
+     * @brief Set volatility threshold for specific symbol
+     * @param symbol Symbol name (e.g., "BTCUSDT")
+     * @param threshold Volatility threshold for this symbol
+     */
+    void setSymbolVolatilityThreshold(const std::string& symbol, double threshold);
+    
+    /**
+     * @brief Get volatility threshold for specific symbol
+     * @param symbol Symbol name
+     * @return Symbol-specific threshold or default if not set
+     */
+    double getSymbolVolatilityThreshold(const std::string& symbol) const;
+    
+    /**
+     * @brief Load symbol volatility thresholds from config file
+     * @param configPath Path to JSON config file
+     * @return True if loaded successfully
+     */
+    bool loadSymbolVolatilityConfig(const std::string& configPath);
+    
+    /**
+     * @brief Load symbol-specific volatility thresholds from config file
+     * @param configPath Path to JSON configuration file
+     * @return True if loaded successfully, false otherwise
+     */
+    // bool loadSymbolVolatilityConfig(const std::string& configPath);
+
+    /**
      * @brief Get all active trading signals
      * @return Vector of active trading signals
      */
@@ -227,6 +267,9 @@ private:
     std::map<std::string, TradingSignal> activeSignals_;
     StrategyPerformance performance_;
     
+    // Volatility filtering
+    double volatilityThreshold_ = 0.0005; // Default 0.05%
+    
     // Callback management
     std::map<size_t, SignalCallback> signalCallbacks_;
     size_t nextCallbackId_ = 1;
@@ -276,6 +319,9 @@ private:
     // Performance tracking
     void updatePerformanceMetrics(const SignalExecutionResult& result);
     void recordSignalPerformance(const std::string& signalId, const SignalExecutionResult& result);
+    
+    // Symbol-specific volatility thresholds
+    std::map<std::string, double> symbolVolatilityThresholds_; // Per-symbol thresholds
     
     // Additional components
     // std::shared_ptr<LogisticRegressionSignalGenerator> logistic_regression_signal_generator_;

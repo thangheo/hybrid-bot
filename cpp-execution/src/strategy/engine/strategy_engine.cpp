@@ -188,6 +188,33 @@ void StrategyEngine::handleSignalGenerated(const TradingSignal& signal) {
         // LOG_WARN("Could not acquire lock in handleSignalGenerated - queued signal {}", signal.id);
         return;
     }
+
+    // VOLATILITY FILTER: Check if volatility is sufficient for trading
+    if (orderBookAnalyzer_) {
+        try {
+            // Request metrics for the specific symbol/exchange for this signal
+            auto metrics = orderBookAnalyzer_->getMetrics(signal.symbol, signal.exchangeId);
+            double vol_1m = metrics.realize_volatility_1m;
+            
+            // Get symbol-specific threshold or use default
+            double symbolThreshold = getSymbolVolatilityThreshold(signal.symbol.toString());
+            
+            // Skip trading if volatility is below threshold
+            if (vol_1m < symbolThreshold) {
+                LOG_INFO("Signal {} rejected: volatility too low ({:.6f} < {:.6f}) for symbol {}", 
+                         signal.id, vol_1m, symbolThreshold, signal.symbol.toString());
+                return;
+            }
+            
+            // Optional: Log volatility info for debugging
+            LOG_DEBUG("Signal {} volatility check passed: vol_1m={:.6f} >= {:.6f} for symbol {}", 
+                     signal.id, vol_1m, symbolThreshold, signal.symbol.toString());
+                     
+        } catch (const std::exception& e) {
+            LOG_WARN("Error checking volatility for signal {}: {}", signal.id, e.what());
+            // Continue processing signal even if volatility check fails
+        }
+    }
     // Ensure the signal carries a valid strategy id/version. Some generators
     // create signals without populating strategy information (left as the
     // default StrategyId which is "UNKNOWN:1.0"). Fill it from the
@@ -483,35 +510,41 @@ bool StrategyEngine::getRegimeInfo(const std::string& symbol, trading::strategy:
  }
  
  // Update strategy parameters
- bool StrategyEngine::updateParameters(const ParameterSet& params) {
-     std::lock_guard<std::recursive_mutex> lock(mutex_);
-     
-     try {
-         // Update our internal parameters
-         parameters_ = params;
-         
-         // Propagate to sub-components
-         orderBookAnalyzer_->updateParameters(params);
-         imbalanceDetector_->updateParameters(params);
-         liquidityMonitor_->updateParameters(params);
-         // Update all volume profile analyzers
-         for (auto &entry : volumeProfileAnalyzers_) {
-             if (entry.second) entry.second->updateParameters(params);
-         }
-         signalGenerator_->updateParameters(params);
-         momentumCorrelator_->updateParameters(params);
-         thresholdManager_->updateParameters(params);
-         signalDecayModel_->updateParameters(params);
-         
-         LOG_INFO("Strategy parameters updated: {}", strategyId_);
-         return true;
-     } catch (const std::exception& e) {
-         LOG_ERROR("Exception updating parameters: {}", e.what());
-         return false;
-     }
- }
- 
- // Get current strategy parameters
+bool StrategyEngine::updateParameters(const ParameterSet& params) {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    
+    try {
+        // Update our internal parameters
+        parameters_ = params;
+        
+        // Update volatility threshold
+        double oldThreshold = volatilityThreshold_;
+        volatilityThreshold_ = parameters_.getDouble("volatilityThreshold", 0.0005);
+        if (oldThreshold != volatilityThreshold_) {
+            LOG_INFO("Volatility threshold updated: {:.6f} -> {:.6f} ({:.3f}%)", 
+                     oldThreshold, volatilityThreshold_, volatilityThreshold_ * 100.0);
+        }
+        
+        // Propagate to sub-components
+        orderBookAnalyzer_->updateParameters(params);
+        imbalanceDetector_->updateParameters(params);
+        liquidityMonitor_->updateParameters(params);
+        // Update all volume profile analyzers
+        for (auto &entry : volumeProfileAnalyzers_) {
+            if (entry.second) entry.second->updateParameters(params);
+        }
+        signalGenerator_->updateParameters(params);
+        momentumCorrelator_->updateParameters(params);
+        thresholdManager_->updateParameters(params);
+        signalDecayModel_->updateParameters(params);
+        
+        LOG_INFO("Strategy parameters updated: {}", strategyId_);
+        return true;
+    } catch (const std::exception& e) {
+        LOG_ERROR("Exception updating parameters: {}", e.what());
+        return false;
+    }
+} // Get current strategy parameters
  ParameterSet StrategyEngine::getParameters() const {
      std::lock_guard<std::recursive_mutex> lock(mutex_);
      return parameters_;
@@ -880,24 +913,26 @@ std::optional<ImbalanceEvent> StrategyEngine::findSourceEvent(
      }
  }
  
- void StrategyEngine::loadDefaultParameters() {
-     // Load default parameters from config
-     parameters_ = config_.defaultParameters;
-     
-     // Propagate to sub-components
-     orderBookAnalyzer_->updateParameters(parameters_);
-     imbalanceDetector_->updateParameters(parameters_);
-     liquidityMonitor_->updateParameters(parameters_);
-     for (auto &entry : volumeProfileAnalyzers_) {
-         if (entry.second) entry.second->updateParameters(parameters_);
-     }
-     signalGenerator_->updateParameters(parameters_);
-     momentumCorrelator_->updateParameters(parameters_);
-     thresholdManager_->updateParameters(parameters_);
-     signalDecayModel_->updateParameters(parameters_);
- }
- 
- void StrategyEngine::performAdaptiveAdjustments() {
+void StrategyEngine::loadDefaultParameters() {
+    // Load default parameters from config
+    parameters_ = config_.defaultParameters;
+    
+    // Load volatility threshold from parameters
+    volatilityThreshold_ = parameters_.getDouble("volatilityThreshold", 0.0005); // Default 0.05%
+    LOG_INFO("Volatility threshold set to: {:.6f} ({:.3f}%)", volatilityThreshold_, volatilityThreshold_ * 100.0);
+    
+    // Propagate to sub-components
+    orderBookAnalyzer_->updateParameters(parameters_);
+    imbalanceDetector_->updateParameters(parameters_);
+    liquidityMonitor_->updateParameters(parameters_);
+    for (auto &entry : volumeProfileAnalyzers_) {
+        if (entry.second) entry.second->updateParameters(parameters_);
+    }
+    signalGenerator_->updateParameters(parameters_);
+    momentumCorrelator_->updateParameters(parameters_);
+    thresholdManager_->updateParameters(parameters_);
+    signalDecayModel_->updateParameters(parameters_);
+} void StrategyEngine::performAdaptiveAdjustments() {
      if (!adaptiveMechanism_) {
          return;
      }
@@ -1109,8 +1144,68 @@ void StrategyEngine::checkEmergencyExit(const std::string& symbol) const {
                 LOG_ERROR("Exception during emergency exit for {}: {}", symbol, e.what());
             }
         } else {
-            LOG_DEBUG("EMERGENCY EXIT NEEDED but no callback registered: {} - {}", symbol, exit_result.emergency_reason);
+            LOG_TRACE("EMERGENCY EXIT NEEDED but no callback registered: {} - {}", symbol, exit_result.emergency_reason);
         }
+    }
+}
+
+// Volatility threshold management methods
+void StrategyEngine::setSymbolVolatilityThreshold(const std::string& symbol, double threshold) {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    symbolVolatilityThresholds_[symbol] = threshold;
+    LOG_INFO("Set volatility threshold for {}: {:.6f} ({:.3f}%)", 
+             symbol, threshold, threshold * 100.0);
+}
+
+double StrategyEngine::getSymbolVolatilityThreshold(const std::string& symbol) const {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    auto it = symbolVolatilityThresholds_.find(symbol);
+    if (it != symbolVolatilityThresholds_.end()) {
+        return it->second;
+    }
+    // Return default threshold if symbol-specific not found
+    return volatilityThreshold_;
+}
+
+bool StrategyEngine::loadSymbolVolatilityConfig(const std::string& configPath) {
+    try {
+        std::ifstream file(configPath);
+        if (!file.is_open()) {
+            LOG_ERROR("Cannot open volatility config file: {}", configPath);
+            return false;
+        }
+        
+        nlohmann::json config;
+        file >> config;
+        
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
+        
+        // Load symbol-specific thresholds
+        if (config.contains("symbol_volatility_thresholds") && 
+            config["symbol_volatility_thresholds"].contains("symbols")) {
+            
+            auto symbols = config["symbol_volatility_thresholds"]["symbols"];
+            size_t loadedCount = 0;
+            
+            for (auto& [symbol, symbolConfig] : symbols.items()) {
+                if (symbolConfig.contains("threshold")) {
+                    double threshold = symbolConfig["threshold"];
+                    symbolVolatilityThresholds_[symbol] = threshold;
+                    loadedCount++;
+                    
+                    LOG_DEBUG("Loaded volatility threshold for {}: {:.6f} ({:.3f}%)", 
+                             symbol, threshold, threshold * 100.0);
+                }
+            }
+            
+            LOG_INFO("Loaded volatility thresholds for {} symbols from {}", 
+                     loadedCount, configPath);
+        }
+        
+        return true;
+    } catch (const std::exception& e) {
+        LOG_ERROR("Error loading symbol volatility config from {}: {}", configPath, e.what());
+        return false;
     }
 }
  
