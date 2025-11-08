@@ -44,7 +44,7 @@ int main(int argc, char* argv[]) {
         
         // Check system capabilities and log warnings for missing RT features
         std::cout << "Checking system capabilities..." << std::endl;
-        system::SystemCapabilities::initializeAndLog();
+        trading::system::SystemCapabilities::initializeAndLog();
         
         E8Instance = std::make_unique<Trading_system>();
         

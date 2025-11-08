@@ -3,6 +3,9 @@
 #include <pthread.h>
 #include <unistd.h>
 #include <limits.h>
+#include <sched.h>
+#include <algorithm>
+#include <cstdio>
 
 namespace trading {
 namespace system {
@@ -17,13 +20,6 @@ public:
      * @return true if RT scheduling is available, false otherwise
      */
     static bool hasRealTimeScheduling() {
-        // Check if the process can use real-time priorities
-        long rt_max = sysconf(_SC_PRIORITY_MAX);
-        long rt_min = sysconf(_SC_PRIORITY_MIN);
-        
-        // Try to get current scheduling policy
-        int current_policy = sched_getscheduler(0);
-        
         // Check if we can get real-time priority limits
         int fifo_max = sched_get_priority_max(SCHED_FIFO);
         int fifo_min = sched_get_priority_min(SCHED_FIFO);
