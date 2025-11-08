@@ -24,7 +24,9 @@ CollateralManager::CollateralManager(const RiskConfig& config,
     , m_executionInterface(executionInterface)
     , m_dataInterface(dataInterface)
     , m_config(config)
-    , m_collateralConfig(config.collateralConfig) {
+    , m_collateralConfig(config.getCollateralConfig()) {
+    
+    std::cerr << "[CollateralManager] Constructor - managedExchanges count: " << m_collateralConfig.managedExchanges.size() << std::endl;
     
     // CRASH PROTECTION: Validate critical pointers
     if (!m_executionInterface) {
