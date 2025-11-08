@@ -38,6 +38,7 @@
     CANCELLATION_IMBALANCE,        // one-sided cancellations
     PRICE_VOLATILITY_IMBALANCE,    // volatility surge
     HIDDEN_LIQUIDITY_IMBALANCE,    // iceberg / hidden liquidity
+    BAYESIAN_ML,                   // Bayesian machine learning detector
     CUSTOM                         // strategy-defined
 };
 
@@ -60,6 +61,7 @@
          case ImbalanceType::LIQUIDITY_IMBALANCE: return "liquidity_imbalance";
          case ImbalanceType::TREND_CONTINUATION: return "trend_continuation";
          case ImbalanceType::TREND_REVERSAL: return "trend_reversal";
+         case ImbalanceType::BAYESIAN_ML: return "bayesian_ml";
          case ImbalanceType::CUSTOM: return "custom";
          default: return "unknown";
      }
@@ -83,6 +85,7 @@
      if (str == "liquidity_imbalance") return ImbalanceType::LIQUIDITY_IMBALANCE;
      if (str == "trend_continuation") return ImbalanceType::TREND_CONTINUATION;
      if (str == "trend_reversal") return ImbalanceType::TREND_REVERSAL;
+     if (str == "bayesian_ml") return ImbalanceType::BAYESIAN_ML;
      if (str == "custom") return ImbalanceType::CUSTOM;
      return ImbalanceType::CUSTOM; // Default to CUSTOM for unknown types
  }

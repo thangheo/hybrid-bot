@@ -64,6 +64,7 @@ private:
     // Helper to create specific detector instances
     std::unique_ptr<IImbalanceDetector> createVolumeDetector() const;
     std::unique_ptr<IImbalanceDetector> createSpreadDetector() const;
+    std::unique_ptr<IImbalanceDetector> createBayesianDetector() const;
     // Add more create methods as we extract more detectors
 };
 
