@@ -273,7 +273,7 @@ private:
     double volatilityThreshold_ = 0.0005; // Default 0.05%
     
     // Volume Profile metrics storage (symbol -> metrics map)
-    std::map<std::string, std::map<std::string, double>> volumeProfileMetrics_;
+    // std::map<std::string, std::map<std::string, double>> volumeProfileMetrics_;
     
     // Callback management
     std::map<size_t, SignalCallback> signalCallbacks_;
