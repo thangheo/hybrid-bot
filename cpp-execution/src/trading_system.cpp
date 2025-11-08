@@ -1349,6 +1349,8 @@ void Trading_system::setupComponentConnections() {
                         if (riskManager) {
                             try {
                                 auto cachedPos = riskManager->getCachedPosition(targetExchange, trading::core::Symbol(symbol));
+                                LOG_INFO("ExitCallback: 🔍 Cached position lookup for {}: {}", 
+                                         symbol, cachedPos.has_value() ? std::to_string(cachedPos.value()) : "NO_VALUE");
                                 if (cachedPos.has_value() && std::abs(cachedPos.value()) > 1e-8) {
                                     exitQuantity = std::abs(cachedPos.value());
                                     foundCachedPosition = true;
@@ -1358,6 +1360,8 @@ void Trading_system::setupComponentConnections() {
                             } catch (const std::exception& e) {
                                 LOG_WARN("ExitCallback: Cached position lookup failed for {}: {}", symbol, e.what());
                             }
+                        } else {
+                            LOG_WARN("ExitCallback: RiskManager weak_ptr expired during position lookup");
                         }
                         
                         // Fallback: Single exchange API call (faster than getAllPositions)
