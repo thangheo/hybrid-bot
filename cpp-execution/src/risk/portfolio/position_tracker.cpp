@@ -555,12 +555,8 @@ bool PositionTracker::reconcilePositions(ExchangeId exchangeId) {
 }
 void PositionTracker::updateMarketData(const MarketData& marketData) {
     try {
-        // Update price cache
-        {
-            std::lock_guard<std::mutex> lock(m_marketDataMutex);
-            m_priceCache[marketData.tradingPair.toString()] = marketData.price;
-        }
-        // Update positions with new price, but collect notifications to send outside the lock
+        // No local cache needed - MarketDataInterface has its own cache
+        // Just update positions with new price
         std::vector<Position> notifyList;
         {
             std::lock_guard<std::mutex> lock(m_positionsMutex);
@@ -735,18 +731,12 @@ double PositionTracker::calculateTotalExposure() const {
 }
 
 double PositionTracker::getCachedPrice(const TradingPair& tradingPair) const {
-    std::lock_guard<std::mutex> lk(m_marketDataMutex);
     const std::string key = tradingPair.toString();
-    auto it = m_priceCache.find(key);
-    if (it != m_priceCache.end()) {
-        LOG_WARN("PRICE_CACHE_HIT: pair={} price={}", key, it->second);
-        return it->second;
-    }
     
-    LOG_WARN("PRICE_CACHE_MISS: pair={} dataInterface={} cacheSize={}", 
-             key, (m_dataInterface ? "YES" : "NO"), m_priceCache.size());
+    LOG_WARN("PRICE_LOOKUP_START: pair={} dataInterface={}", 
+             key, (m_dataInterface ? "YES" : "NO"));
     
-    // Attempt to query data interface if available
+    // Use MarketDataInterface cache directly (5s TTL from config)
     try {
         if (m_dataInterface) {
             double p = m_dataInterface->getCurrentPrice(tradingPair.toString());
@@ -821,43 +811,16 @@ std::string PositionTracker::createPositionKey(const ExchangeId& exchangeId,
 
 double PositionTracker::getCurrentPrice(const TradingPair& tradingPair) const {
     try {
-        // First check cache
-        {
-            std::lock_guard<std::mutex> lock(m_marketDataMutex);
-            auto it = m_priceCache.find(tradingPair.toString());
-            if (it != m_priceCache.end() && std::isfinite(it->second) && it->second > 0.0) {
-                return it->second;
-            }
-        }
-        
-        // If not in cache, try to get from data interface
+        // Use MarketDataInterface directly (has 5s cache + orderbook data)
         if (m_dataInterface) {
-            try {
-                core::Symbol sym(tradingPair.toString());
-                auto marketData = m_dataInterface->getMarketData(sym);
-                if (marketData.has_value() && std::isfinite(marketData->price) && marketData->price > 0.0) {
-                    // Update cache safely
-                    try {
-                        std::lock_guard<std::mutex> lock(m_marketDataMutex);
-                        m_priceCache[tradingPair.toString()] = marketData->price;
-                    } catch (...) {
-                        // Cache update failed, but we still have the price
-                    }
-                    return marketData->price;
-                }
-            } catch (const std::exception& e) {
-                std::cerr << "Error getting current price from data interface for " 
-                          << tradingPair.toString() << ": " << e.what() << std::endl;
-            } catch (...) {
-                std::cerr << "Unknown error getting current price from data interface for " 
-                          << tradingPair.toString() << std::endl;
-            }
+            return m_dataInterface->getCurrentPrice(tradingPair.toString());
         }
     } catch (const std::exception& e) {
-        std::cerr << "Critical error in getCurrentPrice for " << tradingPair.toString() 
-                  << ": " << e.what() << std::endl;
+        std::cerr << "Error getting current price from data interface for " 
+                  << tradingPair.toString() << ": " << e.what() << std::endl;
     } catch (...) {
-        std::cerr << "Critical unknown error in getCurrentPrice for " << tradingPair.toString() << std::endl;
+        std::cerr << "Unknown error getting current price from data interface for " 
+                  << tradingPair.toString() << std::endl;
     }
     
     return 0.0; // Price not available
