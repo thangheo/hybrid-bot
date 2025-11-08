@@ -190,7 +190,8 @@ void StrategyEngine::handleSignalGenerated(const TradingSignal& signal) {
     }
 
     // VOLATILITY FILTER: Check if volatility is sufficient for trading
-    if (orderBookAnalyzer_) {
+    // Only apply volatility filter to BUY/entry signals, allow sell/exit signals to pass through
+    if (orderBookAnalyzer_ && signal.direction == core::Direction::BUY) {
         try {
             // Request metrics for the specific symbol/exchange for this signal
             auto metrics = orderBookAnalyzer_->getMetrics(signal.symbol, signal.exchangeId);
