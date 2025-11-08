@@ -1504,17 +1504,7 @@ models::Order ExecutionService::createOrderFromSignal(const TradingSignal& signa
                           << order->getTradingPair().toString() << "." << std::endl;
                 order->setType(models::OrderType::MARKET);
                 order->setPrice(0.0);
-            }
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
+            }           
             
             if (order->getSide() == models::OrderSide::BUY) {
                 if (market_condition.askPrice > 0.0) fallback_price = market_condition.askPrice * 1.0;
