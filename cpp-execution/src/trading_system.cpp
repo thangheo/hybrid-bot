@@ -953,7 +953,8 @@ void Trading_system::signalWorkerLoop(size_t workerId) {
                     if (execSignal.confidence < 0.5) continue;
                 } else if (execSignal.direction == core::Direction::SELL) {
                     // if (execSignal.strength < 0.3) continue;
-                    if (execSignal.confidence < 0.6) continue;
+                    //wow, this is stupid, why sell need higher confidence than buy
+                    if (execSignal.confidence < 0.3) continue;
                 }
                 
 
@@ -973,7 +974,7 @@ void Trading_system::signalWorkerLoop(size_t workerId) {
                     signalsValidated_++;
                     if (validationResult.approved) {
                         signalsApproved_++;
-                        realExecution(execSignal); // disable for debugging
+                        realExecution(execSignal); 
                     } else {
                         signalsRejected_++;
                     }
