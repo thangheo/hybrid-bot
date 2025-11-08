@@ -116,6 +116,6 @@
     "batch_size": 100,
     "flush_interval_seconds": 10
   },
-  "enabled_exchanges": ["BINANCE", "COINBASE"]
+  "enabled_exchanges": ["BINANCE"]
 
 }
