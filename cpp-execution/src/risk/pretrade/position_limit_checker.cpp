@@ -73,6 +73,10 @@ bool PositionLimitChecker::checkPositionLimit(const TradingSignal& signal,
     StrategyId strategyId = signal.getStrategyId();
     core::ExchangeId exchangeId = signal.exchangeId;
 
+    LOG_DEBUG("PositionLimitChecker", 
+              "Starting position limit check for signal {}: asset={}, pair={}, strategy={}, exchange={}", 
+              signal.getSignalId(), asset, tradingPair.toString(), strategyId.toString(), exchangeId.toString());
+
     // We treat configured limits as USD notional limits. Convert current
     // position and proposed order into USD and compare against limits.
 
@@ -83,6 +87,9 @@ bool PositionLimitChecker::checkPositionLimit(const TradingSignal& signal,
             currentPrice = m_positionTracker->getCachedPrice(tradingPair);
         }
     } catch (...) { currentPrice = 0.0; }
+
+    LOG_DEBUG("PositionLimitChecker", 
+              "Price check for {}: currentPrice={}", tradingPair.toString(), currentPrice);
 
     double currentNotional = 0.0;
     if (currentPrice > 0.0) {
@@ -105,6 +112,9 @@ bool PositionLimitChecker::checkPositionLimit(const TradingSignal& signal,
         if (currentPrice > 0.0) {
             orderNotional = orderQuantity * currentPrice;
         } else {
+            LOG_WARN("PositionLimitChecker", 
+                     "REJECTION REASON: Price unavailable for signal {}, asset={}", 
+                     signal.getSignalId(), asset);
             RiskViolation violation(
                 ViolationType::PRICE_DEVIATION,
                 "Price unavailable to compute order notional for position limit check",
@@ -117,6 +127,9 @@ bool PositionLimitChecker::checkPositionLimit(const TradingSignal& signal,
     } else if (targetSize <= 1.0) {
         // Interpret as fraction of the configured asset limit (USD)
         if (assetLimitUsd <= 0.0) {
+            LOG_WARN("PositionLimitChecker", 
+                     "REJECTION REASON: Asset limit too low for signal {}, asset={}, assetLimitUsd={}", 
+                     signal.getSignalId(), asset, assetLimitUsd);
             RiskViolation violation(
                 ViolationType::POSITION_LIMIT,
                 "Asset position limit too low to interpret targetSize fractionally for " + asset,
@@ -132,6 +145,9 @@ bool PositionLimitChecker::checkPositionLimit(const TradingSignal& signal,
         if (currentPrice > 0.0) {
             orderNotional = std::abs(targetSize) * currentPrice;
         } else {
+            LOG_WARN("PositionLimitChecker", 
+                     "REJECTION REASON: Price unavailable for absolute quantity signal {}, asset={}", 
+                     signal.getSignalId(), asset);
             RiskViolation violation(
                 ViolationType::PRICE_DEVIATION,
                 "Price unavailable to compute order notional for position limit check",
@@ -142,6 +158,10 @@ bool PositionLimitChecker::checkPositionLimit(const TradingSignal& signal,
             return false;
         }
     }
+
+    LOG_DEBUG("PositionLimitChecker", 
+              "Calculated notionals for signal {}: orderQuantity={}, targetSize={}, orderNotional={}", 
+              signal.getSignalId(), orderQuantity, targetSize, orderNotional);
 
     double proposedNotional = currentNotional + orderNotional;
 
@@ -170,9 +190,9 @@ bool PositionLimitChecker::checkPositionLimit(const TradingSignal& signal,
     // If the configured assetLimit is interpreted as USD notional, validate proposedNotional
     if (proposedNotional > assetLimit) {
         // print for debug all related values
-        LOG_DEBUG("PositionLimitChecker", 
-                  "Asset limit check for {}: currentNotional = {}, orderNotional = {}, proposedNotional = {}, assetLimit = {}",
-                  asset, currentNotional, orderNotional, proposedNotional, assetLimit);
+        LOG_WARN("PositionLimitChecker", 
+                  "REJECTION REASON - Asset limit exceeded for signal {}, asset {}: currentNotional={}, orderNotional={}, proposedNotional={}, assetLimit={}",
+                  signal.getSignalId(), asset, currentNotional, orderNotional, proposedNotional, assetLimit);
         RiskViolation violation(
             ViolationType::POSITION_LIMIT,
             "Asset position notional limit exceeded for " + asset,
@@ -194,6 +214,9 @@ bool PositionLimitChecker::checkPositionLimit(const TradingSignal& signal,
     double proposedStrategyNotional = strategyCurrentNotional + orderNotional;
 
     if (strategyLimit > 0.0 && proposedStrategyNotional > strategyLimit) {
+        LOG_WARN("PositionLimitChecker", 
+                  "REJECTION REASON - Strategy limit exceeded for signal {}, strategy {}: currentNotional={}, orderNotional={}, proposedNotional={}, strategyLimit={}",
+                  signal.getSignalId(), strategyId.toString(), strategyCurrentNotional, orderNotional, proposedStrategyNotional, strategyLimit);
         RiskViolation violation(
             ViolationType::POSITION_LIMIT,
             "Strategy-level position notional limit exceeded for " + strategyId.toString(),
@@ -215,6 +238,9 @@ bool PositionLimitChecker::checkPositionLimit(const TradingSignal& signal,
     double proposedExchangeNotional = exchangeCurrentNotional + orderNotional;
 
     if (exchangeLimit > 0.0 && proposedExchangeNotional > exchangeLimit) {
+        LOG_WARN("PositionLimitChecker", 
+                  "REJECTION REASON - Exchange limit exceeded for signal {}, exchange {}: currentNotional={}, orderNotional={}, proposedNotional={}, exchangeLimit={}",
+                  signal.getSignalId(), exchangeId.toString(), exchangeCurrentNotional, orderNotional, proposedExchangeNotional, exchangeLimit);
         RiskViolation violation(
             ViolationType::POSITION_LIMIT,
             "Exchange-level position notional limit exceeded for exchange " + exchangeId.toString(),
@@ -224,6 +250,10 @@ bool PositionLimitChecker::checkPositionLimit(const TradingSignal& signal,
         violations.push_back(violation);
         withinLimits = false;
     }
+    
+    LOG_DEBUG("PositionLimitChecker", 
+              "Position limit check completed for signal {}: withinLimits={}, violations={}",
+              signal.getSignalId(), withinLimits, violations.size());
     
     return withinLimits;
 }
