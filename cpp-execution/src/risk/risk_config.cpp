@@ -590,6 +590,40 @@ void RiskConfig::loadCollateralConfig(const json& co) {
     if (co.contains("maxFundingAmount")) {
         collateralConfig_.maxFundingAmount = co["maxFundingAmount"].get<double>();
     }
+    if (co.contains("managedExchanges") && co["managedExchanges"].is_array()) {
+        collateralConfig_.managedExchanges.clear();
+        for (const auto& exchangeStr : co["managedExchanges"]) {
+            std::string exchangeName = exchangeStr.get<std::string>();
+            if (exchangeName == "binance") {
+                collateralConfig_.managedExchanges.push_back(core::ExchangeId::binance());
+            } else if (exchangeName == "coinbase") {
+                collateralConfig_.managedExchanges.push_back(core::ExchangeId::coinbase());
+            } else {
+                std::cerr << "Unknown exchange in managedExchanges: " << exchangeName << std::endl;
+            }
+        }
+    }
+    if (co.contains("minimumBalances") && co["minimumBalances"].is_object()) {
+        collateralConfig_.minimumBalances.clear();
+        for (const auto& [asset, amount] : co["minimumBalances"].items()) {
+            collateralConfig_.minimumBalances[asset] = amount.get<double>();
+        }
+    }
+    if (co.contains("emergencyFundingBuffer")) {
+        collateralConfig_.emergencyFundingBuffer = co["emergencyFundingBuffer"].get<double>();
+    }
+    if (co.contains("emergencyFundingSource")) {
+        collateralConfig_.emergencyFundingSource = co["emergencyFundingSource"].get<std::string>();
+    }
+    if (co.contains("minimumFreeCollateralRatio")) {
+        collateralConfig_.minimumFreeCollateralRatio = co["minimumFreeCollateralRatio"].get<double>();
+    }
+    if (co.contains("emergencyFundingThreshold")) {
+        collateralConfig_.emergencyFundingThreshold = co["emergencyFundingThreshold"].get<double>();
+    }
+    if (co.contains("autoInitiateEmergencyFunding")) {
+        collateralConfig_.autoInitiateEmergencyFunding = co["autoInitiateEmergencyFunding"].get<bool>();
+    }
     // Add other collateral settings...
 }
 
