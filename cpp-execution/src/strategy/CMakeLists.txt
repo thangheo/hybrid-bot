@@ -23,6 +23,9 @@ list(FILTER STRATEGY_SOURCES EXCLUDE REGEX "signal/hawkes/hawkes_predictor\\.cpp
 # Remove strategy_app.cpp from the library sources if it exists
 list(FILTER STRATEGY_SOURCES EXCLUDE REGEX "strategy_app\\.cpp$")
 
+# Exclude the monolithic backup file which has compilation issues
+list(FILTER STRATEGY_SOURCES EXCLUDE REGEX "imbalance_detection_engine_monolithic_backup\\.cpp$")
+
 # Define the strategy library
 add_library(strategy STATIC ${STRATEGY_SOURCES})
 
