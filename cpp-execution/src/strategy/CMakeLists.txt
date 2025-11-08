@@ -7,6 +7,10 @@ file(GLOB_RECURSE STRATEGY_SOURCES
     "communication/*.cpp"
     "optimization/*.cpp"
     "pattern/*.cpp"
+    "pattern/aggregation/*.cpp"
+    "pattern/detectors/*.cpp"
+    "pattern/publication/*.cpp"
+    "pattern/threshold/*.cpp"
     "signal/*.cpp"
     "exit/*.cpp"
     # "signal/hawkes/*.cpp"
@@ -20,7 +24,7 @@ list(FILTER STRATEGY_SOURCES EXCLUDE REGEX "signal/hawkes/hawkes_predictor\\.cpp
 list(FILTER STRATEGY_SOURCES EXCLUDE REGEX "strategy_app\\.cpp$")
 
 # Define the strategy library
-add_library(strategy ${STRATEGY_SOURCES})
+add_library(strategy STATIC ${STRATEGY_SOURCES})
 
 # Include directories for the library
 target_include_directories(strategy
@@ -41,6 +45,8 @@ target_link_libraries(strategy
         proto_lib
         data_ingestion
         perception
+        # NOTE: Cannot link 'risk' here due to circular dependency (risk depends on strategy)
+        # RiskManager integration is handled at higher level (e.g., in applications)
         # Eigen3::Eigen
         nlohmann_json::nlohmann_json
     PRIVATE

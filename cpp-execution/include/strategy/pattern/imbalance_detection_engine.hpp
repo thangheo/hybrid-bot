@@ -16,7 +16,13 @@
 #include "strategy/types.hpp"
 
 // Forward-declare Bayesian model to avoid pulling heavy Eigen headers into this public header
-namespace trading { namespace perception { class BayesianTradingModel; } }
+namespace trading { 
+    namespace perception { class BayesianTradingModel; } 
+    namespace strategy { 
+        namespace aggregation { struct AggregatedSignal; }
+    }
+    namespace data_ingestion { class MarketData; }
+}
 
 #include "data_ingestion/orderbook/order_book.hpp"
 #include "perception/bayesian_trading_adapter.hpp"
@@ -351,6 +357,16 @@ public:
     
     // Optimal exit strategy integration (replaced old signal state tracking)
     // Position management now handled by OptimalExitStrategy class
+    
+    // PIMPL for modular architecture compatibility wrapper
+    class Impl;
+    std::unique_ptr<Impl> pImpl_;
+    
+    // Helper methods for compatibility wrapper
+    // trading::data_ingestion::MarketData convertMetricsToMarketData(const OrderBookMetrics& metrics) const; // TODO: Implement when needed
+    void convertResultsToEvents(const std::vector<aggregation::AggregatedSignal>& results, 
+                               const OrderBookMetrics& originalMetrics);
+    void triggerCallbacks();
 };
 
 // Type alias

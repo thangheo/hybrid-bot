@@ -81,7 +81,8 @@ struct TradingSignal {
     double decayRate;                                 // Decay rate for the signal
     double expectedPriceImpact;                       // Expected price impact of the signal
     std::unordered_map<std::string, double> signalMetrics;     // Metrics associated with this signal
-    
+    // metadata can be added as needed
+    std::unordered_map<std::string, std::string> metadata;     // Additional metadata key-value pairs
     /**
      * Default constructor
      */
@@ -195,6 +196,8 @@ struct TradingSignal {
     // set target size
     void setTargetSize(double size) { this->targetSize = size; }
     void setTtl(const core::Duration& duration) { this->ttl = duration; }
+    void setGenerationTime(const core::Timestamp& timestamp) { this->generationTime = timestamp; }
+    void setConfidence(double conf) { this->confidence = conf; }
     /**
      * Check if signal is still valid based on TTL
      */

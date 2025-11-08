@@ -79,10 +79,10 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../../../bin)
 add_executable(data_interface_integration_test tests/data_interface_integration_test.cpp)
 target_link_libraries(data_interface_integration_test PRIVATE 
     data_interface
-    risk
-    strategy
+    strategy  # Strategy uses risk components 
     data_ingestion
     common
+    risk      # Risk library must come after strategy for static linking
     nlohmann_json::nlohmann_json
     protobuf::libprotobuf
         )
