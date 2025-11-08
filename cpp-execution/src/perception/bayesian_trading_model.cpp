@@ -30,11 +30,15 @@ void BayesianTradingModel::initialize_model(int num_features) {
     std::lock_guard<std::mutex> lock(model_mutex_);
     
     if (is_initialized_ && num_features_ == num_features) {
+        std::cout << "[BayesianTradingModel] Already initialized with " << num_features << " features - skipping" << std::endl;
         return;  // Already initialized with same dimensions
     }
     
     num_features_ = num_features;
-    num_updates_ = 0;
+    // Only reset num_updates_ if this is a fresh initialization (not after load_model)
+    if (!is_initialized_) {
+        num_updates_ = 0;
+    }
     
     // Initialize Bayesian parameters
     // Allocate per-class parameters (one-vs-rest)
@@ -51,7 +55,7 @@ void BayesianTradingModel::initialize_model(int num_features) {
     
     is_initialized_ = true;
     
-    std::cout << "[BayesianTradingModel] Initialized with " << num_features << " features" << std::endl;
+    std::cout << "[BayesianTradingModel] Initialized with " << num_features << " features (num_updates=" << num_updates_ << ")" << std::endl;
 }
 
 void BayesianTradingModel::update_feature_stats(const Eigen::VectorXd& features) {
@@ -738,6 +742,9 @@ bool BayesianTradingModel::load_model(const std::string& filepath) {
                 feature_active_[i] = 0;
             }
         }
+        
+        // CRITICAL: Set model as initialized after successful load
+        is_initialized_ = true;
         
         std::cout << "[BayesianTradingModel] Model loaded from: " << filepath << std::endl;
         return true;
