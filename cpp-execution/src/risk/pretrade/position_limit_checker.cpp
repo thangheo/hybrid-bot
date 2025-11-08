@@ -87,8 +87,8 @@ bool PositionLimitChecker::checkPositionLimit(const TradingSignal& signal,
         }
     } catch (...) { currentPrice = 0.0; }
 
-    LOG_DEBUG("PositionLimitChecker", 
-              "Price check for {}: currentPrice={}", tradingPair.toString(), currentPrice);
+    LOG_WARN("PRICE_DEBUG: pair={} currentPrice={} positionTracker={}", 
+              tradingPair.toString(), currentPrice, (m_positionTracker ? "YES" : "NO"));
 
     double currentNotional = 0.0;
     if (currentPrice > 0.0) {
@@ -140,6 +140,18 @@ bool PositionLimitChecker::checkPositionLimit(const TradingSignal& signal,
             return false;
         }
         orderNotional = targetSize * assetLimitUsd;
+        // For fractional orders, we don't need current price to validate
+        // Just check if the order notional (fraction of limit) is reasonable
+        LOG_WARN("FRACTIONAL_ORDER: signal={} asset={} targetSize={} orderNotional={} limit={} currentPrice={}", 
+                 signal.getSignalId(), asset, targetSize, orderNotional, assetLimitUsd, currentPrice);
+        
+        // For fractional orders, if no current price, assume currentNotional = 0
+        // This allows the order to proceed with just the fractional limit check
+        if (currentPrice <= 0.0) {
+            currentNotional = 0.0;
+            LOG_WARN("FRACTIONAL_NO_PRICE: signal={} asset={} - proceeding with currentNotional=0", 
+                     signal.getSignalId(), asset);
+        }
     } else {
         // targetSize > 1.0: treat as absolute asset quantity
         if (currentPrice > 0.0) {
