@@ -25,6 +25,17 @@ CollateralManager::CollateralManager(const RiskConfig& config,
     , m_config(config)
     , m_collateralConfig(config.collateralConfig) {
     
+    // CRASH PROTECTION: Validate critical pointers
+    if (!m_executionInterface) {
+        std::cerr << "[CollateralManager] WARNING: ExecutionInterface is null!" << std::endl;
+    }
+    if (!m_positionTracker) {
+        std::cerr << "[CollateralManager] WARNING: PositionTracker is null!" << std::endl;
+    }
+    if (!m_dataInterface) {
+        std::cerr << "[CollateralManager] WARNING: DataInterface is null!" << std::endl;
+    }
+    
     // Initialize default collateral status
     m_collateralStatus.totalCollateral = 0.0;
     m_collateralStatus.freeCollateral = 0.0;
@@ -485,12 +496,20 @@ double CollateralManager::calculateMarginRequirement(const ExchangeId& exchangeI
 }
 bool CollateralManager::fetchExchangeBalances() {
     try {
+        // CRASH PROTECTION: Check for null pointer
+        if (!m_executionInterface) {
+            std::cerr << "[CollateralManager] ERROR: m_executionInterface is null!" << std::endl;
+            return false;
+        }
+        
         // Clear current balances
         std::vector<ExchangeBalance> newBalances;
         
         // Request balances from each configured exchange
         for (const auto& exchangeId : m_collateralConfig.managedExchanges) {
-            if (m_executionInterface) {
+            std::cerr << "[CollateralManager] Fetching balances for exchange: " << exchangeId.toString() << std::endl;
+            
+            try {
                 auto exchangeBalances = m_executionInterface->getAccountBalances(exchangeId);
                 
                 if (!exchangeBalances.empty()) {
@@ -507,6 +526,10 @@ bool CollateralManager::fetchExchangeBalances() {
                         newBalances.push_back(balance);
                     }
                 }
+            } catch (const std::exception& e) {
+                std::cerr << "[CollateralManager] Error fetching balances for " << exchangeId.toString() 
+                          << ": " << e.what() << std::endl;
+                // Continue with next exchange
             }
         }
         
