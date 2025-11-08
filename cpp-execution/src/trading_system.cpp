@@ -1327,6 +1327,9 @@ void Trading_system::setupComponentConnections() {
                         exitOrder.set_time_in_force("GTC"); // Good-Til-Canceled
                         exitOrder.set_strategy_id("OptimalExitStrategy");
                         exitOrder.set_signal_id("exit_signal_" + symbol);
+                        exitOrder.set_exchange_id(trading::core::ExchangeId::binance()); 
+                        exitOrder.set_price(currentPrice); // not used for 
+                        
 
                         // Determine exchange id and quantity from live positions if possible
                         core::ExchangeId targetExchange = trading::core::ExchangeId::binance(); // fallback
@@ -1598,68 +1601,14 @@ void Trading_system::loadEmergencyState() {
     }
 }
 
-// 🚨 CRITICAL: EXIT ORDER HANDLING to prevent stuck positions
-void Trading_system::executeExitOrder(const std::string& symbol, core::Direction direction, double quantity, const std::string& reason) {
-    try {
-        // Skip frequency check for EXIT orders - they are risk management priority
-        if (!emergencyFrequencyCheckWithType(symbol, "EXIT")) {
-            std::cout << "⚠️ EXIT order frequency check failed, but FORCING execution for risk management: " << symbol << std::endl;
-            // Continue anyway for exits - risk management takes priority
-        }
+// REMOVED: executeExitOrder() - This was dead code never called anywhere  
+// The actual exit execution happens through:
+// OptimalExitStrategy::closePosition() -> exitCallback_ -> ExecutionInterface::submitOrder()
+// See lines 1300-1427 for the real exit callback registration
 
-        // Create EXIT signal
-        execution::TradingSignal exitSignal;
-        exitSignal.id = "EXIT_" + symbol + "_" + std::to_string(std::chrono::system_clock::now().time_since_epoch().count());
-        exitSignal.symbol = core::Symbol(symbol);
-        exitSignal.direction = direction;
-        exitSignal.strength = 1.0;  // Max strength for exits
-        exitSignal.targetSize = 1.0; // Full position
-        exitSignal.confidence = 1.0; // Max confidence for exits
-        exitSignal.quality = 1.0;
-        exitSignal.setExchangeId(core::ExchangeId::binance()); // Default exchange
-        exitSignal.setQuantity(quantity);
-
-        std::cout << "🚨 EXECUTING EXIT ORDER: " << symbol << " " 
-                  << (direction == core::Direction::SELL ? "SELL" : "BUY") 
-                  << " qty=" << quantity << " reason=" << reason << std::endl;
-
-        // Execute immediately - bypass normal queue for exits
-        if (executionService_) {
-            ExecutionResponse response = executionService_->executeSignal(exitSignal);
-            
-            if (response.success) {
-                std::cout << "✅ EXIT EXECUTED: " << symbol << " " << reason << std::endl;
-                recordTradeWithType(symbol, "EXIT");
-            } else {
-                std::cout << "❌ EXIT FAILED: " << symbol << " " << reason 
-                          << " Error: " << response.error_message << std::endl;
-            }
-        }
-
-    } catch (const std::exception& e) {
-        std::cout << "💥 EXIT ORDER EXCEPTION: " << symbol << " " << e.what() << std::endl;
-    }
-}
-
-void Trading_system::handleExitSignal(const std::string& symbol, core::Direction exitDirection, double currentPrice, const std::string& exitReason) {
-    // Get current position size from risk manager 
-    double positionSize = 0.0;
-    if (riskManager_) {
-        try {
-            // This should get actual position, but for now use a reasonable estimate
-            positionSize = 0.001; // Estimate based on recent orders
-            
-            std::cout << "🔄 EXIT SIGNAL: " << symbol << " direction=" 
-                      << (exitDirection == core::Direction::SELL ? "SELL" : "BUY")
-                      << " price=" << currentPrice << " reason=" << exitReason << std::endl;
-            
-            executeExitOrder(symbol, exitDirection, positionSize, exitReason);
-            
-        } catch (const std::exception& e) {
-            std::cout << "❌ Failed to handle exit signal: " << e.what() << std::endl;
-        }
-    }
-}
+// REMOVED: handleExitSignal() - This was dead code never called anywhere
+// The actual exit strategy works through OptimalExitStrategy -> registerGlobalOptimalExitCallback()
+// Exit flow: ImbalanceDetectionEngine calls g_optimalExit.evaluateExit() -> exitCallback_ -> ExecutionInterface
 
 
         

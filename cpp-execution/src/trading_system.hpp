@@ -113,9 +113,9 @@ public:
     void recordTradeWithType(const std::string& symbol, const std::string& orderType);
     void loadEmergencyState();
     
-    // 🚨 EXIT ORDER HANDLING 
-    void executeExitOrder(const std::string& symbol, core::Direction direction, double quantity, const std::string& reason);
-    void handleExitSignal(const std::string& symbol, core::Direction exitDirection, double currentPrice, const std::string& exitReason);
+    // EXIT ORDER HANDLING: 
+    // Removed dead code: executeExitOrder() and handleExitSignal() - never called
+    // Real exit flow: OptimalExitStrategy -> registerGlobalOptimalExitCallback() -> ExecutionInterface
 
     void printStatus();
     
