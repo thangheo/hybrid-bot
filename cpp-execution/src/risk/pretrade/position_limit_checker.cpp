@@ -73,9 +73,8 @@ bool PositionLimitChecker::checkPositionLimit(const TradingSignal& signal,
     StrategyId strategyId = signal.getStrategyId();
     core::ExchangeId exchangeId = signal.exchangeId;
 
-    LOG_DEBUG("PositionLimitChecker", 
-              "Starting position limit check for signal {}: asset={}, pair={}, strategy={}, exchange={}", 
-              signal.getSignalId(), asset, tradingPair.toString(), strategyId.toString(), exchangeId.toString());
+    LOG_WARN("POSITION_CHECK_START: signal={} asset={} pair={} qty={} target={}", 
+              signal.getSignalId(), asset, tradingPair.toString(), signal.getQuantity(), signal.getTargetSize());
 
     // We treat configured limits as USD notional limits. Convert current
     // position and proposed order into USD and compare against limits.
@@ -190,8 +189,7 @@ bool PositionLimitChecker::checkPositionLimit(const TradingSignal& signal,
     // If the configured assetLimit is interpreted as USD notional, validate proposedNotional
     if (proposedNotional > assetLimit) {
         // print for debug all related values
-        LOG_WARN("PositionLimitChecker", 
-                  "REJECTION REASON - Asset limit exceeded for signal {}, asset {}: currentNotional={}, orderNotional={}, proposedNotional={}, assetLimit={}",
+        LOG_WARN("ASSET_LIMIT_EXCEEDED: signal={} asset={} current={} order={} proposed={} limit={}", 
                   signal.getSignalId(), asset, currentNotional, orderNotional, proposedNotional, assetLimit);
         RiskViolation violation(
             ViolationType::POSITION_LIMIT,
@@ -214,8 +212,7 @@ bool PositionLimitChecker::checkPositionLimit(const TradingSignal& signal,
     double proposedStrategyNotional = strategyCurrentNotional + orderNotional;
 
     if (strategyLimit > 0.0 && proposedStrategyNotional > strategyLimit) {
-        LOG_WARN("PositionLimitChecker", 
-                  "REJECTION REASON - Strategy limit exceeded for signal {}, strategy {}: currentNotional={}, orderNotional={}, proposedNotional={}, strategyLimit={}",
+        LOG_WARN("STRATEGY_LIMIT_EXCEEDED: signal={} strategy={} current={} order={} proposed={} limit={}", 
                   signal.getSignalId(), strategyId.toString(), strategyCurrentNotional, orderNotional, proposedStrategyNotional, strategyLimit);
         RiskViolation violation(
             ViolationType::POSITION_LIMIT,
@@ -238,8 +235,7 @@ bool PositionLimitChecker::checkPositionLimit(const TradingSignal& signal,
     double proposedExchangeNotional = exchangeCurrentNotional + orderNotional;
 
     if (exchangeLimit > 0.0 && proposedExchangeNotional > exchangeLimit) {
-        LOG_WARN("PositionLimitChecker", 
-                  "REJECTION REASON - Exchange limit exceeded for signal {}, exchange {}: currentNotional={}, orderNotional={}, proposedNotional={}, exchangeLimit={}",
+        LOG_WARN("EXCHANGE_LIMIT_EXCEEDED: signal={} exchange={} current={} order={} proposed={} limit={}", 
                   signal.getSignalId(), exchangeId.toString(), exchangeCurrentNotional, orderNotional, proposedExchangeNotional, exchangeLimit);
         RiskViolation violation(
             ViolationType::POSITION_LIMIT,
