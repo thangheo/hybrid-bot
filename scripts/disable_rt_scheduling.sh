@@ -12,8 +12,6 @@ export ZMQ_THREAD_SCHED_POLICY=0
 # Disable any other real-time scheduling attempts
 export NO_RT_SCHEDULING=1
 export DISABLE_THREAD_PRIORITY=1
-
-# Set pthread scheduling to use normal scheduling policy
 export PTHREAD_INHERIT_SCHED=1
 
 # Run the trading system with disabled RT scheduling
