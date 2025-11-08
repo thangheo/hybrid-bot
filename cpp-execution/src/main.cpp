@@ -1,5 +1,6 @@
 #include <iostream>
 #include "trading_system.hpp"
+#include "common/system_capabilities.hpp"
 
 using namespace trading;
 // Global demo instance for signal handling
@@ -39,7 +40,12 @@ int main(int argc, char* argv[]) {
     }
     try {
         std::cout << "🚀 STARTING FULL TRADING SYSTEM 🚀" << std::endl;
-        std::cout << "=====================================================" << std::endl;        
+        std::cout << "=====================================================" << std::endl;
+        
+        // Check system capabilities and log warnings for missing RT features
+        std::cout << "Checking system capabilities..." << std::endl;
+        system::SystemCapabilities::initializeAndLog();
+        
         E8Instance = std::make_unique<Trading_system>();
         
         // Initialize system

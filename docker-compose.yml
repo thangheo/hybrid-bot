@@ -14,8 +14,15 @@ services:
     build: ./cpp-execution
     environment:
       - EXECUTION_MODE=simulation
+      - ZMQ_THREAD_PRIORITY=-1
+      - ZMQ_THREAD_SCHED_POLICY=0
+      - NO_RT_SCHEDULING=1
+      - DISABLE_THREAD_PRIORITY=1
     volumes:
       - ./configs:/app/configs
+    # Disable real-time scheduling capabilities to prevent pthread errors
+    ulimits:
+      rtprio: 0
       
   monitoring:
     build: ./monitoring
