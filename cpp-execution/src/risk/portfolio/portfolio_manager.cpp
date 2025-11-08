@@ -332,8 +332,26 @@ void PortfolioManager::registerPortfolioCallback(
 
 void PortfolioManager::processExecution(const trading::execution::models::ExecutionReport& executionReport) {
     // Process the execution report and update portfolio metrics
-    m_positionTracker->updatePositions(executionReport);
-    recalculatePortfolioMetrics();
+    std::cerr << "[PortfolioManager] 🔄 Processing execution: " << executionReport.symbol().toString() 
+              << " qty=" << executionReport.quantity() << " side=" << static_cast<int>(executionReport.side()) << std::endl;
+    
+    try {
+        m_positionTracker->updatePositions(executionReport);
+        std::cerr << "[PortfolioManager] ✅ PositionTracker updated successfully" << std::endl;
+        
+        // Verify position was updated
+        auto position = m_positionTracker->getPosition(executionReport.exchangeId(), executionReport.symbol());
+        if (position.has_value()) {
+            std::cerr << "[PortfolioManager] 📊 Position after update: " << executionReport.symbol().toString() 
+                      << " = " << position->getQuantity() << std::endl;
+        } else {
+            std::cerr << "[PortfolioManager] ⚠️ No position found after update!" << std::endl;
+        }
+        
+        recalculatePortfolioMetrics();
+    } catch (const std::exception& e) {
+        std::cerr << "[PortfolioManager] 💥 Exception in processExecution: " << e.what() << std::endl;
+    }
 }
 
 void PortfolioManager::recalculatePortfolioMetrics() {
