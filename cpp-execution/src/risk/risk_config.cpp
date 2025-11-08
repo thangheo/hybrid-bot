@@ -591,17 +591,22 @@ void RiskConfig::loadCollateralConfig(const json& co) {
         collateralConfig_.maxFundingAmount = co["maxFundingAmount"].get<double>();
     }
     if (co.contains("managedExchanges") && co["managedExchanges"].is_array()) {
+        std::cerr << "[RiskConfig] Loading managedExchanges from JSON..." << std::endl;
         collateralConfig_.managedExchanges.clear();
         for (const auto& exchangeStr : co["managedExchanges"]) {
             std::string exchangeName = exchangeStr.get<std::string>();
+            std::cerr << "[RiskConfig] Processing exchange: " << exchangeName << std::endl;
             if (exchangeName == "binance") {
                 collateralConfig_.managedExchanges.push_back(core::ExchangeId::binance());
+                std::cerr << "[RiskConfig] Added binance exchange" << std::endl;
             } else if (exchangeName == "coinbase") {
                 collateralConfig_.managedExchanges.push_back(core::ExchangeId::coinbase());
+                std::cerr << "[RiskConfig] Added coinbase exchange" << std::endl;
             } else {
                 std::cerr << "Unknown exchange in managedExchanges: " << exchangeName << std::endl;
             }
         }
+        std::cerr << "[RiskConfig] Final managedExchanges count: " << collateralConfig_.managedExchanges.size() << std::endl;
     }
     if (co.contains("minimumBalances") && co["minimumBalances"].is_object()) {
         collateralConfig_.minimumBalances.clear();
