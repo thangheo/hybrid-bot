@@ -1294,11 +1294,12 @@ void Trading_system::setupComponentConnections() {
         if (executionInterface) {
             LOG_INFO("ExitCallback", "Registering exit callback for OptimalExitStrategy");
 
-            // Capture a weak_ptr so the lambda does not extend the lifetime of the ExecutionInterface
+            // Capture weak_ptrs to avoid extending lifetimes
             std::weak_ptr<trading::risk::ExecutionInterface> execWeak = executionInterface;
+            std::weak_ptr<trading::risk::RiskManager> riskWeak = riskManager_;
 
             registerGlobalOptimalExitCallback(
-                [execWeak](const std::string& symbol, core::Direction exitDirection, double currentPrice, const std::string& reason) {
+                [execWeak, riskWeak](const std::string& symbol, core::Direction exitDirection, double currentPrice, const std::string& reason) {
                     try {
                         LOG_INFO("ExitCallback", "🔥 EXIT SIGNAL: {} {} at price {} (reason: {})", 
                                 symbol, 
@@ -1331,35 +1332,47 @@ void Trading_system::setupComponentConnections() {
                         exitOrder.set_price(currentPrice); // not used for 
                         
 
-                        // Determine exchange id and quantity from live positions if possible
+                        // 🚀 OPTIMIZED: Use cached position data instead of expensive API calls
                         core::ExchangeId targetExchange = trading::core::ExchangeId::binance(); // fallback
                         double exitQuantity = 0.0;
-                        try {
-                            // Try to find the symbol across exchanges - prefer binance for now
-                            auto positions = executionInterface->getPositions(targetExchange);
-                            auto positionIt = positions.find(symbol);
-                            if (positionIt != positions.end() && positionIt->second != 0.0) {
-                                exitQuantity = std::abs(positionIt->second);
-                                LOG_INFO("ExitCallback", "Found position for {} on {}: {} (will exit {})", symbol, targetExchange.toString(), positionIt->second, exitQuantity);
-                            } else {
-                                // fallback: search all exchanges via getAllPositions if available
-                                try {
-                                    auto allPos = executionInterface->getAllPositions();
-                                    for (const auto& [ex, map] : allPos) {
-                                        auto it2 = map.find(symbol);
-                                        if (it2 != map.end() && it2->second != 0.0) {
-                                            exitQuantity = std::abs(it2->second);
-                                            targetExchange = ex;
-                                            LOG_INFO("ExitCallback", "Found position for {} on {}: {} (will exit {})", symbol, ex.toString(), it2->second, exitQuantity);
-                                            break;
-                                        }
-                                    }
-                                } catch (...) {
-                                    // ignore - getAllPositions may not be implemented by all ExecutionInterface
+                        
+                        // First try: Get cached position from RiskManager (O(1) lookup vs O(n) API scan)
+                        // This avoids expensive getAllPositions() API calls that return 100+ positions
+                        bool foundCachedPosition = false;
+                        
+                        // Try RiskManager's cached position first (fastest O(1) lookup)
+                        auto riskManager = riskWeak.lock();
+                        if (riskManager) {
+                            try {
+                                auto cachedPos = riskManager->getCachedPosition(targetExchange, trading::core::Symbol(symbol));
+                                if (cachedPos.has_value() && std::abs(cachedPos.value()) > 1e-8) {
+                                    exitQuantity = std::abs(cachedPos.value());
+                                    foundCachedPosition = true;
+                                    LOG_INFO("ExitCallback", "🚀 FAST: Found cached position for {}: {} (will exit {})", 
+                                             symbol, cachedPos.value(), exitQuantity);
                                 }
+                            } catch (const std::exception& e) {
+                                LOG_WARN("ExitCallback", "Cached position lookup failed for {}: {}", symbol, e.what());
                             }
-                        } catch (const std::exception& e) {
-                            LOG_WARN("ExitCallback", "Error fetching positions for {}: {} - will attempt exit with fallback values", symbol, e.what());
+                        }
+                        
+                        // Fallback: Single exchange API call (faster than getAllPositions)
+                        if (!foundCachedPosition) {
+                            try {
+                                auto positions = executionInterface->getPositions(targetExchange);
+                                auto positionIt = positions.find(symbol);
+                                if (positionIt != positions.end() && positionIt->second != 0.0) {
+                                    exitQuantity = std::abs(positionIt->second);
+                                    foundCachedPosition = true;
+                                    LOG_INFO("ExitCallback", "Found position for {} on {}: {} (will exit {})", symbol, targetExchange.toString(), positionIt->second, exitQuantity);
+                                }
+                            } catch (const std::exception& e) {
+                                LOG_WARN("ExitCallback", "Error fetching positions for {}: {}", symbol, e.what());
+                            }
+                        }
+                        
+                        if (!foundCachedPosition) {
+                            LOG_WARN("ExitCallback", "No position found for {} - this may indicate a tracking issue", symbol);
                         }
 
                         double signedPosQty = 0.0; // signed quantity as reported by ExecutionInterface
