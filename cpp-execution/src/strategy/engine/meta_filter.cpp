@@ -209,7 +209,7 @@ MetaFilterResult MetaFilter::checkEmergencyExit(
         result.trend_confidence = result.p_trend_up_value;
         emergency_exits_triggered_++;
         
-        LOG_WARN("MetaFilter EMERGENCY EXIT: {} - p_trend_up={:.3f} <= {:.3f} (MARKET DUMP DETECTED!)",
+        LOG_TRACE("MetaFilter EMERGENCY EXIT: {} - p_trend_up={:.3f} <= {:.3f} (MARKET DUMP DETECTED!)",
                  symbol, result.p_trend_up_value, config_.emergency_p_trend_threshold);
         return result;
     }
