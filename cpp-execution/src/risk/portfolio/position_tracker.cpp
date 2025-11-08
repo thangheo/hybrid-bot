@@ -738,16 +738,28 @@ double PositionTracker::getCachedPrice(const TradingPair& tradingPair) const {
     std::lock_guard<std::mutex> lk(m_marketDataMutex);
     const std::string key = tradingPair.toString();
     auto it = m_priceCache.find(key);
-    if (it != m_priceCache.end()) return it->second;
+    if (it != m_priceCache.end()) {
+        LOG_WARN("PRICE_CACHE_HIT: pair={} price={}", key, it->second);
+        return it->second;
+    }
+    
+    LOG_WARN("PRICE_CACHE_MISS: pair={} dataInterface={} cacheSize={}", 
+             key, (m_dataInterface ? "YES" : "NO"), m_priceCache.size());
+    
     // Attempt to query data interface if available
     try {
         if (m_dataInterface) {
             double p = m_dataInterface->getCurrentPrice(tradingPair.toString());
+            LOG_WARN("PRICE_FROM_INTERFACE: pair={} price={}", key, p);
             if (p > 0.0) return p;
         }
+    } catch (const std::exception& e) {
+        LOG_WARN("PRICE_INTERFACE_ERROR: pair={} error={}", key, e.what());
     } catch (...) {
-        // ignore
+        LOG_WARN("PRICE_INTERFACE_UNKNOWN_ERROR: pair={}", key);
     }
+    
+    LOG_WARN("PRICE_NOT_FOUND: pair={}", key);
     return 0.0;
 }
 
