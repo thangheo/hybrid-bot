@@ -1117,7 +1117,7 @@ void Trading_system::execWorkerLoop(size_t workerId) {
                 finalQty = roundedQty;
             } catch (const std::exception &e) {
                 // Best-effort: keep previous finalQty if helper fails.
-                LOG_WARN("Exec", "Quantity precision helper failed for {}: {}", task.symbol.toString(), e.what());
+                LOG_WARN("Exec: Quantity precision helper failed for {}: {}", task.symbol.toString(), e.what());
             }
 
             // --- Step 5: Enforce minimum notional AFTER precision rounding ---
@@ -1132,7 +1132,7 @@ void Trading_system::execWorkerLoop(size_t workerId) {
                 
                 // If still below minimum after rounding, increase by one step
                 if (finalNotionalUsd < minNotionalUsd) {
-                    LOG_WARN("Exec", "Adjusted quantity still insufficient: {}", "Order value below minimum notional requirement");
+                    LOG_WARN("Exec: Adjusted quantity still insufficient: {}", "Order value below minimum notional requirement");
                     std::cout << "❌ Adjusted quantity still insufficient: Order value below minimum notional requirement" << std::endl;
                     continue; // Skip this order
                 }
@@ -1275,7 +1275,7 @@ void Trading_system::setupComponentConnections() {
                 if (strategyEngine_->getRegimeInfo(symbol.toString(), rinfo)) {
                     if (!rinfo.recommended_action.empty()) {
                         // Log the recommendation for observability; do not change behavior
-                        LOG_INFO("SlowGate", "Regime recommendation for {}: recommended={} stay_prob={} reason={}",
+                        LOG_INFO("SlowGate: Regime recommendation for {}: recommended={} stay_prob={} reason={}",
                                  symbol.toString(), rinfo.recommended_action,
                                  rinfo.stay_prob.has_value() ? std::to_string(rinfo.stay_prob.value()) : std::string("n/a"),
                                  rinfo.recommendation_reason);
@@ -1290,13 +1290,13 @@ void Trading_system::setupComponentConnections() {
     }
 
     // 4. Register exit callback for OptimalExitStrategy
-    LOG_INFO("ExitCallback", "🔧 Setting up OptimalExitStrategy callback...");
+    LOG_INFO("ExitCallback: 🔧 Setting up OptimalExitStrategy callback...");
     if (riskManager_) {
-        LOG_INFO("ExitCallback", "✅ RiskManager is available");
+        LOG_INFO("ExitCallback: ✅ RiskManager is available");
         auto executionInterface = riskManager_->getExecutionInterface();
         if (executionInterface) {
-            LOG_INFO("ExitCallback", "✅ ExecutionInterface is available");
-            LOG_INFO("ExitCallback", "Registering exit callback for OptimalExitStrategy");
+            LOG_INFO("ExitCallback: ✅ ExecutionInterface is available");
+            LOG_INFO("ExitCallback: Registering exit callback for OptimalExitStrategy");
 
             // Capture weak_ptrs to avoid extending lifetimes
             std::weak_ptr<trading::risk::ExecutionInterface> execWeak = executionInterface;
@@ -1305,7 +1305,7 @@ void Trading_system::setupComponentConnections() {
             registerGlobalOptimalExitCallback(
                 [execWeak, riskWeak](const std::string& symbol, core::Direction exitDirection, double currentPrice, const std::string& reason) {
                     try {
-                        LOG_INFO("ExitCallback", "🔥 EXIT SIGNAL: {} {} at price {} (reason: {})", 
+                        LOG_INFO("ExitCallback: 🔥 EXIT SIGNAL: {} {} at price {} (reason: {})", 
                                 symbol, 
                                 (exitDirection == core::Direction::SELL ? "SELL" : "BUY"), 
                                 currentPrice, 
@@ -1314,12 +1314,12 @@ void Trading_system::setupComponentConnections() {
                         // Lock weak_ptr to get shared_ptr for this call
                         auto executionInterface = execWeak.lock();
                         if (!executionInterface) {
-                            LOG_ERROR("ExitCallback", "ExecutionInterface expired - skipping exit for {}", symbol);
+                            LOG_ERROR("ExitCallback: ExecutionInterface expired - skipping exit for {}", symbol);
                             return;
                         }
 
                         // Log pointer address for easier debugging if something later fails
-                        LOG_INFO("ExitCallback", "Using ExecutionInterface ptr={}", static_cast<const void*>(executionInterface.get()));
+                        LOG_INFO("ExitCallback: Using ExecutionInterface ptr={}", static_cast<const void*>(executionInterface.get()));
 
                         // Create OrderRequest for exit
                         ::risk::OrderRequest exitOrder;
@@ -1352,11 +1352,11 @@ void Trading_system::setupComponentConnections() {
                                 if (cachedPos.has_value() && std::abs(cachedPos.value()) > 1e-8) {
                                     exitQuantity = std::abs(cachedPos.value());
                                     foundCachedPosition = true;
-                                    LOG_INFO("ExitCallback", "🚀 FAST: Found cached position for {}: {} (will exit {})", 
+                                    LOG_INFO("ExitCallback: 🚀 FAST: Found cached position for {}: {} (will exit {})", 
                                              symbol, cachedPos.value(), exitQuantity);
                                 }
                             } catch (const std::exception& e) {
-                                LOG_WARN("ExitCallback", "Cached position lookup failed for {}: {}", symbol, e.what());
+                                LOG_WARN("ExitCallback: Cached position lookup failed for {}: {}", symbol, e.what());
                             }
                         }
                         
@@ -1368,21 +1368,21 @@ void Trading_system::setupComponentConnections() {
                                 if (positionIt != positions.end() && positionIt->second != 0.0) {
                                     exitQuantity = std::abs(positionIt->second);
                                     foundCachedPosition = true;
-                                    LOG_INFO("ExitCallback", "Found position for {} on {}: {} (will exit {})", symbol, targetExchange.toString(), positionIt->second, exitQuantity);
+                                    LOG_INFO("ExitCallback: Found position for {} on {}: {} (will exit {})", symbol, targetExchange.toString(), positionIt->second, exitQuantity);
                                 }
                             } catch (const std::exception& e) {
-                                LOG_WARN("ExitCallback", "Error fetching positions for {}: {}", symbol, e.what());
+                                LOG_WARN("ExitCallback: Error fetching positions for {}: {}", symbol, e.what());
                             }
                         }
                         
                         if (!foundCachedPosition) {
-                            LOG_WARN("ExitCallback", "No position found for {} - this may indicate a tracking issue", symbol);
+                            LOG_WARN("ExitCallback: No position found for {} - this may indicate a tracking issue", symbol);
                         }
 
                         double signedPosQty = 0.0; // signed quantity as reported by ExecutionInterface
 
                         if (exitQuantity <= 0.0) {
-                            LOG_WARN("ExitCallback", "No non-zero position found for {} - skipping exit", symbol);
+                            LOG_WARN("ExitCallback: No non-zero position found for {} - skipping exit", symbol);
                             return;
                         }
 
@@ -1415,7 +1415,7 @@ void Trading_system::setupComponentConnections() {
                             else finalSide = core::Direction::SELL;
 
                             if (finalSide != exitDirection) {
-                                LOG_WARN("ExitCallback", "Requested exit direction ({}) differs from position sign (qty={}) - overriding to {}",
+                                LOG_WARN("ExitCallback: Requested exit direction ({}) differs from position sign (qty={}) - overriding to {}",
                                          (exitDirection == core::Direction::SELL ? "SELL" : "BUY"), signedPosQty,
                                          (finalSide == core::Direction::SELL ? "SELL" : "BUY"));
                             }
@@ -1452,7 +1452,7 @@ void Trading_system::setupComponentConnections() {
                         // Validate through RiskManager instead of direct execution
                         auto riskManagerForValidation = riskWeak.lock();
                         if (!riskManagerForValidation) {
-                            LOG_ERROR("ExitCallback", "RiskManager expired - cannot validate exit signal for {}", symbol);
+                            LOG_ERROR("ExitCallback: RiskManager expired - cannot validate exit signal for {}", symbol);
                             return;
                         }
 
@@ -1461,31 +1461,31 @@ void Trading_system::setupComponentConnections() {
                             if (validationResult.approved) {
                                 // Now submit through ExecutionInterface after risk validation
                                 std::string orderId = executionInterface->submitOrder(exitOrder);
-                                LOG_INFO("ExitCallback", "✅ EXIT ORDER SUBMITTED after risk validation: {} (order_id: {})", 
+                                LOG_INFO("ExitCallback: ✅ EXIT ORDER SUBMITTED after risk validation: {} (order_id: {})", 
                                         exitOrder.clientOrderId, orderId);
                             } else {
-                                LOG_WARN("ExitCallback", "🚫 EXIT SIGNAL REJECTED by risk management for {}: {}", 
+                                LOG_WARN("ExitCallback: 🚫 EXIT SIGNAL REJECTED by risk management for {}: {}", 
                                         symbol, validationResult.violations.empty() ? "No specific violations provided" : validationResult.violations.front().description);
                             }
                         } catch (const std::exception& e) {
-                            LOG_ERROR("ExitCallback", "❌ Risk validation or order submission failed for {}: {}", symbol, e.what());
+                            LOG_ERROR("ExitCallback: ❌ Risk validation or order submission failed for {}: {}", symbol, e.what());
                             return;
                         }
 
                     } catch (const std::exception& e) {
-                        LOG_ERROR("ExitCallback", "❌ FAILED to submit exit order for {}: {}", symbol, e.what());
+                        LOG_ERROR("ExitCallback: ❌ FAILED to submit exit order for {}: {}", symbol, e.what());
                     }
                 }
             );
 
-            LOG_INFO("ExitCallback", "✅ OptimalExitStrategy exit callback registered successfully");
+            LOG_INFO("ExitCallback: ✅ OptimalExitStrategy exit callback registered successfully");
         } else {
-            LOG_ERROR("ExitCallback", "❌ Cannot register exit callback: ExecutionInterface is null");
+            LOG_ERROR("ExitCallback: ❌ Cannot register exit callback: ExecutionInterface is null");
         }
     } else {
-        LOG_ERROR("ExitCallback", "❌ Cannot register exit callback: RiskManager is null");
+        LOG_ERROR("ExitCallback: ❌ Cannot register exit callback: RiskManager is null");
     }
-    LOG_INFO("ExitCallback", "🔧 OptimalExitStrategy setup completed");
+    LOG_INFO("ExitCallback: 🔧 OptimalExitStrategy setup completed");
 }
 
 void Trading_system::realExecution(const execution::TradingSignal& signal) {
