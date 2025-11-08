@@ -1,7 +1,7 @@
 {
   "binance": {
-    "api_key": "",
-    "api_secret": "",
+    "api_key": "${BINANCE_API_KEY}",
+    "api_secret": "${BINANCE_API_SECRET}",
     "websocket_url": "wss://stream.binance.com:9443/ws",
     "rest_api_url": "https://api.binance.com"
   },
