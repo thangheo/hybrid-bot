@@ -55,10 +55,16 @@ public:
         std::shared_ptr<trading::execution::ExecutionService> execService, 
         const RiskConfig& config, 
         std::shared_ptr<trading::risk::MarketDataInterface> marketDataInterface,
-        std::shared_ptr<zmq::context_t> zmqContext = nullptr
+        std::shared_ptr<zmq::context_t> zmqContext = nullptr,
+        std::shared_ptr<PositionTracker> sharedPositionTracker = nullptr
     ) {
         // Create using make_shared - this enables shared_from_this()
         auto manager = std::shared_ptr<RiskManager>(new RiskManager(execService, config, marketDataInterface, zmqContext));
+
+        // Override with shared PositionTracker if provided
+        if (sharedPositionTracker && manager->m_preTradeFilter) {
+            manager->m_preTradeFilter->setPositionTracker(sharedPositionTracker);
+        }
 
         // Now safe to call methods that use shared_from_this()
         if (!manager->initialize()) {

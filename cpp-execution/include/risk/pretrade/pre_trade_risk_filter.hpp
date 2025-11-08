@@ -111,6 +111,12 @@ public:
      */
     std::shared_ptr<PositionTracker> getPositionTracker() const;
 
+    /**
+     * Set the position tracker (for shared instance injection)
+     * @param positionTracker shared PositionTracker instance
+     */
+    void setPositionTracker(std::shared_ptr<PositionTracker> positionTracker);
+
     // Helper methods for signal property extraction
     std::string getBaseAsset(const core::Symbol& tradingPair) const;
     // createPreTradeFilter factory function

@@ -85,6 +85,12 @@ public:
      */
     double calculateNewPosition(const TradingPair& tradingPair, core::Direction direction, double quantity) const;
 
+    /**
+     * Set position tracker (for shared instance injection)
+     * @param positionTracker shared PositionTracker instance
+     */
+    void setPositionTracker(std::shared_ptr<PositionTracker> positionTracker);
+
 private:
     std::shared_ptr<PositionTracker> m_positionTracker;
     RiskConfig m_config;
