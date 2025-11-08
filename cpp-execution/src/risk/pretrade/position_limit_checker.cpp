@@ -369,5 +369,9 @@ std::string PositionLimitChecker::getQuoteAsset(const core::Symbol& tradingPair)
     return tradingPair.quote;
 }
 
+void PositionLimitChecker::setPositionTracker(std::shared_ptr<PositionTracker> positionTracker) {
+    m_positionTracker = positionTracker;
+}
+
 } // namespace risk
 } // namespace trading

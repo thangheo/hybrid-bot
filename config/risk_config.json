@@ -38,8 +38,8 @@
       "arbitrage": 5000.0
     },
     "exchangeLimits": {
-      "binance": 50000.0,
-      "coinbase": 30000.0
+      "BINANCE": 50000.0,
+      "COINBASE": 30000.0
     },
     "defaultLimit": 4000.0,
     "enforceStrictly": true
@@ -259,12 +259,12 @@
       "USDT": 1.0
     },
     "exchangeTransferFees": {
-      "binance": 0.001,
-      "coinbase": 0.0025
+      "BINANCE": 0.001,
+      "COINBASE": 0.0025
     },
     "preferredExchanges": [
-      "binance",
-      "coinbase"
+      "BINANCE",
+      "COINBASE"
     ],
     "perAssetOverrides": {
       "BTC": {
@@ -461,8 +461,8 @@
     "emergencyFundingThreshold": 0.1,
     "autoInitiateEmergencyFunding": false,
     "managedExchanges": [
-      "binance",
-      "coinbase"
+      "BINANCE",
+      "COINBASE"
     ],
     "minimumBalances": {
       "BTC": 0.01,
@@ -472,11 +472,11 @@
     "emergencyFundingBuffer": 0.1,
     "emergencyFundingSource": "main_wallet",
     "exchangeMarginRates": {
-      "binance": {
+      "BINANCE": {
         "BTC/USDT": 0.1,
         "ETH/USDT": 0.15
       },
-      "coinbase": {
+      "COINBASE": {
         "BTC/USD": 0.2,
         "ETH/USD": 0.25
       }

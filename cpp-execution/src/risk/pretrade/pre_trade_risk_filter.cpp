@@ -795,5 +795,13 @@ std::shared_ptr<PositionTracker> PreTradeRiskFilter::getPositionTracker() const 
     return m_positionTracker;
 }
 
+void PreTradeRiskFilter::setPositionTracker(std::shared_ptr<PositionTracker> positionTracker) {
+    m_positionTracker = positionTracker;
+    // Update sub-components that use PositionTracker
+    if (m_positionLimitChecker) {
+        m_positionLimitChecker->setPositionTracker(positionTracker);
+    }
+}
+
 } // namespace risk
 } // namespace trading

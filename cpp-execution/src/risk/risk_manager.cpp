@@ -197,6 +197,11 @@ bool RiskManager::initialize() {
                 LOG_ERROR(std::format("{} {}", "RiskManager", "Failed to create PreTradeRiskFilter"));
                 return false;
             }
+            
+            // ✅ CRITICAL FIX: Inject shared PositionTracker into PreTradeFilter
+            m_preTradeFilter->setPositionTracker(sharedPositionTracker);
+            LOG_INFO("RiskManager", "✅ Injected shared PositionTracker into PreTradeFilter");
+            
             if (!m_preTradeFilter->initialize()) {
                 LOG_ERROR(std::format("{} {}", "RiskManager", "Failed to initialize PreTradeRiskFilter"));
                 return false;
