@@ -295,7 +295,7 @@ private:
     
     // Emergency limits
     static constexpr int MAX_TRADES_PER_HOUR = 20;
-    static constexpr int MIN_GAP_SECONDS = 30;
+    static constexpr int MIN_GAP_SECONDS = 5; // Reduced from 30 to 5 for testing
     static constexpr double MAX_LOSS_PER_SYMBOL = -50.0;
     static constexpr double MAX_TOTAL_DAILY_LOSS = -200.0;
     
