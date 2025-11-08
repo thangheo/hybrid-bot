@@ -1290,9 +1290,12 @@ void Trading_system::setupComponentConnections() {
     }
 
     // 4. Register exit callback for OptimalExitStrategy
+    LOG_INFO("ExitCallback", "🔧 Setting up OptimalExitStrategy callback...");
     if (riskManager_) {
+        LOG_INFO("ExitCallback", "✅ RiskManager is available");
         auto executionInterface = riskManager_->getExecutionInterface();
         if (executionInterface) {
+            LOG_INFO("ExitCallback", "✅ ExecutionInterface is available");
             LOG_INFO("ExitCallback", "Registering exit callback for OptimalExitStrategy");
 
             // Capture weak_ptrs to avoid extending lifetimes
@@ -1482,6 +1485,7 @@ void Trading_system::setupComponentConnections() {
     } else {
         LOG_ERROR("ExitCallback", "❌ Cannot register exit callback: RiskManager is null");
     }
+    LOG_INFO("ExitCallback", "🔧 OptimalExitStrategy setup completed");
 }
 
 void Trading_system::realExecution(const execution::TradingSignal& signal) {

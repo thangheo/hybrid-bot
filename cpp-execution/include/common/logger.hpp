@@ -9,6 +9,7 @@
 #include <iomanip>
 #include <vector>
 #include <atomic>
+#include <type_traits>
 
 namespace trading {
 namespace common {
@@ -268,27 +269,104 @@ private:
     static std::atomic<bool> shutdown_called_;
 };
 
-// Convenience macros with safety check
-#define LOG_TRACE(...) do { auto logger = trading::common::Logger::getLogger(); if (logger) logger->trace(__VA_ARGS__); } while(0)
-#define LOG_DEBUG(...) do { auto logger = trading::common::Logger::getLogger(); if (logger) logger->debug(__VA_ARGS__); } while(0)
-#define LOG_INFO(...) do { auto logger = trading::common::Logger::getLogger(); if (logger) logger->info(__VA_ARGS__); } while(0)
-#define LOG_WARN(...) do { auto logger = trading::common::Logger::getLogger(); if (logger) logger->warn(__VA_ARGS__); } while(0)
-#define LOG_ERROR(...) do { auto logger = trading::common::Logger::getLogger(); if (logger) logger->error(__VA_ARGS__); } while(0)
-#define LOG_CRITICAL(...) do { auto logger = trading::common::Logger::getLogger(); if (logger) logger->critical(__VA_ARGS__); } while(0)
+// Enhanced macros that support category-based logging
+// LOG_WARN("message") - backward compatible
+// LOG_WARN("Category", "format {}", args...) - new category-based format
 
-// Source location logging macros
-#define LOG_TRACE_LOC(format, ...) do { auto logger = trading::common::Logger::getLogger(); if (logger) logger->trace( \
-                                    std::string(__FILE__) + ":" + std::to_string(__LINE__) + " - " + format, ##__VA_ARGS__); } while(0)
-#define LOG_DEBUG_LOC(format, ...) do { auto logger = trading::common::Logger::getLogger(); if (logger) logger->debug( \
-                                   std::string(__FILE__) + ":" + std::to_string(__LINE__) + " - " + format, ##__VA_ARGS__); } while(0)
-#define LOG_INFO_LOC(format, ...) do { auto logger = trading::common::Logger::getLogger(); if (logger) logger->info( \
-                                  std::string(__FILE__) + ":" + std::to_string(__LINE__) + " - " + format, ##__VA_ARGS__); } while(0)
-#define LOG_WARN_LOC(format, ...) do { auto logger = trading::common::Logger::getLogger(); if (logger) logger->warn( \
-                                  std::string(__FILE__) + ":" + std::to_string(__LINE__) + " - " + format, ##__VA_ARGS__); } while(0)
-#define LOG_ERROR_LOC(format, ...) do { auto logger = trading::common::Logger::getLogger(); if (logger) logger->error( \
-                                   std::string(__FILE__) + ":" + std::to_string(__LINE__) + " - " + format, ##__VA_ARGS__); } while(0)
-#define LOG_CRITICAL_LOC(format, ...) do { auto logger = trading::common::Logger::getLogger(); if (logger) logger->critical( \
-                                      std::string(__FILE__) + ":" + std::to_string(__LINE__) + " - " + format, ##__VA_ARGS__); } while(0)
+#define LOG_TRACE(...) do { \
+    auto logger = trading::common::Logger::getLogger(); \
+    if (logger) { \
+        LOG_CALL_WITH_COUNT(logger->trace, __VA_ARGS__); \
+    } \
+} while(0)
+
+#define LOG_DEBUG(...) do { \
+    auto logger = trading::common::Logger::getLogger(); \
+    if (logger) { \
+        LOG_CALL_WITH_COUNT(logger->debug, __VA_ARGS__); \
+    } \
+} while(0)
+
+#define LOG_INFO(...) do { \
+    auto logger = trading::common::Logger::getLogger(); \
+    if (logger) { \
+        LOG_CALL_WITH_COUNT(logger->info, __VA_ARGS__); \
+    } \
+} while(0)
+
+#define LOG_WARN(...) do { \
+    auto logger = trading::common::Logger::getLogger(); \
+    if (logger) { \
+        LOG_CALL_WITH_COUNT(logger->warn, __VA_ARGS__); \
+    } \
+} while(0)
+
+#define LOG_ERROR(...) do { \
+    auto logger = trading::common::Logger::getLogger(); \
+    if (logger) { \
+        LOG_CALL_WITH_COUNT(logger->error, __VA_ARGS__); \
+    } \
+} while(0)
+
+#define LOG_CRITICAL(...) do { \
+    auto logger = trading::common::Logger::getLogger(); \
+    if (logger) { \
+        LOG_CALL_WITH_COUNT(logger->critical, __VA_ARGS__); \
+    } \
+} while(0)
+
+// Helper macros for argument counting and dispatching
+#define LOG_GET_COUNT(_1, _2, _3, _4, _5, _6, _7, _8, _9, _10, COUNT, ...) COUNT
+#define LOG_COUNT_ARGS(...) LOG_GET_COUNT(__VA_ARGS__, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1)
+
+#define LOG_CALL_WITH_COUNT(method, ...) \
+    LOG_CONCAT(LOG_CALL_, LOG_COUNT_ARGS(__VA_ARGS__))(method, __VA_ARGS__)
+
+#define LOG_CONCAT(x, y) LOG_CONCAT_IMPL(x, y)
+#define LOG_CONCAT_IMPL(x, y) x##y
+
+// Helper function to safely convert any type to string for logging - placed outside namespace to avoid conflicts
+template<typename T>
+inline std::string logger_to_string_helper(T&& value) {
+    if constexpr (std::is_convertible_v<T, std::string>) {
+        return std::string(std::forward<T>(value));
+    } else if constexpr (std::is_arithmetic_v<std::decay_t<T>>) {
+        return std::to_string(value);
+    } else {
+        std::ostringstream oss;
+        oss << value;
+        return oss.str();
+    }
+}
+
+// Implementations for different argument counts
+#define LOG_CALL_1(method, arg1) method(arg1)
+#define LOG_CALL_2(method, arg1, arg2) method(logger_to_string_helper(arg1) + ": " + logger_to_string_helper(arg2))
+#define LOG_CALL_3(method, arg1, arg2, arg3) method(logger_to_string_helper(arg1) + ": " + arg2, arg3)
+#define LOG_CALL_4(method, arg1, arg2, arg3, arg4) method(logger_to_string_helper(arg1) + ": " + arg2, arg3, arg4)
+#define LOG_CALL_5(method, arg1, arg2, arg3, arg4, arg5) method(logger_to_string_helper(arg1) + ": " + arg2, arg3, arg4, arg5)
+#define LOG_CALL_6(method, arg1, arg2, arg3, arg4, arg5, arg6) method(logger_to_string_helper(arg1) + ": " + arg2, arg3, arg4, arg5, arg6)
+#define LOG_CALL_7(method, arg1, arg2, arg3, arg4, arg5, arg6, arg7) method(logger_to_string_helper(arg1) + ": " + arg2, arg3, arg4, arg5, arg6, arg7)
+#define LOG_CALL_8(method, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8) method(logger_to_string_helper(arg1) + ": " + arg2, arg3, arg4, arg5, arg6, arg7, arg8)
+#define LOG_CALL_9(method, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9) method(logger_to_string_helper(arg1) + ": " + arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9)
+#define LOG_CALL_10(method, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10) method(logger_to_string_helper(arg1) + ": " + arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10)
 
 } // namespace common
 } // namespace trading
+
+// Source location logging macros
+#define LOG_TRACE(format, ...) do { auto logger = trading::common::Logger::getLogger(); if (logger) logger->trace( \
+                                    std::string(__FILE__) + ":" + std::to_string(__LINE__) + " - " + format, ##__VA_ARGS__); } while(0)
+#define LOG_DEBUG(format, ...) do { auto logger = trading::common::Logger::getLogger(); if (logger) logger->debug( \
+                                   std::string(__FILE__) + ":" + std::to_string(__LINE__) + " - " + format, ##__VA_ARGS__); } while(0)
+#define LOG_INFO(format, ...) do { auto logger = trading::common::Logger::getLogger(); if (logger) logger->info( \
+                                  std::string(__FILE__) + ":" + std::to_string(__LINE__) + " - " + format, ##__VA_ARGS__); } while(0)
+#define LOG_WARN(format, ...) do { auto logger = trading::common::Logger::getLogger(); if (logger) logger->warn( \
+                                  std::string(__FILE__) + ":" + std::to_string(__LINE__) + " - " + format, ##__VA_ARGS__); } while(0)
+#define LOG_ERROR(format, ...) do { auto logger = trading::common::Logger::getLogger(); if (logger) logger->error( \
+                                   std::string(__FILE__) + ":" + std::to_string(__LINE__) + " - " + format, ##__VA_ARGS__); } while(0)
+#define LOG_CRITICAL(format, ...) do { auto logger = trading::common::Logger::getLogger(); if (logger) logger->critical( \
+                                      std::string(__FILE__) + ":" + std::to_string(__LINE__) + " - " + format, ##__VA_ARGS__); } while(0)
+
+// } // namespace common
+// } // namespace trading
