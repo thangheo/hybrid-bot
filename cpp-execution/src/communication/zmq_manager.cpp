@@ -20,6 +20,23 @@ std::shared_ptr<zmq::context_t> ZmqManager::getContext(int io_threads) {
         } catch (...) {
             // ignore if option unsupported
         }
+        
+        // Disable thread priority scheduling to avoid pthread errors on systems without RT privileges
+        try {
+#ifdef ZMQ_THREAD_PRIORITY
+            context_->set(zmq::ctxopt::thread_priority, -1);  // Disable priority scheduling
+#endif
+        } catch (...) {
+            // ignore if option unsupported
+        }
+        
+        try {
+#ifdef ZMQ_THREAD_SCHED_POLICY
+            context_->set(zmq::ctxopt::thread_sched_policy, 0);  // Use default scheduling policy
+#endif
+        } catch (...) {
+            // ignore if option unsupported
+        }
     }
     return context_;
 }
