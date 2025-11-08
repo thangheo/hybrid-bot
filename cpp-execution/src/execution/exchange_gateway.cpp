@@ -11,7 +11,7 @@
 #include "exchange_gateway.hpp"
 #include <stdexcept>
 #include <sstream>
-
+#include <iostream>
 namespace trading {
 namespace execution {
 
@@ -28,27 +28,67 @@ ExchangeGateway::~ExchangeGateway() = default;
 // getAccountBalancesAsync
 std::future<std::unordered_map<std::string, double>> ExchangeGateway::getAccountBalancesAsync(const core::ExchangeId& exchangeId) {
     return std::async(std::launch::async, [this, exchangeId]() {
-        // Get the appropriate exchange client
-        auto client = apiClientManager_->getClient(exchangeId);
-        
-        // Get account balances directly through the existing API
-        auto future = client->getAccountBalances();
-        auto balances = future.get();
-        
-        // Convert std::map to std::unordered_map
-        std::unordered_map<std::string, double> unorderedBalances(balances.begin(), balances.end());
-        return unorderedBalances;
+        try {
+            // CRASH PROTECTION: Validate apiClientManager_
+            if (!apiClientManager_) {
+                std::cerr << "[ExchangeGateway] ERROR: apiClientManager_ is null!" << std::endl;
+                return std::unordered_map<std::string, double>{};
+            }
+            
+            // Get the appropriate exchange client with null check
+            auto client = apiClientManager_->getClient(exchangeId);
+            if (!client) {
+                std::cerr << "[ExchangeGateway] ERROR: No client found for exchange: " 
+                          << exchangeId.toString() << std::endl;
+                return std::unordered_map<std::string, double>{};
+            }
+            
+            // Get account balances with error handling
+            auto future = client->getAccountBalances();
+            auto balances = future.get();
+            
+            // Convert std::map to std::unordered_map
+            std::unordered_map<std::string, double> unorderedBalances(balances.begin(), balances.end());
+            return unorderedBalances;
+            
+        } catch (const std::exception& e) {
+            std::cerr << "[ExchangeGateway] ERROR in getAccountBalances: " << e.what() << std::endl;
+            return std::unordered_map<std::string, double>{};
+        } catch (...) {
+            std::cerr << "[ExchangeGateway] UNKNOWN ERROR in getAccountBalances" << std::endl;
+            return std::unordered_map<std::string, double>{};
+        }
     });
 }
 
 std::future<execution::models::ExecutionReport> ExchangeGateway::placeOrder(const execution::models::Order& order) {
     return std::async(std::launch::async, [this, order]() {
-        // Get the appropriate exchange client
-        auto client = apiClientManager_->getClient(order.getExchangeId());
-        
-        // Place the order directly through the existing API
-        auto future = client->placeOrder(order);
-        return future.get();
+        try {
+            // CRASH PROTECTION: Validate apiClientManager_
+            if (!apiClientManager_) {
+                std::cerr << "[ExchangeGateway] ERROR: apiClientManager_ is null in placeOrder!" << std::endl;
+                return execution::models::ExecutionReport{}; // Return empty report
+            }
+            
+            // Get the appropriate exchange client with null check
+            auto client = apiClientManager_->getClient(order.getExchangeId());
+            if (!client) {
+                std::cerr << "[ExchangeGateway] ERROR: No client found for exchange in placeOrder: " 
+                          << order.getExchangeId().toString() << std::endl;
+                return execution::models::ExecutionReport{}; // Return empty report
+            }
+            
+            // Place the order directly through the existing API
+            auto future = client->placeOrder(order);
+            return future.get();
+            
+        } catch (const std::exception& e) {
+            std::cerr << "[ExchangeGateway] ERROR in placeOrder: " << e.what() << std::endl;
+            return execution::models::ExecutionReport{}; // Return empty report
+        } catch (...) {
+            std::cerr << "[ExchangeGateway] UNKNOWN ERROR in placeOrder" << std::endl;
+            return execution::models::ExecutionReport{}; // Return empty report
+        }
     });
 }
 
@@ -89,26 +129,47 @@ std::future<std::unordered_map<std::string, double>> ExchangeGateway::getAccount
     bool forceRefresh) {
     
     return std::async(std::launch::async, [this, exchangeId, forceRefresh]() {
-        // Check cache first (unless force refresh)
-        if (!forceRefresh) {
-            auto cached = getCachedBalances(exchangeId);
-            if (cached.has_value()) {
-                return cached.value();
+        try {
+            // Check cache first (unless force refresh)
+            if (!forceRefresh) {
+                auto cached = getCachedBalances(exchangeId);
+                if (cached.has_value()) {
+                    return cached.value();
+                }
             }
+            
+            // CRASH PROTECTION: Validate apiClientManager_
+            if (!apiClientManager_) {
+                std::cerr << "[ExchangeGateway] ERROR: apiClientManager_ is null in getAccountBalances!" << std::endl;
+                return std::unordered_map<std::string, double>{};
+            }
+            
+            // Fetch fresh data from API with null check
+            auto client = apiClientManager_->getClient(exchangeId);
+            if (!client) {
+                std::cerr << "[ExchangeGateway] ERROR: No client found for exchange in getAccountBalances: " 
+                          << exchangeId.toString() << std::endl;
+                return std::unordered_map<std::string, double>{};
+            }
+            
+            auto future = client->getAccountBalances();
+            auto balances = future.get();
+            
+            // Convert std::map to std::unordered_map for cache
+            std::unordered_map<std::string, double> unorderedBalances(balances.begin(), balances.end());
+            
+            // Update cache
+            updateBalanceCache(exchangeId, unorderedBalances);
+            
+            return unorderedBalances;
+            
+        } catch (const std::exception& e) {
+            std::cerr << "[ExchangeGateway] ERROR in getAccountBalances: " << e.what() << std::endl;
+            return std::unordered_map<std::string, double>{};
+        } catch (...) {
+            std::cerr << "[ExchangeGateway] UNKNOWN ERROR in getAccountBalances" << std::endl;
+            return std::unordered_map<std::string, double>{};
         }
-        
-        // Fetch fresh data from API
-        auto client = apiClientManager_->getClient(exchangeId);
-        auto future = client->getAccountBalances();
-        auto balances = future.get();
-        
-        // Convert std::map to std::unordered_map for cache
-        std::unordered_map<std::string, double> unorderedBalances(balances.begin(), balances.end());
-        
-        // Update cache
-        updateBalanceCache(exchangeId, unorderedBalances);
-        
-        return unorderedBalances;
     });
 }
 

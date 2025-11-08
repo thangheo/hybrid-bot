@@ -27,26 +27,46 @@ ApiClientManager::~ApiClientManager() = default;
 std::shared_ptr<ExchangeApiClient> ApiClientManager::getClient(const core::ExchangeId& exchangeId) {
     std::lock_guard<std::mutex> lock(mutex_);
     
-    // Check if client already exists
-    auto it = clients_.find(exchangeId.toString());
-    if (it != clients_.end()) {
-        return it->second;
-    }
-    
-    // Create a new client if it doesn't exist
-    auto client = createClient(exchangeId);
-    if (client) {
-        clients_[exchangeId.toString()] = client;
-        
-        // Create a rate limit controller for this exchange if it doesn't exist
-        if (rateLimitControllers_.find(exchangeId.toString()) == rateLimitControllers_.end()) {
-            rateLimitControllers_[exchangeId.toString()] = std::make_shared<RateLimitController>(exchangeId);
+    try {
+        // Check if client already exists and is valid
+        auto it = clients_.find(exchangeId.toString());
+        if (it != clients_.end() && it->second) {
+            // CRASH PROTECTION: Verify client is still connected/valid
+            if (it->second->isConnected()) {
+                return it->second;
+            } else {
+                // Client disconnected, remove and recreate
+                std::cerr << "[ApiClientManager] Client disconnected for " << exchangeId.toString() 
+                          << ", removing and recreating..." << std::endl;
+                clients_.erase(it);
+            }
         }
         
-        return client;
+        // Create a new client if it doesn't exist or was removed
+        auto client = createClient(exchangeId);
+        if (client) {
+            clients_[exchangeId.toString()] = client;
+            
+            // Create a rate limit controller for this exchange if it doesn't exist
+            if (rateLimitControllers_.find(exchangeId.toString()) == rateLimitControllers_.end()) {
+                rateLimitControllers_[exchangeId.toString()] = std::make_shared<RateLimitController>(exchangeId);
+            }
+            
+            return client;
+        }
+        
+        std::cerr << "[ApiClientManager] ERROR: Failed to create client for exchange: " 
+                  << exchangeId.toString() << std::endl;
+        return nullptr; // Return nullptr instead of throwing
+        
+    } catch (const std::exception& e) {
+        std::cerr << "[ApiClientManager] ERROR in getClient for " << exchangeId.toString() 
+                  << ": " << e.what() << std::endl;
+        return nullptr; // Return nullptr instead of crashing
+    } catch (...) {
+        std::cerr << "[ApiClientManager] UNKNOWN ERROR in getClient for " << exchangeId.toString() << std::endl;
+        return nullptr; // Return nullptr instead of crashing
     }
-    
-    throw std::runtime_error("Failed to create client for exchange: " + exchangeId.toString());
 }
 
 bool ApiClientManager::hasClient(const core::ExchangeId& exchangeId) const {
@@ -182,19 +202,46 @@ void ApiClientManager::shutdown() {
 }
 // In api_client_manager.cpp
 std::shared_ptr<ExchangeApiClient> ApiClientManager::createClient(const core::ExchangeId& exchangeId) {
-    // Get credentials from the authentication service
-    auto credentials = authService_->getCredentials(exchangeId);
-    
-    // Get the rate limit controller for this exchange
-    auto rateLimitController = rateLimitControllers_[exchangeId.toString()];
-    
-    // Create the appropriate client based on the exchange ID
-    if (exchangeId == core::ExchangeId::binance()) {
-        return std::make_shared<BinanceApiClient>(credentials.value(), rateLimitController);
-    } else if (exchangeId == core::ExchangeId::ftx()) {
-        return std::make_shared<FtxApiClient>(credentials.value(), rateLimitController);
-    } else {
-        throw std::runtime_error("Unsupported exchange: " + exchangeId.toString());
+    try {
+        // CRASH PROTECTION: Validate authService_
+        if (!authService_) {
+            std::cerr << "[ApiClientManager] ERROR: authService_ is null!" << std::endl;
+            return nullptr;
+        }
+        
+        // Get credentials from the authentication service
+        auto credentials = authService_->getCredentials(exchangeId);
+        if (!credentials.has_value()) {
+            std::cerr << "[ApiClientManager] ERROR: No credentials found for exchange: " 
+                      << exchangeId.toString() << std::endl;
+            return nullptr;
+        }
+        
+        // Get the rate limit controller for this exchange
+        auto rateLimitController = rateLimitControllers_[exchangeId.toString()];
+        if (!rateLimitController) {
+            // Create a default rate limit controller if none exists
+            rateLimitController = std::make_shared<RateLimitController>(exchangeId);
+            rateLimitControllers_[exchangeId.toString()] = rateLimitController;
+        }
+        
+        // Create the appropriate client based on the exchange ID
+        if (exchangeId == core::ExchangeId::binance()) {
+            return std::make_shared<BinanceApiClient>(credentials.value(), rateLimitController);
+        } else if (exchangeId == core::ExchangeId::ftx()) {
+            return std::make_shared<FtxApiClient>(credentials.value(), rateLimitController);
+        } else {
+            std::cerr << "[ApiClientManager] ERROR: Unsupported exchange: " << exchangeId.toString() << std::endl;
+            return nullptr; // Return nullptr instead of throwing
+        }
+        
+    } catch (const std::exception& e) {
+        std::cerr << "[ApiClientManager] ERROR in createClient for " << exchangeId.toString() 
+                  << ": " << e.what() << std::endl;
+        return nullptr;
+    } catch (...) {
+        std::cerr << "[ApiClientManager] UNKNOWN ERROR in createClient for " << exchangeId.toString() << std::endl;
+        return nullptr;
     }
 }
 } // namespace execution
