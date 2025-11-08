@@ -596,16 +596,15 @@ void RiskConfig::loadCollateralConfig(const json& co) {
         for (const auto& exchangeStr : co["managedExchanges"]) {
             std::string exchangeName = exchangeStr.get<std::string>();
             std::cerr << "[RiskConfig] Processing exchange: " << exchangeName << std::endl;
-            if (exchangeName == "binance") {
+            try {
+                auto exchangeId = core::ExchangeId::fromString(exchangeName);
+                collateralConfig_.managedExchanges.push_back(exchangeId);
+                std::cerr << "[RiskConfig] Added exchange: " << exchangeName << " -> " << exchangeId.toString() << std::endl;
+            } catch (const std::exception& e) {
+                std::cerr << "[RiskConfig] Failed to parse exchange '" << exchangeName << "': " << e.what() << std::endl;
+                // Fall back to binance for backward compatibility
                 collateralConfig_.managedExchanges.push_back(core::ExchangeId::binance());
-                std::cerr << "[RiskConfig] Added binance exchange" << std::endl;
-            } else if (exchangeName == "coinbase") {
-                collateralConfig_.managedExchanges.push_back(core::ExchangeId::coinbase());
-                std::cerr << "[RiskConfig] Added coinbase exchange" << std::endl;
-            } else {
-                //default is binance for backward compatibility
-                collateralConfig_.managedExchanges.push_back(core::ExchangeId::binance());
-                std::cerr << "[RiskConfig] Unknown exchange in managedExchanges: " << exchangeName << std::endl;
+                std::cerr << "[RiskConfig] Using fallback binance exchange" << std::endl;
             }
         }
         std::cerr << "[RiskConfig] Final managedExchanges count: " << collateralConfig_.managedExchanges.size() << std::endl;
