@@ -389,10 +389,44 @@ bool StrategyEngine::getRegimeInfo(const std::string& symbol, trading::strategy:
          }
 
          if (vpIt != volumeProfileAnalyzers_.end() && vpIt->second) {
-            //  vpIt->second->updateVolumeProfile(orderBook, {});
-            //  std::cout << std::format("Processed volume profile for {}: POC = {}", 
-            //                      orderBook.getSymbol().toString(), 
-            //                      vpIt->second->calculatePointOfControl()) << std::endl;
+             // Update volume profile with current order book data
+             vpIt->second->updateVolumeProfile(orderBook, {});
+             
+             // Get volume profile insights for enhanced signal generation
+             auto profile = vpIt->second->getCurrentProfile();
+             double poc = vpIt->second->calculatePointOfControl();
+             auto valueArea = vpIt->second->calculateValueArea(0.7); // 70% value area
+             auto anomalies = vpIt->second->detectAnomalies();
+             
+             // Calculate density ratio (volume concentration metric)
+             double currentPrice = orderBook.getMidPrice();
+             double densityRatio = 1.0;
+             if (currentPrice > 0.0 && profile.total_volume > 0.0) {
+                 // Estimate local density based on proximity to high-volume areas
+                 double pocDistance = poc > 0.0 ? std::abs(currentPrice - poc) / currentPrice : 1.0;
+                 bool inValueArea = (currentPrice >= valueArea.second && currentPrice <= valueArea.first);
+                 
+                 // Higher density when near POC and inside value area
+                 densityRatio = 1.0;
+                 if (pocDistance < 0.01) densityRatio += 1.0; // Near POC
+                 if (inValueArea) densityRatio += 0.5; // In value area
+                 if (anomalies.hasAnomalies()) densityRatio += 0.3; // During anomalies
+             }
+             
+             // Store volume profile metrics for later use in signal enhancement
+             std::string symbol = orderBook.getSymbol().toString();
+             volumeProfileMetrics_[symbol] = {
+                 {"poc", poc},
+                 {"value_area_high", valueArea.first},
+                 {"value_area_low", valueArea.second},
+                 {"total_volume", profile.total_volume},
+                 {"vwap", profile.vwap},
+                 {"has_anomalies", anomalies.hasAnomalies() ? 1.0 : 0.0},
+                 {"density_ratio", densityRatio}
+             };
+             
+             LOG_DEBUG("Volume profile updated for {}: POC={:.4f}, VAH={:.4f}, VAL={:.4f}, VWAP={:.4f}", 
+                      symbol, poc, valueArea.first, valueArea.second, profile.vwap);
          }
         //  return true; // Return true if imbalance detected
          try {
@@ -418,7 +452,8 @@ bool StrategyEngine::getRegimeInfo(const std::string& symbol, trading::strategy:
          updateShockDetectorPrice(symbol.toString(), currentPrice);
          
          // Check for emergency exit conditions on every price update
-         checkEmergencyExit(symbol.toString());
+         //skip this for now
+         // checkEmergencyExit(symbol.toString()); // COMMENTED OUT: Testing without regime-based emergency exits
          
          //print exchange and symbol
          // Variables to store data for processing outside the lock
@@ -734,6 +769,156 @@ TradingSignal StrategyEngine::enhanceSignalWithEventContext(
         if (sensitivity != 1.0) {
             enhancedSignal.strength = std::min(1.0, enhancedSignal.strength * sensitivity);
         }
+    }
+    
+    // VOLUME PROFILE ENHANCEMENT: Add volume profile context to signal
+    std::string symbol = enhancedSignal.symbol.toString();
+    auto vpMetricsIt = volumeProfileMetrics_.find(symbol);
+    if (vpMetricsIt != volumeProfileMetrics_.end()) {
+        const auto& vpMetrics = vpMetricsIt->second;
+        
+        // Early exit if no valid volume profile data
+        if (vpMetrics.empty()) {
+            return enhancedSignal;
+        }
+        
+        // Get current price from trading pair state or supporting metrics
+        double currentPrice = 0.0;
+        
+        // Try to get price from supporting metrics first
+        currentPrice = sourceEvent.getSupportingMetric("price", 0.0);
+        
+        // If not available in metrics, get from trading pair state
+        if (currentPrice <= 0.0) {
+            std::string pairId = sourceEvent.exchangeId.toString() + ":" + symbol;
+            auto pairIt = tradingPairStates_.find(pairId);
+            if (pairIt != tradingPairStates_.end()) {
+                currentPrice = pairIt->second.lastPrice;
+            }
+        }
+        
+        // Early exit if no valid price data
+        if (currentPrice <= 0.0) {
+            return enhancedSignal;
+        }
+        
+        // Add basic volume profile metrics to signal
+        for (const auto& [metricName, value] : vpMetrics) {
+            enhancedSignal.setMetric("vp_" + metricName, value);
+        }
+        
+        // Calculate distance metrics and contextual flags
+        auto pocIt = vpMetrics.find("poc");
+        auto vahIt = vpMetrics.find("value_area_high");
+        auto valIt = vpMetrics.find("value_area_low");
+        auto vwapIt = vpMetrics.find("vwap");
+        auto totalVolumeIt = vpMetrics.find("total_volume");
+        auto anomaliesIt = vpMetrics.find("has_anomalies");
+        
+        // Context analysis variables
+        double pocDistance = 1.0;
+        double vahDistance = 1.0;
+        double valDistance = 1.0;
+        double vwapDistance = 1.0;
+        bool nearPOC = false;
+        bool nearEdge = false;
+        bool inValueArea = false;
+        bool hasAnomaly = false;
+        
+        // Calculate POC distance and context
+        if (pocIt != vpMetrics.end()) {
+            pocDistance = std::abs(currentPrice - pocIt->second) / currentPrice;
+            nearPOC = pocDistance < 0.005; // Within 0.5% of POC
+            enhancedSignal.setMetric("vp_poc_distance_pct", pocDistance * 100.0);
+            enhancedSignal.setMetric("vp_near_poc", nearPOC ? 1.0 : 0.0);
+        }
+        
+        // Calculate value area context
+        if (vahIt != vpMetrics.end() && valIt != vpMetrics.end()) {
+            inValueArea = (currentPrice >= valIt->second && currentPrice <= vahIt->second);
+            vahDistance = std::abs(currentPrice - vahIt->second) / currentPrice;
+            valDistance = std::abs(currentPrice - valIt->second) / currentPrice;
+            nearEdge = (vahDistance < 0.003 || valDistance < 0.003); // Within 0.3% of edges
+            
+            enhancedSignal.setMetric("vp_in_value_area", inValueArea ? 1.0 : 0.0);
+            enhancedSignal.setMetric("vp_vah_distance_pct", vahDistance * 100.0);
+            enhancedSignal.setMetric("vp_val_distance_pct", valDistance * 100.0);
+            enhancedSignal.setMetric("vp_near_value_area_edge", nearEdge ? 1.0 : 0.0);
+        }
+        
+        // Calculate VWAP context
+        if (vwapIt != vpMetrics.end()) {
+            vwapDistance = std::abs(currentPrice - vwapIt->second) / currentPrice;
+            enhancedSignal.setMetric("vp_vwap_distance_pct", vwapDistance * 100.0);
+            enhancedSignal.setMetric("vp_above_vwap", currentPrice > vwapIt->second ? 1.0 : 0.0);
+        }
+        
+        // Check for volume anomalies
+        hasAnomaly = (anomaliesIt != vpMetrics.end() && anomaliesIt->second > 0.0);
+        
+        // Calculate volume density ratio (volume context strength)
+        double densityRatio = 1.0;
+        if (totalVolumeIt != vpMetrics.end() && totalVolumeIt->second > 0.0) {
+            // Estimate local density - higher near POC and value area
+            double pocWeight = nearPOC ? 2.0 : 1.0;
+            double valueAreaWeight = inValueArea ? 1.5 : 1.0;
+            densityRatio = pocWeight * valueAreaWeight;
+        }
+        enhancedSignal.setMetric("vp_density_ratio", densityRatio);
+        
+        // CONTEXT-BASED SIGNAL ADJUSTMENT (unified approach)
+        double contextWeight = 1.0;
+        
+        // Base enhancements for significant levels
+        if (nearPOC) contextWeight += 0.2;          // POC is strongest level
+        if (nearEdge) contextWeight += 0.15;        // Value area edges are strong S/R
+        if (hasAnomaly) contextWeight += 0.1;       // Unusual volume activity
+        
+        // Get imbalance direction for context-aware filtering
+        double imbalanceDirection = sourceEvent.getSupportingMetric("imbalance_direction", 0.0);
+        
+        // MEAN REVERSION vs BREAKOUT LOGIC
+        if (inValueArea && nearPOC) {
+            // Inside value area near POC -> mean reversion zone
+            contextWeight *= 0.7; // Suppress directional signals (expect reversal)
+            enhancedSignal.setMetric("vp_context_suppression", 1.0);
+            enhancedSignal.setMetric("vp_context_boost", 0.0);
+            
+        } else if (!inValueArea && std::abs(imbalanceDirection) > 0.5) {
+            // Outside value area with strong directional imbalance -> breakout regime
+            contextWeight *= 1.2; // Boost breakout signals
+            enhancedSignal.setMetric("vp_context_boost", 1.0);
+            enhancedSignal.setMetric("vp_context_suppression", 0.0);
+            
+        } else if (nearEdge && std::abs(imbalanceDirection) > 0.3) {
+            // At value area edge with moderate imbalance -> potential breakout
+            contextWeight *= 1.1; // Moderate boost
+            enhancedSignal.setMetric("vp_context_boost", 0.5);
+            enhancedSignal.setMetric("vp_context_suppression", 0.0);
+            
+        } else {
+            // Neutral context
+            enhancedSignal.setMetric("vp_context_boost", 0.0);
+            enhancedSignal.setMetric("vp_context_suppression", 0.0);
+        }
+        
+        // Apply density-based adaptive scaling
+        contextWeight *= (0.8 + 0.4 * std::min(densityRatio, 2.0)); // Scale by local volume density
+        
+        // Clamp final context weight to prevent extreme values
+        contextWeight = std::clamp(contextWeight, 0.6, 1.5);
+        
+        // Apply unified context weight to signal strength
+        enhancedSignal.strength *= contextWeight;
+        enhancedSignal.setMetric("vp_context_weight", contextWeight);
+        
+        // Enhanced logging with context information
+        LOG_DEBUG("Enhanced signal {} with VP context: POC_dist={:.3f}%, in_VA={}, ctx_weight={:.3f}, regime={}", 
+                 enhancedSignal.id, 
+                 pocDistance * 100.0,
+                 inValueArea,
+                 contextWeight,
+                 inValueArea && nearPOC ? "mean_reversion" : (!inValueArea ? "breakout" : "neutral"));
     }
     
     // Copy event context into signal
@@ -1057,15 +1242,16 @@ bool StrategyEngine::applySignalFilters(const TradingSignal& signal) const {
     std::string symbol = signal.symbol.toString();
     
     // Apply MetaFilter (regime-based filter)
-    if (meta_filter_) {
-        auto meta_result = meta_filter_->checkEntryAllowed(symbol, regime_subscriber_.get());
-        if (!meta_result.allow_entry) {
-            LOG_WARN("MetaFilter BLOCKED entry signal {} for {}: {} (p_trend_up={:.3f}, regime_confidence={:.3f})",
-                     signal.id, symbol, meta_result.block_reason, 
-                     meta_result.p_trend_up_value, meta_result.regime_confidence_value);
-            return false;
-        }
-    }
+    // COMMENTED OUT: Testing without regime-based filtering to capture more opportunities
+    // if (meta_filter_) {
+    //     auto meta_result = meta_filter_->checkEntryAllowed(symbol, regime_subscriber_.get());
+    //     if (!meta_result.allow_entry) {
+    //         LOG_WARN("MetaFilter BLOCKED entry signal {} for {}: {} (p_trend_up={:.3f}, regime_confidence={:.3f})",
+    //                  signal.id, symbol, meta_result.block_reason, 
+    //                  meta_result.p_trend_up_value, meta_result.regime_confidence_value);
+    //         return false;
+    //     }
+    // }
     
     // Apply ShockDetector (volatility-based filter)  
     if (shock_detector_) {
@@ -1207,6 +1393,173 @@ bool StrategyEngine::loadSymbolVolatilityConfig(const std::string& configPath) {
         LOG_ERROR("Error loading symbol volatility config from {}: {}", configPath, e.what());
         return false;
     }
+}
+
+// Volume Profile Access Methods Implementation
+VolumeProfileAnalyzerPtr StrategyEngine::getVolumeProfileAnalyzer(const core::Symbol& symbol, const core::ExchangeId& exchangeId) const {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    std::string pairId = exchangeId.toString() + ":" + symbol.toString();
+    auto it = volumeProfileAnalyzers_.find(pairId);
+    return (it != volumeProfileAnalyzers_.end()) ? it->second : nullptr;
+}
+
+std::map<std::string, double> StrategyEngine::getVolumeProfileMetrics(const std::string& symbol) const {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    auto it = volumeProfileMetrics_.find(symbol);
+    return (it != volumeProfileMetrics_.end()) ? it->second : std::map<std::string, double>{};
+}
+
+bool StrategyEngine::isNearVolumeProfileLevel(const std::string& symbol, double price, double tolerance) const {
+    if (price <= 0.0) return false;
+    
+    auto metrics = getVolumeProfileMetrics(symbol);
+    if (metrics.empty()) return false;
+    
+    // Check distance from POC
+    auto pocIt = metrics.find("poc");
+    if (pocIt != metrics.end()) {
+        double pocDistance = std::abs(price - pocIt->second) / price;
+        if (pocDistance < tolerance) return true;
+    }
+    
+    // Check distance from value area edges
+    auto vahIt = metrics.find("value_area_high");
+    auto valIt = metrics.find("value_area_low");
+    if (vahIt != metrics.end() && valIt != metrics.end()) {
+        double vahDistance = std::abs(price - vahIt->second) / price;
+        double valDistance = std::abs(price - valIt->second) / price;
+        if (vahDistance < tolerance || valDistance < tolerance) return true;
+    }
+    
+    // Check distance from VWAP
+    auto vwapIt = metrics.find("vwap");
+    if (vwapIt != metrics.end()) {
+        double vwapDistance = std::abs(price - vwapIt->second) / price;
+        if (vwapDistance < tolerance) return true;
+    }
+    
+    return false;
+}
+
+double StrategyEngine::getVolumeProfileSignalFactor(const std::string& symbol, double price) const {
+    if (price <= 0.0) return 1.0;
+    
+    auto metrics = getVolumeProfileMetrics(symbol);
+    if (metrics.empty()) return 1.0;
+    
+    double factor = 1.0;
+    
+    // Boost near POC (Point of Control - highest volume area)
+    auto pocIt = metrics.find("poc");
+    if (pocIt != metrics.end()) {
+        double pocDistance = std::abs(price - pocIt->second) / price;
+        if (pocDistance < 0.005) { // Within 0.5%
+            factor *= 1.25; // Strong boost near POC
+        } else if (pocDistance < 0.01) { // Within 1%
+            factor *= 1.1;  // Moderate boost
+        }
+    }
+    
+    // Boost near value area edges (support/resistance)
+    auto vahIt = metrics.find("value_area_high");
+    auto valIt = metrics.find("value_area_low");
+    if (vahIt != metrics.end() && valIt != metrics.end()) {
+        double vahDistance = std::abs(price - vahIt->second) / price;
+        double valDistance = std::abs(price - valIt->second) / price;
+        
+        if (vahDistance < 0.003 || valDistance < 0.003) { // Within 0.3%
+            factor *= 1.2; // Good boost at value area edges
+        }
+    }
+    
+    // Additional boost during volume anomalies
+    auto anomaliesIt = metrics.find("has_anomalies");
+    if (anomaliesIt != metrics.end() && anomaliesIt->second > 0.0) {
+        factor *= 1.15; // Moderate boost during unusual volume activity
+    }
+    
+    // Slight reduction if outside value area (less significant levels)
+    auto valAreaIt = metrics.find("vp_in_value_area");
+    if (valAreaIt != metrics.end() && valAreaIt->second == 0.0) {
+        factor *= 0.95; // Slight reduction outside value area
+    }
+    
+    return std::min(factor, 2.0); // Cap maximum enhancement at 2x
+}
+
+double StrategyEngine::calculateAdaptiveThreshold(const std::string& symbol, double baseThreshold, double currentPrice) const {
+    auto metrics = getVolumeProfileMetrics(symbol);
+    if (metrics.empty() || baseThreshold <= 0.0) {
+        return baseThreshold; // No volume profile data, return base threshold
+    }
+    
+    // Get current price if not provided
+    if (currentPrice <= 0.0) {
+        // Find any trading pair for this symbol to get current price
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
+        for (const auto& [pairId, state] : tradingPairStates_) {
+            if (pairId.find(":" + symbol) != std::string::npos) {
+                currentPrice = state.lastPrice;
+                break;
+            }
+        }
+        if (currentPrice <= 0.0) return baseThreshold; // No price data
+    }
+    
+    // Get volume profile context
+    auto pocIt = metrics.find("poc");
+    auto vahIt = metrics.find("value_area_high");
+    auto valIt = metrics.find("value_area_low");
+    auto densityRatioIt = metrics.find("density_ratio");
+    
+    double adaptiveMultiplier = 1.0;
+    
+    // Calculate density-based adjustment
+    if (densityRatioIt != metrics.end()) {
+        double densityRatio = densityRatioIt->second;
+        // Higher density requires stronger imbalance to be significant
+        adaptiveMultiplier *= (1.0 + 0.5 * std::min(densityRatio, 2.0));
+    }
+    
+    // Context-based adjustment
+    bool nearPOC = false;
+    bool inValueArea = false;
+    
+    if (pocIt != metrics.end()) {
+        double pocDistance = std::abs(currentPrice - pocIt->second) / currentPrice;
+        nearPOC = pocDistance < 0.005; // Within 0.5% of POC
+    }
+    
+    if (vahIt != metrics.end() && valIt != metrics.end()) {
+        inValueArea = (currentPrice >= valIt->second && currentPrice <= vahIt->second);
+    }
+    
+    // Adjust threshold based on volume profile context
+    if (inValueArea && nearPOC) {
+        // In high-volume area near POC - need stronger imbalance to overcome noise
+        adaptiveMultiplier *= 1.3;
+    } else if (!inValueArea) {
+        // Outside value area - lower threshold for breakout detection
+        adaptiveMultiplier *= 0.8;
+    }
+    
+    // Clamp the multiplier to reasonable bounds
+    adaptiveMultiplier = std::clamp(adaptiveMultiplier, 0.5, 2.0);
+    
+    return baseThreshold * adaptiveMultiplier;
+}
+
+bool StrategyEngine::isImbalanceSignificant(const std::string& symbol, double imbalanceStrength, double baseThreshold) const {
+    double adaptiveThreshold = calculateAdaptiveThreshold(symbol, baseThreshold);
+    bool isSignificant = imbalanceStrength > adaptiveThreshold;
+    
+    // Log for debugging adaptive threshold adjustments
+    if (adaptiveThreshold != baseThreshold) {
+        LOG_DEBUG("Adaptive threshold for {}: base={:.4f} -> adaptive={:.4f}, strength={:.4f}, significant={}", 
+                 symbol, baseThreshold, adaptiveThreshold, imbalanceStrength, isSignificant);
+    }
+    
+    return isSignificant;
 }
  
  } // namespace strategy

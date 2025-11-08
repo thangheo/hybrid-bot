@@ -248,6 +248,8 @@ private:
     LiquidityFlowMonitorPtr liquidityMonitor_;
     // Keep a separate VolumeProfileAnalyzer per trading pair (exchange:symbol)
     std::map<std::string, VolumeProfileAnalyzerPtr> volumeProfileAnalyzers_;
+    // Store latest volume profile metrics for each symbol for signal enhancement
+    std::map<std::string, std::map<std::string, double>> volumeProfileMetrics_;
     ImbalanceSignalGeneratorPtr signalGenerator_;
     MomentumCorrelationPtr momentumCorrelator_;
     ThresholdManagerPtr thresholdManager_;
@@ -269,6 +271,9 @@ private:
     
     // Volatility filtering
     double volatilityThreshold_ = 0.0005; // Default 0.05%
+    
+    // Volume Profile metrics storage (symbol -> metrics map)
+    std::map<std::string, std::map<std::string, double>> volumeProfileMetrics_;
     
     // Callback management
     std::map<size_t, SignalCallback> signalCallbacks_;
@@ -329,6 +334,57 @@ private:
     std::unique_ptr<trading::strategy::core_analysis::RegimeSubscriber> regime_subscriber_;
 
 public:
+    // Volume Profile Access Methods
+    /**
+     * Get volume profile analyzer for a specific symbol
+     * @param symbol The trading symbol
+     * @param exchangeId The exchange ID  
+     * @return Shared pointer to volume profile analyzer or nullptr if not found
+     */
+    VolumeProfileAnalyzerPtr getVolumeProfileAnalyzer(const core::Symbol& symbol, const core::ExchangeId& exchangeId) const;
+    
+    /**
+     * Get current volume profile metrics for a symbol
+     * @param symbol The trading symbol as string
+     * @return Map of metric names to values
+     */
+    std::map<std::string, double> getVolumeProfileMetrics(const std::string& symbol) const;
+    
+    /**
+     * Check if price is near significant volume profile levels
+     * @param symbol The trading symbol
+     * @param price Current price to check
+     * @param tolerance Tolerance percentage (default 0.5%)
+     * @return True if near POC, value area edges, or VWAP
+     */
+    bool isNearVolumeProfileLevel(const std::string& symbol, double price, double tolerance = 0.005) const;
+    
+    /**
+     * Get volume profile signal enhancement factor
+     * @param symbol The trading symbol  
+     * @param price Current price
+     * @return Enhancement factor (1.0 = no enhancement, >1.0 = boost, <1.0 = reduction)
+     */
+    double getVolumeProfileSignalFactor(const std::string& symbol, double price) const;
+    
+    /**
+     * Calculate adaptive threshold based on volume profile context
+     * @param symbol The trading symbol
+     * @param baseThreshold Base imbalance threshold
+     * @param currentPrice Current price (optional, will fetch if not provided)
+     * @return Adjusted threshold based on volume density and context
+     */
+    double calculateAdaptiveThreshold(const std::string& symbol, double baseThreshold, double currentPrice = 0.0) const;
+    
+    /**
+     * Check if imbalance strength meets volume-profile-adjusted threshold
+     * @param symbol The trading symbol
+     * @param imbalanceStrength Raw imbalance strength
+     * @param baseThreshold Base threshold for comparison
+     * @return True if imbalance is significant enough given volume context
+     */
+    bool isImbalanceSignificant(const std::string& symbol, double imbalanceStrength, double baseThreshold) const;
+
     // Query latest regime info for a symbol (thread-safe). Returns true if symbol exists.
     bool getRegimeInfo(const std::string& symbol, trading::strategy::core_analysis::RegimeInfo& out) const;
 };
