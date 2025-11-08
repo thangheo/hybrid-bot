@@ -353,20 +353,3 @@ inline std::string logger_to_string_helper(T&& value) {
 
 } // namespace common
 } // namespace trading
-
-// Source location logging macros
-#define LOG_TRACE(format, ...) do { auto logger = trading::common::Logger::getLogger(); if (logger) logger->trace( \
-                                    std::string(__FILE__) + ":" + std::to_string(__LINE__) + " - " + format, ##__VA_ARGS__); } while(0)
-#define LOG_DEBUG(format, ...) do { auto logger = trading::common::Logger::getLogger(); if (logger) logger->debug( \
-                                   std::string(__FILE__) + ":" + std::to_string(__LINE__) + " - " + format, ##__VA_ARGS__); } while(0)
-#define LOG_INFO(format, ...) do { auto logger = trading::common::Logger::getLogger(); if (logger) logger->info( \
-                                  std::string(__FILE__) + ":" + std::to_string(__LINE__) + " - " + format, ##__VA_ARGS__); } while(0)
-#define LOG_WARN(format, ...) do { auto logger = trading::common::Logger::getLogger(); if (logger) logger->warn( \
-                                  std::string(__FILE__) + ":" + std::to_string(__LINE__) + " - " + format, ##__VA_ARGS__); } while(0)
-#define LOG_ERROR(format, ...) do { auto logger = trading::common::Logger::getLogger(); if (logger) logger->error( \
-                                   std::string(__FILE__) + ":" + std::to_string(__LINE__) + " - " + format, ##__VA_ARGS__); } while(0)
-#define LOG_CRITICAL(format, ...) do { auto logger = trading::common::Logger::getLogger(); if (logger) logger->critical( \
-                                      std::string(__FILE__) + ":" + std::to_string(__LINE__) + " - " + format, ##__VA_ARGS__); } while(0)
-
-// } // namespace common
-// } // namespace trading
