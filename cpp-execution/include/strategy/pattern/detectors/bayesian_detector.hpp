@@ -96,13 +96,32 @@ private:
      */
     std::shared_ptr<trading::perception::BayesianTradingModel> getOrCreateModel(
         const std::string& symbol, int regime);
+        
+    /**
+     * @brief Model persistence methods (matching original system)
+     */
+    std::string getModelFilePath(const std::string& symbol, int regime) const;
+    bool loadModelFromFile(std::shared_ptr<trading::perception::BayesianTradingModel> model,
+                          const std::string& filePath);
+    bool saveModelToFile(std::shared_ptr<trading::perception::BayesianTradingModel> model,
+                        const std::string& filePath);
     
     /**
-     * @brief Extract features from order book metrics
+     * @brief Initialize models directory and copy from backup if needed
+     */
+    void initializeModelsDirectory();
+    
+    /**
+     * @brief Extract features from order book metrics (matching original buildFeatures)
      */
     std::vector<double> extractFeatures(
         const OrderBookMetrics& metrics, 
         const std::string& symbol);
+    
+    /**
+     * @brief Run basic detectors to get results for feature extraction
+     */
+    std::vector<DetectorAnalysisResult> runBasicDetectors(const OrderBookMetrics& metrics);
     
     /**
      * @brief Update feature history for symbol

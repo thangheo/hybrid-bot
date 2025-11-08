@@ -121,4 +121,14 @@ set(CPACK_PACKAGE_VERSION_MAJOR ${PROJECT_VERSION_MAJOR})
 set(CPACK_PACKAGE_VERSION_MINOR ${PROJECT_VERSION_MINOR})
 set(CPACK_PACKAGE_VERSION_PATCH ${PROJECT_VERSION_PATCH})
 set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE")
+
+# Bayesian integration test
+# add_executable(test_bayesian_integration test_bayesian_integration.cpp)
+# target_link_libraries(test_bayesian_integration 
+#     strategy 
+#     perception 
+#     data_interface 
+#     common
+# )
+
 include(CPack)
