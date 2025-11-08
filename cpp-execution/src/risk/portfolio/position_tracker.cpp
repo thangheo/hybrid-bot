@@ -771,50 +771,17 @@ void PositionTracker::notifyPositionUpdate(const Position& position, const std::
         callbacksCopy = m_updateCallbacks;
     }
 
-    // CRASH FIX: Limit concurrent callback threads to prevent resource exhaustion
-    static std::atomic<int> activeCallbackThreads{0};
-    const int MAX_CALLBACK_THREADS = 10;
-
-    // Invoke callbacks asynchronously to ensure a slow/blocking callback
-    // cannot stall the PositionTracker's processing thread.
+    // THREAD EXPLOSION FIX: Execute callbacks synchronously to prevent 
+    // runaway thread creation that was causing system crashes.
+    // The old async approach with detached threads was creating hundreds
+    // of threads after each order execution, causing resource exhaustion.
     for (const auto& callback : callbacksCopy) {
         try {
-            // Check thread limit before spawning
-            if (activeCallbackThreads.load() >= MAX_CALLBACK_THREADS) {
-                try {
-                    LOG_WARN("PositionTracker: Callback thread limit reached ({}), executing synchronously", MAX_CALLBACK_THREADS);
-                    callback(position, updateType);
-                } catch (const std::exception& e) {
-                    std::cerr << "Error in synchronous position update callback: " << e.what() << std::endl;
-                } catch (...) {
-                    std::cerr << "Unknown error in synchronous position update callback" << std::endl;
-                }
-                continue;
-            }
-
-            // Capture by value: copy callback and position so background
-            // thread owns its data and cannot reference stack locals.
-            std::thread([callback, position, updateType]() {
-                activeCallbackThreads.fetch_add(1);
-                try {
-                    callback(position, updateType);
-                } catch (const std::exception& e) {
-                    std::cerr << "Error in async position update callback: " << e.what() << std::endl;
-                } catch (...) {
-                    std::cerr << "Unknown error in async position update callback" << std::endl;
-                }
-                activeCallbackThreads.fetch_sub(1);
-            }).detach();
+            callback(position, updateType);
         } catch (const std::exception& e) {
-            std::cerr << "Failed to spawn thread for position update callback: " << e.what() << std::endl;
-            // Fall back to synchronous execution
-            try {
-                callback(position, updateType);
-            } catch (const std::exception& cb_e) {
-                std::cerr << "Error in fallback synchronous position update callback: " << cb_e.what() << std::endl;
-            } catch (...) {
-                std::cerr << "Unknown error in fallback synchronous position update callback" << std::endl;
-            }
+            std::cerr << "Error in position update callback: " << e.what() << std::endl;
+        } catch (...) {
+            std::cerr << "Unknown error in position update callback" << std::endl;
         }
     }
 }

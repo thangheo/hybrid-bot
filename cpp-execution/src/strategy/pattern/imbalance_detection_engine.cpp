@@ -3784,7 +3784,7 @@ void ImbalanceDetectionEngine::trackLabelingEvent(core::Direction labelDirection
             case core::Direction::NEUTRAL: directionStr = "NEUTRAL"; break;
         }
         
-        LOG_INFO("LabelingStats [PRODUCTION]", 
+        LOG_TRACE("LabelingStats [PRODUCTION]", 
                 "Total={} BUY={:.1f}% SELL={:.1f}% NEUTRAL={:.1f}% | Current: Symbol={} ret={:.4f} label={} delay={}ms", 
                 totalCount, buyPct, sellPct, neutralPct,
                 symbol, normalizedReturn, directionStr, delay.count());
