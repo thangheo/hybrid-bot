@@ -229,7 +229,8 @@ inline OrderType orderTypeFromString(const std::string& str) {
 struct OrderRequest {
     std::string orderId;
     std::string clientOrderId;
-    core::ExchangeId exchangeId;
+    //default exchange id to binance
+    core::ExchangeId exchangeId = core::ExchangeId::binance();
     TradingPair tradingPair;        // Keep as string for now
     OrderSide side;
     OrderType type;                 // Changed from string to OrderType enum

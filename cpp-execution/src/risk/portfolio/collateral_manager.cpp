@@ -514,12 +514,20 @@ bool CollateralManager::fetchExchangeBalances() {
         std::vector<ExchangeBalance> newBalances;
         
         // Request balances from each configured exchange
-        for (const auto& exchangeId : m_collateralConfig.managedExchanges) {
+        std::cerr << "[CollateralManager] Total managedExchanges count: " << m_collateralConfig.managedExchanges.size() << std::endl;
+        for (size_t i = 0; i < m_collateralConfig.managedExchanges.size(); ++i) {
+            const auto& exchangeId = m_collateralConfig.managedExchanges[i];
+            std::cerr << "[CollateralManager] Processing exchange " << i << std::endl;
+            std::cerr << "[CollateralManager] Exchange object address: " << &exchangeId << std::endl;
+            std::cerr << "[CollateralManager] Exchange isValid(): " << (exchangeId.isValid() ? "true" : "false") << std::endl;
             try {
                 std::string exchangeName = exchangeId.toString();
                 std::cerr << "[CollateralManager] Fetching balances for exchange: " << exchangeName << std::endl;
+            } catch (const std::exception& e) {
+                std::cerr << "[CollateralManager] Exception getting exchange name: " << e.what() << std::endl;
+                continue;
             } catch (...) {
-                std::cerr << "[CollateralManager] Error getting exchange name - skipping" << std::endl;
+                std::cerr << "[CollateralManager] Unknown error getting exchange name - skipping" << std::endl;
                 continue;
             }
             

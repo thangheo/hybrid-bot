@@ -68,7 +68,7 @@ struct TradingSignal {
     
     // Trading details
     core::Symbol symbol;                              // Trading pair symbol
-    core::ExchangeId exchangeId;                      // Exchange identifier
+    core::ExchangeId exchangeId = core::ExchangeId::binance(); // Exchange identifier
     double targetSize;                                // Suggested position size (from execution)
     double quantity;                                  // Quantity to trade (from execution)
     std::vector<PriceTarget> targets;                 // Price targets
