@@ -169,6 +169,10 @@ bool PositionLimitChecker::checkPositionLimit(const TradingSignal& signal,
 
     // If the configured assetLimit is interpreted as USD notional, validate proposedNotional
     if (proposedNotional > assetLimit) {
+        // print for debug all related values
+        LOG_DEBUG("PositionLimitChecker", 
+                  "Asset limit check for {}: currentNotional = {}, orderNotional = {}, proposedNotional = {}, assetLimit = {}",
+                  asset, currentNotional, orderNotional, proposedNotional, assetLimit);
         RiskViolation violation(
             ViolationType::POSITION_LIMIT,
             "Asset position notional limit exceeded for " + asset,
