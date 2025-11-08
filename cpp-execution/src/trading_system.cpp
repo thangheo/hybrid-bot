@@ -1420,19 +1420,53 @@ void Trading_system::setupComponentConnections() {
                         // Use MARKET type for immediate exit to avoid limit hangs; can be tuned via config
                         exitOrder.set_exchange_id(targetExchange);
                         exitOrder.quantity = exitQuantity;
-                        exitOrder.set_order_type(models::OrderType::MARKET);
+                        exitOrder.set_order_type(models::OrderType::LIMIT);
                         exitOrder.set_side(finalSide);
 
-                        // Submit the exit order
-                        std::string orderId;
-                        try {
-                            orderId = executionInterface->submitOrder(exitOrder);
-                        } catch (const std::exception& e) {
-                            LOG_ERROR("ExitCallback", "submitOrder threw for {}: {}", symbol, e.what());
+                        // Create TradingSignal for proper risk validation flow
+                        execution::TradingSignal exitSignal;
+                        exitSignal.id = exitOrder.clientOrderId;
+                        exitSignal.setStrategyId(core::StrategyId("OptimalExitStrategy"));
+                        exitSignal.setTradingPair(trading::core::Symbol(symbol));
+                        exitSignal.setDirection(finalSide);
+                        exitSignal.setConfidence(1.0);
+                        exitSignal.setStrength(1.0);
+                        // exitSignal.setQuantity(exitQuantity);
+                        // exitSignal.setOrderType(models::OrderType::MARKET);
+                        exitSignal.setExchangeId(targetExchange);
+                        exitSignal.setGenerationTime(std::chrono::system_clock::now());
+                        exitSignal.expirationTime = exitSignal.getGenerationTime() + std::chrono::minutes(5); // 5 min expiry for exit
+
+                        // Add exit-specific metadata and set quantity
+                        exitSignal.setQuantity(exitQuantity);
+                        exitSignal.setPrice(currentPrice);
+                        exitSignal.metadata["exit_reason"] = reason;
+                        exitSignal.metadata["exit_price"] = std::to_string(currentPrice);
+                        exitSignal.metadata["position_qty"] = std::to_string(signedPosQty);
+                        exitSignal.metadata["is_exit_signal"] = "true";
+
+                        // Validate through RiskManager instead of direct execution
+                        auto riskManagerForValidation = riskWeak.lock();
+                        if (!riskManagerForValidation) {
+                            LOG_ERROR("ExitCallback", "RiskManager expired - cannot validate exit signal for {}", symbol);
                             return;
                         }
 
-                        LOG_INFO("ExitCallback", "✅ EXIT ORDER SUBMITTED: {} (order_id: {})", exitOrder.clientOrderId, orderId);
+                        try {
+                            auto validationResult = riskManagerForValidation->validateSignal(exitSignal);
+                            if (validationResult.approved) {
+                                // Now submit through ExecutionInterface after risk validation
+                                std::string orderId = executionInterface->submitOrder(exitOrder);
+                                LOG_INFO("ExitCallback", "✅ EXIT ORDER SUBMITTED after risk validation: {} (order_id: {})", 
+                                        exitOrder.clientOrderId, orderId);
+                            } else {
+                                LOG_WARN("ExitCallback", "🚫 EXIT SIGNAL REJECTED by risk management for {}: {}", 
+                                        symbol, validationResult.violations.empty() ? "No specific violations provided" : validationResult.violations.front().description);
+                            }
+                        } catch (const std::exception& e) {
+                            LOG_ERROR("ExitCallback", "❌ Risk validation or order submission failed for {}: {}", symbol, e.what());
+                            return;
+                        }
 
                     } catch (const std::exception& e) {
                         LOG_ERROR("ExitCallback", "❌ FAILED to submit exit order for {}: {}", symbol, e.what());
