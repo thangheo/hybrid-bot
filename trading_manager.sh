@@ -24,6 +24,11 @@ NC='\033[0m' # No Color
 
 # Create directories if they don't exist
 mkdir -p "$LOG_DIR" "$PID_DIR"
+export ZMQ_THREAD_PRIORITY=-1
+export ZMQ_THREAD_SCHED_POLICY=0
+export NO_RT_SCHEDULING=1
+export DISABLE_THREAD_PRIORITY=1
+export PTHREAD_INHERIT_SCHED=1
 
 #source environment
 source venv/bin/activate

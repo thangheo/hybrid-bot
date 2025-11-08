@@ -11,6 +11,7 @@
 #include <cmath>
 #include <stdexcept>
 #include <random>
+#include <future>
 
 namespace trading {
 namespace risk {
@@ -57,9 +58,16 @@ bool CollateralManager::initialize() {
         if (m_positionTracker) {
             m_positionTracker->registerPositionUpdateCallback(
                 [this](const Position& position, const std::string& updateType) {
-                    // Trigger a collateral update when positions change significantly
-                    if (updateType == "new" || updateType == "modified" || updateType == "reconciliation") {
-                        updateCollateralStatus();
+                    try {
+                        // Trigger a collateral update when positions change significantly
+                        if (updateType == "new" || updateType == "modified" || updateType == "reconciliation") {
+                            // Check if object is still valid before calling methods
+                            if (m_executionInterface && m_dataInterface) {
+                                updateCollateralStatus();
+                            }
+                        }
+                    } catch (...) {
+                        // Silently ignore all errors in callbacks to prevent crashes
                     }
                 }
             );
@@ -507,10 +515,28 @@ bool CollateralManager::fetchExchangeBalances() {
         
         // Request balances from each configured exchange
         for (const auto& exchangeId : m_collateralConfig.managedExchanges) {
-            std::cerr << "[CollateralManager] Fetching balances for exchange: " << exchangeId.toString() << std::endl;
+            try {
+                std::string exchangeName = exchangeId.toString();
+                std::cerr << "[CollateralManager] Fetching balances for exchange: " << exchangeName << std::endl;
+            } catch (...) {
+                std::cerr << "[CollateralManager] Error getting exchange name - skipping" << std::endl;
+                continue;
+            }
             
             try {
-                auto exchangeBalances = m_executionInterface->getAccountBalances(exchangeId);
+                // Add timeout protection - use async with timeout  
+                auto future = std::async(std::launch::async, [this, exchangeId]() {
+                    return m_executionInterface->getAccountBalances(exchangeId);
+                });
+                
+                // Wait max 10 seconds for balance request
+                auto status = future.wait_for(std::chrono::seconds(10));
+                if (status == std::future_status::timeout) {
+                    std::cerr << "[CollateralManager] Timeout fetching balances - skipping this exchange" << std::endl;
+                    continue;
+                }
+                
+                auto exchangeBalances = future.get();
                 
                 if (!exchangeBalances.empty()) {
                     // Convert to our balance format
