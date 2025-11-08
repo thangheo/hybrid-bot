@@ -62,8 +62,15 @@ public:
         auto manager = std::shared_ptr<RiskManager>(new RiskManager(execService, config, marketDataInterface, zmqContext));
 
         // Override with shared PositionTracker if provided
+        LOG_INFO("RiskManager", "🔧 INJECTION DEBUG: sharedPositionTracker={}, preTradeFilter={}", 
+                 (sharedPositionTracker ? "YES" : "NULL"), 
+                 (manager->m_preTradeFilter ? "YES" : "NULL"));
+        
         if (sharedPositionTracker && manager->m_preTradeFilter) {
             manager->m_preTradeFilter->setPositionTracker(sharedPositionTracker);
+            LOG_INFO("RiskManager", "✅ Injected shared PositionTracker into PreTradeFilter");
+        } else {
+            LOG_WARN("RiskManager", "❌ Failed injection - missing components");
         }
 
         // Now safe to call methods that use shared_from_this()

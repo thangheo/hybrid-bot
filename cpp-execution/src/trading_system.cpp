@@ -194,13 +194,16 @@ bool Trading_system::initialize() {
             
     // ✅ NEW - Use the factory method
     // riskManager_ = RiskManager::create(executionService_, riskConfig_, marketDataInterface_);
+    // Create shared PositionTracker for synchronized position tracking
+    std::shared_ptr<trading::risk::PositionTracker> sharedPositionTracker = 
+        std::make_shared<trading::risk::PositionTracker>(riskConfig_, marketDataInterface_);
+    
     riskManager_ = trading::risk::RiskManager::create(
         executionService_, 
         riskConfig_, 
         marketDataInterface_,
-        zmq_context_
-        // zmq_server_->getContext() // Pass shared ZMQ context
-        // shared_context
+        zmq_context_,
+        sharedPositionTracker  // Pass shared PositionTracker
     );
     if (!riskManager_) {
         LOG_ERROR("Application", "Failed to initialize risk manager");
