@@ -76,23 +76,18 @@ bool PreTradeRiskFilter::initialize() {
     try {
         LOG_INFO("Initializing pre-trade risk filter...");
 
-        // Create shared dependencies with null DataInterface for now
-        // TODO: Accept DataInterface from RiskManager constructor
-        m_positionTracker = std::make_shared<PositionTracker>(m_config, nullptr);
-        // m_dataInterface = std::make_shared<DataInterface>();
-            // m_data_interface = std::make_unique<MarketDataInterface>(m_config);
-            // use singleton pattern to create data interface
-            // m_data_interface = MarketDataInterface::getInstance(m_config);
-            if (!m_dataInterface) {
-    }
-        // use singleton pattern to create data interface
-        // m_dataInterface = MarketDataInterface::getInstance(m_config);
+        // Create DataInterface first
+        if (!m_dataInterface) {
+            m_dataInterface = std::make_shared<MarketDataInterface>(m_config);
+        }
+        
         if (!m_dataInterface) {
             LOG_ERROR("Failed to create MarketDataInterface");
             return false;
         }
 
-        
+        // Create PositionTracker with proper DataInterface
+        m_positionTracker = std::make_shared<PositionTracker>(m_config, m_dataInterface);        
         // Initialize position tracker and data interface
         if (!m_positionTracker->initialize()) {
             LOG_ERROR("Failed to initialize position tracker");
