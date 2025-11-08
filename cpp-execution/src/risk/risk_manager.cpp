@@ -874,5 +874,38 @@ std::shared_ptr<ExecutionInterface> RiskManager::getExecutionInterface() const {
     return m_executionInterface;
 }
 
+std::optional<double> RiskManager::getCachedPosition(const ExchangeId& exchangeId, const TradingPair& tradingPair) const {
+    // 🚀 FAST O(1) position lookup from cached PositionTracker
+    // Avoids expensive getAllPositions() API calls (100+ positions)
+    try {
+        // Try PreTradeFilter's position tracker first
+        if (m_preTradeFilter && m_preTradeFilter->getPositionTracker()) {
+            auto positionOpt = m_preTradeFilter->getPositionTracker()->getPosition(exchangeId, tradingPair);
+            if (positionOpt.has_value()) {
+                return positionOpt->getQuantity();
+            }
+        }
+        
+        // Fallback: Direct ExecutionInterface lookup (still better than getAllPositions)
+        if (m_executionInterface) {
+            try {
+                auto positions = m_executionInterface->getPositions(exchangeId);
+                auto it = positions.find(tradingPair.toString());
+                if (it != positions.end() && std::abs(it->second) > 1e-8) {
+                    return it->second;
+                }
+            } catch (...) {
+                // Continue to nullopt return
+            }
+        }
+        
+        return std::nullopt;
+    } catch (const std::exception& e) {
+        LOG_WARN("RiskManager", "Error getting cached position for {}@{}: {}", 
+                 tradingPair.toString(), exchangeId.toString(), e.what());
+        return std::nullopt;
+    }
+}
+
 } // namespace risk
 } // namespace trading

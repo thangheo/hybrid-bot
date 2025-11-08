@@ -104,6 +104,12 @@ public:
      * @return The current risk manager mode
      */
     RiskManagerMode getMode() const;
+    
+    /**
+     * Get the position tracker for cached position lookups
+     * @return shared_ptr to PositionTracker, may be nullptr if not initialized
+     */
+    std::shared_ptr<PositionTracker> getPositionTracker() const;
 
     // Helper methods for signal property extraction
     std::string getBaseAsset(const core::Symbol& tradingPair) const;

@@ -796,5 +796,9 @@ std::string PreTradeRiskFilter::getBaseAsset(const core::Symbol& tradingPair) co
     return symbol.base;
 }
 
+std::shared_ptr<PositionTracker> PreTradeRiskFilter::getPositionTracker() const {
+    return m_positionTracker;
+}
+
 } // namespace risk
 } // namespace trading

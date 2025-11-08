@@ -198,6 +198,14 @@ public:
      * @return shared_ptr to ExecutionInterface, may be nullptr if not initialized
      */
     std::shared_ptr<ExecutionInterface> getExecutionInterface() const;
+    
+    /**
+     * Get cached position for fast O(1) lookup (avoids expensive API calls)
+     * @param exchangeId The exchange identifier
+     * @param tradingPair The trading pair
+     * @return Optional position quantity, nullopt if not found
+     */
+    std::optional<double> getCachedPosition(const ExchangeId& exchangeId, const TradingPair& tradingPair) const;
 private:
     std::shared_ptr<trading::execution::ExecutionService> m_execService;
     std::shared_ptr<trading::execution::ExecutionService> m_executionService;
@@ -211,9 +219,9 @@ private:
      */
     explicit RiskManager(std::shared_ptr<trading::execution::ExecutionService> execService, 
                         const RiskConfig& config)
-        : m_config(config)
+        : m_execService(execService)  // Store for later use
+        , m_config(config)
         , m_mode(RiskManagerMode::NORMAL)
-        , m_execService(execService)  // Store for later use
     {
         // DON'T call any methods that use shared_from_this() here!
         LOG_INFO("RiskManager", "RiskManager constructor completed");
