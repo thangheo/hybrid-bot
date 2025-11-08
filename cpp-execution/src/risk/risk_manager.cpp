@@ -880,11 +880,15 @@ std::optional<double> RiskManager::getCachedPosition(const ExchangeId& exchangeI
     try {
         // Try PreTradeFilter's position tracker first
         if (m_preTradeFilter && m_preTradeFilter->getPositionTracker()) {
-            LOG_INFO("RiskManager", "🔍 Checking position tracker for {}@{}", tradingPair.toString(), exchangeId.toString());
+            // Diagnostic: print pointer and timestamp to help debug missing positions
+            auto pt_ptr = m_preTradeFilter->getPositionTracker().get();
+            auto now = std::chrono::system_clock::now();
+            auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
+            LOG_INFO("RiskManager", "🔍 Checking position tracker for {}@{} ptr={} ts_ms={}", tradingPair.toString(), exchangeId.toString(), pt_ptr, now_ms);
             auto positionOpt = m_preTradeFilter->getPositionTracker()->getPosition(exchangeId, tradingPair);
             if (positionOpt.has_value()) {
-                LOG_INFO("RiskManager - ✅ Found position in tracker: {}@{} = {}", 
-                         tradingPair.toString(), exchangeId.toString(), positionOpt->getQuantity());
+                LOG_INFO("RiskManager - ✅ Found position in tracker: {}@{} = {} (pt_ptr={})", 
+                         tradingPair.toString(), exchangeId.toString(), positionOpt->getQuantity(), pt_ptr);
                 return positionOpt->getQuantity();
             } else {
                 LOG_WARN("RiskManager - ❌ NO position found in tracker for {}@{}", tradingPair.toString(), exchangeId.toString());

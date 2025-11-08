@@ -336,7 +336,12 @@ void PortfolioManager::processExecution(const trading::execution::models::Execut
               << " qty=" << executionReport.quantity() << " side=" << static_cast<int>(executionReport.side()) << std::endl;
     
     try {
-        m_positionTracker->updatePositions(executionReport);
+            // Diagnostic: log position tracker pointer and timestamp before updating
+            auto pt_ptr = m_positionTracker.get();
+            auto now = std::chrono::system_clock::now();
+            auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
+            std::cout << "[TTL_DEBUG] PortfolioManager updating PositionTracker ptr=" << pt_ptr << " ts_ms=" << now_ms << std::endl;
+            m_positionTracker->updatePositions(executionReport);
         std::cerr << "[PortfolioManager] ✅ PositionTracker updated successfully" << std::endl;
         
         // Verify position was updated
