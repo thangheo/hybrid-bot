@@ -106,13 +106,15 @@ bool PositionLimitChecker::checkPositionLimit(const TradingSignal& signal,
     double assetLimitUsd = getPositionLimit(asset, strategyId.toString());
     double orderQuantity = std::abs(signal.getQuantity());
 
+    LOG_WARN("DEBUG_LIMITS: signal={} assetLimitUsd={} orderQuantity={} currentPrice={}", 
+              signal.getSignalId(), assetLimitUsd, orderQuantity, currentPrice);
+
     if (orderQuantity > 0.0) {
         // Explicit absolute quantity provided on the signal -> convert to USD using current price
         if (currentPrice > 0.0) {
             orderNotional = orderQuantity * currentPrice;
         } else {
-            LOG_WARN("PositionLimitChecker", 
-                     "REJECTION REASON: Price unavailable for signal {}, asset={}", 
+            LOG_WARN("PRICE_UNAVAILABLE_1: signal={} asset={}", 
                      signal.getSignalId(), asset);
             RiskViolation violation(
                 ViolationType::PRICE_DEVIATION,
@@ -126,8 +128,7 @@ bool PositionLimitChecker::checkPositionLimit(const TradingSignal& signal,
     } else if (targetSize <= 1.0) {
         // Interpret as fraction of the configured asset limit (USD)
         if (assetLimitUsd <= 0.0) {
-            LOG_WARN("PositionLimitChecker", 
-                     "REJECTION REASON: Asset limit too low for signal {}, asset={}, assetLimitUsd={}", 
+            LOG_WARN("ASSET_LIMIT_TOO_LOW: signal={} asset={} assetLimitUsd={}", 
                      signal.getSignalId(), asset, assetLimitUsd);
             RiskViolation violation(
                 ViolationType::POSITION_LIMIT,
@@ -144,8 +145,7 @@ bool PositionLimitChecker::checkPositionLimit(const TradingSignal& signal,
         if (currentPrice > 0.0) {
             orderNotional = std::abs(targetSize) * currentPrice;
         } else {
-            LOG_WARN("PositionLimitChecker", 
-                     "REJECTION REASON: Price unavailable for absolute quantity signal {}, asset={}", 
+            LOG_WARN("PRICE_UNAVAILABLE_2: signal={} asset={}", 
                      signal.getSignalId(), asset);
             RiskViolation violation(
                 ViolationType::PRICE_DEVIATION,
