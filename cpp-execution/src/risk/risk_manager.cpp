@@ -880,28 +880,50 @@ std::optional<double> RiskManager::getCachedPosition(const ExchangeId& exchangeI
     try {
         // Try PreTradeFilter's position tracker first
         if (m_preTradeFilter && m_preTradeFilter->getPositionTracker()) {
+            LOG_INFO("RiskManager", "🔍 Checking position tracker for {}@{}", tradingPair.toString(), exchangeId.toString());
             auto positionOpt = m_preTradeFilter->getPositionTracker()->getPosition(exchangeId, tradingPair);
             if (positionOpt.has_value()) {
+                LOG_INFO("RiskManager - ✅ Found position in tracker: {}@{} = {}", 
+                         tradingPair.toString(), exchangeId.toString(), positionOpt->getQuantity());
                 return positionOpt->getQuantity();
+            } else {
+                LOG_WARN("RiskManager - ❌ NO position found in tracker for {}@{}", tradingPair.toString(), exchangeId.toString());
             }
+        } else {
+            LOG_WARN("RiskManager - ❌ PreTradeFilter or PositionTracker is null!");
         }
         
         // Fallback: Direct ExecutionInterface lookup (still better than getAllPositions)
+        LOG_INFO("RiskManager - 🔄 Falling back to ExecutionInterface for {}@{}", tradingPair.toString(), exchangeId.toString());
         if (m_executionInterface) {
             try {
                 auto positions = m_executionInterface->getPositions(exchangeId);
+                LOG_INFO("RiskManager - 📊 ExecutionInterface returned {} positions total", positions.size());
                 auto it = positions.find(tradingPair.toString());
                 if (it != positions.end() && std::abs(it->second) > 1e-8) {
+                    LOG_INFO("RiskManager - ✅ Found position in ExecutionInterface: {}@{} = {}", 
+                             tradingPair.toString(), exchangeId.toString(), it->second);
                     return it->second;
+                } else if (it != positions.end()) {
+                    LOG_WARN("RiskManager - ⚠️ Position found but too small: {}@{} = {} (< 1e-8)", 
+                             tradingPair.toString(), exchangeId.toString(), it->second);
+                } else {
+                    LOG_WARN("RiskManager - ❌ Position not found in ExecutionInterface for {}@{}", 
+                             tradingPair.toString(), exchangeId.toString());
                 }
+            } catch (const std::exception& e) {
+                // LOG_ERROR("RiskManager", "💥 ExecutionInterface exception: {}", e.what());
+                LOG_ERROR("RiskManager - 💥 ExecutionInterface exception: {}", e.what());
             } catch (...) {
-                // Continue to nullopt return
+                LOG_ERROR("RiskManager - 💥 Unknown ExecutionInterface exception");
             }
+        } else {
+            LOG_WARN("RiskManager - ❌ ExecutionInterface is null!");
         }
         
         return std::nullopt;
     } catch (const std::exception& e) {
-        LOG_WARN("RiskManager", "Error getting cached position for {}@{}: {}", 
+        LOG_WARN("RiskManager - Error getting cached position for {}@{}: {}", 
                  tradingPair.toString(), exchangeId.toString(), e.what());
         return std::nullopt;
     }
