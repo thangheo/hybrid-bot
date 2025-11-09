@@ -266,7 +266,7 @@ private:
     std::vector<RiskEventCallback> m_eventCallbacks;
     mutable std::mutex m_callbackMutex;
     // Optional position synchronizer instance (keeps a synchronized cache of positions)
-    std::unique_ptr<trading::risk::sync::PositionSynchronizer> m_positionSync;
+    std::shared_ptr<trading::risk::sync::PositionSynchronizer> m_positionSync;
     // Optional signal checker to be forwarded to PostTradeMonitor during init
     std::optional<PostTradeSignalChecker> postTradeSignalChecker_;
     

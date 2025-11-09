@@ -201,6 +201,7 @@ bool RiskManager::initialize() {
                 // Use default PositionSyncConfig (can be tuned via external config later)
                 trading::risk::sync::PositionSyncConfig syncConfig{};
                 // Create synchronizer via factory
+                // Create as shared_ptr so we can safely share ownership with consumers
                 m_positionSync = trading::risk::sync::createPositionSynchronizer(syncConfig, zmqContext_);
                 if (m_positionSync) {
                     if (!m_positionSync->initialize()) {
@@ -288,7 +289,8 @@ bool RiskManager::initialize() {
                 // PostTradeMonitor may expose stop-loss and reconciliation subsystems which accept a PositionSynchronizer
                 // Forward the shared pointer (wrap unique_ptr raw pointer into shared_ptr temporarily)
                 // Create a non-owning shared_ptr wrapper with no-op deleter so we can pass a shared_ptr view
-                auto sharedSync = std::shared_ptr<trading::risk::sync::PositionSynchronizer>(m_positionSync.get(), [](auto*){});
+                // m_positionSync is a shared_ptr now — pass owning shared_ptr to consumers
+                auto sharedSync = m_positionSync;
 
                 // Inject into PostTradeMonitor subcomponents if available
                 trySetPositionSync(&m_postTradeMonitor->getStopLossManager(), sharedSync);
@@ -321,8 +323,8 @@ bool RiskManager::initialize() {
         }
         // If PositionSynchronizer is running, inject it into collateral manager
         if (m_positionSync && m_collateralManager) {
-            auto sharedSync = std::shared_ptr<trading::risk::sync::PositionSynchronizer>(m_positionSync.get(), [](auto*){});
-            trySetPositionSync(m_collateralManager.get(), sharedSync);
+            // m_collateralManager expects a shared_ptr — forward the owning shared_ptr
+            trySetPositionSync(m_collateralManager.get(), m_positionSync);
         }
         
         // Initialize risk service
