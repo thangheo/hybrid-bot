@@ -56,6 +56,11 @@ public:
     double getCurrentPrice(
         const core::Symbol& tradingPair, 
         const std::optional<std::string>& exchangeId = std::nullopt) override;
+
+    // Overload that accepts a typed ExchangeId to avoid repeated string conversions
+    double getCurrentPrice(
+        const core::Symbol& tradingPair,
+        const core::ExchangeId& exchangeId) override;
     
     std::vector<std::pair<Timestamp, double>> getHistoricalPrices(
         const core::Symbol& tradingPair,

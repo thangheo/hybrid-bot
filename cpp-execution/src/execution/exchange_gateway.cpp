@@ -193,7 +193,7 @@ std::future<double> ExchangeGateway::getCurrentPrice(
         // 2) Try shared market-data interface (cache-backed) if available and not forcing refresh
         if (!forceRefresh && marketDataInterface_) {
             try {
-                double p = marketDataInterface_->getCurrentPrice(symbol, exchangeId.toString());
+                double p = marketDataInterface_->getCurrentPrice(symbol, exchangeId);
                 if (p > 0.0) {
                     // Update local cache for stats/fast-path
                     updatePriceCache(exchangeId, symbol, p);
