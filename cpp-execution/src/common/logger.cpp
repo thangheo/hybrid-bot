@@ -10,7 +10,6 @@ namespace common {
 
 // Static member initialization
 std::once_flag Logger::initialized_;
-std::atomic<bool> Logger::shutdown_called_{false};
 
 // Concrete logger implementation
 class ConsoleLogger : public Logger {
@@ -82,7 +81,7 @@ std::shared_ptr<Logger>& Logger::getInstance() {
 // Factory method to create the logger
 void Logger::initialize(const std::string& appName, LogLevel level) {
     std::call_once(initialized_, [&appName, level]() {
-        if (!shutdown_called_.load()) {
+        if (!getShutdownFlag().load()) {
             // Allocate ConsoleLogger with a no-op deleter so it is not
             // destroyed during static teardown. This prevents calling
             // virtual methods on partially-destroyed objects from other
@@ -98,7 +97,7 @@ void Logger::initialize(const std::string& appName, LogLevel level) {
 // Get the logger instance (with auto-initialization if needed)
 std::shared_ptr<Logger> Logger::getLogger() {
     // Check if shutdown was called
-    if (shutdown_called_.load()) {
+    if (getShutdownFlag().load()) {
         return nullptr;
     }
     
@@ -114,7 +113,7 @@ std::shared_ptr<Logger> Logger::getLogger() {
 
 // Explicit shutdown method to clean up before static destruction
 void Logger::shutdown() {
-    shutdown_called_.store(true);
+    getShutdownFlag().store(true);
     
     // Clear the instance
     auto& instance = getInstance();
