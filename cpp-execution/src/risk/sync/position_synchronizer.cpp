@@ -24,8 +24,9 @@ bool PositionSynchronizer::initialize() {
         return true;
     }
     publisher_.store(std::make_shared<PositionPublisher>(config_, zmqContext_));
-    subscriber_.store(std::make_shared<PositionSubscriber>(config_, zmqContext_));
-    std::cerr << "[PositionSynchronizer] Created publisher and subscriber objects" << std::endl;
+    auto subptr = std::make_shared<PositionSubscriber>(config_, zmqContext_);
+    subscriber_.store(subptr);
+    std::cerr << "[PositionSynchronizer] Created publisher and subscriber objects pub=" << publisher_.load().get() << " sub=" << subptr.get() << std::endl;
     return true;
 }
 
@@ -61,6 +62,7 @@ void PositionSynchronizer::shutdown() {
     if (pub) {
         // optionally stop publisher if needed
     }
+    std::cerr << "[PositionSynchronizer] shutdown: clearing publisher/subscriber\n";
     publisher_.store(nullptr);
     subscriber_.store(nullptr);
     initialized_ = false;
