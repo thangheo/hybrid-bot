@@ -90,9 +90,17 @@ bool PreTradeRiskFilter::initialize() {
             return false;
         }
 
-        // Create PositionTracker with proper DataInterface
-        m_positionTracker = std::make_shared<PositionTracker>(m_config, m_dataInterface);        
-        // Initialize position tracker and data interface
+        // Create PositionTracker only if one wasn't injected earlier. This
+        // prevents losing a shared PositionTracker that callers (e.g. RiskManager)
+        // may have injected for fast, consistent position reads.
+        if (!m_positionTracker) {
+            m_positionTracker = std::make_shared<PositionTracker>(m_config, m_dataInterface);
+        } else {
+            LOG_INFO("PreTradeRiskFilter: using injected PositionTracker (ptr={})", m_positionTracker.get());
+        }
+
+        // Initialize position tracker and data interface. initialize() is idempotent
+        // in PositionTracker so calling it for an injected tracker is safe.
         if (!m_positionTracker->initialize()) {
             LOG_ERROR("Failed to initialize position tracker");
             return false;
