@@ -517,19 +517,57 @@ bool CollateralManager::fetchExchangeBalances() {
         
         // Request balances from each configured exchange
         std::cerr << "[CollateralManager] Total managedExchanges count: " << m_collateralConfig.managedExchanges.size() << std::endl;
+        
+        // Validate vector integrity before iterating
+        if (m_collateralConfig.managedExchanges.size() > 100) {
+            std::cerr << "[CollateralManager] ERROR: Suspiciously large exchange count - possible memory corruption!" << std::endl;
+            return false;
+        }
+        
         for (size_t i = 0; i < m_collateralConfig.managedExchanges.size(); ++i) {
-            const auto& exchangeId = m_collateralConfig.managedExchanges[i];
-            std::cerr << "[CollateralManager] Processing exchange " << i << std::endl;
-            std::cerr << "[CollateralManager] Exchange object address: " << &exchangeId << std::endl;
-            std::cerr << "[CollateralManager] Exchange isValid(): " << (exchangeId.isValid() ? "true" : "false") << std::endl;
+            std::cerr << "[CollateralManager] Processing exchange index " << i << std::endl;
+            
+            // Add bounds checking
+            if (i >= m_collateralConfig.managedExchanges.size()) {
+                std::cerr << "[CollateralManager] ERROR: Index out of bounds!" << std::endl;
+                break;
+            }
+            
+            ExchangeId exchangeId; // Declare here so it's in scope for the rest of the loop
+            
             try {
-                std::string exchangeName = exchangeId.toString();
-                std::cerr << "[CollateralManager] Fetching balances for exchange: " << exchangeName << std::endl;
+                exchangeId = m_collateralConfig.managedExchanges[i];
+                std::cerr << "[CollateralManager] Exchange object address: " << &exchangeId << std::endl;
+                
+                // Test toString() first (safer than isValid())
+                std::string exchangeName;
+                try {
+                    exchangeName = exchangeId.toString();
+                    std::cerr << "[CollateralManager] Exchange toString(): " << exchangeName << std::endl;
+                } catch (const std::exception& e) {
+                    std::cerr << "[CollateralManager] Exception in toString(): " << e.what() << std::endl;
+                    continue;
+                } catch (...) {
+                    std::cerr << "[CollateralManager] Unknown error in toString() - skipping" << std::endl;
+                    continue;
+                }
+                
+                // Only call isValid() if toString() worked
+                try {
+                    bool isValid = exchangeId.isValid();
+                    std::cerr << "[CollateralManager] Exchange isValid(): " << (isValid ? "true" : "false") << std::endl;
+                } catch (const std::exception& e) {
+                    std::cerr << "[CollateralManager] Exception in isValid(): " << e.what() << std::endl;
+                    continue;
+                } catch (...) {
+                    std::cerr << "[CollateralManager] Unknown error in isValid() - skipping" << std::endl;
+                    continue;
+                }
             } catch (const std::exception& e) {
-                std::cerr << "[CollateralManager] Exception getting exchange name: " << e.what() << std::endl;
+                std::cerr << "[CollateralManager] Exception accessing exchange " << i << ": " << e.what() << std::endl;
                 continue;
             } catch (...) {
-                std::cerr << "[CollateralManager] Unknown error getting exchange name - skipping" << std::endl;
+                std::cerr << "[CollateralManager] Unknown error accessing exchange " << i << " - skipping" << std::endl;
                 continue;
             }
             
