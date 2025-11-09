@@ -66,21 +66,39 @@ bool CollateralManager::initialize() {
         
         // Register position update callback to monitor collateral levels
         if (m_positionTracker) {
-            m_positionTracker->registerPositionUpdateCallback(
-                [this](const Position& position, const std::string& updateType) {
-                    try {
-                        // Trigger a collateral update when positions change significantly
-                        if (updateType == "new" || updateType == "modified" || updateType == "reconciliation") {
-                            // Check if object is still valid before calling methods
-                            if (m_executionInterface && m_dataInterface) {
-                                updateCollateralStatus();
-                            }
-                        }
-                    } catch (...) {
-                        // Silently ignore all errors in callbacks to prevent crashes
-                    }
+            // Defensive callback: capture a weak pointer to 'this' semantics via local copies
+            auto positionUpdateCallback = [this](const Position& position, const std::string& updateType) {
+                // Defensive null check for 'this' pointer (rare but defensive in callbacks)
+                if (!this) {
+                    std::cerr << "[CollateralManager] Invalid this pointer in callback!" << std::endl;
+                    return;
                 }
-            );
+
+                // Use local copies to avoid race conditions on member pointers
+                auto execInterface = m_executionInterface;
+                auto dataInterface = m_dataInterface;
+                if (!execInterface) {
+                    std::cerr << "[CollateralManager] ExecutionInterface is null in callback" << std::endl;
+                    return;
+                }
+                if (!dataInterface) {
+                    std::cerr << "[CollateralManager] DataInterface is null in callback" << std::endl;
+                    return;
+                }
+
+                try {
+                    // Trigger a collateral update when positions change significantly
+                    if (updateType == "new" || updateType == "modified" || updateType == "reconciliation") {
+                        updateCollateralStatus();
+                    }
+                } catch (const std::exception& e) {
+                    std::cerr << "[CollateralManager] Exception in callback: " << e.what() << std::endl;
+                } catch (...) {
+                    std::cerr << "[CollateralManager] Unknown exception in callback" << std::endl;
+                }
+            };
+
+            m_positionTracker->registerPositionUpdateCallback(positionUpdateCallback);
         }
         
         return true;
