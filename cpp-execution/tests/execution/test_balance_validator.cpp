@@ -83,9 +83,9 @@ protected:
     std::shared_ptr<MockApiClient> mockClient;
     ExchangeId exchangeId;
     
-    Order createTestOrder(OrderSide side, double quantity, double price, const std::string& symbol = "BTCUSDT") {
-        Order order;
-        order.setTradingPair(Symbol(symbol));
+    models::Order createTestOrder(OrderSide side, double quantity, double price, const std::string& symbol = "BTCUSDT") {
+        models::Order order;
+        order.setTradingPair(core::Symbol(symbol));
         order.setSide(side);
         order.setQuantity(quantity);
         order.setPrice(price);
