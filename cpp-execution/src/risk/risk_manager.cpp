@@ -21,7 +21,7 @@ namespace {
     auto trySetPositionSync(T* obj, const std::shared_ptr<trading::risk::sync::PositionSynchronizer>& sync)
         -> decltype(obj->setPositionSynchronizer(sync), void()) {
         if (obj) {
-            obj->setPositionSynchronizer(sync);  // Pass by const ref, let setter decide ownership
+            obj->setPositionSynchronizer(sync);
         }
     }
 
