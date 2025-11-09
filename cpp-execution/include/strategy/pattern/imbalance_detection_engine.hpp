@@ -312,6 +312,17 @@ public:
     // Pointer to the global regime subscriber (optional). Set by caller (StrategyEngine)
     trading::strategy::core_analysis::RegimeSubscriber* regime_subscriber_ = nullptr;
 
+    // Optional callback to check authoritative position for a symbol
+    // Return: optional<double> signed position quantity if available, nullopt if unknown
+    std::function<std::optional<double>(const core::ExchangeId&, const core::Symbol&)> positionLookup_ = nullptr;
+
+public:
+    // Set a callback that allows the engine to ask for an authoritative (cached) position
+    // If not set, the engine preserves legacy behavior (no authoritative check)
+    void setPositionLookupCallback(const std::function<std::optional<double>(const core::ExchangeId&, const core::Symbol&)>& cb) {
+        positionLookup_ = cb;
+    }
+
 public:
     // Set the RegimeSubscriber so the engine can snapshot regime probabilities at capture time and weight predictions
     void setRegimeSubscriber(trading::strategy::core_analysis::RegimeSubscriber* sub) { regime_subscriber_ = sub; }

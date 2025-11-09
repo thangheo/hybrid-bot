@@ -229,6 +229,9 @@ public:
      */
     void registerEmergencyExitCallback(const EmergencyExitCallback& callback);
 
+    // Expose imbalance detector for integration wiring (e.g., to set position lookup callback)
+    std::shared_ptr<ImbalanceDetectionEngine> getImbalanceDetector() const { return imbalanceDetector_; }
+
 private:
     // Strategy identification
     StrategyId strategyId_;

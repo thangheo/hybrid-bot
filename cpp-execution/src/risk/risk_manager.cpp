@@ -1008,7 +1008,23 @@ std::optional<double> RiskManager::getCachedPosition(const ExchangeId& exchangeI
             auto pt_ptr = m_preTradeFilter->getPositionTracker().get();
             auto now = std::chrono::system_clock::now();
             auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
-            LOG_INFO("RiskManager", "🔍 Checking position tracker for {}@{} ptr={} ts_ms={}", tradingPair.toString(), exchangeId.toString(), pt_ptr, now_ms);
+            // Diagnostic: dump tracker pointer and a sample of stored positions to help debug lookup mismatches
+            try {
+                auto tracker = m_preTradeFilter->getPositionTracker();
+                auto allPositions = tracker->getAllPositions();
+                LOG_INFO("RiskManager - 🔍 Checking position tracker for {}@{} ptr={} ts_ms={} positions_count={}", 
+                         tradingPair.toString(), exchangeId.toString(), static_cast<const void*>(pt_ptr), now_ms, allPositions.size());
+                // Log up to 5 sample positions
+                size_t sample = std::min<size_t>(allPositions.size(), 5);
+                for (size_t i = 0; i < sample; ++i) {
+                    try {
+                        const auto& p = allPositions[i];
+                        LOG_INFO("RiskManager - Tracker sample[{}]: {}@{} = {}", i, p.getTradingPair().toString(), p.getExchangeId().toString(), p.getQuantity());
+                    } catch (...) {}
+                }
+            } catch (const std::exception& e) {
+                LOG_WARN("RiskManager - Failed to read positions from tracker for diagnostics: {}", e.what());
+            }
             auto positionOpt = m_preTradeFilter->getPositionTracker()->getPosition(exchangeId, tradingPair);
             if (positionOpt.has_value()) {
                 LOG_INFO("RiskManager - ✅ Found position in tracker: {}@{} = {} (pt_ptr={})", 
