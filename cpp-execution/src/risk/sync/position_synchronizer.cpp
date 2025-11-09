@@ -62,21 +62,25 @@ std::shared_ptr<PositionPublisher> PositionSynchronizer::getPublisher() const { 
 std::shared_ptr<PositionSubscriber> PositionSynchronizer::getSubscriber() const { return subscriber_; }
 
 void PositionSynchronizer::registerPositionEventCallback(const PositionEventCallback& callback) {
-    if (subscriber_) subscriber_->registerEventCallback(callback);
+    auto sub = subscriber_;
+    if (sub) sub->registerEventCallback(callback);
 }
 
 bool PositionSynchronizer::hasPosition(const std::string& symbol, const std::string& exchangeId) const {
-    if (subscriber_) return subscriber_->hasPosition(symbol, exchangeId);
+    auto sub = subscriber_;
+    if (sub) return sub->hasPosition(symbol, exchangeId);
     return false;
 }
 
 std::optional<Position> PositionSynchronizer::getPosition(const std::string& symbol, const std::string& exchangeId) const {
-    if (subscriber_) return subscriber_->getPosition(symbol, exchangeId);
+    auto sub = subscriber_;
+    if (sub) return sub->getPosition(symbol, exchangeId);
     return std::nullopt;
 }
 
 std::vector<Position> PositionSynchronizer::getAllPositions() const {
-    if (subscriber_) return subscriber_->getAllPositions();
+    auto sub = subscriber_;
+    if (sub) return sub->getAllPositions();
     return {};
 }
 
@@ -87,10 +91,12 @@ PositionSyncStatus PositionSynchronizer::getOverallStatus() const {
     bool pubHealthy = true;
     bool subHealthy = true;
     PositionSyncStatus ps, ss;
-    if (publisher_) ps = publisher_->getStatus();
-    if (subscriber_) ss = subscriber_->getStatus();
+    auto pub = publisher_;
+    auto sub = subscriber_;
+    if (pub) ps = pub->getStatus();
+    if (sub) ss = sub->getStatus();
     pubHealthy = publisher_ ? ps.isHealthy : true;
-    subHealthy = subscriber_ ? ss.isHealthy : true;
+    subHealthy = sub ? ss.isHealthy : true;
     s.isHealthy = pubHealthy && subHealthy;
     s.lastSequenceNumber = std::max(ps.lastSequenceNumber, ss.lastSequenceNumber);
     // Use subscriber processed events as the authoritative processed count
@@ -105,8 +111,10 @@ PositionSyncStatus PositionSynchronizer::getOverallStatus() const {
 PositionSynchronizer::SyncMetrics PositionSynchronizer::getMetrics() const {
     SyncMetrics m{};
     PositionSyncStatus ps, ss;
-    if (publisher_) ps = publisher_->getStatus();
-    if (subscriber_) ss = subscriber_->getStatus();
+    auto pub = publisher_;
+    auto sub = subscriber_;
+    if (pub) ps = pub->getStatus();
+    if (sub) ss = sub->getStatus();
     m.publishedEvents = ps.processedEvents;
     m.publishFailures = ps.errorCount;
     m.receivedEvents = ss.processedEvents;
