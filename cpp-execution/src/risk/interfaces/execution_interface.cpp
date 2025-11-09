@@ -329,7 +329,29 @@ std::unique_ptr<ExecutionInterface> createExecutionInterface(const RiskConfig& c
     
     try {
         // Create all required dependencies for ExecutionService
+        // If no ApiClientManager is provided by the caller, create one locally.
+        // Attempt to populate credentials from environment variables to avoid
+        // returning a manager with no configured credentials which leads to
+        // runtime errors when clients are requested.
         auto apiManager = std::make_shared<execution::ApiClientManager>();
+
+        try {
+            // Quick check: does the manager already have a client for Binance?
+            if (!apiManager->hasClient(core::ExchangeId::binance())) {
+                const char* envKey = std::getenv("BINANCE_API_KEY");
+                const char* envSecret = std::getenv("BINANCE_API_SECRET");
+                if (envKey && envSecret) {
+                    execution::ExchangeCredentials creds{envKey, envSecret, std::string(""), true};
+                    // Create an AuthenticationService and set credentials so createClient can use them
+                    // The ApiClientManager default constructor creates its own AuthenticationService internally.
+                    // We will add a client directly to the manager to ensure clients exist.
+                    apiManager->addClient(core::ExchangeId::binance(),
+                        std::make_shared<execution::BinanceApiClient>(creds, std::make_shared<execution::RateLimitController>(core::ExchangeId::binance())));
+                }
+            }
+        } catch (const std::exception& e) {
+            LOG_WARN("ExecutionInterfaceFactory", "Failed to auto-populate ApiClientManager from environment: {}", e.what());
+        }
         // Obtain shared MarketDataInterface singleton so the gateway uses the centralized cache
         std::shared_ptr<trading::risk::DataInterface> sharedMdIface;
         try {

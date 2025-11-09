@@ -12,6 +12,7 @@
 #include "rebalancing_engine.hpp"
 #include "collateral_manager.hpp"
 #include "../../execution/models/execution_report.hpp"
+#include "interfaces/execution_interface.hpp"
 
 #include <memory>
 #include <string>
@@ -143,6 +144,8 @@ private:
     std::shared_ptr<RebalancingEngine> m_rebalancingEngine;
     std::shared_ptr<CollateralManager> m_collateralManager;
     std::shared_ptr<DataInterface> m_dataInterface;
+    // Optional injected ExecutionInterface - if present, use it instead of creating a new one
+    std::shared_ptr<ExecutionInterface> m_executionInterface;
     
     // Configuration
     RiskConfig m_config;
@@ -159,6 +162,11 @@ private:
     // Helper methods
     void recalculatePortfolioMetrics();
     void notifyPortfolioEvent(const std::string& eventType, const std::string& description);
+    // Allow RiskManager or tests to inject a shared ExecutionInterface to avoid duplicate ApiClientManagers
+public:
+    void setExecutionInterface(const std::shared_ptr<ExecutionInterface>& executionInterface) {
+        m_executionInterface = executionInterface;
+    }
 };
 
 } // namespace risk

@@ -8,7 +8,7 @@
 #include "portfolio/portfolio_manager.hpp"
 #include "interfaces/data_interface.hpp"
 #include "interfaces/execution_interface.hpp"
-#include "../../execution/models/execution_report.hpp"
+#include "execution/models/execution_report.hpp"
 #include <iostream>
 #include <algorithm>
 #include <numeric>
@@ -53,15 +53,21 @@ bool PortfolioManager::initialize() {
         // Create shared interfaces for sub-components using factory function      
         
        
-        // Create execution interface using factory function
-        auto executionInterface = createExecutionInterface(m_config);
-        if (!executionInterface->initialize()) {
-            std::cerr << "Failed to initialize ExecutionInterface" << std::endl;
-            return false;
+        // Use injected ExecutionInterface if provided (to share ApiClientManager/credentials)
+        std::shared_ptr<ExecutionInterface> sharedExecutionInterface;
+        if (m_executionInterface) {
+            sharedExecutionInterface = m_executionInterface;
+        } else {
+            // Create execution interface using factory function
+            auto executionInterface = createExecutionInterface(m_config);
+            if (!executionInterface || !executionInterface->initialize()) {
+                std::cerr << "Failed to initialize ExecutionInterface" << std::endl;
+                return false;
+            }
+
+            // Convert unique_ptr to shared_ptr for sharing among components
+            sharedExecutionInterface = std::shared_ptr<ExecutionInterface>(executionInterface.release());
         }
-        
-        // Convert unique_ptr to shared_ptr for sharing among components
-        std::shared_ptr<ExecutionInterface> sharedExecutionInterface(executionInterface.release());
         
         // Initialize position tracker
         m_positionTracker = std::make_shared<PositionTracker>(m_config, m_dataInterface);
