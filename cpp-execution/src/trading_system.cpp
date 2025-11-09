@@ -1453,7 +1453,42 @@ void Trading_system::setupComponentConnections() {
 
                         // Use MARKET type for immediate exit to avoid limit hangs; can be tuned via config
                         exitOrder.set_exchange_id(targetExchange);
-                        exitOrder.quantity = exitQuantity;
+
+                        // SHORT-CIRCUIT: Round DOWN the exit quantity to the exchange LOT_SIZE (stepSize)
+                        // and enforce minimum order quantity. If the rounded quantity is below
+                        // the exchange's minQty, skip the exit early to avoid creating unusable signals.
+                        try {
+                            std::string symStr = symbol; // e.g. "AAVE/USDT"
+                            const auto& prec = ::execution::SymbolPrecisionManager::getPrecision(symStr);
+
+                            double finalQtyRounded = exitQuantity;
+                            if (prec.stepSize > 0.0 && exitQuantity > 0.0) {
+                                double steps = std::floor(exitQuantity / prec.stepSize);
+                                finalQtyRounded = steps * prec.stepSize;
+                            }
+
+                            // Clean up floating point artifacts and apply display precision
+                            double multiplier = std::pow(10.0, prec.precision);
+                            double cleaned = std::floor(finalQtyRounded * multiplier + 0.5) / multiplier;
+                            char buf[64];
+                            snprintf(buf, sizeof(buf), "%.*f", prec.precision, cleaned);
+                            finalQtyRounded = std::strtod(buf, nullptr);
+
+                            // If the rounded quantity is below the exchange minimum, skip exit
+                            if (finalQtyRounded < prec.minQty - 1e-12) {
+                                LOG_WARN("ExitCallback: Rounded exit quantity {} for {} is below minQty {} - skipping exit", finalQtyRounded, symbol, prec.minQty);
+                                return;
+                            }
+
+                            // Use the rounded quantity from now on
+                            exitOrder.quantity = finalQtyRounded;
+                            exitQuantity = finalQtyRounded; // update local copy for signal
+                        } catch (const std::exception& e) {
+                            // Best-effort fallback - use unrounded quantity if something goes wrong
+                            LOG_WARN("ExitCallback: Quantity rounding failed for {}: {} - using raw quantity {}", symbol, e.what(), exitQuantity);
+                            exitOrder.quantity = exitQuantity;
+                        }
+
                         exitOrder.set_order_type(models::OrderType::LIMIT);
                         exitOrder.set_side(finalSide);
 
@@ -1472,7 +1507,9 @@ void Trading_system::setupComponentConnections() {
                         exitSignal.expirationTime = exitSignal.getGenerationTime() + std::chrono::minutes(5); // 5 min expiry for exit
 
                         // Add exit-specific metadata and set quantity
+                        // set both quantity and targetSize so pre-trade validation accepts the exit
                         exitSignal.setQuantity(exitQuantity);
+                        exitSignal.setTargetSize(exitQuantity);
                         exitSignal.setPrice(currentPrice);
                         exitSignal.metadata["exit_reason"] = reason;
                         exitSignal.metadata["exit_price"] = std::to_string(currentPrice);
