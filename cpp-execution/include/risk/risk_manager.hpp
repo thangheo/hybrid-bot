@@ -244,7 +244,7 @@ private:
     std::shared_ptr<zmq::context_t> zmqContext_;
 
     // just declare fucking idiots
-    std::unique_ptr<CollateralManager> m_collateralManager;
+    std::shared_ptr<CollateralManager> m_collateralManager;
     // Core subsystems
     std::unique_ptr<PreTradeRiskFilter> m_preTradeFilter;
     std::unique_ptr<PostTradeMonitor> m_postTradeMonitor;

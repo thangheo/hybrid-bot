@@ -202,7 +202,7 @@ struct FundingOperation {
 //     // Optional fast position cache
 //     std::shared_ptr<trading::risk::sync::PositionSynchronizer> m_positionSync;
 // };
-class CollateralManager {
+class CollateralManager : public std::enable_shared_from_this<CollateralManager> {
 public:
     CollateralManager(const RiskConfig& config, 
                     std::shared_ptr<PositionTracker> positionTracker,

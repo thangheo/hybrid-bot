@@ -312,7 +312,7 @@ bool RiskManager::initialize() {
         
     // Create a single shared PositionTracker instance and inject it into components
     // Pass shared tracker into collateral manager (and later into portfolio/post-trade components)
-    m_collateralManager = std::make_unique<CollateralManager>(
+    m_collateralManager = std::make_shared<CollateralManager>(
         m_config,
         sharedPositionTracker,
         m_executionInterface,
