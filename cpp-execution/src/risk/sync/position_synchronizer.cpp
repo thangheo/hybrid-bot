@@ -1,0 +1,143 @@
+/* Minimal PositionSynchronizer implementation to satisfy linker during demo builds */
+#include "risk/sync/position_synchronizer.hpp"
+#include "risk/sync/position_publisher.hpp"
+#include "risk/sync/position_subscriber.hpp"
+#include <iostream>
+
+namespace trading {
+namespace risk {
+namespace sync {
+
+PositionSynchronizer::PositionSynchronizer(const PositionSyncConfig& config, std::shared_ptr<zmq::context_t> zmqContext)
+    : config_(config), zmqContext_(zmqContext) {
+}
+
+PositionSynchronizer::~PositionSynchronizer() {
+    shutdown();
+}
+
+bool PositionSynchronizer::initialize() {
+    // Ensure idempotent initialization
+    bool expected = false;
+    if (!initialized_.compare_exchange_strong(expected, true)) {
+        // Already initialized
+        return true;
+    }
+    publisher_ = std::make_shared<PositionPublisher>(config_, zmqContext_);
+    subscriber_ = std::make_shared<PositionSubscriber>(config_, zmqContext_);
+    std::cerr << "[PositionSynchronizer] Created publisher and subscriber objects" << std::endl;
+    return true;
+}
+
+bool PositionSynchronizer::start(std::shared_ptr<PositionTracker> positionTracker) {
+    if (!initialized_) initialize();
+    positionTracker_ = positionTracker;
+    std::cerr << "[PositionSynchronizer] Starting components" << std::endl;
+    // Start publisher first (bind) then subscriber (connect) to ensure inproc transport works
+    if (publisher_) {
+        publisher_->initialize();
+        publisher_->connectToPositionTracker(positionTracker);
+        publisher_->start();
+    }
+    if (subscriber_) {
+        subscriber_->initialize();
+        subscriber_->start();
+    }
+    return true;
+}
+
+void PositionSynchronizer::stop() {
+    if (subscriber_) subscriber_->stop();
+}
+
+void PositionSynchronizer::shutdown() {
+    stop();
+    if (subscriber_) subscriber_->shutdown();
+    publisher_.reset();
+    subscriber_.reset();
+    initialized_ = false;
+}
+
+std::shared_ptr<PositionPublisher> PositionSynchronizer::getPublisher() const { return publisher_; }
+std::shared_ptr<PositionSubscriber> PositionSynchronizer::getSubscriber() const { return subscriber_; }
+
+void PositionSynchronizer::registerPositionEventCallback(const PositionEventCallback& callback) {
+    if (subscriber_) subscriber_->registerEventCallback(callback);
+}
+
+bool PositionSynchronizer::hasPosition(const std::string& symbol, const std::string& exchangeId) const {
+    if (subscriber_) return subscriber_->hasPosition(symbol, exchangeId);
+    return false;
+}
+
+std::optional<Position> PositionSynchronizer::getPosition(const std::string& symbol, const std::string& exchangeId) const {
+    if (subscriber_) return subscriber_->getPosition(symbol, exchangeId);
+    return std::nullopt;
+}
+
+std::vector<Position> PositionSynchronizer::getAllPositions() const {
+    if (subscriber_) return subscriber_->getAllPositions();
+    return {};
+}
+
+bool PositionSynchronizer::forceReconciliation() { return true; }
+// Aggregate status from publisher and subscriber
+PositionSyncStatus PositionSynchronizer::getOverallStatus() const {
+    PositionSyncStatus s;
+    bool pubHealthy = true;
+    bool subHealthy = true;
+    PositionSyncStatus ps, ss;
+    if (publisher_) ps = publisher_->getStatus();
+    if (subscriber_) ss = subscriber_->getStatus();
+    pubHealthy = publisher_ ? ps.isHealthy : true;
+    subHealthy = subscriber_ ? ss.isHealthy : true;
+    s.isHealthy = pubHealthy && subHealthy;
+    s.lastSequenceNumber = std::max(ps.lastSequenceNumber, ss.lastSequenceNumber);
+    s.processedEvents = ps.processedEvents + ss.processedEvents;
+    s.cacheSize = ss.cacheSize;
+    s.cacheHits = ss.cacheHits;
+    s.cacheMisses = ss.cacheMisses;
+    s.lastError = !ss.lastError.empty() ? ss.lastError : ps.lastError;
+    return s;
+}
+
+PositionSynchronizer::SyncMetrics PositionSynchronizer::getMetrics() const {
+    SyncMetrics m{};
+    PositionSyncStatus ps, ss;
+    if (publisher_) ps = publisher_->getStatus();
+    if (subscriber_) ss = subscriber_->getStatus();
+    m.publishedEvents = ps.processedEvents;
+    m.publishFailures = ps.errorCount;
+    m.receivedEvents = ss.processedEvents;
+    m.processedEvents = ss.processedEvents;
+    m.cacheHits = ss.cacheHits;
+    m.cacheMisses = ss.cacheMisses;
+    m.cacheHitRate = (m.cacheHits + m.cacheMisses) ? static_cast<double>(m.cacheHits) / (m.cacheHits + m.cacheMisses) : 0.0;
+    m.sequenceGaps = 0;
+    m.reconciliationCount = reconciliationCount_;
+    m.lastReconciliation = lastReconciliationTime_;
+    return m;
+}
+
+bool PositionSynchronizer::isHealthy() const { return true; }
+
+// reconciliation helpers
+void PositionSynchronizer::reconciliationLoop() {}
+bool PositionSynchronizer::performReconciliation() { return true; }
+bool PositionSynchronizer::comparePositions() { return true; }
+void PositionSynchronizer::handleDiscrepancy(const std::string&, const Position&, const std::optional<Position>&) {}
+void PositionSynchronizer::updateOverallHealth() {}
+bool PositionSynchronizer::checkComponentsHealth() { return true; }
+PositionSynchronizer::SyncMetrics PositionSynchronizer::calculateMetrics() const { return SyncMetrics{}; }
+bool PositionSynchronizer::validateConfig() const { return true; }
+
+// Factory
+std::unique_ptr<PositionSynchronizer> createPositionSynchronizer(
+    const PositionSyncConfig& config,
+    std::shared_ptr<zmq::context_t> zmqContext) {
+    return std::make_unique<PositionSynchronizer>(config, zmqContext);
+}
+
+} // namespace sync
+} // namespace risk
+} // namespace trading

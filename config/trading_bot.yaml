@@ -63,7 +63,18 @@ enhanced_indicators:
     adaptive_parameters: true   # Use adaptive indicator parameters
     regime_adjustment: true     # Adjust indicators based on market regime
     fallback_on_error: true     # Fall back to base indicators on error
-
+    
+position_synchronization:
+  enabled: true
+  publisher:
+    batch_size: 10
+    batch_timeout_ms: 100
+  subscriber:
+    cache_timeout_ms: 30000
+    max_queue_size: 1000
+  reconciliation:
+    interval_seconds: 300
+    timeout_ms: 5000
 # 📊 DATA INGESTION
 data_ingestion:
   binance:

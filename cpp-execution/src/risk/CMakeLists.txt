@@ -13,7 +13,13 @@ file(GLOB_RECURSE RISK_SOURCES
     "service/*.cpp"
     "utils/*.cpp"
     "storage/*.cpp"
+
 )
+# include sync directory sources
+file(GLOB_RECURSE RISK_SYNC_SOURCES
+    "sync/*.cpp"
+)
+list(APPEND RISK_SOURCES ${RISK_SYNC_SOURCES})
 
 # Exclude any test sources under interfaces/tests or other tests folders so
 # the static library does not accidentally contain test mains (integration
@@ -82,6 +88,48 @@ target_link_libraries(risk
         SQLite::SQLite3
 )
 
+# Find Crypto++ (cryptopp) for checksum/hash utilities used in sync types
+find_package(CryptoPP QUIET)
+if(NOT CryptoPP_FOUND)
+    # Try pkg-config as a fallback to find include dirs and libs
+    find_package(PkgConfig QUIET)
+    if(PkgConfig_FOUND)
+        pkg_check_modules(CRYPTOPP cryptopp)
+        if(CRYPTOPP_FOUND)
+            message(STATUS "Found Crypto++ via pkg-config")
+            target_include_directories(risk PRIVATE ${CRYPTOPP_INCLUDE_DIRS})
+            target_link_libraries(risk PRIVATE ${CRYPTOPP_LIBRARIES})
+            set(CryptoPP_FOUND TRUE)
+        endif()
+    endif()
+endif()
+
+if(CryptoPP_FOUND)
+    message(STATUS "Linking Crypto++ into risk target")
+    # If find_package provided imported targets, use them; otherwise link by name
+    if(TARGET CryptoPP::CryptoPP)
+        target_link_libraries(risk PRIVATE CryptoPP::CryptoPP)
+    else()
+        # common library name on many distros is cryptopp or crypto++
+        find_library(CRYPTOPP_LIB NAMES cryptopp CryptoPP crypto++)
+        if(CRYPTOPP_LIB)
+            target_link_libraries(risk PRIVATE ${CRYPTOPP_LIB})
+        endif()
+    endif()
+else()
+    message(WARNING "Crypto++ (cryptopp) not found; using OpenSSL SHA256 fallback if available. Install libcryptopp-dev to use Crypto++ implementation.")
+    # Use OpenSSL fallback if available
+    find_package(OpenSSL QUIET)
+    if(OPENSSL_FOUND)
+        message(STATUS "OpenSSL found; enabling OpenSSL SHA256 fallback for risk target")
+        target_compile_definitions(risk PRIVATE USE_OPENSSL_SHA256)
+        target_include_directories(risk PRIVATE ${OPENSSL_INCLUDE_DIR})
+        target_link_libraries(risk PRIVATE OpenSSL::SSL OpenSSL::Crypto)
+    else()
+        message(WARNING "OpenSSL not found; checksum implementation will be unavailable and build may fail.")
+    endif()
+endif()
+
 # Add compiler-specific flags
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     target_compile_options(risk PRIVATE 
@@ -101,7 +149,18 @@ elseif(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     )
 endif()
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../../bin)
-
+# 
+add_executable(position_sync_demo sync/position_sync_demo.cpp)
+target_link_libraries(position_sync_demo PRIVATE 
+        risk
+        data_ingestion
+        strategy
+        execution
+        common
+        nlohmann_json::nlohmann_json
+        protobuf::libprotobuf
+        SQLite::SQLite3
+        )
 # create executable for risk demo
 # add_executable(risk_demo risk_demo.cpp)
 # target_link_libraries(risk_demo PRIVATE 
