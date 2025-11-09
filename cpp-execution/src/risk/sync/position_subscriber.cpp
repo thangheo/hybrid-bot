@@ -14,7 +14,7 @@ PositionSubscriber::PositionSubscriber(const PositionSyncConfig& config, std::sh
 }
 
 PositionSubscriber::~PositionSubscriber() {
-    std::cerr << "[PositionSubscriber] dtor this=" << this << "\n";
+    std::cerr << "[PositionSubscriber] dtor this=" << this << " (thread " << std::this_thread::get_id() << ")\n";
     shutdown();
 }
 
@@ -119,7 +119,7 @@ bool PositionSubscriber::hasPosition(const std::string& symbol, const std::strin
 
 std::optional<Position> PositionSubscriber::getPosition(const std::string& symbol, const std::string& exchangeId) const {
     // diagnostic: print 'this' pointer before touching members (non-dereferencing)
-    std::cerr << "[PositionSubscriber] getPosition called this=" << this << " symbol=" << symbol << " exchange=" << exchangeId << "\n";
+    std::cerr << "[PositionSubscriber] getPosition called this=" << this << " symbol=" << symbol << " exchange=" << exchangeId << " (thread " << std::this_thread::get_id() << ")\n";
     if (!initialized_.load()) return std::nullopt;
     std::shared_lock lock(cacheMutex_);
     auto it = positionCache_.find(createCacheKey(symbol, exchangeId));
