@@ -3,6 +3,7 @@
 
 #include "strategy/types.hpp"
 #include <memory>
+#include <thread>
 #include <vector>
 #include <functional>
 #include <string>
@@ -34,7 +35,6 @@ class ImbalanceParameterTuner {
 public:
     // Constructor
     ImbalanceParameterTuner();
-    ~ImbalanceParameterTuner() = default;
 
     // Define parameter search space
     void defineParameterSpace(const ParameterSpace& space);
@@ -98,6 +98,13 @@ private:
     
     // Thread safety
     mutable std::mutex mutex_;
+    // Thread running the optimization - owned by this object to avoid detached
+    // threads capturing dangling 'this' pointer. Managed lifecycle in destructor.
+    std::thread optimizationThread_;
+
+public:
+    // Ensure proper cleanup of optimization thread
+    ~ImbalanceParameterTuner();
 };
 
 } // namespace strategy
