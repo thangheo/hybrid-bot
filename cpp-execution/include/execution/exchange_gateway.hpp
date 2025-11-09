@@ -24,6 +24,8 @@
 #include "execution/models/execution_report.hpp"
 #include "execution/api_client_manager.hpp"
 #include "core/market_types.hpp"
+// Optional dependency on risk market data interface for shared cache reads
+#include "risk/interfaces/data_interface.hpp"
 
 namespace trading {
 namespace execution { //this is stupid but too late to change
@@ -71,7 +73,8 @@ public:
      * Constructor
      * @param apiClientManager Your existing ApiClientManager
      */
-    explicit ExchangeGateway(std::shared_ptr<execution::ApiClientManager> apiClientManager);
+    explicit ExchangeGateway(std::shared_ptr<execution::ApiClientManager> apiClientManager,
+                             std::shared_ptr<trading::risk::DataInterface> marketDataInterface = nullptr);
     
     /**
      * Destructor
@@ -180,6 +183,8 @@ public:
 private:
     // Underlying API client manager (your existing component)
     std::shared_ptr<execution::ApiClientManager> apiClientManager_;
+    // Optional shared market-data interface (cache backed)
+    std::shared_ptr<trading::risk::DataInterface> marketDataInterface_;
     
     // Cache storage
     mutable std::shared_mutex balanceCacheMutex_;
