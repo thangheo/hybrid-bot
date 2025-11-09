@@ -534,20 +534,47 @@ bool CollateralManager::fetchExchangeBalances() {
             }
             
             try {
-                // Add timeout protection - use async with timeout  
-                auto future = std::async(std::launch::async, [this, exchangeId]() {
-                    return m_executionInterface->getAccountBalances(exchangeId);
-                });
-                
-                // Wait max 10 seconds for balance request
-                auto status = future.wait_for(std::chrono::seconds(10));
-                if (status == std::future_status::timeout) {
-                    std::cerr << "[CollateralManager] Timeout fetching balances - skipping this exchange" << std::endl;
-                    continue;
+                // First try to use cached balances from the data interface (cheaper, centralized cache)
+                std::map<std::string, double> exchangeBalances;
+                bool gotBalances = false;
+
+                if (m_dataInterface) {
+                    try {
+                        auto mdBalances = m_dataInterface->getExchangeBalances(exchangeId);
+                        if (!mdBalances.empty()) {
+                            exchangeBalances = mdBalances;
+                            gotBalances = true;
+                            std::cerr << "[CollateralManager] Using cached balances from DataInterface for " << exchangeId.toString() << std::endl;
+                        }
+                    } catch (const std::exception& e) {
+                        std::cerr << "[CollateralManager] DataInterface getExchangeBalances threw: " << e.what() << std::endl;
+                    } catch (...) {
+                        std::cerr << "[CollateralManager] DataInterface getExchangeBalances unknown error" << std::endl;
+                    }
                 }
-                
-                auto exchangeBalances = future.get();
-                
+
+                // Fallback to calling ExecutionInterface (may be expensive / blocking) if no cached balances
+                if (!gotBalances) {
+                    if (!m_executionInterface) {
+                        std::cerr << "[CollateralManager] ERROR: m_executionInterface is null when fetching balances" << std::endl;
+                        continue;
+                    }
+
+                    // Add timeout protection - use async with timeout
+                    auto future = std::async(std::launch::async, [this, exchangeId]() {
+                        return m_executionInterface->getAccountBalances(exchangeId);
+                    });
+
+                    // Wait max 10 seconds for balance request
+                    auto status = future.wait_for(std::chrono::seconds(10));
+                    if (status == std::future_status::timeout) {
+                        std::cerr << "[CollateralManager] Timeout fetching balances - skipping this exchange" << std::endl;
+                        continue;
+                    }
+
+                    exchangeBalances = future.get();
+                }
+
                 if (!exchangeBalances.empty()) {
                     // Convert to our balance format
                     for (const auto& [asset, amount] : exchangeBalances) {
@@ -558,12 +585,12 @@ bool CollateralManager::fetchExchangeBalances() {
                         balance.free = amount;  // Assuming all is free for now
                         balance.locked = 0.0;   // No locked amount info from simple API
                         balance.lastUpdated = std::chrono::system_clock::now();
-                        
+
                         newBalances.push_back(balance);
                     }
                 }
             } catch (const std::exception& e) {
-                std::cerr << "[CollateralManager] Error fetching balances for " << exchangeId.toString() 
+                std::cerr << "[CollateralManager] Error fetching balances for " << exchangeId.toString()
                           << ": " << e.what() << std::endl;
                 // Continue with next exchange
             }
