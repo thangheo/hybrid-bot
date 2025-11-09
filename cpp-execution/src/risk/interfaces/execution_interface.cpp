@@ -330,7 +330,14 @@ std::unique_ptr<ExecutionInterface> createExecutionInterface(const RiskConfig& c
     try {
         // Create all required dependencies for ExecutionService
         auto apiManager = std::make_shared<execution::ApiClientManager>();
-        auto gateway = std::make_shared<execution::ExchangeGateway>(apiManager);
+        // Obtain shared MarketDataInterface singleton so the gateway uses the centralized cache
+        std::shared_ptr<trading::risk::DataInterface> sharedMdIface;
+        try {
+            sharedMdIface = trading::risk::MarketDataInterface::createDataInterface(trading::risk::RiskConfig{});
+        } catch (...) {
+            sharedMdIface = nullptr;
+        }
+        auto gateway = std::make_shared<execution::ExchangeGateway>(apiManager, sharedMdIface);
         
         // Create ExecutionService dependencies
         auto orderGenerator = std::make_shared<trading::execution::OrderGenerator>();

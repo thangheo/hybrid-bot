@@ -668,7 +668,15 @@ void Trading_system::setupExecutionEngine() {
     // After initializing the router, add this debug check:
     smart_order_router->initialize(exchanges);
 
-    exchangeGateway_ = std::make_shared<execution::ExchangeGateway>(api_client_manager);
+    // Create or obtain shared MarketDataInterface and pass it into the gateway
+    std::shared_ptr<trading::risk::DataInterface> sharedMdIface;
+    try {
+        sharedMdIface = trading::risk::MarketDataInterface::createDataInterface(trading::risk::RiskConfig{});
+    } catch (...) {
+        sharedMdIface = nullptr;
+    }
+
+    exchangeGateway_ = std::make_shared<execution::ExchangeGateway>(api_client_manager, sharedMdIface);
     if (!exchangeGateway_->isHealthy()) {
         std::cout << "Exchange Gateway is not healthy!" << std::endl;
         std::cout << "start using fallback ExecutionService" << std::endl;
