@@ -233,6 +233,14 @@ bool RiskManager::initialize() {
         if (!m_portfolioManager) {
             // Construct PortfolioManager using the shared PositionTracker to avoid duplicate trackers
             m_portfolioManager = std::make_unique<PortfolioManager>(m_config, m_dataInterface, sharedPositionTracker);
+            // Inject the shared ExecutionInterface (if available) so portfolio components reuse the same ApiClientManager
+            if (m_executionInterface) {
+                try {
+                    m_portfolioManager->setExecutionInterface(m_executionInterface);
+                } catch (...) {
+                    LOG_WARN("RiskManager", "Failed to inject ExecutionInterface into PortfolioManager - continuing");
+                }
+            }
             if (!m_portfolioManager->initialize()) {
                 LOG_ERROR("RiskManager", "Failed to initialize PortfolioManager");
                 return false;
