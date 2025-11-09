@@ -10,9 +10,11 @@ namespace sync {
 
 PositionSubscriber::PositionSubscriber(const PositionSyncConfig& config, std::shared_ptr<zmq::context_t> zmqContext)
     : config_(config), zmqContext_(zmqContext) {
+    std::cerr << "[PositionSubscriber] ctor this=" << this << "\n";
 }
 
 PositionSubscriber::~PositionSubscriber() {
+    std::cerr << "[PositionSubscriber] dtor this=" << this << "\n";
     shutdown();
 }
 
@@ -93,6 +95,7 @@ void PositionSubscriber::stop() {
 }
 
 void PositionSubscriber::shutdown() {
+    std::cerr << "[PositionSubscriber] shutdown this=" << this << " - setting initialized_=false\n";
     initialized_ = false;  // Mark as shutdown first to prevent new operations
     stop();
     if (subscriber_) {
@@ -115,6 +118,8 @@ bool PositionSubscriber::hasPosition(const std::string& symbol, const std::strin
 }
 
 std::optional<Position> PositionSubscriber::getPosition(const std::string& symbol, const std::string& exchangeId) const {
+    // diagnostic: print 'this' pointer before touching members (non-dereferencing)
+    std::cerr << "[PositionSubscriber] getPosition called this=" << this << " symbol=" << symbol << " exchange=" << exchangeId << "\n";
     if (!initialized_.load()) return std::nullopt;
     std::shared_lock lock(cacheMutex_);
     auto it = positionCache_.find(createCacheKey(symbol, exchangeId));
