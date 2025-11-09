@@ -159,6 +159,8 @@ PositionSyncStatus PositionSubscriber::getStatus() const {
     s.cacheMisses = cacheMisses_.load();
     s.pendingEvents = 0;
     s.errorCount = failedEvents_.load();
+    s.processedEvents = processedEvents_.load();
+    s.receivedEvents = receivedEvents_.load();
     {
         std::lock_guard<std::mutex> lk(statsMutex_);
         s.lastError = lastError_;

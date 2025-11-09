@@ -103,6 +103,7 @@ struct PositionSyncStatus {
     std::chrono::system_clock::time_point lastSync;
     uint64_t lastSequenceNumber;
     size_t pendingEvents;
+    size_t receivedEvents;
     size_t processedEvents;
     size_t errorCount;
     std::string lastError;

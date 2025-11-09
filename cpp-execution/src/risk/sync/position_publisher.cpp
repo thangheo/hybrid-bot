@@ -89,6 +89,7 @@ bool PositionPublisher::publishEvent(const PositionEvent& event) {
     {
         std::lock_guard<std::mutex> lk(queueMutex_);
         eventQueue_.push(std::move(pe));
+        queuedEvents_.fetch_add(1);
         std::cerr << "[PositionPublisher] Enqueued event seq=" << e.sequenceNumber << " symbol=" << e.symbol << " queue_size=" << eventQueue_.size() << std::endl;
     }
     queueCondition_.notify_one();
@@ -105,13 +106,13 @@ bool PositionPublisher::publishSnapshot(const PositionSnapshot& snapshot) {
         zmq::message_t msg(data.size());
         memcpy(msg.data(), data.data(), data.size());
         publisher_->send(msg, zmq::send_flags::none);
-        ++publishedEvents_;
+        publishedEvents_.fetch_add(1);
         lastPublishTime_ = std::chrono::system_clock::now();
         return true;
     } catch (const zmq::error_t& ex) {
         lastError_ = ex.what();
         healthy_ = false;
-        ++failedEvents_;
+        failedEvents_.fetch_add(1);
         return false;
     }
 }
@@ -120,9 +121,14 @@ PositionSyncStatus PositionPublisher::getStatus() const {
     PositionSyncStatus s;
     s.isHealthy = healthy_.load();
     s.lastSequenceNumber = sequenceNumber_.load();
-    s.processedEvents = publishedEvents_;
+    s.processedEvents = publishedEvents_.load();
     s.pendingEvents = eventQueue_.size();
-    s.lastError = lastError_;
+    s.receivedEvents = 0; // publisher doesn't receive
+    s.errorCount = failedEvents_.load();
+    {
+        std::lock_guard<std::mutex> lk(statsMutex_);
+        s.lastError = lastError_;
+    }
     return s;
 }
 
@@ -162,15 +168,17 @@ void PositionPublisher::workerLoop() {
                 std::string data = j.dump();
                 zmq::message_t msg(data.size());
                 memcpy(msg.data(), data.data(), data.size());
-                        publisher_->send(msg, zmq::send_flags::none);
-                        ++publishedEvents_;
-                        // Debug log
-                        std::cerr << "[PositionPublisher] Sent event seq=" << e.sequenceNumber << " symbol=" << e.symbol << std::endl;
+                                publisher_->send(msg, zmq::send_flags::none);
+                                publishedEvents_.fetch_add(1);
+                                // decrement queued events counter for the one we just sent
+                                queuedEvents_.fetch_sub(1);
+                                // Debug log
+                                std::cerr << "[PositionPublisher] Sent event seq=" << e.sequenceNumber << " symbol=" << e.symbol << std::endl;
                 lastPublishTime_ = std::chrono::system_clock::now();
             } catch (const zmq::error_t& ex) {
-                lastError_ = ex.what();
-                healthy_ = false;
-                ++failedEvents_;
+                                lastError_ = ex.what();
+                                healthy_ = false;
+                                failedEvents_.fetch_add(1);
             }
         }
     }

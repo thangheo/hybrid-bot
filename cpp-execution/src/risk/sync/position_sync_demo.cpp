@@ -119,8 +119,8 @@ private:
         simulatePositionUpdate("BTCUSDT", "binance", 2.0, 45500.0);
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
         
-        // Simulate position close
-        simulatePositionClose("ETHUSDT", "binance");
+    // Simulate position close (provide last known market price to avoid validation error)
+        simulatePositionClose("ETHUSDT", "binance", 3000.0);
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
         
         std::cout << "✅ Position changes simulated" << std::endl;
@@ -256,8 +256,8 @@ private:
         }
     }
     
-    void simulatePositionClose(const std::string& symbol, const std::string& exchange) {
-        std::cout << "Simulating position close: " << symbol << std::endl;
+    void simulatePositionClose(const std::string& symbol, const std::string& exchange, double lastPrice) {
+        std::cout << "Simulating position close: " << symbol << " lastPrice=" << lastPrice << std::endl;
         if (positionSync_ && positionSync_->getPublisher()) {
             PositionEvent ev;
             ev.eventType = PositionEventType::POSITION_CLOSED;
@@ -266,8 +266,8 @@ private:
             ev.exchangeId = exchange;
             ev.strategyId = "demo";
             ev.quantity = 0.0;
-            ev.avgPrice = 0.0;
-            ev.lastPrice = 0.0;
+            ev.avgPrice = lastPrice; // set to last price for closing
+            ev.lastPrice = lastPrice;
             ev.timestamp = std::chrono::system_clock::now();
             positionSync_->getPublisher()->publishEvent(ev);
         }
