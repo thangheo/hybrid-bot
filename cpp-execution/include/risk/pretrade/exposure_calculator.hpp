@@ -19,6 +19,9 @@
 
 namespace trading::risk {
 
+// Forward-declare PositionSynchronizer so we don't force full header includes in this public header
+namespace sync { class PositionSynchronizer; }
+
 enum class ExposureValidationResult {
     APPROVED,
     TOTAL_LIMIT_EXCEEDED,
@@ -47,6 +50,9 @@ public:
         std::shared_ptr<DataInterface> dataInterface,
         Config config = Config{}
     );
+
+    // Optional: inject PositionSynchronizer for fast cached reads
+    void setPositionSynchronizer(std::shared_ptr<trading::risk::sync::PositionSynchronizer> positionSync);
 
     ~ExposureCalculator();
     // getCurrentExposure
@@ -89,6 +95,7 @@ private:
     // Forward declaration for PIMPL
     class Impl;
     std::unique_ptr<Impl> impl_;
+    std::shared_ptr<trading::risk::sync::PositionSynchronizer> positionSync_;
 };
 
 } // namespace trading::risk

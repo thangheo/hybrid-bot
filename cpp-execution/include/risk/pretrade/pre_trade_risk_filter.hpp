@@ -117,6 +117,12 @@ public:
      */
     void setPositionTracker(std::shared_ptr<PositionTracker> positionTracker);
 
+    /**
+     * Expose PositionLimitChecker pointer for optional injection of dependencies
+     * @return raw pointer to PositionLimitChecker or nullptr if not initialized
+     */
+    PositionLimitChecker* getPositionLimitChecker() const;
+
     // Helper methods for signal property extraction
     std::string getBaseAsset(const core::Symbol& tradingPair) const;
     // createPreTradeFilter factory function

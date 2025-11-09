@@ -12,6 +12,7 @@
 #include "../interfaces/execution_interface.hpp"
 #include "../interfaces/data_interface.hpp"
 #include "core/market_types.hpp"
+#include "risk/sync/position_synchronizer.hpp"
 #include <map>
 #include <unordered_map>
 #include <string>
@@ -115,6 +116,8 @@ public:
     std::vector<ExchangeBalance> getExchangeBalances(const std::optional<ExchangeId>& exchangeId = std::nullopt) const;
     
     /**
+    // Optional: inject PositionSynchronizer for fast cached position reads
+    void setPositionSynchronizer(std::shared_ptr<trading::risk::sync::PositionSynchronizer> positionSync);
      * Initiate emergency funding when free collateral is below threshold
      * @return true if funding was initiated successfully, false otherwise
      */
@@ -148,6 +151,8 @@ public:
      */
     void registerCollateralCallback(const std::function<void(const std::string&, const std::string&)>& callback);
     
+    // Optional: inject PositionSynchronizer for fast cached position reads
+    void setPositionSynchronizer(std::shared_ptr<trading::risk::sync::PositionSynchronizer> positionSync);
     /**
      * Get funding history
      * @return Vector of funding operations
@@ -194,6 +199,8 @@ private:
     bool executeFundingOperation(const std::string& source, const ExchangeId& targetExchangeId, 
                                const std::string& asset, double amount);
     ExchangeBalance getExchangeBalance(const ExchangeId& exchangeId, const std::string& asset) const;
+    // Optional fast position cache
+    std::shared_ptr<trading::risk::sync::PositionSynchronizer> m_positionSync;
 };
 
 } // namespace risk

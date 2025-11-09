@@ -6,12 +6,16 @@
  */
 
  #include "portfolio/rebalancing_engine.hpp"
+#include "risk/sync/position_synchronizer.hpp"
  #include <iostream>
  #include <algorithm>
  #include <numeric>
  #include <thread>
  #include <chrono>
  #include <future>
+ 
+ // Forward declaration for PositionSynchronizer in the sync namespace
+//  namespace trading { namespace risk { namespace sync { class PositionSynchronizer; } } }
  
  namespace trading {
  namespace risk {
@@ -34,6 +38,10 @@
     // Initialize next scheduled rebalancing
     m_nextScheduledRebalancing = std::chrono::system_clock::now() + 
                                 std::chrono::minutes(m_rebalancingConfig.rebalancingIntervalMinutes);
+}
+
+void RebalancingEngine::setPositionSynchronizer(std::shared_ptr<trading::risk::sync::PositionSynchronizer> positionSync) {
+    m_positionSync = std::move(positionSync);
 }
 
 RebalancingEngine::~RebalancingEngine() {
@@ -184,8 +192,13 @@ std::vector<RebalancingOrder> RebalancingEngine::calculateRebalancingNeeds() con
     try {
         std::lock_guard<std::mutex> lock(m_allocationMutex);
         
-        // Get current positions
-        auto positions = m_positionTracker->getAllPositions();
+        // Get current positions preferring PositionSynchronizer if available
+        std::vector<Position> positions;
+        if (m_positionSync) {
+            positions = m_positionSync->getAllPositions();
+        } else {
+            positions = m_positionTracker->getAllPositions();
+        }
         
         // Calculate total portfolio value
         double totalPortfolioValue = 0.0;
@@ -618,8 +631,13 @@ bool RebalancingEngine::setAutoRebalancing(bool enabled) {
 double RebalancingEngine::calculateExchangeAllocation(const ExchangeId& exchangeId, 
                                                     const TradingPair& tradingPair) const {
     try {
-        // Get current positions
-        auto positions = m_positionTracker->getAllPositions();
+        // Get current positions preferring PositionSynchronizer if available
+        std::vector<Position> positions;
+        if (m_positionSync) {
+            positions = m_positionSync->getAllPositions();
+        } else {
+            positions = m_positionTracker->getAllPositions();
+        }
         
         // Calculate total portfolio value
         double totalPortfolioValue = 0.0;

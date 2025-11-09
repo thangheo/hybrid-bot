@@ -23,9 +23,14 @@
 #include <thread>
 #include <condition_variable>
 #include <atomic>
+// #include<trading/risk/sync/position_synchronizer.hpp> --- IGNORE ---
 
 namespace trading {
 namespace risk {
+
+// Forward-declare PositionSynchronizer in the sync namespace so callers of
+// RebalancingEngine don't need to include the full sync header here.
+namespace sync { class PositionSynchronizer; }
 
 /**
  * Structure to represent a rebalancing order
@@ -67,6 +72,9 @@ public:
                      std::shared_ptr<PositionTracker> positionTracker,
                      std::shared_ptr<ExecutionInterface> executionInterface,
                      std::shared_ptr<DataInterface> dataInterface);
+
+    // Optional: inject PositionSynchronizer for fast cached reads
+    void setPositionSynchronizer(std::shared_ptr<trading::risk::sync::PositionSynchronizer> positionSync);
     
     /**
      * Destructor - properly stops rebalancing thread
@@ -188,6 +196,8 @@ private:
     
     // Helper methods
     double calculateExchangeAllocation(const ExchangeId& exchangeId, const TradingPair& tradingPair) const;
+    // Optional fast position cache
+    std::shared_ptr<trading::risk::sync::PositionSynchronizer> m_positionSync;
     std::vector<ExchangeId> getPreferredExchanges() const;
     bool executeRebalancingOrder(const RebalancingOrder& order);
     void notifyRebalancingEvent(const RebalancingResult& result);
