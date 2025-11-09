@@ -11,6 +11,7 @@
  #include <chrono>
  #include <future>
  #include <sstream>
+#include <memory>
  
  namespace trading {
  namespace risk {
@@ -137,30 +138,42 @@
          return true;
      }
      
-     // Use std::future with timeout to implement the validation timeout
-     std::promise<ValidationResult> resultPromise;
-     auto resultFuture = resultPromise.get_future();
-     
-     // Run validation in another thread
-     std::thread validationThread([this, &signal, &resultPromise]() {
-         try {
-             ValidationResult validationResult = m_riskManager->validateSignal(signal);
-             resultPromise.set_value(validationResult);
-         } catch (const std::exception& e) {
-             // Create error result
-             ValidationResult errorResult;
-             errorResult.signalId = signal.id;
-             errorResult.approved = false;
-             
-             RiskViolation violation;
-             violation.type = ViolationType::SYSTEM_ERROR;
-             violation.description = std::string("Exception during validation: ") + e.what();
-             errorResult.violations.push_back(violation);
-             errorResult.timestamp = std::chrono::system_clock::now().time_since_epoch().count();
-             
-             resultPromise.set_value(errorResult);
-         }
-     });
+    // Use std::future with timeout to implement the validation timeout
+    // Use a heap-owned promise so the worker thread can safely outlive this function
+    auto promisePtr = std::make_shared<std::promise<ValidationResult>>();
+    auto resultFuture = promisePtr->get_future();
+
+    // Run validation in another thread; capture signal by value and promise by shared_ptr
+    std::thread validationThread([this, signal, promisePtr]() mutable {
+        try {
+            ValidationResult validationResult = m_riskManager->validateSignal(signal);
+            try {
+                promisePtr->set_value(validationResult);
+            } catch (...) {
+                // promise may have been satisfied already; ignore
+            }
+        } catch (const std::exception& e) {
+            // Create error result
+            ValidationResult errorResult;
+            // Attempt to set a sensible signal id if available
+            try {
+                errorResult.signalId = signal.id;
+            } catch (...) {}
+            errorResult.approved = false;
+
+            RiskViolation violation;
+            violation.type = ViolationType::SYSTEM_ERROR;
+            violation.description = std::string("Exception during validation: ") + e.what();
+            errorResult.violations.push_back(violation);
+            errorResult.timestamp = std::chrono::system_clock::now().time_since_epoch().count();
+
+            try {
+                promisePtr->set_value(errorResult);
+            } catch (...) {
+                // ignore if promise already set
+            }
+        }
+    });
      
      // Wait for the result with timeout
      auto status = resultFuture.wait_for(std::chrono::milliseconds(timeoutMs));
