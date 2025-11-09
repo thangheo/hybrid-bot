@@ -154,7 +154,13 @@ PositionSyncStatus PositionSubscriber::getStatus() const {
     PositionSyncStatus s;
     s.isHealthy = healthy_.load();
     s.lastSequenceNumber = lastSequenceNumber_.load();
-    s.cacheSize = positionCache_.size();
+    
+    // CONCURRENCY FIX: Must acquire shared lock to read cache size
+    {
+        std::shared_lock lock(cacheMutex_);
+        s.cacheSize = positionCache_.size();
+    }
+    
     s.cacheHits = cacheHits_.load();
     s.cacheMisses = cacheMisses_.load();
     s.pendingEvents = 0;
@@ -175,8 +181,14 @@ void PositionSubscriber::clearCache() { std::unique_lock lock(cacheMutex_); posi
 
 PositionSubscriber::CacheStats PositionSubscriber::getCacheStats() const {
     CacheStats s{};
-    s.totalEntries = positionCache_.size();
-    s.validEntries = positionCache_.size();
+    
+    // CONCURRENCY FIX: Must acquire shared lock to read cache size  
+    {
+        std::shared_lock lock(cacheMutex_);
+        s.totalEntries = positionCache_.size();
+        s.validEntries = positionCache_.size();
+    }
+    
     s.expiredEntries = 0;
     s.hits = cacheHits_.load();
     s.misses = cacheMisses_.load();
