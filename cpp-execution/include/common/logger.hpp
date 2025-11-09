@@ -266,7 +266,12 @@ private:
     // Thread-safe singleton implementation
     static std::shared_ptr<Logger>& getInstance();
     static std::once_flag initialized_;
-    static std::atomic<bool> shutdown_called_;
+    
+    // Use function-local static to avoid ODR violations
+    static std::atomic<bool>& getShutdownFlag() {
+        static std::atomic<bool> shutdown_called_{false};
+        return shutdown_called_;
+    }
 };
 
 // Simple logging macros - fully backward compatible
