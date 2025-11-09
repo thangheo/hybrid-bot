@@ -93,7 +93,8 @@ PositionSyncStatus PositionSynchronizer::getOverallStatus() const {
     subHealthy = subscriber_ ? ss.isHealthy : true;
     s.isHealthy = pubHealthy && subHealthy;
     s.lastSequenceNumber = std::max(ps.lastSequenceNumber, ss.lastSequenceNumber);
-    s.processedEvents = ps.processedEvents + ss.processedEvents;
+    // Use subscriber processed events as the authoritative processed count
+    s.processedEvents = ss.processedEvents;
     s.cacheSize = ss.cacheSize;
     s.cacheHits = ss.cacheHits;
     s.cacheMisses = ss.cacheMisses;

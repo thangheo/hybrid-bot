@@ -153,9 +153,9 @@ private:
     
     // Statistics
     mutable std::mutex statsMutex_;
-    size_t publishedEvents_{0};
-    size_t failedEvents_{0};
-    size_t queuedEvents_{0};
+    mutable std::atomic<size_t> publishedEvents_{0};
+    mutable std::atomic<size_t> failedEvents_{0};
+    mutable std::atomic<size_t> queuedEvents_{0};
     std::chrono::system_clock::time_point lastPublishTime_;
     std::string lastError_;
     

@@ -195,6 +195,7 @@ nlohmann::json PositionSyncStatus::toJson() const {
     j["lastSync"] = std::chrono::duration_cast<std::chrono::milliseconds>(lastSync.time_since_epoch()).count();
     j["lastSequenceNumber"] = lastSequenceNumber;
     j["pendingEvents"] = pendingEvents;
+    j["receivedEvents"] = receivedEvents;
     j["processedEvents"] = processedEvents;
     j["errorCount"] = errorCount;
     j["lastError"] = lastError;
