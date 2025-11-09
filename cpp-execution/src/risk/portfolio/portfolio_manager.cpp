@@ -69,8 +69,15 @@ bool PortfolioManager::initialize() {
             sharedExecutionInterface = std::shared_ptr<ExecutionInterface>(executionInterface.release());
         }
         
-        // Initialize position tracker
-        m_positionTracker = std::make_shared<PositionTracker>(m_config, m_dataInterface);
+        // Initialize position tracker. If one was injected via the ctor, reuse it
+        // instead of overwriting with a new instance. This ensures a single
+        // shared PositionTracker is used across components (RiskManager, PostTrade, PreTrade etc.).
+        if (!m_positionTracker) {
+            m_positionTracker = std::make_shared<PositionTracker>(m_config, m_dataInterface);
+        } else {
+            std::cerr << "PortfolioManager: using injected PositionTracker ptr=" << static_cast<const void*>(m_positionTracker.get()) << std::endl;
+        }
+
         if (!m_positionTracker->initialize()) {
             std::cerr << "Failed to initialize PositionTracker" << std::endl;
             return false;
