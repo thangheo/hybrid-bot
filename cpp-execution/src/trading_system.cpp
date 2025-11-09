@@ -926,6 +926,11 @@ void Trading_system::signalWorkerLoop(size_t workerId) {
         if (batch.empty()) continue;
 
         for (auto &signal : batch) {
+            // CRITICAL FIX: Exit immediately if shutdown is in progress
+            if (!signalWorkersRunning_.load()) {
+                break;
+            }
+            
             try {
                 //if signal is neutral, skip
                 if (signal.direction == core::Direction::NEUTRAL) continue;
@@ -984,8 +989,13 @@ void Trading_system::signalWorkerLoop(size_t workerId) {
                     }
                 }                   
 
-                // Validate with risk manager
-                if (riskManager_) {
+                // CRITICAL FIX: Check if system is shutting down before accessing riskManager_
+                if (!signalWorkersRunning_.load()) {
+                    break; // Exit immediately if shutdown is in progress
+                }
+                
+                // Validate with risk manager (with additional safety check)
+                if (riskManager_ && signalWorkersRunning_.load()) {
                     auto validationResult = riskManager_->validateSignal(execSignal);
                     signalsValidated_++;
                     if (validationResult.approved) {
