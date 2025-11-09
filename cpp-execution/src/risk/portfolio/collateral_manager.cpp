@@ -108,42 +108,88 @@ void CollateralManager::setPositionSynchronizer(
 //     }
 // }
 bool CollateralManager::initialize() {
-    // DO NOT register the problematic callback for now
-    std::cerr << "[CollateralManager] Initializing (with safety fixes)" << std::endl;
-    
-    // Just return true without registering callbacks
-    // This prevents the crash but disables position update notifications
-    return true;
-    
-    /* COMMENTED OUT THE PROBLEMATIC CODE
-    auto positionUpdateCallback = [this](const Position& position, const std::string& reason) {
-        // This is where it crashes - accessing m_executionInterface
-    };
-    
-    if (m_positionTracker) {
-        m_positionTracker->registerPositionCallback(positionUpdateCallback);
+    try {
+        std::cerr << "[CollateralManager] Initializing (registering safe callbacks)" << std::endl;
+
+        // Fetch initial balances (best-effort)
+        if (!fetchExchangeBalances()) {
+            // Continue even if initial fetch fails
+        }
+
+        // Register a safe callback that captures a weak_ptr to avoid use-after-free.
+        if (m_positionTracker) {
+            std::weak_ptr<CollateralManager> weak_self;
+            try {
+                weak_self = shared_from_this();
+            } catch (...) {
+                // If this object is not owned by shared_ptr, fall back to not registering
+                std::cerr << "[CollateralManager] Warning: cannot obtain shared_from_this(), skipping callback registration" << std::endl;
+                return true;
+            }
+
+            auto positionUpdateCallback = [weak_self](const Position& position, const std::string& updateType) {
+                auto self = weak_self.lock();
+                if (!self) {
+                    // Object destroyed; silently ignore
+                    return;
+                }
+
+                // Use local copies of interfaces to avoid races
+                auto execInterface = self->m_executionInterface;
+                auto dataInterface = self->m_dataInterface;
+                if (!execInterface || !dataInterface) {
+                    // Missing dependencies, nothing to do
+                    return;
+                }
+
+                try {
+                    if (updateType == "new" || updateType == "modified" || updateType == "reconciliation") {
+                        self->updateCollateralStatus();
+                    }
+                } catch (const std::exception& e) {
+                    std::cerr << "[CollateralManager] Exception in callback: " << e.what() << std::endl;
+                } catch (...) {
+                    std::cerr << "[CollateralManager] Unknown exception in callback" << std::endl;
+                }
+            };
+
+            m_positionTracker->registerPositionUpdateCallback(positionUpdateCallback);
+        }
+
+        return true;
+    } catch (const std::exception& e) {
+        std::cerr << "Error initializing CollateralManager: " << e.what() << std::endl;
+        return false;
     }
-    */
 }
 
 
 // Add a safe shutdown
 bool CollateralManager::shutdown() {
-    std::lock_guard<std::mutex> lock(m_collateralMutex);
-    
-    // Clear all callbacks first
-    {
-        std::lock_guard<std::mutex> callbackLock(m_callbackMutex);
-        m_collateralCallbacks.clear();
+    try {
+        // Lock the collateral mutex to stabilize state during shutdown
+        std::lock_guard<std::mutex> lock(m_collateralMutex);
+
+        // Clear externally-registered collateral callbacks
+        {
+            std::lock_guard<std::mutex> callbackLock(m_callbackMutex);
+            m_collateralCallbacks.clear();
+        }
+
+        // Reset pointers so future callbacks (if any) find null interfaces
+        m_executionInterface.reset();
+        m_dataInterface.reset();
+
+        // Note: PositionTracker may still hold callbacks; using weak_ptr in our registration
+        // ensures callbacks will no-op after this object is destroyed. Reset our reference.
+        m_positionTracker.reset();
+        m_positionSync.reset();
+
+        return true;
+    } catch (const std::exception& e) {
+        std::cerr << "Exception during CollateralManager shutdown: " << e.what() << std::endl;
+        return false;
     }
-    
-    // Clear shared_ptrs safely
-    m_executionInterface.reset();
-    m_dataInterface.reset();
-    m_positionTracker.reset();
-    m_positionSync.reset();
-    
-    return true;
 }
 
 // bool CollateralManager::shutdown() {
