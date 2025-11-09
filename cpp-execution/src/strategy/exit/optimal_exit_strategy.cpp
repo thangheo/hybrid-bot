@@ -268,45 +268,47 @@ OptimalExitStrategy::ExitDecision OptimalExitStrategy::evaluateExit(
 }
 
 void OptimalExitStrategy::closePosition(const std::string& symbol, ExitReason reason, double pnl) {
+    // Close the active trade (if present), trigger the exit callback, and record a recent-close timestamp
     {
         std::lock_guard<std::mutex> lock(tradesMutex_);
-
         auto it = activeTrades_.find(symbol);
-        if (it != activeTrades_.end()) {
-            TradeState& trade = it->second;
-    
-    auto it = activeTrades_.find(symbol);
-    if (it != activeTrades_.end()) {
-        TradeState& trade = it->second;
-        
-        auto now = std::chrono::steady_clock::now();
-        double held_seconds = std::chrono::duration<double>(now - trade.entry_time).count();
-        double peak_pnl = 0.0;
-        
-        if (trade.entry_direction == core::Direction::BUY) {
-            peak_pnl = (trade.peak_price - trade.entry_price) / trade.entry_price * 10000;
+        if (it == activeTrades_.end()) {
+            LOG_WARN("EXIT_STRATEGY: closePosition called for non-active symbol {}", symbol);
         } else {
-            peak_pnl = (trade.entry_price - trade.peak_price) / trade.entry_price * 10000;
-        }
-        
-        LOG_INFO("EXIT_STRATEGY: {} | Reason: {} | PnL: {:.2f}bps | Peak: {:.2f}bps | Held: {:.1f}s",
-                 symbol, exitReasonToString(reason), pnl, peak_pnl, held_seconds);
-        
-        // 🚨 CRITICAL: Trigger actual EXIT order execution
-        if (exitCallback_) {
+            TradeState& trade = it->second;
+
+            auto now = std::chrono::steady_clock::now();
+            double held_seconds = std::chrono::duration<double>(now - trade.entry_time).count();
+            double peak_pnl = 0.0;
+
+            if (trade.entry_direction == core::Direction::BUY) {
+                peak_pnl = (trade.peak_price - trade.entry_price) / trade.entry_price * 10000;
+            } else {
+                peak_pnl = (trade.entry_price - trade.peak_price) / trade.entry_price * 10000;
+            }
+
+            LOG_INFO("EXIT_STRATEGY: {} | Reason: {} | PnL: {:.2f}bps | Peak: {:.2f}bps | Held: {:.1f}s",
+                     symbol, exitReasonToString(reason), pnl, peak_pnl, held_seconds);
+
+            if (!exitCallback_) {
+                LOG_ERROR("❌ CRITICAL: EXIT CALLBACK NOT REGISTERED - Position {} will remain stuck!", symbol);
+                LOG_ERROR("❌ This will cause capital to be tied up indefinitely!");
+                return;
+            }
+
             // Determine exit direction (opposite of entry)
-            core::Direction exitDirection = (trade.entry_direction == core::Direction::BUY) ? 
+            core::Direction exitDirection = (trade.entry_direction == core::Direction::BUY) ?
                                           core::Direction::SELL : core::Direction::BUY;
-            
-            // Use current market price or entry price as fallback
-            double exitPrice = trade.entry_price; // Fallback to entry price
-            
+
+            // Use entry price as fallback
+            double exitPrice = trade.entry_price;
+
             std::string reasonStr = std::string(exitReasonToString(reason));
-            
-            LOG_INFO("🚨 TRIGGERING EXIT CALLBACK: {} {} @ {:.6f} reason={}", 
-                     symbol, (exitDirection == core::Direction::SELL ? "SELL" : "BUY"), 
+
+            LOG_INFO("🚨 TRIGGERING EXIT CALLBACK: {} {} @ {:.6f} reason={}",
+                     symbol, (exitDirection == core::Direction::SELL ? "SELL" : "BUY"),
                      exitPrice, reasonStr);
-            
+
             try {
                 exitCallback_(symbol, exitDirection, exitPrice, reasonStr);
             } catch (const std::exception& e) {
@@ -314,24 +316,18 @@ void OptimalExitStrategy::closePosition(const std::string& symbol, ExitReason re
                 // Don't remove trade from activeTrades_ if callback fails
                 return;
             }
-        } else {
-            LOG_ERROR("❌ CRITICAL: EXIT CALLBACK NOT REGISTERED - Position {} will remain stuck!", symbol);
-            LOG_ERROR("❌ This will cause capital to be tied up indefinitely!");
-            
-            // Consider throwing exception in critical systems
-            // throw std::runtime_error("Exit callback not registered - cannot execute exit orders");
-        }
-        
+
+            // Mark trade inactive and erase it
             trade.is_active = false;
             activeTrades_.erase(it);
         }
     }
 
     // Record close timestamp for cooldown (outside tradesMutex_ to avoid long locks)
-    try {
+    {
         std::lock_guard<std::mutex> rlock(recentCloseMutex_);
         recentCloseTs_[symbol] = std::chrono::steady_clock::now();
-    } catch (...) {}
+    }
 }
 
 bool OptimalExitStrategy::hasActivePosition(const std::string& symbol) const {
