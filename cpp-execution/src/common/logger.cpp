@@ -8,8 +8,7 @@
 namespace trading {
 namespace common {
 
-// Static member initialization
-std::once_flag Logger::initialized_;
+// Static members are now function-local to avoid ODR violations
 
 // Concrete logger implementation
 class ConsoleLogger : public Logger {
@@ -80,7 +79,7 @@ std::shared_ptr<Logger>& Logger::getInstance() {
 
 // Factory method to create the logger
 void Logger::initialize(const std::string& appName, LogLevel level) {
-    std::call_once(initialized_, [&appName, level]() {
+    std::call_once(getInitializedFlag(), [&appName, level]() {
         if (!getShutdownFlag().load()) {
             // Allocate ConsoleLogger with a no-op deleter so it is not
             // destroyed during static teardown. This prevents calling
