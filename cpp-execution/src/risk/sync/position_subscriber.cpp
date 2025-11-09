@@ -93,6 +93,7 @@ void PositionSubscriber::stop() {
 }
 
 void PositionSubscriber::shutdown() {
+    initialized_ = false;  // Mark as shutdown first to prevent new operations
     stop();
     if (subscriber_) {
         try { subscriber_->close(); } catch(...) {}
@@ -100,7 +101,6 @@ void PositionSubscriber::shutdown() {
     }
     std::unique_lock lock(cacheMutex_);
     positionCache_.clear();
-    initialized_ = false;
 }
 
 void PositionSubscriber::registerEventCallback(const PositionEventCallback& callback) {
@@ -109,11 +109,13 @@ void PositionSubscriber::registerEventCallback(const PositionEventCallback& call
 }
 
 bool PositionSubscriber::hasPosition(const std::string& symbol, const std::string& exchangeId) const {
+    if (!initialized_.load()) return false;
     std::shared_lock lock(cacheMutex_);
     return positionCache_.find(createCacheKey(symbol, exchangeId)) != positionCache_.end();
 }
 
 std::optional<Position> PositionSubscriber::getPosition(const std::string& symbol, const std::string& exchangeId) const {
+    if (!initialized_.load()) return std::nullopt;
     std::shared_lock lock(cacheMutex_);
     auto it = positionCache_.find(createCacheKey(symbol, exchangeId));
     if (it != positionCache_.end()) {
@@ -125,6 +127,7 @@ std::optional<Position> PositionSubscriber::getPosition(const std::string& symbo
 }
 
 std::vector<Position> PositionSubscriber::getAllPositions() const {
+    if (!initialized_.load()) return {};
     std::vector<Position> out;
     std::shared_lock lock(cacheMutex_);
     out.reserve(positionCache_.size());
@@ -133,6 +136,7 @@ std::vector<Position> PositionSubscriber::getAllPositions() const {
 }
 
 std::vector<Position> PositionSubscriber::getStrategyPositions(const std::string& strategyId) const {
+    if (!initialized_.load()) return {};
     std::vector<Position> out;
     std::shared_lock lock(cacheMutex_);
     for (const auto& kv : positionCache_) {
@@ -142,6 +146,7 @@ std::vector<Position> PositionSubscriber::getStrategyPositions(const std::string
 }
 
 std::vector<Position> PositionSubscriber::getSymbolPositions(const std::string& symbol) const {
+    if (!initialized_.load()) return {};
     std::vector<Position> out;
     std::shared_lock lock(cacheMutex_);
     for (const auto& kv : positionCache_) {
@@ -177,7 +182,11 @@ PositionSyncStatus PositionSubscriber::getStatus() const {
 bool PositionSubscriber::isHealthy() const { return healthy_.load(); }
 
 bool PositionSubscriber::refreshCache() { return true; }
-void PositionSubscriber::clearCache() { std::unique_lock lock(cacheMutex_); positionCache_.clear(); }
+void PositionSubscriber::clearCache() { 
+    if (!initialized_.load()) return;
+    std::unique_lock lock(cacheMutex_); 
+    positionCache_.clear(); 
+}
 
 PositionSubscriber::CacheStats PositionSubscriber::getCacheStats() const {
     CacheStats s{};
