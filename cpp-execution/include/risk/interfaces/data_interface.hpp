@@ -64,6 +64,15 @@ public:
      * @return Current price
      */
     virtual double getCurrentPrice(const core::Symbol& tradingPair, const std::optional<std::string>& exchangeId = std::nullopt) { return 0.0; }
+
+    /**
+     * Convenience overload that accepts a typed ExchangeId to avoid string
+     * conversions in hot paths. Default implementation forwards to the
+     * string-based overload.
+     */
+    virtual double getCurrentPrice(const core::Symbol& tradingPair, const core::ExchangeId& exchangeId) {
+        return getCurrentPrice(tradingPair, std::optional<std::string>(exchangeId.toString()));
+    }
     
     /**
      * Get price for a trading pair (alias for getCurrentPrice for compatibility)

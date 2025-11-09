@@ -22,7 +22,8 @@
 #include <common/exchange_types.hpp>
 namespace trading {
 namespace risk {
-using ExchangeId = common::ExchangeId;
+// Use the same ExchangeId type as RiskConfig/CollateralConfig to avoid type mismatch
+using ExchangeId = core::ExchangeId;
 using namespace core;
 /**
  * Structure to represent an exchange balance
