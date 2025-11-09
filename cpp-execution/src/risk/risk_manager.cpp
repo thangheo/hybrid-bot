@@ -18,10 +18,10 @@ namespace risk {
 // Helper to attempt to call setPositionSynchronizer on objects that support it.
 namespace {
     template <typename T>
-    auto trySetPositionSync(T* obj, std::shared_ptr<trading::risk::sync::PositionSynchronizer> sync)
+    auto trySetPositionSync(T* obj, const std::shared_ptr<trading::risk::sync::PositionSynchronizer>& sync)
         -> decltype(obj->setPositionSynchronizer(sync), void()) {
         if (obj) {
-            obj->setPositionSynchronizer(std::move(sync));
+            obj->setPositionSynchronizer(sync);  // Pass by const ref, let setter decide ownership
         }
     }
 
@@ -321,11 +321,7 @@ bool RiskManager::initialize() {
             LOG_ERROR(std::format("{} {}", "RiskManager", "Failed to initialize CollateralManager"));
             return false;
         }
-        // If PositionSynchronizer is running, inject it into collateral manager
-        if (m_positionSync && m_collateralManager) {
-            // m_collateralManager expects a shared_ptr — forward the owning shared_ptr
-            trySetPositionSync(m_collateralManager.get(), m_positionSync);
-        }
+        // Note: CollateralManager PositionSync injection already done above during PositionSynchronizer setup
         
         // Initialize risk service
         m_riskService = std::make_unique<RiskService>(m_config);

@@ -53,7 +53,7 @@ CollateralManager::CollateralManager(const RiskConfig& config,
 
 void CollateralManager::setPositionSynchronizer(
     std::shared_ptr<trading::risk::sync::PositionSynchronizer> positionSync) {
-    m_positionSync = std::move(positionSync);
+    m_positionSync = positionSync;  // Copy the shared_ptr to share ownership
 }
 
 bool CollateralManager::initialize() {

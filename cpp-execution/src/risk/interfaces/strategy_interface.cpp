@@ -84,9 +84,21 @@ private:
         json["timestamp"] = std::chrono::duration_cast<std::chrono::milliseconds>(
             event.timestamp.time_since_epoch()).count();
         
-        // Include metadata if present
+        // Include metadata if present (with size limits to prevent buffer overflows)
         if (!event.metadata.empty()) {
-            json["metadata"] = event.metadata;
+            nlohmann::json metadata_json;
+            size_t total_size = 0;
+            const size_t MAX_METADATA_SIZE = 1024; // 1KB limit
+            
+            for (const auto& [key, value] : event.metadata) {
+                total_size += key.size() + value.size();
+                if (total_size > MAX_METADATA_SIZE) {
+                    LOG_WARN("Metadata size exceeded limit, truncating");
+                    break;
+                }
+                metadata_json[key] = value;
+            }
+            json["metadata"] = metadata_json;
         }
         
         return json;
@@ -99,7 +111,17 @@ private:
                 auto json = nlohmann::json::parse(message);
                 
                 StrategyId strategyId = jsonToStrategyId(json["strategy_id"]);
-                std::string eventData = json["event_data"].dump();
+                std::string eventData;
+                if (json.contains("event_data") && json["event_data"].is_object()) {
+                    eventData = json["event_data"].dump();
+                    // Limit event data size to prevent buffer overflows
+                    if (eventData.size() > 2048) {
+                        LOG_WARN("Event data size exceeded limit, truncating");
+                        eventData = eventData.substr(0, 2048);
+                    }
+                } else {
+                    eventData = "{}";
+                }
                 
                 // Call the callback if registered
                 if (strategyEventCallback_) {

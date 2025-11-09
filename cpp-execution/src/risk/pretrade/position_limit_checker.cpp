@@ -409,7 +409,7 @@ void PositionLimitChecker::setPositionTracker(std::shared_ptr<PositionTracker> p
 }
 
 void PositionLimitChecker::setPositionSynchronizer(std::shared_ptr<trading::risk::sync::PositionSynchronizer> positionSync) {
-    m_positionSync = std::move(positionSync);
+    m_positionSync = positionSync;  // Copy the shared_ptr to share ownership
 }
 
 } // namespace risk
