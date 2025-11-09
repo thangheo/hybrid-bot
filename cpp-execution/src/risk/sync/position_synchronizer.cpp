@@ -55,7 +55,22 @@ void PositionSynchronizer::stop() {
 }
 
 void PositionSynchronizer::shutdown() {
+    // Prevent new calls from entering
+    initialized_ = false;
+
+    // Stop components from receiving new events
     stop();
+
+    // Wait for any in-flight calls (getPosition/hasPosition/getAllPositions) to finish
+    size_t waitCount = 0;
+    while (inFlightCalls_.load() != 0) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        if (++waitCount % 1000 == 0) {
+            std::cerr << "[PositionSynchronizer] waiting for in-flight calls to finish: " << inFlightCalls_.load() << "\n";
+        }
+    }
+
+    // Now safe to shutdown subscriber/publisher
     auto sub = subscriber_.load();
     if (sub) sub->shutdown();
     auto pub = publisher_.load();
@@ -65,30 +80,53 @@ void PositionSynchronizer::shutdown() {
     std::cerr << "[PositionSynchronizer] shutdown: clearing publisher/subscriber\n";
     publisher_.store(nullptr);
     subscriber_.store(nullptr);
-    initialized_ = false;
 }
 
 std::shared_ptr<PositionPublisher> PositionSynchronizer::getPublisher() const { return publisher_.load(); }
 std::shared_ptr<PositionSubscriber> PositionSynchronizer::getSubscriber() const { return subscriber_.load(); }
 
 void PositionSynchronizer::registerPositionEventCallback(const PositionEventCallback& callback) {
+    if (!initialized_.load()) return;
+    struct InflightGuard {
+        const std::atomic<size_t>& counter;
+        InflightGuard(const std::atomic<size_t>& c) : counter(c) { const_cast<std::atomic<size_t>&>(counter).fetch_add(1); }
+        ~InflightGuard() { const_cast<std::atomic<size_t>&>(counter).fetch_sub(1); }
+    } guard(inFlightCalls_);
     auto sub = subscriber_.load();
     if (sub) sub->registerEventCallback(callback);
 }
 
 bool PositionSynchronizer::hasPosition(const std::string& symbol, const std::string& exchangeId) const {
+    if (!initialized_.load()) return false;
+    struct InflightGuard {
+        const std::atomic<size_t>& counter;
+        InflightGuard(const std::atomic<size_t>& c) : counter(c) { const_cast<std::atomic<size_t>&>(counter).fetch_add(1); }
+        ~InflightGuard() { const_cast<std::atomic<size_t>&>(counter).fetch_sub(1); }
+    } guard(inFlightCalls_);
     auto sub = subscriber_.load();
     if (sub) return sub->hasPosition(symbol, exchangeId);
     return false;
 }
 
 std::optional<Position> PositionSynchronizer::getPosition(const std::string& symbol, const std::string& exchangeId) const {
+    // Increment in-flight counter to ensure shutdown waits until we're done
+    struct InflightGuard {
+        const std::atomic<size_t>& counter;
+        InflightGuard(const std::atomic<size_t>& c) : counter(c) { const_cast<std::atomic<size_t>&>(counter).fetch_add(1); }
+        ~InflightGuard() { const_cast<std::atomic<size_t>&>(counter).fetch_sub(1); }
+    } guard(inFlightCalls_);
     auto sub = subscriber_.load();
     if (sub) return sub->getPosition(symbol, exchangeId);
     return std::nullopt;
 }
 
 std::vector<Position> PositionSynchronizer::getAllPositions() const {
+    if (!initialized_.load()) return {};
+    struct InflightGuard {
+        const std::atomic<size_t>& counter;
+        InflightGuard(const std::atomic<size_t>& c) : counter(c) { const_cast<std::atomic<size_t>&>(counter).fetch_add(1); }
+        ~InflightGuard() { const_cast<std::atomic<size_t>&>(counter).fetch_sub(1); }
+    } guard(inFlightCalls_);
     auto sub = subscriber_.load();
     if (sub) return sub->getAllPositions();
     return {};

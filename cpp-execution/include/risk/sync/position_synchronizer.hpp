@@ -172,6 +172,8 @@ private:
     std::atomic<bool> initialized_{false};
     std::atomic<bool> running_{false};
     std::atomic<bool> healthy_{true};
+    // Track number of in-flight calls into the synchronizer (getPosition/hasPosition/etc.)
+    mutable std::atomic<size_t> inFlightCalls_{0};
     
     // Reconciliation thread
     std::thread reconciliationThread_;

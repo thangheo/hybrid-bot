@@ -41,8 +41,14 @@
 }
 
 void RebalancingEngine::setPositionSynchronizer(std::shared_ptr<trading::risk::sync::PositionSynchronizer> positionSync) {
-    m_positionSync = std::move(positionSync);
+    // Copy the shared_ptr to share ownership; do not std::move here or we may
+    // inadvertently transfer ownership and destroy the synchronizer while
+    // other components still reference it.
+    m_positionSync = positionSync;
 }
+    // Copy the shared_ptr to share ownership; do not std::move here or we may
+    // inadvertently transfer ownership and destroy the synchronizer while
+    // other components still reference it.
 
 RebalancingEngine::~RebalancingEngine() {
     // Properly stop the rebalancing thread

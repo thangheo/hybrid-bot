@@ -258,7 +258,8 @@ bool RiskManager::initialize() {
             // If we have a running PositionSynchronizer, inject into PositionLimitChecker
             if (m_positionSync) {
                 try {
-                    auto sharedSync = std::shared_ptr<trading::risk::sync::PositionSynchronizer>(m_positionSync.get(), [](auto*){});
+                    // Forward an owning shared_ptr so injected components share ownership
+                    auto sharedSync = m_positionSync;
                     if (auto plc = m_preTradeFilter->getPositionLimitChecker()) {
                         trySetPositionSync(plc, sharedSync);
                     }
@@ -287,9 +288,7 @@ bool RiskManager::initialize() {
         if (m_positionSync) {
             try {
                 // PostTradeMonitor may expose stop-loss and reconciliation subsystems which accept a PositionSynchronizer
-                // Forward the shared pointer (wrap unique_ptr raw pointer into shared_ptr temporarily)
-                // Create a non-owning shared_ptr wrapper with no-op deleter so we can pass a shared_ptr view
-                // m_positionSync is a shared_ptr now — pass owning shared_ptr to consumers
+                // Forward the owning shared_ptr so injected components share ownership
                 auto sharedSync = m_positionSync;
 
                 // Inject into PostTradeMonitor subcomponents if available
