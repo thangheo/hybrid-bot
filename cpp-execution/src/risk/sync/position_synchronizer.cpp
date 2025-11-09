@@ -23,8 +23,8 @@ bool PositionSynchronizer::initialize() {
         // Already initialized
         return true;
     }
-    publisher_ = std::make_shared<PositionPublisher>(config_, zmqContext_);
-    subscriber_ = std::make_shared<PositionSubscriber>(config_, zmqContext_);
+    publisher_.store(std::make_shared<PositionPublisher>(config_, zmqContext_));
+    subscriber_.store(std::make_shared<PositionSubscriber>(config_, zmqContext_));
     std::cerr << "[PositionSynchronizer] Created publisher and subscriber objects" << std::endl;
     return true;
 }
@@ -34,52 +34,60 @@ bool PositionSynchronizer::start(std::shared_ptr<PositionTracker> positionTracke
     positionTracker_ = positionTracker;
     std::cerr << "[PositionSynchronizer] Starting components" << std::endl;
     // Start publisher first (bind) then subscriber (connect) to ensure inproc transport works
-    if (publisher_) {
-        publisher_->initialize();
-        publisher_->connectToPositionTracker(positionTracker);
-        publisher_->start();
+    auto pub = publisher_.load();
+    if (pub) {
+        pub->initialize();
+        pub->connectToPositionTracker(positionTracker);
+        pub->start();
     }
-    if (subscriber_) {
-        subscriber_->initialize();
-        subscriber_->start();
+    auto sub = subscriber_.load();
+    if (sub) {
+        sub->initialize();
+        sub->start();
     }
     return true;
 }
 
 void PositionSynchronizer::stop() {
-    if (subscriber_) subscriber_->stop();
+    auto sub = subscriber_.load();
+    if (sub) sub->stop();
 }
 
 void PositionSynchronizer::shutdown() {
     stop();
-    if (subscriber_) subscriber_->shutdown();
-    publisher_.reset();
-    subscriber_.reset();
+    auto sub = subscriber_.load();
+    if (sub) sub->shutdown();
+    auto pub = publisher_.load();
+    if (pub) {
+        // optionally stop publisher if needed
+    }
+    publisher_.store(nullptr);
+    subscriber_.store(nullptr);
     initialized_ = false;
 }
 
-std::shared_ptr<PositionPublisher> PositionSynchronizer::getPublisher() const { return publisher_; }
-std::shared_ptr<PositionSubscriber> PositionSynchronizer::getSubscriber() const { return subscriber_; }
+std::shared_ptr<PositionPublisher> PositionSynchronizer::getPublisher() const { return publisher_.load(); }
+std::shared_ptr<PositionSubscriber> PositionSynchronizer::getSubscriber() const { return subscriber_.load(); }
 
 void PositionSynchronizer::registerPositionEventCallback(const PositionEventCallback& callback) {
-    auto sub = subscriber_;
+    auto sub = subscriber_.load();
     if (sub) sub->registerEventCallback(callback);
 }
 
 bool PositionSynchronizer::hasPosition(const std::string& symbol, const std::string& exchangeId) const {
-    auto sub = subscriber_;
+    auto sub = subscriber_.load();
     if (sub) return sub->hasPosition(symbol, exchangeId);
     return false;
 }
 
 std::optional<Position> PositionSynchronizer::getPosition(const std::string& symbol, const std::string& exchangeId) const {
-    auto sub = subscriber_;
+    auto sub = subscriber_.load();
     if (sub) return sub->getPosition(symbol, exchangeId);
     return std::nullopt;
 }
 
 std::vector<Position> PositionSynchronizer::getAllPositions() const {
-    auto sub = subscriber_;
+    auto sub = subscriber_.load();
     if (sub) return sub->getAllPositions();
     return {};
 }
@@ -91,11 +99,11 @@ PositionSyncStatus PositionSynchronizer::getOverallStatus() const {
     bool pubHealthy = true;
     bool subHealthy = true;
     PositionSyncStatus ps, ss;
-    auto pub = publisher_;
-    auto sub = subscriber_;
+    auto pub = publisher_.load();
+    auto sub = subscriber_.load();
     if (pub) ps = pub->getStatus();
     if (sub) ss = sub->getStatus();
-    pubHealthy = publisher_ ? ps.isHealthy : true;
+    pubHealthy = pub ? ps.isHealthy : true;
     subHealthy = sub ? ss.isHealthy : true;
     s.isHealthy = pubHealthy && subHealthy;
     s.lastSequenceNumber = std::max(ps.lastSequenceNumber, ss.lastSequenceNumber);
@@ -111,8 +119,8 @@ PositionSyncStatus PositionSynchronizer::getOverallStatus() const {
 PositionSynchronizer::SyncMetrics PositionSynchronizer::getMetrics() const {
     SyncMetrics m{};
     PositionSyncStatus ps, ss;
-    auto pub = publisher_;
-    auto sub = subscriber_;
+    auto pub = publisher_.load();
+    auto sub = subscriber_.load();
     if (pub) ps = pub->getStatus();
     if (sub) ss = sub->getStatus();
     m.publishedEvents = ps.processedEvents;

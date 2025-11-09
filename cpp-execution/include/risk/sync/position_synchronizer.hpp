@@ -164,8 +164,8 @@ private:
     std::shared_ptr<zmq::context_t> zmqContext_;
     
     // Components
-    std::shared_ptr<PositionPublisher> publisher_;
-    std::shared_ptr<PositionSubscriber> subscriber_;
+    std::atomic<std::shared_ptr<PositionPublisher>> publisher_{nullptr};
+    std::atomic<std::shared_ptr<PositionSubscriber>> subscriber_{nullptr};
     std::weak_ptr<PositionTracker> positionTracker_;
     
     // State management
