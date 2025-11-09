@@ -17,6 +17,7 @@
 #include "execution/preflight/preflight.hpp"
 #include "execution/balance_validator_config.hpp"
 #include "risk/risk_config.hpp"
+#include "risk/interfaces/market_data_interface.hpp"
 #include <util/parse_safe.hpp>
 #include <mutex>
 #include "execution/http_balance_client.hpp"
@@ -54,6 +55,18 @@
     
     // Set exchange gateway for balance validation
     balanceValidator_->setExchangeGateway(exchangeGateway_);
+    // If possible, inject a shared DataInterface (MarketDataInterface) so the validator
+    // uses the centralized cached balances rather than calling exchange clients directly.
+    try {
+        // Create or obtain a shared MarketDataInterface and inject it into the validator.
+        auto di = trading::risk::MarketDataInterface::createDataInterface(trading::risk::RiskConfig{});
+        if (di) {
+            balanceValidator_->setDataInterface(di);
+            std::cout << "Info: BalanceValidator wired with shared DataInterface (MarketDataInterface)." << std::endl;
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "Warning: failed to create/inject DataInterface into BalanceValidator: " << e.what() << std::endl;
+    }
     // Optionally wire an HTTP-based authoritative balance service if configured
     const char* balanceSvcUrl = std::getenv("BALANCE_SERVICE_URL");
     if (balanceSvcUrl && balanceSvcUrl[0] != '\0') {

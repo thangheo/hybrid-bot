@@ -10,6 +10,8 @@
 #include "execution/exchange_api_client.hpp"
 #include "execution/exchange_gateway.hpp"
 #include "core/market_types.hpp"
+// Optional data interface to read cached balances
+#include "risk/interfaces/market_data_interface.hpp"
 
 namespace trading {
 namespace execution {
@@ -124,11 +126,18 @@ private:
     std::shared_ptr<ExchangeApiClient> apiClient_;
     // Optional remote balance service client (authoritative)
     std::shared_ptr<HttpBalanceClient> httpBalanceClient_;
+    // Optional shared market/data interface (provides cached balances)
+    std::shared_ptr<trading::risk::DataInterface> dataInterface_;
 
 public:
     // Set optional HTTP balance client (e.g., Python prototype)
     void setHttpBalanceClient(std::shared_ptr<HttpBalanceClient> client) {
         httpBalanceClient_ = client;
+    }
+
+    // Set optional shared DataInterface (e.g., MarketDataInterface) to use cached balances
+    void setDataInterface(std::shared_ptr<trading::risk::DataInterface> dataInterface) {
+        dataInterface_ = dataInterface;
     }
     
     // Balance caching

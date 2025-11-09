@@ -220,9 +220,25 @@ std::future<std::map<std::string, double>> BalanceValidator::getBalances(
     const trading::core::ExchangeId& exchangeId,
     bool forceRefresh
 ) {
+    // Try to return cached balances from injected DataInterface first (non-blocking, centralized cache)
+    if (!forceRefresh && dataInterface_) {
+        try {
+            auto mdBalances = dataInterface_->getExchangeBalances(exchangeId);
+            if (!mdBalances.empty()) {
+                // Convert to future (deferred) and return
+                return std::async(std::launch::deferred, [mdBalances]() {
+                    return mdBalances;
+                });
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "BalanceValidator: DataInterface getExchangeBalances threw: " << e.what() << std::endl;
+        } catch (...) {
+            std::cerr << "BalanceValidator: DataInterface getExchangeBalances unknown error" << std::endl;
+        }
+    }
+
     std::lock_guard<std::mutex> lock(balanceCacheMutex_);
-    
-    // Check if we should use cached balances
+    // Check if we should use local cached balances
     if (!forceRefresh && config_.enableRealTimeValidation) {
         auto it = balanceCache_.find(exchangeId);
         if (it != balanceCache_.end()) {
@@ -235,11 +251,11 @@ std::future<std::map<std::string, double>> BalanceValidator::getBalances(
             }
         }
     }
-    
+
     // Fetch fresh balances and update cache
     return std::async(std::launch::async, [this, exchangeId]() {
         auto freshBalances = fetchFreshBalances(exchangeId).get();
-        
+
         // Update cache
         {
             std::lock_guard<std::mutex> lock(balanceCacheMutex_);
@@ -248,7 +264,7 @@ std::future<std::map<std::string, double>> BalanceValidator::getBalances(
             cached.timestamp = std::chrono::steady_clock::now();
             balanceCache_[exchangeId] = cached;
         }
-        
+
         return freshBalances;
     });
 }
