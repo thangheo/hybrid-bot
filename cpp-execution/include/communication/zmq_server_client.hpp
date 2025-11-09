@@ -46,6 +46,14 @@ const std::string STRATEGY_EVENTS_TOPIC = "strategy_events";
 const std::string MARKET_REGIME_TOPIC = "market_regime.*";
 const std::string MARKET_REGIME_PUBLISH_ENDPOINT = "tcp://*:5555";
 const std::string MARKET_REGIME_REQUEST_ENDPOINT = "tcp://*:5556";
+
+// Position synchronization endpoints and topics
+const std::string POSITION_UPDATES_TOPIC = "position.*";
+const std::string POSITION_PUBLISH_ENDPOINT = "inproc://position_pub";
+const std::string POSITION_REQUEST_ENDPOINT = "inproc://position_req";
+const std::string POSITION_SNAPSHOT_TOPIC = "position_snapshot";
+const std::string POSITION_RECONCILE_TOPIC = "position_reconcile";
+
 // Message priority enumeration
 enum class MessagePriority {
     LOW = 0,

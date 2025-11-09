@@ -1,0 +1,123 @@
+{
+  "position_synchronization": {
+    "enabled": true,
+    
+    "publisher": {
+      "endpoint": "inproc://position_pub",
+      "high_water_mark": 10000,
+      "batch_processing": {
+        "enabled": true,
+        "batch_size": 10,
+        "batch_timeout_ms": 100,
+        "priority_enabled": true
+      },
+      "reliability": {
+        "message_persistence": false,
+        "acknowledge_required": false,
+        "retry_count": 3,
+        "retry_delay_ms": 100
+      }
+    },
+    
+    "subscriber": {
+      "endpoints": ["inproc://position_pub"],
+      "high_water_mark": 10000,
+      "subscription_topics": ["position.*"],
+      "cache": {
+        "enabled": true,
+        "timeout_ms": 30000,
+        "max_entries": 1000,
+        "cleanup_interval_ms": 60000
+      },
+      "processing": {
+        "max_queue_size": 1000,
+        "processing_threads": 2,
+        "ordered_processing": true
+      }
+    },
+    
+    "reconciliation": {
+      "enabled": true,
+      "interval_seconds": 300,
+      "timeout_ms": 5000,
+      "full_sync_interval_seconds": 3600,
+      "discrepancy_handling": {
+        "auto_resolve": true,
+        "prefer_tracker_data": true,
+        "alert_threshold": 0.01,
+        "max_discrepancy_age_seconds": 300
+      }
+    },
+    
+    "health_monitoring": {
+      "enabled": true,
+      "check_interval_ms": 10000,
+      "max_sequence_gap": 100,
+      "max_event_age_ms": 60000,
+      "max_latency_ms": 1000,
+      "alert_thresholds": {
+        "cache_miss_rate": 0.1,
+        "error_rate": 0.05,
+        "sequence_gap_rate": 0.01
+      }
+    },
+    
+    "performance": {
+      "metrics_collection": true,
+      "metrics_interval_seconds": 60,
+      "performance_monitoring": {
+        "track_latency": true,
+        "track_throughput": true,
+        "track_cache_performance": true
+      },
+      "optimization": {
+        "use_zero_copy": true,
+        "compress_messages": false,
+        "batch_acknowledgments": true
+      }
+    },
+    
+    "logging": {
+      "level": "INFO",
+      "log_events": true,
+      "log_performance_metrics": true,
+      "log_health_status": true,
+      "detailed_error_logging": true
+    }
+  },
+  
+  "integration": {
+    "risk_manager": {
+      "use_position_sync": true,
+      "fallback_to_tracker": true,
+      "cache_first": true,
+      "sync_timeout_ms": 1000
+    },
+    
+    "strategy_engine": {
+      "publish_position_events": true,
+      "event_priority_mapping": {
+        "position_opened": "HIGH",
+        "position_closed": "CRITICAL", 
+        "position_updated": "NORMAL",
+        "reconciliation": "LOW"
+      }
+    },
+    
+    "execution_service": {
+      "notify_position_changes": true,
+      "immediate_sync_on_fill": true,
+      "batch_position_updates": false
+    }
+  },
+  
+  "emergency_settings": {
+    "disable_on_error": false,
+    "max_consecutive_errors": 10,
+    "emergency_fallback": {
+      "use_direct_tracker_queries": true,
+      "disable_caching": false,
+      "increase_reconciliation_frequency": true
+    }
+  }
+}
