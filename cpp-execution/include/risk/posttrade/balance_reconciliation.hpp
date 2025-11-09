@@ -17,6 +17,8 @@
 #include "../portfolio/position_tracker.hpp"
 #include "../interfaces/data_interface.hpp"
 #include "../interfaces/execution_interface.hpp"
+// Position synchronizer (optional fast cache)
+#include "risk/sync/position_synchronizer.hpp"
 
 #include <memory>
 #include <vector>
@@ -178,6 +180,13 @@ public:
     void registerReconciliationCallback(
         const std::function<void(const PositionReconciliationEvent&)>& callback
     );
+
+    /**
+     * Optional: Inject a PositionSynchronizer for faster cached position reads.
+     */
+    void setPositionSynchronizer(std::shared_ptr<trading::risk::sync::PositionSynchronizer> positionSync) {
+        m_positionSync = std::move(positionSync);
+    }
     
     /**
      * @brief Get the most recent reconciliation result
@@ -238,6 +247,9 @@ private:
     // Callbacks
     mutable std::mutex m_callbackMutex;
     std::vector<std::function<void(const PositionReconciliationEvent&)>> m_callbacks;
+
+    // Optional fast position cache
+    std::shared_ptr<trading::risk::sync::PositionSynchronizer> m_positionSync;
     
     // Helper methods
     

@@ -21,6 +21,9 @@
 #include "core/market_types.hpp"
 #include "core/time.hpp"
 
+// Position synchronizer (optional fast cache)
+#include "risk/sync/position_synchronizer.hpp"
+
 #include <atomic>
 #include <chrono>
 #include <concepts>
@@ -227,6 +230,15 @@ public:
         std::shared_ptr<DataInterface> dataInterface,
         std::shared_ptr<ExecutionInterface> executionInterface
     );
+
+    /**
+     * Optional: Inject a PositionSynchronizer to use a fast synchronized cache
+     * for position lookups. If not provided, StopLossManager will fall back to
+     * the provided PositionTracker.
+     */
+    void setPositionSynchronizer(std::shared_ptr<trading::risk::sync::PositionSynchronizer> positionSync) {
+        positionSync_ = std::move(positionSync);
+    }
     
     /**
      * Destructor ensures proper cleanup
@@ -333,6 +345,8 @@ public:
 private:
     // Dependencies
     std::shared_ptr<PositionTracker> positionTracker_;
+    // Optional fast position cache
+    std::shared_ptr<trading::risk::sync::PositionSynchronizer> positionSync_;
     std::shared_ptr<DataInterface> dataInterface_;
     std::shared_ptr<ExecutionInterface> executionInterface_;
     
@@ -386,6 +400,9 @@ private:
     
     void updateTrailingStops(const core::Symbol& symbol, double price);
     void notifyCallbacks(const EnhancedStopLossEvent& event);
+
+    // Helper to fetch a Position either from injected PositionSynchronizer or from PositionTracker
+    [[nodiscard]] std::optional<Position> getPositionOpt(const core::ExchangeId& exchangeId, const TradingPair& tradingPair) const;
     
     [[nodiscard]] bool shouldCreateDefaultStopLoss(
         const core::ExchangeId& exchangeId,

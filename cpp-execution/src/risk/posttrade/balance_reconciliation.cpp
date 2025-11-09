@@ -9,6 +9,10 @@
 #include "risk/posttrade/balance_reconciliation.hpp"
 #include <algorithm>
 #include <cmath>
+#include "risk/sync/position_synchronizer.hpp"
+// TODO: For faster position lookups during reconciliation, consider
+// consulting trading::risk::sync::PositionSynchronizer when available.
+// This avoids expensive exchange calls and can reduce reconciliation time.
 #include <set>
 #include <sstream>
 #include <thread>
@@ -81,8 +85,17 @@ ReconciliationResult BalanceReconciliation::reconcileAllPositions() {
     ReconciliationResult result;
     
     try {
-        // Get all positions from position tracker to determine which exchanges to check
-        auto allPositions = m_positionTracker->getAllPositions();
+        // Get all positions (prefer in-memory sync cache if injected)
+        std::vector<Position> allPositions;
+        if (m_positionSync) {
+            try {
+                allPositions = m_positionSync->getAllPositions();
+            } catch (...) {
+                allPositions = m_positionTracker->getAllPositions();
+            }
+        } else {
+            allPositions = m_positionTracker->getAllPositions();
+        }
         std::set<core::ExchangeId> exchanges;
         
         // Extract unique exchanges from positions
@@ -128,8 +141,18 @@ ReconciliationResult BalanceReconciliation::reconcileExchangePositions(
     ReconciliationResult result;
     
     try {
-        // Get expected positions from our tracker
-        auto expectedPositions = m_positionTracker->getExchangePositions(exchangeId);
+        // Get expected positions from our tracker (prefer sync cache)
+        std::vector<Position> expectedPositions;
+        if (m_positionSync) {
+            try {
+                auto all = m_positionSync->getAllPositions();
+                for (const auto &p : all) if (p.getExchangeId() == exchangeId) expectedPositions.push_back(p);
+            } catch (...) {
+                expectedPositions = m_positionTracker->getExchangePositions(exchangeId);
+            }
+        } else {
+            expectedPositions = m_positionTracker->getExchangePositions(exchangeId);
+        }
         
         // Get actual positions from exchange
         std::map<std::string, double> actualPositions;
@@ -224,8 +247,17 @@ ReconciliationResult BalanceReconciliation::reconcileTradingPair(
     try {
         // Create TradingPair from string
         
-        // Get expected position for this specific trading pair
-        auto expectedPosition = m_positionTracker->getPosition(exchangeId, tradingPair);
+        // Get expected position for this specific trading pair (prefer sync cache)
+        std::optional<Position> expectedPosition;
+        if (m_positionSync) {
+            try {
+                expectedPosition = m_positionSync->getPosition(tradingPair.toString(), exchangeId.toString());
+            } catch (...) {
+                expectedPosition = m_positionTracker->getPosition(exchangeId, tradingPair);
+            }
+        } else {
+            expectedPosition = m_positionTracker->getPosition(exchangeId, tradingPair);
+        }
         double expectedQuantity = expectedPosition ? expectedPosition->getQuantity() : 0.0;
         
         // Get actual position from exchange

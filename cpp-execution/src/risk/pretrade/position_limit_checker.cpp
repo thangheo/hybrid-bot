@@ -11,6 +11,9 @@
 
 #include <algorithm>
 #include <cmath>
+// TODO: Where strict/fast position checks are required, prefer
+// trading::risk::sync::PositionSynchronizer cache (if initialized by RiskManager)
+// instead of direct PositionTracker queries.
 
 namespace trading {
 namespace risk {

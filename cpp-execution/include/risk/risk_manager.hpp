@@ -22,6 +22,7 @@
 #include "interfaces/strategy_interface.hpp"
 #include "service/risk_validation_service.hpp"
 #include "risk/interfaces/market_data_interface.hpp"
+#include "risk/sync/position_synchronizer.hpp"
 #include <atomic>
 #include <memory>
 #include <mutex>
@@ -264,6 +265,8 @@ private:
     // Risk event callbacks
     std::vector<RiskEventCallback> m_eventCallbacks;
     mutable std::mutex m_callbackMutex;
+    // Optional position synchronizer instance (keeps a synchronized cache of positions)
+    std::unique_ptr<trading::risk::sync::PositionSynchronizer> m_positionSync;
     // Optional signal checker to be forwarded to PostTradeMonitor during init
     std::optional<PostTradeSignalChecker> postTradeSignalChecker_;
     
