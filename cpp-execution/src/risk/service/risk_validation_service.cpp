@@ -143,51 +143,34 @@
     auto promisePtr = std::make_shared<std::promise<ValidationResult>>();
     auto resultFuture = promisePtr->get_future();
 
-    // Run validation in another thread; capture signal by value and promise by shared_ptr
-    std::thread validationThread([this, signal, promisePtr]() mutable {
+    // Run validation asynchronously and wait with timeout. std::async returns
+    // a future which will clean up the worker when the future is destroyed.
+    auto asyncFuture = std::async(std::launch::async, [this, signal]() -> ValidationResult {
         try {
-            ValidationResult validationResult = m_riskManager->validateSignal(signal);
-            try {
-                promisePtr->set_value(validationResult);
-            } catch (...) {
-                // promise may have been satisfied already; ignore
-            }
+            return m_riskManager->validateSignal(signal);
         } catch (const std::exception& e) {
-            // Create error result
             ValidationResult errorResult;
-            // Attempt to set a sensible signal id if available
-            try {
-                errorResult.signalId = signal.id;
-            } catch (...) {}
+            try { errorResult.signalId = signal.id; } catch (...) {}
             errorResult.approved = false;
-
             RiskViolation violation;
             violation.type = ViolationType::SYSTEM_ERROR;
             violation.description = std::string("Exception during validation: ") + e.what();
             errorResult.violations.push_back(violation);
             errorResult.timestamp = std::chrono::system_clock::now().time_since_epoch().count();
-
-            try {
-                promisePtr->set_value(errorResult);
-            } catch (...) {
-                // ignore if promise already set
-            }
+            return errorResult;
         }
     });
-     
-     // Wait for the result with timeout
-     auto status = resultFuture.wait_for(std::chrono::milliseconds(timeoutMs));
-     
-     if (status == std::future_status::ready) {
-         // Got the result within timeout
-         result = resultFuture.get();
-         validationThread.join();
-         return true;
-     } else {
-         // Timeout occurred
-         validationThread.detach(); // Cannot wait for the thread anymore
-         return false;
-     }
+
+    auto status = asyncFuture.wait_for(std::chrono::milliseconds(timeoutMs));
+    if (status == std::future_status::ready) {
+        result = asyncFuture.get();
+        return true;
+    } else {
+        // Timeout: let the async task continue in background; it only captures
+        // signal by value and does not reference stack locals. Avoid detaching
+        // raw threads here.
+        return false;
+    }
  }
  
  } // namespace risk

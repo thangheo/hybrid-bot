@@ -74,7 +74,9 @@ void ImbalanceParameterTuner::startOptimization(OptimizationMethod method) {
     optimizationProgress_ = 0.0;
     
     // Start optimization in a new thread
-    std::thread optimizationThread([this, method]() {
+    // Store thread in member so it can be joined later. Capture by value where
+    // necessary to avoid referencing 'this' after destruction.
+    optimizationThread_ = std::thread([this, method]() {
         try {
             switch (method) {
                 case OptimizationMethod::GRID_SEARCH:
@@ -103,12 +105,33 @@ void ImbalanceParameterTuner::startOptimization(OptimizationMethod method) {
         optimizationProgress_ = 1.0;
     });
     
-    // Detach thread to allow it to run independently
-    optimizationThread.detach();
+    // Leave thread running; it will be joined in stopOptimization() or the
+    // destructor. This prevents detached threads from outliving the object
+    // and capturing dangling references.
 }
 
 void ImbalanceParameterTuner::stopOptimization() {
     optimizationRunning_ = false;
+
+    // If an optimization thread exists, attempt to join it. Avoid joining
+    // from within the optimization thread itself.
+    try {
+        if (optimizationThread_.joinable()) {
+            if (optimizationThread_.get_id() == std::this_thread::get_id()) {
+                // Called from within the optimization thread; cannot join.
+                // Leave the thread to exit naturally.
+            } else {
+                optimizationThread_.join();
+            }
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "Exception while joining optimization thread: " << e.what() << std::endl;
+    }
+}
+
+ImbalanceParameterTuner::~ImbalanceParameterTuner() {
+    // Ensure optimization is stopped and thread joined before destruction
+    stopOptimization();
 }
 
 bool ImbalanceParameterTuner::isOptimizationRunning() const {
