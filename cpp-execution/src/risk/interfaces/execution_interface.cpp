@@ -105,7 +105,7 @@ public:
     // === ORDER MANAGEMENT ===
     std::string submitOrder(const OrderRequest& orderRequest) override {
         if (!initialized_) {
-            LOG_INFO("ERROR", "ExecutionInterface not initialized");
+            LOG_ERROR("ExecutionInterface not initialized");
             return "";
         }
         
@@ -131,7 +131,7 @@ public:
             return response.success ? response.client_order_id : "";
             
         } catch (const std::exception& e) {
-            LOG_INFO("ERROR", "Failed to submit order: " + std::string(e.what()));
+            LOG_ERROR("Failed to submit order: {}", e.what());
             return "";
         }
     }
@@ -143,7 +143,7 @@ public:
             auto response = executionService_->cancelOrder(orderId);
             return response.success;
         } catch (const std::exception& e) {
-            LOG_INFO("ERROR", "Failed to cancel order: " + std::string(e.what()));
+            LOG_ERROR("Failed to cancel order: {}", e.what());
             return false;
         }
     }
@@ -165,7 +165,7 @@ public:
             }
             return cancelCount;
         } catch (const std::exception& e) {
-            LOG_INFO("ERROR", "Failed to cancel all orders: " + std::string(e.what()));
+            LOG_ERROR("Failed to cancel all orders: {}", e.what());
             return 0;
         }
     }
@@ -176,7 +176,7 @@ public:
         try {
             return executionService_->getOrderStatusJson(orderId);
         } catch (const std::exception& e) {
-            LOG_INFO("ERROR", "Failed to get order status: " + std::string(e.what()));
+            LOG_ERROR("Failed to get order status: {}", e.what());
             return "{}";
         }
     }
@@ -196,7 +196,7 @@ public:
             
             return requests;
         } catch (const std::exception& e) {
-            LOG_INFO("ERROR", "Failed to get open orders: " + std::string(e.what()));
+            LOG_ERROR("Failed to get open orders: {}", e.what());
             return {};
         }
     }
@@ -209,7 +209,7 @@ public:
             // Get gateway from ExecutionService and use it
             auto gateway = executionService_->getExchangeGateway();
             if (!gateway) {
-                LOG_INFO("ERROR", "ExecutionService has no gateway");
+                LOG_ERROR("ExecutionService has no gateway");
                 return {};
             }
             
@@ -220,7 +220,7 @@ public:
             return std::map<std::string, double>(balances.begin(), balances.end());
             
         } catch (const std::exception& e) {
-            LOG_INFO("ERROR", "Failed to get account balances: " + std::string(e.what()));
+            LOG_ERROR("Failed to get account balances: {}", e.what());
             return {};
         }
     }
@@ -255,9 +255,7 @@ public:
             return cancelCount;
             
         } catch (const std::exception& e) {
-            LOG_INFO("ERROR", "Failed to cancel orders for " + 
-                     exchangeId.toString() + "/" + tradingPair.toString() + 
-                     ": " + std::string(e.what()));
+            LOG_ERROR("Failed to cancel orders for {}/{}: {}", exchangeId.toString(), tradingPair.toString(), e.what());
             return 0;
         }
     }
@@ -270,7 +268,7 @@ public:
             auto gateway = executionService_->getExchangeGateway();
             return gateway && gateway->isHealthy();
         } catch (const std::exception& e) {
-            LOG_INFO("ERROR", "Failed to check exchange availability: " + std::string(e.what()));
+            LOG_ERROR("Failed to check exchange availability: {}", e.what());
             return false;
         }
     }
@@ -284,7 +282,7 @@ public:
             
             return gateway->getStatus();
         } catch (const std::exception& e) {
-            LOG_INFO("ERROR", "Failed to get exchange status: " + std::string(e.what()));
+            LOG_ERROR("Failed to get exchange status: {}", e.what());
             return "{}";
         }
     }
@@ -311,7 +309,7 @@ public:
             
             return allPositions;
         } catch (const std::exception& e) {
-            LOG_INFO("ERROR", "Failed to get all positions: " + std::string(e.what()));
+            LOG_ERROR("Failed to get all positions: {}", e.what());
             return {};
         }
     }
@@ -390,8 +388,8 @@ std::unique_ptr<ExecutionInterface> createExecutionInterface(const RiskConfig& c
         
         return std::make_unique<ExecutionInterfaceImpl>(executionService);
         
-    } catch (const std::exception& e) {
-        LOG_INFO("ERROR", "Failed to create ExecutionInterface: " + std::string(e.what()));
+        } catch (const std::exception& e) {
+        LOG_ERROR("Failed to create ExecutionInterface: {}", e.what());
         return nullptr;
     }
 }
@@ -401,7 +399,7 @@ std::unique_ptr<ExecutionInterface> createExecutionInterface_withExecutionServic
     try {
         return std::make_unique<ExecutionInterfaceImpl>(executionService);
     } catch (const std::exception& e) {
-        LOG_INFO("ERROR", "Failed to create ExecutionInterface with ExecutionService: " + std::string(e.what()));
+        LOG_ERROR("Failed to create ExecutionInterface with ExecutionService: {}", e.what());
         return nullptr;
     }
 }
