@@ -982,6 +982,8 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
 
                                     if (authoritativeHasPosition) {
                                         LOG_INFO("ENTRY_BLOCKED_BY_POSITION: {} has authoritative position qty={} - skipping ENTRY", symbol_str, authoritativeQty);
+                                    } else if (g_optimalExit.wasRecentlyClosed(symbol_str)) {
+                                        LOG_INFO("ENTRY_BLOCKED_BY_RECENT_CLOSE: {} was recently closed - skipping ENTRY (cooldown)", symbol_str);
                                     } else {
                                         double current_spread = (m.askPrice - m.bidPrice) / m.midPrice;
 

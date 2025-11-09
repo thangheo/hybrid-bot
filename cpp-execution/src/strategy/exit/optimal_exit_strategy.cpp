@@ -268,7 +268,12 @@ OptimalExitStrategy::ExitDecision OptimalExitStrategy::evaluateExit(
 }
 
 void OptimalExitStrategy::closePosition(const std::string& symbol, ExitReason reason, double pnl) {
-    std::lock_guard<std::mutex> lock(tradesMutex_);
+    {
+        std::lock_guard<std::mutex> lock(tradesMutex_);
+
+        auto it = activeTrades_.find(symbol);
+        if (it != activeTrades_.end()) {
+            TradeState& trade = it->second;
     
     auto it = activeTrades_.find(symbol);
     if (it != activeTrades_.end()) {
@@ -317,9 +322,16 @@ void OptimalExitStrategy::closePosition(const std::string& symbol, ExitReason re
             // throw std::runtime_error("Exit callback not registered - cannot execute exit orders");
         }
         
-        trade.is_active = false;
-        activeTrades_.erase(it);
+            trade.is_active = false;
+            activeTrades_.erase(it);
+        }
     }
+
+    // Record close timestamp for cooldown (outside tradesMutex_ to avoid long locks)
+    try {
+        std::lock_guard<std::mutex> rlock(recentCloseMutex_);
+        recentCloseTs_[symbol] = std::chrono::steady_clock::now();
+    } catch (...) {}
 }
 
 bool OptimalExitStrategy::hasActivePosition(const std::string& symbol) const {
@@ -343,6 +355,15 @@ const char* OptimalExitStrategy::exitReasonToString(ExitReason reason) {
         "SIGNAL_REVERSAL", "TIME_LIMIT", "SPREAD_WIDENING", "LIQUIDITY_DRIED"
     };
     return reason_strings[static_cast<int>(reason)];
+}
+
+bool OptimalExitStrategy::wasRecentlyClosed(const std::string& symbol) const {
+    std::lock_guard<std::mutex> rlock(recentCloseMutex_);
+    auto it = recentCloseTs_.find(symbol);
+    if (it == recentCloseTs_.end()) return false;
+    auto now = std::chrono::steady_clock::now();
+    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - it->second);
+    return elapsed <= entryCooldown_;
 }
 
 void OptimalExitStrategy::updateParameters(const std::string& category, const ExitParams& params) {
