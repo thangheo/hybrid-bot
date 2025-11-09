@@ -72,6 +72,10 @@ bool PreTradeRiskFilter::isHealthy() const {
 PreTradeRiskFilter::~PreTradeRiskFilter() {
     // Destructor implementation
 }
+
+PositionLimitChecker* PreTradeRiskFilter::getPositionLimitChecker() const {
+    return m_positionLimitChecker ? m_positionLimitChecker.get() : nullptr;
+}
 bool PreTradeRiskFilter::initialize() {
     try {
         LOG_INFO("Initializing pre-trade risk filter...");

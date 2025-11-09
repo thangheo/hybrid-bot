@@ -11,6 +11,8 @@
 #include "../risk_config.hpp"
 #include "../portfolio/position_tracker.hpp"
 #include "execution/trading_signal.hpp"
+// Optional fast position cache
+#include "risk/sync/position_synchronizer.hpp"
 
 #include <map>
 #include <string>
@@ -90,6 +92,10 @@ public:
      * @param positionTracker shared PositionTracker instance
      */
     void setPositionTracker(std::shared_ptr<PositionTracker> positionTracker);
+    /**
+     * Optional: inject a PositionSynchronizer for fast cached reads
+     */
+    void setPositionSynchronizer(std::shared_ptr<trading::risk::sync::PositionSynchronizer> positionSync);
 
 private:
     std::shared_ptr<PositionTracker> m_positionTracker;
@@ -104,6 +110,8 @@ private:
     double m_defaultLimit;
     
     void loadLimitsFromConfig();
+    // Optional fast cache
+    std::shared_ptr<trading::risk::sync::PositionSynchronizer> m_positionSync;
     
     // Helper methods
     std::string getBaseAsset(const core::Symbol& tradingPair) const;

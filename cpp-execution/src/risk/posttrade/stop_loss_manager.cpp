@@ -153,6 +153,7 @@ std::optional<Position> StopLossManager::getPositionOpt(const core::ExchangeId& 
     if (positionSync_) {
         try {
             auto pos = positionSync_->getPosition(tradingPair.toString(), exchangeId.toString());
+            
             if (pos.has_value()) return pos;
         } catch (...) {}
     }

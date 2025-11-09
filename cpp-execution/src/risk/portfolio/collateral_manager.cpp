@@ -26,7 +26,8 @@ CollateralManager::CollateralManager(const RiskConfig& config,
     , m_executionInterface(executionInterface)
     , m_dataInterface(dataInterface)
     , m_config(config)
-    , m_collateralConfig(config.getCollateralConfig()) {
+    , m_collateralConfig(config.getCollateralConfig())
+    , m_positionSync(nullptr) { // Initialize m_positionSync
     
     std::cerr << "[CollateralManager] Constructor - managedExchanges count: " << m_collateralConfig.managedExchanges.size() << std::endl;
     
@@ -48,6 +49,11 @@ CollateralManager::CollateralManager(const RiskConfig& config,
     m_collateralStatus.belowMinimumThreshold = false;
     m_collateralStatus.emergencyFundingNeeded = false;
     m_collateralStatus.timestamp = std::chrono::system_clock::now();
+}
+
+void CollateralManager::setPositionSynchronizer(
+    std::shared_ptr<trading::risk::sync::PositionSynchronizer> positionSync) {
+    m_positionSync = std::move(positionSync);
 }
 
 bool CollateralManager::initialize() {

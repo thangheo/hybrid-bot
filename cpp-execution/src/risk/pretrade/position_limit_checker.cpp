@@ -85,7 +85,13 @@ bool PositionLimitChecker::checkPositionLimit(const TradingSignal& signal,
     // Current position notional (USD)
     double currentPrice = 0.0;
     try {
-        if (m_positionTracker) {
+        if (m_positionSync) {
+            try {
+                auto p = m_positionSync->getPosition(tradingPair.toString(), core::ExchangeId::unknown().toString());
+                if (p.has_value()) currentPrice = p->getCurrentPrice();
+            } catch (...) { /* fall back */ }
+        }
+        if (currentPrice == 0.0 && m_positionTracker) {
             currentPrice = m_positionTracker->getCachedPrice(tradingPair);
         }
     } catch (...) { currentPrice = 0.0; }
@@ -96,7 +102,13 @@ bool PositionLimitChecker::checkPositionLimit(const TradingSignal& signal,
     double currentNotional = 0.0;
     if (currentPrice > 0.0) {
         // find current position for tradingPair
-        auto posOpt = m_positionTracker->getPosition(core::ExchangeId::unknown(), tradingPair);
+        std::optional<Position> posOpt;
+        if (m_positionSync) {
+            try {
+                posOpt = m_positionSync->getPosition(tradingPair.toString(), core::ExchangeId::unknown().toString());
+            } catch (...) { posOpt.reset(); }
+        }
+        if (!posOpt && m_positionTracker) posOpt = m_positionTracker->getPosition(core::ExchangeId::unknown(), tradingPair);
         if (posOpt.has_value()) {
             currentNotional = std::abs(posOpt->getQuantity()) * currentPrice;
         }
@@ -224,6 +236,13 @@ bool PositionLimitChecker::checkPositionLimit(const TradingSignal& signal,
             for (const auto& p : stratPositions) strategyCurrentNotional += p.getNotionalValue();
         } catch (...) { strategyCurrentNotional = 0.0; }
     }
+    // If we have a position synchronizer, include those positions too (if different)
+    if (m_positionSync) {
+        try {
+            auto stratPositions = m_positionSync->getAllPositions();
+            for (const auto& p : stratPositions) if (p.getStrategyId() == strategyId) strategyCurrentNotional += p.getNotionalValue();
+        } catch (...) {}
+    }
     double proposedStrategyNotional = strategyCurrentNotional + orderNotional;
 
     if (strategyLimit > 0.0 && proposedStrategyNotional > strategyLimit) {
@@ -241,7 +260,20 @@ bool PositionLimitChecker::checkPositionLimit(const TradingSignal& signal,
 
     // Check exchange limit - compute current exchange-level notional
     double exchangeCurrentNotional = 0.0;
-    if (m_positionTracker) {
+    if (m_positionSync) {
+        try {
+            auto all = m_positionSync->getAllPositions();
+            for (const auto& p : all) if (p.getExchangeId() == exchangeId) exchangeCurrentNotional += p.getNotionalValue();
+        } catch (...) {
+            // fall back to tracker
+            if (m_positionTracker) {
+                try {
+                    auto exchPositions = m_positionTracker->getExchangePositions(exchangeId);
+                    for (const auto& p : exchPositions) exchangeCurrentNotional += p.getNotionalValue();
+                } catch (...) { exchangeCurrentNotional = 0.0; }
+            }
+        }
+    } else if (m_positionTracker) {
         try {
             auto exchPositions = m_positionTracker->getExchangePositions(exchangeId);
             for (const auto& p : exchPositions) exchangeCurrentNotional += p.getNotionalValue();
@@ -374,6 +406,10 @@ std::string PositionLimitChecker::getQuoteAsset(const core::Symbol& tradingPair)
 
 void PositionLimitChecker::setPositionTracker(std::shared_ptr<PositionTracker> positionTracker) {
     m_positionTracker = positionTracker;
+}
+
+void PositionLimitChecker::setPositionSynchronizer(std::shared_ptr<trading::risk::sync::PositionSynchronizer> positionSync) {
+    m_positionSync = std::move(positionSync);
 }
 
 } // namespace risk

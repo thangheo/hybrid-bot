@@ -252,6 +252,17 @@ bool RiskManager::initialize() {
                 LOG_ERROR(std::format("{} {}", "RiskManager", "Failed to initialize PreTradeRiskFilter"));
                 return false;
             }
+            // If we have a running PositionSynchronizer, inject into PositionLimitChecker
+            if (m_positionSync) {
+                try {
+                    auto sharedSync = std::shared_ptr<trading::risk::sync::PositionSynchronizer>(m_positionSync.get(), [](auto*){});
+                    if (auto plc = m_preTradeFilter->getPositionLimitChecker()) {
+                        trySetPositionSync(plc, sharedSync);
+                    }
+                } catch (...) {
+                    // Do not fail initialization if injection fails
+                }
+            }
         }
         LOG_INFO(std::format("{} {}", "RiskManager", "Initialized PreTradeRiskFilter successfully"));
         // Initialize post-trade monitor - pass the shared DataInterface so PostTradeMonitor
@@ -305,6 +316,11 @@ bool RiskManager::initialize() {
         if (!m_collateralManager->initialize()) {
             LOG_ERROR(std::format("{} {}", "RiskManager", "Failed to initialize CollateralManager"));
             return false;
+        }
+        // If PositionSynchronizer is running, inject it into collateral manager
+        if (m_positionSync && m_collateralManager) {
+            auto sharedSync = std::shared_ptr<trading::risk::sync::PositionSynchronizer>(m_positionSync.get(), [](auto*){});
+            trySetPositionSync(m_collateralManager.get(), sharedSync);
         }
         
         // Initialize risk service
