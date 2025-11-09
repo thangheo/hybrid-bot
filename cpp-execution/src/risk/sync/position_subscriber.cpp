@@ -191,6 +191,9 @@ void PositionSubscriber::updateCache(const PositionEvent& event) {
     auto pos = createPositionFromEvent(event);
     auto now = std::chrono::system_clock::now();
     CachedPosition cp{pos, now, now, true};
+    
+    // CRITICAL FIX: Must acquire exclusive lock when modifying cache
+    std::unique_lock lock(cacheMutex_);
     positionCache_.insert_or_assign(createCacheKey(event.symbol, event.exchangeId), std::move(cp));
 }
 void PositionSubscriber::notifyCallbacks(const PositionEvent& event) {

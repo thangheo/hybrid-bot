@@ -1335,7 +1335,7 @@ void Trading_system::setupComponentConnections() {
                         }
 
                         // Log pointer address for easier debugging if something later fails
-                        LOG_INFO("ExitCallback: Using ExecutionInterface ptr={}", static_cast<const void*>(executionInterface.get()));
+                        // LOG_INFO("ExitCallback: Using ExecutionInterface ptr={}", static_cast<const void*>(executionInterface.get()));
 
                         // Create OrderRequest for exit
                         ::risk::OrderRequest exitOrder;
