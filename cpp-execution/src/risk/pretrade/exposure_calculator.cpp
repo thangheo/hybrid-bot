@@ -491,7 +491,11 @@ private:
         // Fallback to data interface
         try {
             if (dataInterface_) {
-                return dataInterface_->getCurrentPrice(symbol.toString());
+                // Call the symbol-based overload so implementations (e.g. MarketDataInterface)
+                // that use an internal cache are used. Passing a string would select the
+                // string-based getPrice() overload on the interface which returns 0 by
+                // default and bypasses the cache.
+                return dataInterface_->getCurrentPrice(symbol);
             }
         } catch (const std::exception& ex) {
             LOG_WARN("Failed to get price from data interface: {}", ex.what());

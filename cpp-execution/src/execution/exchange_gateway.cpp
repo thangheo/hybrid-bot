@@ -15,8 +15,9 @@
 namespace trading {
 namespace execution {
 
-ExchangeGateway::ExchangeGateway(std::shared_ptr<execution::ApiClientManager> apiClientManager)
-    : apiClientManager_(std::move(apiClientManager)) {
+ExchangeGateway::ExchangeGateway(std::shared_ptr<execution::ApiClientManager> apiClientManager,
+                                 std::shared_ptr<trading::risk::DataInterface> marketDataInterface)
+    : apiClientManager_(std::move(apiClientManager)), marketDataInterface_(std::move(marketDataInterface)) {
     if (!apiClientManager_) {
         throw std::invalid_argument("ApiClientManager cannot be null");
     }
@@ -181,23 +182,49 @@ std::future<double> ExchangeGateway::getCurrentPrice(
     bool forceRefresh) {
     
     return std::async(std::launch::async, [this, exchangeId, symbol, forceRefresh]() {
-        // Check cache first (unless force refresh)
+        // 1) Try local cache first (unless force refresh)
         if (!forceRefresh) {
             auto cached = getCachedPrice(exchangeId, symbol);
             if (cached.has_value()) {
                 return cached.value();
             }
         }
-        
-        // Fetch fresh data from API
+
+        // 2) Try shared market-data interface (cache-backed) if available and not forcing refresh
+        if (!forceRefresh && marketDataInterface_) {
+            try {
+                double p = marketDataInterface_->getCurrentPrice(symbol, exchangeId.toString());
+                if (p > 0.0) {
+                    // Update local cache for stats/fast-path
+                    updatePriceCache(exchangeId, symbol, p);
+                    return p;
+                }
+            } catch (const std::exception& e) {
+                std::cerr << "[ExchangeGateway] marketDataInterface getCurrentPrice failed: " << e.what() << std::endl;
+                // fall through to direct API call
+            }
+        }
+
+        // 3) Fallback: fetch fresh data from API client (forceRefresh path or cache miss)
         auto client = apiClientManager_->getClient(exchangeId);
-        auto future = client->getCurrentPrice(symbol);
-        auto price = future.get();
-        
-        // Update cache
-        updatePriceCache(exchangeId, symbol, price);
-        
-        return price;
+        if (!client) {
+            std::cerr << "[ExchangeGateway] ERROR: No client found for exchange in getCurrentPrice: " 
+                      << exchangeId.toString() << std::endl;
+            return 0.0;
+        }
+
+        try {
+            auto future = client->getCurrentPrice(symbol);
+            auto price = future.get();
+
+            // Update cache
+            updatePriceCache(exchangeId, symbol, price);
+
+            return price;
+        } catch (const std::exception& e) {
+            std::cerr << "[ExchangeGateway] ERROR fetching price from client: " << e.what() << std::endl;
+            return 0.0;
+        }
     });
 }
 
