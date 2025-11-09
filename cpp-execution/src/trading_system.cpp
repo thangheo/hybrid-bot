@@ -668,10 +668,15 @@ void Trading_system::setupExecutionEngine() {
     // After initializing the router, add this debug check:
     smart_order_router->initialize(exchanges);
 
-    // Create or obtain shared MarketDataInterface and pass it into the gateway
+    // Create or obtain shared MarketDataInterface and pass it into the gateway.
+    // Important: use the overload that injects the shared ZMQ context so the
+    // inproc://server_pub publisher and subscriber share the same context and
+    // messages are delivered. Passing nullptr for injectedClient and the
+    // shared zmq_context_ for context.
     std::shared_ptr<trading::risk::DataInterface> sharedMdIface;
     try {
-        sharedMdIface = trading::risk::MarketDataInterface::createDataInterface(trading::risk::RiskConfig{});
+        sharedMdIface = trading::risk::MarketDataInterface::createDataInterface(
+            riskConfig_, /*injectedClient=*/std::unique_ptr<trading::communication::GenericZmqClient>(nullptr), zmq_context_);
     } catch (...) {
         sharedMdIface = nullptr;
     }
