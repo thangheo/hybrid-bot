@@ -9,6 +9,8 @@
 #include <iostream>
 #include <algorithm>
 #include <cmath>
+// TODO: Consider integrating with trading::risk::sync::PositionSynchronizer
+// for quicker position reads in high-throughput paths.
 #include <stdexcept>
 #include <random>
 #include <future>

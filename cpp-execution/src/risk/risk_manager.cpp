@@ -15,6 +15,18 @@
 namespace trading {
 namespace risk {
 
+// Helper to attempt to call setPositionSynchronizer on objects that support it.
+namespace {
+    template <typename T>
+    auto trySetPositionSync(T* obj, std::shared_ptr<trading::risk::sync::PositionSynchronizer> sync)
+        -> decltype(obj->setPositionSynchronizer(sync), void()) {
+        obj->setPositionSynchronizer(std::move(sync));
+    }
+
+    // Fallback overload when method doesn't exist - no-op
+    inline void trySetPositionSync(...) {}
+}
+
 // RiskManager::RiskManager(std::shared_ptr<trading::execution::ExecutionService> execService, const RiskConfig& config)
 //     : m_config(config)
 //     , m_mode(RiskManagerMode::NORMAL)
@@ -180,6 +192,40 @@ bool RiskManager::initialize() {
         }
         LOG_INFO(std::format("{} {}", "RiskManager", "Initialized shared PositionTracker successfully"));
 
+        // Setup Position Synchronizer if a ZMQ context is available
+        try {
+            if (zmqContext_) {
+                LOG_INFO("RiskManager", "Attempting to create PositionSynchronizer");
+                // Use default PositionSyncConfig (can be tuned via external config later)
+                trading::risk::sync::PositionSyncConfig syncConfig{};
+                // Create synchronizer via factory
+                m_positionSync = trading::risk::sync::createPositionSynchronizer(syncConfig, zmqContext_);
+                if (m_positionSync) {
+                    if (!m_positionSync->initialize()) {
+                        LOG_WARN("RiskManager", "PositionSynchronizer initialize() failed - continuing without sync cache");
+                        m_positionSync.reset();
+                    } else if (!m_positionSync->start(sharedPositionTracker)) {
+                        LOG_WARN("RiskManager", "PositionSynchronizer start() failed - continuing without sync cache");
+                        m_positionSync.reset();
+                    } else {
+                        LOG_INFO("RiskManager", "PositionSynchronizer started and linked to shared PositionTracker");
+                        // Forward position events to risk event callbacks for monitoring
+                        m_positionSync->registerPositionEventCallback([this](const trading::risk::sync::PositionEvent& ev){
+                            // Build a simple RiskEvent for monitoring purposes
+                            RiskEvent re;
+                            re.type = RiskEventType::POSITION_RECONCILIATION_MISMATCH;
+                            re.description = std::string("PositionSync event: ") + ev.symbol + "@" + ev.exchangeId;
+                            re.severity = "info";
+                            notifyRiskEvent(re);
+                        });
+                    }
+                }
+            }
+        } catch (const std::exception& e) {
+            LOG_WARN("RiskManager", "Exception while setting up PositionSynchronizer: {}", e.what());
+            m_positionSync.reset();
+        }
+
         // Initialize portfolio manager first (only if not injected by tests)
         if (!m_portfolioManager) {
             // Construct PortfolioManager using the shared PositionTracker to avoid duplicate trackers
@@ -223,6 +269,24 @@ bool RiskManager::initialize() {
             }
         }
         LOG_INFO(std::format("{} {}", "RiskManager", "Initialized PostTradeMonitor successfully"));
+        // If we have a running PositionSynchronizer, inject it into components that can use it
+        if (m_positionSync) {
+            try {
+                // PostTradeMonitor may expose stop-loss and reconciliation subsystems which accept a PositionSynchronizer
+                // Forward the shared pointer (wrap unique_ptr raw pointer into shared_ptr temporarily)
+                // Create a non-owning shared_ptr wrapper with no-op deleter so we can pass a shared_ptr view
+                auto sharedSync = std::shared_ptr<trading::risk::sync::PositionSynchronizer>(m_positionSync.get(), [](auto*){});
+
+                // Inject into PostTradeMonitor subcomponents if available
+                trySetPositionSync(&m_postTradeMonitor->getStopLossManager(), sharedSync);
+                trySetPositionSync(&m_postTradeMonitor->getBalanceReconciliation(), sharedSync);
+
+                // CollateralManager - attempt to set if API exists
+                trySetPositionSync(m_collateralManager.get(), sharedSync);
+            } catch (const std::exception& e) {
+                LOG_WARN("RiskManager", "Failed to inject PositionSynchronizer into components: {}", e.what());
+            }
+        }
         
     // Create a single shared PositionTracker instance and inject it into components
     // Pass shared tracker into collateral manager (and later into portfolio/post-trade components)
@@ -308,6 +372,18 @@ bool RiskManager::shutdown() {
         if (m_preTradeFilter) {
             m_preTradeFilter->shutdown();
             LOG_INFO("RiskManager", "PreTradeRiskFilter shut down successfully");
+        }
+
+        // Shutdown position synchronizer if present
+        if (m_positionSync) {
+            try {
+                m_positionSync->stop();
+                m_positionSync->shutdown();
+                LOG_INFO("RiskManager", "PositionSynchronizer stopped and shut down");
+            } catch (const std::exception& e) {
+                LOG_WARN("RiskManager", "Exception during PositionSynchronizer shutdown: {}", e.what());
+            }
+            m_positionSync.reset();
         }
         
         // Shutdown data interface last to ensure all components finish using it
@@ -883,7 +959,27 @@ std::optional<double> RiskManager::getCachedPosition(const ExchangeId& exchangeI
     // 🚀 FAST O(1) position lookup from cached PositionTracker
     // Avoids expensive getAllPositions() API calls (100+ positions)
     try {
-        // Try PreTradeFilter's position tracker first
+        // Try PositionSynchronizer cache first if available (very fast)
+        if (m_positionSync) {
+            try {
+                // positionSync API uses symbol, exchangeId string ordering
+                std::string symbol = tradingPair.toString();
+                std::string exch = exchangeId.toString();
+                if (m_positionSync->hasPosition(symbol, exch)) {
+                    auto pOpt = m_positionSync->getPosition(symbol, exch);
+                    if (pOpt.has_value()) {
+                        double qty = (*pOpt).getQuantity();
+                        LOG_INFO("RiskManager - ✅ Found position in PositionSync cache: {}@{} = {}", symbol, exch, qty);
+                        return qty;
+                    }
+                }
+            } catch (const std::exception& e) {
+                LOG_WARN("RiskManager - PositionSync read error: {}", e.what());
+                // Fall through to tracker fallback
+            }
+        }
+
+        // Try PreTradeFilter's position tracker next
         if (m_preTradeFilter && m_preTradeFilter->getPositionTracker()) {
             // Diagnostic: print pointer and timestamp to help debug missing positions
             auto pt_ptr = m_preTradeFilter->getPositionTracker().get();

@@ -7,10 +7,15 @@
  */
 
 #include "risk/posttrade/stop_loss_manager.hpp"
+#include "risk/sync/position_synchronizer.hpp"
 #include <algorithm>
 #include <sstream>
 #include <ranges>
 #include <optional>
+// TODO: Consider using trading::risk::sync::PositionSynchronizer cache for
+// low-latency position lookups instead of querying PositionTracker directly.
+// Integration point: RiskManager provides a synchronized cache accessible
+// when initialized (see risk/sync/position_synchronizer.hpp).
 namespace trading::risk {
 
 StopLossManager::StopLossManager(
@@ -42,7 +47,13 @@ bool StopLossManager::initialize() {
     
     // Initialize stop losses for existing positions
     try {
-        auto positions = positionTracker_->getAllPositions();
+        // Helper that prefers positionSync_ if injected, falling back to PositionTracker
+        auto getAllPositions = [this]() {
+            if (positionSync_) return positionSync_->getAllPositions();
+            return positionTracker_->getAllPositions();
+        };
+
+        auto positions = getAllPositions();
         
         for (const auto& position : positions) {
             if (std::abs(position.getQuantity()) < 1e-8) {
@@ -88,7 +99,18 @@ void StopLossManager::processExecutionReport(const execution::models::ExecutionR
     }
     
     // Get current position
-    auto position = positionTracker_->getPosition(exchangeId, TradingPair(tradingPair));
+    auto getPositionOpt = [&](const core::ExchangeId& ex, const core::Symbol& pair) -> std::optional<Position> {
+        if (positionSync_) {
+            try {
+                auto pos = positionSync_->getPosition(pair.toString(), ex.toString());
+                if (pos.has_value()) return pos;
+            } catch (...) {}
+        }
+        return positionTracker_->getPosition(ex, TradingPair(pair));
+    };
+
+    // Get current position
+    auto position = getPositionOpt(exchangeId, tradingPair);
     if (!position) {
         return;
     }
@@ -127,6 +149,16 @@ void StopLossManager::processExecutionReport(const execution::models::ExecutionR
     }
 }
 
+std::optional<Position> StopLossManager::getPositionOpt(const core::ExchangeId& exchangeId, const TradingPair& tradingPair) const {
+    if (positionSync_) {
+        try {
+            auto pos = positionSync_->getPosition(tradingPair.toString(), exchangeId.toString());
+            if (pos.has_value()) return pos;
+        } catch (...) {}
+    }
+    return positionTracker_->getPosition(exchangeId, tradingPair);
+}
+
 void StopLossManager::updateMarketData(const core::MarketData& marketData) {
     // Update price cache
     {
@@ -148,9 +180,9 @@ bool StopLossManager::setStopLoss(
     if (!validateStopLossParameters(stopPrice, isTrailing, trailingDistance)) {
         return false;
     }
-    
+    // auto getPositionOpt = [&](const core::ExchangeId& ex, const core::Symbol& pair) -> std::optional<Position> {
     // Get current position to validate
-    auto position = positionTracker_->getPosition(exchangeId, TradingPair(tradingPair));
+    auto position = getPositionOpt(exchangeId, TradingPair(tradingPair));
     if (!position || std::abs(position->getQuantity()) < 1e-8) {
         return false;
     }
