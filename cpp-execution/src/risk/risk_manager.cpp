@@ -20,7 +20,9 @@ namespace {
     template <typename T>
     auto trySetPositionSync(T* obj, std::shared_ptr<trading::risk::sync::PositionSynchronizer> sync)
         -> decltype(obj->setPositionSynchronizer(sync), void()) {
-        obj->setPositionSynchronizer(std::move(sync));
+        if (obj) {
+            obj->setPositionSynchronizer(std::move(sync));
+        }
     }
 
     // Fallback overload when method doesn't exist - no-op
