@@ -12,7 +12,8 @@
 #include "rebalancing_engine.hpp"
 #include "collateral_manager.hpp"
 #include "../../execution/models/execution_report.hpp"
-#include "interfaces/execution_interface.hpp"
+// Forward declare ExecutionInterface to avoid pulling in the full header here
+namespace trading { namespace risk { class ExecutionInterface; } }
 
 #include <memory>
 #include <string>
