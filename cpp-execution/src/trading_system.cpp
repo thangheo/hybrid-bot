@@ -1553,6 +1553,32 @@ void Trading_system::setupComponentConnections() {
         LOG_ERROR("ExitCallback: ❌ Cannot register exit callback: RiskManager is null");
     }
     LOG_INFO("ExitCallback: 🔧 OptimalExitStrategy setup completed");
+
+    // Wire position lookup callback into ImbalanceDetectionEngine so strategy
+    // can consult authoritative cached positions before emitting ENTRY signals.
+    if (strategyEngine_ && riskManager_) {
+        try {
+            auto detector = strategyEngine_->getImbalanceDetector();
+            if (detector) {
+                // Capture weak_ptr to riskManager_ to avoid ownership cycles
+                std::weak_ptr<trading::risk::RiskManager> riskWeakLocal = riskManager_;
+                detector->setPositionLookupCallback(
+                    [riskWeakLocal](const core::ExchangeId& exch, const core::Symbol& sym) -> std::optional<double> {
+                        try {
+                            auto rm = riskWeakLocal.lock();
+                            if (!rm) return std::nullopt;
+                            return rm->getCachedPosition(exch, sym);
+                        } catch (...) {
+                            return std::nullopt;
+                        }
+                    }
+                );
+                LOG_INFO("Wired positionLookup callback into ImbalanceDetectionEngine");
+            }
+        } catch (const std::exception& e) {
+            LOG_WARN("Failed to wire position lookup into ImbalanceDetectionEngine: {}", e.what());
+        }
+    }
 }
 
 void Trading_system::realExecution(const execution::TradingSignal& signal) {
@@ -1719,15 +1745,3 @@ void Trading_system::loadEmergencyState() {
         std::cout << "⚠️  Could not load PnL state: " << e.what() << std::endl;
     }
 }
-
-// REMOVED: executeExitOrder() - This was dead code never called anywhere  
-// The actual exit execution happens through:
-// OptimalExitStrategy::closePosition() -> exitCallback_ -> ExecutionInterface::submitOrder()
-// See lines 1300-1427 for the real exit callback registration
-
-// REMOVED: handleExitSignal() - This was dead code never called anywhere
-// The actual exit strategy works through OptimalExitStrategy -> registerGlobalOptimalExitCallback()
-// Exit flow: ImbalanceDetectionEngine calls g_optimalExit.evaluateExit() -> exitCallback_ -> ExecutionInterface
-
-
-        

@@ -960,28 +960,50 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                                             exitDecision.expected_pnl);
                                 }
                             } else {
-                                // No active position - this is entry signal
+                                // No active position - this is candidate entry signal
                                 if (dir != core::Direction::NEUTRAL) {
-                                    double current_spread = (m.askPrice - m.bidPrice) / m.midPrice;
-                                    
-                                    // Start tracking position
-                                    g_optimalExit.startPosition(symbol_str, m.midPrice, dir, 
-                                                              signal.probability, current_spread);
-                                    
-                                    // Create entry event
-                                    OrderBookMetrics mcopy = m;
-                                    mcopy.metrics["bayes_probability"] = signal.probability;
-                                    mcopy.metrics["bayes_expected_value"] = signal.expected_value;
-                                    mcopy.metrics["bayes_position_size"] = signal.position_size;
-                                    mcopy.metrics["bayes_uncertainty"] = signal.uncertainty;
-                                    mcopy.metrics["entry_signal"] = 1.0;
-                                    
-                                    createImbalanceEventForBayesModel(ImbalanceType::CUSTOM, signal.position_size,
-                                                                    dir, mcopy, signal.probability, signal.uncertainty);
-                                    
-                                    LOG_INFO("ENTRY SIGNAL: {} {} @ {:.6f} (conf={:.3f})", 
-                                            symbol_str, (dir == core::Direction::BUY ? "BUY" : "SELL"), 
-                                            m.midPrice, signal.probability);
+                                    bool authoritativeHasPosition = false;
+                                    double authoritativeQty = 0.0;
+
+                                    // If a position lookup callback is provided, consult authoritative cache
+                                    try {
+                                        if (positionLookup_) {
+                                            auto pos = positionLookup_(m.exchangeId, m.symbol);
+                                            if (pos.has_value() && std::abs(pos.value()) > 1e-8) {
+                                                authoritativeHasPosition = true;
+                                                authoritativeQty = pos.value();
+                                            }
+                                        }
+                                    } catch (const std::exception &e) {
+                                        LOG_WARN("ImbalanceDetectionEngine: positionLookup threw: {}", e.what());
+                                    } catch (...) {
+                                        LOG_WARN("ImbalanceDetectionEngine: positionLookup threw unknown");
+                                    }
+
+                                    if (authoritativeHasPosition) {
+                                        LOG_INFO("ENTRY_BLOCKED_BY_POSITION: {} has authoritative position qty={} - skipping ENTRY", symbol_str, authoritativeQty);
+                                    } else {
+                                        double current_spread = (m.askPrice - m.bidPrice) / m.midPrice;
+
+                                        // Start tracking position
+                                        g_optimalExit.startPosition(symbol_str, m.midPrice, dir, 
+                                                                  signal.probability, current_spread);
+
+                                        // Create entry event
+                                        OrderBookMetrics mcopy = m;
+                                        mcopy.metrics["bayes_probability"] = signal.probability;
+                                        mcopy.metrics["bayes_expected_value"] = signal.expected_value;
+                                        mcopy.metrics["bayes_position_size"] = signal.position_size;
+                                        mcopy.metrics["bayes_uncertainty"] = signal.uncertainty;
+                                        mcopy.metrics["entry_signal"] = 1.0;
+
+                                        createImbalanceEventForBayesModel(ImbalanceType::CUSTOM, signal.position_size,
+                                                                        dir, mcopy, signal.probability, signal.uncertainty);
+
+                                        LOG_INFO("ENTRY SIGNAL: {} {} @ {:.6f} (conf={:.3f})", 
+                                                symbol_str, (dir == core::Direction::BUY ? "BUY" : "SELL"), 
+                                                m.midPrice, signal.probability);
+                                    }
                                 }
                             }
                         }
