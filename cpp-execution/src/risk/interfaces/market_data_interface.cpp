@@ -482,11 +482,16 @@ void MarketDataInterface::onMarketDataReceived(const core::MarketData& data) {
         core::ExchangeId exchange = data.exchangeId;
         core::Symbol symbol = data.tradingPair;
         std::string cacheKey = createCacheKey(exchange, symbol);
-        //print for every 100 messages
+        // Increment and occasionally log received messages so we can verify cache population
         static int messageCount = 0;
-        // if (++messageCount % 1 == 0) {
-        //     LOG_DEBUG("Received market data for {}:{}, cacheKey={}", exchange.toString(), symbol.toString(), cacheKey);
-        // }
+        ++messageCount;
+        // Log the first 20 messages at INFO and thereafter every 100th message at INFO
+        if (messageCount <= 20 || (messageCount % 100) == 0) {
+            LOG_INFO("Received market data #{} for {}:{}, price={}, cacheKey={}", messageCount, exchange.toString(), symbol.toString(), data.price, cacheKey);
+        } else {
+            // Keep a lightweight debug trace on other messages
+            LOG_DEBUG("Received market data for {}:{}, cacheKey={}", exchange.toString(), symbol.toString(), cacheKey);
+        }
         cache_->updateMarketData(cacheKey, data);
         
     } catch (const std::exception& e) {
