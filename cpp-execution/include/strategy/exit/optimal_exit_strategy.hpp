@@ -71,6 +71,11 @@ private:
     // Active trades tracking
     std::map<std::string, TradeState> activeTrades_;
     mutable std::mutex tradesMutex_;
+
+    // Track recent close timestamps for per-symbol cooldowns (to avoid immediate re-entry)
+    std::map<std::string, std::chrono::steady_clock::time_point> recentCloseTs_;
+    mutable std::mutex recentCloseMutex_;
+    std::chrono::milliseconds entryCooldown_{std::chrono::milliseconds(2000)}; // default 2s cooldown
     
     // Load parameters from volatility config
     void loadSymbolParameters(const std::string& config_path);
@@ -135,6 +140,12 @@ public:
      */
     using ExitCallback = std::function<void(const std::string& symbol, core::Direction exitDirection, double currentPrice, const std::string& reason)>;
     void registerExitCallback(const ExitCallback& callback);
+
+public:
+    // Mark whether a symbol was recently closed (within cooldown)
+    bool wasRecentlyClosed(const std::string& symbol) const;
+    // Allow configuring cooldown duration
+    void setEntryCooldown(std::chrono::milliseconds d) { entryCooldown_ = d; }
 
 private:
     ExitCallback exitCallback_;
