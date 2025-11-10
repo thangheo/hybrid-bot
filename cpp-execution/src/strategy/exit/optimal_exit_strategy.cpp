@@ -692,7 +692,7 @@ bool OptimalExitStrategy::shouldEnterPosition(const std::string& symbol,
     }
 
     // Require minimum confidence
-    if (confidence < 0.90) {
+    if (confidence < 0.80) {
         return false;
     }
 
