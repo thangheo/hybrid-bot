@@ -1513,7 +1513,7 @@ double StrategyEngine::calculateAdaptiveThreshold(const std::string& symbol, dou
     if (metrics.empty() || baseThreshold <= 0.0) {
         return baseThreshold; // No volume profile data, return base threshold
     }
-    
+
     // Get current price if not provided
     if (currentPrice <= 0.0) {
         // Find any trading pair for this symbol to get current price
@@ -1526,62 +1526,55 @@ double StrategyEngine::calculateAdaptiveThreshold(const std::string& symbol, dou
         }
         if (currentPrice <= 0.0) return baseThreshold; // No price data
     }
-    
+
     // Get volume profile context
     auto pocIt = metrics.find("poc");
     auto vahIt = metrics.find("value_area_high");
     auto valIt = metrics.find("value_area_low");
     auto densityRatioIt = metrics.find("density_ratio");
-    
-    double adaptiveMultiplier = 1.0;
-    
-    // Calculate density-based adjustment
+
+    // Density adjustment (separate from context) - non-linear but bounded
+    double densityAdj = 1.0;
     if (densityRatioIt != metrics.end()) {
         double densityRatio = densityRatioIt->second;
-        // Higher density requires stronger imbalance to be significant
-        adaptiveMultiplier *= (1.0 + 0.5 * std::min(densityRatio, 2.0));
+        // Higher density -> require stronger imbalance; cap influence
+        densityAdj = 1.0 + 0.5 * std::min(densityRatio, 2.0);
     }
-    
-    // Context-based adjustment
+
+    // Context adjustment based on POC / value area
+    double contextAdj = 1.0;
     bool nearPOC = false;
     bool inValueArea = false;
-    
-    if (pocIt != metrics.end()) {
-        double pocDistance = std::abs(currentPrice - pocIt->second) / currentPrice;
+
+    if (pocIt != metrics.end() && pocIt->second > 0.0) {
+        // Normalize distance relative to POC itself
+        double pocDistance = std::abs(currentPrice - pocIt->second) / pocIt->second;
         nearPOC = pocDistance < 0.005; // Within 0.5% of POC
         LOG_DEBUG("Current price {:.4f}, POC {:.4f}, pocDistance {:.4f}%, nearPOC={}",
-                 currentPrice, pocIt->second, pocDistance * 100.0, nearPOC);
+                  currentPrice, pocIt->second, pocDistance * 100.0, nearPOC);
     }
-    
+
     if (vahIt != metrics.end() && valIt != metrics.end()) {
         inValueArea = (currentPrice >= valIt->second && currentPrice <= vahIt->second);
     }
-    
-    // Adjust threshold based on volume profile context
+
     if (inValueArea && nearPOC) {
-        // In high-volume area near POC - need stronger imbalance to overcome noise
-        adaptiveMultiplier *= 1.3;
+        // Need stronger imbalance in noisy high-volume area
+        contextAdj = 1.3;
     } else if (!inValueArea) {
-        // Outside value area - lower threshold for breakout detection
-        adaptiveMultiplier *= 0.8;
+        // Loosen threshold outside value area for breakout detection
+        contextAdj = 0.8;
     }
-    
-    // Clamp the multiplier to reasonable bounds
-    adaptiveMultiplier = std::clamp(adaptiveMultiplier, 0.5, 2.0);
-    
+
+    double adaptiveMultiplier = std::clamp(densityAdj * contextAdj, 0.5, 2.0);
     return baseThreshold * adaptiveMultiplier;
 }
 
-bool StrategyEngine::isImbalanceSignificant(const std::string& symbol, double imbalanceStrength, double baseThreshold) const {
-    double adaptiveThreshold = calculateAdaptiveThreshold(symbol, baseThreshold);
-    bool isSignificant = imbalanceStrength > adaptiveThreshold;
-    
-    // Log for debugging adaptive threshold adjustments
-    if (adaptiveThreshold != baseThreshold) {
-        LOG_DEBUG("Adaptive threshold for {}: base={:.4f} -> adaptive={:.4f}, strength={:.4f}, significant={}", 
-                 symbol, baseThreshold, adaptiveThreshold, imbalanceStrength, isSignificant);
-    }
-    
+
+bool StrategyEngine::isImbalanceSignificant(const std::string& symbol, double imbalanceStrength, double threshold) const {
+    bool isSignificant = imbalanceStrength > threshold;
+    LOG_DEBUG("Imbalance check {}: strength={:.4f}, threshold={:.4f}, significant={}",
+              symbol, imbalanceStrength, threshold, isSignificant);
     return isSignificant;
 }
  
