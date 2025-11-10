@@ -200,6 +200,8 @@ bool Trading_system::initialize() {
         auto hs = marketDataInterface_->getHealthStatus();
         LOG_INFO("MarketDataInterface health - cacheEntries={}, validEntries={}, cacheHealthy={}, subscriberHealthy={}",
                  hs.cacheStats.totalEntries, hs.cacheStats.validEntries, hs.cacheHealthy, hs.subscriberHealthy);
+        // Also log pointer/address for easier debugging if workers see nullptr
+        LOG_INFO("MarketDataInterface pointer={}", static_cast<const void*>(marketDataInterface_.get()));
     } catch (const std::exception& e) {
         LOG_WARN("Failed to query MarketDataInterface health after init: {}", e.what());
     }
@@ -1299,6 +1301,9 @@ void Trading_system::execWorkerLoop(size_t workerId) {
                                  task.symbol.toString(), 
                                  sp.has_value() ? std::to_string(sp.value()) : "n/a", 
                                  spreadRatio * 100.0);
+                    }
+                    else {
+                        LOG_WARN("ExecWorker: marketDataInterface_ is NULL when starting exit tracking for {}", task.symbol.toString());
                     }
                     exitStrategy_->startPosition(task.symbol.toString(), currentPrice, task.direction, task.confidence, spreadRatio);
                 }
