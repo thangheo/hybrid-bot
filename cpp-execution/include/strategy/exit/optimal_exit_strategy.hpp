@@ -13,8 +13,15 @@ namespace trading {
 namespace strategy {
 
 /**
- * Optimal Exit Strategy for HFT with 2s training windows
- * Replaces simple "NEUTRAL = SELL" logic with multi-layer exit system
+ * IMPROVED Optimal Exit Strategy for HFT with adaptive exits
+ * 
+ * Key improvements:
+ * - Fixed peak tracking for SELL positions 
+ * - Dynamic parameter adjustment based on time and momentum
+ * - Faster signal reversal detection
+ * - Momentum-based exit acceleration
+ * - Time-based stop tightening
+ * - Strict time limit enforcement
  */
 class OptimalExitStrategy {
 public:
@@ -44,20 +51,25 @@ public:
         double entry_confidence = 0.0;
         std::string symbol;
         bool is_active = false;
+        
+        // NEW: Enhanced tracking fields
+        double initial_momentum = 0.0;     // Average PnL/tick in first 3 ticks
+        int ticks_since_entry = 0;         // Number of evaluation ticks
+        double cumulative_pnl_sum = 0.0;   // Sum of PnL values for momentum calc
     };
     
 private:
-    // Configurable parameters based on volatility category
+    // IMPROVED parameters with tighter controls
     struct ExitParams {
-        double profit_target_bps = 8.0;        // 8bps profit target
-        double trailing_stop_bps = 5.0;        // 5bps trailing stop
-        double hard_stop_loss_bps = -4.0;      // -4bps max loss
-        double max_holding_seconds = 10.0;     // 10s timeout
-        double signal_confidence_flip = 0.3;   // signal reversal threshold
-        double spread_widening_factor = 2.5;   // exit if spread > 2.5x entry
-        double max_spread_bps = 10.0;          // Guard: max spread = 0.1% = 10 bps
-        double min_stop_distance_bps = 12.0;   // Guard: min stop distance = 12 bps  
-        double stop_spread_multiplier = 2.5;   // Guard: stop distance ≥ 2.5×spread
+        double profit_target_bps = 6.0;        // Reduced: Take profits earlier
+        double trailing_stop_bps = 3.5;        // Tighter trailing stop
+        double hard_stop_loss_bps = -3.0;      // Tighter max loss
+        double max_holding_seconds = 8.0;      // Reduced: Exit faster
+        double signal_confidence_flip = 0.25;  // More sensitive to reversals
+        double spread_widening_factor = 2.0;   // More sensitive to spread changes
+        double max_spread_bps = 8.0;           // Tighter spread requirement
+        double min_stop_distance_bps = 10.0;   // Minimum stop distance
+        double stop_spread_multiplier = 2.5;   // Stop distance multiplier
     };
     
     // Per-symbol exit parameters (based on volatility config)
@@ -72,10 +84,10 @@ private:
     std::map<std::string, TradeState> activeTrades_;
     mutable std::mutex tradesMutex_;
 
-    // Track recent close timestamps for per-symbol cooldowns (to avoid immediate re-entry)
+    // Track recent close timestamps for per-symbol cooldowns
     std::map<std::string, std::chrono::steady_clock::time_point> recentCloseTs_;
     mutable std::mutex recentCloseMutex_;
-    std::chrono::milliseconds entryCooldown_{std::chrono::milliseconds(2000)}; // default 2s cooldown
+    std::chrono::milliseconds entryCooldown_{std::chrono::milliseconds(2000)}; // 2s cooldown
     
     // Load parameters from volatility config
     void loadSymbolParameters(const std::string& config_path);
@@ -96,6 +108,7 @@ public:
     
     /**
      * Evaluate exit decision for active position
+     * IMPROVED: Now with momentum tracking and dynamic adjustments
      */
     [[nodiscard]] ExitDecision evaluateExit(const std::string& symbol,
                              double current_price,
@@ -142,9 +155,9 @@ public:
     void registerExitCallback(const ExitCallback& callback);
 
 public:
-    // Mark whether a symbol was recently closed (within cooldown)
+    // Check if symbol was recently closed (within cooldown)
     bool wasRecentlyClosed(const std::string& symbol) const;
-    // Allow configuring cooldown duration
+    // Configure cooldown duration
     void setEntryCooldown(std::chrono::milliseconds d) { entryCooldown_ = d; }
 
 private:
