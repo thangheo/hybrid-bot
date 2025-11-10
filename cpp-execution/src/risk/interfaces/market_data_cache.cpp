@@ -148,8 +148,8 @@ void MarketDataCache::updateMarketData(const std::string& cacheKey, const core::
         totalUpdates_.fetch_add(1, std::memory_order_relaxed);
         
         // Update main cache
-        // LOG_TRACE("Updating market data for {}: price={}, bid={}, ask={}, volume={}, cacheKey={}",
-        //          cacheKey, data.price, data.bid, data.ask, data.volume, cacheKey);
+        LOG_INFO("Updating market data for {}: price={}, bid={}, ask={}, volume={}, cacheKey={}",
+                 cacheKey, data.price, data.bid, data.ask, data.volume, cacheKey);
 
         {
             std::unique_lock<std::shared_mutex> lock(cacheMutex_);
@@ -160,8 +160,8 @@ void MarketDataCache::updateMarketData(const std::string& cacheKey, const core::
                 data.price > 0.0  // Valid if we have a price
             };
             size_t sizeAfter = marketDataCache_.size();
-            // LOG_TRACE("MarketDataCache::updateMarketData this={} key='{}' sizeBefore={} sizeAfter={}",
-            //           static_cast<const void*>(this), cacheKey, sizeBefore, sizeAfter);
+            LOG_TRACE("MarketDataCache::updateMarketData this={} key='{}' sizeBefore={} sizeAfter={}",
+                      static_cast<const void*>(this), cacheKey, sizeBefore, sizeAfter);
         }
         // Periodic cleanup check
         if (shouldPerformCleanup()) {

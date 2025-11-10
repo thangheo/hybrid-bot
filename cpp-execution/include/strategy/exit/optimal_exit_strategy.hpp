@@ -47,6 +47,7 @@ public:
         std::chrono::steady_clock::time_point entry_time;
         double peak_price = 0.0;
         double entry_spread_ratio = 0.0;
+    double entry_spread_ema = 0.0; // EMA / smoothed spread (same units as entry_spread_ratio)
         core::Direction entry_direction = core::Direction::NEUTRAL;
         double entry_confidence = 0.0;
         std::string symbol;
@@ -104,7 +105,8 @@ public:
                       double entry_price,
                       core::Direction direction,
                       double confidence,
-                      double spread_ratio);
+                      double spread_ratio,
+                      double spread_ema = 0.0);
     
     /**
      * Evaluate exit decision for active position
@@ -113,6 +115,7 @@ public:
     [[nodiscard]] ExitDecision evaluateExit(const std::string& symbol,
                              double current_price,
                              double current_spread_ratio,
+                             double current_spread_ema,
                              core::Direction current_signal_direction,
                              double current_confidence,
                              double bid_price = 0.0,
