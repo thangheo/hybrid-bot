@@ -160,7 +160,13 @@
        "exchange": "BINANCE",
        "category": "consensus_innovation",
        "description": "Algorand - Pure proof-of-stake"
-     }
+     },
+      {
+        "symbol": "ZEC/USDT",
+        "exchange": "BINANCE",
+        "category": "layer2",
+        "description": "Zcash - Privacy-focused cryptocurrency"
+      }
     ],
   "parameters": {
     "numeric": {
@@ -187,7 +193,7 @@
     },
     "array": {
       "price_levels": [5, 10, 20, 50],
-      "time_windows": [1000, 2000, 5000, 10000],
+          "time_windows": [10000, 30000, 60000, 120000],
       "volume_thresholds": [0.1, 0.25, 0.5, 1.0]
     }
   },
@@ -222,7 +228,7 @@
         "tradeImbalanceThreshold": 0.6,
         "cancellationImbalanceThreshold": 0.6,
         "priceVolatilityImbalanceThreshold": 0.3,      
-        "detectionWindowMs": 5000,
+  "detectionWindowMs": 60000,
         "maxHistorySize": 500,
         "global_sensitivity": 0.75,
         "thresholds": {
@@ -232,7 +238,7 @@
           "order_flow": 0.3
         },
         "bayesModelPath": "models/bayesian/",
-        "labelingDelayMs": 2000,
+  "labelingDelayMs": 60000,
         "bayesSaveAfterUpdates": 25,
         "requireModelReadyUpdates": 50,
         "bayesMinSaveIntervalMs": 30000,
@@ -244,7 +250,7 @@
           "log_transform_threshold": 0.0,
           "comment": "Critical fix for extreme feature values (e.g., FLOKI feature_2 mean=202k)"
         },
-        "trainingStartDelayMs": 1,
+  "trainingStartDelayMs": 1000,
         "minOrderbookLevels": 0,
         "bayesMinUpdatesToTrade": 500
         ,
@@ -278,14 +284,14 @@
             "enable_cancellation_tracking": true
           },
           "array": {
-            "flow_windows": [30, 60, 120, 300]
+            "flow_windows": [60, 120, 300, 600]
           }
         }
       }
     },
     "volumeProfileAnalyzer": {
       "parameters": {
-        "timeWindowMs": 60000,
+  "timeWindowMs": 60000,
         "priceLevels": 50,
         "exchangeId": "BINANCE",
         "tradingPair": "BTC/USDT",
@@ -314,16 +320,16 @@
     },
     "signalGenerator": {
       "parameters": {
-        "minSignalStrength": 0.6,
-        "confidenceThreshold": 0.7,
-        "signalTtlMs": 500
+  "minSignalStrength": 0.6,
+  "confidenceThreshold": 0.7,
+  "signalTtlMs": 60000
       }
     },
     "momentumCorrelator": {
       "parameters": {
-        "correlationWindowMs": 10000,
-        "predictionHorizonMs": 2000,
-        "ewmaHalfLifeMs": 3000
+  "correlationWindowMs": 60000,
+  "predictionHorizonMs": 60000,
+  "ewmaHalfLifeMs": 30000
       }
     },
     "thresholdManager": {

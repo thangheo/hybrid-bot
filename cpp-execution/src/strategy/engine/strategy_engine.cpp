@@ -228,6 +228,26 @@ void StrategyEngine::handleSignalGenerated(const TradingSignal& signal) {
         if (s.strategyId.version.empty()) s.strategyId.version = config_.version;
     }
 
+    // Selective significance check for BUY/entry signals.
+    // We use an adaptive threshold (may incorporate volume profile context)
+    // to decide whether a detected imbalance is strong enough to act on.
+    try {
+        if (s.direction == core::Direction::BUY) {
+            double baseThreshold = getSymbolVolatilityThreshold(s.symbol.toString());
+            double adaptiveThreshold = calculateAdaptiveThreshold(s.symbol.toString(), baseThreshold, 0.0);
+            double imbalanceStrength = s.strength; // use signal strength as proxy for imbalance
+
+            if (!isImbalanceSignificant(s.symbol.toString(), imbalanceStrength, adaptiveThreshold)) {
+                LOG_INFO("Signal {} rejected: imbalance not significant (strength={:.3f} < threshold={:.6f}) for symbol {}", 
+                         s.id, imbalanceStrength, adaptiveThreshold, s.symbol.toString());
+                return;
+            }
+        }
+    } catch (const std::exception &ex) {
+        LOG_WARN("Exception during imbalance significance check for signal {}: {}", s.id, ex.what());
+        // On error, continue processing the signal rather than dropping it
+    }
+
     activeSignals_[s.id] = s;
     for (const auto& [id, callback] : signalCallbacks_) {
         try {
@@ -1529,6 +1549,8 @@ double StrategyEngine::calculateAdaptiveThreshold(const std::string& symbol, dou
     if (pocIt != metrics.end()) {
         double pocDistance = std::abs(currentPrice - pocIt->second) / currentPrice;
         nearPOC = pocDistance < 0.005; // Within 0.5% of POC
+        LOG_DEBUG("Current price {:.4f}, POC {:.4f}, pocDistance {:.4f}%, nearPOC={}",
+                 currentPrice, pocIt->second, pocDistance * 100.0, nearPOC);
     }
     
     if (vahIt != metrics.end() && valIt != metrics.end()) {
