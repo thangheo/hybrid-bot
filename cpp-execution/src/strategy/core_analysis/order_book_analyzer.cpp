@@ -409,6 +409,8 @@ void OrderBookAnalyzer::calculatePriceMetrics(
     const double bestAsk = asks[0].price;
     
     // Calculate basic price metrics
+    currentMetrics_.bidPrice = bestBid;
+    currentMetrics_.askPrice = bestAsk;
     currentMetrics_.midPrice = (bestBid + bestAsk) / 2.0;
     currentMetrics_.spread = bestAsk - bestBid;
     
