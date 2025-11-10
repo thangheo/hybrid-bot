@@ -69,87 +69,115 @@ void OptimalExitStrategy::loadSymbolParameters(const std::string& config_path) {
             LOG_WARN("Could not open volatility config: {}, using defaults", config_path);
             return;
         }
-        
+
         json config;
         file >> config;
-        
+
         // Update load timestamp
         if (std::filesystem::exists(config_path)) {
             lastLoadedTime_ = std::filesystem::last_write_time(config_path);
         }
-        
+
+        // Read exit_parameters (category-level defaults and per-symbol overrides)
+        json exitParamsJson = json::object();
+        if (config.contains("exit_parameters")) {
+            exitParamsJson = config["exit_parameters"];
+
+            // Set entryCooldown_ from crypto_major if available (fallbacks preserved)
+            if (exitParamsJson.contains("crypto_major") && exitParamsJson["crypto_major"].contains("entry_cooldown_seconds")) {
+                double secs = exitParamsJson["crypto_major"]["entry_cooldown_seconds"].get<double>();
+                entryCooldown_ = std::chrono::milliseconds(static_cast<int>(secs * 1000.0));
+            } else if (exitParamsJson.contains("crypto_minor") && exitParamsJson["crypto_minor"].contains("entry_cooldown_seconds")) {
+                double secs = exitParamsJson["crypto_minor"]["entry_cooldown_seconds"].get<double>();
+                entryCooldown_ = std::chrono::milliseconds(static_cast<int>(secs * 1000.0));
+            }
+        }
+
         // Load per-symbol parameters with IMPROVED settings
         if (config.contains("symbol_volatility_thresholds") && 
             config["symbol_volatility_thresholds"].contains("symbols")) {
-            
+
             for (const auto& [symbol, data] : config["symbol_volatility_thresholds"]["symbols"].items()) {
                 ExitParams params;
-                
+
                 std::string category = data.value("category", "crypto_minor");
-                
+
                 // *** IMPROVED PARAMETERS BASED ON YOUR RESULTS ***
                 if (category == "crypto_major") {
-                    // BTC, ETH, BNB - Higher liquidity, tighter controls
-                    params.profit_target_bps = 6.0;      // Reduced from 8.0 - take profit earlier
-                    params.trailing_stop_bps = 3.0;      // Tightened from 4.0
-                    params.hard_stop_loss_bps = -2.5;    // Tightened from -3.0
-                    params.max_holding_seconds = 5.0;    // Reduced from 8.0 - exit faster
-                    params.signal_confidence_flip = 0.25; // More sensitive to signal changes
-                    params.spread_widening_factor = 2.0;  // More sensitive to spread changes
-                    params.max_spread_bps = 6.0;         // Tighter spread requirement
-                    // params.min_stop_distance_bps = 8.0;  
-                    // params.stop_spread_multiplier = 2.0; // Reduced from 2.5
-                    
+                    params.profit_target_bps = 6.0;
+                    params.trailing_stop_bps = 3.0;
+                    params.hard_stop_loss_bps = -2.5;
+                    params.max_holding_seconds = 5.0;
+                    params.min_holding_seconds = 2.0;
+                    params.signal_confidence_flip = 0.25;
+                    params.spread_widening_factor = 2.0;
+                    params.max_spread_bps = 6.0;
                 } else if (category == "crypto_minor") {
-                    // SOL, AVAX, DOT, etc. - Higher volatility needs wider but faster exits
-                    params.profit_target_bps = 8.0;      // Reduced from 12.0 - don't be greedy
-                    params.trailing_stop_bps = 4.0;      // Tightened from 6.0
-                    params.hard_stop_loss_bps = -3.5;    // Tightened from -5.0
-                    params.max_holding_seconds = 7.0;    // Reduced from 12.0
-                    params.signal_confidence_flip = 0.20; // More sensitive
+                    params.profit_target_bps = 8.0;
+                    params.trailing_stop_bps = 4.0;
+                    params.hard_stop_loss_bps = -3.5;
+                    params.max_holding_seconds = 7.0;
+                    params.min_holding_seconds = 1.5;
+                    params.signal_confidence_flip = 0.20;
                     params.spread_widening_factor = 2.2;
-                    params.max_spread_bps = 10.0;        // Reduced from 12.0
-                    // params.min_stop_distance_bps = 12.0;
-                    // params.stop_spread_multiplier = 2.2;
-                    
+                    params.max_spread_bps = 10.0;
                 } else if (category == "crypto_stable") {
-                    // Stablecoins - Very tight controls
-                    params.profit_target_bps = 3.0;      // Reduced from 5.0
-                    params.trailing_stop_bps = 2.0;      // Tightened from 3.0  
-                    params.hard_stop_loss_bps = -1.5;    // Tightened from -2.0
-                    params.max_holding_seconds = 10.0;   // Can hold a bit longer but reduced
+                    params.profit_target_bps = 3.0;
+                    params.trailing_stop_bps = 2.0;
+                    params.hard_stop_loss_bps = -1.5;
+                    params.max_holding_seconds = 10.0;
+                    params.min_holding_seconds = 1.0;
                     params.signal_confidence_flip = 0.35;
                     params.spread_widening_factor = 1.5;
-                    params.max_spread_bps = 4.0;         // Very tight
-                    // params.min_stop_distance_bps = 6.0;
-                    // params.stop_spread_multiplier = 2.0;
+                    params.max_spread_bps = 4.0;
                 }
-                
-                // NEW: Add volatility-specific overrides if available
+
+                // Apply category-level exit_parameters overrides if present
+                if (!exitParamsJson.is_null() && exitParamsJson.contains(category)) {
+                    const auto& cat = exitParamsJson[category];
+                    if (cat.contains("max_holding_seconds")) params.max_holding_seconds = cat["max_holding_seconds"].get<double>();
+                    if (cat.contains("min_holding_seconds")) params.min_holding_seconds = cat["min_holding_seconds"].get<double>();
+                    if (cat.contains("min_hold_before_spread_exit_seconds")) params.min_hold_before_spread_exit_seconds = cat["min_hold_before_spread_exit_seconds"].get<double>();
+                    if (cat.contains("spread_widening_consecutive_checks")) params.spread_widening_consecutive_checks = cat["spread_widening_consecutive_checks"].get<int>();
+                    if (cat.contains("emergency_spread_multiplier")) params.emergency_spread_multiplier = cat["emergency_spread_multiplier"].get<double>();
+                    if (cat.contains("spread_cost_multiplier")) params.spread_cost_multiplier = cat["spread_cost_multiplier"].get<double>();
+                }
+
+                // NEW: Add volatility-specific overrides if available in symbol data
                 if (data.contains("recent_volatility_30s")) {
                     double volatility = data["recent_volatility_30s"];
-                    // Dynamic adjustment based on recent volatility
                     if (volatility > 0.002) { // High volatility (>20bps)
                         params.profit_target_bps *= 1.2;
                         params.hard_stop_loss_bps *= 1.2;
                         params.max_holding_seconds *= 0.8; // Exit faster in high volatility
                     }
                 }
-                
+
+                // Apply per-symbol overrides if provided under exit_parameters.per_symbol_overrides
+                if (!exitParamsJson.is_null() && exitParamsJson.contains("per_symbol_overrides") &&
+                    exitParamsJson["per_symbol_overrides"].contains("example") == false) {
+                    // allow user-specified overrides keyed by symbol
+                    if (exitParamsJson["per_symbol_overrides"].contains(symbol)) {
+                        const auto& ov = exitParamsJson["per_symbol_overrides"][symbol];
+                        if (ov.contains("max_holding_seconds")) params.max_holding_seconds = ov["max_holding_seconds"].get<double>();
+                        if (ov.contains("min_holding_seconds")) params.min_holding_seconds = ov["min_holding_seconds"].get<double>();
+                    }
+                }
+
                 // Convert symbol format (BTCUSDT -> BTC/USDT if needed)
                 std::string formatted_symbol = symbol;
                 if (symbol.length() >= 6 && symbol.substr(symbol.length()-4) == "USDT") {
                     formatted_symbol = symbol.substr(0, symbol.length()-4) + "/USDT";
                 }
-                
+
                 symbolParams_[formatted_symbol] = params;
                 symbolParams_[symbol] = params; // Store both formats
             }
         }
-        
+
         LOG_INFO("✅ Loaded improved exit parameters for {} symbols from {}", 
                  symbolParams_.size(), config_path);
-        
+
     } catch (const std::exception& e) {
         LOG_ERROR("❌ Failed to load volatility config from {}: {}", config_path, e.what());
     }
@@ -391,22 +419,7 @@ OptimalExitStrategy::ExitDecision OptimalExitStrategy::evaluateExit(
     return ExitDecision{false};
 }
  
-bool wasRecentlyClosed(const std::string& symbol) {
-    static std::mutex recentCloseMutex;
-    static std::unordered_map<std::string, std::chrono::steady_clock::time_point> recentCloseTs;
-    static const double cooldown_seconds = 5.0; // 5 seconds cooldown
-
-    std::lock_guard<std::mutex> lock(recentCloseMutex);
-    auto it = recentCloseTs.find(symbol);
-    if (it != recentCloseTs.end()) {
-        auto now = std::chrono::steady_clock::now();
-        double elapsed = std::chrono::duration<double>(now - it->second).count();
-        if (elapsed < cooldown_seconds) {
-            return true;
-        }
-    }
-    return false;
-}
+// Note: unified cooldown logic implemented as member wasRecentlyClosed() using entryCooldown_
 // getParamsForSymbol
 // ExitParams getParamsForSymbol(const std::string& symbol);
 // ============================================================================
@@ -418,8 +431,8 @@ bool OptimalExitStrategy::shouldEnterPosition(const std::string& symbol,
                                               double spread_ema,
                                               double spread_ratio,
                                               double confidence) const {
-    // Check cooldown
-    if (wasRecentlyClosed(symbol)) {
+    // Check cooldown using member cooldown (config-driven)
+    if (this->wasRecentlyClosed(symbol)) {
         return false;
     }
 
