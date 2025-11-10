@@ -9,6 +9,31 @@
 namespace trading {
 namespace strategy {
 
+std::vector<std::string> OptimalExitStrategy::getActiveSymbols() const {
+    std::lock_guard<std::mutex> lock(tradesMutex_);
+    std::vector<std::string> symbols;
+    for (const auto& [symbol, state] : activeTrades_) {
+        if (state.is_active) symbols.push_back(symbol);
+    }
+    return symbols;
+}
+
+std::optional<OptimalExitStrategy::PositionInfo> OptimalExitStrategy::getPositionInfo(const std::string& symbol) const {
+    std::lock_guard<std::mutex> lock(tradesMutex_);
+    auto it = activeTrades_.find(symbol);
+    if (it == activeTrades_.end() || !it->second.is_active) {
+        return std::nullopt;
+    }
+    const auto& state = it->second;
+    PositionInfo info;
+    info.direction = state.entry_direction;
+    info.entry_price = state.entry_price;
+    info.confidence = state.entry_confidence;
+    info.entry_time = state.entry_time;
+    info.quantity = 1.0; // TODO: track real quantity if available
+    return info;
+}
+
 using json = nlohmann::json;
 
 // ============= CRITICAL BUG FIXES & IMPROVEMENTS =============
@@ -438,13 +463,13 @@ bool OptimalExitStrategy::shouldEnterPosition(const std::string& symbol,
 
     // CRITICAL: Reject if current spread much wider than normal
     double spread_multiple = spread_ratio / std::max(spread_ema, 0.01);
-    if (spread_multiple > 1.5) {  // Current spread > 1.5x normal
+    if (spread_multiple > 1.2) {  // Current spread > 1.5x normal
         // Spread is widening - adverse selection risk
         return false;
     }
 
     // Require minimum confidence
-    if (confidence < 0.80) {
+    if (confidence < 0.90) {
         return false;
     }
 
@@ -492,7 +517,11 @@ void OptimalExitStrategy::closePosition(const std::string& symbol, ExitReason re
             // Determine exit direction (opposite of entry for closing)
             core::Direction exitDir = (trade.entry_direction == core::Direction::BUY) ? 
                                      core::Direction::SELL : core::Direction::BUY;
+            // Instrumentation: log before invoking to confirm callback presence
+            LOG_INFO("OptimalExitStrategy: Invoking exitCallback_ for symbol {} (this={})", symbol, static_cast<const void*>(this));
             exitCallback_(symbol, exitDir, trade.entry_price, exitReasonToString(reason));
+        } else {
+            LOG_WARN("OptimalExitStrategy: exitCallback_ not set - skipping exit callback for {}", symbol);
         }
     }
     
