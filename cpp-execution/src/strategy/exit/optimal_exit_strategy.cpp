@@ -161,6 +161,9 @@ void OptimalExitStrategy::startPosition(const std::string& symbol,
     trade.peak_price = entry_price; // Initialize peak at entry
     trade.entry_spread_ratio = spread_ratio;
     trade.entry_spread_ema = spread_ema;
+    // Safety: set small floor if entry spread is zero to avoid immediate triggers
+    if (trade.entry_spread_ratio <= 0.0) trade.entry_spread_ratio = 1e-6;
+    trade.spread_widening_counter = 0;
     trade.entry_direction = direction;
     trade.entry_confidence = confidence;
     trade.symbol = symbol;
@@ -372,21 +375,53 @@ OptimalExitStrategy::ExitDecision OptimalExitStrategy::evaluateExit(
     
     // LAYER 5: SPREAD WIDENING - Liquidity check
     double effective_current_spread = current_spread_ratio;
-    // If EMA provided and non-zero, consider a conservative max of instant and EMA
     if (current_spread_ema > 0.0) {
-        // just use spread ema for the sake of stability
-        // effective_current_spread = std::max(current_spread_ratio, current_spread_ema);
-        effective_current_spread = current_spread_ema;
+        effective_current_spread = std::max(current_spread_ratio, current_spread_ema);
     }
 
-    if (effective_current_spread > trade.entry_spread_ratio * params.spread_widening_factor) {
+    // Emergency fast-exit if instant spread spikes extremely high (configurable)
+    double instant_bps = current_spread_ratio * 10000.0;
+    double ema_bps = current_spread_ema * 10000.0;
+    double effective_bps = effective_current_spread * 10000.0;
+
+    if (instant_bps > params.max_spread_bps * params.emergency_spread_multiplier) {
         decision.should_exit = true;
-        decision.reason = ExitReason::SPREAD_WIDENING;
-        LOG_INFO("💧 SPREAD_WIDENING: {} current_spread={:.2f}bps > entry_spread={:.2f}bps * {:.1f}", 
-                 symbol, current_spread_ratio * 10000, 
-                 trade.entry_spread_ratio * 10000, 
-                 params.spread_widening_factor);
+        decision.reason = ExitReason::LIQUIDITY_DRIED;
+        decision.exit_price = current_price;
+        if (trade.entry_direction == core::Direction::BUY) {
+            decision.expected_pnl = (current_price - trade.entry_price) / trade.entry_price * 10000;
+        } else {
+            decision.expected_pnl = (trade.entry_price - current_price) / trade.entry_price * 10000;
+        }
+        LOG_WARN("🚨 EMERGENCY_SPREAD_SPIKE: {} instant={:.2f}bps ema={:.2f}bps effective={:.2f}bps > emergency_threshold", 
+                 symbol, instant_bps, ema_bps, effective_bps);
         return decision;
+    }
+
+    // Avoid spread-based exits immediately after entry to reduce churn
+    if (elapsed_seconds >= params.min_hold_before_spread_exit_seconds) {
+        if (effective_current_spread > trade.entry_spread_ratio * params.spread_widening_factor) {
+            trade.spread_widening_counter++;
+        } else {
+            trade.spread_widening_counter = 0;
+        }
+
+        if (trade.spread_widening_counter >= params.spread_widening_consecutive_checks) {
+            decision.should_exit = true;
+            decision.reason = ExitReason::SPREAD_WIDENING;
+            LOG_INFO("💧 SPREAD_WIDENING: {} instant={:.2f}bps ema={:.2f}bps effective={:.2f}bps > entry*{:.1f} (count={}/{})", 
+                     symbol, instant_bps, ema_bps, effective_bps, params.spread_widening_factor,
+                     trade.spread_widening_counter, params.spread_widening_consecutive_checks);
+            // reset counter after triggering
+            trade.spread_widening_counter = 0;
+            return decision;
+        }
+    } else {
+        // Debug logging when spread would have triggered but was suppressed due to short holding time
+        if (effective_current_spread > trade.entry_spread_ratio * params.spread_widening_factor) {
+            LOG_TRACE("SPREAD_WIDENING_SUPPRESSED: {} held={:.3f}s < {:.3f}s, instant={:.2f}bps ema={:.2f}bps", 
+                      symbol, elapsed_seconds, params.min_hold_before_spread_exit_seconds, instant_bps, ema_bps);
+        }
     }
     
     // *** NEW: MOMENTUM-BASED EXIT - Exit if momentum reverses strongly ***
