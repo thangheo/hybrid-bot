@@ -169,7 +169,7 @@ void OptimalExitStrategy::startPosition(const std::string& symbol,
     trade.ticks_since_entry = 0;
     trade.cumulative_pnl_sum = 0.0;
     
-    LOG_INFO("EXIT_STRATEGY: Started position {} @ {:.6f}, direction={}, confidence={:.3f}, spread_ratio={:.2f}bps", 
+    LOG_INFO("EXIT_STRATEGY: Started position {} @ {:.6f}, direction={}, confidence={:.3f}, spread_ratio={:.5f}bps", 
              symbol, entry_price, 
              (direction == core::Direction::BUY ? "BUY" : "SELL"), 
              confidence, spread_ratio * 10000);
