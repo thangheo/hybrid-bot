@@ -1296,11 +1296,36 @@ void Trading_system::execWorkerLoop(size_t workerId) {
                     if (marketDataInterface_) {
                         auto sp = marketDataInterface_->getCurrentSpread(task.symbol.toString());
                         if (sp.has_value() && currentPrice > 0.0) spreadRatio = sp.value() / currentPrice;
-                        // LOG spread every 
-                        LOG_INFO("ExecWorker: Current spread for {} is {} (ratio {:.4f}%)", 
-                                 task.symbol.toString(), 
-                                 sp.has_value() ? std::to_string(sp.value()) : "n/a", 
-                                 spreadRatio * 100.0);
+                        // LOG spread every attempt; if cache miss, try a local orderbook fallback so we can observe spread
+                        if (sp.has_value()) {
+                            LOG_INFO("ExecWorker: Current spread for {} is {} (ratio {:.4f}%)", 
+                                     task.symbol.toString(), std::to_string(sp.value()), spreadRatio * 100.0);
+                        } else {
+                            // Cache miss - attempt fallback from dataIngestionService orderbook
+                            LOG_TRACE("ExecWorker: No spread in MarketDataInterface cache for {} - attempting fallback orderbook lookup", task.symbol.toString());
+                            try {
+                                auto ob = dataIngestionService_->getOrderBook(task.exchangeId, task.symbol);
+                                if (ob) {
+                                    try {
+                                        auto bestBid = ob->getBestBid();
+                                        auto bestAsk = ob->getBestAsk();
+                                        double bid = bestBid.price;
+                                        double ask = bestAsk.price;
+                                        double fb_spread = ask - bid;
+                                        if (fb_spread > 0.0 && currentPrice > 0.0) {
+                                            spreadRatio = fb_spread / currentPrice;
+                                        }
+                                        LOG_INFO("ExecWorker: Fallback orderbook spread for {} is {} (ratio {:.4f}%)", task.symbol.toString(), std::to_string(fb_spread), spreadRatio * 100.0);
+                                    } catch (...) {
+                                        LOG_TRACE("ExecWorker: Fallback orderbook getBestBid/getBestAsk failed for {}", task.symbol.toString());
+                                    }
+                                } else {
+                                    LOG_TRACE("ExecWorker: Fallback orderbook unavailable for {}", task.symbol.toString());
+                                }
+                            } catch (const std::exception &e) {
+                                LOG_WARN("ExecWorker: Fallback orderbook lookup failed for {}: {}", task.symbol.toString(), e.what());
+                            }
+                        }
                     }
                     else {
                         LOG_WARN("ExecWorker: marketDataInterface_ is NULL when starting exit tracking for {}", task.symbol.toString());
