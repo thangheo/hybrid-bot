@@ -114,7 +114,8 @@ public:
     void cleanup();
     void pruneExpiredEntries();
     void pruneOldHistory();
-    
+    // getCurrentSpread
+    std::optional<double> getCurrentSpread(const std::string& cacheKey) const;
     // Statistics and health
     struct CacheStats {
         size_t totalEntries{0};

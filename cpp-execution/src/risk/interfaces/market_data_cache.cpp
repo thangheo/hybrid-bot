@@ -316,6 +316,26 @@ double MarketDataCache::getVolatility(const std::string& cacheKey, const std::st
         return 0.0;
     }
 }
+// getCurrentSpread
+std::optional<double> MarketDataCache::getCurrentSpread(const std::string& cacheKey) const {
+    try {
+        std::shared_lock<std::shared_mutex> lock(cacheMutex_);
+        auto it = marketDataCache_.find(cacheKey);
+        if (it != marketDataCache_.end()) {
+            const auto& entry = it->second;
+            if (entry.isValid && !entry.isExpired(config_.cacheValidityDuration)) {
+                const auto& data = entry.data;
+                if (data.ask > 0 && data.bid > 0) {
+                    return data.ask - data.bid;
+                }
+            }
+        }
+        return std::nullopt;
+    } catch (const std::exception& e) {
+        LOG_ERROR("Error getting current spread for {}: {}", cacheKey, e.what());
+        return std::nullopt;
+    }
+}
 
 void MarketDataCache::cleanup() {
     LOG_DEBUG("Starting MarketDataCache cleanup");

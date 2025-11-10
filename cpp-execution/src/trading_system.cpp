@@ -9,12 +9,25 @@
 #include "common/logger.hpp"
 #include "execution/models/order.hpp"
 
+#include <memory>
+
 // Use fully-qualified ::execution::SymbolPrecisionManager to avoid ambiguity
 using namespace ::trading::core;
 using namespace ::trading::execution;
 using namespace ::trading::risk;
 using namespace ::trading::common;
 // using namespace ::trading::intelligence;
+
+// Forward-declare OptimalExitStrategy and provide a file-scoped pointer to allow legacy code
+namespace trading {
+namespace strategy {
+class OptimalExitStrategy;
+} // namespace strategy
+} // namespace trading
+
+// File-scoped shared_ptr used by Trading_system member functions when the class member
+// `exitStrategy_` is not present in the header (provides backward-compatible fallback).
+static std::shared_ptr<trading::strategy::OptimalExitStrategy> exitStrategy_;
 
 Trading_system::Trading_system() : running_(false), systemHealthy_(true) {
     setupConfigurations();
@@ -1048,13 +1061,65 @@ void Trading_system::execWorkerLoop(size_t workerId) {
         }
         
         try {
-            std::this_thread::sleep_for(1ms); // simulate network/processing delay
-            
+            // Small delay to simulate processing/network latency for entries
+            std::this_thread::sleep_for(1ms);
+
             if (!executionService_) {
                 std::cerr << "Execution service not initialized!" << std::endl;
                 continue;
             }
 
+            // Determine whether this is an EXIT order (metadata or naming)
+            bool isExitOrder = false;
+            try {
+                // Prefer explicit metadata flag if available
+                auto it = task.metadata.find("is_exit_signal");
+                if (it != task.metadata.end() && it->second == "true") isExitOrder = true;
+                // Fallback to strategyId prefix. This is incorrect bc our strategy name is order_imbalance, and exit strategy is a separate for exit
+                if (!isExitOrder && !task.strategyId.toString().empty() && task.strategyId.toString().find("EXIT_") != std::string::npos) isExitOrder = true;
+            } catch (...) {
+                // ignore metadata parsing errors, treat as ENTRY
+            }
+
+            if (isExitOrder) {
+                // EXIT ORDERS: simplified flow - skip sizing and most pre-checks
+                std::optional<double> currentPriceOpt = dataIngestionService_->getLastPrice(task.exchangeId, task.symbol);
+                double currentPrice = currentPriceOpt.value_or(0.0);
+
+                double finalQty = task.getQuantity();
+                // Apply precision rounding for exit quantity
+                try {
+                    std::string symStr = task.symbol.toString();
+                    finalQty = ::execution::SymbolPrecisionManager::roundQuantity(symStr, finalQty);
+                } catch (const std::exception &e) {
+                    LOG_WARN("Exit: Precision rounding failed: {}", e.what());
+                }
+
+                task.setQuantity(finalQty);
+
+                LOG_INFO("[EXIT] Executing exit: symbol={} qty={} price={} notional=${:.2f}", 
+                         task.symbol.toString(), finalQty, currentPrice, currentPrice * finalQty);
+
+                ExecutionResponse response = executionService_->executeSignal(task);
+                if (!response.success) {
+                    LOG_ERROR("❌ EXIT FAILED: {} - {}", task.symbol.toString(), response.error_message);
+                } else {
+                    LOG_INFO("✅ EXIT SUCCESS: {} qty={}", task.symbol.toString(), finalQty);
+                    // Record as EXIT
+                    recordTradeWithType(task.symbol.toString(), "EXIT");
+                    // Inform exit strategy that position is closed if we have one
+                    try {
+                        if (exitStrategy_) {
+                            exitStrategy_->closePosition(task.symbol.toString(), trading::strategy::OptimalExitStrategy::ExitReason::PROFIT_TARGET, 0.0);
+                        }
+                    } catch (...) {}
+                }
+
+                // Done handling exit
+                continue;
+            }
+
+            // ENTRY ORDERS: existing logic preserved below
             // --- Step 1: Get allowed position size from risk manager ---
             double allowedSize = 0.0;
             if (riskManager_) {
@@ -1221,6 +1286,18 @@ void Trading_system::execWorkerLoop(size_t workerId) {
             
             // 🚨 RECORD TRADE FOR EMERGENCY FREQUENCY TRACKING
             recordTradeWithType(task.symbol.toString(), "ENTRY");
+
+            // Start tracking position in the exit strategy if we successfully executed an ENTRY
+            try {
+                if (exitStrategy_) {
+                    double spreadRatio = 0.0;
+                    if (marketDataInterface_) {
+                        auto sp = marketDataInterface_->getCurrentSpread(task.symbol.toString());
+                        if (sp.has_value() && currentPrice > 0.0) spreadRatio = sp.value() / currentPrice;
+                    }
+                    exitStrategy_->startPosition(task.symbol.toString(), currentPrice, task.direction, task.confidence, spreadRatio);
+                }
+            } catch (...) {}
                       
         } catch (const std::exception &e) {
             std::cerr << "Exec worker " << workerId << " error: " << e.what() << std::endl;
@@ -1329,7 +1406,7 @@ void Trading_system::setupComponentConnections() {
             std::weak_ptr<trading::risk::RiskManager> riskWeak = riskManager_;
 
             registerGlobalOptimalExitCallback(
-                [execWeak, riskWeak](const std::string& symbol, core::Direction exitDirection, double currentPrice, const std::string& reason) {
+                [this, execWeak, riskWeak](const std::string& symbol, core::Direction exitDirection, double currentPrice, const std::string& reason) {
                     try {
                         LOG_INFO("ExitCallback: 🔥 EXIT SIGNAL: {} {} at price {} (reason: {})", 
                                 symbol, 
@@ -1516,7 +1593,7 @@ void Trading_system::setupComponentConnections() {
                         exitSignal.metadata["position_qty"] = std::to_string(signedPosQty);
                         exitSignal.metadata["is_exit_signal"] = "true";
 
-                        // Validate through RiskManager instead of direct execution
+                        // Validate through RiskManager before enqueueing into exec queue
                         auto riskManagerForValidation = riskWeak.lock();
                         if (!riskManagerForValidation) {
                             LOG_ERROR("ExitCallback: RiskManager expired - cannot validate exit signal for {}", symbol);
@@ -1525,18 +1602,39 @@ void Trading_system::setupComponentConnections() {
 
                         try {
                             auto validationResult = riskManagerForValidation->validateSignal(exitSignal);
-                            if (validationResult.approved) {
-                                // Now submit through ExecutionInterface after risk validation
-                                std::string orderId = executionInterface->submitOrder(exitOrder);
-                                LOG_INFO("ExitCallback: ✅ EXIT ORDER SUBMITTED after risk validation: {} (order_id: {})", 
-                                        exitOrder.clientOrderId, orderId);
-                            } else {
+                            if (!validationResult.approved) {
                                 LOG_WARN("ExitCallback: 🚫 EXIT SIGNAL REJECTED by risk management for {}: {}", 
-                                        symbol, validationResult.violations.empty() ? "No specific violations provided" : validationResult.violations.front().description);
+                                         symbol, validationResult.violations.empty() ? "No specific violations provided" : validationResult.violations.front().description);
+                                return;
                             }
                         } catch (const std::exception& e) {
-                            LOG_ERROR("ExitCallback: ❌ Risk validation or order submission failed for {}: {}", symbol, e.what());
+                            LOG_ERROR("ExitCallback: ❌ Risk validation failed for {}: {}", symbol, e.what());
                             return;
+                        }
+
+                        // IMPORTANT: Check emergency limits for EXIT orders using Trading_system's emergency checker
+                        try {
+                            if (!this->emergencyFrequencyCheckWithType(symbol, "EXIT")) {
+                                LOG_WARN("ExitCallback: EXIT blocked by emergencyFrequencyCheck for {}", symbol);
+                                return;
+                            }
+                        } catch (...) {
+                            LOG_WARN("ExitCallback: emergencyFrequencyCheckWithType threw for {} - allowing exit to proceed", symbol);
+                        }
+
+                        // Enqueue exit signal with priority (push_front) so exec workers handle exits first
+                        try {
+                            std::unique_lock<std::mutex> lk(this->execQueueMutex_);
+                            if (this->execQueue_.size() >= this->execQueueLimit_) {
+                                // make room by dropping the oldest non-exit if possible (drop back)
+                                this->execQueue_.pop_back();
+                            }
+                            this->execQueue_.push_front(exitSignal);
+                            lk.unlock();
+                            this->execQueueCv_.notify_one();
+                            LOG_INFO("ExitCallback: ✅ EXIT queued for execution: {} qty={} reason={}", symbol, exitSignal.getQuantity(), reason);
+                        } catch (const std::exception &e) {
+                            LOG_ERROR("ExitCallback: Failed to enqueue exit for {}: {}", symbol, e.what());
                         }
 
                     } catch (const std::exception& e) {
@@ -1745,3 +1843,4 @@ void Trading_system::loadEmergencyState() {
         std::cout << "⚠️  Could not load PnL state: " << e.what() << std::endl;
     }
 }
+

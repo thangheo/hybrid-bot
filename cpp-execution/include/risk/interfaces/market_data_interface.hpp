@@ -81,6 +81,11 @@ public:
     std::map<std::string, double> getExchangeBalances(
         const core::ExchangeId& exchangeId) override;
     
+    // getCurrentSpread
+    std::optional<double> getCurrentSpread(
+        const core::Symbol& tradingPair,
+        const std::optional<std::string>& exchangeId = std::nullopt);
+        
     void registerMarketDataCallback(
         const std::function<void(const MarketData&)>& callback) override;
     
