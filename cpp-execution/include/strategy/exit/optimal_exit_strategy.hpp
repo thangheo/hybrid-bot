@@ -59,7 +59,11 @@ public:
         double cumulative_pnl_sum = 0.0;   // Sum of PnL values for momentum calc
         int spread_widening_counter = 0;   // consecutive checks where spread widening condition held
     };
-    
+    bool shouldEnterPosition(const std::string& symbol,
+                                 double entry_price,
+                                 double spread_ema,
+                                 double spread_ratio,
+                                 double confidence) const;
 private:
     // IMPROVED parameters with tighter controls
     // struct ExitParams {
@@ -71,11 +75,7 @@ private:
     //     double spread_widening_factor = 2.0;   // More sensitive to spread changes
     //     double max_spread_bps = 8.0;           // Tighter spread requirement
     //     double min_stop_distance_bps = 10.0;   // Minimum stop distance
-        bool shouldEnterPosition(const std::string& symbol,
-                                 double entry_price,
-                                 double spread_ema,
-                                 double spread_ratio,
-                                 double confidence) const;
+        
     //     double stop_spread_multiplier = 2.5;   // Stop distance multiplier
     //     // Emergency parameters
     //     double emergency_spread_multiplier = 3.0; // instant spread multiple to treat as emergency
