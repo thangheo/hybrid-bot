@@ -402,6 +402,7 @@ std::optional<double> MarketDataInterface::getCurrentSpread(
     const std::optional<std::string>& exchangeId) {
     
     if (!initialized_.load()) {
+        LOG_WARN("MarketDataInterface not initialized");
         return std::nullopt;
     }
     
