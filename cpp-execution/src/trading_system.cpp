@@ -1294,7 +1294,9 @@ void Trading_system::execWorkerLoop(size_t workerId) {
                 if (exitStrategy_) {
                     double spreadRatio = 0.0;
                     if (marketDataInterface_) {
-                        auto sp = marketDataInterface_->getCurrentSpread(task.symbol.toString());//wrong cacheKey
+                        // Use the overload that accepts a Symbol and exchange string so
+                        // MarketDataInterface builds the canonical cacheKey (e.g. "BINANCE:SUI/USDT").
+                        auto sp = marketDataInterface_->getCurrentSpread(task.symbol, task.exchangeId.toString());
                         // auto sp = marketDataInterface_->getCurrentSpread(task.exchangeId, task.symbol);
                         if (sp.has_value() && currentPrice > 0.0) spreadRatio = sp.value() / currentPrice;
                         // LOG spread every attempt; if cache miss, try a local orderbook fallback so we can observe spread
