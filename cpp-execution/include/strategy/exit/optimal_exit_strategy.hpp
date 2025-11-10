@@ -57,6 +57,7 @@ public:
         double initial_momentum = 0.0;     // Average PnL/tick in first 3 ticks
         int ticks_since_entry = 0;         // Number of evaluation ticks
         double cumulative_pnl_sum = 0.0;   // Sum of PnL values for momentum calc
+        int spread_widening_counter = 0;   // consecutive checks where spread widening condition held
     };
     
 private:
@@ -71,6 +72,10 @@ private:
         double max_spread_bps = 8.0;           // Tighter spread requirement
         double min_stop_distance_bps = 10.0;   // Minimum stop distance
         double stop_spread_multiplier = 2.5;   // Stop distance multiplier
+        // Emergency parameters
+        double emergency_spread_multiplier = 3.0; // instant spread multiple to treat as emergency
+        double min_hold_before_spread_exit_seconds = 0.05; // ignore spread-based exits within first X seconds
+        int spread_widening_consecutive_checks = 2; // require condition for N consecutive evaluates
     };
     
     // Per-symbol exit parameters (based on volatility config)
