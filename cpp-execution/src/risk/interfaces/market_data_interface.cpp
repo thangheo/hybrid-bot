@@ -408,7 +408,7 @@ std::optional<double> MarketDataInterface::getCurrentSpread(
     core::ExchangeId exchange = core::ExchangeId::fromString(
         exchangeId.value_or(defaultExchange_));
     std::string cacheKey = createCacheKey(exchange, tradingPair);
-    
+    LOG_INFO("Getting current spread for {}:{}, cacheKey={}", exchange.toString(), tradingPair.toString(), cacheKey);
     return cache_->getCurrentSpread(cacheKey);
 }
 void MarketDataInterface::setZmqClient(
