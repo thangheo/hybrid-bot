@@ -151,7 +151,8 @@ void OptimalExitStrategy::startPosition(const std::string& symbol,
                                        double entry_price,
                                        core::Direction direction,
                                        double confidence,
-                                       double spread_ratio) {
+                                       double spread_ratio,
+                                       double spread_ema) {
     std::lock_guard<std::mutex> lock(tradesMutex_);
     
     TradeState& trade = activeTrades_[symbol];
@@ -159,6 +160,7 @@ void OptimalExitStrategy::startPosition(const std::string& symbol,
     trade.entry_time = std::chrono::steady_clock::now();
     trade.peak_price = entry_price; // Initialize peak at entry
     trade.entry_spread_ratio = spread_ratio;
+    trade.entry_spread_ema = spread_ema;
     trade.entry_direction = direction;
     trade.entry_confidence = confidence;
     trade.symbol = symbol;
@@ -169,16 +171,17 @@ void OptimalExitStrategy::startPosition(const std::string& symbol,
     trade.ticks_since_entry = 0;
     trade.cumulative_pnl_sum = 0.0;
     
-    LOG_INFO("EXIT_STRATEGY: Started position {} @ {:.6f}, direction={}, confidence={:.3f}, spread_ratio={:.5f}bps", 
+    LOG_INFO("EXIT_STRATEGY: Started position {} @ {:.6f}, direction={}, confidence={:.3f}, spread_ratio={:.5f}bps, spread_ema={:.5f}bps", 
              symbol, entry_price, 
              (direction == core::Direction::BUY ? "BUY" : "SELL"), 
-             confidence, spread_ratio * 10000);
+             confidence, spread_ratio * 10000, spread_ema * 10000);
 }
 
 OptimalExitStrategy::ExitDecision OptimalExitStrategy::evaluateExit(
     const std::string& symbol,
     double current_price,
     double current_spread_ratio,
+    double current_spread_ema,
     core::Direction current_signal_direction,
     double current_confidence,
     double bid_price,
@@ -368,7 +371,13 @@ OptimalExitStrategy::ExitDecision OptimalExitStrategy::evaluateExit(
     }
     
     // LAYER 5: SPREAD WIDENING - Liquidity check
-    if (current_spread_ratio > trade.entry_spread_ratio * params.spread_widening_factor) {
+    double effective_current_spread = current_spread_ratio;
+    // If EMA provided and non-zero, consider a conservative max of instant and EMA
+    if (current_spread_ema > 0.0) {
+        effective_current_spread = std::max(current_spread_ratio, current_spread_ema);
+    }
+
+    if (effective_current_spread > trade.entry_spread_ratio * params.spread_widening_factor) {
         decision.should_exit = true;
         decision.reason = ExitReason::SPREAD_WIDENING;
         LOG_INFO("💧 SPREAD_WIDENING: {} current_spread={:.2f}bps > entry_spread={:.2f}bps * {:.1f}", 

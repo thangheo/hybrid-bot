@@ -934,7 +934,7 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                                 // Check exit conditions for existing position
                                 // double current_spread = (m.askPrice - m.bidPrice) / m.midPrice;
                                 auto exitDecision = g_optimalExit.evaluateExit(
-                                    symbol_str, m.midPrice, m.spreadPercent, dir, signal.probability);
+                                    symbol_str, m.midPrice, m.spread, m.spreadPercent, dir, signal.probability);
 
                                 if (exitDecision.should_exit) {
                                     // Generate exit signal
@@ -989,7 +989,7 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
 
                                         // Start tracking position
                                         g_optimalExit.startPosition(symbol_str, m.midPrice, dir, 
-                                                                  signal.probability, m.spreadPercent);
+                                                                  signal.probability, m.spread, m.spreadPercent);
 
                                         // Create entry event
                                         OrderBookMetrics mcopy = m;
