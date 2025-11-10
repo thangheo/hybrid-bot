@@ -239,6 +239,9 @@ std::optional<core::MarketData> MarketDataProcessor::processProtobufOrderbook(
         marketData.volume = data.volume();
         marketData.high24h = data.high24h();
         marketData.low24h = data.low24h();
+        // add bid and ask data
+        // marketData.lastTradePrice = data.last_trade_price();
+        // marketData.lastTradeQuantity = data.last_trade_quantity();
 
     // LOG_DEBUG("processProtobufOrderbook: created market data for topic='{}' exchange='{}' symbol='{}'", topic, exchange, symbol);
     return marketData;
