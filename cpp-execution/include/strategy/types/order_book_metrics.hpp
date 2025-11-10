@@ -86,7 +86,8 @@ struct OrderBookMetrics {
     double priceVelocity = 0.0;              // Rate of price change
     double volumeVelocity = 0.0;             // Rate of volume change
     double spreadVelocity = 0.0;             // Rate of spread change
-    
+    //emaSpread could be added if needed
+    double emaSpread = 0.0;                  // Exponential moving average of spread
     
 
     // Time-series metrics
@@ -104,7 +105,7 @@ struct OrderBookMetrics {
         metrics["askPrice"] = askPrice;
         metrics["spread"] = spread;
         metrics["spreadPercent"] = spreadPercent;
-
+        metrics["emaSpread"] = emaSpread;
         // Map flow metrics
         metrics["bidFlow"] = bidFlow;
         metrics["askFlow"] = askFlow;
@@ -172,6 +173,7 @@ struct OrderBookMetrics {
         else if (name == "bidPrice") bidPrice = value;
         else if (name == "askPrice") askPrice = value;
         else if (name == "spread") spread = value;
+        else if (name == "emaSpread") emaSpread = value;
         else if (name == "spreadPercent") spreadPercent = value;
         else if (name == "bidVolume" || name == "totalBidVolume") totalBidVolume  = value;
         else if (name == "askVolume" || name == "totalAskVolume") totalAskVolume = value;
@@ -211,6 +213,7 @@ struct OrderBookMetrics {
         else if (name == "bidPrice") return bidPrice;
         else if (name == "askPrice") return askPrice;
         if (name == "spread") return spread;
+        if (name == "emaSpread") return emaSpread;
         if (name == "spreadPercent") return spreadPercent;
         if (name == "totalBidVolume" || name == "bidVolume") return totalBidVolume;
         if (name == "totalAskVolume" || name == "askVolume") return totalAskVolume;
