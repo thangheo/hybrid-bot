@@ -1624,7 +1624,7 @@ bool Trading_system::emergencyFrequencyCheckWithType(const std::string& symbol, 
         auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - lastTradeIt->second);
         
         // EXIT orders have relaxed timing constraints (risk management priority)
-        int requiredGap = (orderType == "EXIT") ? 5 : MIN_GAP_SECONDS; // 5s for exits, 30s for entries
+        int requiredGap = (orderType == "EXIT") ? MIN_GAP_SECONDS_FOR_EXIT : MIN_GAP_SECONDS_FOR_ENTRY;
         
         if (elapsed.count() < requiredGap) {
             if (orderType != "EXIT") { // Don't block exit orders for frequency
