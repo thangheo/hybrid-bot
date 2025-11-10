@@ -443,9 +443,18 @@ void OrderBookAnalyzer::calculatePriceMetrics(
     currentMetrics_.metrics["spreadPercent"] = currentMetrics_.spreadPercent;
     currentMetrics_.metrics["bestBid"] = bestBid;
     currentMetrics_.metrics["bestAsk"] = bestAsk;
+    // Expose EMA members both via the metrics map and the typed members
     currentMetrics_.metrics["emaMidPrice"] = emaMidPrice_;
     currentMetrics_.metrics["emaSpread"] = emaSpread_;
-    currentMetrics_.metrics["averageSpreadPercent"] = emaSpread_ / currentMetrics_.midPrice * 100.0;
+    // Ensure the typed member is populated so external callers using
+    // OrderBookMetrics::emaSpread (e.g. m.emaSpread) receive the value.
+    currentMetrics_.emaSpread = emaSpread_;
+    // Guard against division by zero when computing average spread percent
+    if (currentMetrics_.midPrice > 0.0) {
+        currentMetrics_.metrics["averageSpreadPercent"] = (emaSpread_ / currentMetrics_.midPrice) * 100.0;
+    } else {
+        currentMetrics_.metrics["averageSpreadPercent"] = 0.0;
+    }
 
     // Update the flow metrics
     //currentMetrics_.updateMetricsMap();
