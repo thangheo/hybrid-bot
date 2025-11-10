@@ -146,11 +146,8 @@ MarketDataCache::~MarketDataCache() {
 void MarketDataCache::updateMarketData(const std::string& cacheKey, const core::MarketData& data) {
     try {
         totalUpdates_.fetch_add(1, std::memory_order_relaxed);
-        
-        // Update main cache
-        LOG_INFO("Updating market data for {}: price={}, bid={}, ask={}, volume={}, cacheKey={}",
-                 cacheKey, data.price, data.bid, data.ask, data.volume, cacheKey);
-
+       
+      
         {
             std::unique_lock<std::shared_mutex> lock(cacheMutex_);
             size_t sizeBefore = marketDataCache_.size();
