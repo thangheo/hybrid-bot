@@ -330,6 +330,8 @@ std::optional<double> MarketDataCache::getCurrentSpread(const std::string& cache
                 }
             }
         }
+        // Diagnostic logging for cache miss - TRACE level to avoid spam in normal runs
+        LOG_TRACE("MarketDataCache::getCurrentSpread: cache miss or invalid for key='{}' (entries={})", cacheKey, marketDataCache_.size());
         return std::nullopt;
     } catch (const std::exception& e) {
         LOG_ERROR("Error getting current spread for {}: {}", cacheKey, e.what());
