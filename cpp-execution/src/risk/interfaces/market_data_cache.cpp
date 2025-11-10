@@ -148,7 +148,7 @@ void MarketDataCache::updateMarketData(const std::string& cacheKey, const core::
         totalUpdates_.fetch_add(1, std::memory_order_relaxed);
         
         // Update main cache
-        LOG_TRACE("Updating market data for {}: price={}, bid={}, ask={}, volume={}, cacheKey={}",
+        LOG_INFO("Updating market data for {}: price={}, bid={}, ask={}, volume={}, cacheKey={}",
                  cacheKey, data.price, data.bid, data.ask, data.volume, cacheKey);
 
         {
@@ -338,6 +338,7 @@ std::optional<double> MarketDataCache::getCurrentSpread(const std::string& cache
         return std::nullopt;
     }
 }
+
 
 void MarketDataCache::cleanup() {
     LOG_DEBUG("Starting MarketDataCache cleanup");
