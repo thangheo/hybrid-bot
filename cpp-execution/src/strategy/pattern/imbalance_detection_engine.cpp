@@ -985,11 +985,11 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                                     } else if (g_optimalExit.wasRecentlyClosed(symbol_str)) {
                                         LOG_INFO("ENTRY_BLOCKED_BY_RECENT_CLOSE: {} was recently closed - skipping ENTRY (cooldown)", symbol_str);
                                     } else {
-                                        double current_spread = (m.askPrice - m.bidPrice) / m.midPrice;
+                                        // double current_spread = (m.askPrice - m.bidPrice) / m.midPrice;
 
                                         // Start tracking position
                                         g_optimalExit.startPosition(symbol_str, m.midPrice, dir, 
-                                                                  signal.probability, current_spread);
+                                                                  signal.probability, m.spread);
 
                                         // Create entry event
                                         OrderBookMetrics mcopy = m;
