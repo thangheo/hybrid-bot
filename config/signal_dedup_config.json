@@ -1,6 +1,6 @@
 {
   "description": "Emergency signal deduplication config to reduce trading frequency",
-  "debounceWindowMs": 15000,
+  "debounceWindowMs": 60000,
   "relativeStrengthThreshold": 0.25,
   "absoluteStrengthThreshold": 0.1,
   "flipStrengthThreshold": 0.8,
