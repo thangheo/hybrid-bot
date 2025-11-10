@@ -18,6 +18,7 @@ using namespace ::trading::risk;
 using namespace ::trading::common;
 // using namespace ::trading::intelligence;
 
+
 // Forward-declare OptimalExitStrategy and provide a file-scoped pointer to allow legacy code
 namespace trading {
 namespace strategy {
@@ -80,61 +81,18 @@ Trading_system::Trading_system() : running_(false), systemHealthy_(true) {
     positionSizer_ = std::make_unique<trading::risk::PositionSizer>(riskConfig_.getPositionSizingConfig());
     
 }
-    
+
+// Place this at the end of the file, after the class implementation:
+void Trading_system::exitMonitorLoop() {
+    while (exitMonitorRunning_.load()) {
+        // TODO: Implement exit monitoring logic here
+        // For now, just sleep to avoid busy-waiting
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    }
+}
+ 
 Trading_system::~Trading_system() {
     shutdown();
-}
-
-trading::ExecutionAcknowledgment Trading_system::handleTradingIntent(const trading::TradingIntent& intent) {
-    std::cout << "\n=== PROCESSING TRADING INTENT ===" << std::endl;
-    std::cout << "Intent ID: " << intent.intent_id() << std::endl;
-    std::cout << "Symbol: " << intent.symbol() << std::endl;
-    std::cout << "Side: " << (intent.side() == trading::SIDE_BUY ? "BUY" : "SELL") << std::endl;
-    std::cout << "Quantity: " << intent.target_quantity() << std::endl;
-    std::cout << "Signal Strength: " << intent.signal_strength() << std::endl;
-    std::cout << "Confidence: " << intent.confidence() << std::endl;
-    
-    // Get current market intelligence for this symbol
-    trading::MarketIntelligence currentIntel;
-    bool hasIntel = false;
-    {
-        std::lock_guard<std::mutex> lock(intelligenceMutex_);
-        auto it = latestIntelligence_.find(intent.symbol());
-        if (it != latestIntelligence_.end()) {
-            currentIntel = it->second;
-            hasIntel = true;
-            std::cout << "Current Market Intelligence:" << std::endl;
-            std::cout << "  Spread: " << currentIntel.bid_ask_spread() << std::endl;
-            std::cout << "  Imbalance: " << currentIntel.order_book_imbalance() << std::endl;
-            std::cout << "  Liquidity: " << currentIntel.liquidity_ratio() << std::endl;
-            std::cout << "  Regime: " << currentIntel.current_regime() << std::endl;
-        }
-    }
-    
-    // Create acknowledgment
-    trading::ExecutionAcknowledgment ack;
-    ack.set_intent_id(intent.intent_id());
-    ack.set_accepted(true);
-    ack.set_execution_id("exec_" + intent.intent_id() + "_" + std::to_string(std::time(nullptr)));
-    
-    if (hasIntel) {
-        ack.set_reason("Intent accepted - Market intelligence integrated (" + 
-                        std::to_string(currentIntel.liquidity_ratio()) + " liquidity, " +
-                        std::to_string(currentIntel.bid_ask_spread()) + " spread)");
-    } else {
-        ack.set_reason("Intent accepted - No market intelligence available yet");
-    }
-    
-    // Estimate completion time
-    int64_t baseTime = std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::system_clock::now().time_since_epoch()).count();
-    int completionDelay = calculateCompletionDelay(intent, currentIntel, hasIntel);
-    ack.set_estimated_completion_time(baseTime + completionDelay);
-    
-    std::cout << "Acknowledged intent with " << completionDelay << "ms estimated completion" << std::endl;
-    std::cout << "=================================" << std::endl;
-    
-    return ack;
 }
 
 
@@ -311,7 +269,16 @@ bool Trading_system::start() {
         
         std::cout << "🚀 FULL TRADING SYSTEM IS NOW LIVE!" << std::endl;
         std::cout << "Monitoring system health and processing..." << std::endl;
-        
+
+        // Start exit monitor thread
+
+        // Start exit monitor thread if not already running
+        if (!exitMonitorRunning_.load()) {
+            exitMonitorRunning_.store(true);
+            exitMonitorThread_ = std::thread([this]() { this->exitMonitorLoop(); });
+            LOG_INFO("Trading_system: Exit monitor started");
+        }
+
         return true;
     }
     return false;
@@ -349,26 +316,30 @@ void Trading_system::shutdown() {
 
             // Give WebSocket connections time to close gracefully
             std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-        }
-
-        
+        }        
         // Stop other services
         if (strategyEngine_) {
             std::cout << "Stopping strategy engine..." << std::endl;
             strategyEngine_->stop();
         }
+    // Stop exit monitor thread
+
+    // Stop exit monitor thread
+    exitMonitorRunning_.store(false);
+    if (exitMonitorThread_.joinable()) {
+        exitMonitorThread_.join();
+    }
     // Stop worker pools
     stopOrderbookWorkerPool();
     // Stop strategy-specific orderbook processing pool
     stopStrategyOrderbookWorkerPool();
     stopSignalWorkerPool();
     stopExecWorkerPool();
-        
-        
-        // Stop services in reverse order
-        if (zmq_server_) {
-            zmq_server_->stop();
-        }
+
+    // Stop services in reverse order
+    if (zmq_server_) {
+        zmq_server_->stop();
+    }
         if (riskManager_) {
             std::cout << "Stopping risk manager..." << std::endl;
             // riskManager_->
@@ -390,14 +361,15 @@ void Trading_system::shutdown() {
         std::cout << "System shutdown complete" << std::endl;
     }
 } 
-// Helper method to get current signals for a symbol (you'll need to implement this)
-std::vector<strategy::TradingSignal> Trading_system::getCurrentSignalsForSymbol(const core::Symbol& symbol) {
-    // This should return current active signals for the given symbol
-    // You'll need to implement this based on your signal storage
-    std::vector<strategy::TradingSignal> signals;
-    // Your implementation here...
-    return signals;
-}
+
+// // Helper method to get current signals for a symbol (you'll need to implement this)
+// std::vector<strategy::TradingSignal> Trading_system::getCurrentSignalsForSymbol(const core::Symbol& symbol) {
+//     // This should return current active signals for the given symbol
+//     // You'll need to implement this based on your signal storage
+//     std::vector<strategy::TradingSignal> signals;
+//     // Your implementation here...
+//     return signals;
+// }
 
 void Trading_system::printStatus() {
     auto now = std::chrono::steady_clock::now();
@@ -471,18 +443,14 @@ bool Trading_system::checkSystemHealth() {
 
         bool overallHealthy = dataIngestionHealthy && strategyEngineHealthy &&
                             riskManagerHealthy && zmqHealthy ;
-
         if (!overallHealthy) {
-            std::cout << "⚠️ System health issues detected!" << std::endl;
-            std::cout << "  Data Ingestion: " << (dataIngestionHealthy ? "✅" : "❌") << std::endl;
-            std::cout << "  Strategy Engine: " << (strategyEngineHealthy ? "✅" : "❌") << std::endl;
-            std::cout << "  Risk Manager: " << (riskManagerHealthy ? "✅" : "❌") << std::endl;
-            std::cout << "  ZMQ Server: " << (zmqHealthy ? "✅" : "❌") << std::endl;
-
-            systemHealthy_ = false;
+            std::cerr << "System health check failed:" << std::endl;
+            std::cerr << "  Data Ingestion: " << (dataIngestionHealthy ? "HEALTHY" : "UNHEALTHY") << std::endl;
+            std::cerr << "  Strategy Engine: " << (strategyEngineHealthy ? "HEALTHY" : "UNHEALTHY") << std::endl;
+            std::cerr << "  Risk Manager: " << (riskManagerHealthy ? "HEALTHY" : "UNHEALTHY") << std::endl;
+            std::cerr << "  ZMQ Server: " << (zmqHealthy ? "HEALTHY" : "UNHEALTHY") << std::endl;
             return false;
-        }
-        
+        }        
         return true;
     } catch (const std::exception& e) {
         std::cerr << "Error in system health check: " << e.what() << std::endl;
@@ -490,43 +458,6 @@ bool Trading_system::checkSystemHealth() {
     }
 }
 
-int Trading_system::calculateCompletionDelay(const trading::TradingIntent& intent, 
-                            const trading::MarketIntelligence& intel,
-                            bool hasIntel) {
-    int baseDelay = 15000; // 15 seconds base
-    
-    // Adjust for execution style
-    switch (intent.execution_style()) {
-        case trading::EXEC_AGGRESSIVE:
-            baseDelay = 5000;
-            break;
-        case trading::EXEC_STEALTH:
-            baseDelay = std::min(60000, intent.max_execution_time_ms());
-            break;
-        case trading::EXEC_PASSIVE:
-            baseDelay = 30000;
-            break;
-        default:
-            baseDelay = 15000;
-            break;
-    }
-    
-    // Adjust for market conditions if we have intelligence
-    if (hasIntel) {
-        if (intel.current_regime() == trading::OB_THIN) {
-            baseDelay *= 2.0; // Slower in thin markets
-        } else if (intel.current_regime() == trading::OB_LIQUID) {
-            baseDelay *= 0.8; // Faster in liquid markets
-        }
-        
-        // Adjust for spread
-        if (intel.bid_ask_spread() > 0.005) {
-            baseDelay *= 1.2; // Slower for wide spreads
-        }
-    }
-    
-    return static_cast<int>(baseDelay);
-}
 
 void Trading_system::setupConfigurations() {
     // Create configuration files
@@ -550,29 +481,13 @@ void Trading_system::createStrategyConfig() {
 void Trading_system::onMarketPriceUpdate(const core::Symbol& symbol, double price) {
     // ptcaManager_->updateMarketPrice(symbol, price);
 }
-    // Add this to your Trading_system class:
-void Trading_system::setupPTCAConnections() {
-    
-    
-    // 2. Execution callback - use executionService_ directly
-    if (executionService_) {
-        executionService_->registerExecutionCallback([this](const ExecutionResponse& response) {
-            onExecutionResponse(response);
-        });
-    }
-}
-
+    // Ad
 void Trading_system::onExecutionResponse(const execution::ExecutionResponse& response) {
     std::cout << "📈 Execution: " << response.client_order_id
             << " Status: " << response.order_status  << std::endl;
 
     ordersExecuted_++;
-    
-    // // Register with PTCA if needed
-    // if (ptcaManager_) {
-    //     // Convert ExecutionResponse to ExecutionReport format if needed
-    //     // ptcaManager_->registerExecution(response.client_order_id, response.order_status);
-    // }
+     
 }
 
  
@@ -629,33 +544,28 @@ void Trading_system::setupExecutionEngine() {
     std::cout << "=== SETTING UP EXECUTION ENGINE ===" << std::endl;
     // Create the authentication service first
     auto authService = std::make_shared<AuthenticationService>();
-    
     // Create API client manager with auth service
     auto api_client_manager = std::make_shared<ApiClientManager>(authService);
-    
     // Set up credentials and clients (your existing code)
     //get from environment .env file
     const char* apiKey = std::getenv("BINANCE_API_KEY");
     const char* apiSecret = std::getenv("BINANCE_API_SECRET");
-    
     if(!apiKey || !apiSecret) {
         std::cerr << "Error: Missing Binance API credentials in environment variables." << std::endl;
         systemHealthy_ = false;
         return;
     }
-    
     auto credentials = ExchangeCredentials{
         apiKey,
         apiSecret,
         "", 
         true
     };
-    
     authService->setCredentials(core::ExchangeId::binance(), credentials);
     api_client_manager->addClient(core::ExchangeId::binance(),
         std::make_shared<BinanceApiClient>(credentials, 
         std::make_shared<RateLimitController>(core::ExchangeId::binance())));
-            std::cout << "=== DEBUG API CLIENT MANAGER ===" << std::endl;
+    std::cout << "=== DEBUG API CLIENT MANAGER ===" << std::endl;
     std::cout << "ApiClientManager created, checking status..." << std::endl;
     if (!api_client_manager->initialize()) {
         std::cerr << "Failed to initialize ApiClientManager" << std::endl;
@@ -669,7 +579,6 @@ void Trading_system::setupExecutionEngine() {
     auto execution_algorithm_factory = std::make_shared<ExecutionAlgorithmFactory>();
     auto order_lifecycle_tracker = std::make_shared<OrderLifecycleTracker>();
     auto fill_reconciliation = std::make_shared<FillReconciliation>();
-
     // **CRITICAL: Initialize the smart order router with exchange information**
     std::vector<ExchangeInfo> exchanges;
     ExchangeInfo binanceInfo;
@@ -679,10 +588,8 @@ void Trading_system::setupExecutionEngine() {
     binanceInfo.latency_ms = 50;
     binanceInfo.success_rate = 0.99;
     exchanges.push_back(binanceInfo);
-    
     // After initializing the router, add this debug check:
     smart_order_router->initialize(exchanges);
-
     // Create or obtain shared MarketDataInterface and pass it into the gateway.
     // Important: use the overload that injects the shared ZMQ context so the
     // inproc://server_pub publisher and subscriber share the same context and
@@ -695,7 +602,6 @@ void Trading_system::setupExecutionEngine() {
     } catch (...) {
         sharedMdIface = nullptr;
     }
-
     exchangeGateway_ = std::make_shared<execution::ExchangeGateway>(api_client_manager, sharedMdIface);
     if (!exchangeGateway_->isHealthy()) {
         std::cout << "Exchange Gateway is not healthy!" << std::endl;
@@ -722,9 +628,9 @@ void Trading_system::setupExecutionEngine() {
         fill_reconciliation
         );
         executionService_->setLimitOrderHandling(trading::execution::ExecutionService::LimitOrderHandling::REJECT_IF_NO_PRICE);
-    }       
-    
+    }
 }
+
 // Orderbook worker pool control
 void Trading_system::startOrderbookWorkerPool() {
     if (orderbookWorkersRunning_.exchange(true)) return; // already running

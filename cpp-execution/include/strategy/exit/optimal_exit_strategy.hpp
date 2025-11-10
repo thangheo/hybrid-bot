@@ -25,6 +25,17 @@ namespace strategy {
  */
 class OptimalExitStrategy {
 public:
+    struct PositionInfo {
+        core::Direction direction;
+        double entry_price;
+        double quantity;
+        double confidence;
+        std::chrono::steady_clock::time_point entry_time;
+    };
+
+    std::vector<std::string> getActiveSymbols() const;
+    std::optional<PositionInfo> getPositionInfo(const std::string& symbol) const;
+public:
     enum class ExitReason {
         PROFIT_TARGET,
         TRAILING_STOP,
@@ -65,33 +76,21 @@ public:
                                  double spread_ratio,
                                  double confidence) const;
 private:
-    // IMPROVED parameters with tighter controls
-    // struct ExitParams {
-    //     double profit_target_bps = 6.0;        // Reduced: Take profits earlier
-    //     double trailing_stop_bps = 3.5;        // Tighter trailing stop
-    //     double hard_stop_loss_bps = -3.0;      // Tighter max loss
-    //     double max_holding_seconds = 8.0;      // Reduced: Exit faster
-    //     double signal_confidence_flip = 0.25;  // More sensitive to reversals
-    //     double spread_widening_factor = 2.0;   // More sensitive to spread changes
-    //     double max_spread_bps = 8.0;           // Tighter spread requirement
-    //     double min_stop_distance_bps = 10.0;   // Minimum stop distance
-        
-    //     double stop_spread_multiplier = 2.5;   // Stop distance multiplier
-    //     // Emergency parameters
-    //     double emergency_spread_multiplier = 3.0; // instant spread multiple to treat as emergency
-    //     double min_hold_before_spread_exit_seconds = 0.05; // ignore spread-based exits within first X seconds
-    //     int spread_widening_consecutive_checks = 2; // require condition for N consecutive evaluates
-    // };
     struct ExitParams {
-        double profit_target_bps = 8.0;         // INCREASED: Need bigger move to justify spread
-        double trailing_stop_bps = 4.0;         
-        double hard_stop_loss_bps = -4.0;       
+        // double profit_target_bps = 8.0;         // INCREASED: Need bigger move to justify spread
+        // double trailing_stop_bps = 4.0;         
+        // double hard_stop_loss_bps = -15.0;       
         double max_holding_seconds = 15.0;      // INCREASED: Give trade room to work
-        double min_holding_seconds = 1.0;       // NEW: Minimum hold to avoid churn
+        // double min_holding_seconds = 1.0;       // NEW: Minimum hold to avoid churn
         double signal_confidence_flip = 0.25;   
         double spread_widening_factor = 2.0;    
         double max_spread_bps = 8.0;            
-        
+        // new parameters
+        double  hard_stop_loss_bps = -15.0;      // Nới từ -10 → -15
+        double trailing_stop_bps = 8.0;         // Nới từ 5 → 8
+        double  min_holding_seconds = 10.0;      // Tăng từ 5 → 10
+        double  profit_target_bps = 12.0;        // Giữ nguyên hoặc hạ xuống
+
         // NEW: Spread-adjusted profit targets
         double spread_cost_multiplier = 1.5;    // Profit target = spread * multiplier
         

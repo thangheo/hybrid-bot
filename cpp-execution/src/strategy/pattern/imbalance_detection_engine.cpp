@@ -925,97 +925,61 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                         if (maxModelUpdates < bayesMinUpdatesToTrade_) {
                             // not enough training yet — don't trade
                             LOG_TRACE("ImbalanceDetectionEngine: bayes model updates too low (max={} < min={}), skipping trade", maxModelUpdates, bayesMinUpdatesToTrade_);
-                        } else if (signal.should_trade and signal.position_size > 0.0) {
+                        } else if (signal.should_trade && signal.position_size > 0.0) {
                             core::Direction dir = signal.direction;
                             std::string symbol_str = m.symbol.toString();
-                            
-                            // OPTIMAL EXIT STRATEGY INTEGRATION
-                            if (g_optimalExit.hasActivePosition(symbol_str)) {
-                                // Check exit conditions for existing position
-                                double current_spread_ratio = m.spread / m.midPrice;
-                                auto exitDecision = g_optimalExit.evaluateExit(
-                                    symbol_str, m.midPrice, current_spread_ratio, m.emaSpread/m.midPrice, dir, signal.probability);
-
-                                if (exitDecision.should_exit) {
-                                    // Generate exit signal
-                                    OrderBookMetrics exitMetrics = m;
-                                    exitMetrics.metrics["exit_reason"] = static_cast<double>(exitDecision.reason);
-                                    exitMetrics.metrics["exit_pnl_bps"] = exitDecision.expected_pnl;
-                                    
-                                    // Create exit event (opposite direction)
-                                    core::Direction exitDirection = (dir == core::Direction::BUY) ? 
-                                                                  core::Direction::SELL : core::Direction::BUY;
-                                    
-                                    createImbalanceEventForBayesModel(ImbalanceType::CUSTOM, 
-                                                                    signal.position_size,
-                                                                    exitDirection, exitMetrics, 
-                                                                    0.8, 0.1); // High confidence exit
-                                    
-                                    // Close position tracking
-                                    g_optimalExit.closePosition(symbol_str, exitDecision.reason, exitDecision.expected_pnl);
-                                    
-                                    LOG_INFO("EXIT TRIGGERED: {} - {} ({:.2f}bps)", 
-                                            symbol_str, 
-                                            OptimalExitStrategy::exitReasonToString(exitDecision.reason),
-                                            exitDecision.expected_pnl);
-                                }
-                            } else {
-                                // No active position - this is candidate entry signal
-                                if (dir != core::Direction::NEUTRAL) {
-                                    bool authoritativeHasPosition = false;
-                                    double authoritativeQty = 0.0;
-
-                                    // If a position lookup callback is provided, consult authoritative cache
-                                    try {
-                                        if (positionLookup_) {
-                                            auto pos = positionLookup_(m.exchangeId, m.symbol);
-                                            if (pos.has_value() && std::abs(pos.value()) > 1e-8) {
-                                                authoritativeHasPosition = true;
-                                                authoritativeQty = pos.value();
-                                            }
+                            // ❌ EXIT LOGIC REMOVED: Only handle ENTRY signals here
+                            if (dir != core::Direction::NEUTRAL) {
+                                bool authoritativeHasPosition = false;
+                                double authoritativeQty = 0.0;
+                                // Check authoritative position
+                                try {
+                                    if (positionLookup_) {
+                                        auto pos = positionLookup_(m.exchangeId, m.symbol);
+                                        if (pos.has_value() && std::abs(pos.value()) > 1e-8) {
+                                            authoritativeHasPosition = true;
+                                            authoritativeQty = pos.value();
                                         }
-                                    } catch (const std::exception &e) {
-                                        LOG_WARN("ImbalanceDetectionEngine: positionLookup threw: {}", e.what());
-                                    } catch (...) {
-                                        LOG_WARN("ImbalanceDetectionEngine: positionLookup threw unknown");
                                     }
-                                    double current_spread_ratio = m.spread / m.midPrice;
-                                    double emaSpreadRatio = m.emaSpread / m.midPrice;
-                                    if (authoritativeHasPosition) {
-                                        LOG_INFO("ENTRY_BLOCKED_BY_POSITION: {} has authoritative position qty={} - skipping ENTRY", symbol_str, authoritativeQty);
-                                    } else if (g_optimalExit.wasRecentlyClosed(symbol_str)) {
-                                        LOG_INFO("ENTRY_BLOCKED_BY_RECENT_CLOSE: {} was recently closed - skipping ENTRY (cooldown)", symbol_str);
-                                    } else if (!g_optimalExit.shouldEnterPosition(symbol_str, m.midPrice, emaSpreadRatio, current_spread_ratio, signal.probability)) {
-                                        LOG_INFO("ENTRY_BLOCKED_BY_ENTRY_FILTER: {} did not pass entry filter", symbol_str);
-                                    } else {
-                                        // double current_spread = (m.askPrice - m.bidPrice) / m.midPrice;
+                                } catch (const std::exception &e) {
+                                    LOG_WARN("ImbalanceDetectionEngine: positionLookup threw: {}", e.what());
+                                }
+                                // Calculate spreads (use PERCENT not ratio!)
+                                double current_spread_percent = (m.spread / m.midPrice) * 100.0;
+                                double ema_spread_percent = (m.emaSpread / m.midPrice) * 100.0;
+                                if (authoritativeHasPosition) {
+                                    LOG_INFO("ENTRY_BLOCKED_BY_POSITION: {} has position qty={}", symbol_str, authoritativeQty);
+                                } else if (g_optimalExit.wasRecentlyClosed(symbol_str)) {
+                                    LOG_INFO("ENTRY_BLOCKED_BY_RECENT_CLOSE: {} cooldown", symbol_str);
+                                } else if (!g_optimalExit.shouldEnterPosition(symbol_str, m.midPrice, current_spread_percent, ema_spread_percent, signal.probability)) {
+                                    LOG_INFO("ENTRY_BLOCKED_BY_ENTRY_FILTER: {}", symbol_str);
+                                } else {
+                                    // ✓ ENTRY APPROVED - Start tracking in exit strategy
+                                    // NOTE: Trading_system will ALSO call startPosition after execution
+                                    // You need to handle this duplication!
+                                    g_optimalExit.startPosition(symbol_str, m.midPrice, dir, signal.probability, current_spread_percent, ema_spread_percent);
+                                    LOG_INFO("STARTED TRACKING POSITION: {} dir={} entry={:.6f} conf={:.3f} spread_ema={:.3f}% spread_cur={:.3f}%",
+                                            symbol_str,
+                                            (dir == core::Direction::BUY ? "BUY" : "SELL"),
+                                            m.midPrice,
+                                            signal.probability,
+                                            ema_spread_percent,
+                                            current_spread_percent);
 
-                                        // Start tracking position
-                                        g_optimalExit.startPosition(symbol_str, m.midPrice, dir, 
-                                                                  signal.probability, current_spread_ratio, emaSpreadRatio);
-                                        LOG_TRACE("STARTED TRACKING POSITION: {} dir={} entry_price={:.6f} prob={:.5f}, spread_emaRatio = {:.3f},spread_currentRatio = {:.5f}",
-                                                 symbol_str,
-                                                 (dir == core::Direction::BUY ? "BUY" : "SELL"),
-                                                 m.midPrice,
-                                                 signal.probability,
-                                                 emaSpreadRatio,
-                                                 current_spread_ratio);
+                                    // Create entry event
+                                    OrderBookMetrics mcopy = m;
+                                    mcopy.metrics["bayes_probability"] = signal.probability;
+                                    mcopy.metrics["bayes_expected_value"] = signal.expected_value;
+                                    mcopy.metrics["bayes_position_size"] = signal.position_size;
+                                    mcopy.metrics["bayes_uncertainty"] = signal.uncertainty;
+                                    mcopy.metrics["entry_signal"] = 1.0;
 
-                                        // Create entry event
-                                        OrderBookMetrics mcopy = m;
-                                        mcopy.metrics["bayes_probability"] = signal.probability;
-                                        mcopy.metrics["bayes_expected_value"] = signal.expected_value;
-                                        mcopy.metrics["bayes_position_size"] = signal.position_size;
-                                        mcopy.metrics["bayes_uncertainty"] = signal.uncertainty;
-                                        mcopy.metrics["entry_signal"] = 1.0;
+                                    createImbalanceEventForBayesModel(ImbalanceType::CUSTOM, signal.position_size,
+                                                                    dir, mcopy, signal.probability, signal.uncertainty);
 
-                                        createImbalanceEventForBayesModel(ImbalanceType::CUSTOM, signal.position_size,
-                                                                        dir, mcopy, signal.probability, signal.uncertainty);
-
-                                        LOG_INFO("ENTRY SIGNAL: {} {} @ {:.6f} (conf={:.3f})", 
-                                                symbol_str, (dir == core::Direction::BUY ? "BUY" : "SELL"), 
-                                                m.midPrice, signal.probability);
-                                    }
+                                    LOG_INFO("ENTRY SIGNAL: {} {} @ {:.6f} (conf={:.3f})", 
+                                            symbol_str, (dir == core::Direction::BUY ? "BUY" : "SELL"), 
+                                            m.midPrice, signal.probability);
                                 }
                             }
                         }
@@ -3834,6 +3798,8 @@ void ImbalanceDetectionEngine::trackLabelingEvent(core::Direction labelDirection
 // Define the global registration function in the global namespace so it
 // matches the declaration in the public header
 void registerGlobalOptimalExitCallback(const trading::strategy::OptimalExitStrategy::ExitCallback& callback) {
+    // Instrumentation: log registration calls forwarded to file-scoped g_optimalExit
+    LOG_INFO("registerGlobalOptimalExitCallback: forwarding registration to file-scoped g_optimalExit (addr={})", static_cast<const void*>(&trading::strategy::g_optimalExit));
     // Forward to the internal global instance defined in this translation unit
     trading::strategy::g_optimalExit.registerExitCallback(callback);
 }

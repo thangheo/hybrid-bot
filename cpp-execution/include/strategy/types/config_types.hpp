@@ -66,7 +66,7 @@
     double priceSpikeThreshold = 0.6;            // Threshold for price spike detection
     double liquidityPressureThreshold = 0.5;     // Threshold for liquidity pressure changes
      // Window and history settings
-     int detectionWindowMs = 1000;                // Detection window in milliseconds
+     int detectionWindowMs = 60000;                // Detection window in milliseconds
      int maxHistorySize = 1000;                   // Maximum history size for metrics
      
      // Advanced configuration

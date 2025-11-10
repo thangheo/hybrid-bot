@@ -1,3 +1,4 @@
+
 /**
  * @file trading_system.hpp
  * @brief Complete trading system integration demonstration
@@ -82,12 +83,17 @@ using namespace trading::execution;
 namespace trading {
 
 class Trading_system {
+private:
+    // Exit monitor thread and control
+    std::thread exitMonitorThread_;
+    std::atomic<bool> exitMonitorRunning_{false};
+    void exitMonitorLoop();
 public:
     Trading_system()  ;
     
     ~Trading_system() ;
 
-    trading::ExecutionAcknowledgment handleTradingIntent(const trading::TradingIntent& intent);
+    // trading::ExecutionAcknowledgment handleTradingIntent(const trading::TradingIntent& intent);
 
 
     bool initialize() ;
@@ -238,17 +244,15 @@ private:
     std::atomic<uint64_t> publishTimeNs_{0};
     std::atomic<uint64_t> publishCalls_{0};
     
-    int calculateCompletionDelay(const trading::TradingIntent& intent, 
-                                const trading::MarketIntelligence& intel,
-                                bool hasIntel) ;
+    // int calculateCompletionDelay(const trading::TradingIntent& intent, 
+    //                             const trading::MarketIntelligence& intel,
+    //                             bool hasIntel) ;
 
     void setupConfigurations() ;
         
     void createStrategyConfig() ;
     void onMarketPriceUpdate(const core::Symbol& symbol, double price) ;
-        // Add this to your Trading_system class:
-    void setupPTCAConnections() ;
-    
+            
     void onExecutionResponse(const execution::ExecutionResponse& response) ;
     
     //create ptca config
