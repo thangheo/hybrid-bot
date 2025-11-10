@@ -993,6 +993,13 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                                         // Start tracking position
                                         g_optimalExit.startPosition(symbol_str, m.midPrice, dir, 
                                                                   signal.probability, current_spread_ratio, emaSpreadRatio);
+                                        LOG_INFO("STARTED TRACKING POSITION: {} dir={} entry_price={:.6f} prob={:.5f}, spread_emaRatio = {:.3f},spread_currentRatio = {:.5f}",
+                                                 symbol_str,
+                                                 (dir == core::Direction::BUY ? "BUY" : "SELL"),
+                                                 m.midPrice,
+                                                 signal.probability,
+                                                 emaSpreadRatio,
+                                                 current_spread_ratio);
 
                                         // Create entry event
                                         OrderBookMetrics mcopy = m;
