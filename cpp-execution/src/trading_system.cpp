@@ -81,16 +81,155 @@ Trading_system::Trading_system() : running_(false), systemHealthy_(true) {
     positionSizer_ = std::make_unique<trading::risk::PositionSizer>(riskConfig_.getPositionSizingConfig());
     
 }
-
-// Place this at the end of the file, after the class implementation:
-void Trading_system::exitMonitorLoop() {
-    while (exitMonitorRunning_.load()) {
-        // TODO: Implement exit monitoring logic here
-        // For now, just sleep to avoid busy-waiting
-        std::this_thread::sleep_for(std::chrono::milliseconds(500));
-    }
-}
  
+void Trading_system::exitMonitorLoop() {
+    LOG_INFO("Exit monitor loop started");
+    
+    while (exitMonitorRunning_.load()) {
+        try {
+            if (!exitStrategy_) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                continue;
+            }
+            
+            // Get all active positions from exit strategy
+            auto activeSymbols = exitStrategy_->getActiveSymbols();
+            
+            for (const auto& symbol : activeSymbols) {
+                try {
+                    // Get current market data
+                    core::Symbol sym(symbol);
+                    auto exchangeId = core::ExchangeId::binance(); // Or get from position
+                    
+                    auto priceOpt = dataIngestionService_->getLastPrice(exchangeId, sym);
+                    if (!priceOpt.has_value()) {
+                        LOG_TRACE("Exit monitor: No price for {}", symbol);
+                        continue;
+                    }
+                    
+                    double currentPrice = priceOpt.value();
+                    
+                    // Get spread
+                    double spreadRatio = 0.0;
+                    double spreadEMA = 0.0;
+                    
+                    if (marketDataInterface_) {
+                        auto spreadOpt = marketDataInterface_->getCurrentSpread(sym, exchangeId.toString());
+                        if (spreadOpt.has_value() && currentPrice > 0.0) {
+                            spreadRatio = spreadOpt.value() / currentPrice;
+                        }
+                        
+                        // Get EMA spread (you need to track this)
+                        // For now, use current spread as approximation
+                        spreadEMA = spreadRatio;
+                    }
+                    
+                    // Get position details - prefer Risk/Execution position tracker via ExecutionInterface
+                    // Fallback to exitStrategy_ stored position info for backward compatibility
+                    std::optional<trading::strategy::OptimalExitStrategy::PositionInfo> posInfo;
+
+                    try {
+                        if (riskManager_) {
+                            // RiskManager::getCachedPosition prefers PositionTracker then ExecutionInterface
+                            std::optional<double> cachedQty = riskManager_->getCachedPosition(exchangeId, sym);
+                            if (cachedQty.has_value() && std::abs(*cachedQty) > 1e-12) {
+                                trading::strategy::OptimalExitStrategy::PositionInfo info;
+                                double qty = *cachedQty;
+                                info.quantity = std::abs(qty);
+                                info.direction = (qty >= 0.0) ? core::Direction::BUY : core::Direction::SELL;
+                                // Try to fetch entry price from PositionTracker if available via RiskManager internals
+                                // RiskManager exposes no direct entry price here, so leave unknown (0.0)
+                                info.entry_price = 0.0;
+                                info.confidence = 1.0;
+                                info.entry_time = std::chrono::steady_clock::now();
+                                posInfo = info;
+                            }
+                        }
+                    } catch (const std::exception& e) {
+                        LOG_WARN("Exit monitor: RiskManager cached position lookup failed: {}", e.what());
+                    }
+
+                    // Fallback to exitStrategy's internal tracking if we didn't obtain position from risk/execution
+                    if (!posInfo.has_value() && exitStrategy_) {
+                        posInfo = exitStrategy_->getPositionInfo(symbol);
+                    }
+
+                    if (!posInfo.has_value()) {
+                        LOG_WARN("Exit monitor: No position info for {}", symbol);
+                        continue;
+                    }
+                    
+                    // Get current signal (optional - can pass NEUTRAL if not available)
+                    core::Direction currentSignalDir = core::Direction::NEUTRAL;
+                    double currentConfidence = 0.5;
+                    
+                    // CRITICAL: Use position direction, not signal direction!
+                    auto exitDecision = exitStrategy_->evaluateExit(
+                        symbol,
+                        currentPrice,
+                        spreadRatio ,     
+                        spreadEMA ,
+                        currentSignalDir,         // Current signal (or NEUTRAL)
+                        currentConfidence,
+                        currentPrice * 0.9995,   // Approximate bid
+                        currentPrice * 1.0005    // Approximate ask
+                    );
+                    
+                    if (exitDecision.should_exit) {
+                        LOG_INFO("EXIT TRIGGERED: {} - {} ({:.2f}bps)",
+                                symbol,
+                                OptimalExitStrategy::exitReasonToString(exitDecision.reason),
+                                exitDecision.expected_pnl);
+                        
+                        // Create exit signal
+                        execution::TradingSignal exitSignal;
+                        exitSignal.id = "EXIT_" + symbol + "_" + std::to_string(std::chrono::system_clock::now().time_since_epoch().count());
+                        exitSignal.symbol = sym;
+                        exitSignal.exchangeId = exchangeId;
+                        
+                        // IMPORTANT: Opposite direction of position
+                        exitSignal.direction = (posInfo->direction == core::Direction::BUY) ?
+                                              core::Direction::SELL : core::Direction::BUY;
+                        
+                        exitSignal.strength = 1.0;
+                        exitSignal.confidence = 0.9;
+                        exitSignal.quality = 0.9;
+                        exitSignal.targetSize = posInfo->quantity;
+                        exitSignal.strategyId = core::StrategyId("exit_strategy");
+                        
+                        // Mark as exit signal
+                        exitSignal.metadata["is_exit_signal"] = "true";
+                        exitSignal.metadata["exit_reason"] = std::to_string(static_cast<int>(exitDecision.reason));
+                        exitSignal.metadata["exit_pnl_bps"] = std::to_string(exitDecision.expected_pnl);
+                        
+                        // Queue for execution
+                        {
+                            std::lock_guard<std::mutex> lk(execQueueMutex_);
+                            execQueue_.push_back(std::move(exitSignal));
+                        }
+                        execQueueCv_.notify_one();
+                        
+                        // Mark position as pending exit (don't close yet - wait for execution)
+                        // exitStrategy_->markPendingExit(symbol);
+                    }
+                    
+                } catch (const std::exception& e) {
+                    LOG_ERROR("Exit monitor error for {}: {}", symbol, e.what());
+                }
+            }
+            
+            // Check every 500ms (adjust based on your needs)
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+            
+        } catch (const std::exception& e) {
+            LOG_ERROR("Exit monitor loop error: {}", e.what());
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+        }
+    }
+    
+    LOG_INFO("Exit monitor loop stopped");
+}
+
 Trading_system::~Trading_system() {
     shutdown();
 }
