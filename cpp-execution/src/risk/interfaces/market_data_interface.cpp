@@ -391,7 +391,26 @@ std::shared_ptr<DataInterface> MarketDataInterface::createDataInterface(
     LOG_INFO("MarketDataInterface singleton (injected) created (this={})", static_cast<const void*>(raw));
     return g_marketDataInterface_singleton;
 }
-
+// getCurrentSpread implementation
+// std::optional<double> MarketDataInterface::getCurrentSpread(
+//     const core::Symbol& tradingPair,
+//     const std::optional<std::string>& exchangeId) {
+//     // Implementation goes here
+// }
+std::optional<double> MarketDataInterface::getCurrentSpread(
+    const core::Symbol& tradingPair,
+    const std::optional<std::string>& exchangeId) {
+    
+    if (!initialized_.load()) {
+        return std::nullopt;
+    }
+    
+    core::ExchangeId exchange = core::ExchangeId::fromString(
+        exchangeId.value_or(defaultExchange_));
+    std::string cacheKey = createCacheKey(exchange, tradingPair);
+    
+    return cache_->getCurrentSpread(cacheKey);
+}
 void MarketDataInterface::setZmqClient(
     std::unique_ptr<trading::communication::GenericZmqClient> zmqClient) {
     // Store injected client for use when creating/configuring subscriber
