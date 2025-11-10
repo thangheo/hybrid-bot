@@ -374,7 +374,9 @@ OptimalExitStrategy::ExitDecision OptimalExitStrategy::evaluateExit(
     double effective_current_spread = current_spread_ratio;
     // If EMA provided and non-zero, consider a conservative max of instant and EMA
     if (current_spread_ema > 0.0) {
-        effective_current_spread = std::max(current_spread_ratio, current_spread_ema);
+        // just use spread ema for the sake of stability
+        // effective_current_spread = std::max(current_spread_ratio, current_spread_ema);
+        effective_current_spread = current_spread_ema;
     }
 
     if (effective_current_spread > trade.entry_spread_ratio * params.spread_widening_factor) {
