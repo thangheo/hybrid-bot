@@ -1294,6 +1294,11 @@ void Trading_system::execWorkerLoop(size_t workerId) {
                     if (marketDataInterface_) {
                         auto sp = marketDataInterface_->getCurrentSpread(task.symbol.toString());
                         if (sp.has_value() && currentPrice > 0.0) spreadRatio = sp.value() / currentPrice;
+                        // LOG spread every 
+                        LOG_INFO("ExecWorker: Current spread for {} is {} (ratio {:.4f}%)", 
+                                 task.symbol.toString(), 
+                                 sp.has_value() ? std::to_string(sp.value()) : "n/a", 
+                                 spreadRatio * 100.0);
                     }
                     exitStrategy_->startPosition(task.symbol.toString(), currentPrice, task.direction, task.confidence, spreadRatio);
                 }
