@@ -529,11 +529,9 @@ void MarketDataInterface::onMarketDataReceived(const core::MarketData& data) {
         ++messageCount;
         // Log the first 200 messages at INFO and thereafter every 100th message at INFO
         if (messageCount <= 200 || (messageCount % 100) == 0) {
-            LOG_INFO("MarketDataInterface: Received market data #{} for {}:{}, price={}, cacheKey={}", messageCount, exchange.toString(), symbol.toString(), data.price, cacheKey);
-        } else {
-            // Keep a lightweight trace on other messages
-            LOG_TRACE("MarketDataInterface: Received market data for {}:{}, cacheKey={}", exchange.toString(), symbol.toString(), cacheKey);
-        }
+            LOG_INFO("MarketDataInterface: Received market data #{} for {}:{}, price={}, bid={}, ask={}, volume={}, cacheKey={}", messageCount, exchange.toString(), symbol.toString(), data.price, data.bid, data.ask, data.volume, cacheKey);
+        } 
+        
         cache_->updateMarketData(cacheKey, data);
         
     } catch (const std::exception& e) {
