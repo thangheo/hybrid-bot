@@ -979,12 +979,12 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                                     } catch (...) {
                                         LOG_WARN("ImbalanceDetectionEngine: positionLookup threw unknown");
                                     }
-
+                                    int current_spread_ratio = m.spread*100/m.midPrice;
                                     if (authoritativeHasPosition) {
                                         LOG_INFO("ENTRY_BLOCKED_BY_POSITION: {} has authoritative position qty={} - skipping ENTRY", symbol_str, authoritativeQty);
                                     } else if (g_optimalExit.wasRecentlyClosed(symbol_str)) {
                                         LOG_INFO("ENTRY_BLOCKED_BY_RECENT_CLOSE: {} was recently closed - skipping ENTRY (cooldown)", symbol_str);
-                                    } else if (!g_optimalExit.shouldEnterPosition(symbol_str, m.midPrice, m.spreadPercent, m.spread, signal.probability)) {
+                                    } else if (!g_optimalExit.shouldEnterPosition(symbol_str, m.midPrice, m.spreadPercent, current_spread_ratio, signal.probability)) {
                                         LOG_INFO("ENTRY_BLOCKED_BY_ENTRY_FILTER: {} did not pass entry filter", symbol_str);
                                     } else {
                                         // double current_spread = (m.askPrice - m.bidPrice) / m.midPrice;
