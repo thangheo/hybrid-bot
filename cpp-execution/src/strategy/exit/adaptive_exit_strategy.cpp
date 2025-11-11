@@ -2,9 +2,15 @@
 #include <numeric>
 #include <algorithm>
 #include <cmath>
+#include <unordered_set>
+#include <mutex>
 #include <common/logger.hpp>
 namespace trading {
 namespace strategy {
+
+// File-scoped tracking to avoid spamming WARN logs for missing/invalid tick_size
+static std::unordered_set<std::string> g_tickSizeWarnedSymbols;
+static std::mutex g_tickWarnMutex;
 
 AdaptiveExitStrategy::AdaptiveExitStrategy(double prediction_window_seconds) 
     : predictionWindow_(prediction_window_seconds) {}
@@ -95,8 +101,14 @@ AdaptiveExitStrategy::DynamicParameters AdaptiveExitStrategy::calculateDynamicPa
     // Protect against invalid tick_size (divide by zero)
     double tick = current_micro.tick_size;
     if (tick <= 0.0) {
-        // Fallback: log once and use a tiny positive tick to avoid div-by-zero
-        LOG_WARN("AdaptiveExitStrategy::calculateDynamicParameters: tick_size <= 0 ({}). Using fallback tiny tick for symbol={}", tick, symbol);
+        // Fallback: only warn once per symbol and use a tiny positive tick to avoid div-by-zero
+        {
+            std::lock_guard<std::mutex> lk(g_tickWarnMutex);
+            if (g_tickSizeWarnedSymbols.find(symbol) == g_tickSizeWarnedSymbols.end()) {
+                LOG_WARN("AdaptiveExitStrategy::calculateDynamicParameters: tick_size <= 0 ({}). Using fallback tiny tick for symbol={}", tick, symbol);
+                g_tickSizeWarnedSymbols.insert(symbol);
+            }
+        }
         tick = 1e-8;
     }
 
@@ -294,16 +306,20 @@ AdaptiveExitStrategy::ExitDecision AdaptiveExitStrategy::evaluateExit(
     
     // Calculate PnL in ticks
     double pnl_ticks = 0.0;
-    double tick_now = current_micro.tick_size;
-    if (tick_now <= 0.0) {
-        LOG_WARN("AdaptiveExitStrategy::evaluateExit: current_micro.tick_size <= 0 ({}). Setting pnl_ticks=0 for symbol={}", tick_now, symbol);
-        pnl_ticks = 0.0;
-    } else {
-        if (state.entry_direction == core::Direction::BUY) {
-            pnl_ticks = (current_price - state.entry_price) / tick_now;
-        } else {
-            pnl_ticks = (state.entry_price - current_price) / tick_now;
+    double tick_now = current_micro.tick_size > 0.0 ? current_micro.tick_size : 1e-8;
+    if (current_micro.tick_size <= 0.0) {
+        // Warn only once per symbol
+        std::lock_guard<std::mutex> lk(g_tickWarnMutex);
+        if (g_tickSizeWarnedSymbols.find(symbol) == g_tickSizeWarnedSymbols.end()) {
+            LOG_WARN("AdaptiveExitStrategy::evaluateExit: current_micro.tick_size <= 0 ({}). Using fallback tick for symbol={}", current_micro.tick_size, symbol);
+            g_tickSizeWarnedSymbols.insert(symbol);
         }
+    }
+
+    if (state.entry_direction == core::Direction::BUY) {
+        pnl_ticks = (current_price - state.entry_price) / tick_now;
+    } else {
+        pnl_ticks = (state.entry_price - current_price) / tick_now;
     }
     
     // Update tracking
