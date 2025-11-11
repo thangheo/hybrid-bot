@@ -38,7 +38,7 @@
 // Data ingestion
 #include "data_ingestion/data_ingestion_service.hpp"
 //zmq server for market intellgence
-#include "market_intelligence/adaptive_intelligence.hpp"
+// #include "market_intelligence/adaptive_intelligence.hpp"
 #include "../../generated/cpp/proto/trading_messages.pb.h"
 #include <nlohmann/json.hpp>
 
@@ -88,7 +88,11 @@ private:
     // Exit monitor thread and control
     std::thread exitMonitorThread_;
     std::atomic<bool> exitMonitorRunning_{false};
+    // market data updater thread
+    std::thread marketDataUpdaterThread_;
+    std::atomic<bool> marketDataUpdaterRunning_{false};
     void exitMonitorLoop();
+    void marketDataUpdaterLoop();
 public:
     Trading_system()  ;
     
@@ -197,7 +201,7 @@ private:
     //share context
     std::shared_ptr<zmq::context_t> zmq_context_;
 
-    std::unique_ptr<trading::intelligence::AdaptiveMarketIntelligence> adaptiveIntel_;
+    // std::unique_ptr<trading::intelligence::AdaptiveMarketIntelligence> adaptiveIntel_;
     std::mutex intelligenceMutex_;
 
     // Market intelligence tracking

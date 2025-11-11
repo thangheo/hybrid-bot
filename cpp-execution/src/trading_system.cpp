@@ -37,7 +37,7 @@ Trading_system::Trading_system() : running_(false), systemHealthy_(true) {
     setupConfigurations();
     setupStatistics();
     // Initialize adaptive intelligence
-    adaptiveIntel_ = std::make_unique<trading::intelligence::AdaptiveMarketIntelligence>();
+    // adaptiveIntel_ = std::make_unique<trading::intelligence::AdaptiveMarketIntelligence>();
     
     ZmqServerConfig serverConfig;
     //create shared context for server and client
@@ -84,7 +84,85 @@ Trading_system::Trading_system() : running_(false), systemHealthy_(true) {
     positionSizer_ = std::make_unique<trading::risk::PositionSizer>(riskConfig_.getPositionSizingConfig());
     
 }
- 
+// Market data updater loop: periodically fetch microstructure metrics and update exit strategy
+void Trading_system::marketDataUpdaterLoop(){
+    while (marketDataUpdaterRunning_.load()) {
+        try {
+            if (!exitStrategy_) {
+                
+                std::this_thread::sleep_for(std::chrono::seconds(1));
+                continue;
+            }
+
+            for (const auto& [sym, exch] : strategyConfig_.tradingPairs) {
+                try {
+                    LOG_INFO("Updating microstructure for {} on {}", sym.toString(), exch.toString());
+                    std::string symbolStr = sym.toString();
+                    // Build microstructure values from cached metrics if available
+                    double vol_1m = 0.0;
+                    double spread_ema = 0.0;
+                    double orderbook_imbalance = 0.0;
+                    double trade_intensity = 0.0;
+                    double price_return = 0.0;
+                    double mid_price = 0.0;
+
+                    trading::strategy::OrderBookMetrics obm;
+                    if (getLatestOrderbookMetrics(sym, exch, obm)) {
+                        vol_1m = obm.realize_volatility_1m;
+                        spread_ema = obm.emaSpread;
+                        orderbook_imbalance = obm.volumeImbalance;
+                        trade_intensity = obm.totalVolume; // proxy
+                        mid_price = obm.midPrice;
+                    } else if (marketDataInterface_) {
+                        try {
+                            auto sp = marketDataInterface_->getCurrentSpread(sym, exch.toString());
+                            if (sp.has_value()) spread_ema = sp.value();
+                            vol_1m = marketDataInterface_->getVolatility(sym, "1m", exch.toString());
+                            mid_price = marketDataInterface_->getCurrentPrice(sym, exch.toString());
+                        } catch (...) {}
+                    }
+                    LOG_INFO("Microstructure raw for {}: vol_1m={}, spread_ema={}, orderbook_imbalance={}, trade_intensity={}",
+                                symbolStr, vol_1m, spread_ema, orderbook_imbalance, trade_intensity);
+
+                    // Compute price return as relative change from last observed mid price
+                    try {
+                        std::string key = exch.toString() + ":" + symbolStr;
+                        double last_price = 0.0;
+                        {
+                            std::lock_guard<std::mutex> lk(lastPriceMutex_);
+                            auto it = lastMidPrice_.find(key);
+                            if (it != lastMidPrice_.end()) last_price = it->second;
+                        }
+
+                        if (mid_price > 0.0 && last_price > 0.0) {
+                            price_return = (mid_price - last_price) / last_price;
+                        } else {
+                            price_return = 0.0;
+                        }
+
+                        // Update last mid price
+                        if (mid_price > 0.0) {
+                            std::lock_guard<std::mutex> lk(lastPriceMutex_);
+                            lastMidPrice_[key] = mid_price;
+                        }
+                    } catch (...) {}
+
+                    // Call updateMarketData on exit strategy
+                    try {
+                        // log debug with information about microstructure every 10 counts
+                        static int count = 0;
+                        if(count++ % 10 == 0){
+                            LOG_DEBUG("Updating microstructure for {}: vol_1m={}, spread_ema={}, orderbook_imbalance={}, trade_intensity={}, price_return={}",
+                                        symbolStr, vol_1m, spread_ema, orderbook_imbalance, trade_intensity, price_return);
+                        }
+                        exitStrategy_->updateMarketData(symbolStr, vol_1m, spread_ema, orderbook_imbalance, trade_intensity, price_return);
+                    } catch (...) {}
+                } catch (...) {}
+            }
+        } catch (...) {}
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+    }
+}
 void Trading_system::exitMonitorLoop() {
     LOG_INFO("Exit monitor loop started");
     
@@ -424,8 +502,8 @@ bool Trading_system::start() {
             std::cerr << "Failed to start data ingestion service" << std::endl;
             return false;
         }
-    // Start orderbook worker pool after data ingestion starts
-    startOrderbookWorkerPool();
+        // Start orderbook worker pool after data ingestion starts
+        startOrderbookWorkerPool();
     // Start dedicated strategy orderbook worker pool (decoupled)
         startStrategyOrderbookWorkerPool(); 
         
@@ -455,85 +533,11 @@ bool Trading_system::start() {
         }
 
         // Start market microstructure updater thread (calls updateMarketData once per second)
-        monitoringThreads_.emplace_back([this]() {           
-
-            while (running_) {
-                try {
-                    if (!exitStrategy_) {
-                        
-                        std::this_thread::sleep_for(std::chrono::seconds(1));
-                        continue;
-                    }
-
-                    for (const auto& [sym, exch] : strategyConfig_.tradingPairs) {
-                        try {
-                            LOG_INFO("Updating microstructure for {} on {}", sym.toString(), exch.toString());
-                            std::string symbolStr = sym.toString();
-                            // Build microstructure values from cached metrics if available
-                            double vol_1m = 0.0;
-                            double spread_ema = 0.0;
-                            double orderbook_imbalance = 0.0;
-                            double trade_intensity = 0.0;
-                            double price_return = 0.0;
-                            double mid_price = 0.0;
-
-                            trading::strategy::OrderBookMetrics obm;
-                            if (getLatestOrderbookMetrics(sym, exch, obm)) {
-                                vol_1m = obm.realize_volatility_1m;
-                                spread_ema = obm.emaSpread;
-                                orderbook_imbalance = obm.volumeImbalance;
-                                trade_intensity = obm.totalVolume; // proxy
-                                mid_price = obm.midPrice;
-                            } else if (marketDataInterface_) {
-                                try {
-                                    auto sp = marketDataInterface_->getCurrentSpread(sym, exch.toString());
-                                    if (sp.has_value()) spread_ema = sp.value();
-                                    vol_1m = marketDataInterface_->getVolatility(sym, "1m", exch.toString());
-                                    mid_price = marketDataInterface_->getCurrentPrice(sym, exch.toString());
-                                } catch (...) {}
-                            }
-                            LOG_INFO("Microstructure raw for {}: vol_1m={}, spread_ema={}, orderbook_imbalance={}, trade_intensity={}",
-                                      symbolStr, vol_1m, spread_ema, orderbook_imbalance, trade_intensity);
-
-                            // Compute price return as relative change from last observed mid price
-                            try {
-                                std::string key = exch.toString() + ":" + symbolStr;
-                                double last_price = 0.0;
-                                {
-                                    std::lock_guard<std::mutex> lk(lastPriceMutex_);
-                                    auto it = lastMidPrice_.find(key);
-                                    if (it != lastMidPrice_.end()) last_price = it->second;
-                                }
-
-                                if (mid_price > 0.0 && last_price > 0.0) {
-                                    price_return = (mid_price - last_price) / last_price;
-                                } else {
-                                    price_return = 0.0;
-                                }
-
-                                // Update last mid price
-                                if (mid_price > 0.0) {
-                                    std::lock_guard<std::mutex> lk(lastPriceMutex_);
-                                    lastMidPrice_[key] = mid_price;
-                                }
-                            } catch (...) {}
-
-                            // Call updateMarketData on exit strategy
-                            try {
-                                // log debug with information about microstructure every 10 counts
-                                static int count = 0;
-                                if(count++ % 10 == 0){
-                                    LOG_DEBUG("Updating microstructure for {}: vol_1m={}, spread_ema={}, orderbook_imbalance={}, trade_intensity={}, price_return={}",
-                                              symbolStr, vol_1m, spread_ema, orderbook_imbalance, trade_intensity, price_return);
-                                }
-                                exitStrategy_->updateMarketData(symbolStr, vol_1m, spread_ema, orderbook_imbalance, trade_intensity, price_return);
-                            } catch (...) {}
-                        } catch (...) {}
-                    }
-                } catch (...) {}
-                std::this_thread::sleep_for(std::chrono::seconds(1));
-            }
-        });
+        if (!marketDataUpdaterRunning_.load()) {
+            marketDataUpdaterRunning_.store(true);
+            marketDataUpdaterThread_ = std::thread([this]() { this->marketDataUpdaterLoop(); });
+            LOG_INFO("Trading_system: Market data updater started");
+        }
 
         return true;
     }
@@ -744,9 +748,9 @@ void Trading_system::createStrategyConfig() {
     std::string configPath = "config/strategy_config.json";
     strategyConfig_ = loadStrategyConfigFromFile(configPath);
         //  std::map<std::string, core::ExchangeId> tradingPairs;
-    for (const auto& [name, pair] : strategyConfig_.tradingPairs) {
-        std::cout << "Configured trading pair: " << name 
-                    << " on exchange " << pair.toString() << std::endl;            
+    for (const auto& [symbol, exchange] : strategyConfig_.tradingPairs) {
+        std::cout << "Configured trading pair: " << symbol.toString()
+                    << " on exchange " << exchange.toString() << std::endl;            
     }
 }
 
