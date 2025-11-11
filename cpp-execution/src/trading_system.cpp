@@ -117,8 +117,8 @@ void Trading_system::marketDataUpdaterLoop(){
                             mid_price = marketDataInterface_->getCurrentPrice(sym, exch.toString());
                         } catch (...) {}
                     }
-                    LOG_INFO("Microstructure raw for {}: vol_1m={}, spread_ema={}, orderbook_imbalance={}, trade_intensity={}",
-                                symbolStr, vol_1m, spread_ema, orderbook_imbalance, trade_intensity);
+                    // LOG_INFO("Microstructure raw for {}: vol_1m={}, spread_ema={}, orderbook_imbalance={}, trade_intensity={}",
+                    //             symbolStr, vol_1m, spread_ema, orderbook_imbalance, trade_intensity);
 
                     // Compute price return as relative change from last observed mid price
                     try {
@@ -231,19 +231,7 @@ void Trading_system::exitMonitorLoop() {
                     if (exitStrategy_) {
                         posInfo = exitStrategy_->getTradeState(symbol);
                     }
-                    // if (!posInfo.has_value() && executionInterface_) {
-                    //     auto execPosOpt = executionInterface_->getPosition(exchangeId, sym);
-                    //     if (execPosOpt.has_value() && std::abs(execPosOpt->quantity) > 1e-12) {
-                    //         trading::strategy::AdaptiveExitStrategy::TradeState info;
-                    //         double qty = execPosOpt->quantity;
-                    //         // info.quantity = std::abs(qty);
-                    //         info.entry_direction = (qty >= 0.0) ? core::Direction::BUY : core::Direction::SELL;
-                    //         info.entry_price = execPosOpt->avgEntryPrice;
-                    //         info.entry_confidence = 1.0;
-                    //         // info.entry_time = std::chrono::steady_clock::now(); // Unknown
-                    //         posInfo = info;
-                    //     }
-                    // }
+                    
                     //this code looks duumb
                     if (!posInfo.has_value() && riskManager_) {
                         try {
@@ -256,8 +244,9 @@ void Trading_system::exitMonitorLoop() {
                                 // info.quantity = std::abs(qty);
                                 info.entry_direction = (qty >= 0.0) ? core::Direction::BUY : core::Direction::SELL;
                                 // Try to fetch entry price from PositionTracker if available via RiskManager internals
-                                // RiskManager exposes no direct entry price here, so leave unknown (0.0)
-                                info.entry_price = 0.0;
+                                // RiskManager exposes no direct entry price here; use currentPrice as a safe fallback
+                                info.entry_price = currentPrice;
+                                LOG_WARN("Exit monitor: fallback entry_price used (from currentPrice) for {} = {}", symbol, currentPrice);
                                 info.entry_confidence = 1.0;
                                 // info.entry_time = std::chrono::steady_clock::now(); 
                                 //this code above is pure trash. trash chatgpt copilot wrote.
