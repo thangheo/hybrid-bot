@@ -45,6 +45,7 @@
 // Strategy engine
 #include "strategy/engine/strategy_engine.hpp"
 #include "strategy/config/strategy_config_loader.hpp"
+#include "strategy/core_analysis/order_book_analyzer.hpp"
 //ptca
 // #include "learning/ptca_integration_manager.hpp"
 // #include "learning/pavlovian_credit_assignment.hpp"
@@ -284,6 +285,9 @@ private:
     void execWorkerLoop(size_t workerId);
 
     void setupComponentConnections() ;
+
+    // Access cached orderbook metrics (thread-safe). Returns true if found.
+    bool getLatestOrderbookMetrics(const core::Symbol& symbol, const core::ExchangeId& exchangeId, trading::strategy::OrderBookMetrics& out) const;
     
     void realExecution(const execution::TradingSignal& signal) ;
         // Returns true if the system is still in its warm-up period after start()
@@ -303,6 +307,11 @@ private:
     static constexpr int MIN_GAP_SECONDS_FOR_EXIT = 1;  
     static constexpr double MAX_LOSS_PER_SYMBOL = -50.0;
     static constexpr double MAX_TOTAL_DAILY_LOSS = -200.0;
+    // Cached orderbook metrics (updated from EventBus subscription)
+    mutable std::mutex metricsMutex_;
+    std::unordered_map<std::string, trading::strategy::OrderBookMetrics> latestOrderbookMetrics_;
+    // EventBus subscription id for MetricsUpdatedEvent
+    size_t metricsSubscriptionId_ = 0;
     
 };
 

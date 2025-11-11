@@ -251,6 +251,11 @@ void OrderBookAnalyzer::processOrderBook(const data_ingestion::OrderBook& snapsh
     
     // Publish event outside of lock to prevent deadlocks
     common::EventBus::getInstance().publish(events::MetricsUpdatedEvent{metricsToNotify});
+    // Also notify any directly registered in-process callbacks. We call the
+    // notifier outside the lock (the lock scope ended above) to avoid
+    // deadlocks — notifyMetricsUpdated() locks internally when copying
+    // callbacks and metrics.
+    notifyMetricsUpdated();
 }
 
 void OrderBookAnalyzer::calculateFlowMetrics(const std::vector<data_ingestion::PriceLevel>& previousBids,
