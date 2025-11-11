@@ -1043,7 +1043,7 @@ std::optional<double> RiskManager::getCachedPosition(const ExchangeId& exchangeI
         const int MAX_FALLBACK_CALLS = 5;
         static thread_local int fallbackCallCount = 0;
         if (fallbackCallCount >= MAX_FALLBACK_CALLS) {
-            LOG_WARN("RiskManager - ⚠️ Reached max fallback ExecutionInterface calls ({}) - skipping further calls to avoid rate limits", MAX_FALLBACK_CALLS);
+            LOG_TRACE("RiskManager - ⚠️ Reached max fallback ExecutionInterface calls ({}) - skipping further calls to avoid rate limits", MAX_FALLBACK_CALLS);
             return std::nullopt;
         }
         // reset counter after 1 minute
