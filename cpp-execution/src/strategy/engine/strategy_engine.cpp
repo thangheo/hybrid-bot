@@ -418,6 +418,7 @@ bool StrategyEngine::getRegimeInfo(const std::string& symbol, trading::strategy:
              double poc = vpIt->second->calculatePointOfControl();
              auto valueArea = vpIt->second->calculateValueArea(0.7); // 70% value area
              auto anomalies = vpIt->second->detectAnomalies();
+             double skewness = vpIt->second->calculateVolumeProfileSkewness();
              
              // Calculate density ratio (volume concentration metric)
              double currentPrice = orderBook.getMidPrice();

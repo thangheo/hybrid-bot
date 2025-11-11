@@ -235,6 +235,17 @@ public:
     bool hasActivePosition(const std::string& symbol) const;
     TradeState getTradeState(const std::string& symbol) const;
     static const char* exitReasonToString(ExitReason reason);
+    // getActiveSymbols
+    std::vector<std::string> getActiveSymbols() const {
+        std::lock_guard<std::mutex> lock(tradesMutex_);
+        std::vector<std::string> symbols;
+        for (const auto& pair : activeTrades_) {
+            if (pair.second.is_active) {
+                symbols.push_back(pair.first);
+            }
+        }
+        return symbols;
+    }
 };
 
 } // namespace strategy

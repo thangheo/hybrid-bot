@@ -371,8 +371,8 @@ using ImbalanceDetectionEngineConstPtr = std::shared_ptr<const ImbalanceDetectio
 } // namespace strategy
 } // namespace trading
 
-// Forward declaration for OptimalExitStrategy
-#include "strategy/exit/optimal_exit_strategy.hpp"
+// Forward declaration for AdaptiveExitStrategy
+// #include "strategy/exit/adaptive_exit_strategy.hpp"
 
-// Global function to allow external registration of exit callback on global OptimalExitStrategy instance
-void registerGlobalOptimalExitCallback(const trading::strategy::OptimalExitStrategy::ExitCallback& callback);
+// Global function to allow external registration of exit callback on global AdaptiveExitStrategy instance
+// void registerGlobalAdaptiveExitCallback(const trading::strategy::AdaptiveExitStrategy::ExitCallback& callback);

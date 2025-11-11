@@ -1,5 +1,6 @@
 #include "trading_system.hpp"
 #include "strategy/core_analysis/regime_subscriber.hpp"
+#include "strategy/exit/adaptive_exit_strategy.hpp"
 #include "common/quantity_precision.hpp" // symbol precision helper for exchange-compliant quantities
 #include "strategy/pattern/imbalance_detection_engine.hpp"
 #include "risk/interfaces/execution_interface.hpp"
@@ -17,18 +18,20 @@ using namespace ::trading::execution;
 using namespace ::trading::risk;
 using namespace ::trading::common;
 // using namespace ::trading::intelligence;
+using namespace ::trading;
 
-
-// Forward-declare OptimalExitStrategy and provide a file-scoped pointer to allow legacy code
+// Forward-declare AdaptiveExitStrategy and provide a file-scoped pointer to allow legacy code
 namespace trading {
 namespace strategy {
-class OptimalExitStrategy;
+class AdaptiveExitStrategy;
 } // namespace strategy
 } // namespace trading
 
 // File-scoped shared_ptr used by Trading_system member functions when the class member
 // `exitStrategy_` is not present in the header (provides backward-compatible fallback).
-static std::shared_ptr<trading::strategy::OptimalExitStrategy> exitStrategy_;
+// static std::shared_ptr<trading::strategy::AdaptiveExitStrategy> exitStrategy_;
+//use adaptive exit strategy instead
+static std::shared_ptr<trading::strategy::AdaptiveExitStrategy> exitStrategy_;
 
 Trading_system::Trading_system() : running_(false), systemHealthy_(true) {
     setupConfigurations();
@@ -94,7 +97,10 @@ void Trading_system::exitMonitorLoop() {
             
             // Get all active positions from exit strategy
             auto activeSymbols = exitStrategy_->getActiveSymbols();
-            
+            if (activeSymbols.empty()) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                continue;
+            }
             for (const auto& symbol : activeSymbols) {
                 try {
                     // Get current market data
@@ -112,7 +118,8 @@ void Trading_system::exitMonitorLoop() {
                     // Get spread
                     double spreadRatio = 0.0;
                     double spreadEMA = 0.0;
-                    
+                    double realize_volatility_1m = 0.0;
+
                     if (marketDataInterface_) {
                             
                         // Try to fetch latest orderbook metrics cached from EventBus
@@ -120,7 +127,6 @@ void Trading_system::exitMonitorLoop() {
                         double obVolImbalance = 0.0;
                         double obRV = 0.0;
                         double obMid = 0.0;
-                        double realize_volatility_1m = 0.0;
                         if (getLatestOrderbookMetrics(sym, exchangeId, obMetrics)) {
                             try {
                                 obMid = obMetrics.midPrice;
@@ -140,70 +146,76 @@ void Trading_system::exitMonitorLoop() {
                             auto spreadOpt = marketDataInterface_->getCurrentSpread(sym, exchangeId.toString());
                             if (spreadOpt.has_value() && currentPrice > 0.0) {
                                 spreadRatio = spreadOpt.value() / currentPrice;
-                            }
-                            
-                            // Get EMA spread (you need to track this)
-                            // For now, use current spread as approximation
+                            }                            
                             spreadEMA = spreadRatio;
                         }
                     }
                         
                     // Get position details - prefer Risk/Execution position tracker via ExecutionInterface
                     // Fallback to exitStrategy_ stored position info for backward compatibility
-                    std::optional<trading::strategy::OptimalExitStrategy::PositionInfo> posInfo;
-                    
-                    // try {
-                    //     if (riskManager_) {
-                    //         // RiskManager::getCachedPosition prefers PositionTracker then ExecutionInterface
-                    //         std::optional<double> cachedQty = riskManager_->getCachedPosition(exchangeId, sym);
-                    //         if (cachedQty.has_value() && std::abs(*cachedQty) > 1e-12) {
-                    //             trading::strategy::OptimalExitStrategy::PositionInfo info;
-                    //             double qty = *cachedQty;
-                    //             info.quantity = std::abs(qty);
-                    //             info.direction = (qty >= 0.0) ? core::Direction::BUY : core::Direction::SELL;
-                    //             // Try to fetch entry price from PositionTracker if available via RiskManager internals
-                    //             // RiskManager exposes no direct entry price here, so leave unknown (0.0)
-                    //             info.entry_price = 0.0;
-                    //             info.confidence = 1.0;
-                    //             info.entry_time = std::chrono::steady_clock::now(); //this is stupid, so the position will never close .
-                    //             //this code above is pure trash. trash chatgpt copilot wrote.
-                    //             posInfo = info;
-                    //         }
+                    std::optional<trading::strategy::AdaptiveExitStrategy::TradeState> posInfo;
+                    if (exitStrategy_) {
+                        posInfo = exitStrategy_->getTradeState(symbol);
+                    }
+                    // if (!posInfo.has_value() && executionInterface_) {
+                    //     auto execPosOpt = executionInterface_->getPosition(exchangeId, sym);
+                    //     if (execPosOpt.has_value() && std::abs(execPosOpt->quantity) > 1e-12) {
+                    //         trading::strategy::AdaptiveExitStrategy::TradeState info;
+                    //         double qty = execPosOpt->quantity;
+                    //         // info.quantity = std::abs(qty);
+                    //         info.entry_direction = (qty >= 0.0) ? core::Direction::BUY : core::Direction::SELL;
+                    //         info.entry_price = execPosOpt->avgEntryPrice;
+                    //         info.entry_confidence = 1.0;
+                    //         // info.entry_time = std::chrono::steady_clock::now(); // Unknown
+                    //         posInfo = info;
                     //     }
-                    // } catch (const std::exception& e) {
-                    //     LOG_WARN("Exit monitor: RiskManager cached position lookup failed: {}", e.what());
                     // }
-
-                    // Fallback to exitStrategy's internal tracking if we didn't obtain position from risk/execution
-                    if (!posInfo.has_value() && exitStrategy_) {
-                        posInfo = exitStrategy_->getPositionInfo(symbol);
+                    //this code looks duumb
+                    if (!posInfo.has_value() && riskManager_) {
+                        try {
+                            //fallback to riskManager
+                            // RiskManager::getCachedPosition prefers PositionTracker then ExecutionInterface
+                            std::optional<double> cachedQty = riskManager_->getCachedPosition(exchangeId, sym);
+                            if (cachedQty.has_value() && std::abs(*cachedQty) > 1e-12) {
+                                trading::strategy::AdaptiveExitStrategy::TradeState info;
+                                double qty = *cachedQty;
+                                // info.quantity = std::abs(qty);
+                                info.entry_direction = (qty >= 0.0) ? core::Direction::BUY : core::Direction::SELL;
+                                // Try to fetch entry price from PositionTracker if available via RiskManager internals
+                                // RiskManager exposes no direct entry price here, so leave unknown (0.0)
+                                info.entry_price = 0.0;
+                                info.entry_confidence = 1.0;
+                                // info.entry_time = std::chrono::steady_clock::now(); 
+                                //this code above is pure trash. trash chatgpt copilot wrote.
+                                posInfo = info;
+                            }
+                        
+                        } catch (const std::exception& e) {
+                            LOG_WARN("Exit monitor: RiskManager cached position lookup failed: {}", e.what());
+                        }
                     }
 
-                    if (!posInfo.has_value()) {
-                        LOG_WARN("Exit monitor: No position info for {}", symbol);
-                        continue;
-                    }
                     
                     // Get current signal (optional - can pass NEUTRAL if not available)
                     core::Direction currentSignalDir = core::Direction::NEUTRAL;
                     double currentConfidence = 0.5;
-                    
+                    AdaptiveExitStrategy::MarketMicrostructure currentMicro;
+                    currentMicro.spread_ema = spreadEMA;
+                    currentMicro.volatility_1m = realize_volatility_1m;
+                    //add microstructure info here later
                     // CRITICAL: Use position direction, not signal direction!
                     auto exitDecision = exitStrategy_->evaluateExit(
                         symbol,
                         currentPrice,
-                        spreadRatio ,     
-                        spreadEMA ,
-                        currentSignalDir,         // Current signal (or NEUTRAL)
-                        currentConfidence,
-                        currentPrice * 0.9995,   // Approximate bid
-                        currentPrice * 1.0005    // Approximate ask
+                        currentMicro,
+                        currentSignalDir,
+                        currentConfidence
                     );
-                    
+
                     if (exitDecision.should_exit) {
                         LOG_INFO("EXIT TRIGGERED: {} - {} ({:.2f}bps)",
                                 symbol,
-                                OptimalExitStrategy::exitReasonToString(exitDecision.reason),
+                                AdaptiveExitStrategy::exitReasonToString(exitDecision.reason),
                                 exitDecision.expected_pnl);
                         
                         // Create exit signal
@@ -213,13 +225,13 @@ void Trading_system::exitMonitorLoop() {
                         exitSignal.exchangeId = exchangeId;
                         
                         // IMPORTANT: Opposite direction of position
-                        exitSignal.direction = (posInfo->direction == core::Direction::BUY) ?
+                        exitSignal.direction = (posInfo->entry_direction == core::Direction::BUY) ?
                                               core::Direction::SELL : core::Direction::BUY;
                         
                         exitSignal.strength = 1.0;
                         exitSignal.confidence = 0.9;
                         exitSignal.quality = 0.9;
-                        exitSignal.targetSize = posInfo->quantity;
+                        exitSignal.targetSize = 1; //full exit
                         exitSignal.strategyId = core::StrategyId("exit_strategy");
                         
                         // Mark as exit signal
@@ -1199,7 +1211,7 @@ void Trading_system::execWorkerLoop(size_t workerId) {
                     // Inform exit strategy that position is closed if we have one
                     try {
                         if (exitStrategy_) {
-                            exitStrategy_->closePosition(task.symbol.toString(), trading::strategy::OptimalExitStrategy::ExitReason::PROFIT_TARGET, 0.0);
+                            exitStrategy_->closePosition(task.symbol.toString(), trading::strategy::AdaptiveExitStrategy::ExitReason::PROFIT_TARGET, 0.0);
                         }
                     } catch (...) {}
                 }
@@ -1381,61 +1393,27 @@ void Trading_system::execWorkerLoop(size_t workerId) {
                 if (exitStrategy_) {
                     double spreadRatio = 0.0;
                     if (marketDataInterface_) {
-                        // Use the overload that accepts a Symbol and exchange string so
-                        // MarketDataInterface builds the canonical cacheKey (e.g. "BINANCE:SUI/USDT").
-                        auto sp = marketDataInterface_->getCurrentSpread(task.symbol, task.exchangeId.toString());
-                        if (sp.has_value() && currentPrice > 0.0) spreadRatio = sp.value() / currentPrice;
-                        // LOG spread every attempt; if cache miss, try a local orderbook fallback so we can observe spread
-                        if (sp.has_value()) {
-                            LOG_INFO("ExecWorker: Current spread for {} is {} (ratio {:.4f}%)", 
-                                     task.symbol.toString(), std::to_string(sp.value()), spreadRatio * 100.0);
-                        } else {
-                            // Cache miss - attempt fallback from dataIngestionService orderbook
-                            LOG_TRACE("ExecWorker: No spread in MarketDataInterface cache for {} - attempting fallback orderbook lookup", task.symbol.toString());
-                            try {
-                                auto ob = dataIngestionService_->getOrderBook(task.exchangeId, task.symbol);
-                                if (ob) {
-                                    try {
-                                        auto bestBid = ob->getBestBid();
-                                        auto bestAsk = ob->getBestAsk();
-                                        double bid = bestBid.price;
-                                        double ask = bestAsk.price;
-                                        double fb_spread = ask - bid;
-                                        if (fb_spread > 0.0 && currentPrice > 0.0) {
-                                            spreadRatio = fb_spread / currentPrice;
-                                        }
-                                        LOG_INFO("ExecWorker: Fallback orderbook spread for {} is {} (ratio {:.4f}%)", task.symbol.toString(), std::to_string(fb_spread), spreadRatio * 100.0);
-                                    } catch (...) {
-                                        LOG_TRACE("ExecWorker: Fallback orderbook getBestBid/getBestAsk failed for {}", task.symbol.toString());
-                                    }
-                                } else {
-                                    LOG_TRACE("ExecWorker: Fallback orderbook unavailable for {}", task.symbol.toString());
-                                }
-                            } catch (const std::exception &e) {
-                                LOG_WARN("ExecWorker: Fallback orderbook lookup failed for {}: {}", task.symbol.toString(), e.what());
-                            }
-                        }
+                        // use market data to populate microstructure fields
+                        try {
+                            auto sp = marketDataInterface_->getCurrentSpread(task.symbol, task.exchangeId.toString());
+                            if (sp.has_value() && currentPrice > 0.0) spreadRatio = sp.value() / currentPrice;
+                        } catch (...) {}
                     }
-                    else {
-                        LOG_WARN("ExecWorker: marketDataInterface_ is NULL when starting exit tracking for {}", task.symbol.toString());
-                    }
-                    exitStrategy_->startPosition(task.symbol.toString(), currentPrice, task.direction, task.confidence, spreadRatio);
+
+                    // Build microstructure and call startPosition
+                    trading::strategy::AdaptiveExitStrategy::MarketMicrostructure micro;
+                    //get vol1m from orderbook metric we subscribed
+                    micro.volatility_1m = 0.0;
+                    micro.spread_ema = spreadRatio * currentPrice; // best-effort
+                    micro.orderbook_imbalance = 0.0;
+                    micro.trade_intensity = 0.0;
+                    // micro.
+                    micro.tick_size = 0.01;
+
+                    exitStrategy_->startPosition(task.symbol.toString(), currentPrice, task.direction, task.confidence, micro);
                 }
             } catch (...) {}
-                    // 5. Subscribe to OrderBook metrics updates so we can use them in exitMonitorLoop
-                    metricsSubscriptionId_ = common::EventBus::getInstance().subscribe<trading::events::MetricsUpdatedEvent>(
-                        [this](const trading::events::MetricsUpdatedEvent& evt) {
-                            try {
-                                const auto& m = evt.metrics;
-                                // Build key as "EXCHANGE:SYMBOL" where exchange.toString() and symbol.toString()
-                                std::string key = m.exchangeId.toString() + ":" + m.symbol.toString();
-                                std::lock_guard<std::mutex> lk(metricsMutex_);
-                                latestOrderbookMetrics_[key] = m; // copy
-                            } catch (...) {
-                                // swallow - caching is best-effort
-                            }
-                        }
-                    );
+                    // (subscription moved to setupComponentConnections to ensure a single global subscription)
                       
         } catch (const std::exception &e) {
             std::cerr << "Exec worker " << workerId << " error: " << e.what() << std::endl;
@@ -1530,265 +1508,282 @@ void Trading_system::setupComponentConnections() {
         });
     }
 
-    // 4. Register exit callback for OptimalExitStrategy
-    LOG_INFO("ExitCallback: 🔧 Setting up OptimalExitStrategy callback...");
+    // 4. Register exit callback for AdaptiveExitStrategy
+    LOG_INFO("ExitCallback: 🔧 Setting up AdaptiveExitStrategy callback...");
     if (riskManager_) {
         LOG_INFO("ExitCallback: ✅ RiskManager is available");
         auto executionInterface = riskManager_->getExecutionInterface();
         if (executionInterface) {
             LOG_INFO("ExitCallback: ✅ ExecutionInterface is available");
-            LOG_INFO("ExitCallback: Registering exit callback for OptimalExitStrategy");
+            LOG_INFO("ExitCallback: Registering exit callback for AdaptiveExitStrategy");
 
             // Capture weak_ptrs to avoid extending lifetimes
             std::weak_ptr<trading::risk::ExecutionInterface> execWeak = executionInterface;
             std::weak_ptr<trading::risk::RiskManager> riskWeak = riskManager_;
 
-            registerGlobalOptimalExitCallback(
-                [this, execWeak, riskWeak](const std::string& symbol, core::Direction exitDirection, double currentPrice, const std::string& reason) {
-                    try {
-                        LOG_INFO("ExitCallback: 🔥 EXIT SIGNAL: {} {} at price {} (reason: {})", 
-                                symbol, 
-                                (exitDirection == core::Direction::SELL ? "SELL" : "BUY"), 
-                                currentPrice, 
-                                reason);
+            // registerGlobalOptimalExitCallback(
+            //     [this, execWeak, riskWeak](const std::string& symbol, core::Direction exitDirection, double currentPrice, const std::string& reason) {
+            //         try {
+            //             LOG_INFO("ExitCallback: 🔥 EXIT SIGNAL: {} {} at price {} (reason: {})", 
+            //                     symbol, 
+            //                     (exitDirection == core::Direction::SELL ? "SELL" : "BUY"), 
+            //                     currentPrice, 
+            //                     reason);
 
-                        // Lock weak_ptr to get shared_ptr for this call
-                        auto executionInterface = execWeak.lock();
-                        if (!executionInterface) {
-                            LOG_ERROR("ExitCallback: ExecutionInterface expired - skipping exit for {}", symbol);
-                            return;
-                        }
+            //             // Lock weak_ptr to get shared_ptr for this call
+            //             auto executionInterface = execWeak.lock();
+            //             if (!executionInterface) {
+            //                 LOG_ERROR("ExitCallback: ExecutionInterface expired - skipping exit for {}", symbol);
+            //                 return;
+            //             }
 
-                        // Log pointer address for easier debugging if something later fails
-                        // LOG_INFO("ExitCallback: Using ExecutionInterface ptr={}", static_cast<const void*>(executionInterface.get()));
+            //             // Log pointer address for easier debugging if something later fails
+            //             // LOG_INFO("ExitCallback: Using ExecutionInterface ptr={}", static_cast<const void*>(executionInterface.get()));
 
-                        // Create OrderRequest for exit
-                        ::risk::OrderRequest exitOrder;
-                        exitOrder.orderId = "EXIT_" + symbol + "_" + std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
-                        std::chrono::system_clock::now().time_since_epoch()).count());
-                        exitOrder.clientOrderId = "exit_" + symbol + "_" + std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
-                        std::chrono::system_clock::now().time_since_epoch()).count());
-                        exitOrder.set_trading_pair(trading::core::Symbol(symbol));
-                        exitOrder.set_side(exitDirection);
-                        exitOrder.set_time_in_force("GTC"); // Good-Til-Canceled
-                        exitOrder.set_strategy_id("OptimalExitStrategy");
-                        exitOrder.set_signal_id("exit_signal_" + symbol);
-                        exitOrder.set_exchange_id(trading::core::ExchangeId::binance()); 
-                        exitOrder.set_price(currentPrice); // not used for 
+            //             // Create OrderRequest for exit
+            //             ::risk::OrderRequest exitOrder;
+            //             exitOrder.orderId = "EXIT_" + symbol + "_" + std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
+            //             std::chrono::system_clock::now().time_since_epoch()).count());
+            //             exitOrder.clientOrderId = "exit_" + symbol + "_" + std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
+            //             std::chrono::system_clock::now().time_since_epoch()).count());
+            //             exitOrder.set_trading_pair(trading::core::Symbol(symbol));
+            //             exitOrder.set_side(exitDirection);
+            //             exitOrder.set_time_in_force("GTC"); // Good-Til-Canceled
+            //             exitOrder.set_strategy_id("AdaptiveExitStrategy");
+            //             exitOrder.set_signal_id("exit_signal_" + symbol);
+            //             exitOrder.set_exchange_id(trading::core::ExchangeId::binance()); 
+            //             exitOrder.set_price(currentPrice); // not used for 
                         
 
-                        // 🚀 OPTIMIZED: Use cached position data instead of expensive API calls
-                        core::ExchangeId targetExchange = trading::core::ExchangeId::binance(); // fallback
-                        double exitQuantity = 0.0;
+            //             // 🚀 OPTIMIZED: Use cached position data instead of expensive API calls
+            //             core::ExchangeId targetExchange = trading::core::ExchangeId::binance(); // fallback
+            //             double exitQuantity = 0.0;
                         
-                        // First try: Get cached position from RiskManager (O(1) lookup vs O(n) API scan)
-                        // This avoids expensive getAllPositions() API calls that return 100+ positions
-                        bool foundCachedPosition = false;
+            //             // First try: Get cached position from RiskManager (O(1) lookup vs O(n) API scan)
+            //             // This avoids expensive getAllPositions() API calls that return 100+ positions
+            //             bool foundCachedPosition = false;
                         
-                        // Try RiskManager's cached position first (fastest O(1) lookup)
-                        auto riskManager = riskWeak.lock();
-                        if (riskManager) {
-                            try {
-                                auto cachedPos = riskManager->getCachedPosition(targetExchange, trading::core::Symbol(symbol));
-                                LOG_INFO("ExitCallback: 🔍 Cached position lookup for {}: {}", 
-                                         symbol, cachedPos.has_value() ? std::to_string(cachedPos.value()) : "NO_VALUE");
-                                if (cachedPos.has_value() && std::abs(cachedPos.value()) > 1e-8) {
-                                    exitQuantity = std::abs(cachedPos.value());
-                                    foundCachedPosition = true;
-                                    LOG_INFO("ExitCallback: 🚀 FAST: Found cached position for {}: {} (will exit {})", 
-                                             symbol, cachedPos.value(), exitQuantity);
-                                }
-                            } catch (const std::exception& e) {
-                                LOG_WARN("ExitCallback: Cached position lookup failed for {}: {}", symbol, e.what());
-                            }
-                        } else {
-                            LOG_WARN("ExitCallback: RiskManager weak_ptr expired during position lookup");
-                        }
+            //             // Try RiskManager's cached position first (fastest O(1) lookup)
+            //             auto riskManager = riskWeak.lock();
+            //             if (riskManager) {
+            //                 try {
+            //                     auto cachedPos = riskManager->getCachedPosition(targetExchange, trading::core::Symbol(symbol));
+            //                     LOG_INFO("ExitCallback: 🔍 Cached position lookup for {}: {}", 
+            //                              symbol, cachedPos.has_value() ? std::to_string(cachedPos.value()) : "NO_VALUE");
+            //                     if (cachedPos.has_value() && std::abs(cachedPos.value()) > 1e-8) {
+            //                         exitQuantity = std::abs(cachedPos.value());
+            //                         foundCachedPosition = true;
+            //                         LOG_INFO("ExitCallback: 🚀 FAST: Found cached position for {}: {} (will exit {})", 
+            //                                  symbol, cachedPos.value(), exitQuantity);
+            //                     }
+            //                 } catch (const std::exception& e) {
+            //                     LOG_WARN("ExitCallback: Cached position lookup failed for {}: {}", symbol, e.what());
+            //                 }
+            //             } else {
+            //                 LOG_WARN("ExitCallback: RiskManager weak_ptr expired during position lookup");
+            //             }
                         
-                        // Fallback: Single exchange API call (faster than getAllPositions)
-                        if (!foundCachedPosition) {
-                            try {
-                                auto positions = executionInterface->getPositions(targetExchange);
-                                auto positionIt = positions.find(symbol);
-                                if (positionIt != positions.end() && positionIt->second != 0.0) {
-                                    exitQuantity = std::abs(positionIt->second);
-                                    foundCachedPosition = true;
-                                    LOG_INFO("ExitCallback: Found position for {} on {}: {} (will exit {})", symbol, targetExchange.toString(), positionIt->second, exitQuantity);
-                                }
-                            } catch (const std::exception& e) {
-                                LOG_WARN("ExitCallback: Error fetching positions for {}: {}", symbol, e.what());
-                            }
-                        }
+            //             // Fallback: Single exchange API call (faster than getAllPositions)
+            //             if (!foundCachedPosition) {
+            //                 try {
+            //                     auto positions = executionInterface->getPositions(targetExchange);
+            //                     auto positionIt = positions.find(symbol);
+            //                     if (positionIt != positions.end() && positionIt->second != 0.0) {
+            //                         exitQuantity = std::abs(positionIt->second);
+            //                         foundCachedPosition = true;
+            //                         LOG_INFO("ExitCallback: Found position for {} on {}: {} (will exit {})", symbol, targetExchange.toString(), positionIt->second, exitQuantity);
+            //                     }
+            //                 } catch (const std::exception& e) {
+            //                     LOG_WARN("ExitCallback: Error fetching positions for {}: {}", symbol, e.what());
+            //                 }
+            //             }
                         
-                        if (!foundCachedPosition) {
-                            LOG_WARN("ExitCallback: No position found for {} - this may indicate a tracking issue", symbol);
-                        }
+            //             if (!foundCachedPosition) {
+            //                 LOG_WARN("ExitCallback: No position found for {} - this may indicate a tracking issue", symbol);
+            //             }
 
-                        double signedPosQty = 0.0; // signed quantity as reported by ExecutionInterface
+            //             double signedPosQty = 0.0; // signed quantity as reported by ExecutionInterface
 
-                        if (exitQuantity <= 0.0) {
-                            LOG_WARN("ExitCallback: No non-zero position found for {} - skipping exit", symbol);
-                            return;
-                        }
+            //             if (exitQuantity <= 0.0) {
+            //                 LOG_WARN("ExitCallback: No non-zero position found for {} - skipping exit", symbol);
+            //                 return;
+            //             }
 
-                        // At this point exitQuantity is absolute value; attempt to fetch the signed quantity
-                        try {
-                            auto positions = executionInterface->getPositions(targetExchange);
-                            auto pit = positions.find(symbol);
-                            if (pit != positions.end()) {
-                                signedPosQty = pit->second;
-                            } else {
-                                try {
-                                    auto allPos = executionInterface->getAllPositions();
-                                    auto itx = allPos.find(targetExchange);
-                                    if (itx != allPos.end()) {
-                                        auto p2 = itx->second.find(symbol);
-                                        if (p2 != itx->second.end()) signedPosQty = p2->second;
-                                    }
-                                } catch (...) {
-                                    // ignore
-                                }
-                            }
-                        } catch (...) {
-                            // leave signedPosQty as 0.0 (best-effort)
-                        }
+            //             // At this point exitQuantity is absolute value; attempt to fetch the signed quantity
+            //             try {
+            //                 auto positions = executionInterface->getPositions(targetExchange);
+            //                 auto pit = positions.find(symbol);
+            //                 if (pit != positions.end()) {
+            //                     signedPosQty = pit->second;
+            //                 } else {
+            //                     try {
+            //                         auto allPos = executionInterface->getAllPositions();
+            //                         auto itx = allPos.find(targetExchange);
+            //                         if (itx != allPos.end()) {
+            //                             auto p2 = itx->second.find(symbol);
+            //                             if (p2 != itx->second.end()) signedPosQty = p2->second;
+            //                         }
+            //                     } catch (...) {
+            //                         // ignore
+            //                     }
+            //                 }
+            //             } catch (...) {
+            //                 // leave signedPosQty as 0.0 (best-effort)
+            //             }
 
-                        // Decide final exit side based on signedPosQty: negative => short => BUY to close; positive => long => SELL to close
-                        core::Direction finalSide = exitDirection; // default to strategy suggestion
-                        if (std::abs(signedPosQty) > 1e-12) {
-                            if (signedPosQty < 0.0) finalSide = core::Direction::BUY;
-                            else finalSide = core::Direction::SELL;
+            //             // Decide final exit side based on signedPosQty: negative => short => BUY to close; positive => long => SELL to close
+            //             core::Direction finalSide = exitDirection; // default to strategy suggestion
+            //             if (std::abs(signedPosQty) > 1e-12) {
+            //                 if (signedPosQty < 0.0) finalSide = core::Direction::BUY;
+            //                 else finalSide = core::Direction::SELL;
 
-                            if (finalSide != exitDirection) {
-                                LOG_WARN("ExitCallback: Requested exit direction ({}) differs from position sign (qty={}) - overriding to {}",
-                                         (exitDirection == core::Direction::SELL ? "SELL" : "BUY"), signedPosQty,
-                                         (finalSide == core::Direction::SELL ? "SELL" : "BUY"));
-                            }
-                        }
+            //                 if (finalSide != exitDirection) {
+            //                     LOG_WARN("ExitCallback: Requested exit direction ({}) differs from position sign (qty={}) - overriding to {}",
+            //                              (exitDirection == core::Direction::SELL ? "SELL" : "BUY"), signedPosQty,
+            //                              (finalSide == core::Direction::SELL ? "SELL" : "BUY"));
+            //                 }
+            //             }
 
-                        // Use MARKET type for immediate exit to avoid limit hangs; can be tuned via config
-                        exitOrder.set_exchange_id(targetExchange);
+            //             // Use MARKET type for immediate exit to avoid limit hangs; can be tuned via config
+            //             exitOrder.set_exchange_id(targetExchange);
 
-                        // SHORT-CIRCUIT: Round DOWN the exit quantity to the exchange LOT_SIZE (stepSize)
-                        // and enforce minimum order quantity. If the rounded quantity is below
-                        // the exchange's minQty, skip the exit early to avoid creating unusable signals.
-                        try {
-                            std::string symStr = symbol; // e.g. "AAVE/USDT"
-                            const auto& prec = ::execution::SymbolPrecisionManager::getPrecision(symStr);
+            //             // SHORT-CIRCUIT: Round DOWN the exit quantity to the exchange LOT_SIZE (stepSize)
+            //             // and enforce minimum order quantity. If the rounded quantity is below
+            //             // the exchange's minQty, skip the exit early to avoid creating unusable signals.
+            //             try {
+            //                 std::string symStr = symbol; // e.g. "AAVE/USDT"
+            //                 const auto& prec = ::execution::SymbolPrecisionManager::getPrecision(symStr);
 
-                            double finalQtyRounded = exitQuantity;
-                            if (prec.stepSize > 0.0 && exitQuantity > 0.0) {
-                                double steps = std::floor(exitQuantity / prec.stepSize);
-                                finalQtyRounded = steps * prec.stepSize;
-                            }
+            //                 double finalQtyRounded = exitQuantity;
+            //                 if (prec.stepSize > 0.0 && exitQuantity > 0.0) {
+            //                     double steps = std::floor(exitQuantity / prec.stepSize);
+            //                     finalQtyRounded = steps * prec.stepSize;
+            //                 }
 
-                            // Clean up floating point artifacts and apply display precision
-                            double multiplier = std::pow(10.0, prec.precision);
-                            double cleaned = std::floor(finalQtyRounded * multiplier + 0.5) / multiplier;
-                            char buf[64];
-                            snprintf(buf, sizeof(buf), "%.*f", prec.precision, cleaned);
-                            finalQtyRounded = std::strtod(buf, nullptr);
+            //                 // Clean up floating point artifacts and apply display precision
+            //                 double multiplier = std::pow(10.0, prec.precision);
+            //                 double cleaned = std::floor(finalQtyRounded * multiplier + 0.5) / multiplier;
+            //                 char buf[64];
+            //                 snprintf(buf, sizeof(buf), "%.*f", prec.precision, cleaned);
+            //                 finalQtyRounded = std::strtod(buf, nullptr);
 
-                            // If the rounded quantity is below the exchange minimum, skip exit
-                            if (finalQtyRounded < prec.minQty - 1e-12) {
-                                LOG_WARN("ExitCallback: Rounded exit quantity {} for {} is below minQty {} - skipping exit", finalQtyRounded, symbol, prec.minQty);
-                                return;
-                            }
+            //                 // If the rounded quantity is below the exchange minimum, skip exit
+            //                 if (finalQtyRounded < prec.minQty - 1e-12) {
+            //                     LOG_WARN("ExitCallback: Rounded exit quantity {} for {} is below minQty {} - skipping exit", finalQtyRounded, symbol, prec.minQty);
+            //                     return;
+            //                 }
 
-                            // Use the rounded quantity from now on
-                            exitOrder.quantity = finalQtyRounded;
-                            exitQuantity = finalQtyRounded; // update local copy for signal
-                        } catch (const std::exception& e) {
-                            // Best-effort fallback - use unrounded quantity if something goes wrong
-                            LOG_WARN("ExitCallback: Quantity rounding failed for {}: {} - using raw quantity {}", symbol, e.what(), exitQuantity);
-                            exitOrder.quantity = exitQuantity;
-                        }
+            //                 // Use the rounded quantity from now on
+            //                 exitOrder.quantity = finalQtyRounded;
+            //                 exitQuantity = finalQtyRounded; // update local copy for signal
+            //             } catch (const std::exception& e) {
+            //                 // Best-effort fallback - use unrounded quantity if something goes wrong
+            //                 LOG_WARN("ExitCallback: Quantity rounding failed for {}: {} - using raw quantity {}", symbol, e.what(), exitQuantity);
+            //                 exitOrder.quantity = exitQuantity;
+            //             }
 
-                        exitOrder.set_order_type(models::OrderType::LIMIT);
-                        exitOrder.set_side(finalSide);
+            //             exitOrder.set_order_type(models::OrderType::LIMIT);
+            //             exitOrder.set_side(finalSide);
 
-                        // Create TradingSignal for proper risk validation flow
-                        execution::TradingSignal exitSignal;
-                        exitSignal.id = exitOrder.clientOrderId;
-                        exitSignal.setStrategyId(core::StrategyId("OptimalExitStrategy"));
-                        exitSignal.setTradingPair(trading::core::Symbol(symbol));
-                        exitSignal.setDirection(finalSide);
-                        exitSignal.setConfidence(1.0);
-                        exitSignal.setStrength(1.0);
-                        // exitSignal.setQuantity(exitQuantity);
-                        // exitSignal.setOrderType(models::OrderType::MARKET);
-                        exitSignal.setExchangeId(targetExchange);
-                        exitSignal.setGenerationTime(std::chrono::system_clock::now());
-                        exitSignal.expirationTime = exitSignal.getGenerationTime() + std::chrono::minutes(5); // 5 min expiry for exit
+            //             // Create TradingSignal for proper risk validation flow
+            //             execution::TradingSignal exitSignal;
+            //             exitSignal.id = exitOrder.clientOrderId;
+            //             exitSignal.setStrategyId(core::StrategyId("AdaptiveExitStrategy"));
+            //             exitSignal.setTradingPair(trading::core::Symbol(symbol));
+            //             exitSignal.setDirection(finalSide);
+            //             exitSignal.setConfidence(1.0);
+            //             exitSignal.setStrength(1.0);
+            //             // exitSignal.setQuantity(exitQuantity);
+            //             // exitSignal.setOrderType(models::OrderType::MARKET);
+            //             exitSignal.setExchangeId(targetExchange);
+            //             exitSignal.setGenerationTime(std::chrono::system_clock::now());
+            //             exitSignal.expirationTime = exitSignal.getGenerationTime() + std::chrono::minutes(5); // 5 min expiry for exit
 
-                        // Add exit-specific metadata and set quantity
-                        // set both quantity and targetSize so pre-trade validation accepts the exit
-                        exitSignal.setQuantity(exitQuantity);
-                        exitSignal.setTargetSize(exitQuantity);
-                        exitSignal.setPrice(currentPrice);
-                        exitSignal.metadata["exit_reason"] = reason;
-                        exitSignal.metadata["exit_price"] = std::to_string(currentPrice);
-                        exitSignal.metadata["position_qty"] = std::to_string(signedPosQty);
-                        exitSignal.metadata["is_exit_signal"] = "true";
+            //             // Add exit-specific metadata and set quantity
+            //             // set both quantity and targetSize so pre-trade validation accepts the exit
+            //             exitSignal.setQuantity(exitQuantity);
+            //             exitSignal.setTargetSize(exitQuantity);
+            //             exitSignal.setPrice(currentPrice);
+            //             exitSignal.metadata["exit_reason"] = reason;
+            //             exitSignal.metadata["exit_price"] = std::to_string(currentPrice);
+            //             exitSignal.metadata["position_qty"] = std::to_string(signedPosQty);
+            //             exitSignal.metadata["is_exit_signal"] = "true";
 
-                        // Validate through RiskManager before enqueueing into exec queue
-                        auto riskManagerForValidation = riskWeak.lock();
-                        if (!riskManagerForValidation) {
-                            LOG_ERROR("ExitCallback: RiskManager expired - cannot validate exit signal for {}", symbol);
-                            return;
-                        }
+            //             // Validate through RiskManager before enqueueing into exec queue
+            //             auto riskManagerForValidation = riskWeak.lock();
+            //             if (!riskManagerForValidation) {
+            //                 LOG_ERROR("ExitCallback: RiskManager expired - cannot validate exit signal for {}", symbol);
+            //                 return;
+            //             }
 
-                        try {
-                            auto validationResult = riskManagerForValidation->validateSignal(exitSignal);
-                            if (!validationResult.approved) {
-                                LOG_WARN("ExitCallback: 🚫 EXIT SIGNAL REJECTED by risk management for {}: {}", 
-                                         symbol, validationResult.violations.empty() ? "No specific violations provided" : validationResult.violations.front().description);
-                                return;
-                            }
-                        } catch (const std::exception& e) {
-                            LOG_ERROR("ExitCallback: ❌ Risk validation failed for {}: {}", symbol, e.what());
-                            return;
-                        }
+            //             try {
+            //                 auto validationResult = riskManagerForValidation->validateSignal(exitSignal);
+            //                 if (!validationResult.approved) {
+            //                     LOG_WARN("ExitCallback: 🚫 EXIT SIGNAL REJECTED by risk management for {}: {}", 
+            //                              symbol, validationResult.violations.empty() ? "No specific violations provided" : validationResult.violations.front().description);
+            //                     return;
+            //                 }
+            //             } catch (const std::exception& e) {
+            //                 LOG_ERROR("ExitCallback: ❌ Risk validation failed for {}: {}", symbol, e.what());
+            //                 return;
+            //             }
 
-                        // IMPORTANT: Check emergency limits for EXIT orders using Trading_system's emergency checker
-                        try {
-                            if (!this->emergencyFrequencyCheckWithType(symbol, "EXIT")) {
-                                LOG_WARN("ExitCallback: EXIT blocked by emergencyFrequencyCheck for {}", symbol);
-                                return;
-                            }
-                        } catch (...) {
-                            LOG_WARN("ExitCallback: emergencyFrequencyCheckWithType threw for {} - allowing exit to proceed", symbol);
-                        }
+            //             // IMPORTANT: Check emergency limits for EXIT orders using Trading_system's emergency checker
+            //             try {
+            //                 if (!this->emergencyFrequencyCheckWithType(symbol, "EXIT")) {
+            //                     LOG_WARN("ExitCallback: EXIT blocked by emergencyFrequencyCheck for {}", symbol);
+            //                     return;
+            //                 }
+            //             } catch (...) {
+            //                 LOG_WARN("ExitCallback: emergencyFrequencyCheckWithType threw for {} - allowing exit to proceed", symbol);
+            //             }
 
-                        // Enqueue exit signal with priority (push_front) so exec workers handle exits first
-                        try {
-                            std::unique_lock<std::mutex> lk(this->execQueueMutex_);
-                            if (this->execQueue_.size() >= this->execQueueLimit_) {
-                                // make room by dropping the oldest non-exit if possible (drop back)
-                                this->execQueue_.pop_back();
-                            }
-                            this->execQueue_.push_front(exitSignal);
-                            lk.unlock();
-                            this->execQueueCv_.notify_one();
-                            LOG_INFO("ExitCallback: ✅ EXIT queued for execution: {} qty={} reason={}", symbol, exitSignal.getQuantity(), reason);
-                        } catch (const std::exception &e) {
-                            LOG_ERROR("ExitCallback: Failed to enqueue exit for {}: {}", symbol, e.what());
-                        }
+            //             // Enqueue exit signal with priority (push_front) so exec workers handle exits first
+            //             try {
+            //                 std::unique_lock<std::mutex> lk(this->execQueueMutex_);
+            //                 if (this->execQueue_.size() >= this->execQueueLimit_) {
+            //                     // make room by dropping the oldest non-exit if possible (drop back)
+            //                     this->execQueue_.pop_back();
+            //                 }
+            //                 this->execQueue_.push_front(exitSignal);
+            //                 lk.unlock();
+            //                 this->execQueueCv_.notify_one();
+            //                 LOG_INFO("ExitCallback: ✅ EXIT queued for execution: {} qty={} reason={}", symbol, exitSignal.getQuantity(), reason);
+            //             } catch (const std::exception &e) {
+            //                 LOG_ERROR("ExitCallback: Failed to enqueue exit for {}: {}", symbol, e.what());
+            //             }
 
-                    } catch (const std::exception& e) {
-                        LOG_ERROR("ExitCallback: ❌ FAILED to submit exit order for {}: {}", symbol, e.what());
-                    }
-                }
-            );
+            //         } catch (const std::exception& e) {
+            //             LOG_ERROR("ExitCallback: ❌ FAILED to submit exit order for {}: {}", symbol, e.what());
+            //         }
+            //     }
+            // );
 
-            LOG_INFO("ExitCallback: ✅ OptimalExitStrategy exit callback registered successfully");
+            LOG_INFO("ExitCallback: ✅ AdaptiveExitStrategy exit callback registered successfully");
         } else {
             LOG_ERROR("ExitCallback: ❌ Cannot register exit callback: ExecutionInterface is null");
         }
     } else {
         LOG_ERROR("ExitCallback: ❌ Cannot register exit callback: RiskManager is null");
     }
-    LOG_INFO("ExitCallback: 🔧 OptimalExitStrategy setup completed");
+    LOG_INFO("ExitCallback: 🔧 AdaptiveExitStrategy setup completed");
+
+    // 5. Subscribe to OrderBook metrics updates so exitMonitorLoop can use them
+    if (metricsSubscriptionId_ == 0) {
+        metricsSubscriptionId_ = common::EventBus::getInstance().subscribe<trading::events::MetricsUpdatedEvent>(
+            [this](const trading::events::MetricsUpdatedEvent& evt) {
+                try {
+                    const auto& m = evt.metrics;
+                    std::string key = m.exchangeId.toString() + ":" + m.symbol.toString();
+                    std::lock_guard<std::mutex> lk(metricsMutex_);
+                    latestOrderbookMetrics_[key] = m; // copy
+                } catch (...) {
+                    // swallow - caching is best-effort
+                }
+            }
+        );
+        LOG_INFO("Metrics subscription registered with id {}", metricsSubscriptionId_);
+    }
 
     // Wire position lookup callback into ImbalanceDetectionEngine so strategy
     // can consult authoritative cached positions before emitting ENTRY signals.

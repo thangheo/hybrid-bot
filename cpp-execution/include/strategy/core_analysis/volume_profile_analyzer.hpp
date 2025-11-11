@@ -166,6 +166,13 @@
       */
      virtual VolumeAnomalies detectAnomalies() const;
      
+    //  volumeProfileSkew
+        /**
+        * Calculate volume profile skewness
+        * 
+        * @return Skewness value
+        */
+    virtual double calculateVolumeProfileSkewness() const;
      /**
       * Calculate value area high and low
       * 
