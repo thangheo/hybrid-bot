@@ -114,16 +114,40 @@ void Trading_system::exitMonitorLoop() {
                     double spreadEMA = 0.0;
                     
                     if (marketDataInterface_) {
-                        auto spreadOpt = marketDataInterface_->getCurrentSpread(sym, exchangeId.toString());
-                        if (spreadOpt.has_value() && currentPrice > 0.0) {
-                            spreadRatio = spreadOpt.value() / currentPrice;
+                            
+                        // Try to fetch latest orderbook metrics cached from EventBus
+                        trading::strategy::OrderBookMetrics obMetrics;
+                        double obVolImbalance = 0.0;
+                        double obRV = 0.0;
+                        double obMid = 0.0;
+                        double realize_volatility_1m = 0.0;
+                        if (getLatestOrderbookMetrics(sym, exchangeId, obMetrics)) {
+                            try {
+                                obMid = obMetrics.midPrice;
+                                obVolImbalance = obMetrics.volumeImbalance;
+                                // Use rv_smoothed if available (field name in metrics)
+                                obRV = obMetrics.rv_smoothed;
+                                spreadRatio = obMetrics.spread / currentPrice;
+                                spreadEMA = obMetrics.emaSpread / currentPrice;
+                                realize_volatility_1m = obMetrics.realize_volatility_1m;
+                                LOG_INFO("Exit monitor: metrics for {} mid={} volImb={} rv={} vol1m={}", symbol, obMid, obVolImbalance, obRV, realize_volatility_1m);
+                            } catch (...) {
+                                // ignore malformed metric
+                            }
+                        } else {
+                            LOG_TRACE("Exit monitor: no cached metrics for {}", symbol);
+                            //use marketDataInterface_ as fallback
+                            auto spreadOpt = marketDataInterface_->getCurrentSpread(sym, exchangeId.toString());
+                            if (spreadOpt.has_value() && currentPrice > 0.0) {
+                                spreadRatio = spreadOpt.value() / currentPrice;
+                            }
+                            
+                            // Get EMA spread (you need to track this)
+                            // For now, use current spread as approximation
+                            spreadEMA = spreadRatio;
                         }
-                        
-                        // Get EMA spread (you need to track this)
-                        // For now, use current spread as approximation
-                        spreadEMA = spreadRatio;
                     }
-                    
+                        
                     // Get position details - prefer Risk/Execution position tracker via ExecutionInterface
                     // Fallback to exitStrategy_ stored position info for backward compatibility
                     std::optional<trading::strategy::OptimalExitStrategy::PositionInfo> posInfo;
@@ -494,6 +518,14 @@ void Trading_system::shutdown() {
         // // Clear data ingestion service pointer after shutdown
         // std::cout << "Clearing data ingestion service..." << std::endl;
         
+        // Unsubscribe from EventBus metrics subscription if present
+        try {
+            if (metricsSubscriptionId_ != 0) {
+                common::EventBus::getInstance().unsubscribe<trading::events::MetricsUpdatedEvent>(metricsSubscriptionId_);
+                metricsSubscriptionId_ = 0;
+            }
+        } catch (...) {}
+
         // Stop event bus last
         std::cout << "Stopping event bus..." << std::endl;
         common::EventBus::getInstance().stop();
@@ -554,6 +586,15 @@ void Trading_system::printStatus() {
                 }
 
                 std::cout << "=========================================" << std::endl;
+}
+
+bool Trading_system::getLatestOrderbookMetrics(const core::Symbol& symbol, const core::ExchangeId& exchangeId, trading::strategy::OrderBookMetrics& out) const {
+    std::string key = exchangeId.toString() + ":" + symbol.toString();
+    std::lock_guard<std::mutex> lk(metricsMutex_);
+    auto it = latestOrderbookMetrics_.find(key);
+    if (it == latestOrderbookMetrics_.end()) return false;
+    out = it->second;
+    return true;
 }
 
 bool Trading_system::isWarmupActive() const {
@@ -1381,6 +1422,20 @@ void Trading_system::execWorkerLoop(size_t workerId) {
                     exitStrategy_->startPosition(task.symbol.toString(), currentPrice, task.direction, task.confidence, spreadRatio);
                 }
             } catch (...) {}
+                    // 5. Subscribe to OrderBook metrics updates so we can use them in exitMonitorLoop
+                    metricsSubscriptionId_ = common::EventBus::getInstance().subscribe<trading::events::MetricsUpdatedEvent>(
+                        [this](const trading::events::MetricsUpdatedEvent& evt) {
+                            try {
+                                const auto& m = evt.metrics;
+                                // Build key as "EXCHANGE:SYMBOL" where exchange.toString() and symbol.toString()
+                                std::string key = m.exchangeId.toString() + ":" + m.symbol.toString();
+                                std::lock_guard<std::mutex> lk(metricsMutex_);
+                                latestOrderbookMetrics_[key] = m; // copy
+                            } catch (...) {
+                                // swallow - caching is best-effort
+                            }
+                        }
+                    );
                       
         } catch (const std::exception &e) {
             std::cerr << "Exec worker " << workerId << " error: " << e.what() << std::endl;
