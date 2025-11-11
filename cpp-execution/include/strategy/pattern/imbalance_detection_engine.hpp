@@ -373,6 +373,15 @@ using ImbalanceDetectionEngineConstPtr = std::shared_ptr<const ImbalanceDetectio
 
 // Forward declaration for AdaptiveExitStrategy
 // #include "strategy/exit/adaptive_exit_strategy.hpp"
-
-// Global function to allow external registration of exit callback on global AdaptiveExitStrategy instance
-// void registerGlobalAdaptiveExitCallback(const trading::strategy::AdaptiveExitStrategy::ExitCallback& callback);
+// Avoid including heavy exit strategy header here; forward-declare the class
+namespace trading { namespace strategy { class AdaptiveExitStrategy; } }
+// Global accessor to allow sharing a single AdaptiveExitStrategy instance across
+// components. Use setGlobalAdaptiveExitStrategy() at startup to register the
+// shared_ptr created by Trading_system so ImbalanceDetectionEngine uses the
+// same instance as the rest of the system.
+namespace trading {
+namespace strategy {
+    void setGlobalAdaptiveExitStrategy(const std::shared_ptr<AdaptiveExitStrategy>& ptr);
+    std::shared_ptr<AdaptiveExitStrategy> getGlobalAdaptiveExitStrategy();
+} // namespace strategy
+} // namespace trading

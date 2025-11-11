@@ -452,6 +452,11 @@ bool Trading_system::initialize() {
         try {
             exitStrategy_ = std::make_shared<trading::strategy::AdaptiveExitStrategy>(60.0);
             LOG_INFO("Initialized AdaptiveExitStrategy singleton: {}", static_cast<const void*>(exitStrategy_.get()));
+            // Register with ImbalanceDetectionEngine so it uses the same instance
+            try {
+                trading::strategy::setGlobalAdaptiveExitStrategy(exitStrategy_);
+                LOG_INFO("Registered AdaptiveExitStrategy with ImbalanceDetectionEngine: {}", static_cast<const void*>(exitStrategy_.get()));
+            } catch (...) {}
         } catch (const std::exception& e) {
             LOG_WARN("Failed to initialize AdaptiveExitStrategy: {}", e.what());
         }

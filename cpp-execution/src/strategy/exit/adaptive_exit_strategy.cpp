@@ -20,8 +20,8 @@ void AdaptiveExitStrategy::updateMarketData(
     auto& history = marketHistory_[symbol];
 
      // Debug: log exact key and map contents
-    LOG_INFO("updateMarketData: Looking for key '{}' in marketHistory_ (size={})", 
-             symbol, marketHistory_.size());
+    LOG_INFO("updateMarketData (this={}): Looking for key '{}' in marketHistory_ (size={})", 
+             static_cast<const void*>(this), symbol, marketHistory_.size());
 
     bool was_empty = history.volatility_samples.empty() && history.spread_samples.empty() && history.price_returns.empty();
 
@@ -473,6 +473,7 @@ bool AdaptiveExitStrategy::shouldEnterPosition(
     // Get current regime and parameters
     std::lock_guard<std::mutex> lk(historyMutex_);
     auto it = marketHistory_.find(symbol);
+    LOG_INFO("shouldEnterPosition (this={}): looking for '{}' in marketHistory_ (size={})", static_cast<const void*>(this), symbol, marketHistory_.size());
     if (it == marketHistory_.end()) {
         // LOG_INFO("Rejecting entry for {}: No market history available", symbol);
         //  // Debug: log exact key and map contents
