@@ -93,7 +93,6 @@ void Trading_system::marketDataUpdaterLoop(){
 
             for (const auto& [sym, exch] : strategyConfig_.tradingPairs) {
                 try {
-                    LOG_INFO("Updating microstructure for {} on {}", sym.toString(), exch.toString());
                     std::string symbolStr = sym.toString();
                     // Build microstructure values from cached metrics if available
                     double vol_1m = 0.0;
