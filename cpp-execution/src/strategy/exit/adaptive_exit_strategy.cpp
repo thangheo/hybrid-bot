@@ -19,10 +19,6 @@ void AdaptiveExitStrategy::updateMarketData(
     std::lock_guard<std::mutex> lock(historyMutex_);
     auto& history = marketHistory_[symbol];
 
-     // Debug: log exact key and map contents
-    LOG_INFO("updateMarketData (this={}): Looking for key '{}' in marketHistory_ (size={})", 
-             static_cast<const void*>(this), symbol, marketHistory_.size());
-
     bool was_empty = history.volatility_samples.empty() && history.spread_samples.empty() && history.price_returns.empty();
 
     // Update rolling windows
@@ -45,20 +41,6 @@ void AdaptiveExitStrategy::updateMarketData(
         history.price_returns.pop_front();
     }
 
-    // Diagnostic: log first sample arrival and current history sizes
-    if (was_empty) {
-        try {
-            LOG_INFO("AdaptiveExitStrategy: first market data for {} (vol={}, spread={}, return={})", symbol, volatility_1m, spread_ema, price_return);
-        } catch (...) {}
-    } else {
-        try {
-            LOG_DEBUG("AdaptiveExitStrategy: updated marketHistory[{}] sizes vol={} spread={} returns={}",
-                      symbol,
-                      history.volatility_samples.size(),
-                      history.spread_samples.size(),
-                      history.price_returns.size());
-        } catch (...) {}
-    }
 }
 
 AdaptiveExitStrategy::MarketRegime AdaptiveExitStrategy::detectMarketRegime(
@@ -110,8 +92,16 @@ AdaptiveExitStrategy::DynamicParameters AdaptiveExitStrategy::calculateDynamicPa
     // ===== CÔNG THỨC TÍNH TOÁN ĐỘNG =====
     
     // 1. Base parameters từ volatility và spread
-    double vol_in_ticks = current_micro.volatility_1m / current_micro.tick_size;
-    double spread_in_ticks = current_micro.spread_ema / current_micro.tick_size;
+    // Protect against invalid tick_size (divide by zero)
+    double tick = current_micro.tick_size;
+    if (tick <= 0.0) {
+        // Fallback: log once and use a tiny positive tick to avoid div-by-zero
+        LOG_WARN("AdaptiveExitStrategy::calculateDynamicParameters: tick_size <= 0 ({}). Using fallback tiny tick for symbol={}", tick, symbol);
+        tick = 1e-8;
+    }
+
+    double vol_in_ticks = current_micro.volatility_1m / tick;
+    double spread_in_ticks = current_micro.spread_ema / tick;
     
     // 2. Profit Target (dựa trên expected move trong prediction window)
     // Formula: PT = α * σ * √t + β * spread
@@ -303,11 +293,17 @@ AdaptiveExitStrategy::ExitDecision AdaptiveExitStrategy::evaluateExit(
     auto params = calculateDynamicParameters(symbol, current_micro, regime);
     
     // Calculate PnL in ticks
-    double pnl_ticks;
-    if (state.entry_direction == core::Direction::BUY) {
-        pnl_ticks = (current_price - state.entry_price) / current_micro.tick_size;
+    double pnl_ticks = 0.0;
+    double tick_now = current_micro.tick_size;
+    if (tick_now <= 0.0) {
+        LOG_WARN("AdaptiveExitStrategy::evaluateExit: current_micro.tick_size <= 0 ({}). Setting pnl_ticks=0 for symbol={}", tick_now, symbol);
+        pnl_ticks = 0.0;
     } else {
-        pnl_ticks = (state.entry_price - current_price) / current_micro.tick_size;
+        if (state.entry_direction == core::Direction::BUY) {
+            pnl_ticks = (current_price - state.entry_price) / tick_now;
+        } else {
+            pnl_ticks = (state.entry_price - current_price) / tick_now;
+        }
     }
     
     // Update tracking
@@ -340,7 +336,13 @@ AdaptiveExitStrategy::ExitDecision AdaptiveExitStrategy::evaluateExit(
     
     ExitDecision decision;
     decision.exit_price = current_price;
-    decision.expected_pnl = pnl_ticks * current_micro.tick_size / state.entry_price * 10000; // to bps
+    // Protect against zero/invalid entry_price when converting to relative expected PnL (bps)
+    if (state.entry_price <= 0.0) {
+        LOG_WARN("AdaptiveExitStrategy::evaluateExit: entry_price <= 0 ({}). expected_pnl set to 0 for symbol={}", state.entry_price, symbol);
+        decision.expected_pnl = 0.0;
+    } else {
+        decision.expected_pnl = pnl_ticks * current_micro.tick_size / state.entry_price * 10000; // to bps
+    }
     
     // ===== EXIT CONDITIONS (Priority Order) =====
     
