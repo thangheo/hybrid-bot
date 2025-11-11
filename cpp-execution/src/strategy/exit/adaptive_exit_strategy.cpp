@@ -16,16 +16,21 @@ void AdaptiveExitStrategy::updateMarketData(
     double orderbook_imbalance,
     double trade_intensity,
     double price_return) {
-    
     std::lock_guard<std::mutex> lock(historyMutex_);
     auto& history = marketHistory_[symbol];
-    
+
+     // Debug: log exact key and map contents
+    LOG_INFO("updateMarketData: Looking for key '{}' in marketHistory_ (size={})", 
+             symbol, marketHistory_.size());
+
+    bool was_empty = history.volatility_samples.empty() && history.spread_samples.empty() && history.price_returns.empty();
+
     // Update rolling windows
     history.volatility_samples.push_back(volatility_1m);
     history.spread_samples.push_back(spread_ema);
     history.volume_samples.push_back(trade_intensity);
     history.price_returns.push_back(price_return);
-    
+
     // Maintain window size
     while (history.volatility_samples.size() > history.max_samples) {
         history.volatility_samples.pop_front();
@@ -38,6 +43,21 @@ void AdaptiveExitStrategy::updateMarketData(
     }
     while (history.price_returns.size() > history.max_samples) {
         history.price_returns.pop_front();
+    }
+
+    // Diagnostic: log first sample arrival and current history sizes
+    if (was_empty) {
+        try {
+            LOG_INFO("AdaptiveExitStrategy: first market data for {} (vol={}, spread={}, return={})", symbol, volatility_1m, spread_ema, price_return);
+        } catch (...) {}
+    } else {
+        try {
+            LOG_DEBUG("AdaptiveExitStrategy: updated marketHistory[{}] sizes vol={} spread={} returns={}",
+                      symbol,
+                      history.volatility_samples.size(),
+                      history.spread_samples.size(),
+                      history.price_returns.size());
+        } catch (...) {}
     }
 }
 
@@ -242,6 +262,11 @@ void AdaptiveExitStrategy::startPosition(
     state.symbol = symbol;
     state.is_active = true;
     
+    // LOG symbols and map
+    // LOG_INFO("AdaptiveExitStrategy: started tracking position on {} at price {:.6f} dir={} conf={:.3f}",
+    //          symbol, entry_price,
+    //          (direction == core::Direction::BUY ? "BUY" : "SELL"),
+    //          confidence);
     // Detect entry regime
     auto it = marketHistory_.find(symbol);
     if (it != marketHistory_.end()) {
@@ -446,9 +471,13 @@ bool AdaptiveExitStrategy::shouldEnterPosition(
     double confidence) const {
     
     // Get current regime and parameters
+    std::lock_guard<std::mutex> lk(historyMutex_);
     auto it = marketHistory_.find(symbol);
     if (it == marketHistory_.end()) {
-        LOG_INFO("Rejecting entry for {}: No market history available", symbol);
+        // LOG_INFO("Rejecting entry for {}: No market history available", symbol);
+        //  // Debug: log exact key and map contents
+        LOG_INFO("shouldEnterPosition: Looking for key '{}' in marketHistory_ (size={})", 
+                symbol, marketHistory_.size());
         return false;  // No history, can't assess
     }
     

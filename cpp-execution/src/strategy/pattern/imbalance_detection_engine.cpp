@@ -979,8 +979,6 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                                     // microstructure.volume_profile_skew = m.volumeProfileSkew;
                                     g_optimalExit.startPosition(symbol_str, m.midPrice, dir, signal.probability, microstructure);
 
-
-                                    // g_optimalExit.startPosition(symbol_str, m.midPrice, dir, signal.probability, current_spread_percent, ema_spread_percent);
                                     LOG_INFO("STARTED TRACKING POSITION: {} dir={} entry={:.6f} conf={:.3f} spread_ema={:.3f}% spread_cur={:.3f}%",
                                             symbol_str,
                                             (dir == core::Direction::BUY ? "BUY" : "SELL"),
