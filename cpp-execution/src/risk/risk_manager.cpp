@@ -1031,14 +1031,29 @@ std::optional<double> RiskManager::getCachedPosition(const ExchangeId& exchangeI
                          tradingPair.toString(), exchangeId.toString(), positionOpt->getQuantity(), pt_ptr);
                 return positionOpt->getQuantity();
             } else {
-                LOG_WARN("RiskManager - ❌ NO position found in tracker for {}@{}", tradingPair.toString(), exchangeId.toString());
+                LOG_TRACE("RiskManager - ❌ NO position found in tracker for {}@{}", tradingPair.toString(), exchangeId.toString());
             }
         } else {
             LOG_WARN("RiskManager - ❌ PreTradeFilter or PositionTracker is null!");
         }
         
-        // Fallback: Direct ExecutionInterface lookup (still better than getAllPositions)
-        LOG_TRACE("RiskManager - 🔄 Falling back to ExecutionInterface for {}@{}", tradingPair.toString(), exchangeId.toString());
+        // Fallback: Direct ExecutionInterface lookup (still better than getAllPositions). This is dangerous because it could
+        // cause binance to ban our IP if done too frequently. This is hft not bag holders trading firm.
+        // LOG_TRACE("RiskManager - 🔄 Falling back to ExecutionInterface for {}@{}", tradingPair.toString(), exchangeId.toString());
+        const int MAX_FALLBACK_CALLS = 5;
+        static thread_local int fallbackCallCount = 0;
+        if (fallbackCallCount >= MAX_FALLBACK_CALLS) {
+            LOG_WARN("RiskManager - ⚠️ Reached max fallback ExecutionInterface calls ({}) - skipping further calls to avoid rate limits", MAX_FALLBACK_CALLS);
+            return std::nullopt;
+        }
+        // reset counter after 1 minute
+        static thread_local auto lastResetTime = std::chrono::steady_clock::now();
+        auto now = std::chrono::steady_clock::now();
+        if (now - lastResetTime > std::chrono::minutes(1)) {
+            fallbackCallCount = 0;
+            lastResetTime = now;
+        }
+        fallbackCallCount++;
         if (m_executionInterface) {
             try {
                 auto positions = m_executionInterface->getPositions(exchangeId);
@@ -1062,7 +1077,7 @@ std::optional<double> RiskManager::getCachedPosition(const ExchangeId& exchangeI
                 LOG_ERROR("RiskManager - 💥 Unknown ExecutionInterface exception");
             }
         } else {
-            LOG_WARN("RiskManager - ❌ ExecutionInterface is null!");
+            LOG_TRACE("RiskManager - ❌ ExecutionInterface is null!");
         }
         
         return std::nullopt;
