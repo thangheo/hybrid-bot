@@ -11,6 +11,8 @@
 #include "execution/models/order.hpp"
 
 #include <memory>
+#include <unordered_map>
+#include <filesystem>
 
 // Use fully-qualified ::execution::SymbolPrecisionManager to avoid ambiguity
 using namespace ::trading::core;
@@ -32,6 +34,64 @@ class AdaptiveExitStrategy;
 // static std::shared_ptr<trading::strategy::AdaptiveExitStrategy> exitStrategy_;
 //use adaptive exit strategy instead
 static std::shared_ptr<trading::strategy::AdaptiveExitStrategy> exitStrategy_;
+
+// Global cache for exchange-specific tick sizes loaded from config
+static std::unordered_map<std::string, double> g_exchangeTickSize;
+static std::unordered_map<std::string, double> g_symbolTickSize;
+
+static void loadExchangeTickSizes(const std::string& path = "config/exchange_specific_params.json") {
+    try {
+        if (!std::filesystem::exists(path)) return;
+        std::ifstream ifs(path);
+        if (!ifs.is_open()) return;
+        nlohmann::json j; ifs >> j;
+        for (auto it = j.begin(); it != j.end(); ++it) {
+            const std::string exch = it.key();
+            try {
+                if (it.value().contains("numeric") && it.value()["numeric"].contains("tick_size")) {
+                    double t = it.value()["numeric"]["tick_size"].get<double>();
+                    g_exchangeTickSize[exch] = t;
+                }
+            } catch (...) { /* ignore malformed entries */ }
+        }
+    } catch (...) {
+        // best-effort
+    }
+}
+
+static double getExchangeTickSize(const core::ExchangeId& exId) {
+    auto it = g_exchangeTickSize.find(exId.toString());
+    if (it != g_exchangeTickSize.end() && it->second > 0.0) return it->second;
+    // fallback to common default
+    return 0.01;
+}
+
+static void loadSymbolTickSizes(const std::string& path = "config/symbol_tick_sizes.json") {
+    try {
+        if (!std::filesystem::exists(path)) return;
+        std::ifstream ifs(path);
+        if (!ifs.is_open()) return;
+        nlohmann::json j; ifs >> j;
+        for (auto it = j.begin(); it != j.end(); ++it) {
+            try {
+                double t = it.value().get<double>();
+                // Normalize key: remove '/' if present and uppercase
+                std::string k = it.key();
+                k.erase(std::remove(k.begin(), k.end(), '/'), k.end());
+                g_symbolTickSize[k] = t;
+            } catch (...) {}
+        }
+    } catch (...) {}
+}
+
+static double getSymbolTickSize(const core::Symbol& sym) {
+    std::string k = sym.toString();
+    k.erase(std::remove(k.begin(), k.end(), '/'), k.end());
+    auto it = g_symbolTickSize.find(k);
+    if (it != g_symbolTickSize.end() && it->second > 0.0) return it->second;
+    // fallback to exchange-level config
+    return 0.0; // let caller combine with exchange fallback
+}
 
 Trading_system::Trading_system() : running_(false), systemHealthy_(true) {
     setupConfigurations();
@@ -265,6 +325,8 @@ void Trading_system::exitMonitorLoop() {
                     AdaptiveExitStrategy::MarketMicrostructure currentMicro;
                     currentMicro.spread_ema = spreadEMA;
                     currentMicro.volatility_1m = realize_volatility_1m;
+                    // Populate tick_size from exchange config cache
+                    currentMicro.tick_size = getExchangeTickSize(exchangeId);
                     //add microstructure info here later
                     // CRITICAL: Use position direction, not signal direction!
                     auto exitDecision = exitStrategy_->evaluateExit(
@@ -302,12 +364,55 @@ void Trading_system::exitMonitorLoop() {
                         exitSignal.metadata["exit_reason"] = std::to_string(static_cast<int>(exitDecision.reason));
                         exitSignal.metadata["exit_pnl_bps"] = std::to_string(exitDecision.expected_pnl);
                         
-                        // Queue for execution
-                        {
-                            std::lock_guard<std::mutex> lk(execQueueMutex_);
-                            execQueue_.push_back(std::move(exitSignal));
+                        // Determine exit quantity: prefer authoritative position size from RiskManager/PositionTracker
+                        double exitQty = 0.0;
+                        bool qtyResolved = false;
+                        try {
+                            // If posInfo was found earlier and has a quantity (recently fetched from risk manager), use it
+                            if (posInfo.has_value()) {
+                                // If TradeState later includes quantity in future, prefer that; currently we rely on RiskManager
+                                // Try to query RiskManager for exact tracked position quantity
+                                if (riskManager_) {
+                                    auto trackedOpt = riskManager_->getCachedPosition(exchangeId, sym);
+                                    if (trackedOpt.has_value() && std::abs(*trackedOpt) > 1e-12) {
+                                        exitQty = std::abs(*trackedOpt);
+                                        qtyResolved = true;
+                                    }
+                                }
+                            }
+                        } catch (...) { /* best-effort */ }
+
+                        // Fallback: compute minimal quantity to satisfy min notional using currentPrice
+                        const double minNotionalUsd = 10.0; // align with exec worker min notional
+                        if (!qtyResolved) {
+                            if (currentPrice > 0.0) {
+                                double minQty = minNotionalUsd / currentPrice;
+                                try {
+                                    std::string symStr = sym.toString();
+                                    exitQty = ::execution::SymbolPrecisionManager::roundQuantity(symStr, minQty);
+                                    if (exitQty <= 0.0) {
+                                        // Try bumping by one step
+                                        double bumped = minQty + std::pow(10.0, -8);
+                                        exitQty = ::execution::SymbolPrecisionManager::roundQuantity(symStr, bumped);
+                                    }
+                                    if (exitQty > 0.0) qtyResolved = true;
+                                } catch (...) {
+                                    // If rounding fails, set qtyResolved false and proceed to skip
+                                }
+                            }
                         }
-                        execQueueCv_.notify_one();
+
+                        if (!qtyResolved || exitQty <= 0.0) {
+                            LOG_WARN("Exit monitor: cannot determine valid exit quantity for {} - skipping exit (currentPrice={}, resolvedQty={})", symbol, currentPrice, exitQty);
+                        } else {
+                            exitSignal.setQuantity((posInfo.has_value() ? exitQty : exitQty));
+                            // Queue for execution
+                            {
+                                std::lock_guard<std::mutex> lk(execQueueMutex_);
+                                execQueue_.push_back(std::move(exitSignal));
+                            }
+                            execQueueCv_.notify_one();
+                        }
                         
                         // Mark position as pending exit (don't close yet - wait for execution)
                         // exitStrategy_->markPendingExit(symbol);
@@ -348,6 +453,10 @@ bool Trading_system::initialize() {
     
     // 🚨 EMERGENCY: Load current PnL state to block losing symbols
     loadEmergencyState();
+    // Load exchange-specific tick sizes early so downstream components can use them
+    loadExchangeTickSizes("config/exchange_specific_params.json");
+    // Load optional per-symbol tick sizes
+    loadSymbolTickSizes("config/symbol_tick_sizes.json");
     
     // 1. Initialize event bus first
     common::EventBus::getInstance().start();
@@ -1497,7 +1606,7 @@ void Trading_system::execWorkerLoop(size_t workerId) {
                     micro.orderbook_imbalance = 0.0;
                     micro.trade_intensity = 0.0;
                     // micro.
-                    micro.tick_size = 0.01;
+                    micro.tick_size = getExchangeTickSize(task.exchangeId);
 
                     exitStrategy_->startPosition(task.symbol.toString(), currentPrice, task.direction, task.confidence, micro);
                 }
