@@ -455,6 +455,51 @@ bool Trading_system::start() {
             LOG_INFO("Trading_system: Exit monitor started");
         }
 
+        // Start market microstructure updater thread (calls updateMarketData once per second)
+        monitoringThreads_.emplace_back([this]() {
+            while (running_) {
+                try {
+                    if (!exitStrategy_) {
+                        std::this_thread::sleep_for(std::chrono::seconds(1));
+                        continue;
+                    }
+
+                    for (const auto& [sym, exch] : strategyConfig_.tradingPairs) {
+                        try {
+                            std::string symbolStr = sym.toString();
+                            // Build microstructure values from cached metrics if available
+                            double vol_1m = 0.0;
+                            double spread_ema = 0.0;
+                            double orderbook_imbalance = 0.0;
+                            double trade_intensity = 0.0;
+                            double price_return = 0.0;
+
+                            trading::strategy::OrderBookMetrics obm;
+                            if (getLatestOrderbookMetrics(sym, exch, obm)) {
+                                vol_1m = obm.realize_volatility_1m;
+                                spread_ema = obm.emaSpread;
+                                orderbook_imbalance = obm.volumeImbalance;
+                                trade_intensity = obm.totalVolume; // proxy
+                                // price_return not tracked currently; leave 0.0
+                            } else if (marketDataInterface_) {
+                                try {
+                                    auto sp = marketDataInterface_->getCurrentSpread(sym, exch.toString());
+                                    if (sp.has_value()) spread_ema = sp.value();
+                                    vol_1m = marketDataInterface_->getVolatility(sym, "1m", exch.toString());
+                                } catch (...) {}
+                            }
+
+                            // Call updateMarketData on exit strategy
+                            try {
+                                exitStrategy_->updateMarketData(symbolStr, vol_1m, spread_ema, orderbook_imbalance, trade_intensity, price_return);
+                            } catch (...) {}
+                        } catch (...) {}
+                    }
+                } catch (...) {}
+                std::this_thread::sleep_for(std::chrono::seconds(1));
+            }
+        });
+
         return true;
     }
     return false;
@@ -541,10 +586,17 @@ void Trading_system::shutdown() {
         // Stop event bus last
         std::cout << "Stopping event bus..." << std::endl;
         common::EventBus::getInstance().stop();
-        
+
+        // Join monitoring threads if any - ensure they terminate after running_==false
+        for (auto &t : monitoringThreads_) {
+            try {
+                if (t.joinable()) t.join();
+            } catch (...) {}
+        }
+
         std::cout << "System shutdown complete" << std::endl;
     }
-} 
+}
 
 // // Helper method to get current signals for a symbol (you'll need to implement this)
 // std::vector<strategy::TradingSignal> Trading_system::getCurrentSignalsForSymbol(const core::Symbol& symbol) {
