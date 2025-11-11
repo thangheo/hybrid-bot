@@ -463,7 +463,7 @@ bool AdaptiveExitStrategy::shouldEnterPosition(
     //debug with reject reason
     // 2. Kelly criterion check
     if (params.kelly_fraction < 0.01) {
-        LOG_DEBUG("Rejecting entry for {}: Kelly fraction too low ({} < 0.01)",
+        LOG_INFO("Rejecting entry for {}: Kelly fraction too low ({} < 0.01)",
                   symbol, params.kelly_fraction);
         return false;  // Position size would be too small
     }
@@ -472,21 +472,21 @@ bool AdaptiveExitStrategy::shouldEnterPosition(
     switch (regime) {
         case MarketRegime::LOW_LIQUIDITY:
             if (micro.spread_ema > micro.tick_size * 10) {
-                LOG_DEBUG("Rejecting entry for {}: Low liquidity (spread_ema={} > tick_size*10)",
+                LOG_INFO("Rejecting entry for {}: Low liquidity (spread_ema={} > tick_size*10)",
                           symbol, micro.spread_ema);
                 return false;  // Spread too wide
             }
             break;
         case MarketRegime::HIGH_VOLATILITY:
             if (confidence < 0.95) {
-                LOG_DEBUG("Rejecting entry for {}: Low confidence in high volatility ({} < 0.95)",
+                LOG_INFO("Rejecting entry for {}: Low confidence in high volatility ({} < 0.95)",
                           symbol, confidence);
                 return false;  // Need high confidence in volatile markets
             }
             break;
         default:
             if (confidence < 0.85) {
-                LOG_DEBUG("Rejecting entry for {}: Low confidence in default regime ({} < 0.85)",
+                LOG_INFO("Rejecting entry for {}: Low confidence in default regime ({} < 0.85)",
                           symbol, confidence);
                 return false;
             }
@@ -497,7 +497,7 @@ bool AdaptiveExitStrategy::shouldEnterPosition(
     if (spread_history.size() >= 10) {
         double spread_percentile_80 = calculatePercentile(spread_history, 0.80);
         if (micro.spread_ema > spread_percentile_80) {
-            LOG_DEBUG("Rejecting entry for {}: Current spread worse than 80th percentile ({} > {})",
+            LOG_INFO("Rejecting entry for {}: Current spread worse than 80th percentile ({} > {})",
                       symbol, micro.spread_ema, spread_percentile_80);
             return false;  // Current spread worse than 80% of recent
         }
