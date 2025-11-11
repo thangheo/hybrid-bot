@@ -1012,7 +1012,7 @@ std::optional<double> RiskManager::getCachedPosition(const ExchangeId& exchangeI
             try {
                 auto tracker = m_preTradeFilter->getPositionTracker();
                 auto allPositions = tracker->getAllPositions();
-                LOG_INFO("RiskManager - 🔍 Checking position tracker for {}@{} ptr={} ts_ms={} positions_count={}", 
+                LOG_TRACE("RiskManager - 🔍 Checking position tracker for {}@{} ptr={} ts_ms={} positions_count={}", 
                          tradingPair.toString(), exchangeId.toString(), static_cast<const void*>(pt_ptr), now_ms, allPositions.size());
                 // Log up to 5 sample positions
                 size_t sample = std::min<size_t>(allPositions.size(), 5);
@@ -1038,21 +1038,21 @@ std::optional<double> RiskManager::getCachedPosition(const ExchangeId& exchangeI
         }
         
         // Fallback: Direct ExecutionInterface lookup (still better than getAllPositions)
-        LOG_INFO("RiskManager - 🔄 Falling back to ExecutionInterface for {}@{}", tradingPair.toString(), exchangeId.toString());
+        LOG_TRACE("RiskManager - 🔄 Falling back to ExecutionInterface for {}@{}", tradingPair.toString(), exchangeId.toString());
         if (m_executionInterface) {
             try {
                 auto positions = m_executionInterface->getPositions(exchangeId);
-                LOG_INFO("RiskManager - 📊 ExecutionInterface returned {} positions total", positions.size());
+                LOG_TRACE("RiskManager - 📊 ExecutionInterface returned {} positions total", positions.size());
                 auto it = positions.find(tradingPair.toString());
                 if (it != positions.end() && std::abs(it->second) > 1e-8) {
-                    LOG_INFO("RiskManager - ✅ Found position in ExecutionInterface: {}@{} = {}", 
+                    LOG_TRACE("RiskManager - ✅ Found position in ExecutionInterface: {}@{} = {}", 
                              tradingPair.toString(), exchangeId.toString(), it->second);
                     return it->second;
                 } else if (it != positions.end()) {
-                    LOG_WARN("RiskManager - ⚠️ Position found but too small: {}@{} = {} (< 1e-8)", 
+                    LOG_TRACE("RiskManager - ⚠️ Position found but too small: {}@{} = {} (< 1e-8)", 
                              tradingPair.toString(), exchangeId.toString(), it->second);
                 } else {
-                    LOG_WARN("RiskManager - ❌ Position not found in ExecutionInterface for {}@{}", 
+                    LOG_TRACE("RiskManager - ❌ Position not found in ExecutionInterface for {}@{}", 
                              tradingPair.toString(), exchangeId.toString());
                 }
             } catch (const std::exception& e) {

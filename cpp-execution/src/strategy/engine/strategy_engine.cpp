@@ -202,13 +202,13 @@ void StrategyEngine::handleSignalGenerated(const TradingSignal& signal) {
             
             // Skip trading if volatility is below threshold
             if (vol_1m < symbolThreshold) {
-                LOG_INFO("Signal {} rejected: volatility too low ({:.6f} < {:.6f}) for symbol {}", 
+                LOG_TRACE("Signal {} rejected: volatility too low ({:.6f} < {:.6f}) for symbol {}", 
                          signal.id, vol_1m, symbolThreshold, signal.symbol.toString());
                 return;
             }
             
             // Optional: Log volatility info for debugging
-            LOG_DEBUG("Signal {} volatility check passed: vol_1m={:.6f} >= {:.6f} for symbol {}", 
+            LOG_TRACE("Signal {} volatility check passed: vol_1m={:.6f} >= {:.6f} for symbol {}", 
                      signal.id, vol_1m, symbolThreshold, signal.symbol.toString());
                      
         } catch (const std::exception& e) {
