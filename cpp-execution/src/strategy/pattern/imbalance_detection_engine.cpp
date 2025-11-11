@@ -967,24 +967,7 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                                 else if (!g_optimalExit.shouldEnterPosition(symbol_str,microstructure,signal.probability)) {
                                     LOG_INFO("ENTRY_BLOCKED_BY_ENTRY_FILTER: {}", symbol_str);
                                 } else {
-                                    // ✓ ENTRY APPROVED - Start tracking in exit strategy
-                                    // use new adaptive startPosition method
-                                    // void AdaptiveExitStrategy::startPosition(
-                                    //     const std::string& symbol,
-                                    //     double entry_price,
-                                    //     core::Direction direction,
-                                    //     double confidence,
-                                    //     const MarketMicrostructure& microstructure) 
-                                    // struct MarketMicrostructure {
-                                    //     double volatility_1m = 0.0;      // 1-minute realized volatility
-                                    //     double spread_ema = 0.0;          // EMA of bid-ask spread
-                                    //     double spread_std = 0.0;          // Spread standard deviation
-                                    //     double orderbook_imbalance = 0.0; // Bid/ask volume imbalance
-                                    //     double trade_intensity = 0.0;     // Trades per second
-                                    //     double price_impact = 0.0;        // Estimated price impact
-                                    //     double tick_size = 0.0;           // Minimum price increment
-                                    //     double volume_profile_skew = 0.0; // Volume distribution asymmetry
-                                    // };
+                                    
                                     AdaptiveExitStrategy::MarketMicrostructure microstructure;
                                     microstructure.volatility_1m = m.realize_volatility_1m;
                                     microstructure.spread_ema = m.emaSpread;

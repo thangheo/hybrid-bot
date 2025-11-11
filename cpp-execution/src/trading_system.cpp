@@ -516,6 +516,12 @@ bool Trading_system::start() {
 
                             // Call updateMarketData on exit strategy
                             try {
+                                // log debug with information about microstructure every 10 counts
+                                static int count = 0;
+                                if(count++ % 10 == 0){
+                                    LOG_DEBUG("Updating microstructure for {}: vol_1m={}, spread_ema={}, orderbook_imbalance={}, trade_intensity={}, price_return={}",
+                                              symbolStr, vol_1m, spread_ema, orderbook_imbalance, trade_intensity, price_return);
+                                }
                                 exitStrategy_->updateMarketData(symbolStr, vol_1m, spread_ema, orderbook_imbalance, trade_intensity, price_return);
                             } catch (...) {}
                         } catch (...) {}
@@ -622,15 +628,7 @@ void Trading_system::shutdown() {
         std::cout << "System shutdown complete" << std::endl;
     }
 }
-
-// // Helper method to get current signals for a symbol (you'll need to implement this)
-// std::vector<strategy::TradingSignal> Trading_system::getCurrentSignalsForSymbol(const core::Symbol& symbol) {
-//     // This should return current active signals for the given symbol
-//     // You'll need to implement this based on your signal storage
-//     std::vector<strategy::TradingSignal> signals;
-//     // Your implementation here...
-//     return signals;
-// }
+ 
 
 void Trading_system::printStatus() {
     auto now = std::chrono::steady_clock::now();
