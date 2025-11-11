@@ -76,20 +76,17 @@ Trading_system::Trading_system() : running_(false), systemHealthy_(true) {
     riskConfig_.zmqPublisherEndpoint = SERVER_REQUEST_ENDPOINT;
     // marketDataInterface_ = std::make_shared<trading::risk::MarketDataInterface>(riskConfig_);
 
-    // Use shared singleton MarketDataInterface to ensure a single cache instance.
-    // Defer creating/initializing MarketDataInterface until initialize()
-    // so we can ensure the internal ZMQ server is bound and the shared
-    // ZMQ client/context can be injected before the subscriber starts.
-    // Initialize position sizer with config loaded in riskConfig_
     positionSizer_ = std::make_unique<trading::risk::PositionSizer>(riskConfig_.getPositionSizingConfig());
     
 }
 // Market data updater loop: periodically fetch microstructure metrics and update exit strategy
 void Trading_system::marketDataUpdaterLoop(){
+    LOG_INFO("Market data updater loop started");
+
     while (marketDataUpdaterRunning_.load()) {
         try {
             if (!exitStrategy_) {
-                
+                LOG_INFO("Market data updater: exit strategy not initialized yet");
                 std::this_thread::sleep_for(std::chrono::seconds(1));
                 continue;
             }
@@ -588,6 +585,11 @@ void Trading_system::shutdown() {
     exitMonitorRunning_.store(false);
     if (exitMonitorThread_.joinable()) {
         exitMonitorThread_.join();
+    }
+    // Stop market data updater thread
+    marketDataUpdaterRunning_.store(false);
+    if (marketDataUpdaterThread_.joinable()) {
+        marketDataUpdaterThread_.join();
     }
     // Stop worker pools
     stopOrderbookWorkerPool();
