@@ -11,7 +11,7 @@
 
  #include "strategy/pattern/imbalance_detection_engine.hpp"
  #include "strategy/types/profit_aware_labeling.hpp"
-#include "strategy/exit/optimal_exit_strategy.hpp"
+#include "strategy/exit/adaptive_exit_strategy.hpp"
  #include <common/event_bus.hpp>
  #include <common/trading_events.hpp>
  #include <algorithm>
@@ -234,7 +234,8 @@ static StatisticalThresholdAdapter g_statThresholdAdapter;
 static ProfitAwareLabeling g_profitLabeling;
 
 // Global optimal exit strategy instance
-static OptimalExitStrategy g_optimalExit;
+// static OptimalExitStrategy g_optimalExit;
+static AdaptiveExitStrategy g_optimalExit;
 
 // Helper: build filesystem-friendly model filename for exchange+symbol
 static std::string buildSymbolModelPath(const std::string &baseDir, const core::ExchangeId &exch, const core::Symbol &sym) {
@@ -947,17 +948,56 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                                 // Calculate spreads (use PERCENT not ratio!)
                                 double current_spread_percent = (m.spread / m.midPrice) * 100.0;
                                 double ema_spread_percent = (m.emaSpread / m.midPrice) * 100.0;
+                                AdaptiveExitStrategy::MarketMicrostructure microstructure;
+                                microstructure.volatility_1m = m.realize_volatility_1m;
+                                microstructure.spread_ema = m.emaSpread;
+                                microstructure.spread_std = m.metrics.count("spread_std") ? m.metrics.at("spread_std") : 0.0;
+                                microstructure.orderbook_imbalance = m.bidAskVolumeRatio;
+                                // microstructure.trade_intensity = 
+                                // microstructure.price_impact = m.estimatedPriceImpact;
+                                microstructure.tick_size = 0.01; // Placeholder, replace with actual tick size if available
+                                // microstructure.volume_profile_skew = m.volumeProfileSkew;    
+
                                 if (authoritativeHasPosition) {
                                     LOG_INFO("ENTRY_BLOCKED_BY_POSITION: {} has position qty={}", symbol_str, authoritativeQty);
-                                } else if (g_optimalExit.wasRecentlyClosed(symbol_str)) {
-                                    LOG_INFO("ENTRY_BLOCKED_BY_RECENT_CLOSE: {} cooldown", symbol_str);
-                                } else if (!g_optimalExit.shouldEnterPosition(symbol_str, m.midPrice, current_spread_percent, ema_spread_percent, signal.probability)) {
+                                } 
+                                // else if (g_optimalExit.wasRecentlyClosed(symbol_str)) {
+                                //     LOG_INFO("ENTRY_BLOCKED_BY_RECENT_CLOSE: {} cooldown", symbol_str);
+                                // }
+                                else if (!g_optimalExit.shouldEnterPosition(symbol_str,microstructure,signal.probability)) {
                                     LOG_INFO("ENTRY_BLOCKED_BY_ENTRY_FILTER: {}", symbol_str);
                                 } else {
                                     // ✓ ENTRY APPROVED - Start tracking in exit strategy
-                                    // NOTE: Trading_system will ALSO call startPosition after execution
-                                    // You need to handle this duplication!
-                                    g_optimalExit.startPosition(symbol_str, m.midPrice, dir, signal.probability, current_spread_percent, ema_spread_percent);
+                                    // use new adaptive startPosition method
+                                    // void AdaptiveExitStrategy::startPosition(
+                                    //     const std::string& symbol,
+                                    //     double entry_price,
+                                    //     core::Direction direction,
+                                    //     double confidence,
+                                    //     const MarketMicrostructure& microstructure) 
+                                    // struct MarketMicrostructure {
+                                    //     double volatility_1m = 0.0;      // 1-minute realized volatility
+                                    //     double spread_ema = 0.0;          // EMA of bid-ask spread
+                                    //     double spread_std = 0.0;          // Spread standard deviation
+                                    //     double orderbook_imbalance = 0.0; // Bid/ask volume imbalance
+                                    //     double trade_intensity = 0.0;     // Trades per second
+                                    //     double price_impact = 0.0;        // Estimated price impact
+                                    //     double tick_size = 0.0;           // Minimum price increment
+                                    //     double volume_profile_skew = 0.0; // Volume distribution asymmetry
+                                    // };
+                                    AdaptiveExitStrategy::MarketMicrostructure microstructure;
+                                    microstructure.volatility_1m = m.realize_volatility_1m;
+                                    microstructure.spread_ema = m.emaSpread;
+                                    microstructure.spread_std = m.metrics.count("spread_std") ? m.metrics.at("spread_std") : 0.0;
+                                    microstructure.orderbook_imbalance = m.bidAskVolumeRatio;
+                                    // microstructure.trade_intensity = 
+                                    // microstructure.price_impact = m.estimatedPriceImpact;
+                                    microstructure.tick_size = 0.01; // Placeholder, replace with actual tick size if available
+                                    // microstructure.volume_profile_skew = m.volumeProfileSkew;
+                                    g_optimalExit.startPosition(symbol_str, m.midPrice, dir, signal.probability, microstructure);
+
+
+                                    // g_optimalExit.startPosition(symbol_str, m.midPrice, dir, signal.probability, current_spread_percent, ema_spread_percent);
                                     LOG_INFO("STARTED TRACKING POSITION: {} dir={} entry={:.6f} conf={:.3f} spread_ema={:.3f}% spread_cur={:.3f}%",
                                             symbol_str,
                                             (dir == core::Direction::BUY ? "BUY" : "SELL"),
@@ -3797,9 +3837,9 @@ void ImbalanceDetectionEngine::trackLabelingEvent(core::Direction labelDirection
 
 // Define the global registration function in the global namespace so it
 // matches the declaration in the public header
-void registerGlobalOptimalExitCallback(const trading::strategy::OptimalExitStrategy::ExitCallback& callback) {
-    // Instrumentation: log registration calls forwarded to file-scoped g_optimalExit
-    LOG_INFO("registerGlobalOptimalExitCallback: forwarding registration to file-scoped g_optimalExit (addr={})", static_cast<const void*>(&trading::strategy::g_optimalExit));
-    // Forward to the internal global instance defined in this translation unit
-    trading::strategy::g_optimalExit.registerExitCallback(callback);
-}
+// void registerGlobalOptimalExitCallback(const trading::strategy::OptimalExitStrategy::ExitCallback& callback) {
+//     // Instrumentation: log registration calls forwarded to file-scoped g_optimalExit
+//     LOG_INFO("registerGlobalOptimalExitCallback: forwarding registration to file-scoped g_optimalExit (addr={})", static_cast<const void*>(&trading::strategy::g_optimalExit));
+//     // Forward to the internal global instance defined in this translation unit
+//     trading::strategy::g_optimalExit.registerExitCallback(callback);
+// }

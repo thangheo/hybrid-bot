@@ -529,7 +529,46 @@
      
      return rates;
  }
- 
+//  calculateVolumeProfileSkewness
+double VolumeProfileAnalyzer::calculateVolumeProfileSkewness() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    
+    if (current_profile_.price_ranges.empty() || 
+        current_profile_.volume_data.empty() || 
+        current_profile_.total_volume <= 0) {
+        return 0.0;
+    }
+    
+    // Calculate mean price
+    double mean_price = 0.0;
+    for (size_t i = 0; i < current_profile_.volume_data.size(); ++i) {
+        double midPrice = (current_profile_.price_ranges[i].lower_bound + 
+                            current_profile_.price_ranges[i].upper_bound) / 2.0;
+        mean_price += midPrice * current_profile_.volume_data[i].total_volume;
+    }
+    mean_price /= current_profile_.total_volume;
+    
+    // Calculate skewness
+    double skewness_numerator = 0.0;
+    double skewness_denominator = 0.0;
+    
+    for (size_t i = 0; i < current_profile_.volume_data.size(); ++i) {
+        double midPrice = (current_profile_.price_ranges[i].lower_bound + 
+                            current_profile_.price_ranges[i].upper_bound) / 2.0;
+        double diff = midPrice - mean_price;
+        skewness_numerator += current_profile_.volume_data[i].total_volume * diff * diff * diff;
+        skewness_denominator += current_profile_.volume_data[i].total_volume * diff * diff;
+    }
+    
+    if (skewness_denominator == 0.0) {
+        return 0.0;
+    }
+    
+    double skewness = skewness_numerator / std::pow(skewness_denominator, 1.5);
+    
+    return skewness;
+}
+
  std::vector<double> VolumeProfileAnalyzer::detectHighVolumeNodes(double threshold) const {
      std::vector<double> nodes;
      

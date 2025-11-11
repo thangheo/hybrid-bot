@@ -1,4 +1,4 @@
-#include "strategy/exit/adaptive_exit_strategy_improved.hpp"
+#include "strategy/exit/adaptive_exit_strategy.hpp" 
 #include <numeric>
 #include <algorithm>
 #include <cmath>
@@ -570,6 +570,21 @@ const char* AdaptiveExitStrategy::exitReasonToString(ExitReason reason) {
         case ExitReason::ADVERSE_SELECTION: return "ADVERSE_SELECTION";
         default: return "UNKNOWN";
     }
+}
+// hasActivePosition
+bool AdaptiveExitStrategy::hasActivePosition(const std::string& symbol) const {
+    std::lock_guard<std::mutex> lock(tradesMutex_);
+    auto it = activeTrades_.find(symbol);
+    return (it != activeTrades_.end() && it->second.is_active);
+}
+// getTradeState
+AdaptiveExitStrategy::TradeState AdaptiveExitStrategy::getTradeState(const std::string& symbol) const {
+    std::lock_guard<std::mutex> lock(tradesMutex_);
+    auto it = activeTrades_.find(symbol);
+    if (it != activeTrades_.end()) {
+        return it->second;
+    }
+    return TradeState{};
 }
 
 } // namespace strategy
