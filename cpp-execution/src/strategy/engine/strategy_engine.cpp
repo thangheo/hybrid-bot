@@ -446,9 +446,12 @@ bool StrategyEngine::getRegimeInfo(const std::string& symbol, trading::strategy:
                  {"has_anomalies", anomalies.hasAnomalies() ? 1.0 : 0.0},
                  {"density_ratio", densityRatio}
              };
-             
-             LOG_DEBUG("Volume profile updated for {}: POC={:.4f}, VAH={:.4f}, VAL={:.4f}, VWAP={:.4f}", 
-                      symbol, poc, valueArea.first, valueArea.second, profile.vwap);
+            //  update every 30 counts
+            static size_t updateCount = 0;
+            if (++updateCount % 30 == 0) {
+                 LOG_DEBUG("Volume profile updated for {}: POC={:.4f}, VAH={:.4f}, VAL={:.4f}, VWAP={:.4f}", 
+                          symbol, poc, valueArea.first, valueArea.second, profile.vwap);
+            }
          }
         //  return true; // Return true if imbalance detected
          try {
