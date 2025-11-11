@@ -448,6 +448,7 @@ bool AdaptiveExitStrategy::shouldEnterPosition(
     // Get current regime and parameters
     auto it = marketHistory_.find(symbol);
     if (it == marketHistory_.end()) {
+        LOG_INFO("Rejecting entry for {}: No market history available", symbol);
         return false;  // No history, can't assess
     }
     
