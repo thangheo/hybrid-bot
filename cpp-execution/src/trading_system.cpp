@@ -419,9 +419,8 @@ bool Trading_system::start() {
         }
         std::cout << std::endl;
         //order book depth from config
-        int depth = 10;//strategyConfig_.orderBookDepth;
-        
-        if (!dataIngestionService_->start(symbols, depth)) {
+        int depth = 20;//strategyConfig_.orderBookDepth;        
+        if (!dataIngestionService_->start(symbols,depth)) {
             std::cerr << "Failed to start data ingestion service" << std::endl;
             return false;
         }
@@ -456,24 +455,19 @@ bool Trading_system::start() {
         }
 
         // Start market microstructure updater thread (calls updateMarketData once per second)
-        monitoringThreads_.emplace_back([this]() {
-            // Log the logger level once when thread starts so we can diagnose
-            try {
-                auto logger = trading::common::Logger::getLogger();
-                bool debugEnabled = false;
-                if (logger) debugEnabled = logger->shouldLog(trading::common::LogLevel::DEBUG);
-                LOG_INFO("Monitoring thread started - debugEnabled={}", debugEnabled);
-            } catch (...) {}
+        monitoringThreads_.emplace_back([this]() {           
 
             while (running_) {
                 try {
                     if (!exitStrategy_) {
+                        
                         std::this_thread::sleep_for(std::chrono::seconds(1));
                         continue;
                     }
 
                     for (const auto& [sym, exch] : strategyConfig_.tradingPairs) {
                         try {
+                            LOG_INFO("Updating microstructure for {} on {}", sym.toString(), exch.toString());
                             std::string symbolStr = sym.toString();
                             // Build microstructure values from cached metrics if available
                             double vol_1m = 0.0;
@@ -498,6 +492,8 @@ bool Trading_system::start() {
                                     mid_price = marketDataInterface_->getCurrentPrice(sym, exch.toString());
                                 } catch (...) {}
                             }
+                            LOG_INFO("Microstructure raw for {}: vol_1m={}, spread_ema={}, orderbook_imbalance={}, trade_intensity={}",
+                                      symbolStr, vol_1m, spread_ema, orderbook_imbalance, trade_intensity);
 
                             // Compute price return as relative change from last observed mid price
                             try {
