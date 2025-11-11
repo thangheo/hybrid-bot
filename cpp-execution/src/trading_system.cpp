@@ -127,27 +127,28 @@ void Trading_system::exitMonitorLoop() {
                     // Get position details - prefer Risk/Execution position tracker via ExecutionInterface
                     // Fallback to exitStrategy_ stored position info for backward compatibility
                     std::optional<trading::strategy::OptimalExitStrategy::PositionInfo> posInfo;
-
-                    try {
-                        if (riskManager_) {
-                            // RiskManager::getCachedPosition prefers PositionTracker then ExecutionInterface
-                            std::optional<double> cachedQty = riskManager_->getCachedPosition(exchangeId, sym);
-                            if (cachedQty.has_value() && std::abs(*cachedQty) > 1e-12) {
-                                trading::strategy::OptimalExitStrategy::PositionInfo info;
-                                double qty = *cachedQty;
-                                info.quantity = std::abs(qty);
-                                info.direction = (qty >= 0.0) ? core::Direction::BUY : core::Direction::SELL;
-                                // Try to fetch entry price from PositionTracker if available via RiskManager internals
-                                // RiskManager exposes no direct entry price here, so leave unknown (0.0)
-                                info.entry_price = 0.0;
-                                info.confidence = 1.0;
-                                info.entry_time = std::chrono::steady_clock::now();
-                                posInfo = info;
-                            }
-                        }
-                    } catch (const std::exception& e) {
-                        LOG_WARN("Exit monitor: RiskManager cached position lookup failed: {}", e.what());
-                    }
+                    
+                    // try {
+                    //     if (riskManager_) {
+                    //         // RiskManager::getCachedPosition prefers PositionTracker then ExecutionInterface
+                    //         std::optional<double> cachedQty = riskManager_->getCachedPosition(exchangeId, sym);
+                    //         if (cachedQty.has_value() && std::abs(*cachedQty) > 1e-12) {
+                    //             trading::strategy::OptimalExitStrategy::PositionInfo info;
+                    //             double qty = *cachedQty;
+                    //             info.quantity = std::abs(qty);
+                    //             info.direction = (qty >= 0.0) ? core::Direction::BUY : core::Direction::SELL;
+                    //             // Try to fetch entry price from PositionTracker if available via RiskManager internals
+                    //             // RiskManager exposes no direct entry price here, so leave unknown (0.0)
+                    //             info.entry_price = 0.0;
+                    //             info.confidence = 1.0;
+                    //             info.entry_time = std::chrono::steady_clock::now(); //this is stupid, so the position will never close .
+                    //             //this code above is pure trash. trash chatgpt copilot wrote.
+                    //             posInfo = info;
+                    //         }
+                    //     }
+                    // } catch (const std::exception& e) {
+                    //     LOG_WARN("Exit monitor: RiskManager cached position lookup failed: {}", e.what());
+                    // }
 
                     // Fallback to exitStrategy's internal tracking if we didn't obtain position from risk/execution
                     if (!posInfo.has_value() && exitStrategy_) {
