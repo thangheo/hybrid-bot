@@ -364,54 +364,48 @@ void Trading_system::exitMonitorLoop() {
                         exitSignal.metadata["exit_reason"] = std::to_string(static_cast<int>(exitDecision.reason));
                         exitSignal.metadata["exit_pnl_bps"] = std::to_string(exitDecision.expected_pnl);
                         
-                        // Determine exit quantity: prefer authoritative position size from RiskManager/PositionTracker
+                        // Determine exit quantity: always try authoritative source first
                         double exitQty = 0.0;
                         bool qtyResolved = false;
                         try {
-                            // If posInfo was found earlier and has a quantity (recently fetched from risk manager), use it
-                            if (posInfo.has_value()) {
-                                // If TradeState later includes quantity in future, prefer that; currently we rely on RiskManager
-                                // Try to query RiskManager for exact tracked position quantity
-                                if (riskManager_) {
-                                    auto trackedOpt = riskManager_->getCachedPosition(exchangeId, sym);
-                                    if (trackedOpt.has_value() && std::abs(*trackedOpt) > 1e-12) {
-                                        exitQty = std::abs(*trackedOpt);
-                                        qtyResolved = true;
-                                    }
+                            if (riskManager_) {
+                                auto trackedOpt = riskManager_->getCachedPosition(exchangeId, sym);
+                                if (trackedOpt.has_value() && std::abs(*trackedOpt) > 1e-12) {
+                                    exitQty = std::abs(*trackedOpt);
+                                    qtyResolved = true;
                                 }
                             }
-                        } catch (...) { /* best-effort */ }
+                        } catch (...) {}
 
-                        // Fallback: compute minimal quantity to satisfy min notional using currentPrice
-                        const double minNotionalUsd = 10.0; // align with exec worker min notional
+                        // If no authoritative position found, skip issuing an exit order.
                         if (!qtyResolved) {
-                            if (currentPrice > 0.0) {
-                                double minQty = minNotionalUsd / currentPrice;
-                                try {
-                                    std::string symStr = sym.toString();
-                                    exitQty = ::execution::SymbolPrecisionManager::roundQuantity(symStr, minQty);
-                                    if (exitQty <= 0.0) {
-                                        // Try bumping by one step
-                                        double bumped = minQty + std::pow(10.0, -8);
-                                        exitQty = ::execution::SymbolPrecisionManager::roundQuantity(symStr, bumped);
-                                    }
-                                    if (exitQty > 0.0) qtyResolved = true;
-                                } catch (...) {
-                                    // If rounding fails, set qtyResolved false and proceed to skip
-                                }
-                            }
-                        }
-
-                        if (!qtyResolved || exitQty <= 0.0) {
-                            LOG_WARN("Exit monitor: cannot determine valid exit quantity for {} - skipping exit (currentPrice={}, resolvedQty={})", symbol, currentPrice, exitQty);
+                            LOG_INFO("Exit monitor: no authoritative position found for {} - skipping exit signal", symbol);
                         } else {
-                            exitSignal.setQuantity((posInfo.has_value() ? exitQty : exitQty));
-                            // Queue for execution
-                            {
+                            // Ensure the exit notional respects minimum notional by increasing quantity if necessary
+                            const double minNotionalUsd = 20.0;
+                            double finalNotional = currentPrice * exitQty;
+                            std::string symStr = sym.toString();
+                            int attempts = 0;
+                            while (finalNotional < minNotionalUsd && attempts < 5) {
+                                // increase by one step using precision manager
+                                double bumped = exitQty + std::pow(10.0, -8 + attempts);
+                                try {
+                                    bumped = ::execution::SymbolPrecisionManager::roundQuantity(symStr, bumped);
+                                } catch (...) {}
+                                if (bumped <= exitQty) break; // can't bump further
+                                exitQty = bumped;
+                                finalNotional = currentPrice * exitQty;
+                                attempts++;
+                            }
+
+                            if (finalNotional < minNotionalUsd) {
+                                LOG_WARN("Exit monitor: resolved exit quantity for {} results in notional ${:.2f} < minNotional ${:.2f} - skipping exit", symbol, finalNotional, minNotionalUsd);
+                            } else {
+                                exitSignal.setQuantity(exitQty);
                                 std::lock_guard<std::mutex> lk(execQueueMutex_);
                                 execQueue_.push_back(std::move(exitSignal));
+                                execQueueCv_.notify_one();
                             }
-                            execQueueCv_.notify_one();
                         }
                         
                         // Mark position as pending exit (don't close yet - wait for execution)
