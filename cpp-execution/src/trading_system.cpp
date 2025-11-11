@@ -457,6 +457,14 @@ bool Trading_system::start() {
 
         // Start market microstructure updater thread (calls updateMarketData once per second)
         monitoringThreads_.emplace_back([this]() {
+            // Log the logger level once when thread starts so we can diagnose
+            try {
+                auto logger = trading::common::Logger::getLogger();
+                bool debugEnabled = false;
+                if (logger) debugEnabled = logger->shouldLog(trading::common::LogLevel::DEBUG);
+                LOG_INFO("Monitoring thread started - debugEnabled={}", debugEnabled);
+            } catch (...) {}
+
             while (running_) {
                 try {
                     if (!exitStrategy_) {
