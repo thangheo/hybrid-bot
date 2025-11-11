@@ -446,6 +446,17 @@ bool Trading_system::initialize() {
         std::cerr << "Failed to initialize strategy engine" << std::endl;
         return false;
     }
+
+    // Ensure the AdaptiveExitStrategy singleton is created before any updater threads run.
+    // The monitoring/market-data updater threads assume `exitStrategy_` is non-null.
+    if (!exitStrategy_) {
+        try {
+            exitStrategy_ = std::make_shared<trading::strategy::AdaptiveExitStrategy>(60.0);
+            LOG_INFO("Initialized AdaptiveExitStrategy singleton: {}", static_cast<const void*>(exitStrategy_.get()));
+        } catch (const std::exception& e) {
+            LOG_WARN("Failed to initialize AdaptiveExitStrategy: {}", e.what());
+        }
+    }
     
     // Load symbol volatility configuration
     std::string volatilityConfigPath = "config/symbol_volatility_config.json";
