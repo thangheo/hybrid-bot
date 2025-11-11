@@ -491,12 +491,9 @@ bool AdaptiveExitStrategy::shouldEnterPosition(
     // Get current regime and parameters
     std::lock_guard<std::mutex> lk(historyMutex_);
     auto it = marketHistory_.find(symbol);
-    LOG_INFO("shouldEnterPosition (this={}): looking for '{}' in marketHistory_ (size={})", static_cast<const void*>(this), symbol, marketHistory_.size());
     if (it == marketHistory_.end()) {
         // LOG_INFO("Rejecting entry for {}: No market history available", symbol);
         //  // Debug: log exact key and map contents
-        LOG_INFO("shouldEnterPosition: Looking for key '{}' in marketHistory_ (size={})", 
-                symbol, marketHistory_.size());
         return false;  // No history, can't assess
     }
     

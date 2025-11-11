@@ -384,6 +384,7 @@ void Trading_system::exitMonitorLoop() {
                             // Ensure the exit notional respects minimum notional by increasing quantity if necessary
                             const double minNotionalUsd = 20.0;
                             double finalNotional = currentPrice * exitQty;
+                            
                             std::string symStr = sym.toString();
                             int attempts = 0;
                             while (finalNotional < minNotionalUsd && attempts < 5) {
