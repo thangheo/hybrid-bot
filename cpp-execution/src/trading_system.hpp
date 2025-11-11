@@ -312,6 +312,9 @@ private:
     std::unordered_map<std::string, trading::strategy::OrderBookMetrics> latestOrderbookMetrics_;
     // EventBus subscription id for MetricsUpdatedEvent
     size_t metricsSubscriptionId_ = 0;
+    // Last observed mid prices per-symbol (used to compute per-second returns)
+    mutable std::mutex lastPriceMutex_;
+    std::unordered_map<std::string, double> lastMidPrice_;
     
 };
 
