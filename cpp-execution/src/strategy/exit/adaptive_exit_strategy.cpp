@@ -90,56 +90,93 @@ AdaptiveExitStrategy::DynamicParameters AdaptiveExitStrategy::calculateDynamicPa
     // Với α = confidence factor (1.5-2.5), β = spread cost multiplier (1.5-3)
     double alpha = 2.0;  // Base confidence factor
     double beta = 2.5;   // Spread cost multiplier
+    double gamma = 0.4;   // trailing fraction
+    double decay_factor = 1.0;  // holding time multiplier
     
-    // Điều chỉnh theo regime
+        // === Adjust per regime ===
     switch (regime) {
-        case MarketRegimeType::TRENDING:
-            alpha = 2.5;  // Expect larger moves
-            beta = 2.0;   // Can tolerate tighter spread cost
+        case MarketRegimeType::STRESS:
+            alpha = 1.2;   // smaller PT, avoid chasing moves
+            beta  = 5.0;   // spreads explode, cost up
+            gamma = 0.2;   // very tight trailing (protect PnL)
+            decay_factor = 0.4; // close fast
             break;
-        case MarketRegimeType::MEAN_REVERTING:
-            alpha = 1.5;  // Smaller moves expected
-            beta = 3.0;   // Need more buffer for spread
-            break;
+
         case MarketRegimeType::HIGH_VOLATILITY:
-            alpha = 3.0;  // Large moves but risky
-            beta = 2.5;
+            alpha = 3.0;   // bigger expected move
+            beta  = 2.5;
+            gamma = 0.35;  // let run but still tight
+            decay_factor = 0.8;  // shorter hold (fast mean reverts)
             break;
+
         case MarketRegimeType::LOW_LIQUIDITY:
             alpha = 1.8;
-            beta = 4.0;  // Wide spreads need compensation
+            beta  = 4.0;   // compensate for wide spreads
+            gamma = 0.3;
+            decay_factor = 0.7;  // exit earlier to avoid slippage
             break;
+
+        case MarketRegimeType::TRENDING:
+            alpha = 2.5;   // expect larger moves
+            beta  = 2.0;   // spread less important
+            gamma = 0.55;  // let profits run
+            decay_factor = 1.5;  // hold longer
+            break;
+
+        case MarketRegimeType::MEAN_REVERTING:
+            alpha = 1.4;   // smaller PT
+            beta  = 3.0;
+            gamma = 0.25;  // take profit quickly
+            decay_factor = 0.5;
+            break;
+
+        case MarketRegimeType::QUIET:
+            alpha = 1.2;   // tiny move expected
+            beta  = 2.0;
+            gamma = 0.3;   // small trailing
+            decay_factor = 1.0;  // normal hold
+            break;
+
+        case MarketRegimeType::NORMAL:
         default:
+            alpha = 2.0;
+            beta  = 2.5;
+            gamma = 0.4;
+            decay_factor = 1.0;
             break;
     }
-    
+
     // Time adjustment factor: √(prediction_window / 60)
     double time_factor = std::sqrt(predictionWindow_ / 60.0);
     
     params.profit_target_ticks = alpha * vol_in_ticks * time_factor + beta * spread_in_ticks;
-    
+    params.profit_target_ticks = std::min(params.profit_target_ticks, 50.0);
+
     // 3. Stop Loss (based on Value at Risk - VaR)
     // Formula: SL = -VaR(confidence_level) = -z_score * σ * √t
     double z_score_95 = 1.645;  // 95% confidence
     params.stop_loss_ticks = -z_score_95 * vol_in_ticks * time_factor - spread_in_ticks;
     
     // Regime adjustments for stop loss
-    if (regime == MarketRegimeType::HIGH_VOLATILITY) {
-        params.stop_loss_ticks *= 1.5;  // Wider stop in volatile markets
-    } else if (regime == MarketRegimeType::LOW_LIQUIDITY) {
-        params.stop_loss_ticks *= 1.3;  // Account for slippage
-    }
+    if (regime == MarketRegimeType::HIGH_VOLATILITY) 
+        params.stop_loss_ticks *= 1.5;
+    else if (regime == MarketRegimeType::LOW_LIQUIDITY)
+        params.stop_loss_ticks *= 1.3;
+    else if (regime == MarketRegimeType::STRESS)
+        params.stop_loss_ticks *= 2.0; // maximum protection
+
     
     // 4. Trailing Stop (percentage of favorable move)
     // Formula: TS = γ * PT, với γ ∈ [0.3, 0.6]
-    double gamma = 0.4;  // Base trailing factor
-    if (regime == MarketRegimeType::TRENDING) {
-        gamma = 0.5;  // Let winners run more
-    } else if (regime == MarketRegimeType::MEAN_REVERTING) {
-        gamma = 0.3;  // Tighter trailing
-    }
+    // double gamma = 0.4;  // Base trailing factor
+    // if (regime == MarketRegimeType::TRENDING) {
+    //     gamma = 0.5;  // Let winners run more
+    // } else if (regime == MarketRegimeType::MEAN_REVERTING) {
+    //     gamma = 0.3;  // Tighter trailing
+    // }
     params.trailing_stop_ticks = gamma * params.profit_target_ticks;
-    
+    params.stop_loss_ticks = std::max(params.stop_loss_ticks, -50.0);
+
     // 5. Holding Time (based on autocorrelation decay and mean reversion speed)
     // Formula: T_max = prediction_window * decay_factor
     double decay_factor = 1.0;
@@ -162,9 +199,18 @@ AdaptiveExitStrategy::DynamicParameters AdaptiveExitStrategy::calculateDynamicPa
     
     // 6. Signal Reversal Threshold (based on prediction confidence decay)
     // Higher threshold when volatility is high
-    params.signal_reversal_threshold = 0.2 + 0.3 * (current_micro.volatility_1m / 0.001);
-    params.signal_reversal_threshold = std::min(0.7, params.signal_reversal_threshold);
-    
+    // params.signal_reversal_threshold = 0.2 + 0.3 * (current_micro.volatility_1m / 0.001);
+    // params.signal_reversal_threshold = std::min(0.7, params.signal_reversal_threshold);
+    // In quiet regimes, be sensitive; in stress, be conservative
+    double base_rev = 0.2 + 0.3 * (current_micro.volatility_1m / 0.001);
+    base_rev = std::min(0.7, base_rev);
+
+    if (regime == MarketRegimeType::STRESS)
+        base_rev = 0.8; // ignore small reversals
+    else if (regime == MarketRegimeType::QUIET)
+        base_rev = 0.15; // react to small shifts
+
+    params.signal_reversal_threshold = base_rev;
     // 7. Emergency multipliers
     params.spread_emergency_multiplier = 3.0 + spread_in_ticks / 10.0;  // Dynamic based on normal spread
     params.volatility_spike_threshold = vol_in_ticks * 3.0;
@@ -499,25 +545,69 @@ bool AdaptiveExitStrategy::shouldEnterPosition(
     }
     
     // 3. Regime-specific filters
+    //     STRESS,
+    // HIGH_VOLATILITY,
+    // LOW_LIQUIDITY,
+    // TRENDING,
+    // MEAN_REVERTING,
+    // QUIET,
+    // NORMAL,
+    // UNKNOWN
     switch (regime) {
-        case MarketRegimeType::LOW_LIQUIDITY:
-            if (micro.spread_ema > micro.tick_size * 10) {
-                LOG_INFO("Rejecting entry for {}: Low liquidity (spread_ema={} > tick_size*10)",
-                          symbol, micro.spread_ema);
-                return false;  // Spread too wide
-            }
-            break;
+        case MarketRegimeType::STRESS:
+            // In stress regime we force exit / disable new entries
+            LOG_INFO("Rejecting entry for {}: Stress regime - disabling new entries", symbol);
+            return false;
+
         case MarketRegimeType::HIGH_VOLATILITY:
+            // Allow entry but require higher confidence and prefer reduced exposure (checked elsewhere)
             if (confidence < 0.9) {
-                LOG_INFO("Rejecting entry for {}: Low confidence in high volatility ({} < 0.95)",
+                LOG_INFO("Rejecting entry for {}: Low confidence in high volatility ({} < 0.90)",
                           symbol, confidence);
-                return false;  // Need high confidence in volatile markets
+                return false;
+            }
+            // Tight stop logic is applied at exit; here allow entry if confident
+            break;
+
+        case MarketRegimeType::LOW_LIQUIDITY:
+            // Avoid entering in low liquidity due to slippage risk
+            LOG_INFO("Rejecting entry for {}: Low liquidity - avoid entering due to slippage (spread_ema={} tick_size={})",
+                     symbol, micro.spread_ema, micro.tick_size);
+            return false;
+
+        case MarketRegimeType::TRENDING:
+            // Allow entries in trending regime but require decent confidence; longer holding allowed (handled in params)
+            if (confidence < 0.75) {
+                LOG_INFO("Rejecting entry for {}: Low confidence in trending regime ({} < 0.75)",
+                         symbol, confidence);
+                return false;
             }
             break;
+
+        case MarketRegimeType::MEAN_REVERTING:
+            // Use short-term countertrend exits; require slightly higher confidence
+            if (confidence < 0.80) {
+                LOG_INFO("Rejecting entry for {}: Low confidence in mean reverting regime ({} < 0.80)",
+                         symbol, confidence);
+                return false;
+            }
+            break;
+
+        case MarketRegimeType::QUIET:
+            // Quiet markets: skip trades or widen thresholds. Be conservative on entry.
+            if (confidence < 0.70) {
+                LOG_INFO("Rejecting entry for {}: Quiet regime - skipping low confidence trades ({} < 0.70)",
+                         symbol, confidence);
+                return false;
+            }
+            break;
+
+        case MarketRegimeType::NORMAL:
         default:
-            if (confidence < 0.8) {
-                LOG_INFO("Rejecting entry for {}: Low confidence in default regime ({} < 0.85)",
-                          symbol, confidence);
+            // Default operation: require a baseline confidence
+            if (confidence < 0.65) {
+                LOG_INFO("Rejecting entry for {}: Low confidence in default/normal regime ({} < 0.65)",
+                         symbol, confidence);
                 return false;
             }
     }
