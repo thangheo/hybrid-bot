@@ -30,6 +30,7 @@
 #include <common/logger.hpp>
 #include "perception/bayesian_trading_adapter.hpp"
 // #include "core_analysis/regime_subscriber.hpp"
+#include "strategy/types/correlation_types.hpp" // for marketRegimeToString
 
  using namespace trading::core;
  using namespace std::chrono_literals;
@@ -349,7 +350,8 @@ std::array<trading::perception::BayesHandle, ImbalanceDetectionEngine::NUMBER_OF
             std::string name = sanitize(exch.toString()) + "_" + sanitize(sym.toString());
             for (int i = 0; i < ImbalanceDetectionEngine::NUMBER_OF_REGIMES; ++i) {
                 std::ostringstream fn;
-                fn << bayesModelDirectory_ << "/" << name << "_regime" << i << ".json";
+                std::string regimeName = marketRegimeToString(static_cast<MarketRegimeType>(i));
+                fn << bayesModelDirectory_ << "/" << name << "_" << regimeName << ".json";
                 std::string path = fn.str();
                 // If a saved per-regime model exists, create a handle and attempt to load it.
                 if (!path.empty() && std::filesystem::exists(path)) {
@@ -681,21 +683,22 @@ ImbalanceDetectionEngine::~ImbalanceDetectionEngine() {
             auto harray = pr.second; // copy of array of handles
             try {
                 if (!bayesModelDirectory_.empty()) {
-                    for (int i = 0; i < NUMBER_OF_REGIMES; ++i) {
-                        auto h = harray[i];
-                        if (!h) continue;
-                        try {
-                            std::string filename = bayesModelDirectory_;
-                            if (!filename.empty() && filename.back() != '/' && filename.back() != '\\') filename += '/';
-                            filename += symKey + "_regime" + std::to_string(i) + ".json";
-                            trading::perception::bayes_save(h, filename);
-                            LOG_INFO("ImbalanceDetectionEngine: saved per-symbol bayes model {}", filename);
-                        } catch (const std::exception &ex) {
-                            LOG_WARN("ImbalanceDetectionEngine: failed to save per-symbol bayes model {}: {}", symKey, ex.what());
-                        } catch (...) {
-                            LOG_WARN("ImbalanceDetectionEngine: failed to save per-symbol bayes model {} (unknown error)", symKey);
-                        }
-                    }
+                            for (int i = 0; i < NUMBER_OF_REGIMES; ++i) {
+                                auto h = harray[i];
+                                if (!h) continue;
+                                try {
+                                    std::string filename = bayesModelDirectory_;
+                                    if (!filename.empty() && filename.back() != '/' && filename.back() != '\\') filename += '/';
+                                    std::string regimeName = marketRegimeToString(static_cast<MarketRegimeType>(i));
+                                    filename += symKey + "_" + regimeName + ".json";
+                                    trading::perception::bayes_save(h, filename);
+                                    LOG_INFO("ImbalanceDetectionEngine: saved per-symbol bayes model {}", filename);
+                                } catch (const std::exception &ex) {
+                                    LOG_WARN("ImbalanceDetectionEngine: failed to save per-symbol bayes model {}: {}", symKey, ex.what());
+                                } catch (...) {
+                                    LOG_WARN("ImbalanceDetectionEngine: failed to save per-symbol bayes model {} (unknown error)", symKey);
+                                }
+                            }
                 }
             } catch (...) {
                 LOG_WARN("ImbalanceDetectionEngine: failed to save per-symbol bayes model for {}", symKey);
@@ -1350,7 +1353,8 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                                                 for (int i = 0; i < NUMBER_OF_REGIMES; ++i) {
                                                     auto h = handles[i];
                                                     if (!h) continue; // Skip null handles - no warning needed
-                                                    std::string filename = base + name + "_regime" + std::to_string(i) + ".json";
+                                                    std::string regimeName = marketRegimeToString(static_cast<MarketRegimeType>(i));
+                                                    std::string filename = base + name + "_" + regimeName + ".json";
                                                     saveTasks.emplace_back(h, filename);
                                                 }
                                             } catch (const std::exception &ex) { LOG_WARN("error preparing per-symbol save tasks: {}", ex.what()); } catch(...) { LOG_WARN("error preparing per-symbol save tasks (unknown)"); }
