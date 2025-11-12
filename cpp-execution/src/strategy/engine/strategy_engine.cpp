@@ -469,7 +469,28 @@ bool StrategyEngine::getRegimeInfo(const std::string& symbol, trading::strategy:
          }
         //  return true; // Return true if imbalance detected
          try {
-             imbalanceDetector_->analyzeMetrics(metrics);
+             // Simple upstream backpressure handling: if detector is overloaded,
+             // apply a lightweight per-symbol throttle (leaky-bucket) to reduce pressure.
+             static std::unordered_map<std::string, std::chrono::steady_clock::time_point> lastAllowedMetricTime;
+             bool allowed = true;
+             if (imbalanceDetector_->isUnderBackpressure()) {
+                 // when under pressure, allow metrics per symbol at a lower rate (e.g., 1 per 200ms)
+                 auto now_tp = std::chrono::steady_clock::now();
+                 auto &last = lastAllowedMetricTime[orderBook.getSymbol().toString()];
+                 auto elapsed = std::chrono::duration<double, std::milli>(now_tp - last).count();
+                 if (elapsed < 200.0) {
+                     allowed = false; // skip this metric to reduce load
+                 } else {
+                     last = now_tp;
+                     allowed = true;
+                 }
+             }
+             if (allowed) {
+                 imbalanceDetector_->analyzeMetrics(metrics);
+             } else {
+                 // skip enqueueing this heavy metric under backpressure
+                 // Optionally record a counter/metric here
+             }
          } catch (const std::bad_alloc& e) {
              LOG_ERROR("std::bad_alloc during imbalanceDetector_->analyzeMetrics for {}: {}", orderBook.getSymbol(), e.what());
              return false;

@@ -1576,12 +1576,81 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                 // LOG_TRACE("ImbalanceDetectionEngine: enqueued metrics for {}:{} (queue size={})", metrics.exchangeId, metrics.symbol, detectorQueue_.size());
                 return false; // enqueued for async processing
             } else {
-                LOG_WARN("ImbalanceDetectionEngine: detector queue full ({}), falling back to synchronous run", detectorQueue_.size());
+                // Rate-limit the warn to avoid log spam
+                auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now().time_since_epoch()).count();
+                long long prev = lastQueueFullWarnMs_.load();
+                if (now_ms - prev > 2000) { // warn at most once every 2s
+                    LOG_WARN("ImbalanceDetectionEngine: detector queue full ({}), falling back to synchronous run", detectorQueue_.size());
+                    lastQueueFullWarnMs_.store(now_ms);
+                }
+
+                // Synchronous bounded fallback: run a set of detectors on the caller thread
+                // using runDetectorWithTimeout to avoid unbounded blocking. This preserves
+                // detection capability under overload while protecting caller latency.
+                std::vector<DetectorResult> results;
+                try {
+                    // Per-detector timeout (ms)
+                    std::chrono::milliseconds perDetectorTimeout(50);
+
+                    results.push_back(runDetectorWithTimeout("large_order_appearance", [&]{ return detectLargeOrderAppearance(metrics); }, perDetectorTimeout));
+                    results.push_back(runDetectorWithTimeout("large_order_disappearance", [&]{ return detectLargeOrderDisappearance(metrics); }, perDetectorTimeout));
+                    results.push_back(runDetectorWithTimeout("order_flow_imbalance", [&]{ return detectOrderFlowImbalance(metrics); }, perDetectorTimeout));
+                    results.push_back(runDetectorWithTimeout("price_level_concentration", [&]{ return detectPriceLevelConcentration(metrics); }, perDetectorTimeout));
+                    results.push_back(runDetectorWithTimeout("liquidity_imbalance", [&]{ return detectLiquidityImbalance(metrics); }, perDetectorTimeout));
+                    results.push_back(runDetectorWithTimeout("trend_continuation", [&]{ return detectTrendContinuation(metrics); }, perDetectorTimeout));
+                    results.push_back(runDetectorWithTimeout("trend_reversal", [&]{ return detectTrendReversal(metrics); }, perDetectorTimeout));
+                    results.push_back(runDetectorWithTimeout("trade_imbalance", [&]{ return detectTradeImbalance(metrics); }, perDetectorTimeout));
+                } catch (const std::exception &ex) {
+                    LOG_WARN("ImbalanceDetectionEngine: synchronous fallback detectors threw: {}", ex.what());
+                } catch (...) {
+                    LOG_WARN("ImbalanceDetectionEngine: synchronous fallback detectors threw unknown exception");
+                }
+
+                // Build features (same helper used by worker)
+                try {
+                    std::vector<double> features = buildFeatures(metrics, results);
+
+                    // Buffer training sample (thread-safe)
+                    PendingTraining pt;
+                    pt.timestamp = metrics.timestamp;
+                    pt.features = features;
+                    pt.midPrice = metrics.midPrice;
+                    try { pt.vwap = metrics.getMetric("vwap", 0.0); } catch(...) {}
+                    try { pt.sma = metrics.getMetric("sma", 0.0); } catch(...) {}
+                    auto ref = selectReference(metrics, pt.vwap, pt.sma);
+                    pt.referenceValue = ref.first;
+                    pt.referenceType = ref.second;
+                    pt.exchangeId = metrics.exchangeId;
+                    pt.symbol = metrics.symbol;
+
+                    {
+                        std::lock_guard<std::mutex> lk_pending(pendingTrainingMutex_);
+                        if (pendingTraining_.size() >= maxPendingTraining_) pendingTraining_.pop_front();
+                        pendingTraining_.push_back(pt);
+                    }
+                } catch (const std::exception &ex) {
+                    LOG_WARN("ImbalanceDetectionEngine: error in synchronous fallback feature build: {}", ex.what());
+                } catch (...) {
+                    LOG_WARN("ImbalanceDetectionEngine: unknown error in synchronous fallback feature build");
+                }
+                // Return after fallback processing (caller continues)
+                return false;
             }
         }
     }
 
     return false;
+}
+
+bool ImbalanceDetectionEngine::isUnderBackpressure() const {
+    std::lock_guard<std::mutex> lk(detectorQueueMutex_);
+    return detectorQueue_.size() >= detectorQueueMax_;
+}
+
+size_t ImbalanceDetectionEngine::getDetectorQueueSize() const {
+    std::lock_guard<std::mutex> lk(detectorQueueMutex_);
+    return detectorQueue_.size();
 }
 
  
