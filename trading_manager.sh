@@ -228,6 +228,8 @@ start_cpp() {
 
 # Function to start Python strategy
 start_python() {
+    return 0
+
     if is_running "$PYTHON_PID_FILE"; then
         print_status "$YELLOW" "Python strategy is already running (PID: $(cat $PYTHON_PID_FILE))"
         return 1
@@ -251,7 +253,6 @@ start_python() {
     # Start Python process with nohup and config parameter
     cd "$(dirname "$PYTHON_SCRIPT_PATH")" || exit 1
     # NO LONGer need python
-    return 0
     nohup python3 "$(basename "$PYTHON_SCRIPT_PATH")" --config "../$config_path" > "$PYTHON_LOG_FILE" 2>&1 &
     local python_pid=$!
     
