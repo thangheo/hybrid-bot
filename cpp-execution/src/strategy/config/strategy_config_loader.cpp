@@ -76,6 +76,14 @@ StrategyConfig loadStrategyConfigFromFile(const std::string& filePath) {
         // Parse general settings
         config.strategy_id = configJson.value("strategy_id", "default_strategy");
         config.version = configJson.value("version", "1.0.0");
+
+        // Parse optional runtime intervals (ms)
+        if (configJson.contains("marketDataUpdaterIntervalMs") && configJson["marketDataUpdaterIntervalMs"].is_number_integer()) {
+            config.marketDataUpdaterIntervalMs = configJson["marketDataUpdaterIntervalMs"].get<int>();
+        }
+        if (configJson.contains("exitMonitorIntervalMs") && configJson["exitMonitorIntervalMs"].is_number_integer()) {
+            config.exitMonitorIntervalMs = configJson["exitMonitorIntervalMs"].get<int>();
+        }
         
         // Parse trading pairs
         if (configJson.contains("tradingPairs") && configJson["tradingPairs"].is_array()) {
