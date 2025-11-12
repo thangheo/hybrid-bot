@@ -251,15 +251,16 @@ start_python() {
     # Start Python process with nohup and config parameter
     cd "$(dirname "$PYTHON_SCRIPT_PATH")" || exit 1
     # NO LONGer need python
-    # nohup python3 "$(basename "$PYTHON_SCRIPT_PATH")" --config "../$config_path" > "$PYTHON_LOG_FILE" 2>&1 &
-    # local python_pid=$!
+    return 0
+    nohup python3 "$(basename "$PYTHON_SCRIPT_PATH")" --config "../$config_path" > "$PYTHON_LOG_FILE" 2>&1 &
+    local python_pid=$!
     
-    # # Save PID (adjust path since we changed directory)
-    # cd - > /dev/null
-    # echo "$python_pid" > "$PYTHON_PID_FILE"
+    # Save PID (adjust path since we changed directory)
+    cd - > /dev/null
+    echo "$python_pid" > "$PYTHON_PID_FILE"
     
     # Wait a moment and check if it's still running
-    # sleep 80
+    sleep 80
     if is_running "$PYTHON_PID_FILE"; then
         print_status "$GREEN" "Python strategy started successfully (PID: $python_pid)"
         print_status "$GREEN" "Using config: $config_path"
