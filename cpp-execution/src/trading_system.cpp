@@ -606,6 +606,21 @@ void Trading_system::exitMonitorLoop() {
                                 execQueue_.push_back(std::move(exitSignal));
                                 execQueueCv_.notify_one();
                             }
+
+                            // Pragmatic immediate fix: mark the position as closed in the
+                            // AdaptiveExitStrategy so repeated exit triggers don't accumulate
+                            // holding time in logs. We conservatively pass final_pnl=0.0 here
+                            // because real PnL will be reconciled when fills arrive. Follow-up:
+                            // prefer markPendingExit + closePosition on confirmed fills.
+                            try {
+                                if (exitStrategy_) {
+                                    exitStrategy_->closePosition(symbol,
+                                                                 trading::strategy::AdaptiveExitStrategy::ExitReason::TIME_LIMIT,
+                                                                 0.0);
+                                }
+                            } catch (...) {
+                                LOG_WARN("Exit monitor: failed to call closePosition for {}", symbol);
+                            }
                         }
                         
                         // Mark position as pending exit (don't close yet - wait for execution)
