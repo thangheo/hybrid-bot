@@ -310,6 +310,26 @@ std::shared_ptr<trading::strategy::AdaptiveExitStrategy> getGlobalAdaptiveExitSt
     return g_optimalExitPtr;
 }
 
+std::shared_ptr<trading::strategy::AdaptiveExitStrategy> ensureGlobalAdaptiveExitStrategy(double prediction_window_seconds) {
+    // Double-checked locking to avoid races in startup ordering
+    auto cur = g_optimalExitPtr;
+    if (cur) return cur;
+    static std::mutex g_create_mtx;
+    std::lock_guard<std::mutex> lk(g_create_mtx);
+    if (g_optimalExitPtr) return g_optimalExitPtr;
+    try {
+        auto inst = std::make_shared<trading::strategy::AdaptiveExitStrategy>(prediction_window_seconds);
+        g_optimalExitPtr = inst;
+        LOG_INFO("ensureGlobalAdaptiveExitStrategy: created and registered AdaptiveExitStrategy {}", static_cast<const void*>(inst.get()));
+        return g_optimalExitPtr;
+    } catch (const std::exception &ex) {
+        LOG_WARN("ensureGlobalAdaptiveExitStrategy: failed to create AdaptiveExitStrategy: {}", ex.what());
+    } catch (...) {
+        LOG_WARN("ensureGlobalAdaptiveExitStrategy: unknown error creating AdaptiveExitStrategy");
+    }
+    return g_optimalExitPtr;
+}
+
 // Helper: build filesystem-friendly model filename for exchange+symbol
 static std::string buildSymbolModelPath(const std::string &baseDir, const core::ExchangeId &exch, const core::Symbol &sym) {
     if (baseDir.empty()) return std::string();
@@ -1014,52 +1034,74 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                                 //     LOG_INFO("ENTRY_BLOCKED_BY_RECENT_CLOSE: {} cooldown", symbol_str);
                                 // }
                                 else {
-                                    auto opt = trading::strategy::getGlobalAdaptiveExitStrategy();
-                                    if (!opt) {
-                                        LOG_WARN("ENTRY_CHECK: AdaptiveExitStrategy not registered yet, blocking entry for {}", symbol_str);
-                                    } else if (!opt->shouldEnterPosition(symbol_str, microstructure, signal.probability)) {
-                                        LOG_INFO("ENTRY_BLOCKED_BY_ENTRY_FILTER: {}", symbol_str);
-                                    } else {
-                                        
-                                        MarketMicrostructure microstructure;
-                                        microstructure.volatility_1m = m.realize_volatility_1m;
-                                        microstructure.spread_ema = m.emaSpread;
-                                        microstructure.spread_std = m.metrics.count("spread_std") ? m.metrics.at("spread_std") : 0.0;
-                                        microstructure.orderbook_imbalance = m.bidAskVolumeRatio;
-                                        // microstructure.trade_intensity = 
-                                        // microstructure.price_impact = m.estimatedPriceImpact;
-                                        microstructure.tick_size = getConfiguredTickSize(m.exchangeId, m.symbol); // per-symbol/exchange tick size
-                                        // microstructure.volume_profile_skew = m.volumeProfileSkew;
-                                        auto opt2 = trading::strategy::getGlobalAdaptiveExitStrategy();
-                                        if (opt2) {
-                                            opt2->startPosition(symbol_str, m.midPrice, dir, signal.probability, microstructure);
+                                        // Decide whether to allow entry. If the global AdaptiveExitStrategy
+                                        // isn't registered yet we should NOT permanently block entries -
+                                        // instead allow them and emit the entry signal so downstream
+                                        // components (Execution/Risk/PositionTracker) can create an
+                                        // authoritative position record. Once the global pointer is
+                                        // registered later, it will be used for tracking.
+                                        auto opt = trading::strategy::getGlobalAdaptiveExitStrategy();
+                                        bool allowEntry = true;
+                                        if (opt) {
+                                            if (!opt->shouldEnterPosition(symbol_str, microstructure, signal.probability)) {
+                                                LOG_INFO("ENTRY_BLOCKED_BY_ENTRY_FILTER: {}", symbol_str);
+                                                allowEntry = false;
+                                            }
                                         } else {
-                                            LOG_WARN("START_POSITION: AdaptiveExitStrategy not registered, cannot track position for {}", symbol_str);
+                                            // Warn only periodically to avoid log spam
+                                            static std::atomic<int> warnCounter{0};
+                                            if ((warnCounter.fetch_add(1, std::memory_order_relaxed) % 500) == 0) {
+                                                LOG_WARN("ENTRY_CHECK: AdaptiveExitStrategy not registered yet, allowing entries until registered");
+                                            }
+                                            // allowEntry stays true so signals flow through
                                         }
 
-                                        LOG_INFO("STARTED TRACKING POSITION: {} dir={} entry={:.6f} conf={:.3f} spread_ema={:.3f}% spread_cur={:.3f}%",
-                                                symbol_str,
-                                                (dir == core::Direction::BUY ? "BUY" : "SELL"),
-                                                m.midPrice,
-                                                signal.probability,
-                                                ema_spread_percent,
-                                                current_spread_percent);
+                                        if (allowEntry) {
+                                            // Use a single microstructure snapshot for both tracking and event metadata
+                                            MarketMicrostructure micro;
+                                            micro.volatility_1m = m.realize_volatility_1m;
+                                            micro.spread_ema = m.emaSpread;
+                                            micro.spread_std = m.metrics.count("spread_std") ? m.metrics.at("spread_std") : 0.0;
+                                            micro.orderbook_imbalance = m.bidAskVolumeRatio;
+                                            micro.tick_size = getConfiguredTickSize(m.exchangeId, m.symbol);
 
-                                        // Create entry event
-                                        OrderBookMetrics mcopy = m;
-                                        mcopy.metrics["bayes_probability"] = signal.probability;
-                                        mcopy.metrics["bayes_expected_value"] = signal.expected_value;
-                                        mcopy.metrics["bayes_position_size"] = signal.position_size;
-                                        mcopy.metrics["bayes_uncertainty"] = signal.uncertainty;
-                                        mcopy.metrics["entry_signal"] = 1.0;
+                                            // If exit strategy becomes available, register the start there too
+                                            auto opt2 = trading::strategy::getGlobalAdaptiveExitStrategy();
+                                            if (opt2) {
+                                                try {
+                                                    opt2->startPosition(symbol_str, m.midPrice, dir, signal.probability, micro);
+                                                    LOG_INFO("STARTED TRACKING POSITION: {} dir={} entry={:.6f} conf={:.3f} spread_ema={:.3f}% spread_cur={:.3f}%",
+                                                            symbol_str,
+                                                            (dir == core::Direction::BUY ? "BUY" : "SELL"),
+                                                            m.midPrice,
+                                                            signal.probability,
+                                                            ema_spread_percent,
+                                                            current_spread_percent);
+                                                } catch (const std::exception &e) {
+                                                    LOG_WARN("startPosition threw: {}", e.what());
+                                                } catch (...) {
+                                                    LOG_WARN("startPosition threw unknown");
+                                                }
+                                            } else {
+                                                LOG_TRACE("START_POSITION: AdaptiveExitStrategy not registered, proceeding without in-memory tracking for {}", symbol_str);
+                                            }
 
-                                        createImbalanceEventForBayesModel(ImbalanceType::CUSTOM, signal.position_size,
-                                                                        dir, mcopy, signal.probability, signal.uncertainty);
+                                            // Emit an entry event and bayes metadata so downstream systems
+                                            // (Execution/Risk) and the position tracker can record the position
+                                            OrderBookMetrics mcopy = m;
+                                            mcopy.metrics["bayes_probability"] = signal.probability;
+                                            mcopy.metrics["bayes_expected_value"] = signal.expected_value;
+                                            mcopy.metrics["bayes_position_size"] = signal.position_size;
+                                            mcopy.metrics["bayes_uncertainty"] = signal.uncertainty;
+                                            mcopy.metrics["entry_signal"] = 1.0;
 
-                                        LOG_INFO("ENTRY SIGNAL: {} {} @ {:.6f} (conf={:.3f})", 
-                                                symbol_str, (dir == core::Direction::BUY ? "BUY" : "SELL"), 
-                                                m.midPrice, signal.probability);
-                                    }
+                                            createImbalanceEventForBayesModel(ImbalanceType::CUSTOM, signal.position_size,
+                                                                            dir, mcopy, signal.probability, signal.uncertainty);
+
+                                            LOG_INFO("ENTRY SIGNAL: {} {} @ {:.6f} (conf={:.3f})",
+                                                    symbol_str, (dir == core::Direction::BUY ? "BUY" : "SELL"),
+                                                    m.midPrice, signal.probability);
+                                        }
                                 }
 
                             }
