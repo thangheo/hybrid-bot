@@ -508,7 +508,9 @@ bool AdaptiveExitStrategy::shouldEnterPosition(
     // Entry filters
     
     // 1. Minimum expected edge
-    if (params.expected_edge < micro.spread_ema * 1.5) {
+    if (params.expected_edge < micro.spread_ema * 1.2) {
+        LOG_INFO("Rejecting entry for {}: Expected edge too small ({:.4f} < {:.4f})",
+                  symbol, params.expected_edge, micro.spread_ema * 1.2);
         return false;  // Edge too small vs spread cost
     }
     //debug with reject reason
