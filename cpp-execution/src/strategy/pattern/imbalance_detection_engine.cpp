@@ -29,7 +29,7 @@
 #include <filesystem>
 #include <common/logger.hpp>
 #include "perception/bayesian_trading_adapter.hpp"
-#include "core_analysis/regime_subscriber.hpp"
+// #include "core_analysis/regime_subscriber.hpp"
 
  using namespace trading::core;
  using namespace std::chrono_literals;
@@ -958,7 +958,7 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                                 // Calculate spreads (use PERCENT not ratio!)
                                 double current_spread_percent = (m.spread / m.midPrice) * 100.0;
                                 double ema_spread_percent = (m.emaSpread / m.midPrice) * 100.0;
-                                AdaptiveExitStrategy::MarketMicrostructure microstructure;
+                                MarketMicrostructure microstructure;
                                 microstructure.volatility_1m = m.realize_volatility_1m;
                                 microstructure.spread_ema = m.emaSpread;
                                 microstructure.spread_std = m.metrics.count("spread_std") ? m.metrics.at("spread_std") : 0.0;
@@ -982,7 +982,7 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                                         LOG_INFO("ENTRY_BLOCKED_BY_ENTRY_FILTER: {}", symbol_str);
                                     } else {
                                         
-                                        AdaptiveExitStrategy::MarketMicrostructure microstructure;
+                                        MarketMicrostructure microstructure;
                                         microstructure.volatility_1m = m.realize_volatility_1m;
                                         microstructure.spread_ema = m.emaSpread;
                                         microstructure.spread_std = m.metrics.count("spread_std") ? m.metrics.at("spread_std") : 0.0;

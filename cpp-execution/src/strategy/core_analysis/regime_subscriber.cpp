@@ -266,11 +266,10 @@ RegimeSubscriber::~RegimeSubscriber() {
 }
 
 void RegimeSubscriber::start() {
+    // Intentionally disabled: avoid subscribing to external (Python) regime publisher
+    // The system now prefers in-process orderbook-based regime detection.
     if (!impl_) return;
-    bool expected = false;
-    if (impl_->running.compare_exchange_strong(expected, true)) {
-        impl_->thread = std::thread([this]() { impl_->run(); });
-    }
+    std::cout << "RegimeSubscriber::start() suppressed (disabled)." << std::endl;
 }
 
 void RegimeSubscriber::stop() {

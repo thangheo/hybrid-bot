@@ -1,4 +1,5 @@
 #include "strategy/exit/adaptive_exit_strategy.hpp" 
+#include "strategy/core_analysis/orderbook_regime_detector.hpp"
 #include <numeric>
 #include <algorithm>
 #include <cmath>
@@ -49,49 +50,18 @@ void AdaptiveExitStrategy::updateMarketData(
 
 }
 
-AdaptiveExitStrategy::MarketRegime AdaptiveExitStrategy::detectMarketRegime(
+MarketRegimeType AdaptiveExitStrategy::detectMarketRegime(
     const MarketMicrostructure& micro,
     const MarketHistory& history) const {
-    
-    if (history.volatility_samples.size() < 10) {
-        return MarketRegime::NORMAL;
-    }
-    
-    // Calculate regime indicators
-    double vol_percentile_75 = calculatePercentile(history.volatility_samples, 0.75);
-    double vol_percentile_25 = calculatePercentile(history.volatility_samples, 0.25);
-    double spread_percentile_90 = calculatePercentile(history.spread_samples, 0.90);
-    
-    double returns_autocorr = calculateAutoCorrelation(history.price_returns, 1);
-    double vol_ratio = micro.volatility_1m / vol_percentile_75;
-    double spread_ratio = micro.spread_ema / spread_percentile_90;
-    
-    // Regime detection logic
-    if (micro.spread_ema > spread_percentile_90 * 2.0) {
-        return MarketRegime::LOW_LIQUIDITY;
-    }
-    
-    if (micro.volatility_1m > vol_percentile_75 * 1.5) {
-        return MarketRegime::HIGH_VOLATILITY;
-    }
-    
-    // Trending: positive autocorrelation and directional orderbook imbalance
-    if (returns_autocorr > 0.3 && std::abs(micro.orderbook_imbalance) > 0.3) {
-        return MarketRegime::TRENDING;
-    }
-    
-    // Mean reverting: negative autocorrelation
-    if (returns_autocorr < -0.2) {
-        return MarketRegime::MEAN_REVERTING;
-    }
-    
-    return MarketRegime::NORMAL;
+    // Delegate regime detection to OrderbookRegimeDetector
+    trading::strategy::core_analysis::OrderbookRegimeDetector det;
+    return det.detect(micro, history.volatility_samples, history.spread_samples, history.price_returns);
 }
 
 AdaptiveExitStrategy::DynamicParameters AdaptiveExitStrategy::calculateDynamicParameters(
     const std::string& symbol,
     const MarketMicrostructure& current_micro,
-    const MarketRegime& regime) const {
+    const MarketRegimeType& regime) const {
     
     DynamicParameters params;
     
@@ -123,19 +93,19 @@ AdaptiveExitStrategy::DynamicParameters AdaptiveExitStrategy::calculateDynamicPa
     
     // Điều chỉnh theo regime
     switch (regime) {
-        case MarketRegime::TRENDING:
+        case MarketRegimeType::TRENDING:
             alpha = 2.5;  // Expect larger moves
             beta = 2.0;   // Can tolerate tighter spread cost
             break;
-        case MarketRegime::MEAN_REVERTING:
+        case MarketRegimeType::MEAN_REVERTING:
             alpha = 1.5;  // Smaller moves expected
             beta = 3.0;   // Need more buffer for spread
             break;
-        case MarketRegime::HIGH_VOLATILITY:
+        case MarketRegimeType::HIGH_VOLATILITY:
             alpha = 3.0;  // Large moves but risky
             beta = 2.5;
             break;
-        case MarketRegime::LOW_LIQUIDITY:
+        case MarketRegimeType::LOW_LIQUIDITY:
             alpha = 1.8;
             beta = 4.0;  // Wide spreads need compensation
             break;
@@ -154,18 +124,18 @@ AdaptiveExitStrategy::DynamicParameters AdaptiveExitStrategy::calculateDynamicPa
     params.stop_loss_ticks = -z_score_95 * vol_in_ticks * time_factor - spread_in_ticks;
     
     // Regime adjustments for stop loss
-    if (regime == MarketRegime::HIGH_VOLATILITY) {
+    if (regime == MarketRegimeType::HIGH_VOLATILITY) {
         params.stop_loss_ticks *= 1.5;  // Wider stop in volatile markets
-    } else if (regime == MarketRegime::LOW_LIQUIDITY) {
+    } else if (regime == MarketRegimeType::LOW_LIQUIDITY) {
         params.stop_loss_ticks *= 1.3;  // Account for slippage
     }
     
     // 4. Trailing Stop (percentage of favorable move)
     // Formula: TS = γ * PT, với γ ∈ [0.3, 0.6]
     double gamma = 0.4;  // Base trailing factor
-    if (regime == MarketRegime::TRENDING) {
+    if (regime == MarketRegimeType::TRENDING) {
         gamma = 0.5;  // Let winners run more
-    } else if (regime == MarketRegime::MEAN_REVERTING) {
+    } else if (regime == MarketRegimeType::MEAN_REVERTING) {
         gamma = 0.3;  // Tighter trailing
     }
     params.trailing_stop_ticks = gamma * params.profit_target_ticks;
@@ -174,9 +144,9 @@ AdaptiveExitStrategy::DynamicParameters AdaptiveExitStrategy::calculateDynamicPa
     // Formula: T_max = prediction_window * decay_factor
     double decay_factor = 1.0;
     
-    if (regime == MarketRegime::TRENDING) {
+    if (regime == MarketRegimeType::TRENDING) {
         decay_factor = 1.5;  // Hold longer in trends
-    } else if (regime == MarketRegime::MEAN_REVERTING) {
+    } else if (regime == MarketRegimeType::MEAN_REVERTING) {
         decay_factor = 0.5;  // Quick exits in mean reversion
     }
     
@@ -281,7 +251,7 @@ void AdaptiveExitStrategy::startPosition(
     if (it != marketHistory_.end()) {
         state.entry_regime = detectMarketRegime(microstructure, it->second);
     } else {
-        state.entry_regime = MarketRegime::NORMAL;
+        state.entry_regime = MarketRegimeType::NORMAL;
     }
     
     // Reset tracking
@@ -530,14 +500,14 @@ bool AdaptiveExitStrategy::shouldEnterPosition(
     
     // 3. Regime-specific filters
     switch (regime) {
-        case MarketRegime::LOW_LIQUIDITY:
+        case MarketRegimeType::LOW_LIQUIDITY:
             if (micro.spread_ema > micro.tick_size * 10) {
                 LOG_INFO("Rejecting entry for {}: Low liquidity (spread_ema={} > tick_size*10)",
                           symbol, micro.spread_ema);
                 return false;  // Spread too wide
             }
             break;
-        case MarketRegime::HIGH_VOLATILITY:
+        case MarketRegimeType::HIGH_VOLATILITY:
             if (confidence < 0.9) {
                 LOG_INFO("Rejecting entry for {}: Low confidence in high volatility ({} < 0.95)",
                           symbol, confidence);

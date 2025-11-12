@@ -2,6 +2,7 @@
 
 #include "core/types.hpp"
 #include "core/direction.hpp"
+#include <strategy/core_analysis/orderbook_regime_detector.hpp>
 #include <chrono>
 #include <string>
 #include <map>
@@ -24,13 +25,7 @@ namespace strategy {
  */
 class AdaptiveExitStrategy {
 public:
-    enum class MarketRegime {
-        TRENDING,          // Clear directional move
-        MEAN_REVERTING,    // Range-bound, oscillating
-        HIGH_VOLATILITY,   // Volatile, unpredictable
-        LOW_LIQUIDITY,     // Wide spreads, thin orderbook
-        NORMAL            // Balanced conditions
-    };
+    
 
     enum class ExitReason {
         PROFIT_TARGET,
@@ -52,16 +47,16 @@ public:
         double confidence = 0.0;  // Exit confidence score
     };
     
-    struct MarketMicrostructure {
-        double volatility_1m = 0.0;      // 1-minute realized volatility
-        double spread_ema = 0.0;          // EMA of bid-ask spread
-        double spread_std = 0.0;          // Spread standard deviation
-        double orderbook_imbalance = 0.0; // Bid/ask volume imbalance
-        double trade_intensity = 0.0;     // Trades per second
-        double price_impact = 0.0;        // Estimated price impact
-        double tick_size = 0.0;           // Minimum price increment
-        double volume_profile_skew = 0.0; // Volume distribution asymmetry
-    };
+    // struct MarketMicrostructure {
+    //     double volatility_1m = 0.0;      // 1-minute realized volatility
+    //     double spread_ema = 0.0;          // EMA of bid-ask spread
+    //     double spread_std = 0.0;          // Spread standard deviation
+    //     double orderbook_imbalance = 0.0; // Bid/ask volume imbalance
+    //     double trade_intensity = 0.0;     // Trades per second
+    //     double price_impact = 0.0;        // Estimated price impact
+    //     double tick_size = 0.0;           // Minimum price increment
+    //     double volume_profile_skew = 0.0; // Volume distribution asymmetry
+    // };
     
     struct DynamicParameters {
         // Core parameters (dynamically calculated)
@@ -90,7 +85,7 @@ public:
         
         // Entry conditions snapshot
         MarketMicrostructure entry_microstructure;
-        MarketRegime entry_regime;
+        MarketRegimeType entry_regime;
         core::Direction entry_direction;
         double entry_confidence = 0.0;
         
@@ -138,14 +133,14 @@ private:
     double calculateAutoCorrelation(const std::deque<double>& data, int lag) const;
     
     // Market regime detection
-    MarketRegime detectMarketRegime(const MarketMicrostructure& micro, 
+    MarketRegimeType detectMarketRegime(const MarketMicrostructure& micro, 
                                    const MarketHistory& history) const;
     
     // Dynamic parameter calculation
     DynamicParameters calculateDynamicParameters(
         const std::string& symbol,
         const MarketMicrostructure& current_micro,
-        const MarketRegime& regime) const;
+        const MarketRegimeType& regime) const;
     
     // Adverse selection detection
     double calculateAdverseSelectionScore(
