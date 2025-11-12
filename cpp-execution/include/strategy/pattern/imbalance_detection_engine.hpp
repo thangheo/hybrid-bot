@@ -142,8 +142,9 @@ public:
     virtual void updateParameters(const ParameterSet& params);
 
 private:
-    //number of regimes
-    static constexpr int NUMBER_OF_REGIMES = sizeof(MarketRegimeType) - 1; // Exclude UNKNOWN
+    // Number of concrete regimes (exclude UNKNOWN sentinel). Using sizeof(MarketRegimeType)
+    // was incorrect (returns byte size) — compute from the enum sentinel value instead.
+    static constexpr int NUMBER_OF_REGIMES = static_cast<int>(MarketRegimeType::UNKNOWN);
     double calculateOrderCountDropRatio(const OrderBookMetrics& metrics);
     double calculateMarketImpactDecayRatio(const OrderBookMetrics& metrics) ;
     double calculateVolatilityDeclineRatio(const OrderBookMetrics& metrics) ;
