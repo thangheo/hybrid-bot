@@ -752,7 +752,11 @@ bool Trading_system::initialize() {
     // early so other components (ImbalanceDetectionEngine, monitor threads)
     // can reference it without startup-order races.
     try {
-        auto globalExit = trading::strategy::ensureGlobalAdaptiveExitStrategy(60.0);
+    // Read prediction horizon from loaded strategy config (ms -> seconds). Fall back to 1500ms if not set.
+    int predMs = strategyConfig_.momentumCorrelationConfig.predictionHorizonMs;
+    if (predMs <= 0) predMs = 1500;
+    double predSeconds = static_cast<double>(predMs) / 1000.0;
+    auto globalExit = trading::strategy::ensureGlobalAdaptiveExitStrategy(predSeconds);
         if (globalExit) {
             exitStrategy_ = globalExit;
             LOG_INFO("Initialized AdaptiveExitStrategy singleton (via ensureGlobal): {}", static_cast<const void*>(exitStrategy_.get()));

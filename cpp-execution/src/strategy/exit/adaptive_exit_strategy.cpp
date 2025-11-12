@@ -188,11 +188,11 @@ AdaptiveExitStrategy::DynamicParameters AdaptiveExitStrategy::calculateDynamicPa
     
     params.max_holding_time = predictionWindow_ * decay_factor;
     // Base min holding time on tick-to-spread ratio but ensure we don't divide by zero
-    double ratio_based_min = 10.0;
+    double floor_from_window = std::max(0.25, predictionWindow_ * 0.25); // tối thiểu 0.25s
+    double ratio_based_min = floor_from_window;
     if (vol_in_ticks > 1e-12) {
-        ratio_based_min = std::max(10.0, spread_in_ticks / vol_in_ticks * 2.0); // Based on tick-to-spread ratio
+        ratio_based_min = std::max(floor_from_window, spread_in_ticks / vol_in_ticks * 2.0);
     }
-    // Enforce floor: at least half the prediction window
     double prediction_half = predictionWindow_ / 2.0;
     params.min_holding_time = std::max(ratio_based_min, prediction_half);
     
@@ -543,16 +543,7 @@ bool AdaptiveExitStrategy::shouldEnterPosition(
                   symbol, params.kelly_fraction);
         return false;  // Position size would be too small
     }
-    
-    // 3. Regime-specific filters
-    //     STRESS,
-    // HIGH_VOLATILITY,
-    // LOW_LIQUIDITY,
-    // TRENDING,
-    // MEAN_REVERTING,
-    // QUIET,
-    // NORMAL,
-    // UNKNOWN
+     
     switch (regime) {
         case MarketRegimeType::STRESS:
             // In stress regime we force exit / disable new entries
