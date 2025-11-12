@@ -250,15 +250,13 @@ start_python() {
     source "$ENV_FILE"
     # Start Python process with nohup and config parameter
     cd "$(dirname "$PYTHON_SCRIPT_PATH")" || exit 1
-    nohup python3 "$(basename "$PYTHON_SCRIPT_PATH")" --config "../$config_path" > "$PYTHON_LOG_FILE" 2>&1 &
-    # nohup python3 "$(basename "$PYTHON_SCRIPT_PATH")" --start-trainer --n-states 4 --trainer-interval-days 30 --data-source binance > "$PYTHON_LOG_FILE" 2>&1 &
-    # should run publisher only
-    # nohup python3 "$(basename "$PYTHON_SCRIPT_PATH")" --config "../$config
-    local python_pid=$!
+    # NO LONGer need python
+    # nohup python3 "$(basename "$PYTHON_SCRIPT_PATH")" --config "../$config_path" > "$PYTHON_LOG_FILE" 2>&1 &
+    # local python_pid=$!
     
-    # Save PID (adjust path since we changed directory)
-    cd - > /dev/null
-    echo "$python_pid" > "$PYTHON_PID_FILE"
+    # # Save PID (adjust path since we changed directory)
+    # cd - > /dev/null
+    # echo "$python_pid" > "$PYTHON_PID_FILE"
     
     # Wait a moment and check if it's still running
     sleep 80
