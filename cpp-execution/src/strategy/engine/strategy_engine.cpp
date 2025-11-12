@@ -388,18 +388,28 @@ bool StrategyEngine::getRegimeInfo(const std::string& symbol, trading::strategy:
         // Update the volume profile analyzer for this trading pair (create on demand)
          std::string vpId = orderBook.getExchangeId().toString() + ":" + orderBook.getSymbol().toString();
 
+         // Protect access to volumeProfileAnalyzers_ since it may be accessed
+         // concurrently from other threads (e.g. maintenance thread). Use a
+         // short lock scope to minimize contention.
+         std::unique_lock<std::recursive_mutex> vpLock(mutex_, std::defer_lock);
+         vpLock.lock();
          auto vpIt = volumeProfileAnalyzers_.find(vpId);
-             if (vpIt == volumeProfileAnalyzers_.end()) {
+         vpLock.unlock();
+
+         if (vpIt == volumeProfileAnalyzers_.end()) {
              // Create analyzer on demand using params from config
              try {
                  auto analyzer = createVolumeProfileAnalyzer(orderBook.getExchangeId(), orderBook.getSymbol(), config_.volumeProfileConfig.params);
                  // protect insertion which may allocate
                  try {
+                     std::lock_guard<std::recursive_mutex> guard(mutex_);
                      volumeProfileAnalyzers_[vpId] = analyzer;
                  } catch (const std::bad_alloc& e) {
                      LOG_ERROR("std::bad_alloc inserting VolumeProfileAnalyzer into map for {}: {}", vpId, e.what());
                      return false;
                  }
+                 // Refresh iterator under lock
+                 std::lock_guard<std::recursive_mutex> guard2(mutex_);
                  vpIt = volumeProfileAnalyzers_.find(vpId);
              } catch (const std::bad_alloc& e) {
                  LOG_ERROR("std::bad_alloc creating VolumeProfileAnalyzer for {}: {}", vpId, e.what());
@@ -437,7 +447,10 @@ bool StrategyEngine::getRegimeInfo(const std::string& symbol, trading::strategy:
              
              // Store volume profile metrics for later use in signal enhancement
              std::string symbol = orderBook.getSymbol().toString();
-             volumeProfileMetrics_[symbol] = {
+            {
+                // Protect concurrent access to volumeProfileMetrics_
+                std::lock_guard<std::recursive_mutex> guard(mutex_);
+                volumeProfileMetrics_[symbol] = {
                  {"poc", poc},
                  {"value_area_high", valueArea.first},
                  {"value_area_low", valueArea.second},
@@ -445,7 +458,8 @@ bool StrategyEngine::getRegimeInfo(const std::string& symbol, trading::strategy:
                  {"vwap", profile.vwap},
                  {"has_anomalies", anomalies.hasAnomalies() ? 1.0 : 0.0},
                  {"density_ratio", densityRatio}
-             };
+                };
+            }
             //  update every 30 counts
             static size_t updateCount = 0;
             if (++updateCount % 30 == 0) {
