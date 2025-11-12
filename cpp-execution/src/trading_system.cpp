@@ -553,7 +553,9 @@ void Trading_system::exitMonitorLoop() {
                             if (exitStrategy_) {
                                 // Prefer markPendingExit if implemented by the strategy
                                 try {
-                                    exitStrategy_->markPendingExit(symbol);
+                                    // exitStrategy_->markPendingExit(symbol); stupid code
+                                    //calll the fucking closePosition
+                                    exitStrategy_->closePosition(symbol, exitDecision.reason, exitDecision.expected_pnl);
                                     LOG_INFO("Exit monitor: marked pending exit for {}", symbol);
                                 } catch (...) {
                                     // If markPendingExit isn't available/throws, log and continue without closing the position
