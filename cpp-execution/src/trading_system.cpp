@@ -529,11 +529,16 @@ void Trading_system::exitMonitorLoop() {
 
                     if (exitDecision.should_exit and exitDecision.confidence >= 0.8
                         && posInfo.has_value()) {
-                        LOG_INFO("EXIT TRIGGERED: {} - {} ({:.2f}bps)",
+                            // Log exit trigger with holding time
+                        auto now = std::chrono::steady_clock::now();
+                        auto holdingDuration = std::chrono::duration_cast<std::chrono::seconds>(
+                            now - posInfo->entry_time).count();
+                        LOG_INFO("EXIT TRIGGERED: {} - {} ({:.2f}bps) after {}s holding",
                                 symbol,
                                 AdaptiveExitStrategy::exitReasonToString(exitDecision.reason),
-                                exitDecision.expected_pnl);
-                        
+                                exitDecision.expected_pnl,
+                                holdingDuration);
+
                         // Create exit signal
                         execution::TradingSignal exitSignal;
                         exitSignal.id = "EXIT_" + symbol + "_" + std::to_string(std::chrono::system_clock::now().time_since_epoch().count());
