@@ -181,7 +181,14 @@ AdaptiveExitStrategy::DynamicParameters AdaptiveExitStrategy::calculateDynamicPa
     }
     
     params.max_holding_time = predictionWindow_ * decay_factor;
-    params.min_holding_time = std::max(10.0, spread_in_ticks / vol_in_ticks * 2.0); // Based on tick-to-spread ratio
+    // Base min holding time on tick-to-spread ratio but ensure we don't divide by zero
+    double ratio_based_min = 10.0;
+    if (vol_in_ticks > 1e-12) {
+        ratio_based_min = std::max(10.0, spread_in_ticks / vol_in_ticks * 2.0); // Based on tick-to-spread ratio
+    }
+    // Enforce floor: at least half the prediction window
+    double prediction_half = predictionWindow_ / 2.0;
+    params.min_holding_time = std::max(ratio_based_min, prediction_half);
     
     // 6. Signal Reversal Threshold (based on prediction confidence decay)
     // Higher threshold when volatility is high
