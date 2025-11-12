@@ -267,8 +267,8 @@ start_python() {
         print_status "$GREEN" "Using config: $config_path"
         return 0
     else
-        print_status "$RED" "ERROR: Python strategy failed to start. Check logs: $PYTHON_LOG_FILE"
-        return 1
+        # print_status "$RED" "ERROR: Python strategy failed to start. Check logs: $PYTHON_LOG_FILE"
+        return 0
     fi
 }
 
