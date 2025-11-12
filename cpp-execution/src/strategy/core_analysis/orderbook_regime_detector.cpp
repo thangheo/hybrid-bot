@@ -128,17 +128,17 @@ double OrderbookRegimeDetector::calculateMean(const std::deque<double>& data) {
     double sum = std::accumulate(data.begin(), data.end(), 0.0);
     return sum / data.size();
 }
-// static double calculateMedian(const std::deque<double>& data);
-double OrderbookRegimeDetector::calculateMedian(const std::deque<double>& data) {
-    if (data.empty()) return 0.0;
-    std::vector<double> sorted(data.begin(), data.end());
-    std::sort(sorted.begin(), sorted.end());
-    size_t mid = sorted.size() / 2;
-    return sorted.size() % 2 == 0 ? (sorted[mid - 1] + sorted[mid]) / 2.0 : sorted[mid];
-}
+// // static double calculateMedian(const std::deque<double>& data);
+// double OrderbookRegimeDetector::calculateMedian(const std::deque<double>& data) {
+//     if (data.empty()) return 0.0;
+//     std::vector<double> sorted(data.begin(), data.end());
+//     std::sort(sorted.begin(), sorted.end());
+//     size_t mid = sorted.size() / 2;
+//     return sorted.size() % 2 == 0 ? (sorted[mid - 1] + sorted[mid]) / 2.0 : sorted[mid];
+// }
 
 // // function to get current regime as string
-std::string OrderbookRegimeDetector::regimeToString(MarketRegimeType regime) {
+std::string regimeToString(MarketRegimeType regime) {
     switch (regime) {
         case MarketRegimeType::TRENDING: return "TRENDING";
         case MarketRegimeType::MEAN_REVERTING: return "MEAN_REVERTING";

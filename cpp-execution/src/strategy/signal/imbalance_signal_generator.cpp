@@ -40,7 +40,7 @@ namespace trading {
 namespace strategy {
 // Static lookup tables for regime-aware scaling
 const std::array<std::array<double, 7>, 19> ImbalanceSignalGenerator::REGIME_TYPE_SCALING_MATRIX = {{
-    // NORMAL, VOLATILE, TRENDING, RANGE_BOUND, STRESS, QUIET, UNKNOWN
+    // NORMAL, VOLATILE, TRENDING, MEAN_REVERTING, STRESS, QUIET, UNKNOWN
     {{1.0, 0.8, 1.1, 0.9, 0.7, 1.1, 0.9}}, // VOLUME_IMBALANCE
     {{0.8, 0.7, 0.9, 0.8, 0.6, 0.9, 0.8}}, // PRICE_LEVEL_IMBALANCE
     {{1.2, 1.4, 1.3, 1.0, 1.5, 0.8, 1.1}}, // LIQUIDITY_REMOVAL
@@ -66,7 +66,7 @@ const std::array<double, 7> ImbalanceSignalGenerator::REGIME_BASE_ADJUSTMENTS = 
     1.0,  // NORMAL
     0.8,  // VOLATILE (reduce base strength in volatile conditions)
     1.1,  // TRENDING (boost trending signals)
-    0.9,  // RANGE_BOUND (slight reduction in range-bound markets)
+    0.9,  // MEAN_REVERTING (slight reduction in range-bound markets)
     0.7,  // STRESS (significant reduction during market stress)
     1.0,  // QUIET (normal base strength, but different type scaling)
     0.95  // UNKNOWN (slight conservative adjustment)
@@ -387,21 +387,21 @@ TradingSignal ImbalanceSignalGenerator::createSignalFromImbalance(
     
     // Add market regime context
     // Use provided regime detector if available, otherwise fall back to member method
-    MarketRegime currentRegime = MarketRegime::UNKNOWN;
+    // MarketRegimeType currentRegime = MarketRegimeType::UNKNOWN;
     // If a regime detector copy was provided, try to use it via the public
     // interface if possible. To avoid depending on the concrete type here
     // (forward declaration only in the header), fall back to the existing
     // heuristic method which does not require the detector.
-    if (regimeDetectorCopy) {
-        // Best-effort: if the detector exposes getCurrentRegime, it will
-        // be called by the owner when passing a concrete implementation.
-        // Here we conservatively still fall back to the heuristic.
-        currentRegime = getCurrentMarketRegime(imbalance);
-    } else {
-        currentRegime = getCurrentMarketRegime(imbalance);
-    }
-    signal.setMetric("marketRegime", static_cast<double>(currentRegime));
-    signal.setMetric("regimeName", marketRegimeToString(currentRegime));
+    // if (regimeDetectorCopy) {
+    //     // Best-effort: if the detector exposes getCurrentRegime, it will
+    //     // be called by the owner when passing a concrete implementation.
+    //     // Here we conservatively still fall back to the heuristic.
+    //     currentRegime = getCurrentMarketRegime(imbalance);
+    // } else {
+    //     currentRegime = getCurrentMarketRegime(imbalance);
+    // }
+    // signal.setMetric("marketRegime", static_cast<double>(currentRegime));
+    // signal.setMetric("regimeName", marketRegimeToString(currentRegime));
 
     auto dur_us = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - t0).count();
     // auto dur_us1 = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - t1).count();
@@ -454,7 +454,7 @@ bool ImbalanceSignalGenerator::passesSignalFilters(const ImbalanceEvent& imbalan
     
     // Regime-specific additional filtering
     auto regime = getCurrentMarketRegime(imbalance);
-    if (regime == MarketRegime::STRESS) {
+    if (regime == MarketRegimeType::STRESS) {
         // More stringent filtering during market stress
         if (imbalance.strength < config_.minSignalStrength * 1.5) {
             return false;
@@ -563,7 +563,7 @@ SignalQualityMetrics ImbalanceSignalGenerator::calculateSignalQuality(
     }
     
     // Apply quality caps based on regime
-    if (regime == MarketRegime::RANGE_BOUND || regime == MarketRegime::VOLATILE) {
+    if (regime == MarketRegimeType::MEAN_REVERTING || regime == MarketRegimeType::HIGH_VOLATILITY) {
         metrics.finalQuality *= 0.8; // Reduce quality during difficult conditions
     }
     
@@ -602,22 +602,22 @@ double ImbalanceSignalGenerator::calculateTargetSize(
     double regimeScaling = 1.0;
     
     switch (regime) {
-        case MarketRegime::NORMAL:
+        case MarketRegimeType::NORMAL:
             regimeScaling = 1.0;
             break;
-        case MarketRegime::VOLATILE:
+        case MarketRegimeType::HIGH_VOLATILITY:
             regimeScaling = 0.7; // Reduce size in volatile conditions
             break;
-        case MarketRegime::TRENDING:
+        case MarketRegimeType::TRENDING:
             regimeScaling = 1.2; // Increase size in trending markets
             break;
-        case MarketRegime::RANGE_BOUND:
+        case MarketRegimeType::MEAN_REVERTING:
             regimeScaling = 0.8; // Slight reduction in range-bound markets
             break;
-        case MarketRegime::STRESS:
+        case MarketRegimeType::STRESS:
             regimeScaling = 0.5; // Significant reduction during stress
             break;
-        case MarketRegime::QUIET:
+        case MarketRegimeType::QUIET:
             regimeScaling = 1.0;
             break;
         default:
@@ -635,16 +635,16 @@ double ImbalanceSignalGenerator::calculateTargetSize(
             typeScaling = 0.8;
             break;
         case ImbalanceType::LIQUIDITY_REMOVAL:
-            typeScaling = (regime == MarketRegime::STRESS) ? 0.8 : 1.3; // Reduce during stress
+            typeScaling = (regime == MarketRegimeType::STRESS) ? 0.8 : 1.3; // Reduce during stress
             break;
         case ImbalanceType::ABNORMAL_SPREAD:
             typeScaling = 0.6;
             break;
         case ImbalanceType::TREND_CONTINUATION:
-            typeScaling = (regime == MarketRegime::TRENDING) ? 1.4 : 0.9;
+            typeScaling = (regime == MarketRegimeType::TRENDING) ? 1.4 : 0.9;
             break;
         case ImbalanceType::TREND_REVERSAL:
-            typeScaling = (regime == MarketRegime::RANGE_BOUND) ? 1.2 : 0.8;
+            typeScaling = (regime == MarketRegimeType::MEAN_REVERTING) ? 1.2 : 0.8;
             break;
         default:
             typeScaling = 0.9;
@@ -696,16 +696,16 @@ std::chrono::milliseconds ImbalanceSignalGenerator::calculateSignalTTL(
     double regimeFactor = 1.0;
     
     switch (regime) {
-        case MarketRegime::VOLATILE:
+        case MarketRegimeType::HIGH_VOLATILITY:
             regimeFactor = 0.6; // Shorter TTL in volatile markets
             break;
-        case MarketRegime::TRENDING:
+        case MarketRegimeType::TRENDING:
             regimeFactor = 1.4; // Longer TTL in trending markets
             break;
-        case MarketRegime::RANGE_BOUND:
+        case MarketRegimeType::MEAN_REVERTING:
             regimeFactor = 1.1; // Slightly longer in range-bound
             break;
-        case MarketRegime::STRESS:
+        case MarketRegimeType::STRESS:
             regimeFactor = 0.5; // Much shorter during stress
             break;
         default:
@@ -720,8 +720,8 @@ std::chrono::milliseconds ImbalanceSignalGenerator::calculateSignalTTL(
     uint64_t ttlMs = static_cast<uint64_t>(baseTTL * 1000);
     
     // Dynamic bounds based on regime
-    uint64_t minTTL = (regime == MarketRegime::VOLATILE || regime == MarketRegime::STRESS) ? 200 : 500;
-    uint64_t maxTTL = (regime == MarketRegime::TRENDING) ? 90000 : 60000;
+    uint64_t minTTL = (regime == MarketRegimeType::HIGH_VOLATILITY || regime == MarketRegimeType::STRESS) ? 200 : 500;
+    uint64_t maxTTL = (regime == MarketRegimeType::TRENDING) ? 90000 : 60000;
     
     ttlMs = std::clamp(ttlMs, minTTL, maxTTL);
     
@@ -751,16 +751,16 @@ std::vector<PriceTarget> ImbalanceSignalGenerator::generatePriceTargets(const Im
     double regimeVolAdjustment = 1.0;
     
     switch (regime) {
-        case MarketRegime::VOLATILE:
+        case MarketRegimeType::HIGH_VOLATILITY:
             regimeVolAdjustment = 1.5;
             break;
-        case MarketRegime::TRENDING:
+        case MarketRegimeType::TRENDING:
             regimeVolAdjustment = 1.2;
             break;
-        case MarketRegime::RANGE_BOUND:
+        case MarketRegimeType::MEAN_REVERTING:
             regimeVolAdjustment = 0.8;
             break;
-        case MarketRegime::STRESS:
+        case MarketRegimeType::STRESS:
             regimeVolAdjustment = 2.0;
             break;
         default:
@@ -790,10 +790,10 @@ std::vector<PriceTarget> ImbalanceSignalGenerator::generatePriceTargets(const Im
     std::vector<double> targetMultipliers;
     std::vector<double> targetProbabilities;
     
-    if (regime == MarketRegime::TRENDING) {
+    if (regime == MarketRegimeType::TRENDING) {
         targetMultipliers = {0.15, 0.40, 0.80, 1.20}; // More aggressive targets
         targetProbabilities = {0.8, 0.6, 0.4, 0.2};
-    } else if (regime == MarketRegime::VOLATILE) {
+    } else if (regime == MarketRegimeType::HIGH_VOLATILITY) {
         targetMultipliers = {0.40, 0.70, 1.00}; // Fewer, closer targets
         targetProbabilities = {0.6, 0.4, 0.2};
     } else {
@@ -879,27 +879,23 @@ void ImbalanceSignalGenerator::handlePredictionConflict(
 }
 
 // Market regime methods
-MarketRegime ImbalanceSignalGenerator::getCurrentMarketRegime(const ImbalanceEvent& imbalance) const {
+MarketRegimeType ImbalanceSignalGenerator::getCurrentMarketRegime(const ImbalanceEvent& imbalance) const {
     if (regimeDetector_) {
         // Use actual regime detector if available
         // return regimeDetector_->getCurrentRegime();
     }
     
-    // Fallback to simple heuristics based on available metrics
-    // double volatility = imbalance.getSupportingMetric("volatility", 0.01);
-    // double trend = imbalance.getSupportingMetric("trendStrength", 0.0);
-    // double stress = imbalance.getSupportingMetric("stressIndicator", 0.0);
-    auto regime_number = imbalance.getSupportingMetric("marketRegime", static_cast<double>(MarketRegime::UNKNOWN));
-    if (regime_number >= static_cast<double>(MarketRegime::NORMAL) && regime_number <= static_cast<double>(MarketRegime::UNKNOWN)) {
-        // LOG_DEBUG("Current market regime: {}", marketRegimeToString(static_cast<MarketRegime>(static_cast<int>(regime_number))));
-        return static_cast<MarketRegime>(static_cast<int>(regime_number));
+    auto regime_number = imbalance.getSupportingMetric("marketRegime", static_cast<double>(MarketRegimeType::UNKNOWN));
+    // sanity check for regime number if it's within valid range from 0-8
+    if (regime_number >= 0 && regime_number <= 8) {
+        LOG_DEBUG("Current market regime: {}", marketRegimeToString(static_cast<MarketRegimeType>(static_cast<int>(regime_number))));
+        return static_cast<MarketRegimeType>(static_cast<int>(regime_number));
     }
-    
-    // LOG_DEBUG("Current market regime: {}", marketRegimeToString(static_cast<MarketRegime>(static_cast<int>(regime_number))));
-    return MarketRegime::UNKNOWN;
+
+    return MarketRegimeType::UNKNOWN;
 }
 
-double ImbalanceSignalGenerator::getImbalanceTypeScaling(ImbalanceType type, MarketRegime regime) const {
+double ImbalanceSignalGenerator::getImbalanceTypeScaling(ImbalanceType type, MarketRegimeType regime) const {
     size_t typeIndex = static_cast<size_t>(type);
     size_t regimeIndex = static_cast<size_t>(regime);
     
@@ -910,7 +906,7 @@ double ImbalanceSignalGenerator::getImbalanceTypeScaling(ImbalanceType type, Mar
     return 0.9; // Conservative default
 }
 
-double ImbalanceSignalGenerator::getRegimeConfidenceAdjustment(MarketRegime regime, double baseConfidence) const {
+double ImbalanceSignalGenerator::getRegimeConfidenceAdjustment(MarketRegimeType regime, double baseConfidence) const {
     size_t regimeIndex = static_cast<size_t>(regime);
     return baseConfidence * REGIME_BASE_ADJUSTMENTS[regimeIndex];
 }

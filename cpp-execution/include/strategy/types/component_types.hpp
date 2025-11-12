@@ -28,6 +28,7 @@
  class AdaptiveMechanism;
  class LogisticRegressionSignalGenerator;
  class OrderBookAnalyzerManager;
+ class OrderbookRegimeDetector;
  // Define pointer type aliases for easier usage
 //  using OrderBookAnalyzerPtr = std::shared_ptr<OrderBookAnalyzer>;
 using OrderBookAnalyzerPtr = std::shared_ptr<OrderBookAnalyzerManager>;
@@ -36,11 +37,13 @@ using OrderBookAnalyzerPtr = std::shared_ptr<OrderBookAnalyzerManager>;
  using VolumeProfileAnalyzerPtr = std::shared_ptr<VolumeProfileAnalyzer>;
  using ImbalanceSignalGeneratorPtr = std::shared_ptr<ImbalanceSignalGenerator>;
  using MomentumCorrelationPtr = std::shared_ptr<MomentumCorrelation>;
+
  using ThresholdManagerPtr = std::shared_ptr<ThresholdManager>;
  using SignalDecayModelPtr = std::shared_ptr<SignalDecayModel>;
  using ExchangeCalibrationPtr = std::shared_ptr<ExchangeCalibration>;
  using AdaptiveMechanismPtr = std::shared_ptr<AdaptiveMechanism>;
  using LogisticRegressionSignalGeneratorPtr = std::shared_ptr<LogisticRegressionSignalGenerator>;
+ using OrderbookRegimeDetectorPtr = std::shared_ptr<OrderbookRegimeDetector>;
  
  } // namespace strategy
  } // namespace trading

@@ -49,6 +49,7 @@ using namespace trading::core;
  bool StrategyEngine::initialize(const StrategyConfig& config) {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
     
+    
     if (state_ != StrategyState::CREATED && state_ != StrategyState::STOPPED) {
         LOG_ERROR("Cannot initialize strategy engine in current state: {}", 
                   static_cast<int>(state_.load()));
@@ -85,6 +86,7 @@ using namespace trading::core;
             LOG_WARN("Failed to set strategy id on signal generator: {}", e.what());
         }
         momentumCorrelator_ = std::make_shared<MomentumCorrelation>(config_.momentumCorrelationConfig);
+        // regimeDetector_ = std::make_shared<core_analysis::OrderbookRegimeDetector>(config_.regimeDetectorConfig);
         thresholdManager_ = std::make_shared<ThresholdManager>(config_.thresholdManagerConfig);
         // signalDecayModel_ = std::make_shared<SignalDecayModel>(config_.signalDecayConfig);
         signalDecayModel_ = std::make_shared<SignalDecayModel>(DecayModelType::EXPONENTIAL);
@@ -786,9 +788,16 @@ TradingSignal StrategyEngine::enhanceSignalWithEventContext(
     if (momentumCorrelator_) {
         double expectedPriceImpact = momentumCorrelator_->predictPriceMovement(sourceEvent);
         //get current regime and set to metric
-        MarketRegime regime = momentumCorrelator_->detectMarketRegime();
-
-        enhancedSignal.setMetric("marketRegime", static_cast<int>(regime));
+        // MarketRegimeType regime = momentumCorrelator_->detectMarketRegime();
+        //use orderbook based regime detector if available
+        // MarketRegimeType regime = MarketRegimeType::UNKNOWN;
+        // if (regimeDetector_) {
+        //     regime = regimeDetector_->detectMarketRegime();
+        // }
+        // get current regime from metrics
+        // trading::strategy::core_analysis::RegimeInfo regimeInfo;
+        // log debug info for regime detection
+        // enhancedSignal.setMetric("marketRegime", static_cast<int>(regime));
         enhancedSignal.expectedPriceImpact = expectedPriceImpact;
         
         // Add momentum correlation metrics
@@ -796,6 +805,10 @@ TradingSignal StrategyEngine::enhanceSignalWithEventContext(
         double correlation = momentumCorrelator_->getCorrelationCoefficient(imbalanceTypeStr);
         enhancedSignal.setMetric("momentumCorrelation", correlation);
         enhancedSignal.setMetric("predictedPriceMove", expectedPriceImpact);
+        // print debug info for regime and correlation
+        // LOG_DEBUG("Enhancing signal {}: regime={}, correlation={:.4f}, expectedPriceImpact={:.4f}",
+        //             enhancedSignal.id, core_analysis::regimeToString(regime), correlation, expectedPriceImpact);
+                  
     }
     
     // Apply signal decay model
@@ -1003,7 +1016,7 @@ void StrategyEngine::processImbalanceEvents(const std::vector<ImbalanceEvent>& e
     // the signal generator can read `event.getSupportingMetric("marketRegime")`.
     std::vector<ImbalanceEvent> enrichedEvents = events;
     if (momentumCorrelator_) {
-        MarketRegime detected = momentumCorrelator_->detectMarketRegime();
+        MarketRegimeType detected = momentumCorrelator_->detectMarketRegime();
         for (auto &ev : enrichedEvents) {
             ev.supportingMetrics["marketRegime"] = static_cast<double>(detected);
         }
@@ -1082,22 +1095,6 @@ std::optional<ImbalanceEvent> StrategyEngine::findSourceEvent(
     // Debug: Check signal before publishing
     auto expiration_before = std::chrono::duration_cast<std::chrono::milliseconds>(signal.expirationTime.time_since_epoch()).count();
     // LOG_DEBUG("Before EventBus publish - Signal {} expirationTime: {}ms", signal.id, expiration_before);
-    
-    // // Defensive: call registered callbacks directly while holding the callback mutex.
-    // // This ensures any in-process listeners (for example the enqueue callback in main.cpp)
-    // // are invoked even if the EventBus has an issue delivering events.
-    // {
-    //     std::lock_guard<std::recursive_mutex> lk(callbackMutex_);
-    //     for (const auto &entry : signalCallbacks_) {
-    //         try {
-    //             entry.second(signal);
-    //         } catch (const std::exception &e) {
-    //             LOG_ERROR("Exception invoking local signal callback {}: {}", entry.first, e.what());
-    //         } catch (...) {
-    //             LOG_ERROR("Unknown exception invoking local signal callback {}", entry.first);
-    //         }
-    //     }
-    // }
 
     // Still publish to the EventBus for external subscribers
     common::EventBus::getInstance().publish(events::SignalGeneratedEvent{signal});

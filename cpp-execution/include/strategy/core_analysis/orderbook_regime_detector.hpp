@@ -4,6 +4,10 @@
 #include <deque>
 #include <vector>
 #include <string>
+#include "strategy/types/market_regime.hpp"
+
+// Forward declaration to avoid heavy include and break circular includes
+namespace trading { namespace strategy { struct RegimeDetectorConfig; } }
 
 // Tín hiệu đầu ra gợi ý sử dụng
 // Regime	Exit strategy suggestion
@@ -15,36 +19,18 @@
 // QUIET	Skip trades or widen thresholds
 // NORMAL	Default operation
 // more sophisticated regime types
-enum class MarketRegimeType {
-    STRESS,         // Normal market conditions
-    HIGH_VOLATILITY,       // High volatility regime
-    LOW_LIQUIDITY,       // Strong trending market
-    TRENDING,    // Sideways/consolidating market
-    MEAN_REVERTING,         // Market stress conditions
-    QUIET,          // Low activity/volatility
-    NORMAL,
-    UNKNOWN         // Fallback/unknown regime
-};
-
-struct MarketMicrostructure {
-        double volatility_1m = 0.0;      // 1-minute realized volatility
-        double spread_ema = 0.0;          // EMA of bid-ask spread
-        double spread_std = 0.0;          // Spread standard deviation
-        double orderbook_imbalance = 0.0; // Bid/ask volume imbalance
-        double trade_intensity = 0.0;     // Trades per second
-        double price_impact = 0.0;        // Estimated price impact
-        double tick_size = 0.0;           // Minimum price increment
-        double volume_profile_skew = 0.0; // Volume distribution asymmetry
-};
     
 
 namespace trading {
 namespace strategy {
 namespace core_analysis {
+// static std::string regimeToString(MarketRegimeType regime);
 
 class OrderbookRegimeDetector {
 public:
     OrderbookRegimeDetector() = default;
+    // OrderbookRegimeDetector(const RegimeDetectorConfig& config) : config_(config) {}
+    ~OrderbookRegimeDetector() = default;
 
     // Detect market regime using orderbook-derived microstructure and simple history windows
     MarketRegimeType detect(
@@ -52,7 +38,21 @@ public:
         const std::deque<double>& volatility_samples,
         const std::deque<double>& spread_samples,
         const std::deque<double>& price_returns) const;
+    // function to get current regime as string
+
+    // get current regime as enum
+    static MarketRegimeType getCurrentRegimeEnum(const std::string& regimeStr) {
+        if (regimeStr == "STRESS") return MarketRegimeType::STRESS;
+        if (regimeStr == "HIGH_VOLATILITY") return MarketRegimeType::HIGH_VOLATILITY;
+        if (regimeStr == "LOW_LIQUIDITY") return MarketRegimeType::LOW_LIQUIDITY;
+        if (regimeStr == "TRENDING") return MarketRegimeType::TRENDING;
+        if (regimeStr == "MEAN_REVERTING") return MarketRegimeType::MEAN_REVERTING;
+        if (regimeStr == "QUIET") return MarketRegimeType::QUIET;
+        if (regimeStr == "NORMAL") return MarketRegimeType::NORMAL;
+        return MarketRegimeType::UNKNOWN;
+    }
 private:
+    // RegimeDetectorConfig config_;
     // Statistical helpers (public for testing)
     static double calculatePercentile(const std::deque<double>& data, double percentile);
     static double calculateStandardDeviation(const std::deque<double>& data);
@@ -60,8 +60,6 @@ private:
     // helpers functions
     static double calculateMean(const std::deque<double>& data);
     static double calculateMedian(const std::deque<double>& data);
-    // function to get current regime as string
-    static std::string regimeToString(MarketRegimeType regime);
 
 };
 

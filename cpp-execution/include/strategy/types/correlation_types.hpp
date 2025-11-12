@@ -16,46 +16,28 @@
  #include <chrono>
  #include "core/types.hpp"
  #include "strategy/types/imbalance_type.hpp"
+#include "strategy/types/market_regime.hpp"
+#include "strategy/core_analysis/orderbook_regime_detector.hpp"
+
  namespace trading {
  namespace strategy {
- 
-//  enum class MarketRegime {
-//         STRESS ,// (highest priority) - market breakdown conditions
-//         VOLATILE ,// - high volatility conditions
-//         TRENDING,// - strong directional movement with persistence
-//         RANGE_BOUND,// - oscillating within bounds
-//         QUIET,//- low activity/volatility
-//         NORMAL//- default state
-//  };
-
-/**
- * @brief Market regime types for adaptive signal generation
- */
-    // NORMAL, VOLATILE, TRENDING, RANGE_BOUND, STRESS, UNKNOWN
-enum class MarketRegime {
-    NORMAL,         // Normal market conditions
-    VOLATILE,       // High volatility regime
-    TRENDING,       // Strong trending market
-    RANGE_BOUND,    // Sideways/consolidating market
-    STRESS,         // Market stress conditions
-    QUIET,          // Low activity/volatility
-    UNKNOWN         // Fallback/unknown regime
-};
+  
  
  /**
-  * Convert MarketRegime to string representation
+  * Convert MarketRegimeType to string representation
   */
- inline std::string marketRegimeToString(MarketRegime regime) {
-     switch (regime) {
-         case MarketRegime::NORMAL: return "normal";
-         case MarketRegime::TRENDING: return "trending";
-         case MarketRegime::RANGE_BOUND: return "range_bound";
-         case MarketRegime::VOLATILE: return "volatility";
-         case MarketRegime::QUIET: return "quiet";
-        case MarketRegime::STRESS: return "stress";
-         default: return "unknown";
-     }
- }
+inline std::string marketRegimeToString(trading::strategy::MarketRegimeType regime) {
+    using MR = trading::strategy::MarketRegimeType;
+    switch (regime) {
+        case MR::NORMAL: return "normal";
+        case MR::TRENDING: return "trending";
+        case MR::MEAN_REVERTING: return "range_bound";
+        case MR::HIGH_VOLATILITY: return "volatility";
+        case MR::QUIET: return "quiet";
+       case MR::STRESS: return "stress";
+        default: return "unknown";
+    }
+}
  
  /**
   * Parameters for correlation analysis
@@ -138,13 +120,13 @@ enum class MarketRegime {
      std::map<std::string, double> coefficients;  // Correlation coefficients
      std::map<std::string, double> feature_importance; // Feature importance scores
      size_t data_points;                         // Number of data points used
-     MarketRegime market_regime;                 // Detected market regime
+    trading::strategy::MarketRegimeType market_regime;                 // Detected market regime
      double overall_predictive_power;            // Overall predictive power
      
      // Default constructor
      CorrelationStats()
          : data_points(0),
-           market_regime(MarketRegime::NORMAL),
+           market_regime(trading::strategy::MarketRegimeType::NORMAL),
            overall_predictive_power(0.0) {}
  };
  
