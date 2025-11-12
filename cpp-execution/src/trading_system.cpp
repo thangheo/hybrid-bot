@@ -139,86 +139,7 @@ Trading_system::Trading_system() : running_(false), systemHealthy_(true) {
     positionSizer_ = std::make_unique<trading::risk::PositionSizer>(riskConfig_.getPositionSizingConfig());
     
 }
-// Market data updater loop: periodically fetch microstructure metrics and update exit strategy
-// void Trading_system::marketDataUpdaterLoop(){
-//     LOG_INFO("Market data updater loop started");
 
-//     while (marketDataUpdaterRunning_.load()) {
-//         try {
-//             if (!exitStrategy_) {
-//                 LOG_INFO("Market data updater: exit strategy not initialized yet");
-//                 std::this_thread::sleep_for(std::chrono::seconds(1));
-//                 continue;
-//             }
-
-//             for (const auto& [sym, exch] : strategyConfig_.tradingPairs) {
-//                 try {
-//                     std::string symbolStr = sym.toString();
-//                     // Build microstructure values from cached metrics if available
-//                     double vol_1m = 0.0;
-//                     double spread_ema = 0.0;
-//                     double orderbook_imbalance = 0.0;
-//                     double trade_intensity = 0.0;
-//                     double price_return = 0.0;
-//                     double mid_price = 0.0;
-
-//                     trading::strategy::OrderBookMetrics obm;
-//                     if (getLatestOrderbookMetrics(sym, exch, obm)) {
-//                         vol_1m = obm.realize_volatility_1m;
-//                         spread_ema = obm.emaSpread;
-//                         orderbook_imbalance = obm.volumeImbalance;
-//                         trade_intensity = obm.totalVolume; // proxy
-//                         mid_price = obm.midPrice;
-//                     } else if (marketDataInterface_) {
-//                         try {
-//                             auto sp = marketDataInterface_->getCurrentSpread(sym, exch.toString());
-//                             if (sp.has_value()) spread_ema = sp.value();
-//                             vol_1m = marketDataInterface_->getVolatility(sym, "1m", exch.toString());
-//                             mid_price = marketDataInterface_->getCurrentPrice(sym, exch.toString());
-//                         } catch (...) {}
-//                     }
-//                     // LOG_INFO("Microstructure raw for {}: vol_1m={}, spread_ema={}, orderbook_imbalance={}, trade_intensity={}",
-//                     //             symbolStr, vol_1m, spread_ema, orderbook_imbalance, trade_intensity);
-
-//                     // Compute price return as relative change from last observed mid price
-//                     try {
-//                         std::string key = exch.toString() + ":" + symbolStr;
-//                         double last_price = 0.0;
-//                         {
-//                             std::lock_guard<std::mutex> lk(lastPriceMutex_);
-//                             auto it = lastMidPrice_.find(key);
-//                             if (it != lastMidPrice_.end()) last_price = it->second;
-//                         }
-
-//                         if (mid_price > 0.0 && last_price > 0.0) {
-//                             price_return = (mid_price - last_price) / last_price;
-//                         } else {
-//                             price_return = 0.0;
-//                         }
-
-//                         // Update last mid price
-//                         if (mid_price > 0.0) {
-//                             std::lock_guard<std::mutex> lk(lastPriceMutex_);
-//                             lastMidPrice_[key] = mid_price;
-//                         }
-//                     } catch (...) {}
-
-//                     // Call updateMarketData on exit strategy
-//                     try {
-//                         // log debug with information about microstructure every 10 counts
-//                         static int count = 0;
-//                         if(count++ % 10 == 0){
-//                             LOG_DEBUG("Updating microstructure for {}: vol_1m={}, spread_ema={}, orderbook_imbalance={}, trade_intensity={}, price_return={}",
-//                                         symbolStr, vol_1m, spread_ema, orderbook_imbalance, trade_intensity, price_return);
-//                         }
-//                         exitStrategy_->updateMarketData(symbolStr, vol_1m, spread_ema, orderbook_imbalance, trade_intensity, price_return);
-//                     } catch (...) {}
-//                 } catch (...) {}
-//             }
-//         } catch (...) {}
-//         std::this_thread::sleep_for(std::chrono::seconds(1));
-//     }
-// // }
 void Trading_system::updateSymbolMarketData(
     const Symbol& sym, const ExchangeId& exch,
     std::atomic<int>& debugCounter,
@@ -312,7 +233,9 @@ void Trading_system::marketDataUpdaterLoop()
 {
     LOG_INFO("Market data updater loop started");
 
-    constexpr std::chrono::milliseconds targetPeriod{1000};
+    // Use configured interval (ms) for market data updater to support low-latency operation.
+    const int mdIntervalMs = std::max(1, strategyConfig_.marketDataUpdaterIntervalMs);
+    const std::chrono::milliseconds targetPeriod{mdIntervalMs};
     const unsigned int maxWorkers = std::max(1u, std::min(std::thread::hardware_concurrency(), 8u));
 
     std::atomic<int> debugCounter{0};
@@ -322,7 +245,8 @@ void Trading_system::marketDataUpdaterLoop()
 
         // 1. Kiểm tra exitStrategy
         if (!exitStrategy_) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(200));
+            // Use a short retry interval while exit strategy is not ready
+            std::this_thread::sleep_for(std::chrono::milliseconds(std::min(200, mdIntervalMs)));
             continue;
         }
 
@@ -335,7 +259,7 @@ void Trading_system::marketDataUpdaterLoop()
 
         const size_t total = pairs.size();
         if (total == 0) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            std::this_thread::sleep_for(std::chrono::milliseconds(mdIntervalMs));
             continue;
         }
 
@@ -415,14 +339,14 @@ void Trading_system::exitMonitorLoop() {
     while (exitMonitorRunning_.load()) {
         try {
             if (!exitStrategy_) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                std::this_thread::sleep_for(std::chrono::milliseconds(std::max(1, strategyConfig_.exitMonitorIntervalMs)));
                 continue;
             }
             
             // Get all active positions from exit strategy
             auto activeSymbols = exitStrategy_->getActiveSymbols();
             if (activeSymbols.empty()) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                std::this_thread::sleep_for(std::chrono::milliseconds(std::max(1, strategyConfig_.exitMonitorIntervalMs)));
                 continue;
             }
             for (const auto& symbol : activeSymbols) {
@@ -627,8 +551,8 @@ void Trading_system::exitMonitorLoop() {
                 }
             }
             
-            // Check every 500ms (adjust based on your needs)
-            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+            // Sleep based on configured exit monitor interval (default 100ms)
+            std::this_thread::sleep_for(std::chrono::milliseconds(std::max(1, strategyConfig_.exitMonitorIntervalMs)));
             
         } catch (const std::exception& e) {
             LOG_ERROR("Exit monitor loop error: {}", e.what());
@@ -681,8 +605,9 @@ bool Trading_system::initialize() {
         // brief pause to let sockets bind
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
-    // sleep for 2s
-    std::this_thread::sleep_for(std::chrono::seconds(2));
+    // Short startup pause - scale with marketDataUpdaterIntervalMs to avoid long blocking
+    int startupWaitMs = std::min(2000, std::max(50, strategyConfig_.marketDataUpdaterIntervalMs * 5));
+    std::this_thread::sleep_for(std::chrono::milliseconds(startupWaitMs));
     if (!dataIngestionService_->initialize()) {
         std::cerr << "Failed to initialize data ingestion service" << std::endl;
         return false;

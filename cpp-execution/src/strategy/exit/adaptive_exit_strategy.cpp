@@ -188,10 +188,13 @@ AdaptiveExitStrategy::DynamicParameters AdaptiveExitStrategy::calculateDynamicPa
     
     params.max_holding_time = predictionWindow_ * decay_factor;
     // Base min holding time on tick-to-spread ratio but ensure we don't divide by zero
-    double floor_from_window = std::max(0.25, predictionWindow_ * 0.25); // tối thiểu 0.25s
-    double ratio_based_min = floor_from_window;
+    // Recommendation B: use a conservative static floor of 1.0s so strategies
+    // with short prediction windows (e.g., 1.5s) can still respect a minimum
+    // but without an overly large 10s floor.
+    double static_floor = 1.0; // seconds
+    double ratio_based_min = static_floor;
     if (vol_in_ticks > 1e-12) {
-        ratio_based_min = std::max(floor_from_window, spread_in_ticks / vol_in_ticks * 2.0);
+        ratio_based_min = std::max(static_floor, spread_in_ticks / vol_in_ticks * 2.0);
     }
     double prediction_half = predictionWindow_ / 2.0;
     params.min_holding_time = std::max(ratio_based_min, prediction_half);
