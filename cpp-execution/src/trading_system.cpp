@@ -475,7 +475,7 @@ void Trading_system::exitMonitorLoop() {
                             auto holdingDurationMs = std::chrono::duration_cast<std::chrono::milliseconds>(
                                 now - posInfo->entry_time).count();
                             double holdingSeconds = static_cast<double>(holdingDurationMs) / 1000.0;
-                            LOG_INFO("EXIT TRIGGERED: {} - {} ({:.2f}bps) after {:.3f}s holding",
+                            LOG_INFO("EXIT TRIGGERED: {} - {} ({:.4f}bps) after {:.3f}s holding",
                                     symbol,
                                     AdaptiveExitStrategy::exitReasonToString(exitDecision.reason),
                                     exitDecision.expected_pnl,
