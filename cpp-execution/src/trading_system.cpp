@@ -581,7 +581,7 @@ void Trading_system::exitMonitorLoop() {
                             LOG_INFO("Exit monitor: no authoritative position found for {} - skipping exit signal", symbol);
                         } else {
                             // Ensure the exit notional respects minimum notional by increasing quantity if necessary
-                            const double minNotionalUsd = 20.0;
+                            const double minNotionalUsd = 12.0;
                             double finalNotional = currentPrice * exitQty;
                             
                             std::string symStr = sym.toString();
@@ -606,21 +606,16 @@ void Trading_system::exitMonitorLoop() {
                                 execQueue_.push_back(std::move(exitSignal));
                                 execQueueCv_.notify_one();
                             }
-
-                            // Pragmatic immediate fix: mark the position as closed in the
-                            // AdaptiveExitStrategy so repeated exit triggers don't accumulate
-                            // holding time in logs. We conservatively pass final_pnl=0.0 here
-                            // because real PnL will be reconciled when fills arrive. Follow-up:
-                            // prefer markPendingExit + closePosition on confirmed fills.
-                            try {
-                                if (exitStrategy_) {
-                                    exitStrategy_->closePosition(symbol,
-                                                                 trading::strategy::AdaptiveExitStrategy::ExitReason::TIME_LIMIT,
-                                                                 0.0);
-                                }
-                            } catch (...) {
-                                LOG_WARN("Exit monitor: failed to call closePosition for {}", symbol);
+                            
+                        }
+                        try {
+                            if (exitStrategy_) {
+                                // exitStrategy_->markPendingExit(symbol);
+                                exitStrategy_->closePosition(symbol, exitDecision.reason, exitDecision.expected_pnl);
+                                LOG_INFO("Exit monitor: marked pending exit for {}", symbol);
                             }
+                        } catch (...) {
+                            // LOG_WARN("Exit monitor: failed to mark pending exit for {}", symbol);
                         }
                         
                         // Mark position as pending exit (don't close yet - wait for execution)
@@ -1604,7 +1599,7 @@ void Trading_system::execWorkerLoop(size_t workerId) {
         execution::TradingSignal task;
         {
             std::unique_lock<std::mutex> lk(execQueueMutex_);
-            execQueueCv_.wait_for(lk, std::chrono::milliseconds(100), [this]() {
+            execQueueCv_.wait_for(lk, std::chrono::milliseconds(50), [this]() {
                 return !execQueue_.empty() || !execWorkersRunning_.load();
             });
             if (!execWorkersRunning_.load() && execQueue_.empty()) break;
