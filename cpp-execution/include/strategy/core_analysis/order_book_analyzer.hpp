@@ -26,6 +26,8 @@
 #include "common/event_bus.hpp"
 #include "common/trading_events.hpp"
 #include "core/market_types.hpp"
+// Regime detector (per-analyzer instance)
+#include "strategy/core_analysis/orderbook_regime_detector.hpp"
 
 namespace trading {
 namespace strategy {
@@ -279,6 +281,9 @@ private:
     void initializeHistoricalData(size_t capacity);
     void trimHistoricalData(size_t maxSize);
     void addVolatilitySnapshot(const OrderbookSnapshot& snapshot);
+
+    // Per-analyzer regime detector to preserve smoothing state per symbol
+    trading::strategy::core_analysis::OrderbookRegimeDetector regimeDetector_;
 
     // Diagnostics for detecting stale/unchanged snapshots
     size_t lastContentHash_ = 0;
