@@ -20,7 +20,6 @@ namespace trading { namespace perception { class BayesianTradingModel; } }
 
 #include "data_ingestion/orderbook/order_book.hpp"
 #include "perception/bayesian_trading_adapter.hpp"
-#include "strategy/core_analysis/regime_subscriber.hpp"
 #include <vector>
 #include <memory>
 #include <map>
@@ -295,6 +294,7 @@ public:
         // Add symbol context so training can be applied to the correct per-symbol model
         core::ExchangeId exchangeId;
         core::Symbol symbol;
+        int regime = 0; // snapshot of marketRegime at capture time
     };
     std::deque<PendingTraining> pendingTraining_;
     mutable std::mutex pendingTrainingMutex_;
@@ -320,8 +320,8 @@ public:
     std::unordered_map<std::string, std::array<trading::perception::BayesHandle, NUMBER_OF_REGIMES>> bayesHandles_;
     mutable std::mutex bayesHandlesMutex_;
 
-    // Pointer to the global regime subscriber (optional). Set by caller (StrategyEngine)
-    trading::strategy::core_analysis::RegimeSubscriber* regime_subscriber_ = nullptr;
+    // Regime information is now sourced from OrderBookMetrics.metrics["marketRegime"].
+    // The old RegimeSubscriber is no longer used.
 
     // Optional callback to check authoritative position for a symbol
     // Return: optional<double> signed position quantity if available, nullopt if unknown
@@ -335,8 +335,7 @@ public:
     }
 
 public:
-    // Set the RegimeSubscriber so the engine can snapshot regime probabilities at capture time and weight predictions
-    void setRegimeSubscriber(trading::strategy::core_analysis::RegimeSubscriber* sub) { regime_subscriber_ = sub; }
+    // (RegimeSubscriber removed) Regime data comes from OrderBookMetrics.metrics["marketRegime"]
 
     // Configure minimum bayes model updates required before emitting trades
     void setBayesMinUpdatesToTrade(int v) { bayesMinUpdatesToTrade_ = v; }

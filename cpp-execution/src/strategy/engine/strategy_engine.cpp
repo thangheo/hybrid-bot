@@ -148,16 +148,16 @@ using namespace trading::core;
         loadDefaultParameters();
         
         // Create regime subscriber (non-blocking) - will be started in start()
-        try {
-            regime_subscriber_ = std::make_unique<trading::strategy::core_analysis::RegimeSubscriber>();
-            // Connect regime subscriber to imbalance detector
-            if (imbalanceDetector_) {
-                imbalanceDetector_->setRegimeSubscriber(regime_subscriber_.get());
-                LOG_INFO("Connected RegimeSubscriber to ImbalanceDetectionEngine");
-            }
-        } catch (const std::exception& e) {
-            LOG_WARN("Failed to create RegimeSubscriber: {}", e.what());
-        }
+        // try {
+        //     regime_subscriber_ = std::make_unique<trading::strategy::core_analysis::RegimeSubscriber>();
+        //     // Connect regime subscriber to imbalance detector
+        //     if (imbalanceDetector_) {
+        //         imbalanceDetector_->setRegimeSubscriber(regime_subscriber_.get());
+        //         LOG_INFO("Connected RegimeSubscriber to ImbalanceDetectionEngine");
+        //     }
+        // } catch (const std::exception& e) {
+        //     LOG_WARN("Failed to create RegimeSubscriber: {}", e.what());
+        // }
         
         // Initialize signal filters
         try {
@@ -192,32 +192,32 @@ void StrategyEngine::handleSignalGenerated(const TradingSignal& signal) {
     }
 
     // VOLATILITY FILTER: Check if volatility is sufficient for trading
-    // Only apply volatility filter to BUY/entry signals, allow sell/exit signals to pass through
-    if (orderBookAnalyzer_ && signal.direction == core::Direction::BUY) {
-        try {
-            // Request metrics for the specific symbol/exchange for this signal
-            auto metrics = orderBookAnalyzer_->getMetrics(signal.symbol, signal.exchangeId);
-            double vol_1m = metrics.realize_volatility_1m;
+    // // Only apply volatility filter to BUY/entry signals, allow sell/exit signals to pass through
+    // if (orderBookAnalyzer_ && signal.direction == core::Direction::BUY) {
+    //     try {
+    //         // Request metrics for the specific symbol/exchange for this signal
+    //         auto metrics = orderBookAnalyzer_->getMetrics(signal.symbol, signal.exchangeId);
+    //         double vol_1m = metrics.realize_volatility_1m;
             
-            // Get symbol-specific threshold or use default
-            double symbolThreshold = getSymbolVolatilityThreshold(signal.symbol.toString());
+    //         // Get symbol-specific threshold or use default
+    //         double symbolThreshold = getSymbolVolatilityThreshold(signal.symbol.toString());
             
-            // Skip trading if volatility is below threshold
-            if (vol_1m < symbolThreshold) {
-                LOG_TRACE("Signal {} rejected: volatility too low ({:.6f} < {:.6f}) for symbol {}", 
-                         signal.id, vol_1m, symbolThreshold, signal.symbol.toString());
-                return;
-            }
+    //         // Skip trading if volatility is below threshold
+    //         if (vol_1m < symbolThreshold) {
+    //             LOG_TRACE("Signal {} rejected: volatility too low ({:.6f} < {:.6f}) for symbol {}", 
+    //                      signal.id, vol_1m, symbolThreshold, signal.symbol.toString());
+    //             return;
+    //         }
             
-            // Optional: Log volatility info for debugging
-            LOG_TRACE("Signal {} volatility check passed: vol_1m={:.6f} >= {:.6f} for symbol {}", 
-                     signal.id, vol_1m, symbolThreshold, signal.symbol.toString());
+    //         // Optional: Log volatility info for debugging
+    //         LOG_TRACE("Signal {} volatility check passed: vol_1m={:.6f} >= {:.6f} for symbol {}", 
+    //                  signal.id, vol_1m, symbolThreshold, signal.symbol.toString());
                      
-        } catch (const std::exception& e) {
-            LOG_WARN("Error checking volatility for signal {}: {}", signal.id, e.what());
-            // Continue processing signal even if volatility check fails
-        }
-    }
+    //     } catch (const std::exception& e) {
+    //         LOG_WARN("Error checking volatility for signal {}: {}", signal.id, e.what());
+    //         // Continue processing signal even if volatility check fails
+    //     }
+    // }
     // Ensure the signal carries a valid strategy id/version. Some generators
     // create signals without populating strategy information (left as the
     // default StrategyId which is "UNKNOWN:1.0"). Fill it from the
@@ -272,11 +272,8 @@ void StrategyEngine::processQueuedSignals() {
     }
 }
 
-bool StrategyEngine::getRegimeInfo(const std::string& symbol, trading::strategy::core_analysis::RegimeInfo& out) const {
-    std::lock_guard<std::recursive_mutex> lock(mutex_);
-    if (!regime_subscriber_) return false;
-    return regime_subscriber_->get(symbol, out);
-}
+// Regime information is now sourced from OrderBookMetrics.metrics["marketRegime"].
+// getRegimeInfo removed.
  // Start the strategy engine
  bool StrategyEngine::start() {
      std::lock_guard<std::recursive_mutex> lock(mutex_);
@@ -292,12 +289,7 @@ bool StrategyEngine::getRegimeInfo(const std::string& symbol, trading::strategy:
          runMaintenanceThread_ = true;
          signalMaintenanceThread_ = std::make_unique<std::thread>(&StrategyEngine::signalMaintenanceWorker, this);
 
-        // Start regime subscriber if available
-        try {
-            if (regime_subscriber_) regime_subscriber_->start();
-        } catch (const std::exception& e) {
-            LOG_WARN("Failed to start RegimeSubscriber: {}", e.what());
-        }
+        // RegimeSubscriber removed - regimes are provided in OrderBookMetrics
          
          state_ = StrategyState::RUNNING;
          LOG_INFO("Strategy Engine started: {}", strategyId_);
@@ -327,12 +319,7 @@ bool StrategyEngine::getRegimeInfo(const std::string& symbol, trading::strategy:
      if (signalMaintenanceThread_ && signalMaintenanceThread_->joinable()) {
          signalMaintenanceThread_->join();
      }
-    // Stop regime subscriber
-    try {
-        if (regime_subscriber_) regime_subscriber_->stop();
-    } catch (const std::exception& e) {
-        LOG_WARN("Error stopping RegimeSubscriber: {}", e.what());
-    }
+    // RegimeSubscriber removed - nothing to stop here.
      
      {
          std::lock_guard<std::recursive_mutex> lock(mutex_);
@@ -1367,30 +1354,30 @@ void StrategyEngine::registerEmergencyExitCallback(const EmergencyExitCallback& 
     LOG_INFO("Emergency exit callback registered");
 }
 
-void StrategyEngine::checkEmergencyExit(const std::string& symbol) const {
-    if (!meta_filter_) {
-        return;
-    }
+// void StrategyEngine::checkEmergencyExit(const std::string& symbol) const {
+//     if (!meta_filter_) {
+//         return;
+//     }
     
-    auto exit_result = meta_filter_->checkEmergencyExit(symbol, regime_subscriber_.get());
-    if (exit_result.trigger_emergency_exit) {
-        std::lock_guard<std::mutex> lock(emergency_callback_mutex_);
-        if (emergency_exit_callback_) {
-            try {
-                bool success = emergency_exit_callback_(symbol, exit_result.emergency_reason);
-                if (success) {
-                    LOG_CRITICAL("EMERGENCY EXIT EXECUTED: {} - {}", symbol, exit_result.emergency_reason);
-                } else {
-                    LOG_ERROR("EMERGENCY EXIT FAILED: {} - {}", symbol, exit_result.emergency_reason);
-                }
-            } catch (const std::exception& e) {
-                LOG_ERROR("Exception during emergency exit for {}: {}", symbol, e.what());
-            }
-        } else {
-            LOG_TRACE("EMERGENCY EXIT NEEDED but no callback registered: {} - {}", symbol, exit_result.emergency_reason);
-        }
-    }
-}
+//     auto exit_result = meta_filter_->checkEmergencyExit(symbol, regime_subscriber_.get());
+//     if (exit_result.trigger_emergency_exit) {
+//         std::lock_guard<std::mutex> lock(emergency_callback_mutex_);
+//         if (emergency_exit_callback_) {
+//             try {
+//                 bool success = emergency_exit_callback_(symbol, exit_result.emergency_reason);
+//                 if (success) {
+//                     LOG_CRITICAL("EMERGENCY EXIT EXECUTED: {} - {}", symbol, exit_result.emergency_reason);
+//                 } else {
+//                     LOG_ERROR("EMERGENCY EXIT FAILED: {} - {}", symbol, exit_result.emergency_reason);
+//                 }
+//             } catch (const std::exception& e) {
+//                 LOG_ERROR("Exception during emergency exit for {}: {}", symbol, e.what());
+//             }
+//         } else {
+//             LOG_TRACE("EMERGENCY EXIT NEEDED but no callback registered: {} - {}", symbol, exit_result.emergency_reason);
+//         }
+//     }
+// }
 
 // Volatility threshold management methods
 void StrategyEngine::setSymbolVolatilityThreshold(const std::string& symbol, double threshold) {

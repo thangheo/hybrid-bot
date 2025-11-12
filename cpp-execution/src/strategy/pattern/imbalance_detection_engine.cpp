@@ -31,12 +31,74 @@
 #include "perception/bayesian_trading_adapter.hpp"
 // #include "core_analysis/regime_subscriber.hpp"
 #include "strategy/types/correlation_types.hpp" // for marketRegimeToString
+#include <nlohmann/json.hpp>
+#include <fstream>
+#include <mutex>
 
  using namespace trading::core;
  using namespace std::chrono_literals;
 
 namespace trading {
 namespace strategy {
+// Local tick-size loader: read symbol-level and exchange-level tick sizes
+namespace {
+    static std::unordered_map<std::string, double> s_symbolTickSizeLocal;
+    static std::unordered_map<std::string, double> s_exchangeTickSizeLocal;
+    static std::once_flag s_tickInitFlag;
+
+    static std::string normalizeSymbolKey(std::string k) {
+        k.erase(std::remove(k.begin(), k.end(), '/'), k.end());
+        for (auto &c: k) c = static_cast<char>(std::toupper(c));
+        return k;
+    }
+
+    static void initTickSizesLocal() {
+        try {
+            const std::string symPath = "config/symbol_tick_sizes.json";
+            if (std::filesystem::exists(symPath)) {
+                std::ifstream ifs(symPath);
+                if (ifs.is_open()) {
+                    nlohmann::json j; ifs >> j;
+                    for (auto it = j.begin(); it != j.end(); ++it) {
+                        try {
+                            double t = it.value().get<double>();
+                            std::string k = normalizeSymbolKey(it.key());
+                            s_symbolTickSizeLocal[k] = t;
+                        } catch (...) {}
+                    }
+                }
+            }
+        } catch (...) {}
+
+        try {
+            const std::string exchPath = "config/exchange_specific_params.json";
+            if (std::filesystem::exists(exchPath)) {
+                std::ifstream ifs(exchPath);
+                if (ifs.is_open()) {
+                    nlohmann::json j; ifs >> j;
+                    for (auto it = j.begin(); it != j.end(); ++it) {
+                        try {
+                            if (it.value().contains("numeric") && it.value()["numeric"].contains("tick_size")) {
+                                double t = it.value()["numeric"]["tick_size"].get<double>();
+                                s_exchangeTickSizeLocal[it.key()] = t;
+                            }
+                        } catch (...) {}
+                    }
+                }
+            }
+        } catch (...) {}
+    }
+
+    static double getConfiguredTickSize(const core::ExchangeId &exch, const core::Symbol &sym) {
+        std::call_once(s_tickInitFlag, initTickSizesLocal);
+        std::string k = normalizeSymbolKey(sym.toString());
+        auto it = s_symbolTickSizeLocal.find(k);
+        if (it != s_symbolTickSizeLocal.end() && it->second > 0.0) return it->second;
+        auto it2 = s_exchangeTickSizeLocal.find(exch.toString());
+        if (it2 != s_exchangeTickSizeLocal.end() && it2->second > 0.0) return it2->second;
+        return 0.01; // default fallback
+    }
+}
 // Thread-safe statistical adapter to compute dynamic thresholds per regime
 class StatisticalThresholdAdapter {
 public:
@@ -770,14 +832,8 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                 // Build feature vector from detectors + raw metrics (extracted via helper)
                 std::vector<double> features = buildFeatures(m, results);
 
-                // Always buffer training data - use fallback uniform probabilities if regime info unavailable
-                bool hasRegimeInfo = false;
-                if (regime_subscriber_) {
-                    trading::strategy::core_analysis::RegimeInfo rinfo;
-                    hasRegimeInfo = regime_subscriber_->get(m.symbol.toString(), rinfo) && 
-                                   rinfo.probs.size() == ImbalanceDetectionEngine::NUMBER_OF_REGIMES &&
-                                   rinfo.regime >= 0; // Valid regime (not -1)
-                }
+                // Always buffer training data. Regime is sourced exclusively from the
+                // OrderBookMetrics metric "marketRegime" (set by OrderBookAnalyzer).
                 
                 // Buffer features for later labeling/training - always enable training
                 {
@@ -801,6 +857,14 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                     pt.referenceType = ref.second;
                     pt.exchangeId = m.exchangeId;
                     pt.symbol = m.symbol;
+                    // Snapshot regime from metrics (default to 0)
+                    try {
+                        if (m.metrics.count("marketRegime")) {
+                            double rv = m.metrics.at("marketRegime");
+                            int ri = static_cast<int>(rv);
+                            if (ri >= 0 && ri < ImbalanceDetectionEngine::NUMBER_OF_REGIMES) pt.regime = ri; else pt.regime = 0;
+                        } else pt.regime = 0;
+                    } catch (...) { pt.regime = 0; }
                     pendingTraining_.push_back(pt);
 
                         // Evaluate warmup gating immediately after buffering a sample.
@@ -844,10 +908,6 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                         trading::perception::BayesSignal signal;
                         // Get per-regime handles and use only the active regime for prediction
                         auto handles = getBayesHandlesForSymbol(m.exchangeId, m.symbol);
-                        
-                        // Determine active regime (highest probability). Prefer explicit metric injected
-                        // into the OrderBookMetrics (m.metrics["marketRegime"]) if available. This metric
-                        // is set by OrderBookAnalyzer and corresponds to the enum index used for
                         // loading/saving per-regime Bayesian models.
                         int activeRegime = 0;
                         double maxProb = 0.0; // Start from 0 to allow any regime to be selected
@@ -866,46 +926,6 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                             }
                         } catch (...) {}
 
-                        if (!hasRegimeData && regime_subscriber_) {
-                            trading::strategy::core_analysis::RegimeInfo rinfo;
-                            std::string lookup_symbol = m.symbol.toString();
-                            LOG_TRACE("ImbalanceDetectionEngine: regime_subscriber_ is valid, looking up regime for symbol: '{}'", lookup_symbol);                          
-                            
-                            // First try the symbol as-is
-                            bool found_regime = regime_subscriber_->get(lookup_symbol, rinfo);
-                            LOG_TRACE("ImbalanceDetectionEngine: First lookup '{}' found={}", lookup_symbol, found_regime);
-                            
-                            // If not found, try converting format (BTC/USDT -> BTCUSDT)
-                            if (!found_regime) {
-                                std::string converted_symbol = lookup_symbol;
-                                // Remove slash and dash characters
-                                converted_symbol.erase(std::remove(converted_symbol.begin(), converted_symbol.end(), '/'), converted_symbol.end());
-                                converted_symbol.erase(std::remove(converted_symbol.begin(), converted_symbol.end(), '-'), converted_symbol.end());
-                                LOG_TRACE("ImbalanceDetectionEngine: Trying converted symbol: '{}' -> '{}'", lookup_symbol, converted_symbol);
-                                found_regime = regime_subscriber_->get(converted_symbol, rinfo);
-                            }
-                            
-                            if (found_regime && rinfo.probs.size() == ImbalanceDetectionEngine::NUMBER_OF_REGIMES) {
-                                hasRegimeData = true;
-                                // Log the probabilities we found
-                                // LOG_TRACE("ImbalanceDetectionEngine: Found regime data - probs=[{:.1f}, {:.1f}, {:.1f}, {:.1f}], regime={}", 
-                                //          rinfo.probs[0], rinfo.probs[1], rinfo.probs[2], rinfo.probs[3], rinfo.regime); 
-                                
-                                // Find most probable regime
-                                for (int i = 0; i < ImbalanceDetectionEngine::NUMBER_OF_REGIMES; ++i) {
-                                    if (rinfo.probs[i] > maxProb) {
-                                        maxProb = rinfo.probs[i];
-                                        // Only choose regime_subscriber result if we don't already have a metric-based regime
-                                        if (!m.metrics.count("marketRegime")) activeRegime = i;
-                                    }
-                                }
-                                // LOG_TRACE("ImbalanceDetectionEngine: Found regime data for '{}': active_regime={} (prob={:.3f})", 
-                                //          lookup_symbol, activeRegime, maxProb);
-                            } else {
-                                // LOG_TRACE("ImbalanceDetectionEngine: No valid regime data found for '{}' (found={}, probs.size={})", 
-                                //          lookup_symbol, found_regime, rinfo.probs.size());
-                            }
-                        }
                         
                         // Use only the active regime model for prediction
                         trading::perception::BayesSignal activeSignal{};
@@ -983,7 +1003,8 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                                 microstructure.orderbook_imbalance = m.bidAskVolumeRatio;
                                 // microstructure.trade_intensity = 
                                 // microstructure.price_impact = m.estimatedPriceImpact;
-                                microstructure.tick_size = 0.01; // Placeholder, replace with actual tick size if available
+                                //get tick size from con
+                                microstructure.tick_size = getConfiguredTickSize(m.exchangeId, m.symbol);
                                 // microstructure.volume_profile_skew = m.volumeProfileSkew;    
 
                                 if (authoritativeHasPosition) {
@@ -1007,7 +1028,7 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                                         microstructure.orderbook_imbalance = m.bidAskVolumeRatio;
                                         // microstructure.trade_intensity = 
                                         // microstructure.price_impact = m.estimatedPriceImpact;
-                                        microstructure.tick_size = 0.01; // Placeholder, replace with actual tick size if available
+                                        microstructure.tick_size = getConfiguredTickSize(m.exchangeId, m.symbol); // per-symbol/exchange tick size
                                         // microstructure.volume_profile_skew = m.volumeProfileSkew;
                                         auto opt2 = trading::strategy::getGlobalAdaptiveExitStrategy();
                                         if (opt2) {
@@ -1055,7 +1076,8 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                 // Process pending training samples (only when training enabled)
                 if (trainingEnabled_.load()) {
                     try {
-                        std::vector<std::tuple<std::vector<double>, int, core::ExchangeId, core::Symbol>> toTrain;
+                        // tuple: features, label, exchange, symbol, regime
+                        std::vector<std::tuple<std::vector<double>, int, core::ExchangeId, core::Symbol, int>> toTrain;
                         {
                             std::lock_guard<std::mutex> lk_pending2(pendingTrainingMutex_);
                             auto now = m.timestamp;
@@ -1098,19 +1120,7 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                                             normalizedReturn = std::clamp(normalizedReturn, -10.0, 10.0);
                                         }
 
-                                        // Use statistical thresholds computed per-regime (if regime info not available default to regime 0)
-                                        int regimeIdx = 0;
-                                        if (regime_subscriber_) {
-                                            trading::strategy::core_analysis::RegimeInfo rinfo;
-                                            if (regime_subscriber_->get(pt.symbol.toString(), rinfo) && !rinfo.probs.empty()) {
-                                                // pick most probable regime
-                                                double best = -1.0; int bi = 0;
-                                                for (size_t ii = 0; ii < rinfo.probs.size() && ii < ImbalanceDetectionEngine::NUMBER_OF_REGIMES; ++ii) {
-                                                    if (rinfo.probs[ii] > best) { best = rinfo.probs[ii]; bi = static_cast<int>(ii); }
-                                                }
-                                                regimeIdx = bi;
-                                            }
-                                        }
+                                        int regimeIdx = pt.regime;
 
                                         // Use configured minimum profitable return (if set) to prevent trading on tiny expected profits
                                         double cfgMinProf = config_.min_profitable_return;
@@ -1192,7 +1202,7 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                                                                     regimeIdx, confidence, vol);
                                         
                                         // record for training and update stats with realized (non-normalized) absolute return
-                                        toTrain.emplace_back(pt.features, label, pt.exchangeId, pt.symbol);
+                                        toTrain.emplace_back(pt.features, label, pt.exchangeId, pt.symbol, pt.regime);
                                         g_statThresholdAdapter.updateStats(regimeIdx, priceChangeLogRet, vol);
                                         pendingTraining_.pop_front();
                                 } else break;
@@ -1204,6 +1214,7 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                                 int label = std::get<1>(t);
                                 const auto &exch = std::get<2>(t);
                                 const auto &sym = std::get<3>(t);
+                                int sampleRegime = std::get<4>(t);
 
                                 // Get the per-regime handles
                                 auto handles = getBayesHandlesForSymbol(exch, sym);
@@ -1211,104 +1222,30 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                                 for (int i = 0; i < ImbalanceDetectionEngine::NUMBER_OF_REGIMES; ++i) if (handles[i]) { anyHandle = true; break; }
                                 if (!anyHandle) continue;
 
-                                // Active regime training: update regimes based on their probabilities
-                                int activeRegime = 0; // default to regime 0
-                                double maxProb = 0.0;
-                                bool hasRegimeData = false;
-                                trading::strategy::core_analysis::RegimeInfo rinfo;
-                                
-                                if (regime_subscriber_) {
-                                    std::string lookup_symbol = sym.toString();
-                                    
-                                    // LOG_TRACE("ImbalanceDetectionEngine: Training lookup for symbol: '{}'", lookup_symbol);
-                                    
-                                    // First try the symbol as-is
-                                    bool found_regime = regime_subscriber_->get(lookup_symbol, rinfo);
-                                    // LOG_TRACE("ImbalanceDetectionEngine: First lookup '{}' found={}", lookup_symbol, found_regime);
-                                    
-                                    // If not found, try converting format (BTC/USDT -> BTCUSDT)
-                                    if (!found_regime) {
-                                        std::string converted_symbol = lookup_symbol;
-                                        // Remove slash and dash characters
-                                        converted_symbol.erase(std::remove(converted_symbol.begin(), converted_symbol.end(), '/'), converted_symbol.end());
-                                        converted_symbol.erase(std::remove(converted_symbol.begin(), converted_symbol.end(), '-'), converted_symbol.end());
-                                        LOG_TRACE("ImbalanceDetectionEngine: Trying converted symbol: '{}' -> '{}'", lookup_symbol, converted_symbol);
-                                        found_regime = regime_subscriber_->get(converted_symbol, rinfo);
-                                    }
-                                    
-                                    if (found_regime && rinfo.probs.size() == ImbalanceDetectionEngine::NUMBER_OF_REGIMES) {
-                                        hasRegimeData = true;
-                                        // Log the probabilities we found
-                                        // LOG_TRACE("ImbalanceDetectionEngine: Found regime data - probs=[{:.1f}, {:.1f}, {:.1f}, {:.1f}], regime={}", 
-                                        //          rinfo.probs[0], rinfo.probs[1], rinfo.probs[2], rinfo.probs[3], rinfo.regime); 
-                                        
-                                        // Find the regime with highest probability
-                                        for (int i = 0; i < ImbalanceDetectionEngine::NUMBER_OF_REGIMES; ++i) {
-                                            if (rinfo.probs[i] > maxProb) {
-                                                maxProb = rinfo.probs[i];
-                                                activeRegime = i;
-                                            }
+                                // Single-regime update: use the regime snapshot captured with the sample
+                                bool anyUpdated = false;
+                                int activeRegime = 0;
+                                if (sampleRegime >= 0 && sampleRegime < ImbalanceDetectionEngine::NUMBER_OF_REGIMES) activeRegime = sampleRegime;
+                                // Lazy create handle if needed
+                                if (!handles[activeRegime]) {
+                                    try {
+                                        handles[activeRegime] = trading::perception::bayes_create();
+                                        // Update cached handles
+                                        {
+                                            std::lock_guard<std::mutex> lk(bayesHandlesMutex_);
+                                            std::string key = exch.toString() + "_" + sym.toString();
+                                            bayesHandles_[key] = handles;
                                         }
-                                    } else {
-                                        LOG_TRACE("ImbalanceDetectionEngine: No valid regime data found for '{}' (found={}, probs.size={})", 
-                                                lookup_symbol, found_regime, rinfo.probs.size());
+                                        LOG_TRACE("ImbalanceDetectionEngine: lazy created bayes handle for regime {} ({}:{})", 
+                                                activeRegime, exch.toString(), sym.toString());
+                                    } catch (...) {
+                                        handles[activeRegime] = nullptr;
                                     }
                                 }
-
-                                // Update all regimes weighted by their probabilities (sophisticated uniform distribution approach)
-                                bool anyUpdated = false;
-                                
-                                if (hasRegimeData) {
-                                    for (int i = 0; i < ImbalanceDetectionEngine::NUMBER_OF_REGIMES; ++i) {
-                                        if (rinfo.probs[i] > 0.15) {  // Update any regime with >15% probability
-                                            // Lazy create handle if needed
-                                            if (!handles[i]) {
-                                                try {
-                                                    handles[i] = trading::perception::bayes_create();
-                                                    // Update cached handles
-                                                    {
-                                                        std::lock_guard<std::mutex> lk(bayesHandlesMutex_);
-                                                        std::string key = exch.toString() + "_" + sym.toString();
-                                                        bayesHandles_[key] = handles;
-                                                    }
-                                                    LOG_TRACE("ImbalanceDetectionEngine: lazy created bayes handle for regime {} ({}:{})", 
-                                                            i, exch.toString(), sym.toString());
-                                                } catch (...) {
-                                                    handles[i] = nullptr;
-                                                }
-                                            }
-                                            
-                                            if (handles[i]) {
-                                                // Could also use weighted updates based on probability
-                                                trading::perception::bayes_update(handles[i], features, label);
-                                                anyUpdated = true;
-                                                // LOG_TRACE("ImbalanceDetectionEngine: Updated regime {} with prob={:.3f} for {}:{}", 
-                                                //          i, rinfo.probs[i], exch.toString(), sym.toString());
-                                            }
-                                        }
-                                    }
-                                } else {
-                                    // Fallback: update regime 0 when no regime data
-                                    if (!handles[0]) {
-                                        try {
-                                            handles[0] = trading::perception::bayes_create();
-                                            {
-                                                std::lock_guard<std::mutex> lk(bayesHandlesMutex_);
-                                                std::string key = exch.toString() + "_" + sym.toString();
-                                                bayesHandles_[key] = handles;
-                                            }
-                                            LOG_TRACE("ImbalanceDetectionEngine: lazy created fallback bayes handle for regime 0 ({}:{})", 
-                                                    exch.toString(), sym.toString());
-                                        } catch (...) {
-                                            handles[0] = nullptr;
-                                        }
-                                    }
-                                    if (handles[0]) {
-                                        trading::perception::bayes_update(handles[0], features, label);
-                                        anyUpdated = true;
-                                        LOG_TRACE("ImbalanceDetectionEngine: Updated fallback regime 0 for {}:{}", 
-                                                exch.toString(), sym.toString());
-                                    }
+                                if (handles[activeRegime]) {
+                                    trading::perception::bayes_update(handles[activeRegime], features, label);
+                                    anyUpdated = true;
+                                    LOG_TRACE("ImbalanceDetectionEngine: Updated regime {} for {}:{}", activeRegime, exch.toString(), sym.toString());
                                 }
                                 
                                 if (!anyUpdated) {
