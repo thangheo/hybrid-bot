@@ -45,13 +45,33 @@ double OrderbookRegimeDetector::calculateAutoCorrelation(const std::deque<double
     return num / den;
 }
 
+// Patch: Refactored detect with improved smoothing, input guards, and regime logic
 MarketRegimeType OrderbookRegimeDetector::detect(
     const MarketMicrostructure& micro,
     const std::deque<double>& vol_samples,
     const std::deque<double>& spread_samples,
-    const std::deque<double>& returns_samples) const
+    const std::deque<double>& returns_samples)
 {
-    if (vol_samples.size() < 20) return MarketRegimeType::NORMAL;
+    // Configurable parameters (should move to struct in production)
+    constexpr size_t MIN_SAMPLES = 20;
+    constexpr double VOL_THRESHOLD = 1.2;
+    constexpr double SPREAD_THRESHOLD = 2.0;
+    constexpr double STRESS_VOL = 1.2;
+    constexpr double STRESS_SPREAD = 2.0;
+    constexpr double TREND_AC = 0.25;
+    constexpr double TREND_STRENGTH = 0.6;
+    constexpr double IMBALANCE = 0.3;
+    constexpr double MEANREV_AC = -0.25;
+    constexpr double MEANREV_STRENGTH = 0.4;
+    constexpr double QUIET_VOL = 0.5;
+    constexpr double QUIET_ACTIVITY = 0.001;
+    constexpr int SMOOTHING_TICKS = 3;
+
+    if (vol_samples.size() < MIN_SAMPLES ||
+        spread_samples.size() < MIN_SAMPLES ||
+        returns_samples.size() < MIN_SAMPLES) {
+        return MarketRegimeType::NORMAL;
+    }
 
     // ---------- 1. Statistical baselines ----------
     double vol_p75 = calculatePercentile(vol_samples, 0.75);
@@ -72,55 +92,52 @@ MarketRegimeType OrderbookRegimeDetector::detect(
     for (double r : returns_samples) oscillation += std::abs(r);
     double trend_strength = std::abs(cumulative_move) / (oscillation + 1e-9);
 
-    // stress indicator: volatility / average volatility + spread ratio
-    double stress = (vol_now / (vol_p90 + 1e-9)) + (spread_now / (spread_p90 + 1e-9));
-    stress *= 0.5;
-
     // activity: mean(|returns|)
     double activity = oscillation / returns_samples.size();
 
     // ---------- 3. Regime logic ----------
     MarketRegimeType detected = MarketRegimeType::NORMAL;
 
-    // Highest priority: stress / dislocation
-    if (stress > 1.2) {
+    bool high_vol = (vol_now > vol_p90 * VOL_THRESHOLD);
+    bool high_spread = (spread_now > spread_p90 * SPREAD_THRESHOLD);
+
+    // Priority 1: STRESS (both high volatility and high spread)
+    if (high_vol && high_spread) {
         detected = MarketRegimeType::STRESS;
     }
-    // High volatility / instability
-    else if (vol_now > vol_p90 * 1.2) {
+    // Priority 2: Single-factor regimes
+    else if (high_vol) {
         detected = MarketRegimeType::HIGH_VOLATILITY;
     }
-    // Thin book
-    else if (spread_now > spread_p90 * 2.0) {
+    else if (high_spread) {
         detected = MarketRegimeType::LOW_LIQUIDITY;
     }
-    // Trending regime (directional persistence + orderbook imbalance)
-    else if (returns_ac > 0.25 && trend_strength > 0.6 && std::abs(micro.orderbook_imbalance) > 0.3) {
+    // Priority 3: Dynamic regimes
+    else if (returns_ac > TREND_AC && trend_strength > TREND_STRENGTH && std::abs(micro.orderbook_imbalance) > IMBALANCE) {
         detected = MarketRegimeType::TRENDING;
     }
-    // Mean reversion regime
-    else if (returns_ac < -0.25 && trend_strength < 0.4) {
+    else if (returns_ac < MEANREV_AC && trend_strength < MEANREV_STRENGTH) {
         detected = MarketRegimeType::MEAN_REVERTING;
     }
-    // Quiet
-    else if (vol_now < vol_p75 * 0.5 && activity < 0.001) {
+    else if (vol_now < vol_p75 * QUIET_VOL && activity < QUIET_ACTIVITY) {
         detected = MarketRegimeType::QUIET;
     }
 
-    // ---------- 4. Regime smoothing ----------
-    static MarketRegimeType last = MarketRegimeType::NORMAL;
-    static int stable_count = 0;
-
-    if (detected != last) {
-        if (++stable_count > 3) { // require consistency over 3 ticks
-            last = detected;
-            stable_count = 0;
-        }
+    // ---------- 4. Regime smoothing (state machine) ----------
+    if (detected == m_lastRegime) {
+        m_stableCount = 0;
+        m_candidateRegime = detected;
+    } else if (detected == m_candidateRegime) {
+        m_stableCount++;
     } else {
-        stable_count = 0;
+        m_candidateRegime = detected;
+        m_stableCount = 1;
     }
-
-    return last;
+    if (m_stableCount > SMOOTHING_TICKS) {
+        m_lastRegime = m_candidateRegime;
+        m_stableCount = 0;
+    }
+    return m_lastRegime;
 }
 
 double OrderbookRegimeDetector::calculateMean(const std::deque<double>& data) {

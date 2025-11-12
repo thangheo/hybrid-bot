@@ -37,7 +37,7 @@ public:
         const MarketMicrostructure& micro,
         const std::deque<double>& volatility_samples,
         const std::deque<double>& spread_samples,
-        const std::deque<double>& price_returns) const;
+        const std::deque<double>& price_returns);
     // function to get current regime as string
 
     // get current regime as enum
@@ -53,6 +53,10 @@ public:
     }
 private:
     // RegimeDetectorConfig config_;
+    // Smoothing state (mutable)
+    MarketRegimeType m_lastRegime = MarketRegimeType::NORMAL;
+    MarketRegimeType m_candidateRegime = MarketRegimeType::NORMAL;
+    int m_stableCount = 0;
     // Statistical helpers (public for testing)
     static double calculatePercentile(const std::deque<double>& data, double percentile);
     static double calculateStandardDeviation(const std::deque<double>& data);
