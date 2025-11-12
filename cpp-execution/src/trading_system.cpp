@@ -512,7 +512,7 @@ void Trading_system::exitMonitorLoop() {
                     // Get current signal (optional - can pass NEUTRAL if not available)
                     core::Direction currentSignalDir = core::Direction::NEUTRAL;
                     double currentConfidence = 0.5;
-                    AdaptiveExitStrategy::MarketMicrostructure currentMicro;
+                    MarketMicrostructure currentMicro;
                     currentMicro.spread_ema = spreadEMA;
                     currentMicro.volatility_1m = realize_volatility_1m;
                     // Populate tick_size from exchange config cache
@@ -1785,7 +1785,7 @@ void Trading_system::execWorkerLoop(size_t workerId) {
                     }
 
                     // Build microstructure and call startPosition
-                    trading::strategy::AdaptiveExitStrategy::MarketMicrostructure micro;
+                    MarketMicrostructure micro;
                     //get vol1m from orderbook metric we subscribed
                     micro.volatility_1m = 0.0;
                     micro.spread_ema = spreadRatio * currentPrice; // best-effort

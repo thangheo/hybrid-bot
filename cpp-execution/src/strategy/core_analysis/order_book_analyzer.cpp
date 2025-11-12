@@ -8,6 +8,7 @@
 
 #include "strategy/core_analysis/order_book_analyzer.hpp"
 #include "strategy/core_analysis/strategy_metrics.hpp"
+#include "strategy/core_analysis/orderbook_regime_detector.hpp"
 #include <algorithm>
 #include <numeric>
 #include <cmath>
@@ -244,6 +245,55 @@ void OrderBookAnalyzer::processOrderBook(const data_ingestion::OrderBook& snapsh
         // }
         lastUpdateTime_ = snapshot.getTimestamp();
         metricsToNotify = currentMetrics_;
+        // --- Inline Orderbook-based regime detection ---
+        try {
+            // Prepare samples for detector (use recent history)
+            std::deque<double> vol_samples;
+            std::deque<double> spread_samples;
+            std::deque<double> price_returns;
+
+            // Use historical mid prices to compute returns and volatility-like samples
+            const size_t max_samples = 60;
+            size_t mid_count = historicalMidPrices_.size();
+            if (mid_count >= 2) {
+                size_t start = (mid_count > max_samples) ? mid_count - max_samples : 1;
+                // price_returns: signed log-returns
+                for (size_t i = (mid_count > max_samples ? mid_count - max_samples : 1); i < mid_count; ++i) {
+                    double prev = historicalMidPrices_[i-1];
+                    double cur = historicalMidPrices_[i];
+                    if (prev > 0 && cur > 0) {
+                        double lr = std::log(cur / prev);
+                        price_returns.push_back(lr);
+                        vol_samples.push_back(std::fabs(lr));
+                    }
+                }
+            }
+
+            // spread_samples: use historicalSpreads_ tail
+            size_t spread_count = historicalSpreads_.size();
+            size_t sstart = (spread_count > max_samples) ? spread_count - max_samples : 0;
+            for (size_t i = sstart; i < spread_count; ++i) spread_samples.push_back(historicalSpreads_[i]);
+
+            // Build microstructure view expected by detector
+            MarketMicrostructure micro{};
+            micro.volatility_1m = currentMetrics_.realize_volatility_1m;
+            micro.spread_ema = currentMetrics_.emaSpread > 0.0 ? currentMetrics_.emaSpread : currentMetrics_.spread;
+            micro.orderbook_imbalance = currentMetrics_.volumeImbalance;
+            micro.trade_intensity = currentMetrics_.bidFlow + currentMetrics_.askFlow;
+            micro.price_impact = 0.0;
+            micro.tick_size = params_.getDouble("tickSize", 0.0);
+            micro.volume_profile_skew = currentMetrics_.priceLevelImbalance;
+
+            trading::strategy::core_analysis::OrderbookRegimeDetector detector;
+            auto regime = detector.detect(micro, vol_samples, spread_samples, price_returns);
+
+            // Expose numeric regime in metrics for downstream components
+            currentMetrics_.metrics["marketRegime"] = static_cast<double>(static_cast<int>(regime));
+            // Optionally also store a small diagnostic value
+            currentMetrics_.metrics["regime_confidence_dummy"] = 0.0;
+        } catch (const std::exception& e) {
+            LOG_DEBUG("OrderBookAnalyzer: regime detection failed: {}", e.what());
+        }
         // Avoid sending large time-series data in the notification copy. Callers
         // interested in time series should query the analyzer directly.
         metricsToNotify.timeSeriesMetrics.clear();
@@ -251,10 +301,7 @@ void OrderBookAnalyzer::processOrderBook(const data_ingestion::OrderBook& snapsh
     
     // Publish event outside of lock to prevent deadlocks
     common::EventBus::getInstance().publish(events::MetricsUpdatedEvent{metricsToNotify});
-    // Also notify any directly registered in-process callbacks. We call the
-    // notifier outside the lock (the lock scope ended above) to avoid
-    // deadlocks — notifyMetricsUpdated() locks internally when copying
-    // callbacks and metrics.
+    
     notifyMetricsUpdated();
 }
 
