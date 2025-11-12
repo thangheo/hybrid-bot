@@ -209,8 +209,8 @@ void Trading_system::updateSymbolMarketData(
 
         // 4. Debug log
         int cnt = debugCounter.fetch_add(1, std::memory_order_relaxed);
-        if (cnt % 10 == 0) {
-            LOG_INFO("Microstructure {}@{}: vol_1m={:.6f}, spread_ema={:.6f}, imbalance={:.3f}, "
+        if (cnt % 50 == 0) {
+            LOG_TRACE("Microstructure {}@{}: vol_1m={:.6f}, spread_ema={:.6f}, imbalance={:.3f}, "
                      "intensity={:.0f}, price_return={:.6f}, mid={:.6f}",
                      symbolStr, exch.toString(),
                      out_vol_1m, out_spread_ema, out_orderbook_imbalance,
@@ -384,7 +384,7 @@ void Trading_system::exitMonitorLoop() {
                                 spreadRatio = obMetrics.spread / currentPrice;
                                 spreadEMA = obMetrics.emaSpread / currentPrice;
                                 realize_volatility_1m = obMetrics.realize_volatility_1m;
-                                LOG_INFO("Exit monitor: metrics for {} mid={} volImb={} rv={} vol1m={}", symbol, obMid, obVolImbalance, obRV, realize_volatility_1m);
+                                LOG_TRACE("Exit monitor: metrics for {} mid={} volImb={} rv={} vol1m={}", symbol, obMid, obVolImbalance, obRV, realize_volatility_1m);
                             } catch (...) {
                                 // ignore malformed metric
                             }
@@ -458,7 +458,8 @@ void Trading_system::exitMonitorLoop() {
                         && posInfo.has_value()) {
                             // Log exit trigger with holding time
                         auto now = std::chrono::steady_clock::now();
-                        auto holdingDuration = std::chrono::duration_cast<std::chrono::seconds>(
+                        // convert to ms
+                        auto holdingDuration = std::chrono::duration_cast<std::chrono::milliseconds>(
                             now - posInfo->entry_time).count();
                         LOG_INFO("EXIT TRIGGERED: {} - {} ({:.2f}bps) after {}s holding",
                                 symbol,
