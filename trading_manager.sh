@@ -497,7 +497,7 @@ case "$1" in
         if start_python ; then
             
             print_status "$BLUE" "Waiting 5 seconds for C++ to initialize..."
-            sleep 60
+            # sleep 60
             
             # Start 
             start_cpp
