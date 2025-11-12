@@ -767,6 +767,52 @@ bool Trading_system::initialize() {
     } catch (const std::exception &e) {
         LOG_WARN("Failed to ensure global AdaptiveExitStrategy: {}", e.what());
     }
+
+    // Reconciliation pass: import authoritative open positions from PositionTracker
+    // into the AdaptiveExitStrategy so entry tracking (entry_price, entry_time) is present.
+    // Note: AdaptiveExitStrategy currently sets entry_time internally in startPosition();
+    // to preserve authoritative entry timestamps we'd need startPositionWithTime(...) —
+    // for now we import positions so the strategy can evaluate exits going forward.
+    try {
+        if (exitStrategy_ && sharedPositionTracker) {
+            auto positions = sharedPositionTracker->getAllPositions();
+            LOG_INFO("Reconciliation: scanning {} positions from PositionTracker to import into exit strategy", positions.size());
+            for (const auto& pos : positions) {
+                try {
+                    double qty = pos.getQuantity();
+                    if (std::abs(qty) < 1e-12) continue; // skip zero positions
+
+                    std::string sym = pos.getTradingPair().toString();
+                    // Skip if already tracked
+                    if (exitStrategy_->hasActivePosition(sym)) continue;
+
+                    // Build a minimal microstructure snapshot. We prefer cached price if available.
+                    trading::strategy::MarketMicrostructure micro;
+                    micro.tick_size = getExchangeTickSize(pos.getExchangeId());
+                    // Use current price from position tracker if available
+                    try {
+                        micro.volatility_1m = 0.0;
+                        micro.spread_ema = 0.0;
+                        micro.orderbook_imbalance = 0.0;
+                        micro.trade_intensity = 0.0;
+                    } catch (...) {}
+
+                    auto direction = (qty >= 0.0) ? core::Direction::BUY : core::Direction::SELL;
+                    double entryPrice = pos.getAverageEntryPrice();
+                    double confidence = 1.0; // authoritative positions are high confidence
+
+                    exitStrategy_->startPosition(sym, entryPrice, direction, confidence, micro);
+                    LOG_INFO("Reconciliation: imported position {} qty={} price={} into exit strategy", sym, qty, entryPrice);
+                } catch (const std::exception& e) {
+                    LOG_WARN("Reconciliation: failed to import position: {}", e.what());
+                }
+            }
+        } else {
+            LOG_INFO("Reconciliation: skipping import - exitStrategy_ or PositionTracker not available");
+        }
+    } catch (const std::exception& e) {
+        LOG_WARN("Reconciliation pass failed: {}", e.what());
+    }
     
     // Load symbol volatility configuration
     std::string volatilityConfigPath = "config/symbol_volatility_config.json";
