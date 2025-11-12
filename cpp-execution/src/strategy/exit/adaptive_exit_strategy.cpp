@@ -179,7 +179,6 @@ AdaptiveExitStrategy::DynamicParameters AdaptiveExitStrategy::calculateDynamicPa
 
     // 5. Holding Time (based on autocorrelation decay and mean reversion speed)
     // Formula: T_max = prediction_window * decay_factor
-    double decay_factor = 1.0;
     
     if (regime == MarketRegimeType::TRENDING) {
         decay_factor = 1.5;  // Hold longer in trends
