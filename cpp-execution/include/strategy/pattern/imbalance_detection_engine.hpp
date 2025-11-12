@@ -29,6 +29,7 @@ namespace trading { namespace perception { class BayesianTradingModel; } }
 #include <mutex>
 #include <functional>
 #include <deque>
+#include <atomic>
 
 
 
@@ -260,7 +261,17 @@ public:
     std::condition_variable detectorQueueCv_;
     std::deque<OrderBookMetrics> detectorQueue_;
     std::atomic<bool> detectorWorkerRunning_{false};
-    size_t detectorQueueMax_ = 1024;
+    size_t detectorQueueMax_ = 1024*16; // default max queue size
+    // For rate-limiting the 'queue full' warning
+    mutable std::atomic<long long> lastQueueFullWarnMs_{0};
+
+public:
+    // Query if engine is currently under backpressure (queue at or above capacity)
+    bool isUnderBackpressure() const;
+    // Get current queue size (for instrumentation)
+    size_t getDetectorQueueSize() const;
+    // Get configured queue capacity
+    size_t getDetectorQueueMax() const { return detectorQueueMax_; }
 
     // When false, detected events are constructed but not published to EventBus
     std::atomic<bool> publishEvents_{true};
