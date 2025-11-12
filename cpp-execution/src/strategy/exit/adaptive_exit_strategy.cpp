@@ -282,6 +282,17 @@ void AdaptiveExitStrategy::startPosition(
     state.max_favorable_excursion = 0.0;
     state.max_adverse_excursion = 0.0;
     state.momentum_score = 0.0;
+    // Initialize stateful exit control fields per high-level review
+    state.exit_in_progress = false;
+    state.last_exit_attempt = std::chrono::steady_clock::time_point();
+    state.min_hold_seconds = std::max(min_hold_factor_ * predictionWindow_, 0.0);
+    state.cooldown_seconds = cooldown_seconds_default_;
+    state.backoff_attempts = 0;
+    state.next_allowed_exit_time = std::chrono::steady_clock::now();
+    state.consecutive_low_confidence_triggers = 0;
+    state.last_trigger_time = std::chrono::steady_clock::time_point();
+    state.orderable = true;
+    state.last_exit_failure.clear();
 }
 
 AdaptiveExitStrategy::ExitDecision AdaptiveExitStrategy::evaluateExit(
@@ -301,7 +312,13 @@ AdaptiveExitStrategy::ExitDecision AdaptiveExitStrategy::evaluateExit(
     auto& state = it->second;
     
     // Get current dynamic parameters
-    auto regime = detectMarketRegime(current_micro, marketHistory_[symbol]);
+    MarketHistory history_snapshot;
+    {
+        std::lock_guard<std::mutex> lk(historyMutex_);
+        auto it_hist = marketHistory_.find(symbol);
+        if (it_hist != marketHistory_.end()) history_snapshot = it_hist->second;
+    }
+    auto regime = detectMarketRegime(current_micro, history_snapshot);
     auto params = calculateDynamicParameters(symbol, current_micro, regime);
     
     // Calculate PnL in ticks
@@ -362,54 +379,70 @@ AdaptiveExitStrategy::ExitDecision AdaptiveExitStrategy::evaluateExit(
     
     // ===== EXIT CONDITIONS (Priority Order) =====
     
-    // 1. STOP LOSS (immediate)
+    // 1. STOP LOSS (immediate) - bypasses cooldown/consensus
     if (pnl_ticks <= params.stop_loss_ticks) {
         decision.should_exit = true;
         decision.reason = ExitReason::STOP_LOSS;
         decision.confidence = 1.0;
+        // register attempt and return immediately
+        registerExitAttemptResult(symbol, true, "stop_loss_executed");
         return decision;
     }
     
-    // 2. VOLATILITY SPIKE (protect capital)
-    if (current_micro.volatility_1m > state.entry_microstructure.volatility_1m * 2.5) {
+    // Candidate exit aggregation (we evaluate gating below: min_hold, cooldown, consensus, orderability)
+    bool candidate = false;
+    ExitReason candidate_reason = ExitReason::TIME_LIMIT;
+    double candidate_confidence = 0.0;
+
+    // 2. VOLATILITY SPIKE (debounced/sustained)
+    bool vol_spike = false;
+    if (!history_snapshot.volatility_samples.empty()) {
+        size_t n = history_snapshot.volatility_samples.size();
+        int sustain = volatility_spike_sustain_samples_;
+        int count = 0;
+        for (size_t i = (n > (size_t)sustain ? n - sustain : 0); i < n; ++i) {
+            if (history_snapshot.volatility_samples[i] > state.entry_microstructure.volatility_1m * 2.5) ++count;
+        }
+        vol_spike = (count >= sustain);
+    }
+    if (vol_spike) {
         if (pnl_ticks < params.profit_target_ticks * 0.5) {
-            decision.should_exit = true;
-            decision.reason = ExitReason::VOLATILITY_SPIKE;
-            decision.confidence = 0.8;
-            return decision;
+            candidate = true;
+            candidate_reason = ExitReason::VOLATILITY_SPIKE;
+            candidate_confidence = 0.8;
         }
     }
-    
+
     // 3. ADVERSE SELECTION DETECTION
     double adverse_score = calculateAdverseSelectionScore(state, current_micro);
     if (adverse_score > 0.7 && pnl_ticks < 0) {
-        decision.should_exit = true;
-        decision.reason = ExitReason::ADVERSE_SELECTION;
-        decision.confidence = adverse_score;
-        return decision;
+        candidate = true;
+        candidate_reason = ExitReason::ADVERSE_SELECTION;
+        candidate_confidence = adverse_score;
     }
-    
-    // Skip remaining checks if minimum hold time not met
-    if (seconds_held < params.min_holding_time) {
+
+    // Skip remaining checks if minimum hold time not met (enforce aligned horizon)
+    double min_hold = std::max(params.min_holding_time, state.min_hold_seconds);
+    if (seconds_held < min_hold) {
         return decision;
     }
     
     // 4. PROFIT TARGET
+    // 4. PROFIT TARGET
     if (pnl_ticks >= params.profit_target_ticks) {
-        decision.should_exit = true;
-        decision.reason = ExitReason::PROFIT_TARGET;
-        decision.confidence = 0.9;
-        return decision;
+        candidate = true;
+        candidate_reason = ExitReason::PROFIT_TARGET;
+        candidate_confidence = 0.9;
     }
     
+    // 5. TRAILING STOP
     // 5. TRAILING STOP
     if (state.max_favorable_excursion > params.trailing_stop_ticks) {
         double drawdown = state.max_favorable_excursion - pnl_ticks;
         if (drawdown > params.trailing_stop_ticks) {
-            decision.should_exit = true;
-            decision.reason = ExitReason::TRAILING_STOP;
-            decision.confidence = 0.85;
-            return decision;
+            candidate = true;
+            candidate_reason = ExitReason::TRAILING_STOP;
+            candidate_confidence = 0.85;
         }
     }
     
@@ -424,30 +457,120 @@ AdaptiveExitStrategy::ExitDecision AdaptiveExitStrategy::evaluateExit(
     }
     
     if (signal_reversed && state.momentum_score < 0) {
-        decision.should_exit = true;
-        decision.reason = ExitReason::SIGNAL_REVERSAL;
-        decision.confidence = current_confidence;
-        return decision;
+        candidate = true;
+        candidate_reason = ExitReason::SIGNAL_REVERSAL;
+        candidate_confidence = current_confidence;
     }
     
     // 7. SPREAD WIDENING / LIQUIDITY CRISIS
     double spread_ratio = current_micro.spread_ema / state.entry_microstructure.spread_ema;
     if (spread_ratio > params.spread_emergency_multiplier) {
-        decision.should_exit = true;
-        decision.reason = ExitReason::LIQUIDITY_CRISIS;
-        decision.confidence = 0.7;
-        return decision;
+        candidate = true;
+        candidate_reason = ExitReason::LIQUIDITY_CRISIS;
+        candidate_confidence = 0.7;
     }
     
     // 8. TIME LIMIT
     if (seconds_held >= params.max_holding_time) {
-        decision.should_exit = true;
-        decision.reason = ExitReason::TIME_LIMIT;
-        decision.confidence = 0.6;
+        candidate = true;
+        candidate_reason = ExitReason::TIME_LIMIT;
+        candidate_confidence = 0.6;
+    }
+
+    // If no candidate exit, return
+    if (!candidate) return decision;
+
+    // Gating checks: cooldown/backoff, consensus/confidence threshold, orderability
+    auto now_tp = std::chrono::steady_clock::now();
+    if (now_tp < state.next_allowed_exit_time) {
+        // Still in cooldown/backoff window
         return decision;
     }
-    
+
+    // Consensus/Confidence: require either high confidence or repeated triggers
+    if (candidate_confidence < consensus_confidence_threshold_) {
+        // update consecutive counter
+        double elapsed_since_last_trigger = state.last_trigger_time.time_since_epoch().count() == 0 ? 1e9 : std::chrono::duration<double>(now_tp - state.last_trigger_time).count();
+        if (elapsed_since_last_trigger > consensus_window_seconds_) {
+            state.consecutive_low_confidence_triggers = 1;
+        } else {
+            state.consecutive_low_confidence_triggers += 1;
+        }
+        state.last_trigger_time = now_tp;
+
+        if (state.consecutive_low_confidence_triggers < consensus_required_count_) {
+            // Need more confirmations
+            return decision;
+        }
+        // reached consensus - reset counter
+        state.consecutive_low_confidence_triggers = 0;
+    }
+
+    // Pre-check orderability / min_notional. We estimate required_notional conservatively as current_price * 1 unit
+    double required_notional = std::abs(current_price) * 1.0;
+    if (!preCheckOrderability(symbol, required_notional)) {
+        registerExitAttemptResult(symbol, false, "precheck_failed_min_notional_or_balance");
+        return decision;
+    }
+
+    // All gating passed; register success and populate decision
+    registerExitAttemptResult(symbol, true, "exit_allowed");
+    decision.should_exit = true;
+    decision.reason = candidate_reason;
+    decision.confidence = candidate_confidence;
     return decision;
+}
+
+// Implement calculateSkewness
+double AdaptiveExitStrategy::calculateSkewness(const std::deque<double>& data) const {
+    if (data.size() < 3) return 0.0;
+    double mean = std::accumulate(data.begin(), data.end(), 0.0) / data.size();
+    double m2 = 0.0, m3 = 0.0;
+    for (double v : data) {
+        double d = v - mean;
+        m2 += d * d;
+        m3 += d * d * d;
+    }
+    double sd = std::sqrt(m2 / data.size());
+    if (sd == 0.0) return 0.0;
+    double skew = (m3 / data.size()) / (sd * sd * sd);
+    return skew;
+}
+
+bool AdaptiveExitStrategy::preCheckOrderability(const std::string& symbol, double required_notional) const {
+    // Placeholder implementation: in real system query account balances, order book min_notional, etc.
+    // Here we do quick checks: ensure required_notional >= min_notional_default_ and symbol is marked orderable
+    auto it = activeTrades_.find(symbol);
+    if (it != activeTrades_.end()) {
+        const auto& state = it->second;
+        if (!state.orderable) return false;
+    }
+    if (required_notional < min_notional_default_) return false;
+    return true;
+}
+
+void AdaptiveExitStrategy::registerExitAttemptResult(const std::string& symbol, bool success, const std::string& reason) {
+    std::lock_guard<std::mutex> lock(tradesMutex_);
+    auto it = activeTrades_.find(symbol);
+    auto now = std::chrono::steady_clock::now();
+    if (it == activeTrades_.end()) return;
+    auto& state = it->second;
+    state.last_exit_attempt = now;
+    state.last_exit_failure = reason;
+    if (success) {
+        // reset backoff
+        state.backoff_attempts = 0;
+        state.next_allowed_exit_time = now + std::chrono::milliseconds((long)(state.cooldown_seconds * 1000));
+        state.exit_in_progress = false;
+    } else {
+        // increase backoff exponentially
+        state.backoff_attempts += 1;
+        double backoff = state.cooldown_seconds * std::pow(2.0, std::min(5, state.backoff_attempts));
+        state.next_allowed_exit_time = now + std::chrono::milliseconds((long)(backoff * 1000));
+        state.exit_in_progress = false;
+        // if repeated failures, mark non-orderable
+        if (state.backoff_attempts > 3) state.orderable = false;
+    }
 }
 
 double AdaptiveExitStrategy::calculateAdverseSelectionScore(
