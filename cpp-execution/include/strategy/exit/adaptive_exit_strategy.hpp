@@ -107,17 +107,6 @@ public:
         
         bool is_active = false;
         std::string symbol;
-        // Stateful exit controls (high-level review)
-        bool exit_in_progress = false;                              // An exit is currently being attempted
-        std::chrono::steady_clock::time_point last_exit_attempt;    // Last time we tried an exit
-        double min_hold_seconds = 0.0;                              // Per-trade min hold override
-        double cooldown_seconds = 0.0;                              // Configured cooldown for this trade
-        int backoff_attempts = 0;                                   // Exponential backoff counter
-        std::chrono::steady_clock::time_point next_allowed_exit_time;// Next allowed exit attempt time
-        int consecutive_low_confidence_triggers = 0;                // Consensus counter for low-conf triggers
-        std::chrono::steady_clock::time_point last_trigger_time;    // When last trigger incremented
-        bool orderable = true;                                      // Local/account orderability flag
-        std::string last_exit_failure;                              // Last failure reason (informational)
     };
 
 private:
@@ -140,23 +129,12 @@ private:
     // Configuration
     double predictionWindow_ = 60.0;  // 1 minute in seconds
     double riskFreeRate_ = 0.0;       // For Sharpe calculation
-    // High-level review configuration (practical defaults)
-    double min_hold_factor_ = 0.5;               // min_hold >= min_hold_factor_ * predictionWindow_
-    double cooldown_seconds_default_ = 10.0;     // default cooldown between exit attempts
-    int consensus_required_count_ = 3;           // number of repeated low-conf triggers to accept exit
-    double consensus_confidence_threshold_ = 0.75; // required confidence to bypass consensus
-    int volatility_spike_sustain_samples_ = 3;   // how many successive samples to treat vol spike as sustained
-    double consensus_window_seconds_ = 30.0;     // window to gather repeated triggers
-    double min_notional_default_ = 10.0;         // min notional check for orderability (placeholder)
     
     // Statistical functions
     double calculatePercentile(const std::deque<double>& data, double percentile) const;
     double calculateStandardDeviation(const std::deque<double>& data) const;
     double calculateSkewness(const std::deque<double>& data) const;
     double calculateAutoCorrelation(const std::deque<double>& data, int lag) const;
-    // utility pre-checks and bookkeeping for exit attempts
-    bool preCheckOrderability(const std::string& symbol, double required_notional) const;
-    void registerExitAttemptResult(const std::string& symbol, bool success, const std::string& reason);
     
     // Market regime detection
     MarketRegime detectMarketRegime(const MarketMicrostructure& micro, 
