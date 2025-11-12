@@ -140,85 +140,258 @@ Trading_system::Trading_system() : running_(false), systemHealthy_(true) {
     
 }
 // Market data updater loop: periodically fetch microstructure metrics and update exit strategy
-void Trading_system::marketDataUpdaterLoop(){
-    LOG_INFO("Market data updater loop started");
+// void Trading_system::marketDataUpdaterLoop(){
+//     LOG_INFO("Market data updater loop started");
 
-    while (marketDataUpdaterRunning_.load()) {
-        try {
-            if (!exitStrategy_) {
-                LOG_INFO("Market data updater: exit strategy not initialized yet");
-                std::this_thread::sleep_for(std::chrono::seconds(1));
-                continue;
+//     while (marketDataUpdaterRunning_.load()) {
+//         try {
+//             if (!exitStrategy_) {
+//                 LOG_INFO("Market data updater: exit strategy not initialized yet");
+//                 std::this_thread::sleep_for(std::chrono::seconds(1));
+//                 continue;
+//             }
+
+//             for (const auto& [sym, exch] : strategyConfig_.tradingPairs) {
+//                 try {
+//                     std::string symbolStr = sym.toString();
+//                     // Build microstructure values from cached metrics if available
+//                     double vol_1m = 0.0;
+//                     double spread_ema = 0.0;
+//                     double orderbook_imbalance = 0.0;
+//                     double trade_intensity = 0.0;
+//                     double price_return = 0.0;
+//                     double mid_price = 0.0;
+
+//                     trading::strategy::OrderBookMetrics obm;
+//                     if (getLatestOrderbookMetrics(sym, exch, obm)) {
+//                         vol_1m = obm.realize_volatility_1m;
+//                         spread_ema = obm.emaSpread;
+//                         orderbook_imbalance = obm.volumeImbalance;
+//                         trade_intensity = obm.totalVolume; // proxy
+//                         mid_price = obm.midPrice;
+//                     } else if (marketDataInterface_) {
+//                         try {
+//                             auto sp = marketDataInterface_->getCurrentSpread(sym, exch.toString());
+//                             if (sp.has_value()) spread_ema = sp.value();
+//                             vol_1m = marketDataInterface_->getVolatility(sym, "1m", exch.toString());
+//                             mid_price = marketDataInterface_->getCurrentPrice(sym, exch.toString());
+//                         } catch (...) {}
+//                     }
+//                     // LOG_INFO("Microstructure raw for {}: vol_1m={}, spread_ema={}, orderbook_imbalance={}, trade_intensity={}",
+//                     //             symbolStr, vol_1m, spread_ema, orderbook_imbalance, trade_intensity);
+
+//                     // Compute price return as relative change from last observed mid price
+//                     try {
+//                         std::string key = exch.toString() + ":" + symbolStr;
+//                         double last_price = 0.0;
+//                         {
+//                             std::lock_guard<std::mutex> lk(lastPriceMutex_);
+//                             auto it = lastMidPrice_.find(key);
+//                             if (it != lastMidPrice_.end()) last_price = it->second;
+//                         }
+
+//                         if (mid_price > 0.0 && last_price > 0.0) {
+//                             price_return = (mid_price - last_price) / last_price;
+//                         } else {
+//                             price_return = 0.0;
+//                         }
+
+//                         // Update last mid price
+//                         if (mid_price > 0.0) {
+//                             std::lock_guard<std::mutex> lk(lastPriceMutex_);
+//                             lastMidPrice_[key] = mid_price;
+//                         }
+//                     } catch (...) {}
+
+//                     // Call updateMarketData on exit strategy
+//                     try {
+//                         // log debug with information about microstructure every 10 counts
+//                         static int count = 0;
+//                         if(count++ % 10 == 0){
+//                             LOG_DEBUG("Updating microstructure for {}: vol_1m={}, spread_ema={}, orderbook_imbalance={}, trade_intensity={}, price_return={}",
+//                                         symbolStr, vol_1m, spread_ema, orderbook_imbalance, trade_intensity, price_return);
+//                         }
+//                         exitStrategy_->updateMarketData(symbolStr, vol_1m, spread_ema, orderbook_imbalance, trade_intensity, price_return);
+//                     } catch (...) {}
+//                 } catch (...) {}
+//             }
+//         } catch (...) {}
+//         std::this_thread::sleep_for(std::chrono::seconds(1));
+//     }
+// }
+void Trading_system::updateSymbolMarketData(const Symbol& sym, const ExchangeId& exch,
+                                            std::atomic<int>& debugCounter,
+                                            double& out_vol_1m, double& out_spread_ema,
+                                            double& out_orderbook_imbalance, double& out_trade_intensity,
+                                            double& out_price_return, double& out_mid_price) {
+    std::string symbolStr;
+    try {
+        symbolStr = sym.toString();
+        out_vol_1m = 0.0;
+        out_spread_ema = 0.0;
+        out_orderbook_imbalance = 0.0;
+        out_trade_intensity = 0.0;
+        out_price_return = 0.0;
+        out_mid_price = 0.0;
+
+        // Primary: cached orderbook metrics
+        trading::strategy::OrderBookMetrics obm;
+        if (getLatestOrderbookMetrics(sym, exch, obm)) {
+            out_vol_1m = obm.realize_volatility_1m;
+            out_spread_ema = obm.emaSpread;
+            out_orderbook_imbalance = obm.volumeImbalance;
+            out_trade_intensity = obm.totalVolume;
+            out_mid_price = obm.midPrice;
+        } else if (marketDataInterface_) {
+            try {
+                auto sp = marketDataInterface_->getCurrentSpread(sym, exch.toString());
+                if (sp.has_value()) out_spread_ema = sp.value();
+                out_vol_1m = marketDataInterface_->getVolatility(sym, "1m", exch.toString());
+                out_mid_price = marketDataInterface_->getCurrentPrice(sym, exch.toString());
+            } catch (const std::exception& e) {
+                LOG_WARN("marketDataInterface error for {}@{}: {}", symbolStr, exch.toString(), e.what());
+            } catch (...) {
+                LOG_WARN("Unknown marketDataInterface error for {}@{}", symbolStr, exch.toString());
             }
+        }
 
-            for (const auto& [sym, exch] : strategyConfig_.tradingPairs) {
-                try {
-                    std::string symbolStr = sym.toString();
-                    // Build microstructure values from cached metrics if available
-                    double vol_1m = 0.0;
-                    double spread_ema = 0.0;
-                    double orderbook_imbalance = 0.0;
-                    double trade_intensity = 0.0;
-                    double price_return = 0.0;
-                    double mid_price = 0.0;
+        // compute price return using shared_mutex for read
+        std::string key = exch.toString() + ":" + symbolStr;
+        double last_price = 0.0;
+        {
+            std::shared_lock<std::shared_mutex> rlk(lastPriceMutex_);
+            auto it = lastMidPrice_.find(key);
+            if (it != lastMidPrice_.end()) last_price = it->second;
+        }
+        if (out_mid_price > 0.0 && last_price > 0.0) {
+            out_price_return = (out_mid_price - last_price) / last_price;
+            // optional clamp to avoid wild outliers
+            if (!std::isfinite(out_price_return)) out_price_return = 0.0;
+        } else {
+            out_price_return = 0.0;
+        }
 
-                    trading::strategy::OrderBookMetrics obm;
-                    if (getLatestOrderbookMetrics(sym, exch, obm)) {
-                        vol_1m = obm.realize_volatility_1m;
-                        spread_ema = obm.emaSpread;
-                        orderbook_imbalance = obm.volumeImbalance;
-                        trade_intensity = obm.totalVolume; // proxy
-                        mid_price = obm.midPrice;
-                    } else if (marketDataInterface_) {
-                        try {
-                            auto sp = marketDataInterface_->getCurrentSpread(sym, exch.toString());
-                            if (sp.has_value()) spread_ema = sp.value();
-                            vol_1m = marketDataInterface_->getVolatility(sym, "1m", exch.toString());
-                            mid_price = marketDataInterface_->getCurrentPrice(sym, exch.toString());
-                        } catch (...) {}
-                    }
-                    // LOG_INFO("Microstructure raw for {}: vol_1m={}, spread_ema={}, orderbook_imbalance={}, trade_intensity={}",
-                    //             symbolStr, vol_1m, spread_ema, orderbook_imbalance, trade_intensity);
+        // update last price
+        if (out_mid_price > 0.0) {
+            std::unique_lock<std::shared_mutex> wlk(lastPriceMutex_);
+            lastMidPrice_[key] = out_mid_price;
+        }
 
-                    // Compute price return as relative change from last observed mid price
-                    try {
-                        std::string key = exch.toString() + ":" + symbolStr;
-                        double last_price = 0.0;
-                        {
-                            std::lock_guard<std::mutex> lk(lastPriceMutex_);
-                            auto it = lastMidPrice_.find(key);
-                            if (it != lastMidPrice_.end()) last_price = it->second;
-                        }
-
-                        if (mid_price > 0.0 && last_price > 0.0) {
-                            price_return = (mid_price - last_price) / last_price;
-                        } else {
-                            price_return = 0.0;
-                        }
-
-                        // Update last mid price
-                        if (mid_price > 0.0) {
-                            std::lock_guard<std::mutex> lk(lastPriceMutex_);
-                            lastMidPrice_[key] = mid_price;
-                        }
-                    } catch (...) {}
-
-                    // Call updateMarketData on exit strategy
-                    try {
-                        // log debug with information about microstructure every 10 counts
-                        static int count = 0;
-                        if(count++ % 10 == 0){
-                            LOG_DEBUG("Updating microstructure for {}: vol_1m={}, spread_ema={}, orderbook_imbalance={}, trade_intensity={}, price_return={}",
-                                        symbolStr, vol_1m, spread_ema, orderbook_imbalance, trade_intensity, price_return);
-                        }
-                        exitStrategy_->updateMarketData(symbolStr, vol_1m, spread_ema, orderbook_imbalance, trade_intensity, price_return);
-                    } catch (...) {}
-                } catch (...) {}
-            }
-        } catch (...) {}
-        std::this_thread::sleep_for(std::chrono::seconds(1));
+        // debug log periodically
+        int cnt = debugCounter.fetch_add(1, std::memory_order_relaxed);
+        if (cnt % 10 == 0) {
+            LOG_INFO("Microstructure {}@{}: vol_1m={}, spread_ema={}, imbalance={}, intensity={}, price_return={}",
+                      symbolStr, exch.toString(), out_vol_1m, out_spread_ema, out_orderbook_imbalance,
+                      out_trade_intensity, out_price_return);
+        }
+    } catch (const std::exception& e) {
+        LOG_WARN("updateSymbolMarketData exception for {}@{}: {}", symbolStr.empty() ? "<unknown>" : symbolStr, exch.toString(), e.what());
+    } catch (...) {
+        LOG_WARN("Unknown exception in updateSymbolMarketData for {}@{}", symbolStr.empty() ? "<unknown>" : symbolStr, exch.toString());
     }
 }
+
+void Trading_system::marketDataUpdaterLoop() {
+    LOG_INFO("Market data updater loop started");
+
+    // target period in ms (tuneable)
+    constexpr std::chrono::milliseconds targetPeriod{1000}; // 1000ms cycle => higher freq than 1s
+    const unsigned int hw = std::thread::hardware_concurrency();
+    const unsigned int maxWorkers = std::max(1u, std::min(hw == 0 ? 4u : hw, 8u)); // cap to avoid runaway threads
+
+    std::atomic<int> debugCounter{0};
+
+    while (marketDataUpdaterRunning_.load(std::memory_order_acquire)) {
+        auto cycleStart = std::chrono::steady_clock::now();
+
+        if (!exitStrategy_) {
+            LOG_INFO("Market data updater: exit strategy not initialized yet");
+            // wait short and re-check quickly
+            std::this_thread::sleep_for(std::chrono::milliseconds(200));
+            continue;
+        }
+
+        // snapshot trading pairs to avoid iterator invalidation or long locking in the loop
+        std::vector<std::pair<Symbol, ExchangeId>> pairs;
+        pairs.reserve(strategyConfig_.tradingPairs.size());
+        for (const auto& p : strategyConfig_.tradingPairs) pairs.emplace_back(p.first, p.second);
+
+        const size_t total = pairs.size();
+        if (total == 0) {
+            // nothing to update; sleep for a bit
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            continue;
+        }
+
+        // chunk into worker tasks
+        size_t chunkSize = (total + maxWorkers - 1) / maxWorkers;
+        std::vector<std::future<void>> futures;
+        futures.reserve(maxWorkers);
+
+        for (size_t start = 0; start < total; start += chunkSize) {
+            size_t end = std::min(total, start + chunkSize);
+
+            futures.emplace_back(std::async(std::launch::async,
+                [this, &pairs, start, end, &debugCounter]() {
+                    for (size_t i = start; i < end; ++i) {
+                        const Symbol& sym = pairs[i].first;
+                        const ExchangeId& exch = pairs[i].second;
+
+                        double vol_1m = 0.0;
+                        double spread_ema = 0.0;
+                        double orderbook_imbalance = 0.0;
+                        double trade_intensity = 0.0;
+                        double price_return = 0.0;
+                        double mid_price = 0.0;
+
+                        // collect microstructure (safe-catch inside)
+                        updateSymbolMarketData(sym, exch, debugCounter,
+                                               vol_1m, spread_ema, orderbook_imbalance,
+                                               trade_intensity, price_return, mid_price);
+
+                        // call exitStrategy update (catch exceptions, but do not block other symbols)
+                        try {
+                            std::string symbolStr = sym.toString();
+                            exitStrategy_->updateMarketData(symbolStr,
+                                                            vol_1m, spread_ema,
+                                                            orderbook_imbalance,
+                                                            trade_intensity,
+                                                            price_return);
+                        } catch (const std::exception& e) {
+                            LOG_WARN("exitStrategy->updateMarketData failed for {}@{}: {}", sym.toString(), exch.toString(), e.what());
+                        } catch (...) {
+                            LOG_WARN("exitStrategy->updateMarketData unknown failure for {}@{}", sym.toString(), exch.toString());
+                        }
+
+                        if (!marketDataUpdaterRunning_.load(std::memory_order_relaxed)) return; // early exit
+                    }
+                }));
+        }
+
+        // wait for all tasks
+        for (auto& f : futures) {
+            try { f.get(); } catch (const std::exception& e) {
+                LOG_WARN("Worker future exception: {}", e.what());
+            } catch (...) {
+                LOG_WARN("Worker future unknown exception");
+            }
+        }
+
+        // maintain target period (steady clock)
+        auto cycleEnd = std::chrono::steady_clock::now();
+        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(cycleEnd - cycleStart);
+        if (elapsed < targetPeriod) {
+            std::this_thread::sleep_for(targetPeriod - elapsed);
+        } else {
+            // if we're slower than target, log at debug (no spam)
+            LOG_DEBUG("marketDataUpdaterLoop cycle exceeded targetPeriod: {}ms", elapsed.count());
+        }
+    }
+
+    LOG_INFO("Market data updater loop stopped");
+}
+
+
 void Trading_system::exitMonitorLoop() {
     LOG_INFO("Exit monitor loop started");
     
@@ -990,7 +1163,7 @@ void Trading_system::setupExecutionEngine() {
     }
     exchangeGateway_ = std::make_shared<execution::ExchangeGateway>(api_client_manager, sharedMdIface);
     if (!exchangeGateway_->isHealthy()) {
-        std::cout << "Exchange Gateway is not healthy!" << std::endl;
+        std::cout << "ExchangeId Gateway is not healthy!" << std::endl;
         std::cout << "start using fallback ExecutionService" << std::endl;
         executionService_ = std::make_shared<ExecutionService>(
         order_generator,
@@ -1003,7 +1176,7 @@ void Trading_system::setupExecutionEngine() {
         );
         executionService_->setLimitOrderHandling(trading::execution::ExecutionService::LimitOrderHandling::REJECT_IF_NO_PRICE);
     } else {
-        std::cout << "Exchange Gateway initialized and healthy." << std::endl;
+        std::cout << "ExchangeId Gateway initialized and healthy." << std::endl;
         executionService_ = std::make_shared<ExecutionService>(
         exchangeGateway_,
         order_generator,
