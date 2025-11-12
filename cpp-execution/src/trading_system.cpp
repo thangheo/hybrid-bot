@@ -496,10 +496,13 @@ void Trading_system::exitMonitorLoop() {
                                 // Try to fetch entry price from PositionTracker if available via RiskManager internals
                                 // RiskManager exposes no direct entry price here; use currentPrice as a safe fallback
                                 info.entry_price = currentPrice;
+                                // Ensure entry_time is set to now for the fallback path so holdingDuration is meaningful
+                                info.entry_time = std::chrono::steady_clock::now();
                                 LOG_WARN("Exit monitor: fallback entry_price used (from currentPrice) for {} = {}", symbol, currentPrice);
                                 info.entry_confidence = 1.0;
                                 // info.entry_time = std::chrono::steady_clock::now(); 
-                                //this code above is pure trash. trash chatgpt copilot wrote.
+                                // fallback entry_time set above to avoid huge holding durations when original entry_time
+                                // is unavailable from RiskManager/PositionTracker
                                 posInfo = info;
                             }
                         
@@ -735,20 +738,19 @@ bool Trading_system::initialize() {
         return false;
     }
 
-    // Ensure the AdaptiveExitStrategy singleton is created before any updater threads run.
-    // The monitoring/market-data updater threads assume `exitStrategy_` is non-null.
-    if (!exitStrategy_) {
-        try {
-            exitStrategy_ = std::make_shared<trading::strategy::AdaptiveExitStrategy>(60.0);
-            LOG_INFO("Initialized AdaptiveExitStrategy singleton: {}", static_cast<const void*>(exitStrategy_.get()));
-            // Register with ImbalanceDetectionEngine so it uses the same instance
-            try {
-                trading::strategy::setGlobalAdaptiveExitStrategy(exitStrategy_);
-                LOG_INFO("Registered AdaptiveExitStrategy with ImbalanceDetectionEngine: {}", static_cast<const void*>(exitStrategy_.get()));
-            } catch (...) {}
-        } catch (const std::exception& e) {
-            LOG_WARN("Failed to initialize AdaptiveExitStrategy: {}", e.what());
+    // Ensure a single AdaptiveExitStrategy instance is created and registered
+    // early so other components (ImbalanceDetectionEngine, monitor threads)
+    // can reference it without startup-order races.
+    try {
+        auto globalExit = trading::strategy::ensureGlobalAdaptiveExitStrategy(60.0);
+        if (globalExit) {
+            exitStrategy_ = globalExit;
+            LOG_INFO("Initialized AdaptiveExitStrategy singleton (via ensureGlobal): {}", static_cast<const void*>(exitStrategy_.get()));
+        } else {
+            LOG_WARN("AdaptiveExitStrategy: ensureGlobalAdaptiveExitStrategy returned null");
         }
+    } catch (const std::exception &e) {
+        LOG_WARN("Failed to ensure global AdaptiveExitStrategy: {}", e.what());
     }
     
     // Load symbol volatility configuration

@@ -393,5 +393,9 @@ namespace trading {
 namespace strategy {
     void setGlobalAdaptiveExitStrategy(const std::shared_ptr<AdaptiveExitStrategy>& ptr);
     std::shared_ptr<AdaptiveExitStrategy> getGlobalAdaptiveExitStrategy();
+    // Ensure a global AdaptiveExitStrategy exists. Returns the registered/shared_ptr.
+    // If the global pointer is null, this will create one with the provided window
+    // and register it. Thread-safe helper for startup ordering.
+    std::shared_ptr<AdaptiveExitStrategy> ensureGlobalAdaptiveExitStrategy(double prediction_window_seconds = 60.0);
 } // namespace strategy
 } // namespace trading

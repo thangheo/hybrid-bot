@@ -287,10 +287,10 @@ void AdaptiveExitStrategy::startPosition(
     state.is_active = true;
     
     // LOG symbols and map
-    // LOG_INFO("AdaptiveExitStrategy: started tracking position on {} at price {:.6f} dir={} conf={:.3f}",
-    //          symbol, entry_price,
-    //          (direction == core::Direction::BUY ? "BUY" : "SELL"),
-    //          confidence);
+    LOG_DEBUG("AdaptiveExitStrategy: started tracking position on {} at price {:.6f} dir={} conf={:.3f}",
+             symbol, entry_price,
+             (direction == core::Direction::BUY ? "BUY" : "SELL"),
+             confidence);
     // Detect entry regime
     auto it = marketHistory_.find(symbol);
     if (it != marketHistory_.end()) {
@@ -416,16 +416,17 @@ AdaptiveExitStrategy::ExitDecision AdaptiveExitStrategy::evaluateExit(
         return decision;
     }
     
-    // Skip remaining checks if minimum hold time not met
-    if (seconds_held < params.min_holding_time) {
-        return decision;
-    }
     
     // 4. PROFIT TARGET
     if (pnl_ticks >= params.profit_target_ticks) {
         decision.should_exit = true;
         decision.reason = ExitReason::PROFIT_TARGET;
         decision.confidence = 0.9;
+        return decision;
+    }
+    
+    // Skip remaining checks if minimum hold time not met
+    if (seconds_held < params.min_holding_time) {
         return decision;
     }
     
