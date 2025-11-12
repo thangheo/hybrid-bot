@@ -84,15 +84,7 @@ using namespace trading::execution;
 namespace trading {
 
 class Trading_system {
-private:
-    // Exit monitor thread and control
-    std::thread exitMonitorThread_;
-    std::atomic<bool> exitMonitorRunning_{false};
-    // market data updater thread
-    std::thread marketDataUpdaterThread_;
-    std::atomic<bool> marketDataUpdaterRunning_{false};
-    void exitMonitorLoop();
-    void marketDataUpdaterLoop();
+
 public:
     Trading_system()  ;
     
@@ -317,9 +309,26 @@ private:
     // EventBus subscription id for MetricsUpdatedEvent
     size_t metricsSubscriptionId_ = 0;
     // Last observed mid prices per-symbol (used to compute per-second returns)
-    mutable std::mutex lastPriceMutex_;
-    std::unordered_map<std::string, double> lastMidPrice_;
     
+    
+    // Exit monitor thread and control
+    std::thread exitMonitorThread_;
+    std::atomic<bool> exitMonitorRunning_{false};
+    // market data updater thread
+    std::thread marketDataUpdaterThread_;
+    std::atomic<bool> marketDataUpdaterRunning_{false};
+    
+
+    std::unordered_map<std::string, double> lastMidPrice_;
+    std::shared_mutex lastPriceMutex_;
+
+    void exitMonitorLoop();
+    void marketDataUpdaterLoop();
+    void updateSymbolMarketData(const Symbol& sym, const ExchangeId& exch,
+                                            std::atomic<int>& debugCounter,
+                                            double& out_vol_1m, double& out_spread_ema,
+                                            double& out_orderbook_imbalance, double& out_trade_intensity,
+                                            double& out_price_return, double& out_mid_price) ;
 };
 
 } // namespace trading
