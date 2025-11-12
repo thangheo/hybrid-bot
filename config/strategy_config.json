@@ -193,7 +193,7 @@
     },
     "array": {
       "price_levels": [5, 10, 20, 50],
-          "time_windows": [10000, 30000, 60000, 120000],
+          "time_windows": [1500, 3000, 6000, 12000],
       "volume_thresholds": [0.1, 0.25, 0.5, 1.0]
     }
   },
@@ -228,7 +228,7 @@
         "tradeImbalanceThreshold": 0.6,
         "cancellationImbalanceThreshold": 0.6,
         "priceVolatilityImbalanceThreshold": 0.3,      
-  "detectionWindowMs": 60000,
+  "detectionWindowMs": 1500,
         "maxHistorySize": 500,
         "global_sensitivity": 0.75,
         "thresholds": {
@@ -238,7 +238,7 @@
           "order_flow": 0.3
         },
         "bayesModelPath": "models/bayesian/",
-  "labelingDelayMs": 60000,
+  "labelingDelayMs": 1500,
         "bayesSaveAfterUpdates": 25,
         "requireModelReadyUpdates": 50,
         "bayesMinSaveIntervalMs": 30000,
@@ -283,14 +283,14 @@
             "enable_cancellation_tracking": true
           },
           "array": {
-            "flow_windows": [60, 120, 300, 600]
+            "flow_windows": [2, 3, 5, 10]
           }
         }
       }
     },
     "volumeProfileAnalyzer": {
       "parameters": {
-  "timeWindowMs": 60000,
+  "timeWindowMs": 1500,
         "priceLevels": 50,
         "exchangeId": "BINANCE",
         "tradingPair": "BTC/USDT",
@@ -321,13 +321,13 @@
       "parameters": {
   "minSignalStrength": 0.6,
   "confidenceThreshold": 0.7,
-  "signalTtlMs": 60000
+  "signalTtlMs": 1500
       }
     },
     "momentumCorrelator": {
       "parameters": {
-  "correlationWindowMs": 60000,
-  "predictionHorizonMs": 60000,
+  "correlationWindowMs": 1500,
+  "predictionHorizonMs": 1500,
   "ewmaHalfLifeMs": 30000
       }
     },

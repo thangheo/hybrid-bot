@@ -124,7 +124,7 @@ private:
     mutable std::mutex historyMutex_;
     
     // Configuration
-    double predictionWindow_ = 60.0;  // 1 minute in seconds
+    double predictionWindow_ = 1.5;  // Default prediction window in seconds (1.5s)
     double riskFreeRate_ = 0.0;       // For Sharpe calculation
     
     // Statistical functions
@@ -149,7 +149,7 @@ private:
         const MarketMicrostructure& current_micro) const;
 
 public:
-    AdaptiveExitStrategy(double prediction_window_seconds = 60.0);
+    AdaptiveExitStrategy(double prediction_window_seconds = 1.5);
     
     /**
      * Update market microstructure data
