@@ -353,7 +353,20 @@ void Trading_system::exitMonitorLoop() {
                 try {
                     // Get current market data
                     core::Symbol sym(symbol);
-                    auto exchangeId = core::ExchangeId::binance(); // Or get from position
+                    // Resolve exchangeId for this symbol from strategyConfig_.tradingPairs if possible.
+                    // Fallback to binance() with a warning only if not found.
+                    auto exchangeId = core::ExchangeId::binance();
+                    bool exchangeResolved = false;
+                    for (const auto &p : strategyConfig_.tradingPairs) {
+                        if (p.first.toString() == symbol) {
+                            exchangeId = p.second;
+                            exchangeResolved = true;
+                            break;
+                        }
+                    }
+                    if (!exchangeResolved) {
+                        LOG_WARN("Exit monitor: could not resolve exchange for {} - defaulting to {}", symbol, exchangeId.toString());
+                    }
                     
                     auto priceOpt = dataIngestionService_->getLastPrice(exchangeId, sym);
                     if (!priceOpt.has_value()) {
@@ -457,15 +470,16 @@ void Trading_system::exitMonitorLoop() {
                     if (exitDecision.should_exit and exitDecision.confidence >= 0.8
                         && posInfo.has_value()) {
                             // Log exit trigger with holding time
-                        auto now = std::chrono::steady_clock::now();
-                        // convert to ms
-                        auto holdingDuration = std::chrono::duration_cast<std::chrono::milliseconds>(
-                            now - posInfo->entry_time).count();
-                        LOG_INFO("EXIT TRIGGERED: {} - {} ({:.2f}bps) after {}s holding",
-                                symbol,
-                                AdaptiveExitStrategy::exitReasonToString(exitDecision.reason),
-                                exitDecision.expected_pnl,
-                                holdingDuration);
+                            auto now = std::chrono::steady_clock::now();
+                            // holdingDurationMs is milliseconds; convert to seconds for log
+                            auto holdingDurationMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                now - posInfo->entry_time).count();
+                            double holdingSeconds = static_cast<double>(holdingDurationMs) / 1000.0;
+                            LOG_INFO("EXIT TRIGGERED: {} - {} ({:.2f}bps) after {:.3f}s holding",
+                                    symbol,
+                                    AdaptiveExitStrategy::exitReasonToString(exitDecision.reason),
+                                    exitDecision.expected_pnl,
+                                    holdingSeconds);
 
                         // Create exit signal
                         execution::TradingSignal exitSignal;
@@ -533,18 +547,22 @@ void Trading_system::exitMonitorLoop() {
                             }
                             
                         }
+                        // Mark exit as pending on the exitStrategy but DO NOT call closePosition() here
+                        // because that may remove authoritative position info before execution completes.
                         try {
                             if (exitStrategy_) {
-                                // exitStrategy_->markPendingExit(symbol);
-                                exitStrategy_->closePosition(symbol, exitDecision.reason, exitDecision.expected_pnl);
-                                LOG_INFO("Exit monitor: marked pending exit for {}", symbol);
+                                // Prefer markPendingExit if implemented by the strategy
+                                try {
+                                    exitStrategy_->markPendingExit(symbol);
+                                    LOG_INFO("Exit monitor: marked pending exit for {}", symbol);
+                                } catch (...) {
+                                    // If markPendingExit isn't available/throws, log and continue without closing the position
+                                    LOG_DEBUG("Exit monitor: markPendingExit not available for {}", symbol);
+                                }
                             }
                         } catch (...) {
-                            // LOG_WARN("Exit monitor: failed to mark pending exit for {}", symbol);
+                            LOG_DEBUG("Exit monitor: failed to mark pending exit for {}", symbol);
                         }
-                        
-                        // Mark position as pending exit (don't close yet - wait for execution)
-                        // exitStrategy_->markPendingExit(symbol);
                     }
                     
                 } catch (const std::exception& e) {
