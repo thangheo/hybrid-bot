@@ -199,6 +199,9 @@ bool ImbalanceSignalGenerator::processImbalance(const ImbalanceEvent& imbalance)
     // Enhanced logging with market context (variables intentionally unused here)
     auto price = imbalance.getSupportingMetric("midPrice", 0.0);
     auto regime = getCurrentMarketRegime(imbalance);
+    // Log current regime and price for debugging
+    // LOG_DEBUG("Generated signal from imbalance {} at price {:.2f} in regime {}",
+    //     imbalance.eventId, price, marketRegimeTypeToString(static_cast<MarketRegimeType>(static_cast<int>(regime_number))));
     (void)price; (void)regime;
     
     // Notify callbacks (do not hold main mutex_ while notifying)
@@ -888,7 +891,12 @@ MarketRegimeType ImbalanceSignalGenerator::getCurrentMarketRegime(const Imbalanc
     auto regime_number = imbalance.getSupportingMetric("marketRegime", static_cast<double>(MarketRegimeType::UNKNOWN));
     // sanity check for regime number if it's within valid range from 0-8
     if (regime_number >= 0 && regime_number <= 8) {
-        LOG_DEBUG("Current market regime: {}", marketRegimeToString(static_cast<MarketRegimeType>(static_cast<int>(regime_number))));
+        // The market regime can be injected into the ImbalanceEvent by
+        // OrderBookAnalyzer via currentMetrics_.metrics["marketRegime"] = (double)int(regime).
+        // Use that metric value as the authoritative regime when present.
+        LOG_TRACE("Current market regime (from metric): {} ({})",
+                  static_cast<int>(regime_number),
+                  marketRegimeToString(static_cast<MarketRegimeType>(static_cast<int>(regime_number))));
         return static_cast<MarketRegimeType>(static_cast<int>(regime_number));
     }
 

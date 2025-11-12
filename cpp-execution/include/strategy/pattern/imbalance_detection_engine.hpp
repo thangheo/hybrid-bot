@@ -144,7 +144,7 @@ public:
 
 private:
     //number of regimes
-    static constexpr int NUMBER_OF_REGIMES = 4UL;
+    static constexpr int NUMBER_OF_REGIMES = sizeof(MarketRegimeType) - 1; // Exclude UNKNOWN
     double calculateOrderCountDropRatio(const OrderBookMetrics& metrics);
     double calculateMarketImpactDecayRatio(const OrderBookMetrics& metrics) ;
     double calculateVolatilityDeclineRatio(const OrderBookMetrics& metrics) ;

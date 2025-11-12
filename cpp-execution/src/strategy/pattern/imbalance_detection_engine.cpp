@@ -842,17 +842,31 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                         // Get per-regime handles and use only the active regime for prediction
                         auto handles = getBayesHandlesForSymbol(m.exchangeId, m.symbol);
                         
-                        // Determine active regime (highest probability)
+                        // Determine active regime (highest probability). Prefer explicit metric injected
+                        // into the OrderBookMetrics (m.metrics["marketRegime"]) if available. This metric
+                        // is set by OrderBookAnalyzer and corresponds to the enum index used for
+                        // loading/saving per-regime Bayesian models.
                         int activeRegime = 0;
                         double maxProb = 0.0; // Start from 0 to allow any regime to be selected
                         bool hasRegimeData = false;
-                        
-                        if (regime_subscriber_) {
+
+                        // Prefer metric-provided regime when present
+                        try {
+                            if (m.metrics.count("marketRegime")) {
+                                double rv = m.metrics.at("marketRegime");
+                                int ri = static_cast<int>(rv);
+                                if (ri >= 0 && ri < ImbalanceDetectionEngine::NUMBER_OF_REGIMES) {
+                                    activeRegime = ri;
+                                    hasRegimeData = true;
+                                    LOG_TRACE("ImbalanceDetectionEngine: using marketRegime metric={} for symbol {}", activeRegime, m.symbol.toString());
+                                }
+                            }
+                        } catch (...) {}
+
+                        if (!hasRegimeData && regime_subscriber_) {
                             trading::strategy::core_analysis::RegimeInfo rinfo;
                             std::string lookup_symbol = m.symbol.toString();
-                            LOG_TRACE("ImbalanceDetectionEngine: regime_subscriber_ is valid, looking up regime for symbol: '{}'", lookup_symbol);
-                            
-
+                            LOG_TRACE("ImbalanceDetectionEngine: regime_subscriber_ is valid, looking up regime for symbol: '{}'", lookup_symbol);                          
                             
                             // First try the symbol as-is
                             bool found_regime = regime_subscriber_->get(lookup_symbol, rinfo);
@@ -878,7 +892,8 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                                 for (int i = 0; i < ImbalanceDetectionEngine::NUMBER_OF_REGIMES; ++i) {
                                     if (rinfo.probs[i] > maxProb) {
                                         maxProb = rinfo.probs[i];
-                                        activeRegime = i;
+                                        // Only choose regime_subscriber result if we don't already have a metric-based regime
+                                        if (!m.metrics.count("marketRegime")) activeRegime = i;
                                     }
                                 }
                                 // LOG_TRACE("ImbalanceDetectionEngine: Found regime data for '{}': active_regime={} (prob={:.3f})", 
