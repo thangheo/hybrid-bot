@@ -527,7 +527,8 @@ void Trading_system::exitMonitorLoop() {
                         currentConfidence
                     );
 
-                    if (exitDecision.should_exit) {
+                    if (exitDecision.should_exit and exitDecision.confidence >= 0.8
+                        && posInfo.has_value()) {
                         LOG_INFO("EXIT TRIGGERED: {} - {} ({:.2f}bps)",
                                 symbol,
                                 AdaptiveExitStrategy::exitReasonToString(exitDecision.reason),
@@ -613,7 +614,7 @@ void Trading_system::exitMonitorLoop() {
             
         } catch (const std::exception& e) {
             LOG_ERROR("Exit monitor loop error: {}", e.what());
-            std::this_thread::sleep_for(std::chrono::seconds(1));
+            std::this_thread::sleep_for(std::chrono::seconds(5));
         }
     }
     
