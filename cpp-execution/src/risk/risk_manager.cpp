@@ -1019,7 +1019,7 @@ std::optional<double> RiskManager::getCachedPosition(const ExchangeId& exchangeI
                 for (size_t i = 0; i < sample; ++i) {
                     try {
                         const auto& p = allPositions[i];
-                        LOG_INFO("RiskManager - Tracker sample[{}]: {}@{} = {}", i, p.getTradingPair().toString(), p.getExchangeId().toString(), p.getQuantity());
+                        LOG_TRACE("RiskManager - Tracker sample[{}]: {}@{} = {}", i, p.getTradingPair().toString(), p.getExchangeId().toString(), p.getQuantity());
                     } catch (...) {}
                 }
             } catch (const std::exception& e) {

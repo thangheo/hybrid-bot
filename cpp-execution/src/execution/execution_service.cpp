@@ -415,15 +415,15 @@ ExecutionResponse ExecutionService::executeSignal(const TradingSignal& signal) {
         auto balanceResult = balanceValidator_->validateOrder(*exchange_order, exchangeId, false);
         
         if (!balanceResult.isValid) {
-            std::cout << "❌ Order rejected due to insufficient balance:" << std::endl;
-            std::cout << "   Symbol: " << exchange_order->getTradingPair().toString() << std::endl;
-            std::cout << "   Side: " << (exchange_order->getSide() == models::OrderSide::BUY ? "BUY" : "SELL") << std::endl;
-            std::cout << "   Quantity: " << exchange_order->getQuantity() << std::endl;
-            std::cout << "   Price: " << exchange_order->getPrice() << std::endl;
-            std::cout << "   Asset: " << balanceResult.asset << std::endl;
-            std::cout << "   Required: " << balanceResult.requiredBalance << std::endl;
-            std::cout << "   Available: " << balanceResult.availableBalance << std::endl;
-            std::cout << "   Reason: " << balanceResult.reason << std::endl;
+            // std::cout << "❌ Order rejected due to insufficient balance:" << std::endl;
+            // std::cout << "   Symbol: " << exchange_order->getTradingPair().toString() << std::endl;
+            // std::cout << "   Side: " << (exchange_order->getSide() == models::OrderSide::BUY ? "BUY" : "SELL") << std::endl;
+            // std::cout << "   Quantity: " << exchange_order->getQuantity() << std::endl;
+            // std::cout << "   Price: " << exchange_order->getPrice() << std::endl;
+            // std::cout << "   Asset: " << balanceResult.asset << std::endl;
+            // std::cout << "   Required: " << balanceResult.requiredBalance << std::endl;
+            // std::cout << "   Available: " << balanceResult.availableBalance << std::endl;
+            // std::cout << "   Reason: " << balanceResult.reason << std::endl;
 
             // Suggest quantity adjustment if possible
             if (balanceResult.canAdjust && balanceResult.suggestedQuantity > 0) {
