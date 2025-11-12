@@ -497,7 +497,7 @@ bool AdaptiveExitStrategy::shouldEnterPosition(
     std::lock_guard<std::mutex> lk(historyMutex_);
     auto it = marketHistory_.find(symbol);
     if (it == marketHistory_.end()) {
-        // LOG_INFO("Rejecting entry for {}: No market history available", symbol);
+        LOG_INFO("Rejecting entry for {}: No market history available", symbol);
         //  // Debug: log exact key and map contents
         return false;  // No history, can't assess
     }
@@ -531,14 +531,14 @@ bool AdaptiveExitStrategy::shouldEnterPosition(
             }
             break;
         case MarketRegime::HIGH_VOLATILITY:
-            if (confidence < 0.95) {
+            if (confidence < 0.9) {
                 LOG_INFO("Rejecting entry for {}: Low confidence in high volatility ({} < 0.95)",
                           symbol, confidence);
                 return false;  // Need high confidence in volatile markets
             }
             break;
         default:
-            if (confidence < 0.85) {
+            if (confidence < 0.8) {
                 LOG_INFO("Rejecting entry for {}: Low confidence in default regime ({} < 0.85)",
                           symbol, confidence);
                 return false;
