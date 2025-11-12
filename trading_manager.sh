@@ -259,7 +259,7 @@ start_python() {
     # echo "$python_pid" > "$PYTHON_PID_FILE"
     
     # Wait a moment and check if it's still running
-    sleep 80
+    # sleep 80
     if is_running "$PYTHON_PID_FILE"; then
         print_status "$GREEN" "Python strategy started successfully (PID: $python_pid)"
         print_status "$GREEN" "Using config: $config_path"
