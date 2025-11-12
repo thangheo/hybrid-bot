@@ -284,8 +284,7 @@ void OrderBookAnalyzer::processOrderBook(const data_ingestion::OrderBook& snapsh
             micro.tick_size = params_.getDouble("tickSize", 0.0);
             micro.volume_profile_skew = currentMetrics_.priceLevelImbalance;
 
-            trading::strategy::core_analysis::OrderbookRegimeDetector detector;
-            auto regime = detector.detect(micro, vol_samples, spread_samples, price_returns);
+            auto regime = regimeDetector_.detect(micro, vol_samples, spread_samples, price_returns);
 
             // Expose numeric regime in metrics for downstream components
             currentMetrics_.metrics["marketRegime"] = static_cast<double>(static_cast<int>(regime));
