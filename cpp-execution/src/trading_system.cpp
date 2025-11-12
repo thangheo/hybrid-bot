@@ -1878,20 +1878,20 @@ void Trading_system::setupComponentConnections() {
             }
 
             // No active buy signal found; consult RegimeSubscriber diagnostics (log-only)
-            try {
-                trading::strategy::core_analysis::RegimeInfo rinfo;
-                if (strategyEngine_->getRegimeInfo(symbol.toString(), rinfo)) {
-                    if (!rinfo.recommended_action.empty()) {
-                        // Log the recommendation for observability; do not change behavior
-                        LOG_INFO("SlowGate: Regime recommendation for {}: recommended={} stay_prob={} reason={}",
-                                 symbol.toString(), rinfo.recommended_action,
-                                 rinfo.stay_prob.has_value() ? std::to_string(rinfo.stay_prob.value()) : std::string("n/a"),
-                                 rinfo.recommendation_reason);
-                    }
-                }
-            } catch (...) {
-                // best-effort logging only
-            }
+            // try {
+            //     trading::strategy::core_analysis::RegimeInfo rinfo;
+            //     if (strategyEngine_->getRegimeInfo(symbol.toString(), rinfo)) {
+            //         if (!rinfo.recommended_action.empty()) {
+            //             // Log the recommendation for observability; do not change behavior
+            //             LOG_INFO("SlowGate: Regime recommendation for {}: recommended={} stay_prob={} reason={}",
+            //                      symbol.toString(), rinfo.recommended_action,
+            //                      rinfo.stay_prob.has_value() ? std::to_string(rinfo.stay_prob.value()) : std::string("n/a"),
+            //                      rinfo.recommendation_reason);
+            //         }
+            //     }
+            // } catch (...) {
+            //     // best-effort logging only
+            // }
 
             return false;
         });

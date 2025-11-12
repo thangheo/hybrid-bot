@@ -313,7 +313,7 @@ private:
     // Signal filtering methods
     bool applySignalFilters(const TradingSignal& signal) const;
     void updateShockDetectorPrice(const std::string& symbol, double price) const;
-    void checkEmergencyExit(const std::string& symbol) const;
+    // void checkEmergencyExit(const std::string& symbol) const;
 
     // Emergency exit callback
     mutable std::mutex emergency_callback_mutex_;
@@ -336,8 +336,8 @@ private:
     
     // Additional components
     // std::shared_ptr<LogisticRegressionSignalGenerator> logistic_regression_signal_generator_;
-    // Regime subscriber (receives regimes from Python publisher)
-    std::unique_ptr<trading::strategy::core_analysis::RegimeSubscriber> regime_subscriber_;
+    // Regime subscriber removed: regime information is now taken from
+    // OrderBookMetrics.metrics["marketRegime"] injected by OrderBookAnalyzer.
 
 public:
     // Volume Profile Access Methods
