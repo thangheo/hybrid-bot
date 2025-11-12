@@ -215,7 +215,11 @@ AdaptiveExitStrategy::DynamicParameters AdaptiveExitStrategy::calculateDynamicPa
     params.signal_reversal_threshold = base_rev;
     // 7. Emergency multipliers
     params.spread_emergency_multiplier = 3.0 + spread_in_ticks / 10.0;  // Dynamic based on normal spread
-    params.volatility_spike_threshold = vol_in_ticks * 3.0;
+    // Use a cleaner multiplier for spike detection: absolute multiplier of recent volatility
+    // Previously this was vol_in_ticks * 3.0 which can be too small for very low-volatility assets
+    // Set to a minimum multiplier and allow scaling with vol_in_ticks for very low vols.
+    double base_vol_spike_multiplier = 4.0; // raise base multiplier to reduce false positives
+    params.volatility_spike_threshold = std::max(base_vol_spike_multiplier, vol_in_ticks * 3.0);
     
     // 8. Calculate expected edge and Kelly fraction
     // Sử dụng historical PnL nếu có
@@ -396,17 +400,19 @@ AdaptiveExitStrategy::ExitDecision AdaptiveExitStrategy::evaluateExit(
     }
     
     // 2. VOLATILITY SPIKE (protect capital)
+    // Use a stricter rule: require multiple consecutive spikes and that the pnl is not near target
     if (current_micro.volatility_1m > state.entry_microstructure.volatility_1m * params.volatility_spike_threshold) {
         state.vol_spike_count++;
-        if (state.vol_spike_count >= 2 && pnl_ticks < params.profit_target_ticks * 0.5) {
+        // Require at least 3 consecutive spikes and that current PnL is less than 25% of profit target
+        if (state.vol_spike_count >= 3 && pnl_ticks < params.profit_target_ticks * 0.25) {
             decision.should_exit = true;
             decision.reason = ExitReason::VOLATILITY_SPIKE;
-            decision.confidence = 0.8;
+            // Confidence scales with how bad the relative spike is
+            double rel_spike = current_micro.volatility_1m / std::max(1e-12, state.entry_microstructure.volatility_1m);
+            decision.confidence = std::min(1.0, 0.5 + (rel_spike - params.volatility_spike_threshold) / (params.volatility_spike_threshold * 2.0));
             return decision;
         }
-
-    }
-    else{
+    } else {
         state.vol_spike_count = 0; // reset if no spike
     }
     
