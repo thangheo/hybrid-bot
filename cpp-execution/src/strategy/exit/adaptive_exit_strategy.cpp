@@ -678,12 +678,22 @@ void AdaptiveExitStrategy::closePosition(const std::string& symbol,
     auto it = activeTrades_.find(symbol);
     if (it != activeTrades_.end()) {
         it->second.is_active = false;
-        
+        LOG_INFO("AdaptiveExitStrategy: closed position on {} due to {} with final PnL: {:.4f} ticks",
+                 symbol, exitReasonToString(reason), final_pnl);
         // Update historical PnL for future Kelly calculations
         historicalPnLs_[symbol].push_back(final_pnl);
         if (historicalPnLs_[symbol].size() > 100) {
             historicalPnLs_[symbol].pop_front();
         }
+    }
+}
+
+void AdaptiveExitStrategy::markPendingExit(const std::string& symbol) {
+    std::lock_guard<std::mutex> lock(tradesMutex_);
+    auto it = activeTrades_.find(symbol);
+    if (it != activeTrades_.end()) {
+        it->second.pending_exit = true;
+        LOG_INFO("AdaptiveExitStrategy: marked pending exit for {}", symbol);
     }
 }
 

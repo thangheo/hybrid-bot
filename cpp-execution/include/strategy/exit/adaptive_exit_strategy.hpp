@@ -102,6 +102,7 @@ public:
         int vol_spike_count = 0;    // Number of spikes to confirm
 
         bool is_active = false;
+        bool pending_exit = false;
         std::string symbol;
     };
 
@@ -208,6 +209,12 @@ public:
     void closePosition(const std::string& symbol, 
                       ExitReason reason, 
                       double final_pnl);
+
+    /**
+     * Mark a position as having an exit in-flight. This avoids immediate closing
+     * of trade state while we wait for execution/fill confirmation.
+     */
+    void markPendingExit(const std::string& symbol);
     
     /**
      * Get trade statistics for performance analysis
