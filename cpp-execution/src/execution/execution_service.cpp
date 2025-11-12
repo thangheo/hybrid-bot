@@ -489,21 +489,55 @@ ExecutionResponse ExecutionService::executeSignal(const TradingSignal& signal) {
                     };
                 }
             } else {
-                order_lifecycle_tracker_->updateOrderState(
-                    exchange_order->getClientOrderId(),
-                    models::OrderState::REJECTED,
-                    exchange_order->getExchangeOrderId(),
-                    balanceResult.reason
-                );
+                // Before rejecting based on cached data, perform one forced fresh validation
+                // This helps avoid false negatives when a recent fill hasn't propagated to
+                // the cached DataInterface or local cache yet (common after immediate fills).
+                try {
+                    std::cout << "[BALANCE] Cached validation failed - attempting forced fresh validation for order "
+                              << exchange_order->getClientOrderId() << std::endl;
+                    auto freshResult = balanceValidator_->validateOrder(*exchange_order, exchangeId, true);
+                    if (freshResult.isValid) {
+                        std::cout << "\u2705 Fresh balance validation PASSED after cache refresh; proceeding with order." << std::endl;
+                        // overwrite balanceResult so subsequent logging reflects fresh data
+                        balanceResult = freshResult;
+                        // continue to submission
+                    } else {
+                        // Still insufficient after fresh fetch - reject
+                        order_lifecycle_tracker_->updateOrderState(
+                            exchange_order->getClientOrderId(),
+                            models::OrderState::REJECTED,
+                            exchange_order->getExchangeOrderId(),
+                            freshResult.reason
+                        );
 
-                return ExecutionResponse{
-                    exchange_order->getClientOrderId(),
-                    "",
-                    false,
-                    balanceResult.reason,
-                    std::chrono::system_clock::now(),
-                    "REJECTED_INSUFFICIENT_BALANCE"
-                };
+                        return ExecutionResponse{
+                            exchange_order->getClientOrderId(),
+                            "",
+                            false,
+                            freshResult.reason,
+                            std::chrono::system_clock::now(),
+                            "REJECTED_INSUFFICIENT_BALANCE"
+                        };
+                    }
+                } catch (const std::exception& e) {
+                    std::cerr << "Warning: forced fresh balance validation threw: " << e.what()
+                              << ". Falling back to original rejection reason." << std::endl;
+                    order_lifecycle_tracker_->updateOrderState(
+                        exchange_order->getClientOrderId(),
+                        models::OrderState::REJECTED,
+                        exchange_order->getExchangeOrderId(),
+                        balanceResult.reason
+                    );
+
+                    return ExecutionResponse{
+                        exchange_order->getClientOrderId(),
+                        "",
+                        false,
+                        balanceResult.reason,
+                        std::chrono::system_clock::now(),
+                        "REJECTED_INSUFFICIENT_BALANCE"
+                    };
+                }
             }
         }
         
