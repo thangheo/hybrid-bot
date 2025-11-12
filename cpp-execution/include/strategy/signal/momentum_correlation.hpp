@@ -85,7 +85,7 @@ public:
      * @brief Detect the current market regime
      * @return Identified market regime
      */
-    MarketRegime detectMarketRegime() const;
+    MarketRegimeType detectMarketRegime() const;
 
     /**
      * @brief Get correlation coefficient for a specific metric
@@ -116,7 +116,7 @@ public:
      * @brief Get the current market regime
      * @return Current market regime
      */
-    MarketRegime getCurrentMarketRegime() const;
+    MarketRegimeType getCurrentMarketRegime() const;
     /**
      * @brief Get the current correlation parameters
      * @return Current correlation parameters
@@ -159,7 +159,7 @@ private:
     // Last update times (milliseconds since epoch) for EWMA smoothing per metric
     std::map<std::string, uint64_t> last_update_ms_;
     std::map<std::string, double> feature_importance_;
-    MarketRegime current_regime_ = MarketRegime::NORMAL;
+    MarketRegimeType current_regime_ = MarketRegimeType::NORMAL;
     // Lock-free snapshots published for fast read access by predictPriceMovement()
     // Updated under correlation_mutex_ via std::atomic_store/std::atomic_load helpers
     mutable std::shared_ptr<std::map<std::string, double>> coeffs_snapshot_;
@@ -207,7 +207,7 @@ private:
     double calculateMomentumAcceleration(const std::vector<double>& movements) const;
     // calculateMarketStress
     double calculateMarketStress(const std::vector<double>& movements, double volatility) const;
-    void applyRegimeSmoothing(MarketRegime& detectedRegime);
+    void applyRegimeSmoothing(MarketRegimeType& detectedRegime);
     // regimeToString
     // std::string regimeToString(MarketRegime regime) const {
 };

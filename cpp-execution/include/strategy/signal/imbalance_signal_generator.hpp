@@ -356,7 +356,7 @@ private:
      * @param regime Current market regime
      * @return Scaling factor
      */
-    double getImbalanceTypeScaling(ImbalanceType type, MarketRegime regime) const;
+    double getImbalanceTypeScaling(ImbalanceType type, MarketRegimeType regime) const;
     
     /**
      * @brief Get regime-specific confidence adjustment
@@ -364,14 +364,14 @@ private:
      * @param baseConfidence Base confidence level
      * @return Adjusted confidence
      */
-    double getRegimeConfidenceAdjustment(MarketRegime regime, double baseConfidence) const;
+    double getRegimeConfidenceAdjustment(MarketRegimeType regime, double baseConfidence) const;
     
     /**
      * @brief Determine current market regime
      * @param imbalance Source imbalance for context
      * @return Current market regime
      */
-    MarketRegime getCurrentMarketRegime(const ImbalanceEvent& imbalance) const;
+    MarketRegimeType getCurrentMarketRegime(const ImbalanceEvent& imbalance) const;
     
     // Utility methods
     /**

@@ -135,10 +135,10 @@ void MomentumCorrelation::updateCorrelationModel(
     //  data_points_.clear();
      correlation_coefficients_.clear();
      feature_importance_.clear();
-     current_regime_ = MarketRegime::NORMAL;
+     current_regime_ = MarketRegimeType::NORMAL;
  }
  
- MarketRegime MomentumCorrelation::detectMarketRegime() const {
+ MarketRegimeType MomentumCorrelation::detectMarketRegime() const {
      return current_regime_;
  }
   
@@ -747,11 +747,14 @@ void MomentumCorrelation::updateHighestCorrelatedMetrics() {
      return absCorrelation > criticalValue;
  }
  
+MarketRegimeType MomentumCorrelation::getCurrentMarketRegime() const {
+    return current_regime_;
+}
 
 void MomentumCorrelation::updateMarketRegime() {
     // We need enough data points for reliable regime detection
     if (data_points_.size() < params_.regime_detection_window) {
-        current_regime_ = MarketRegime::NORMAL;
+        current_regime_ = MarketRegimeType::NORMAL;
         return;
     }
     
@@ -809,36 +812,36 @@ void MomentumCorrelation::updateMarketRegime() {
     double activityLevel = oscillation / recentMovements.size();
     
     // Enhanced regime determination with hierarchical logic
-    MarketRegime detectedRegime = MarketRegime::NORMAL;
+    MarketRegimeType detectedRegime = MarketRegimeType::NORMAL;
     
     // 1. Check for market stress first (highest priority)
     if (stressIndicator > 0.7) {
-        detectedRegime = MarketRegime::STRESS;
+        detectedRegime = MarketRegimeType::STRESS;
     }
     // 2. Check for high volatility conditions
     else if (volatility > 0.004) { // 0.4% threshold
         if (activityLevel < 0.002) {
             // High vol but low activity - might be gapping/sparse trading
-            detectedRegime = MarketRegime::VOLATILE;
+            detectedRegime = MarketRegimeType::HIGH_VOLATILITY;
         } else {
-            detectedRegime = MarketRegime::VOLATILE;
+            detectedRegime = MarketRegimeType::HIGH_VOLATILITY;
         }
     }
     // 3. Check for trending conditions
     else if (directionalMovement > 0.006 && trendPersistence > 0.6 && momentum > 0.3) {
-        detectedRegime = MarketRegime::TRENDING;
+        detectedRegime = MarketRegimeType::TRENDING;
     }
     // 4. Check for range-bound conditions
     else if (directionalMovement < 0.003 && oscillation > 0.008 && trendPersistence < 0.4) {
-        detectedRegime = MarketRegime::RANGE_BOUND;
+        detectedRegime = MarketRegimeType::MEAN_REVERTING;
     }
     // 5. Check for quiet/low activity conditions
     else if (volatility < 0.001 && activityLevel < 0.002) {
-        detectedRegime = MarketRegime::QUIET;
+        detectedRegime = MarketRegimeType::QUIET;
     }
     // 6. Default to normal
     else {
-        detectedRegime = MarketRegime::NORMAL;
+        detectedRegime = MarketRegimeType::NORMAL;
     }
     
     // Apply smoothing to prevent rapid regime switching
@@ -935,9 +938,9 @@ double MomentumCorrelation::calculateMarketStress(const std::vector<double>& mov
 }
 
 // Helper method to apply regime smoothing
-void MomentumCorrelation::applyRegimeSmoothing(MarketRegime& detectedRegime) {
+void MomentumCorrelation::applyRegimeSmoothing(MarketRegimeType& detectedRegime) {
     // Simple smoothing: require 2-3 consecutive detections before switching
-    static MarketRegime lastDetection = MarketRegime::NORMAL;
+    static MarketRegimeType lastDetection = MarketRegimeType::NORMAL;
     static int consecutiveCount = 0;
     
     if (detectedRegime == lastDetection) {
@@ -951,11 +954,11 @@ void MomentumCorrelation::applyRegimeSmoothing(MarketRegime& detectedRegime) {
     int requiredConsecutive = 2; // Default
     
     // Require more evidence for stress regime
-    if (detectedRegime == MarketRegime::STRESS) {
+    if (detectedRegime == MarketRegimeType::STRESS) {
         requiredConsecutive = 3;
     }
     // Require less evidence when moving from stress back to normal
-    else if (current_regime_ == MarketRegime::STRESS && detectedRegime != MarketRegime::STRESS) {
+    else if (current_regime_ == MarketRegimeType::STRESS && detectedRegime != MarketRegimeType::STRESS) {
         requiredConsecutive = 1;
     }
     
@@ -1041,7 +1044,7 @@ double MomentumCorrelation::calculateWeightedPrediction(const ImbalanceEvent& ev
     prediction *= event.strength;
     
     // Snapshot current market regime to avoid data race
-    MarketRegime regimeSnapshot = MarketRegime::NORMAL;
+    MarketRegimeType regimeSnapshot = MarketRegimeType::NORMAL;
     {
         std::lock_guard<std::mutex> lock(correlation_mutex_);
         regimeSnapshot = current_regime_;
@@ -1050,12 +1053,12 @@ double MomentumCorrelation::calculateWeightedPrediction(const ImbalanceEvent& ev
     // Apply market regime adjustments
     double regimeMultiplier = 1.0;
     switch (regimeSnapshot) {
-        case MarketRegime::VOLATILE: regimeMultiplier = 0.8; break;
-        case MarketRegime::TRENDING:        regimeMultiplier = 1.2; break;
-        case MarketRegime::RANGE_BOUND:     regimeMultiplier = 0.7; break;
-        case MarketRegime::QUIET:           regimeMultiplier = 0.6; break;
-        case MarketRegime::NORMAL:      regimeMultiplier = 1.0; break;
-        case MarketRegime::STRESS:         regimeMultiplier = 0.5; break;
+        case MarketRegimeType::HIGH_VOLATILITY: regimeMultiplier = 0.8; break;
+        case MarketRegimeType::TRENDING:        regimeMultiplier = 1.2; break;
+        case MarketRegimeType::MEAN_REVERTING:     regimeMultiplier = 0.7; break;
+        case MarketRegimeType::QUIET:           regimeMultiplier = 0.6; break;
+        case MarketRegimeType::NORMAL:      regimeMultiplier = 1.0; break;
+        case MarketRegimeType::STRESS:         regimeMultiplier = 0.5; break;
         default:                            regimeMultiplier = 1.0; break;
     }
     prediction *= regimeMultiplier;

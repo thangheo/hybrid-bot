@@ -288,7 +288,13 @@
      
      AdaptiveMechanismConfig() = default;
  };
- 
+//  regime detector config
+    struct RegimeDetectorConfig {
+        double sensitivity = 1.0;               // Sensitivity for regime detection
+        int detectionWindowMs = 60000;         // Detection window in milliseconds
+        RegimeDetectorConfig() = default;
+    };
+    
  // The main StrategyConfig should have these fields:
  struct StrategyConfig {
      core::StrategyId strategy_id;                      // Unique identifier for the strategy
@@ -296,16 +302,17 @@
      ParameterSet defaultParameters;                    // Default parameters
      
      // Component configurations
-     OrderBookAnalyzerConfig orderBookAnalyzerConfig;
-     ImbalanceDetectionConfig imbalanceDetectionConfig;
-     LiquidityFlowConfig liquidityFlowConfig;
-     VolumeProfileConfig volumeProfileConfig;
-     SignalGeneratorConfig signalGeneratorConfig;
-     MomentumCorrelationConfig momentumCorrelationConfig;
-     ThresholdManagerConfig thresholdManagerConfig;
-     SignalDecayConfig signalDecayConfig;
-     ExchangeCalibrationConfig exchangeCalibrationConfig;
-     AdaptiveMechanismConfig adaptiveMechanismConfig;
+    OrderBookAnalyzerConfig orderBookAnalyzerConfig;
+    ImbalanceDetectionConfig imbalanceDetectionConfig;
+    LiquidityFlowConfig liquidityFlowConfig;
+    VolumeProfileConfig volumeProfileConfig;
+    SignalGeneratorConfig signalGeneratorConfig;
+    MomentumCorrelationConfig momentumCorrelationConfig;
+    RegimeDetectorConfig regimeDetectorConfig;
+    ThresholdManagerConfig thresholdManagerConfig;
+    SignalDecayConfig signalDecayConfig;
+    ExchangeCalibrationConfig exchangeCalibrationConfig;
+    AdaptiveMechanismConfig adaptiveMechanismConfig;
      
      // Map of trading pairs to monitor (symbol -> exchange ID)
     std::map<core::Symbol, core::ExchangeId> tradingPairs;

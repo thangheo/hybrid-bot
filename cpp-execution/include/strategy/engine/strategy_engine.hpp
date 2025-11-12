@@ -255,6 +255,9 @@ private:
     std::map<std::string, std::map<std::string, double>> volumeProfileMetrics_;
     ImbalanceSignalGeneratorPtr signalGenerator_;
     MomentumCorrelationPtr momentumCorrelator_;
+
+    // regimeDetector_
+    OrderbookRegimeDetectorPtr regimeDetector_;
     ThresholdManagerPtr thresholdManager_;
     SignalDecayModelPtr signalDecayModel_;
     ExchangeCalibrationPtr exchangeCalibration_;
