@@ -75,7 +75,7 @@ public:
         double signal_reversal_threshold;
         double spread_emergency_multiplier;
         double volatility_spike_threshold;
-        
+        int volatility_window_seconds = 60; // For dynamic calculations
         // Calculated metrics
         double expected_edge;             // Expected profit per trade
         double sharpe_estimate;           // Risk-adjusted return estimate
@@ -104,7 +104,8 @@ public:
         double pnl_mean = 0.0;
         double pnl_std = 0.0;
         double time_weighted_pnl = 0.0;
-        
+        int vol_spike_count = 0;    // Number of spikes to confirm
+
         bool is_active = false;
         std::string symbol;
     };

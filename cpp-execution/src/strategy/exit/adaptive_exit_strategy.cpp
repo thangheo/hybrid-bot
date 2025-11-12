@@ -181,7 +181,7 @@ AdaptiveExitStrategy::DynamicParameters AdaptiveExitStrategy::calculateDynamicPa
     }
     
     params.max_holding_time = predictionWindow_ * decay_factor;
-    params.min_holding_time = std::max(1.0, spread_in_ticks / vol_in_ticks * 2.0); // Based on tick-to-spread ratio
+    params.min_holding_time = std::max(10.0, spread_in_ticks / vol_in_ticks * 2.0); // Based on tick-to-spread ratio
     
     // 6. Signal Reversal Threshold (based on prediction confidence decay)
     // Higher threshold when volatility is high
@@ -371,13 +371,18 @@ AdaptiveExitStrategy::ExitDecision AdaptiveExitStrategy::evaluateExit(
     }
     
     // 2. VOLATILITY SPIKE (protect capital)
-    if (current_micro.volatility_1m > state.entry_microstructure.volatility_1m * 2.5) {
-        if (pnl_ticks < params.profit_target_ticks * 0.5) {
+    if (current_micro.volatility_1m > state.entry_microstructure.volatility_1m * params.volatility_spike_threshold) {
+        state.vol_spike_count++;
+        if (state.vol_spike_count >= 2 && pnl_ticks < params.profit_target_ticks * 0.5) {
             decision.should_exit = true;
             decision.reason = ExitReason::VOLATILITY_SPIKE;
             decision.confidence = 0.8;
             return decision;
         }
+
+    }
+    else{
+        state.vol_spike_count = 0; // reset if no spike
     }
     
     // 3. ADVERSE SELECTION DETECTION
