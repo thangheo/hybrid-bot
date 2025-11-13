@@ -380,6 +380,13 @@ void Trading_system::exitMonitorLoop() {
                     double spreadRatio = 0.0;
                     double spreadEMA = 0.0;
                     double realize_volatility_1m = 0.0;
+                    double volatility = 0.0;
+                    double bidPrice = 0.0;
+                    double askPrice = 0.0;
+                    double bidVolume = 0.0;
+                    double askVolume = 0.0;
+                    double orderbookImbalance = 0.0;
+                    double liquidityProfileScore = 0.0;
                     trading::strategy::OrderBookMetrics obMetrics;
 
                     if (marketDataInterface_) {
@@ -397,6 +404,14 @@ void Trading_system::exitMonitorLoop() {
                                 spreadRatio = obMetrics.spread / currentPrice;
                                 spreadEMA = obMetrics.emaSpread / currentPrice;
                                 realize_volatility_1m = obMetrics.realize_volatility_1m;
+                                volatility = obMetrics.realizedVolatility;
+                                bidPrice = obMetrics.bidPrice;
+                                askPrice = obMetrics.askPrice;
+                                orderbookImbalance = obMetrics.volumeImbalance;
+                                liquidityProfileScore = obMetrics.liquidityProfileScore;
+                                bidVolume = obMetrics.totalBidVolume;
+                                askVolume = obMetrics.totalAskVolume;
+
                                 LOG_TRACE("Exit monitor: metrics for {} mid={} volImb={} rv={} vol1m={}", symbol, obMid, obVolImbalance, obRV, realize_volatility_1m);
                             } catch (...) {
                                 // ignore malformed metric
@@ -503,42 +518,20 @@ void Trading_system::exitMonitorLoop() {
                         exitSignal.metadata["exit_pnl_bps"] = std::to_string(exitDecision.expected_pnl);
                         exitSignal.signalMetrics["spread_ema"] = spreadEMA;
                         exitSignal.signalMetrics["volatility_1m"] = realize_volatility_1m;
-                        // bid ask spread liquidity...
-                        // exitSignal.signalMetrics["bid_ask_spread"] = bidAskSpread;
-                        // Populate common market metrics so downstream ExecutionService receives them
-                        // Prefer values from the cached OrderBookMetrics (obMetrics) when available
-                        try {
-                            double bidPrice = 0.0;
-                            double askPrice = 0.0;
-                            double volatility = realize_volatility_1m;
-                            double askVolume = 0.0;
-                            double bidVolume = 0.0;
-                            double liquidityProfileScore = 0.0;
+                        // meta data
 
-                            // Attempt to fetch latest cached metrics again into a local variable
-                            trading::strategy::OrderBookMetrics obm_local;
-                            if (getLatestOrderbookMetrics(sym, exchangeId, obm_local)) {
-                                bidPrice = obm_local.getMetric("bidPrice", bidPrice);
-                                askPrice = obm_local.getMetric("askPrice", askPrice);
-                                volatility = obm_local.getMetric("volatility", volatility);
-                                askVolume = obm_local.getMetric("askVolume", askVolume);
-                                bidVolume = obm_local.getMetric("bidVolume", bidVolume);
-                                liquidityProfileScore = obm_local.getMetric("liquidityProfileScore", liquidityProfileScore);
-                            }
-
-                            exitSignal.signalMetrics["volatility"] = volatility;
-                            if (bidPrice > 0.0 && askPrice > 0.0) {
-                                double spread = askPrice - bidPrice;
-                                exitSignal.signalMetrics["bidAskSpread"] = spread;
-                                exitSignal.signalMetrics["bidPrice"] = bidPrice;
-                                exitSignal.signalMetrics["askPrice"] = askPrice;
-                            }
-                            exitSignal.signalMetrics["bidVolume"] = bidVolume;
-                            exitSignal.signalMetrics["askVolume"] = askVolume;
-                            exitSignal.signalMetrics["liquidityProfileScore"] = liquidityProfileScore;
-                        } catch (...) {
-                            // Best-effort: do not fail exit signal creation if metrics extraction throws
+                       
+                        exitSignal.signalMetrics["volatility"] = volatility;
+                        if (bidPrice > 0.0 && askPrice > 0.0) {
+                            double spread = askPrice - bidPrice;
+                            exitSignal.signalMetrics["bidAskSpread"] = spread;
+                            exitSignal.signalMetrics["bidPrice"] = bidPrice;
+                            exitSignal.signalMetrics["askPrice"] = askPrice;
                         }
+                        exitSignal.signalMetrics["bidVolume"] = bidVolume;
+                        exitSignal.signalMetrics["askVolume"] = askVolume;
+                        exitSignal.signalMetrics["liquidityProfileScore"] = liquidityProfileScore;
+                      
                         // Determine exit quantity: always try authoritative source first
                         double exitQty = 0.0;
                         bool qtyResolved = false;
@@ -1495,6 +1488,13 @@ void Trading_system::signalWorkerLoop(size_t workerId) {
             if (!signalWorkersRunning_.load()) {
                 break;
             }
+            // Debug: log incoming signal direction so we can trace missing SELLs
+            try {
+                std::cout << "SignalWorker: incoming signal id=" << signal.id
+                          << " symbol=" << signal.symbol.toString()
+                          << " dir=" << (signal.direction == core::Direction::BUY ? "BUY" : (signal.direction == core::Direction::SELL ? "SELL" : "NEUTRAL"))
+                          << " strength=" << signal.strength << std::endl;
+            } catch (...) {}
             
             try {
                 //if signal is neutral, skip
