@@ -1856,25 +1856,11 @@ void Trading_system::execWorkerLoop(size_t workerId) {
                 continue;
             }
 
-            // --- Step 8: Create and process execution report ---
-            execution::models::ExecutionReport report;
-            report.setOrderId("ORDER_" + task.id);
-            report.setExchangeId(task.exchangeId);
-            report.setSymbol(task.symbol);
-            report.setSide(task.direction == core::Direction::BUY ? 
-                          execution::models::OrderSide::BUY : 
-                          execution::models::OrderSide::SELL);
-            report.setQuantity(finalQty);
-            report.setFilledQuantity(finalQty);
-            report.setStatus(execution::models::OrderState::FILLED);
-            
-            if (riskManager_) {
-                std::cout << "[TTL_DEBUG] Sending ExecutionReport to RiskManager: " 
-                         << task.symbol.toString() << " qty=" << finalQty << std::endl;
-                riskManager_->processExecutionReport(report);
-            } else {
-                std::cout << "[TTL_DEBUG] ERROR: riskManager_ is NULL - ExecutionReport NOT sent!" << std::endl;
-            }
+            // Note: execution reporting is now centralized via ExecutionService callbacks.
+            // The ExecutionService / ExecutionInterface will invoke the registered
+            // execution callback which will forward a canonical ExecutionReport to
+            // the RiskManager. Avoid constructing and sending a local ExecutionReport
+            // here to prevent duplicate processing.
 
             std::cout << "📈 Executed: " << task.symbol.toString() << " " 
                       << (task.direction == core::Direction::BUY ? "BUY" : "SELL") 
@@ -1969,6 +1955,37 @@ void Trading_system::setupComponentConnections() {
         std::cout << "🚨 Risk Event: " << event.description 
                     << " (Severity: " << event.severity << ")" << std::endl;
     });
+
+    // 3.a Register ExecutionService callback to forward canonical execution
+    // reports to RiskManager. This centralizes emission and prevents duplicates
+    // caused by multiple components creating their own reports.
+    if (executionService_ && riskManager_) {
+        try {
+            executionService_->registerExecutionCallback([this](const execution::ExecutionResponse& resp) {
+                try {
+                    // Convert ExecutionResponse -> ExecutionReport (best-effort)
+                    execution::models::ExecutionReport report;
+                    report.setOrderId(resp.client_order_id);
+                    // Exchange/order ids may be empty for failures; best-effort only
+                    // Try to populate status
+                    if (resp.success) {
+                        report.setStatus(execution::models::OrderState::FILLED);
+                    } else {
+                        report.setStatus(execution::models::OrderState::REJECTED);
+                    }
+                    // Forward to RiskManager
+                    if (riskManager_) {
+                        riskManager_->processExecutionReport(report);
+                    }
+                } catch (...) {
+                    // swallow - reporting must not crash execution thread
+                }
+            });
+            LOG_INFO("Trading_system", "Registered execution callback to forward reports to RiskManager");
+        } catch (...) {
+            LOG_WARN("Trading_system", "Failed to register execution callback on ExecutionService");
+        }
+    }
 
     // Register post-trade signal checker so PostTradeMonitor can consult live strategy signals
     if (riskManager_ && strategyEngine_) {
