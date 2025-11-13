@@ -707,10 +707,35 @@ void OrderBookAnalyzer::calculateDerivedMetrics() {
         currentMetrics_.realizedVolatility / (1.0 + std::chrono::duration<double>(
             currentMetrics_.timestamp - lastUpdateTime_).count());
     currentMetrics_.liquidityPressure = std::abs(currentMetrics_.pressureImbalance);
-    // Composite liquidity score
+    // Composite liquidity raw score (may be unbounded)
     const double bidLiquidity = currentMetrics_.totalBidVolume * (1.0 + currentMetrics_.bidDensity);
     const double askLiquidity = currentMetrics_.totalAskVolume * (1.0 + currentMetrics_.askDensity);
-    currentMetrics_.liquidityProfileScore = (bidLiquidity + askLiquidity) / 2.0;
+    double rawLiquidityProfile = (bidLiquidity + askLiquidity) / 2.0;
+
+    // Normalization: map rawLiquidityProfile to (0,1) using configurable scale.
+    // If no explicit scale provided, fall back to historical average total volume
+    double scale = params_.getDouble("liquidityNormalizationScale", 0.0);
+    if (scale <= 0.0) {
+        double avgTotalVol = 0.0;
+        if (!historicalVolumes_.empty()) {
+            double sum = std::accumulate(historicalVolumes_.begin(), historicalVolumes_.end(), 0.0);
+            avgTotalVol = sum / static_cast<double>(historicalVolumes_.size());
+        } else {
+            avgTotalVol = (currentMetrics_.totalBidVolume + currentMetrics_.totalAskVolume);
+        }
+        // Prevent scale from being zero or extremely small
+        scale = std::max(1e-6, avgTotalVol);
+    }
+
+    // Use soft-normalization raw / (raw + scale) to map to [0,1)
+    double normalizedLiquidity = rawLiquidityProfile / (rawLiquidityProfile + scale);
+    normalizedLiquidity = std::clamp(normalizedLiquidity, 0.0, 1.0);
+
+    // Store normalized score in typed member (so downstream code expecting 0..1 works)
+    currentMetrics_.liquidityProfileScore = normalizedLiquidity;
+    // Also expose raw value for diagnostics
+    currentMetrics_.metrics["liquidityProfileScoreRaw"] = rawLiquidityProfile;
+    currentMetrics_.metrics["liquidityProfileScore"] = normalizedLiquidity;
     // Update metrics map
     //currentMetrics_.updateMetricsMap();
 }

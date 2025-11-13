@@ -36,7 +36,7 @@ class MarketRegimeState:
     
     # Enhanced with C++ intelligence
     order_book_regime: int  # OrderBookRegime enum value
-    liquidity_score: float
+    liquidityProfileScore: float
     volatility_trend: float
     flow_momentum: float
 
@@ -278,7 +278,7 @@ class MarketIntelligenceIntegrator:
             transition_probability=self._estimate_transitions(history, primary_regime),
             last_update=time.time(),
             order_book_regime=intel.current_regime,
-            liquidity_score=intel.liquidity_ratio,
+            liquidityProfileScore=intel.liquidity_ratio,
             volatility_trend=intel.realized_volatility_1m,
             flow_momentum=intel.net_flow_5s - intel.net_flow_30s
         )
@@ -573,7 +573,7 @@ class IntegratedTradingStrategy:
         intent.urgency_factor = self.intelligence_integrator.get_execution_urgency(symbol)
         intent.max_slippage_tolerance = 0.002 * (1 + regime_state.volatility_trend)
         intent.allow_partial_fills = True
-        intent.max_market_impact = 0.01 if regime_state.liquidity_score > 0.5 else 0.005
+        intent.max_market_impact = 0.01 if regime_state.liquidityProfileScore > 0.5 else 0.005
         
         # Timing based on regime
         if regime_state.primary_regime in [tm.REGIME_EUPHORIA, tm.REGIME_PANIC]:
@@ -647,7 +647,7 @@ class IntegratedTradingStrategy:
             size *= 1.5  # Larger positions in euphoria
         
         # Adjust for liquidity
-        size *= regime_state.liquidity_score
+        size *= regime_state.liquidityProfileScore
         
         # Adjust for volatility
         if regime_state.volatility_trend > 0.02:
@@ -805,7 +805,7 @@ class IntegratedTradingStrategy:
         for symbol, regime_state in self.intelligence_integrator.current_regimes.items():
             print(f"  {symbol}: Regime {regime_state.primary_regime} "
                   f"(conf: {regime_state.confidence:.2f}, "
-                  f"liq: {regime_state.liquidity_score:.2f})")
+                  f"liq: {regime_state.liquidityProfileScore:.2f})")
         
         print("========================")
 
