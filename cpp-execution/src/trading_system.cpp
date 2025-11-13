@@ -39,6 +39,11 @@ static std::shared_ptr<trading::strategy::AdaptiveExitStrategy> exitStrategy_;
 static std::unordered_map<std::string, double> g_exchangeTickSize;
 static std::unordered_map<std::string, double> g_symbolTickSize;
 
+// Simple in-memory authoritative position cache for debugging / local use.
+// Key: symbol.toString(), Value: signed quantity (positive = long, negative = short)
+static std::unordered_map<std::string, double> g_localPositions;
+static std::mutex g_localPositionsMutex;
+
 static void loadExchangeTickSizes(const std::string& path = "config/exchange_specific_params.json") {
     try {
         if (!std::filesystem::exists(path)) return;
@@ -434,28 +439,22 @@ void Trading_system::exitMonitorLoop() {
                         posInfo = exitStrategy_->getTradeState(symbol);
                     }
                     
-                    //this code looks duumb
+                    //this code looks duumb.//FUCK YOU STUPID DOG
                     if (!posInfo.has_value() && riskManager_) {
                         try {
                             //fallback to riskManager
                             // RiskManager::getCachedPosition prefers PositionTracker then ExecutionInterface
                             std::optional<double> cachedQty = riskManager_->getCachedPosition(exchangeId, sym);
                             if (cachedQty.has_value() && std::abs(*cachedQty) > 1e-12) {
-                                trading::strategy::AdaptiveExitStrategy::TradeState info;
+                                trading::strategy::AdaptiveExitStrategy::TradeState info; //why?
                                 double qty = *cachedQty;
                                 // info.quantity = std::abs(qty);
                                 info.entry_direction = (qty >= 0.0) ? core::Direction::BUY : core::Direction::SELL;
-                                // Try to fetch entry price from PositionTracker if available via RiskManager internals
-                                // RiskManager exposes no direct entry price here; use currentPrice as a safe fallback
                                 info.entry_price = currentPrice;
-                                // Ensure entry_time is set to now for the fallback path so holdingDuration is meaningful
                                 info.entry_time = std::chrono::steady_clock::now();
                                 LOG_WARN("Exit monitor: fallback entry_price used (from currentPrice) for {} = {}", symbol, currentPrice);
                                 info.entry_confidence = 1.0;
-                                // info.entry_time = std::chrono::steady_clock::now(); 
-                                // fallback entry_time set above to avoid huge holding durations when original entry_time
-                                // is unavailable from RiskManager/PositionTracker
-                                posInfo = info;
+                                posInfo = info; 
                             }
                         
                         } catch (const std::exception& e) {
@@ -484,17 +483,17 @@ void Trading_system::exitMonitorLoop() {
 
                     if (exitDecision.should_exit and exitDecision.confidence >= 0.8
                         && posInfo.has_value()) {
-                            // Log exit trigger with holding time
-                            auto now = std::chrono::steady_clock::now();
-                            // holdingDurationMs is milliseconds; convert to seconds for log
-                            auto holdingDurationMs = std::chrono::duration_cast<std::chrono::milliseconds>(
-                                now - posInfo->entry_time).count();
-                            double holdingSeconds = static_cast<double>(holdingDurationMs) / 1000.0;
-                            LOG_INFO("EXIT TRIGGERED: {} - {} ({:.4f}bps) after {:.3f}s holding",
-                                    symbol,
-                                    AdaptiveExitStrategy::exitReasonToString(exitDecision.reason),
-                                    exitDecision.expected_pnl,
-                                    holdingSeconds);
+                        // Log exit trigger with holding time
+                        auto now = std::chrono::steady_clock::now();
+                        // holdingDurationMs is milliseconds; convert to seconds for log
+                        auto holdingDurationMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                            now - posInfo->entry_time).count();
+                        double holdingSeconds = static_cast<double>(holdingDurationMs) / 1000.0;
+                        LOG_INFO("EXIT TRIGGERED: {} - {} ({:.4f}bps) after {:.3f}s holding",
+                                symbol,
+                                AdaptiveExitStrategy::exitReasonToString(exitDecision.reason),
+                                exitDecision.expected_pnl,
+                                holdingSeconds);
 
                         // Create exit signal
                         execution::TradingSignal exitSignal;
@@ -504,7 +503,7 @@ void Trading_system::exitMonitorLoop() {
                         
                         // IMPORTANT: Opposite direction of position
                         exitSignal.direction = (posInfo->entry_direction == core::Direction::BUY) ?
-                                              core::Direction::SELL : core::Direction::BUY;
+                                            core::Direction::SELL : core::Direction::BUY;
                         
                         exitSignal.strength = 1.0;
                         exitSignal.confidence = 0.9;
@@ -520,7 +519,7 @@ void Trading_system::exitMonitorLoop() {
                         exitSignal.signalMetrics["volatility_1m"] = realize_volatility_1m;
                         // meta data
 
-                       
+                    
                         exitSignal.signalMetrics["volatility"] = volatility;
                         if (bidPrice > 0.0 && askPrice > 0.0) {
                             double spread = askPrice - bidPrice;
@@ -531,19 +530,33 @@ void Trading_system::exitMonitorLoop() {
                         exitSignal.signalMetrics["bidVolume"] = bidVolume;
                         exitSignal.signalMetrics["askVolume"] = askVolume;
                         exitSignal.signalMetrics["liquidityProfileScore"] = liquidityProfileScore;
-                      
+                    
                         // Determine exit quantity: always try authoritative source first
                         double exitQty = 0.0;
                         bool qtyResolved = false;
+
+                        // Prefer local in-memory authoritative cache for simplicity/debuggability
                         try {
-                            if (riskManager_) {
-                                auto trackedOpt = riskManager_->getCachedPosition(exchangeId, sym);
-                                if (trackedOpt.has_value() && std::abs(*trackedOpt) > 1e-12) {
-                                    exitQty = std::abs(*trackedOpt);
-                                    qtyResolved = true;
-                                }
+                            std::lock_guard<std::mutex> lk(g_localPositionsMutex);
+                            auto it = g_localPositions.find(sym.toString());
+                            if (it != g_localPositions.end() && std::abs(it->second) > 1e-12) {
+                                exitQty = std::abs(it->second);
+                                qtyResolved = true;
                             }
                         } catch (...) {}
+
+                        // Fallback to RiskManager cached position only if local cache missing
+                        if (!qtyResolved) {
+                            try {
+                                if (riskManager_) {
+                                    auto trackedOpt = riskManager_->getCachedPosition(exchangeId, sym);
+                                    if (trackedOpt.has_value() && std::abs(*trackedOpt) > 1e-12) {
+                                        exitQty = std::abs(*trackedOpt);
+                                        qtyResolved = true;
+                                    }
+                                }
+                            } catch (...) {}
+                        }
 
                         // If no authoritative position found, skip issuing an exit order.
                         if (!qtyResolved) {
@@ -1500,8 +1513,7 @@ void Trading_system::signalWorkerLoop(size_t workerId) {
                 }
                 
                 signalsGenerated_++;
-                             double adjustedStrength = signal.strength;
-              
+                double adjustedStrength = signal.strength;              
 
                 // convert and validate
                 execution::TradingSignal execSignal;
@@ -1883,6 +1895,17 @@ void Trading_system::execWorkerLoop(size_t workerId) {
                           << ", StrategyId: " << task.strategyId
                           << ", ExchangeId: " << task.exchangeId.toString()
                           << std::endl;
+                // Print local position cache for this symbol to help debugging
+                try {
+                    std::lock_guard<std::mutex> lk(g_localPositionsMutex);
+                    auto it = g_localPositions.find(task.symbol.toString());
+                    if (it != g_localPositions.end()) {
+                        std::cout << "[LOCAL POS] " << task.symbol.toString() << " cachedQty=" << it->second << std::endl;
+                    } else {
+                        std::cout << "[LOCAL POS] " << task.symbol.toString() << " cachedQty=<none>" << std::endl;
+                    }
+                } catch (...) {}
+
                 continue;
             }
 
