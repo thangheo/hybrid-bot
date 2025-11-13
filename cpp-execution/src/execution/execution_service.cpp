@@ -342,170 +342,187 @@ ExecutionResponse ExecutionService::executeSignal(const TradingSignal& signal) {
     static std::mutex cachedMinNotionalMutex;
 
     // === Professional Balance Validation ===
+    bool skipAllBalanceValidation = false;
     try {
-        // Use the new balance validator for comprehensive checking (cached read)
-        std::cout << "[BALANCE] Preflight (cached) validation for order " << exchange_order->getClientOrderId()
-                  << " on exchange " << exchangeId.toString() << std::endl;
-        auto balanceResult = balanceValidator_->validateOrder(*exchange_order, exchangeId, false);
-        
-        if (!balanceResult.isValid) {
-            std::cerr << "❌ Order rejected due to insufficient balance:" << std::endl;
+        bool cfgSkip = false;
+        try { cfgSkip = balanceValidator_->skipBalanceForExits(); } catch (...) { cfgSkip = false; }
+        if (cfgSkip) {
+            try {
+                std::string v = exchange_order->getExtraParam("is_exit_signal");
+                if (!v.empty() && v == "true") skipAllBalanceValidation = true;
+            } catch (...) { /* ignore */ }
+        }
 
-            // Suggest quantity adjustment if possible
-            if (balanceResult.canAdjust && balanceResult.suggestedQuantity > 0) {
-                std::cout << "   💡 Suggested quantity: " << balanceResult.suggestedQuantity << std::endl;
+        if (skipAllBalanceValidation) {
+            std::cout << "[BALANCE] SKIPPING all balance validation for exit order " << exchange_order->getClientOrderId() << std::endl;
+        } else {
+            // Use the new balance validator for comprehensive checking (cached read)
+            std::cout << "[BALANCE] Preflight (cached) validation for order " << exchange_order->getClientOrderId()
+                      << " on exchange " << exchangeId.toString() << std::endl;
+            auto balanceResult = balanceValidator_->validateOrder(*exchange_order, exchangeId, false);
+            
+            if (!balanceResult.isValid) {
+                std::cerr << "❌ Order rejected due to insufficient balance:" << std::endl;
 
-                // Attempt to adjust the order quantity to suggestedQuantity and re-run validation.
-                try {
-                    double origQty = exchange_order->getQuantity();
-                    exchange_order->setQuantity(balanceResult.suggestedQuantity);
+                // Suggest quantity adjustment if possible
+                if (balanceResult.canAdjust && balanceResult.suggestedQuantity > 0) {
+                    std::cout << "   💡 Suggested quantity: " << balanceResult.suggestedQuantity << std::endl;
 
-                    std::cout << "[BALANCE] Attempting adjusted quantity " << balanceResult.suggestedQuantity
-                              << " for order " << exchange_order->getClientOrderId() << std::endl;
+                    // Attempt to adjust the order quantity to suggestedQuantity and re-run validation.
+                    try {
+                        double origQty = exchange_order->getQuantity();
+                        exchange_order->setQuantity(balanceResult.suggestedQuantity);
 
-                    auto adjResult = balanceValidator_->validateOrder(*exchange_order, exchangeId, false);
-                    if (adjResult.isValid) {
-                        std::cout << "✅ Adjusted quantity passed balance validation; proceeding with adjusted order." << std::endl;
-                        // overwrite balanceResult so subsequent logging reflects adjusted quantity/requirements
-                        balanceResult = adjResult;
+                        std::cout << "[BALANCE] Attempting adjusted quantity " << balanceResult.suggestedQuantity
+                                  << " for order " << exchange_order->getClientOrderId() << std::endl;
 
-                        // update lifecycle tracker with new quantity (best-effort)
-                        order_lifecycle_tracker_->updateOrderState(
-                            exchange_order->getClientOrderId(),
-                            models::OrderState::PENDING
-                        );
-                        // continue to submission with adjusted quantity
-                    } else {
-                        // restore original quantity for reporting
-                        exchange_order->setQuantity(origQty);
-                        std::cout << "Adjusted quantity still insufficient: " << adjResult.reason << std::endl;
+                        auto adjResult = balanceValidator_->validateOrder(*exchange_order, exchangeId, false);
+                        if (adjResult.isValid) {
+                            std::cout << "✅ Adjusted quantity passed balance validation; proceeding with adjusted order." << std::endl;
+                            // overwrite balanceResult so subsequent logging reflects adjusted quantity/requirements
+                            balanceResult = adjResult;
+
+                            // update lifecycle tracker with new quantity (best-effort)
+                            order_lifecycle_tracker_->updateOrderState(
+                                exchange_order->getClientOrderId(),
+                                models::OrderState::PENDING
+                            );
+                            // continue to submission with adjusted quantity
+                        } else {
+                            // restore original quantity for reporting
+                            exchange_order->setQuantity(origQty);
+                            std::cout << "Adjusted quantity still insufficient: " << adjResult.reason << std::endl;
+                            order_lifecycle_tracker_->updateOrderState(
+                                exchange_order->getClientOrderId(),
+                                models::OrderState::REJECTED,
+                                exchange_order->getExchangeOrderId(),
+                                adjResult.reason
+                            );
+
+                            return ExecutionResponse{
+                                exchange_order->getClientOrderId(),
+                                "",
+                                false,
+                                adjResult.reason,
+                                std::chrono::system_clock::now(),
+                                "REJECTED_INSUFFICIENT_BALANCE"
+                            };
+                        }
+                    } catch (const std::exception& e) {
+                        std::cerr << "Warning: failed to attempt suggested quantity adjustment: " << e.what() << std::endl;
+                        // Fallback to original rejection path below
                         order_lifecycle_tracker_->updateOrderState(
                             exchange_order->getClientOrderId(),
                             models::OrderState::REJECTED,
                             exchange_order->getExchangeOrderId(),
-                            adjResult.reason
+                            balanceResult.reason
                         );
 
                         return ExecutionResponse{
                             exchange_order->getClientOrderId(),
                             "",
                             false,
-                            adjResult.reason,
+                            balanceResult.reason,
                             std::chrono::system_clock::now(),
                             "REJECTED_INSUFFICIENT_BALANCE"
                         };
                     }
-                } catch (const std::exception& e) {
-                    std::cerr << "Warning: failed to attempt suggested quantity adjustment: " << e.what() << std::endl;
-                    // Fallback to original rejection path below
-                    order_lifecycle_tracker_->updateOrderState(
-                        exchange_order->getClientOrderId(),
-                        models::OrderState::REJECTED,
-                        exchange_order->getExchangeOrderId(),
-                        balanceResult.reason
-                    );
+                } else {
+                    // Before rejecting based on cached data, perform one forced fresh validation
+                    // This helps avoid false negatives when a recent fill hasn't propagated to
+                    // the cached DataInterface or local cache yet (common after immediate fills).
+                    try {
+                        std::cout << "[BALANCE] Cached validation failed - attempting forced fresh validation for order "
+                                  << exchange_order->getClientOrderId() << std::endl;
+                        auto freshResult = balanceValidator_->validateOrder(*exchange_order, exchangeId, true);
+                        if (freshResult.isValid) {
+                            std::cout << "\u2705 Fresh balance validation PASSED after cache refresh; proceeding with order." << std::endl;
+                            // overwrite balanceResult so subsequent logging reflects fresh data
+                            balanceResult = freshResult;
+                            // continue to submission
+                        } else {
+                            // Still insufficient after fresh fetch - reject
+                            order_lifecycle_tracker_->updateOrderState(
+                                exchange_order->getClientOrderId(),
+                                models::OrderState::REJECTED,
+                                exchange_order->getExchangeOrderId(),
+                                freshResult.reason
+                            );
 
-                    return ExecutionResponse{
-                        exchange_order->getClientOrderId(),
-                        "",
-                        false,
-                        balanceResult.reason,
-                        std::chrono::system_clock::now(),
-                        "REJECTED_INSUFFICIENT_BALANCE"
-                    };
-                }
-            } else {
-                // Before rejecting based on cached data, perform one forced fresh validation
-                // This helps avoid false negatives when a recent fill hasn't propagated to
-                // the cached DataInterface or local cache yet (common after immediate fills).
-                try {
-                    std::cout << "[BALANCE] Cached validation failed - attempting forced fresh validation for order "
-                              << exchange_order->getClientOrderId() << std::endl;
-                    auto freshResult = balanceValidator_->validateOrder(*exchange_order, exchangeId, true);
-                    if (freshResult.isValid) {
-                        std::cout << "\u2705 Fresh balance validation PASSED after cache refresh; proceeding with order." << std::endl;
-                        // overwrite balanceResult so subsequent logging reflects fresh data
-                        balanceResult = freshResult;
-                        // continue to submission
-                    } else {
-                        // Still insufficient after fresh fetch - reject
+                            return ExecutionResponse{
+                                exchange_order->getClientOrderId(),
+                                "",
+                                false,
+                                freshResult.reason,
+                                std::chrono::system_clock::now(),
+                                "REJECTED_INSUFFICIENT_BALANCE"
+                            };
+                        }
+                    } catch (const std::exception& e) {
+                        std::cerr << "Warning: forced fresh balance validation threw: " << e.what()
+                                  << ". Falling back to original rejection reason." << std::endl;
                         order_lifecycle_tracker_->updateOrderState(
                             exchange_order->getClientOrderId(),
                             models::OrderState::REJECTED,
                             exchange_order->getExchangeOrderId(),
-                            freshResult.reason
+                            balanceResult.reason
                         );
 
                         return ExecutionResponse{
                             exchange_order->getClientOrderId(),
                             "",
                             false,
-                            freshResult.reason,
+                            balanceResult.reason,
                             std::chrono::system_clock::now(),
                             "REJECTED_INSUFFICIENT_BALANCE"
                         };
                     }
-                } catch (const std::exception& e) {
-                    std::cerr << "Warning: forced fresh balance validation threw: " << e.what()
-                              << ". Falling back to original rejection reason." << std::endl;
-                    order_lifecycle_tracker_->updateOrderState(
-                        exchange_order->getClientOrderId(),
-                        models::OrderState::REJECTED,
-                        exchange_order->getExchangeOrderId(),
-                        balanceResult.reason
-                    );
-
-                    return ExecutionResponse{
-                        exchange_order->getClientOrderId(),
-                        "",
-                        false,
-                        balanceResult.reason,
-                        std::chrono::system_clock::now(),
-                        "REJECTED_INSUFFICIENT_BALANCE"
-                    };
                 }
             }
+            
+            // Log successful validation
+            std::cout << "✅ Balance validation passed:" << std::endl;
+            std::cout << "   Asset: " << balanceResult.asset << std::endl;
+            std::cout << "   Required: " << balanceResult.requiredBalance << std::endl;
+            std::cout << "   Available: " << balanceResult.availableBalance << std::endl;
+            std::cout << "   Est. fees: " << balanceResult.estimatedFees << std::endl;
         }
-        
-        // Log successful validation
-        std::cout << "✅ Balance validation passed:" << std::endl;
-        std::cout << "   Asset: " << balanceResult.asset << std::endl;
-        std::cout << "   Required: " << balanceResult.requiredBalance << std::endl;
-        std::cout << "   Available: " << balanceResult.availableBalance << std::endl;
-        std::cout << "   Est. fees: " << balanceResult.estimatedFees << std::endl;
-        
     } catch (const std::exception& e) {
         std::cerr << "Warning: balance validation failed with error: " << e.what() << ". Proceeding with legacy checks." << std::endl;
 
         
         // === Final Balance Check with Fresh Data ===
         // Perform one more balance validation with forced refresh before submitting
-        auto finalBalanceResult = balanceValidator_->validateOrder(*exchange_order, exchangeId, true);
-        
-        if (!finalBalanceResult.isValid) {
-            std::cout << "❌ Final balance check failed with fresh data:" << std::endl;
-            std::cout << "   Reason: " << finalBalanceResult.reason << std::endl;
-            std::cout << "   Required: " << finalBalanceResult.requiredBalance << std::endl;
-            std::cout << "   Available: " << finalBalanceResult.availableBalance << std::endl;
+        if (!skipAllBalanceValidation) {
+            auto finalBalanceResult = balanceValidator_->validateOrder(*exchange_order, exchangeId, true);
+            
+            if (!finalBalanceResult.isValid) {
+                std::cout << "❌ Final balance check failed with fresh data:" << std::endl;
+                std::cout << "   Reason: " << finalBalanceResult.reason << std::endl;
+                std::cout << "   Required: " << finalBalanceResult.requiredBalance << std::endl;
+                std::cout << "   Available: " << finalBalanceResult.availableBalance << std::endl;
 
-            order_lifecycle_tracker_->updateOrderState(
-                exchange_order->getClientOrderId(),
-                models::OrderState::REJECTED,
-                exchange_order->getExchangeOrderId(),
-                "Final balance check failed: " + finalBalanceResult.reason
-            );
+                order_lifecycle_tracker_->updateOrderState(
+                    exchange_order->getClientOrderId(),
+                    models::OrderState::REJECTED,
+                    exchange_order->getExchangeOrderId(),
+                    "Final balance check failed: " + finalBalanceResult.reason
+                );
 
-            return ExecutionResponse{
-                exchange_order->getClientOrderId(),
-                "",
-                false,
-                "Final balance check failed: " + finalBalanceResult.reason,
-                std::chrono::system_clock::now(),
-                "REJECTED_FINAL_BALANCE_CHECK"
-            };
+                return ExecutionResponse{
+                    exchange_order->getClientOrderId(),
+                    "",
+                    false,
+                    "Final balance check failed: " + finalBalanceResult.reason,
+                    std::chrono::system_clock::now(),
+                    "REJECTED_FINAL_BALANCE_CHECK"
+                };
+            }
+            
+            std::cout << "✅ Final balance check passed - proceeding to submit order" << std::endl;
+        } else {
+            std::cout << "[BALANCE] Skipped final forced balance validation for exit order " << exchange_order->getClientOrderId() << std::endl;
         }
-        
-        std::cout << "✅ Final balance check passed - proceeding to submit order" << std::endl;
     }
 
         // Before submitting, perform a forced fresh validation to avoid cached-stale passes
@@ -1275,6 +1292,17 @@ models::Order ExecutionService::createOrderFromSignal(const TradingSignal& signa
         auto order = order_generator_->createOrder(params);
         if (!order) {
             throw std::runtime_error("Failed to create order from parameters");
+        }
+
+        // Propagate signal metadata into order extra params so callers can
+        // communicate runtime flags (e.g., is_exit_signal) to the execution layer.
+        try {
+            for (const auto &kv : signal.metadata) {
+                if (kv.first.empty()) continue;
+                order->setExtraParam(kv.first, kv.second);
+            }
+        } catch (...) {
+            // Non-fatal: metadata propagation is best-effort
         }
         
         // ADD DEBUG HERE:
