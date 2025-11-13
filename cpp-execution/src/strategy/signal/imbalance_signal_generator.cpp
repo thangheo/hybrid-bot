@@ -219,7 +219,7 @@ std::vector<TradingSignal> ImbalanceSignalGenerator::generateSignals() {
     return generatedSignals_;
 }
 
-#define DEBUG_BUILD 1
+#define DEBUG_BUILD 0
 // Enhanced signal creation
 // New signature: accept optional snapshots of component pointers and config to avoid
 // accessing shared state while holding the main mutex.

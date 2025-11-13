@@ -380,11 +380,11 @@ void Trading_system::exitMonitorLoop() {
                     double spreadRatio = 0.0;
                     double spreadEMA = 0.0;
                     double realize_volatility_1m = 0.0;
+                    trading::strategy::OrderBookMetrics obMetrics;
 
                     if (marketDataInterface_) {
                             
                         // Try to fetch latest orderbook metrics cached from EventBus
-                        trading::strategy::OrderBookMetrics obMetrics;
                         double obVolImbalance = 0.0;
                         double obRV = 0.0;
                         double obMid = 0.0;
@@ -501,7 +501,44 @@ void Trading_system::exitMonitorLoop() {
                         exitSignal.metadata["is_exit_signal"] = "true";
                         exitSignal.metadata["exit_reason"] = std::to_string(static_cast<int>(exitDecision.reason));
                         exitSignal.metadata["exit_pnl_bps"] = std::to_string(exitDecision.expected_pnl);
-                        
+                        exitSignal.signalMetrics["spread_ema"] = spreadEMA;
+                        exitSignal.signalMetrics["volatility_1m"] = realize_volatility_1m;
+                        // bid ask spread liquidity...
+                        // exitSignal.signalMetrics["bid_ask_spread"] = bidAskSpread;
+                        // Populate common market metrics so downstream ExecutionService receives them
+                        // Prefer values from the cached OrderBookMetrics (obMetrics) when available
+                        try {
+                            double bidPrice = 0.0;
+                            double askPrice = 0.0;
+                            double volatility = realize_volatility_1m;
+                            double askVolume = 0.0;
+                            double bidVolume = 0.0;
+                            double liquidityProfileScore = 0.0;
+
+                            // Attempt to fetch latest cached metrics again into a local variable
+                            trading::strategy::OrderBookMetrics obm_local;
+                            if (getLatestOrderbookMetrics(sym, exchangeId, obm_local)) {
+                                bidPrice = obm_local.getMetric("bidPrice", bidPrice);
+                                askPrice = obm_local.getMetric("askPrice", askPrice);
+                                volatility = obm_local.getMetric("volatility", volatility);
+                                askVolume = obm_local.getMetric("askVolume", askVolume);
+                                bidVolume = obm_local.getMetric("bidVolume", bidVolume);
+                                liquidityProfileScore = obm_local.getMetric("liquidityProfileScore", liquidityProfileScore);
+                            }
+
+                            exitSignal.signalMetrics["volatility"] = volatility;
+                            if (bidPrice > 0.0 && askPrice > 0.0) {
+                                double spread = askPrice - bidPrice;
+                                exitSignal.signalMetrics["bidAskSpread"] = spread;
+                                exitSignal.signalMetrics["bidPrice"] = bidPrice;
+                                exitSignal.signalMetrics["askPrice"] = askPrice;
+                            }
+                            exitSignal.signalMetrics["bidVolume"] = bidVolume;
+                            exitSignal.signalMetrics["askVolume"] = askVolume;
+                            exitSignal.signalMetrics["liquidityProfileScore"] = liquidityProfileScore;
+                        } catch (...) {
+                            // Best-effort: do not fail exit signal creation if metrics extraction throws
+                        }
                         // Determine exit quantity: always try authoritative source first
                         double exitQty = 0.0;
                         bool qtyResolved = false;
@@ -1491,12 +1528,8 @@ void Trading_system::signalWorkerLoop(size_t workerId) {
                 execSignal.targets = signal.targets;
                 execSignal.exchangeId = signal.exchangeId;
                 // Preserve strategy-provided metrics and metadata so Execution gets market context
-                try {
-                    execSignal.signalMetrics = signal.signalMetrics;
-                } catch(...) {}
-                try {
-                    execSignal.metadata = signal.metadata;
-                } catch(...) {}
+                execSignal.signalMetrics = signal.signalMetrics;
+                execSignal.metadata = signal.metadata;
                 // execSignal.
                 if (!dedup.shouldProcessSignal(execSignal)) {
                     // Duplicate — skip processing, do NOT register the original with PTCA
@@ -1504,14 +1537,14 @@ void Trading_system::signalWorkerLoop(size_t workerId) {
                 }
 
                 // Basic filtering
-                if (execSignal.direction == core::Direction::BUY) {
-                    // if (execSignal.strength < 0.5) continue;
-                    if (execSignal.confidence < 0.5) continue;
-                } else if (execSignal.direction == core::Direction::SELL) {
-                    // if (execSignal.strength < 0.3) continue;
-                    //wow, this is stupid, why sell need higher confidence than buy
-                    if (execSignal.confidence < 0.3) continue;
-                }
+                // if (execSignal.direction == core::Direction::BUY) {
+                //     // if (execSignal.strength < 0.5) continue;
+                //     if (execSignal.confidence < 0.5) continue;
+                // } else if (execSignal.direction == core::Direction::SELL) {
+                //     // if (execSignal.strength < 0.3) continue;
+                //     //wow, this is stupid, why sell need higher confidence than buy
+                //     if (execSignal.confidence < 0.3) continue;
+                // }
                 
 
                 //check if price target percentage > 0.2%
