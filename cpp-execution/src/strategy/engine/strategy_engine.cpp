@@ -770,21 +770,21 @@ TradingSignal StrategyEngine::enhanceSignalWithEventContext(
     
     // Create a copy to avoid mutating the original
     TradingSignal enhancedSignal = baseSignal;
+
+    // Preserve all metrics from the original signal so downstream components
+    // (ExecutionService, RiskManager, monitoring) receive the same context.
+    try {
+        for (const auto &kv : baseSignal.signalMetrics) {
+            enhancedSignal.setMetric(kv.first, kv.second);
+        }
+    } catch (...) {
+        // best-effort, do not fail signal enhancement on metrics copying
+    }
     
     // Add correlation data from momentum correlator
     if (momentumCorrelator_) {
         double expectedPriceImpact = momentumCorrelator_->predictPriceMovement(sourceEvent);
         //get current regime and set to metric
-        // MarketRegimeType regime = momentumCorrelator_->detectMarketRegime();
-        //use orderbook based regime detector if available
-        // MarketRegimeType regime = MarketRegimeType::UNKNOWN;
-        // if (regimeDetector_) {
-        //     regime = regimeDetector_->detectMarketRegime();
-        // }
-        // get current regime from metrics
-        // trading::strategy::core_analysis::RegimeInfo regimeInfo;
-        // log debug info for regime detection
-        // enhancedSignal.setMetric("marketRegime", static_cast<int>(regime));
         enhancedSignal.expectedPriceImpact = expectedPriceImpact;
         
         // Add momentum correlation metrics
@@ -793,9 +793,50 @@ TradingSignal StrategyEngine::enhanceSignalWithEventContext(
         enhancedSignal.setMetric("momentumCorrelation", correlation);
         enhancedSignal.setMetric("predictedPriceMove", expectedPriceImpact);
         // print debug info for regime and correlation
-        // LOG_DEBUG("Enhancing signal {}: regime={}, correlation={:.4f}, expectedPriceImpact={:.4f}",
-        //             enhancedSignal.id, core_analysis::regimeToString(regime), correlation, expectedPriceImpact);
-                  
+    }
+
+    // Re-inject supporting metrics from the source event (these may not be
+    // present on the base signal if the generator replaced the object).
+    try {
+        // Common market metrics expected by ExecutionService
+        double bidPrice = sourceEvent.getSupportingMetric("bidPrice", 0.0);
+        double askPrice = sourceEvent.getSupportingMetric("askPrice", 0.0);
+        double volatility = sourceEvent.getSupportingMetric("volatility", 0.0);
+        double askVolume = sourceEvent.getSupportingMetric("askVolume", 0.0);
+        double bidVolume = sourceEvent.getSupportingMetric("bidVolume", 0.0);
+        double liquidityProfileScore = sourceEvent.getSupportingMetric("liquidityProfileScore", 0.0);
+        double midPrice = sourceEvent.getSupportingMetric("midPrice", 0.0);
+
+        enhancedSignal.setMetric("volatility", volatility);
+        enhancedSignal.setMetric("bidVolume", bidVolume);
+        enhancedSignal.setMetric("askVolume", askVolume);
+        enhancedSignal.setMetric("liquidityProfileScore", liquidityProfileScore);
+
+        if (bidPrice > 0.0 && askPrice > 0.0) {
+            enhancedSignal.setMetric("bidPrice", bidPrice);
+            enhancedSignal.setMetric("askPrice", askPrice);
+            double spread = askPrice - bidPrice;
+            enhancedSignal.setMetric("bidAskSpread", spread);
+        } else if (midPrice > 0.0) {
+            // Fallback to midPrice as both sides if explicit sides missing
+            enhancedSignal.setMetric("bidPrice", midPrice);
+            enhancedSignal.setMetric("askPrice", midPrice);
+            enhancedSignal.setMetric("bidAskSpread", 0.0);
+        }
+
+        // Market regime and other event-level metrics
+        double regime = sourceEvent.getSupportingMetric("marketRegime", static_cast<double>(0));
+        enhancedSignal.setMetric("marketRegime", regime);
+
+        // Copy any additional supporting metrics from the event into the signal
+        for (const auto &kv : sourceEvent.supportingMetrics) {
+            // Avoid overwriting already populated metrics from the base signal
+            if (enhancedSignal.signalMetrics.find(kv.first) == enhancedSignal.signalMetrics.end()) {
+                enhancedSignal.setMetric(kv.first, kv.second);
+            }
+        }
+    } catch (...) {
+        // best-effort
     }
     
     // Apply signal decay model

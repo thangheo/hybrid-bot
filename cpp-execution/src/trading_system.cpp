@@ -1490,6 +1490,13 @@ void Trading_system::signalWorkerLoop(size_t workerId) {
                 execSignal.expirationTime = signal.expirationTime;
                 execSignal.targets = signal.targets;
                 execSignal.exchangeId = signal.exchangeId;
+                // Preserve strategy-provided metrics and metadata so Execution gets market context
+                try {
+                    execSignal.signalMetrics = signal.signalMetrics;
+                } catch(...) {}
+                try {
+                    execSignal.metadata = signal.metadata;
+                } catch(...) {}
                 // execSignal.
                 if (!dedup.shouldProcessSignal(execSignal)) {
                     // Duplicate — skip processing, do NOT register the original with PTCA
