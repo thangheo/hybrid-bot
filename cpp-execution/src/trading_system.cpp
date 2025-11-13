@@ -9,6 +9,7 @@
 #include <fstream>
 #include "common/logger.hpp"
 #include "execution/models/order.hpp"
+#include "position.hpp"
 
 #include <memory>
 #include <unordered_map>
@@ -39,10 +40,6 @@ static std::shared_ptr<trading::strategy::AdaptiveExitStrategy> exitStrategy_;
 static std::unordered_map<std::string, double> g_exchangeTickSize;
 static std::unordered_map<std::string, double> g_symbolTickSize;
 
-// Simple in-memory authoritative position cache for debugging / local use.
-// Key: symbol.toString(), Value: signed quantity (positive = long, negative = short)
-static std::unordered_map<std::string, double> g_localPositions;
-static std::mutex g_localPositionsMutex;
 
 static void loadExchangeTickSizes(const std::string& path = "config/exchange_specific_params.json") {
     try {
@@ -536,27 +533,33 @@ void Trading_system::exitMonitorLoop() {
                         bool qtyResolved = false;
 
                         // Prefer local in-memory authoritative cache for simplicity/debuggability
-                        try {
-                            std::lock_guard<std::mutex> lk(g_localPositionsMutex);
-                            auto it = g_localPositions.find(sym.toString());
-                            if (it != g_localPositions.end() && std::abs(it->second) > 1e-12) {
-                                exitQty = std::abs(it->second);
-                                qtyResolved = true;
-                            }
-                        } catch (...) {}
+                        // try {
+                        //     std::lock_guard<std::mutex> lk(g_localPositionsMutex);
+                        //     auto it = g_localPositions.find(sym.toString());
+                        //     if (it != g_localPositions.end() && std::abs(it->second) > 1e-12) {
+                        //         exitQty = std::abs(it->second);
+                        //         qtyResolved = true;
+                        //     }
+                        // } catch (...) {}
+                        exitQty = getLocalPosition(sym.toString()).value_or(0.0);
+                        LOG_DEBUG("Exit monitor: local cached position for {} = {}", symbol, exitQty);
+                        if (exitQty > 1e-12) {
+                            qtyResolved = true;
+                        }
 
                         // Fallback to RiskManager cached position only if local cache missing
-                        if (!qtyResolved) {
-                            try {
-                                if (riskManager_) {
-                                    auto trackedOpt = riskManager_->getCachedPosition(exchangeId, sym);
-                                    if (trackedOpt.has_value() && std::abs(*trackedOpt) > 1e-12) {
-                                        exitQty = std::abs(*trackedOpt);
-                                        qtyResolved = true;
-                                    }
-                                }
-                            } catch (...) {}
-                        }
+                        // if (!qtyResolved) {
+                        //     try {
+                        //         if (riskManager_) {
+                        //             auto trackedOpt = riskManager_->getCachedPosition(exchangeId, sym);
+                        //             if (trackedOpt.has_value() && std::abs(*trackedOpt) > 1e-12) {
+                        //                 exitQty = std::abs(*trackedOpt);
+                        //                 qtyResolved = true;
+                        //             }
+                        //         }
+                        //     } catch (...) {}
+                        // }
+                        
 
                         // If no authoritative position found, skip issuing an exit order.
                         if (!qtyResolved) {
@@ -781,7 +784,13 @@ bool Trading_system::initialize() {
                     double confidence = 1.0; // authoritative positions are high confidence
 
                     exitStrategy_->startPosition(sym, entryPrice, direction, confidence, micro);
-                    LOG_INFO("Reconciliation: imported position {} qty={} price={} into exit strategy", sym, qty, entryPrice);
+                    // Also update local authoritative cache so exitMonitor can resolve quantities
+                    try {
+                        setLocalPosition(sym, qty);
+                        LOG_INFO("Reconciliation: imported position {} qty={} price={} into exit strategy (cached locally)", sym, qty, entryPrice);
+                    } catch (...) {
+                        LOG_WARN("Reconciliation: failed to update local position cache for {}", sym);
+                    }
                 } catch (const std::exception& e) {
                     LOG_WARN("Reconciliation: failed to import position: {}", e.what());
                 }
@@ -1883,6 +1892,7 @@ void Trading_system::execWorkerLoop(size_t workerId) {
             ExecutionResponse response = executionService_->executeSignal(task);
             
             if (!response.success) {
+
                 std::cout << "❌ Execution failed for signal " << task.id 
                           << ": " << response.error_message << std::endl;
                 std::cout << "Signal details - Symbol: " << task.symbol.toString()
@@ -1896,15 +1906,15 @@ void Trading_system::execWorkerLoop(size_t workerId) {
                           << ", ExchangeId: " << task.exchangeId.toString()
                           << std::endl;
                 // Print local position cache for this symbol to help debugging
-                try {
-                    std::lock_guard<std::mutex> lk(g_localPositionsMutex);
-                    auto it = g_localPositions.find(task.symbol.toString());
-                    if (it != g_localPositions.end()) {
-                        std::cout << "[LOCAL POS] " << task.symbol.toString() << " cachedQty=" << it->second << std::endl;
-                    } else {
-                        std::cout << "[LOCAL POS] " << task.symbol.toString() << " cachedQty=<none>" << std::endl;
-                    }
-                } catch (...) {}
+                // try {
+                //     std::lock_guard<std::mutex> lk(g_localPositionsMutex);
+                //     auto it = g_localPositions.find(task.symbol.toString());
+                //     if (it != g_localPositions.end()) {
+                //         std::cout << "[LOCAL POS] " << task.symbol.toString() << " cachedQty=" << it->second << std::endl;
+                //     } else {
+                //         std::cout << "[LOCAL POS] " << task.symbol.toString() << " cachedQty=<none>" << std::endl;
+                //     }
+                // } catch (...) {}
 
                 continue;
             }
@@ -1920,7 +1930,8 @@ void Trading_system::execWorkerLoop(size_t workerId) {
                       << " qty=" << finalQty
                       << " notional=$" << (currentPrice * finalQty)
                       << std::endl;
-            
+            addLocalPosition(task.symbol.toString(), 0.0); // touch local cache to avoid missing key
+
             // 🚨 RECORD TRADE FOR EMERGENCY FREQUENCY TRACKING
             recordTradeWithType(task.symbol.toString(), "ENTRY");
 
@@ -1947,6 +1958,18 @@ void Trading_system::execWorkerLoop(size_t workerId) {
                     micro.tick_size = getExchangeTickSize(task.exchangeId);
 
                     exitStrategy_->startPosition(task.symbol.toString(), currentPrice, task.direction, task.confidence, micro);
+                    // Update local authoritative cache for executed ENTRY
+                    try {
+                        double signedQty = (task.direction == core::Direction::BUY) ? finalQty : -finalQty;
+                        auto prevOpt = getLocalPosition(task.symbol.toString());
+                        double prev = prevOpt.has_value() ? *prevOpt : 0.0;
+                        addLocalPosition(task.symbol.toString(), signedQty);
+                        auto nowOpt = getLocalPosition(task.symbol.toString());
+                        double now = nowOpt.has_value() ? *nowOpt : 0.0;
+                        LOG_INFO("Exec worker: updated local cache for {} prev={} -> now={}", task.symbol.toString(), prev, now);
+                    } catch (...) {
+                        LOG_WARN("Exec worker: failed to update local position cache for {}", task.symbol.toString());
+                    }
                 }
             } catch (...) {}
                     // (subscription moved to setupComponentConnections to ensure a single global subscription)
