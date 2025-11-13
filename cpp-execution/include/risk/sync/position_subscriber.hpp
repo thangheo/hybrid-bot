@@ -139,6 +139,12 @@ public:
      * @return true if successful
      */
     bool refreshCache();
+
+    /**
+     * Deliver an event directly to the subscriber for synchronous processing
+     * This bypasses ZMQ and updates the local cache immediately.
+     */
+    void deliverEventDirect(const PositionEvent& event);
     
     /**
      * Clear position cache

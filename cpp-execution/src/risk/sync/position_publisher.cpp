@@ -5,6 +5,7 @@
 #include <iostream>
 #include <algorithm>
 #include <cctype>
+#include "risk/sync/position_subscriber.hpp"
 
 namespace trading {
 namespace risk {
@@ -13,6 +14,12 @@ namespace sync {
 PositionPublisher::PositionPublisher(const PositionSyncConfig& config, std::shared_ptr<zmq::context_t> zmqContext)
     : config_(config), zmqContext_(zmqContext) {
 }
+
+void PositionPublisher::setLocalSubscriber(std::shared_ptr<PositionSubscriber> sub) {
+    localSubscriber_ = sub;
+}
+
+// local subscriber weak_ptr accessors are implemented in header (setter)
 
 PositionPublisher::~PositionPublisher() {
     shutdown();
@@ -104,6 +111,15 @@ bool PositionPublisher::publishEvent(const PositionEvent& event) {
     e.sequenceNumber = getNextSequenceNumber();
     if (e.eventId.empty()) {
         e.eventId = std::to_string(e.sequenceNumber);
+    }
+
+    // If there's a local in-process subscriber, deliver the event synchronously
+    if (auto sub = localSubscriber_.lock()) {
+        try {
+            sub->deliverEventDirect(e);
+        } catch (...) {
+            // swallow; don't let subscriber failures block publisher
+        }
     }
 
     PriorityEvent pe{e, std::chrono::system_clock::now()};
