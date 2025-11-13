@@ -474,6 +474,33 @@ void RiskManager::processExecutionReport(const ExecutionReport& executionReport)
                   << executionReport.symbol().toString() 
                   << " status=" << static_cast<int>(executionReport.status()) << std::endl;
 
+        // Duplicate report guard: build a compact key and ignore repeats within short window
+        try {
+            std::string key = executionReport.orderId() + "|" + executionReport.symbol().toString() + "|" + std::to_string(static_cast<int>(executionReport.side())) + "|" + std::to_string(executionReport.filledQuantity());
+            auto now = std::chrono::system_clock::now();
+            std::lock_guard<std::mutex> lk(recentReportsMutex_);
+            auto it = recentExecutionReports_.find(key);
+            if (it != recentExecutionReports_.end()) {
+                auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - it->second).count();
+                if (elapsed < 5) {
+                    std::cout << "[TTL_DEBUG] Duplicate ExecutionReport ignored (key=" << key << ") age=" << elapsed << "s" << std::endl;
+                    return; // skip duplicate
+                }
+            }
+            recentExecutionReports_[key] = now;
+
+            // Shrink map occasionally to avoid unbounded growth
+            if (recentExecutionReports_.size() > 1000) {
+                // remove entries older than 60s
+                for (auto it2 = recentExecutionReports_.begin(); it2 != recentExecutionReports_.end(); ) {
+                    if (std::chrono::duration_cast<std::chrono::seconds>(now - it2->second).count() > 60) it2 = recentExecutionReports_.erase(it2);
+                    else ++it2;
+                }
+            }
+        } catch (...) {
+            // best-effort - do not block processing on dedup logic
+        }
+
         // Update portfolio with execution information (guarded)
         if (m_portfolioManager) {
             try {
