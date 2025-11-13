@@ -1219,6 +1219,23 @@ void Trading_system::setupExecutionEngine() {
         );
         executionService_->setLimitOrderHandling(trading::execution::ExecutionService::LimitOrderHandling::REJECT_IF_NO_PRICE);
     }
+    // Ensure the execution service is initialized and running. If initialization fails,
+    // mark system unhealthy so callers do not attempt to send signals to a stopped service.
+    if (executionService_) {
+        bool init_ok = false;
+        try {
+            init_ok = executionService_->initialize();
+        } catch (const std::exception& e) {
+            std::cerr << "ExecutionService::initialize threw exception: " << e.what() << std::endl;
+        }
+        if (!init_ok) {
+            std::cerr << "Failed to initialize ExecutionService - marking system unhealthy." << std::endl;
+            systemHealthy_ = false;
+            return;
+        } else {
+            std::cout << "ExecutionService initialized and running." << std::endl;
+        }
+    }
 }
 
 // Orderbook worker pool control
