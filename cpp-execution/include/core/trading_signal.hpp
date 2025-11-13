@@ -247,6 +247,66 @@ struct TradingSignal {
     }
 
     /**
+     * Populate commonly used derived metrics in `signalMetrics` so downstream
+     * components that read the map (execution, risk, monitoring) have a
+     * consistent set of keys available. This method merges/overwrites a small
+     * canonical set of metrics derived from the signal fields and targets.
+     */
+    void populateDerivedMetrics() {
+        // Basic numeric fields
+        // Only set metrics if not already present to preserve upstream values
+        if (signalMetrics.find("price") == signalMetrics.end()) setMetric("price", price);
+        setMetric("strength", strength);
+        setMetric("confidence", confidence);
+        setMetric("quality", quality);
+        setMetric("targetSize", targetSize);
+        setMetric("expectedPriceImpact", expectedPriceImpact);
+        // bid ask spread
+        // double bidPrice = 0.0;
+        // double askPrice = 0.0;
+        // for (const auto& metric : signalMetrics) {
+        //     if (metric.first == "bidPrice") {
+        //         bidPrice = metric.second;
+        //     } else if (metric.first == "askPrice") {
+        //         askPrice = metric.second;
+        //     }
+        // }
+        // TTL in milliseconds
+        auto ttlMs = std::chrono::duration_cast<std::chrono::milliseconds>(ttl).count();
+        setMetric("ttlMs", static_cast<double>(ttlMs));
+
+        // Generation and expiration times as epoch microseconds (if available)
+    auto genUs = std::chrono::duration_cast<std::chrono::microseconds>(generationTime.time_since_epoch()).count();
+    if (signalMetrics.find("generationTimeUs") == signalMetrics.end()) setMetric("generationTimeUs", static_cast<double>(genUs));
+    auto expUs = std::chrono::duration_cast<std::chrono::microseconds>(expirationTime.time_since_epoch()).count();
+    if (signalMetrics.find("expirationTimeUs") == signalMetrics.end()) setMetric("expirationTimeUs", static_cast<double>(expUs));
+
+        // Targets summary
+        if (signalMetrics.find("numTargets") == signalMetrics.end()) setMetric("numTargets", static_cast<double>(targets.size()));
+        for (size_t i = 0; i < targets.size() && i < 3; ++i) {
+            std::string pKey = std::string("target") + std::to_string(i) + std::string("_price");
+            std::string probKey = std::string("target") + std::to_string(i) + std::string("_prob");
+            std::string pctKey = std::string("target") + std::to_string(i) + std::string("_pct");
+            if (signalMetrics.find(pKey) == signalMetrics.end()) setMetric(pKey, targets[i].price);
+            if (signalMetrics.find(probKey) == signalMetrics.end()) setMetric(probKey, targets[i].probability);
+            if (signalMetrics.find(pctKey) == signalMetrics.end()) setMetric(pctKey, targets[i].percentage);
+        }
+
+        if (signalMetrics.find("exchangeId") == signalMetrics.end()) setMetric("exchangeId", static_cast<double>(exchangeId.toString().length()));
+        if (signalMetrics.find("quantity") == signalMetrics.end()) setMetric("quantity", quantity);
+
+        // Common market metrics expected by ExecutionService and others. Only set
+        // defaults if the strategy hasn't provided them already.
+        if (signalMetrics.find("bidPrice") == signalMetrics.end()) setMetric("bidPrice", price);
+        if (signalMetrics.find("askPrice") == signalMetrics.end()) setMetric("askPrice", price);
+        if (signalMetrics.find("volatility") == signalMetrics.end()) setMetric("volatility", 0.02);
+        if (signalMetrics.find("bidVolume") == signalMetrics.end()) setMetric("bidVolume", 100.0);
+        if (signalMetrics.find("askVolume") == signalMetrics.end()) setMetric("askVolume", 100.0);
+        if (signalMetrics.find("liquidityProfileScore") == signalMetrics.end()) setMetric("liquidityProfileScore", 0.8);
+        if (signalMetrics.find("market_impact_estimate") == signalMetrics.end()) setMetric("market_impact_estimate", expectedPriceImpact);
+    }
+
+    /**
      * Check if this is a buy signal
      */
     bool isBuySignal() const { return direction == core::Direction::BUY; }

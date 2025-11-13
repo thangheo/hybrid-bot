@@ -1687,12 +1687,7 @@ void Trading_system::execWorkerLoop(size_t workerId) {
             
             double currentPrice = currentPriceOpt.value();
             double finalQty = notionalUsd / currentPrice;
-
-            // Use the centralized symbol precision manager to quantize quantity
-            // This replaces the ad-hoc precision selection logic and ensures
-            // the quantity adheres to exchange LOT_SIZE (stepSize), min/max
-            // and decimal precision rules. The helper lives in
-            // include/common/quantity_precision.hpp
+ 
             try {
                 // Use symbol.toString() which yields e.g. "XRP/USDT"; the
                 // precision helper will normalize it internally (remove '/').

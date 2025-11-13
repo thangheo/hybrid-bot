@@ -199,6 +199,7 @@ bool ImbalanceSignalGenerator::processImbalance(const ImbalanceEvent& imbalance)
     // Enhanced logging with market context (variables intentionally unused here)
     auto price = imbalance.getSupportingMetric("midPrice", 0.0);
     auto regime = getCurrentMarketRegime(imbalance);
+
     // Log current regime and price for debugging
     // LOG_DEBUG("Generated signal from imbalance {} at price {:.2f} in regime {}",
     //     imbalance.eventId, price, marketRegimeTypeToString(static_cast<MarketRegimeType>(static_cast<int>(regime_number))));
@@ -280,9 +281,7 @@ TradingSignal ImbalanceSignalGenerator::createSignalFromImbalance(
     // Apply momentum correlation analysis (timed)
     double predictedMove = 0.0;
     double correlation = 0.0;
-    auto sub_t1 = std::chrono::steady_clock::now();
-
-    
+    auto sub_t1 = std::chrono::steady_clock::now();    
     bool predictionTimedOut = false;
 
     if (momentumCopy) {
@@ -388,30 +387,8 @@ TradingSignal ImbalanceSignalGenerator::createSignalFromImbalance(
         }
     }
     
-    // Add market regime context
-    // Use provided regime detector if available, otherwise fall back to member method
-    // MarketRegimeType currentRegime = MarketRegimeType::UNKNOWN;
-    // If a regime detector copy was provided, try to use it via the public
-    // interface if possible. To avoid depending on the concrete type here
-    // (forward declaration only in the header), fall back to the existing
-    // heuristic method which does not require the detector.
-    // if (regimeDetectorCopy) {
-    //     // Best-effort: if the detector exposes getCurrentRegime, it will
-    //     // be called by the owner when passing a concrete implementation.
-    //     // Here we conservatively still fall back to the heuristic.
-    //     currentRegime = getCurrentMarketRegime(imbalance);
-    // } else {
-    //     currentRegime = getCurrentMarketRegime(imbalance);
-    // }
-    // signal.setMetric("marketRegime", static_cast<double>(currentRegime));
-    // signal.setMetric("regimeName", marketRegimeToString(currentRegime));
 
     auto dur_us = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - t0).count();
-    // auto dur_us1 = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - t1).count();
-    // auto dur_us2 = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - t2).count();
-    // auto dur_us3 = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - t3).count();
-    // auto dur_us4 = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - t4).count();
-    // auto dur_us5 = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - t5).count();
     auto dur_us6 = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - t6).count();
     
     // Emit both total and sub-step timings to aid diagnosis (debug-level)
@@ -422,8 +399,6 @@ TradingSignal ImbalanceSignalGenerator::createSignalFromImbalance(
         // LOG_WARN("createSignalFromImbalance: signal id={} creation took {} us", signal.id, dur_us);
         LOG_WARN("createSignalFromImbalance: id={} total={}us (strength={}us, predict={}us, quality={}us)",
                   signal.id, dur_us, sub_elapsed_strength, sub_elapsed_predict, sub_elapsed_quality);
-        // LOG_WARN("createSignalFromImbalance: id={} total={}us (t1={}us, t2={}us, t3={}us, t4={}us, t5={}us, t6={}us)",
-        //           signal.id, dur_us, dur_us1, dur_us2, dur_us3, dur_us4, dur_us5, dur_us6);
 
     }
     // If the generator has a configured strategy id, ensure the signal carries it
@@ -431,9 +406,10 @@ TradingSignal ImbalanceSignalGenerator::createSignalFromImbalance(
     // UNKNOWN strategy identifiers.
     if (!strategyId_.isEmpty() && !signal.strategyId.isValid()) {
         signal.strategyId = strategyId_;
-        // SignalGeneratorConfig does not expose a `version` member; avoid accessing it.
-        // Preserve any existing version in strategyId or let the owner set it explicitly if needed.
     }
+    // Ensure downstream components always see a standard set of metrics
+    // derived from the signal fields and targets.
+    signal.populateDerivedMetrics();
     
     return signal;
 }
