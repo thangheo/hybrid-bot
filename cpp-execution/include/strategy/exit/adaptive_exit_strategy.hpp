@@ -100,7 +100,7 @@ public:
         double pnl_std = 0.0;
         double time_weighted_pnl = 0.0;
         int vol_spike_count = 0;    // Number of spikes to confirm
-
+        double quantity = 0.0;
         bool is_active = false;
         bool pending_exit = false;
         std::string symbol;

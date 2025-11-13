@@ -269,6 +269,11 @@ private:
     std::shared_ptr<trading::risk::sync::PositionSynchronizer> m_positionSync;
     // Optional signal checker to be forwarded to PostTradeMonitor during init
     std::optional<PostTradeSignalChecker> postTradeSignalChecker_;
+
+    // Lightweight duplicate execution-report guard: map of recent unique keys -> timestamp
+    // Key format: orderId|symbol|side|filledQty (stringified)
+    std::unordered_map<std::string, std::chrono::system_clock::time_point> recentExecutionReports_;
+    mutable std::mutex recentReportsMutex_;
     
     // Private helper methods
     void notifyRiskEvent(const RiskEvent& event);

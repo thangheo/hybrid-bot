@@ -581,16 +581,7 @@ void Trading_system::exitMonitorLoop() {
                         // because that may remove authoritative position info before execution completes.
                         try {
                             if (exitStrategy_) {
-                                // Prefer markPendingExit if implemented by the strategy
-                                try {
-                                    // exitStrategy_->markPendingExit(symbol); stupid code
-                                    //calll the fucking closePosition
-                                    exitStrategy_->closePosition(symbol, exitDecision.reason, exitDecision.expected_pnl);
-                                    LOG_INFO("Exit monitor: marked pending exit for {}", symbol);
-                                } catch (...) {
-                                    // If markPendingExit isn't available/throws, log and continue without closing the position
-                                    LOG_DEBUG("Exit monitor: markPendingExit not available for {}", symbol);
-                                }
+                                exitStrategy_->closePosition(symbol, exitDecision.reason, exitDecision.expected_pnl);                               
                             }
                         } catch (...) {
                             LOG_DEBUG("Exit monitor: failed to mark pending exit for {}", symbol);
@@ -1637,12 +1628,40 @@ void Trading_system::execWorkerLoop(size_t workerId) {
             }
 
             if (isExitOrder) {
-                // EXIT ORDERS: simplified flow - skip sizing and most pre-checks
+                // EXIT ORDERS: Use actual available wallet balance instead of relying
+                // on internal position tracking which may be out-of-sync (double-counted).
                 std::optional<double> currentPriceOpt = dataIngestionService_->getLastPrice(task.exchangeId, task.symbol);
                 double currentPrice = currentPriceOpt.value_or(0.0);
 
-                double finalQty = task.getQuantity();
-                LOG_DEBUG("Exit order detected for {} - qty={}", task.symbol.toString(), finalQty);
+                // Tracked quantity (from signal or position tracker)
+                double trackedQty = task.getQuantity();
+
+                // Query available balance from market data / balance cache
+                double availableQty = trackedQty;
+                try {
+                    if (marketDataInterface_) {
+                        // marketDataInterface_->getBalance expects base asset name
+                        availableQty = marketDataInterface_->getBalance(task.exchangeId, task.symbol.base);
+                    }
+                } catch (const std::exception &e) {
+                    LOG_WARN("Exit: balance lookup failed for {}: {}", task.symbol.toString(), e.what());
+                    // fall back to trackedQty
+                    availableQty = trackedQty;
+                }
+
+                LOG_INFO("[EXIT] Detected exit for {} - trackedQty={} availableQty={}",
+                         task.symbol.toString(), trackedQty, availableQty);
+
+                if (availableQty <= 0.0) {
+                    LOG_WARN("Exit aborted for {}: no available balance (available={})", task.symbol.toString(), availableQty);
+                    // Record attempt for observability and skip
+                    std::cout << "❌ EXIT SKIPPED for " << task.symbol.toString() << ": no available balance" << std::endl;
+                    continue;
+                }
+
+                // Sell at most what is available. If trackedQty is larger, prefer availableQty.
+                double finalQty = std::min(trackedQty, availableQty);
+
                 // Apply precision rounding for exit quantity
                 try {
                     std::string symStr = task.symbol.toString();
@@ -1651,10 +1670,36 @@ void Trading_system::execWorkerLoop(size_t workerId) {
                     LOG_WARN("Exit: Precision rounding failed: {}", e.what());
                 }
 
+                // --- Enforce minimum notional for exits as well ---
+                const double minNotionalUsd = 10.0;
+                double finalNotionalUsd = currentPrice * finalQty;
+                if (finalNotionalUsd < minNotionalUsd) {
+                    // Try bumping up to a small threshold (e.g., $12) and re-round
+                    double minQtyForNotional = 12.0 / std::max(1e-12, currentPrice);
+                    try {
+                        std::string symStr = task.symbol.toString();
+                        double bumped = ::execution::SymbolPrecisionManager::roundQuantity(symStr, minQtyForNotional);
+                        // Only accept bumped qty if it's <= availableQty
+                        if (bumped <= availableQty && (bumped * currentPrice) >= minNotionalUsd) {
+                            finalQty = bumped;
+                            finalNotionalUsd = currentPrice * finalQty;
+                        } else {
+                            LOG_WARN("Exec: Exit adjusted quantity still insufficient or exceeds available balance for {}: bumped={} available={}",
+                                     task.symbol.toString(), bumped, availableQty);
+                            std::cout << "❌ EXIT FAILED for " << task.symbol.toString() << ": Order value below minimum notional requirement or exceeds available balance" << std::endl;
+                            continue; // Skip this exit - cannot meet min notional
+                        }
+                    } catch (const std::exception &e) {
+                        LOG_WARN("Exit: precision helper failed during minNotional adjustment: {}", e.what());
+                        std::cout << "❌ EXIT FAILED for " << task.symbol.toString() << ": Order value below minimum notional requirement" << std::endl;
+                        continue;
+                    }
+                }
+
                 task.setQuantity(finalQty);
 
                 LOG_INFO("[EXIT] Executing exit: symbol={} qty={} price={} notional=${:.2f}", 
-                         task.symbol.toString(), finalQty, currentPrice, currentPrice * finalQty);
+                         task.symbol.toString(), finalQty, currentPrice, finalNotionalUsd);
 
                 ExecutionResponse response = executionService_->executeSignal(task);
                 if (!response.success) {
