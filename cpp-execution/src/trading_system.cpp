@@ -468,6 +468,7 @@ void Trading_system::exitMonitorLoop() {
                     currentMicro.volatility_1m = realize_volatility_1m;
                     currentMicro.orderbook_imbalance = orderbookImbalance;
                     currentMicro.trade_intensity = obMetrics.totalVolume;
+                    currentMicro.mid_price = obMetrics.midPrice;
                     // currentMicro.
                     currentMicro.price_impact = volatility;
 
@@ -1055,6 +1056,7 @@ bool Trading_system::getLatestOrderbookMetrics(const core::Symbol& symbol, const
 }
 
 bool Trading_system::isWarmupActive() const {
+    
     try {
         if (!running_) return false;
         auto now = std::chrono::steady_clock::now();

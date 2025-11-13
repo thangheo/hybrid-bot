@@ -1025,7 +1025,8 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                                 // microstructure.price_impact = m.estimatedPriceImpact;
                                 //get tick size from con
                                 microstructure.tick_size = getConfiguredTickSize(m.exchangeId, m.symbol);
-                                // microstructure.volume_profile_skew = m.volumeProfileSkew;    
+                                // microstructure.volume_profile_skew = m.volumeProfileSkew;
+                                microstructure.mid_price = m.midPrice;
 
                                 if (authoritativeHasPosition) {
                                     LOG_INFO("ENTRY_BLOCKED_BY_POSITION: {} has position qty={}", symbol_str, authoritativeQty);
@@ -1064,7 +1065,7 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                                             micro.spread_std = m.metrics.count("spread_std") ? m.metrics.at("spread_std") : 0.0;
                                             micro.orderbook_imbalance = m.bidAskVolumeRatio;
                                             micro.tick_size = getConfiguredTickSize(m.exchangeId, m.symbol);
-
+                                            micro.mid_price = m.midPrice;
                                             // If exit strategy becomes available, register the start there too
                                             auto opt2 = trading::strategy::getGlobalAdaptiveExitStrategy();
                                             if (opt2) {

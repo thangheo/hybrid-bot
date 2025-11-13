@@ -283,7 +283,7 @@ void OrderBookAnalyzer::processOrderBook(const data_ingestion::OrderBook& snapsh
             micro.price_impact = 0.0;
             micro.tick_size = params_.getDouble("tickSize", 0.0);
             micro.volume_profile_skew = currentMetrics_.priceLevelImbalance;
-
+            micro.mid_price = currentMetrics_.midPrice;
             auto regime = regimeDetector_.detect(micro, vol_samples, spread_samples, price_returns);
 
             // Expose numeric regime in metrics for downstream components
