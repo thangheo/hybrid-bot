@@ -466,6 +466,11 @@ void Trading_system::exitMonitorLoop() {
                     MarketMicrostructure currentMicro;
                     currentMicro.spread_ema = spreadEMA;
                     currentMicro.volatility_1m = realize_volatility_1m;
+                    currentMicro.orderbook_imbalance = orderbookImbalance;
+                    currentMicro.trade_intensity = obMetrics.totalVolume;
+                    // currentMicro.
+                    currentMicro.price_impact = volatility;
+
                     // Populate tick_size from exchange config cache
                     currentMicro.tick_size = getExchangeTickSize(exchangeId);
                     //add microstructure info here later
@@ -755,52 +760,52 @@ bool Trading_system::initialize() {
     // Note: AdaptiveExitStrategy currently sets entry_time internally in startPosition();
     // to preserve authoritative entry timestamps we'd need startPositionWithTime(...) —
     // for now we import positions so the strategy can evaluate exits going forward.
-    try {
-        if (exitStrategy_ && sharedPositionTracker) {
-            auto positions = sharedPositionTracker->getAllPositions();
-            LOG_INFO("Reconciliation: scanning {} positions from PositionTracker to import into exit strategy", positions.size());
-            for (const auto& pos : positions) {
-                try {
-                    double qty = pos.getQuantity();
-                    if (std::abs(qty) < 1e-12) continue; // skip zero positions
+    // try {
+    //     if (exitStrategy_ && sharedPositionTracker) {
+    //         auto positions = sharedPositionTracker->getAllPositions();
+    //         LOG_INFO("Reconciliation: scanning {} positions from PositionTracker to import into exit strategy", positions.size());
+    //         for (const auto& pos : positions) {
+    //             try {
+    //                 double qty = pos.getQuantity();
+    //                 if (std::abs(qty) < 1e-12) continue; // skip zero positions
 
-                    std::string sym = pos.getTradingPair().toString();
-                    // Skip if already tracked
-                    if (exitStrategy_->hasActivePosition(sym)) continue;
+    //                 std::string sym = pos.getTradingPair().toString();
+    //                 // Skip if already tracked
+    //                 if (exitStrategy_->hasActivePosition(sym)) continue;
 
-                    // Build a minimal microstructure snapshot. We prefer cached price if available.
-                    trading::strategy::MarketMicrostructure micro;
-                    micro.tick_size = getExchangeTickSize(pos.getExchangeId());
-                    // Use current price from position tracker if available
-                    try {
-                        micro.volatility_1m = 0.0;
-                        micro.spread_ema = 0.0;
-                        micro.orderbook_imbalance = 0.0;
-                        micro.trade_intensity = 0.0;
-                    } catch (...) {}
+    //                 // Build a minimal microstructure snapshot. We prefer cached price if available.
+    //                 trading::strategy::MarketMicrostructure micro;
+    //                 micro.tick_size = getExchangeTickSize(pos.getExchangeId());
+    //                 // Use current price from position tracker if available
+    //                 // // auto obMetrics = sharedOrderBookTracker->getMetrics(pos.getTradingPair());
+    //                 // micro.volatility_1m = obMetrics.volatility_1m;
+    //                 // micro.spread_ema = obMetrics.spread_ema;
+    //                 // micro.orderbook_imbalance = obMetrics.orderbook_imbalance;
+    //                 // micro.trade_intensity = obMetrics.totalVolume;
+    //                 // micro.price_impact = obMetrics.price_impact;
 
-                    auto direction = (qty >= 0.0) ? core::Direction::BUY : core::Direction::SELL;
-                    double entryPrice = pos.getAverageEntryPrice();
-                    double confidence = 1.0; // authoritative positions are high confidence
-
-                    exitStrategy_->startPosition(sym, entryPrice, direction, confidence, micro);
-                    // Also update local authoritative cache so exitMonitor can resolve quantities
-                    try {
-                        setLocalPosition(sym, qty);
-                        LOG_INFO("Reconciliation: imported position {} qty={} price={} into exit strategy (cached locally)", sym, qty, entryPrice);
-                    } catch (...) {
-                        LOG_WARN("Reconciliation: failed to update local position cache for {}", sym);
-                    }
-                } catch (const std::exception& e) {
-                    LOG_WARN("Reconciliation: failed to import position: {}", e.what());
-                }
-            }
-        } else {
-            LOG_INFO("Reconciliation: skipping import - exitStrategy_ or PositionTracker not available");
-        }
-    } catch (const std::exception& e) {
-        LOG_WARN("Reconciliation pass failed: {}", e.what());
-    }
+    //                 auto direction = (qty >= 0.0) ? core::Direction::BUY : core::Direction::SELL;
+    //                 double entryPrice = pos.getAverageEntryPrice();
+    //                 double confidence = 1.0; // authoritative positions are high confidence
+    //                 //why?
+    //                 exitStrategy_->startPosition(sym, entryPrice, direction, confidence, micro);
+    //                 // Also update local authoritative cache so exitMonitor can resolve quantities
+    //                 try {
+    //                     setLocalPosition(sym, qty);
+    //                     LOG_INFO("Reconciliation: imported position {} qty={} price={} into exit strategy (cached locally)", sym, qty, entryPrice);
+    //                 } catch (...) {
+    //                     LOG_WARN("Reconciliation: failed to update local position cache for {}", sym);
+    //                 }
+    //             } catch (const std::exception& e) {
+    //                 LOG_WARN("Reconciliation: failed to import position: {}", e.what());
+    //             }
+    //         }
+    //     } else {
+    //         LOG_INFO("Reconciliation: skipping import - exitStrategy_ or PositionTracker not available");
+    //     }
+    // } catch (const std::exception& e) {
+    //     LOG_WARN("Reconciliation pass failed: {}", e.what());
+    // }
     
     // Load symbol volatility configuration
     std::string volatilityConfigPath = "config/symbol_volatility_config.json";
@@ -1920,6 +1925,9 @@ void Trading_system::execWorkerLoop(size_t workerId) {
                     }
 
                     // Build microstructure and call startPosition
+                    // get micro structure from oderbook metrics
+
+
                     MarketMicrostructure micro;
                     //get vol1m from orderbook metric we subscribed
                     micro.volatility_1m = 0.0;

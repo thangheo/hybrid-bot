@@ -58,220 +58,365 @@ MarketRegimeType AdaptiveExitStrategy::detectMarketRegime(
     return det.detect(micro, history.volatility_samples, history.spread_samples, history.price_returns);
 }
 
+// AdaptiveExitStrategy::DynamicParameters AdaptiveExitStrategy::calculateDynamicParameters(
+//     const std::string& symbol,
+//     const MarketMicrostructure& current_micro,
+//     const MarketRegimeType& regime) const {
+    
+//     DynamicParameters params;
+    
+//     // ===== CÔNG THỨC TÍNH TOÁN ĐỘNG =====
+    
+//     // 1. Base parameters từ volatility và spread
+//     // Protect against invalid tick_size (divide by zero)
+//     double tick = current_micro.tick_size;
+//     if (tick <= 0.0) {
+//         // Fallback: only warn once per symbol and use a tiny positive tick to avoid div-by-zero
+//         {
+//             std::lock_guard<std::mutex> lk(g_tickWarnMutex);
+//             if (g_tickSizeWarnedSymbols.find(symbol) == g_tickSizeWarnedSymbols.end()) {
+//                 LOG_WARN("AdaptiveExitStrategy::calculateDynamicParameters: tick_size <= 0 ({}). Using fallback tiny tick for symbol={}", tick, symbol);
+//                 g_tickSizeWarnedSymbols.insert(symbol);
+//             }
+//         }
+//         tick = 1e-8;
+//     }
+
+//     double vol_in_ticks = current_micro.volatility_1m / tick;
+//     double spread_in_ticks = current_micro.spread_ema / tick;
+    
+//     // 2. Profit Target (dựa trên expected move trong prediction window)
+//     // Formula: PT = α * σ * √t + β * spread
+//     // Với α = confidence factor (1.5-2.5), β = spread cost multiplier (1.5-3)
+//     double alpha = 2.0;  // Base confidence factor
+//     double beta = 2.5;   // Spread cost multiplier
+//     double gamma = 0.4;   // trailing fraction
+//     double decay_factor = 1.0;  // holding time multiplier
+    
+//         // === Adjust per regime ===
+//     switch (regime) {
+//         case MarketRegimeType::STRESS:
+//             alpha = 1.2;   // smaller PT, avoid chasing moves
+//             beta  = 5.0;   // spreads explode, cost up
+//             gamma = 0.2;   // very tight trailing (protect PnL)
+//             decay_factor = 0.4; // close fast
+//             break;
+
+//         case MarketRegimeType::HIGH_VOLATILITY:
+//             alpha = 3.0;   // bigger expected move
+//             beta  = 2.5;
+//             gamma = 0.35;  // let run but still tight
+//             decay_factor = 0.8;  // shorter hold (fast mean reverts)
+//             break;
+
+//         case MarketRegimeType::LOW_LIQUIDITY:
+//             alpha = 1.8;
+//             beta  = 4.0;   // compensate for wide spreads
+//             gamma = 0.3;
+//             decay_factor = 0.7;  // exit earlier to avoid slippage
+//             break;
+
+//         case MarketRegimeType::TRENDING:
+//             alpha = 2.5;   // expect larger moves
+//             beta  = 2.0;   // spread less important
+//             gamma = 0.55;  // let profits run
+//             decay_factor = 1.5;  // hold longer
+//             break;
+
+//         case MarketRegimeType::MEAN_REVERTING:
+//             alpha = 1.4;   // smaller PT
+//             beta  = 3.0;
+//             gamma = 0.25;  // take profit quickly
+//             decay_factor = 0.5;
+//             break;
+
+//         case MarketRegimeType::QUIET:
+//             alpha = 1.2;   // tiny move expected
+//             beta  = 2.0;
+//             gamma = 0.3;   // small trailing
+//             decay_factor = 1.0;  // normal hold
+//             break;
+
+//         case MarketRegimeType::NORMAL:
+//         default:
+//             alpha = 2.0;
+//             beta  = 2.5;
+//             gamma = 0.4;
+//             decay_factor = 1.0;
+//             break;
+//     }
+
+//     // Time adjustment factor: √(prediction_window / 60)
+//     double time_factor = std::sqrt(predictionWindow_ / 60.0);
+    
+//     params.profit_target_ticks = alpha * vol_in_ticks * time_factor + beta * spread_in_ticks;
+//     params.profit_target_ticks = std::min(params.profit_target_ticks, 50.0);
+
+//     // 3. Stop Loss (based on Value at Risk - VaR)
+//     // Formula: SL = -VaR(confidence_level) = -z_score * σ * √t
+//     double z_score_95 = 1.645;  // 95% confidence
+//     params.stop_loss_ticks = -z_score_95 * vol_in_ticks * time_factor - spread_in_ticks;
+    
+//     // Regime adjustments for stop loss
+//     if (regime == MarketRegimeType::HIGH_VOLATILITY) 
+//         params.stop_loss_ticks *= 1.5;
+//     else if (regime == MarketRegimeType::LOW_LIQUIDITY)
+//         params.stop_loss_ticks *= 1.3;
+//     else if (regime == MarketRegimeType::STRESS)
+//         params.stop_loss_ticks *= 2.0; // maximum protection
+
+    
+//     // 4. Trailing Stop (percentage of favorable move)
+//     // Formula: TS = γ * PT, với γ ∈ [0.3, 0.6]
+//     // double gamma = 0.4;  // Base trailing factor
+//     // if (regime == MarketRegimeType::TRENDING) {
+//     //     gamma = 0.5;  // Let winners run more
+//     // } else if (regime == MarketRegimeType::MEAN_REVERTING) {
+//     //     gamma = 0.3;  // Tighter trailing
+//     // }
+//     params.trailing_stop_ticks = gamma * params.profit_target_ticks;
+//     params.stop_loss_ticks = std::max(params.stop_loss_ticks, -50.0);
+
+//     // 5. Holding Time (based on autocorrelation decay and mean reversion speed)
+//     // Formula: T_max = prediction_window * decay_factor
+    
+//     if (regime == MarketRegimeType::TRENDING) {
+//         decay_factor = 1.5;  // Hold longer in trends
+//     } else if (regime == MarketRegimeType::MEAN_REVERTING) {
+//         decay_factor = 0.5;  // Quick exits in mean reversion
+//     }
+    
+//     params.max_holding_time = predictionWindow_ * decay_factor;
+//     // Base min holding time on tick-to-spread ratio but ensure we don't divide by zero
+//     // Recommendation B: use a conservative static floor of 1.0s so strategies
+//     // with short prediction windows (e.g., 1.5s) can still respect a minimum
+//     // but without an overly large 10s floor.
+//     double static_floor = 1.0; // seconds
+//     double ratio_based_min = static_floor;
+//     if (vol_in_ticks > 1e-12) {
+//         ratio_based_min = std::max(static_floor, spread_in_ticks / vol_in_ticks * 2.0);
+//     }
+//     double prediction_half = predictionWindow_ / 2.0;
+//     params.min_holding_time = std::max(ratio_based_min, prediction_half);
+    
+//     // 6. Signal Reversal Threshold (based on prediction confidence decay)
+//     // Higher threshold when volatility is high
+//     // params.signal_reversal_threshold = 0.2 + 0.3 * (current_micro.volatility_1m / 0.001);
+//     // params.signal_reversal_threshold = std::min(0.7, params.signal_reversal_threshold);
+//     // In quiet regimes, be sensitive; in stress, be conservative
+//     double base_rev = 0.2 + 0.3 * (current_micro.volatility_1m / 0.001);
+//     base_rev = std::min(0.7, base_rev);
+
+//     if (regime == MarketRegimeType::STRESS)
+//         base_rev = 0.8; // ignore small reversals
+//     else if (regime == MarketRegimeType::QUIET)
+//         base_rev = 0.15; // react to small shifts
+
+//     params.signal_reversal_threshold = base_rev;
+//     // 7. Emergency multipliers
+//     params.spread_emergency_multiplier = 3.0 + spread_in_ticks / 10.0;  // Dynamic based on normal spread
+//     // Use a cleaner multiplier for spike detection: absolute multiplier of recent volatility
+//     // Previously this was vol_in_ticks * 3.0 which can be too small for very low-volatility assets
+//     // Set to a minimum multiplier and allow scaling with vol_in_ticks for very low vols.
+//     double base_vol_spike_multiplier = 4.0; // raise base multiplier to reduce false positives
+//     params.volatility_spike_threshold = std::max(base_vol_spike_multiplier, vol_in_ticks * 3.0);
+    
+//     // 8. Calculate expected edge and Kelly fraction
+//     // Sử dụng historical PnL nếu có
+//     auto it = historicalPnLs_.find(symbol);
+//     if (it != historicalPnLs_.end() && it->second.size() >= 20) {
+//         const auto& pnls = it->second;
+        
+//         // Win rate
+//         double wins = std::count_if(pnls.begin(), pnls.end(), 
+//                                    [](double pnl) { return pnl > 0; });
+//         double win_rate = wins / pnls.size();
+        
+//         // Average win/loss
+//         double avg_win = 0, avg_loss = 0;
+//         int win_count = 0, loss_count = 0;
+//         for (double pnl : pnls) {
+//             if (pnl > 0) {
+//                 avg_win += pnl;
+//                 win_count++;
+//             } else if (pnl < 0) {
+//                 avg_loss += std::abs(pnl);
+//                 loss_count++;
+//             }
+//         }
+        
+//         if (win_count > 0) avg_win /= win_count;
+//         if (loss_count > 0) avg_loss /= loss_count;
+        
+//         // Kelly Criterion: f = (p * b - q) / b
+//         // Với p = win_rate, q = 1-p, b = avg_win/avg_loss
+//         if (avg_loss > 0) {
+//             double b = avg_win / avg_loss;
+//             double kelly = (win_rate * b - (1 - win_rate)) / b;
+//             params.kelly_fraction = std::max(0.0, std::min(0.25, kelly)); // Cap at 25%
+//         }
+        
+//         params.expected_edge = win_rate * avg_win - (1 - win_rate) * avg_loss;
+        
+//         // Sharpe estimate
+//         double pnl_std = calculateStandardDeviation(pnls);
+//         if (pnl_std > 0) {
+//             params.sharpe_estimate = params.expected_edge / pnl_std * std::sqrt(252);  // Annualized
+//         }
+//     } else {
+//         // Conservative defaults khi chưa có history
+//         params.kelly_fraction = 0.02;
+//         params.expected_edge = spread_in_ticks * 0.1;  // Assume 10% edge over spread
+//         params.sharpe_estimate = 0.5;
+//     }
+    
+//     return params;
+// }
+
 AdaptiveExitStrategy::DynamicParameters AdaptiveExitStrategy::calculateDynamicParameters(
     const std::string& symbol,
-    const MarketMicrostructure& current_micro,
-    const MarketRegimeType& regime) const {
-    
-    DynamicParameters params;
-    
-    // ===== CÔNG THỨC TÍNH TOÁN ĐỘNG =====
-    
-    // 1. Base parameters từ volatility và spread
-    // Protect against invalid tick_size (divide by zero)
-    double tick = current_micro.tick_size;
+    const MarketMicrostructure& cur,
+    const MarketRegimeType& regime) const 
+{
+    DynamicParameters p;
+
+    // ===== Safety tick =====
+    double tick = cur.tick_size;
     if (tick <= 0.0) {
-        // Fallback: only warn once per symbol and use a tiny positive tick to avoid div-by-zero
-        {
-            std::lock_guard<std::mutex> lk(g_tickWarnMutex);
-            if (g_tickSizeWarnedSymbols.find(symbol) == g_tickSizeWarnedSymbols.end()) {
-                LOG_WARN("AdaptiveExitStrategy::calculateDynamicParameters: tick_size <= 0 ({}). Using fallback tiny tick for symbol={}", tick, symbol);
-                g_tickSizeWarnedSymbols.insert(symbol);
-            }
-        }
-        tick = 1e-8;
+        return p;  // Cannot compute dynamic parameters without valid tick size
+        // double mp = cur.mid_price > 0 ? cur.mid_price : 1.0;
+        // tick = mp * 1e-6;     // fallback theo mid price
     }
 
-    double vol_in_ticks = current_micro.volatility_1m / tick;
-    double spread_in_ticks = current_micro.spread_ema / tick;
-    
-    // 2. Profit Target (dựa trên expected move trong prediction window)
-    // Formula: PT = α * σ * √t + β * spread
-    // Với α = confidence factor (1.5-2.5), β = spread cost multiplier (1.5-3)
-    double alpha = 2.0;  // Base confidence factor
-    double beta = 2.5;   // Spread cost multiplier
-    double gamma = 0.4;   // trailing fraction
-    double decay_factor = 1.0;  // holding time multiplier
-    
-        // === Adjust per regime ===
+    // Bound tick để tránh explode
+    tick = std::clamp(tick, 1e-8, 1.0);
+
+    // ===== Convert volatility and spread to ticks =====
+    double vol_ticks   = cur.volatility_1m / tick;
+    double spr_ticks   = cur.spread_ema / tick;
+
+    // tránh zero → min stability
+    vol_ticks = std::max(vol_ticks, 1e-6);
+    spr_ticks = std::max(spr_ticks, 1e-6);
+
+    // ===== Prediction window (2s) =====
+    double pw_sec = predictionWindow_ / 1000.0;   // 2000 ms = 2s
+    double time_factor = std::sqrt(pw_sec);       // scale đúng đơn vị
+
+    // ===== Regime parameters =====
+    double alpha = 2.0;
+    double beta  = 2.5;
+    double gamma = 0.4;
+    double decay = 1.0;
+
     switch (regime) {
         case MarketRegimeType::STRESS:
-            alpha = 1.2;   // smaller PT, avoid chasing moves
-            beta  = 5.0;   // spreads explode, cost up
-            gamma = 0.2;   // very tight trailing (protect PnL)
-            decay_factor = 0.4; // close fast
+            alpha = 1.2;  beta = 5.0;  gamma = 0.2;  decay = 0.4;
             break;
 
         case MarketRegimeType::HIGH_VOLATILITY:
-            alpha = 3.0;   // bigger expected move
-            beta  = 2.5;
-            gamma = 0.35;  // let run but still tight
-            decay_factor = 0.8;  // shorter hold (fast mean reverts)
+            alpha = 3.0;  beta = 2.5;  gamma = 0.35; decay = 0.8;
             break;
 
         case MarketRegimeType::LOW_LIQUIDITY:
-            alpha = 1.8;
-            beta  = 4.0;   // compensate for wide spreads
-            gamma = 0.3;
-            decay_factor = 0.7;  // exit earlier to avoid slippage
+            alpha = 1.8;  beta = 4.0;  gamma = 0.3;  decay = 0.7;
             break;
 
         case MarketRegimeType::TRENDING:
-            alpha = 2.5;   // expect larger moves
-            beta  = 2.0;   // spread less important
-            gamma = 0.55;  // let profits run
-            decay_factor = 1.5;  // hold longer
+            alpha = 2.5;  beta = 2.0;  gamma = 0.55; decay = 1.5;
             break;
 
         case MarketRegimeType::MEAN_REVERTING:
-            alpha = 1.4;   // smaller PT
-            beta  = 3.0;
-            gamma = 0.25;  // take profit quickly
-            decay_factor = 0.5;
+            alpha = 1.4;  beta = 3.0;  gamma = 0.25; decay = 0.5;
             break;
 
         case MarketRegimeType::QUIET:
-            alpha = 1.2;   // tiny move expected
-            beta  = 2.0;
-            gamma = 0.3;   // small trailing
-            decay_factor = 1.0;  // normal hold
+            alpha = 1.2;  beta = 2.0;  gamma = 0.3;  decay = 1.0;
             break;
 
         case MarketRegimeType::NORMAL:
         default:
-            alpha = 2.0;
-            beta  = 2.5;
-            gamma = 0.4;
-            decay_factor = 1.0;
             break;
     }
 
-    // Time adjustment factor: √(prediction_window / 60)
-    double time_factor = std::sqrt(predictionWindow_ / 60.0);
-    
-    params.profit_target_ticks = alpha * vol_in_ticks * time_factor + beta * spread_in_ticks;
-    params.profit_target_ticks = std::min(params.profit_target_ticks, 50.0);
+    // ===== Profit target =====
+    double pt = alpha * vol_ticks * time_factor + beta * spr_ticks;
+    pt = std::clamp(pt, 0.5, 50.0);     // floor 0.5 ticks
 
-    // 3. Stop Loss (based on Value at Risk - VaR)
-    // Formula: SL = -VaR(confidence_level) = -z_score * σ * √t
-    double z_score_95 = 1.645;  // 95% confidence
-    params.stop_loss_ticks = -z_score_95 * vol_in_ticks * time_factor - spread_in_ticks;
-    
-    // Regime adjustments for stop loss
-    if (regime == MarketRegimeType::HIGH_VOLATILITY) 
-        params.stop_loss_ticks *= 1.5;
-    else if (regime == MarketRegimeType::LOW_LIQUIDITY)
-        params.stop_loss_ticks *= 1.3;
-    else if (regime == MarketRegimeType::STRESS)
-        params.stop_loss_ticks *= 2.0; // maximum protection
+    p.profit_target_ticks = pt;
 
-    
-    // 4. Trailing Stop (percentage of favorable move)
-    // Formula: TS = γ * PT, với γ ∈ [0.3, 0.6]
-    // double gamma = 0.4;  // Base trailing factor
-    // if (regime == MarketRegimeType::TRENDING) {
-    //     gamma = 0.5;  // Let winners run more
-    // } else if (regime == MarketRegimeType::MEAN_REVERTING) {
-    //     gamma = 0.3;  // Tighter trailing
-    // }
-    params.trailing_stop_ticks = gamma * params.profit_target_ticks;
-    params.stop_loss_ticks = std::max(params.stop_loss_ticks, -50.0);
+    // ===== Stop loss =====
+    double sl = -1.645 * vol_ticks * time_factor - spr_ticks;
 
-    // 5. Holding Time (based on autocorrelation decay and mean reversion speed)
-    // Formula: T_max = prediction_window * decay_factor
-    
-    if (regime == MarketRegimeType::TRENDING) {
-        decay_factor = 1.5;  // Hold longer in trends
-    } else if (regime == MarketRegimeType::MEAN_REVERTING) {
-        decay_factor = 0.5;  // Quick exits in mean reversion
-    }
-    
-    params.max_holding_time = predictionWindow_ * decay_factor;
-    // Base min holding time on tick-to-spread ratio but ensure we don't divide by zero
-    // Recommendation B: use a conservative static floor of 1.0s so strategies
-    // with short prediction windows (e.g., 1.5s) can still respect a minimum
-    // but without an overly large 10s floor.
-    double static_floor = 1.0; // seconds
-    double ratio_based_min = static_floor;
-    if (vol_in_ticks > 1e-12) {
-        ratio_based_min = std::max(static_floor, spread_in_ticks / vol_in_ticks * 2.0);
-    }
-    double prediction_half = predictionWindow_ / 2.0;
-    params.min_holding_time = std::max(ratio_based_min, prediction_half);
-    
-    // 6. Signal Reversal Threshold (based on prediction confidence decay)
-    // Higher threshold when volatility is high
-    // params.signal_reversal_threshold = 0.2 + 0.3 * (current_micro.volatility_1m / 0.001);
-    // params.signal_reversal_threshold = std::min(0.7, params.signal_reversal_threshold);
-    // In quiet regimes, be sensitive; in stress, be conservative
-    double base_rev = 0.2 + 0.3 * (current_micro.volatility_1m / 0.001);
-    base_rev = std::min(0.7, base_rev);
+    if (regime == MarketRegimeType::HIGH_VOLATILITY) sl *= 1.5;
+    if (regime == MarketRegimeType::LOW_LIQUIDITY)   sl *= 1.3;
+    if (regime == MarketRegimeType::STRESS)          sl *= 2.0;
 
-    if (regime == MarketRegimeType::STRESS)
-        base_rev = 0.8; // ignore small reversals
-    else if (regime == MarketRegimeType::QUIET)
-        base_rev = 0.15; // react to small shifts
+    sl = std::max(sl, -50.0);            // floor SL
+    p.stop_loss_ticks = sl;
 
-    params.signal_reversal_threshold = base_rev;
-    // 7. Emergency multipliers
-    params.spread_emergency_multiplier = 3.0 + spread_in_ticks / 10.0;  // Dynamic based on normal spread
-    // Use a cleaner multiplier for spike detection: absolute multiplier of recent volatility
-    // Previously this was vol_in_ticks * 3.0 which can be too small for very low-volatility assets
-    // Set to a minimum multiplier and allow scaling with vol_in_ticks for very low vols.
-    double base_vol_spike_multiplier = 4.0; // raise base multiplier to reduce false positives
-    params.volatility_spike_threshold = std::max(base_vol_spike_multiplier, vol_in_ticks * 3.0);
-    
-    // 8. Calculate expected edge and Kelly fraction
-    // Sử dụng historical PnL nếu có
+    // ===== Trailing =====
+    p.trailing_stop_ticks = std::max(0.5, gamma * pt);
+
+    // ===== Holding time =====
+    double T_max = pw_sec * decay;
+    double T_min = std::max(1.0, std::max( (spr_ticks / vol_ticks) * 2.0, pw_sec * 0.5 ));
+
+    p.max_holding_time = T_max;
+    p.min_holding_time = T_min;
+
+    // ===== Signal reversal threshold =====
+    double base_rev = 0.2 + 0.3 * (cur.volatility_1m / 0.001);
+    base_rev = std::min(base_rev, 0.7);
+
+    if (regime == MarketRegimeType::STRESS) base_rev = 0.8;
+    if (regime == MarketRegimeType::QUIET)  base_rev = 0.15;
+
+    p.signal_reversal_threshold = base_rev;
+
+    // ===== Emergency multipliers =====
+    p.spread_emergency_multiplier = 3.0 + spr_ticks / 10.0;
+    p.volatility_spike_threshold = std::clamp(std::max(4.0, vol_ticks * 3.0), 4.0, 100.0);
+
+    // ===== Expected edge + Kelly =====
     auto it = historicalPnLs_.find(symbol);
-    if (it != historicalPnLs_.end() && it->second.size() >= 20) {
+    if (it != historicalPnLs_.end() && it->second.size() >= 50) {
+
         const auto& pnls = it->second;
-        
-        // Win rate
-        double wins = std::count_if(pnls.begin(), pnls.end(), 
-                                   [](double pnl) { return pnl > 0; });
-        double win_rate = wins / pnls.size();
-        
-        // Average win/loss
-        double avg_win = 0, avg_loss = 0;
-        int win_count = 0, loss_count = 0;
-        for (double pnl : pnls) {
-            if (pnl > 0) {
-                avg_win += pnl;
-                win_count++;
-            } else if (pnl < 0) {
-                avg_loss += std::abs(pnl);
-                loss_count++;
-            }
+
+        double wins = std::count_if(pnls.begin(), pnls.end(), [](double x){return x>0;});
+        double wr = wins / pnls.size();
+
+        double avgW=0, avgL=0; int wc=0, lc=0;
+        for(double x: pnls){
+            if(x>0){avgW+=x; wc++;}
+            else if(x<0){avgL+=-x; lc++;}
         }
-        
-        if (win_count > 0) avg_win /= win_count;
-        if (loss_count > 0) avg_loss /= loss_count;
-        
-        // Kelly Criterion: f = (p * b - q) / b
-        // Với p = win_rate, q = 1-p, b = avg_win/avg_loss
-        if (avg_loss > 0) {
-            double b = avg_win / avg_loss;
-            double kelly = (win_rate * b - (1 - win_rate)) / b;
-            params.kelly_fraction = std::max(0.0, std::min(0.25, kelly)); // Cap at 25%
+
+        if (wc>0) avgW/=wc;
+        if (lc>0) avgL/=lc;
+
+        if (avgL>0) {
+            double b = avgW/avgL;
+            double k = (wr*b - (1-wr)) / b;
+            p.kelly_fraction = std::clamp(k, 0.0, 0.25);
         }
-        
-        params.expected_edge = win_rate * avg_win - (1 - win_rate) * avg_loss;
-        
-        // Sharpe estimate
-        double pnl_std = calculateStandardDeviation(pnls);
-        if (pnl_std > 0) {
-            params.sharpe_estimate = params.expected_edge / pnl_std * std::sqrt(252);  // Annualized
-        }
+
+        p.expected_edge = wr*avgW - (1-wr)*avgL;
+
+        double stdp = calculateStandardDeviation(pnls);
+        p.sharpe_estimate = (stdp>0) ? (p.expected_edge/stdp * std::sqrt(252.0)) : 0.5;
+
     } else {
-        // Conservative defaults khi chưa có history
-        params.kelly_fraction = 0.02;
-        params.expected_edge = spread_in_ticks * 0.1;  // Assume 10% edge over spread
-        params.sharpe_estimate = 0.5;
+        p.kelly_fraction = 0.02;
+        p.expected_edge = spr_ticks * 0.1;
+        p.sharpe_estimate = 0.5;
     }
-    
-    return params;
+
+    return p;
 }
+
+
 
 void AdaptiveExitStrategy::startPosition(
     const std::string& symbol,
@@ -391,11 +536,22 @@ AdaptiveExitStrategy::ExitDecision AdaptiveExitStrategy::evaluateExit(
     
     // ===== EXIT CONDITIONS (Priority Order) =====
     
+    // Skip remaining checks if minimum hold time not met
+    if (seconds_held < params.min_holding_time) {
+        return decision;
+    }
+
     // 1. STOP LOSS (immediate)
     if (pnl_ticks <= params.stop_loss_ticks) {
         decision.should_exit = true;
         decision.reason = ExitReason::STOP_LOSS;
         decision.confidence = 1.0;
+        // Log current and aggregated PnL at exit trigger
+        {
+            double aggregated = calculateTotalPnL(symbol, pnl_ticks);
+            LOG_INFO("AdaptiveExitStrategy: exit triggered on {} reason={} current PnL: {:.4f} ticks (aggregated: {:.4f} ticks)",
+                     symbol, exitReasonToString(decision.reason), pnl_ticks, aggregated);
+        }
         return decision;
     }
     
@@ -410,6 +566,9 @@ AdaptiveExitStrategy::ExitDecision AdaptiveExitStrategy::evaluateExit(
             // Confidence scales with how bad the relative spike is
             double rel_spike = current_micro.volatility_1m / std::max(1e-12, state.entry_microstructure.volatility_1m);
             decision.confidence = std::min(1.0, 0.5 + (rel_spike - params.volatility_spike_threshold) / (params.volatility_spike_threshold * 2.0));
+            double aggregated = calculateTotalPnL(symbol, pnl_ticks);
+            LOG_INFO("AdaptiveExitStrategy: exit triggered on {} reason={} current PnL: {:.4f} ticks (aggregated: {:.4f} ticks)",
+                     symbol, exitReasonToString(decision.reason), pnl_ticks, aggregated);
             return decision;
         }
     } else {
@@ -422,6 +581,11 @@ AdaptiveExitStrategy::ExitDecision AdaptiveExitStrategy::evaluateExit(
         decision.should_exit = true;
         decision.reason = ExitReason::ADVERSE_SELECTION;
         decision.confidence = adverse_score;
+        {
+            double aggregated = calculateTotalPnL(symbol, pnl_ticks);
+            LOG_INFO("AdaptiveExitStrategy: exit triggered on {} reason={} current PnL: {:.4f} ticks (aggregated: {:.4f} ticks)",
+                     symbol, exitReasonToString(decision.reason), pnl_ticks, aggregated);
+        }
         return decision;
     }
     
@@ -431,13 +595,14 @@ AdaptiveExitStrategy::ExitDecision AdaptiveExitStrategy::evaluateExit(
         decision.should_exit = true;
         decision.reason = ExitReason::PROFIT_TARGET;
         decision.confidence = 0.9;
+        {
+            double aggregated = calculateTotalPnL(symbol, pnl_ticks);
+            LOG_INFO("AdaptiveExitStrategy: exit triggered on {} reason={} current PnL: {:.4f} ticks (aggregated: {:.4f} ticks)",
+                     symbol, exitReasonToString(decision.reason), pnl_ticks, aggregated);
+        }
         return decision;
     }
     
-    // Skip remaining checks if minimum hold time not met
-    if (seconds_held < params.min_holding_time) {
-        return decision;
-    }
     
     // 5. TRAILING STOP
     if (state.max_favorable_excursion > params.trailing_stop_ticks) {
@@ -446,6 +611,9 @@ AdaptiveExitStrategy::ExitDecision AdaptiveExitStrategy::evaluateExit(
             decision.should_exit = true;
             decision.reason = ExitReason::TRAILING_STOP;
             decision.confidence = 0.85;
+            double aggregated = calculateTotalPnL(symbol, pnl_ticks);
+            LOG_INFO("AdaptiveExitStrategy: exit triggered on {} reason={} current PnL: {:.4f} ticks (aggregated: {:.4f} ticks)",
+                     symbol, exitReasonToString(decision.reason), pnl_ticks, aggregated);
             return decision;
         }
     }
@@ -464,6 +632,9 @@ AdaptiveExitStrategy::ExitDecision AdaptiveExitStrategy::evaluateExit(
         decision.should_exit = true;
         decision.reason = ExitReason::SIGNAL_REVERSAL;
         decision.confidence = current_confidence;
+        double aggregated = calculateTotalPnL(symbol, pnl_ticks);
+        LOG_INFO("AdaptiveExitStrategy: exit triggered on {} reason={} current PnL: {:.4f} ticks (aggregated: {:.4f} ticks)",
+                 symbol, exitReasonToString(decision.reason), pnl_ticks, aggregated);
         return decision;
     }
     
@@ -473,6 +644,9 @@ AdaptiveExitStrategy::ExitDecision AdaptiveExitStrategy::evaluateExit(
         decision.should_exit = true;
         decision.reason = ExitReason::LIQUIDITY_CRISIS;
         decision.confidence = 0.7;
+        double aggregated = calculateTotalPnL(symbol, pnl_ticks);
+        LOG_INFO("AdaptiveExitStrategy: exit triggered on {} reason={} current PnL: {:.4f} ticks (aggregated: {:.4f} ticks)",
+                 symbol, exitReasonToString(decision.reason), pnl_ticks, aggregated);
         return decision;
     }
     
@@ -481,6 +655,9 @@ AdaptiveExitStrategy::ExitDecision AdaptiveExitStrategy::evaluateExit(
         decision.should_exit = true;
         decision.reason = ExitReason::TIME_LIMIT;
         decision.confidence = 0.6;
+        double aggregated = calculateTotalPnL(symbol, pnl_ticks);
+        LOG_INFO("AdaptiveExitStrategy: exit triggered on {} reason={} current PnL: {:.4f} ticks (aggregated: {:.4f} ticks)",
+                 symbol, exitReasonToString(decision.reason), pnl_ticks, aggregated);
         return decision;
     }
     
@@ -678,14 +855,31 @@ void AdaptiveExitStrategy::closePosition(const std::string& symbol,
     auto it = activeTrades_.find(symbol);
     if (it != activeTrades_.end()) {
         it->second.is_active = false;
-        LOG_INFO("AdaptiveExitStrategy: closed position on {} due to {} with final PnL: {:.4f} ticks",
-                 symbol, exitReasonToString(reason), final_pnl);
+        // Calculate total PnL including recent tracked PnLs and the final realized PnL
+        double total_pnl = calculateTotalPnL(symbol, final_pnl);
+        LOG_INFO("AdaptiveExitStrategy: closed position on {} due to {} with final PnL: {:.4f} ticks (total PnL: {:.4f} ticks)",
+                 symbol, exitReasonToString(reason), final_pnl, total_pnl);
         // Update historical PnL for future Kelly calculations
         historicalPnLs_[symbol].push_back(final_pnl);
         if (historicalPnLs_[symbol].size() > 100) {
             historicalPnLs_[symbol].pop_front();
         }
     }
+}
+
+double AdaptiveExitStrategy::calculateTotalPnL(const std::string& symbol, double final_pnl) const {
+    // Aggregate recent PnLs from trade state (if present) and include the final realized PnL.
+    std::lock_guard<std::mutex> lock(tradesMutex_);
+    double total = final_pnl;
+    auto it = activeTrades_.find(symbol);
+    if (it != activeTrades_.end()) {
+        const auto& state = it->second;
+        // Sum recent Pnls (which are in ticks)
+        for (double p : state.recent_pnls) {
+            total += p;
+        }
+    }
+    return total;
 }
 
 void AdaptiveExitStrategy::markPendingExit(const std::string& symbol) {
