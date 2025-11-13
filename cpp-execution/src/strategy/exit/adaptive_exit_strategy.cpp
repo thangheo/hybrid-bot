@@ -283,9 +283,9 @@ AdaptiveExitStrategy::DynamicParameters AdaptiveExitStrategy::calculateDynamicPa
     // ===== Safety tick =====
     double tick = cur.tick_size;
     if (tick <= 0.0) {
-        return p;  // Cannot compute dynamic parameters without valid tick size
-        // double mp = cur.mid_price > 0 ? cur.mid_price : 1.0;
-        // tick = mp * 1e-6;     // fallback theo mid price
+        // return p;  // Cannot compute dynamic parameters without valid tick size
+        double mp = cur.mid_price > 0 ? cur.mid_price : 1.0;
+        tick = mp * 1e-6;     // fallback theo mid price
     }
 
     // Bound tick để tránh explode
@@ -548,7 +548,7 @@ AdaptiveExitStrategy::ExitDecision AdaptiveExitStrategy::evaluateExit(
         decision.confidence = 1.0;
         // Log current and aggregated PnL at exit trigger
         {
-            double aggregated = calculateTotalPnL(symbol, pnl_ticks);
+            double aggregated = calculateTotalPnLUnlocked(symbol, pnl_ticks);
             LOG_INFO("AdaptiveExitStrategy: exit triggered on {} reason={} current PnL: {:.4f} ticks (aggregated: {:.4f} ticks)",
                      symbol, exitReasonToString(decision.reason), pnl_ticks, aggregated);
         }
@@ -566,7 +566,7 @@ AdaptiveExitStrategy::ExitDecision AdaptiveExitStrategy::evaluateExit(
             // Confidence scales with how bad the relative spike is
             double rel_spike = current_micro.volatility_1m / std::max(1e-12, state.entry_microstructure.volatility_1m);
             decision.confidence = std::min(1.0, 0.5 + (rel_spike - params.volatility_spike_threshold) / (params.volatility_spike_threshold * 2.0));
-            double aggregated = calculateTotalPnL(symbol, pnl_ticks);
+            double aggregated = calculateTotalPnLUnlocked(symbol, pnl_ticks);
             LOG_INFO("AdaptiveExitStrategy: exit triggered on {} reason={} current PnL: {:.4f} ticks (aggregated: {:.4f} ticks)",
                      symbol, exitReasonToString(decision.reason), pnl_ticks, aggregated);
             return decision;
@@ -582,7 +582,7 @@ AdaptiveExitStrategy::ExitDecision AdaptiveExitStrategy::evaluateExit(
         decision.reason = ExitReason::ADVERSE_SELECTION;
         decision.confidence = adverse_score;
         {
-            double aggregated = calculateTotalPnL(symbol, pnl_ticks);
+            double aggregated = calculateTotalPnLUnlocked(symbol, pnl_ticks);
             LOG_INFO("AdaptiveExitStrategy: exit triggered on {} reason={} current PnL: {:.4f} ticks (aggregated: {:.4f} ticks)",
                      symbol, exitReasonToString(decision.reason), pnl_ticks, aggregated);
         }
@@ -596,7 +596,7 @@ AdaptiveExitStrategy::ExitDecision AdaptiveExitStrategy::evaluateExit(
         decision.reason = ExitReason::PROFIT_TARGET;
         decision.confidence = 0.9;
         {
-            double aggregated = calculateTotalPnL(symbol, pnl_ticks);
+            double aggregated = calculateTotalPnLUnlocked(symbol, pnl_ticks);
             LOG_INFO("AdaptiveExitStrategy: exit triggered on {} reason={} current PnL: {:.4f} ticks (aggregated: {:.4f} ticks)",
                      symbol, exitReasonToString(decision.reason), pnl_ticks, aggregated);
         }
@@ -611,7 +611,7 @@ AdaptiveExitStrategy::ExitDecision AdaptiveExitStrategy::evaluateExit(
             decision.should_exit = true;
             decision.reason = ExitReason::TRAILING_STOP;
             decision.confidence = 0.85;
-            double aggregated = calculateTotalPnL(symbol, pnl_ticks);
+            double aggregated = calculateTotalPnLUnlocked(symbol, pnl_ticks);
             LOG_INFO("AdaptiveExitStrategy: exit triggered on {} reason={} current PnL: {:.4f} ticks (aggregated: {:.4f} ticks)",
                      symbol, exitReasonToString(decision.reason), pnl_ticks, aggregated);
             return decision;
@@ -632,7 +632,7 @@ AdaptiveExitStrategy::ExitDecision AdaptiveExitStrategy::evaluateExit(
         decision.should_exit = true;
         decision.reason = ExitReason::SIGNAL_REVERSAL;
         decision.confidence = current_confidence;
-        double aggregated = calculateTotalPnL(symbol, pnl_ticks);
+    double aggregated = calculateTotalPnLUnlocked(symbol, pnl_ticks);
         LOG_INFO("AdaptiveExitStrategy: exit triggered on {} reason={} current PnL: {:.4f} ticks (aggregated: {:.4f} ticks)",
                  symbol, exitReasonToString(decision.reason), pnl_ticks, aggregated);
         return decision;
@@ -644,7 +644,7 @@ AdaptiveExitStrategy::ExitDecision AdaptiveExitStrategy::evaluateExit(
         decision.should_exit = true;
         decision.reason = ExitReason::LIQUIDITY_CRISIS;
         decision.confidence = 0.7;
-        double aggregated = calculateTotalPnL(symbol, pnl_ticks);
+    double aggregated = calculateTotalPnLUnlocked(symbol, pnl_ticks);
         LOG_INFO("AdaptiveExitStrategy: exit triggered on {} reason={} current PnL: {:.4f} ticks (aggregated: {:.4f} ticks)",
                  symbol, exitReasonToString(decision.reason), pnl_ticks, aggregated);
         return decision;
@@ -655,7 +655,7 @@ AdaptiveExitStrategy::ExitDecision AdaptiveExitStrategy::evaluateExit(
         decision.should_exit = true;
         decision.reason = ExitReason::TIME_LIMIT;
         decision.confidence = 0.6;
-        double aggregated = calculateTotalPnL(symbol, pnl_ticks);
+    double aggregated = calculateTotalPnLUnlocked(symbol, pnl_ticks);
         LOG_INFO("AdaptiveExitStrategy: exit triggered on {} reason={} current PnL: {:.4f} ticks (aggregated: {:.4f} ticks)",
                  symbol, exitReasonToString(decision.reason), pnl_ticks, aggregated);
         return decision;
@@ -856,7 +856,7 @@ void AdaptiveExitStrategy::closePosition(const std::string& symbol,
     if (it != activeTrades_.end()) {
         it->second.is_active = false;
         // Calculate total PnL including recent tracked PnLs and the final realized PnL
-        double total_pnl = calculateTotalPnL(symbol, final_pnl);
+    double total_pnl = calculateTotalPnLUnlocked(symbol, final_pnl);
         LOG_INFO("AdaptiveExitStrategy: closed position on {} due to {} with final PnL: {:.4f} ticks (total PnL: {:.4f} ticks)",
                  symbol, exitReasonToString(reason), final_pnl, total_pnl);
         // Update historical PnL for future Kelly calculations
@@ -868,13 +868,15 @@ void AdaptiveExitStrategy::closePosition(const std::string& symbol,
 }
 
 double AdaptiveExitStrategy::calculateTotalPnL(const std::string& symbol, double final_pnl) const {
-    // Aggregate recent PnLs from trade state (if present) and include the final realized PnL.
     std::lock_guard<std::mutex> lock(tradesMutex_);
+    return calculateTotalPnLUnlocked(symbol, final_pnl);
+}
+
+double AdaptiveExitStrategy::calculateTotalPnLUnlocked(const std::string& symbol, double final_pnl) const {
     double total = final_pnl;
     auto it = activeTrades_.find(symbol);
     if (it != activeTrades_.end()) {
         const auto& state = it->second;
-        // Sum recent Pnls (which are in ticks)
         for (double p : state.recent_pnls) {
             total += p;
         }

@@ -261,7 +261,7 @@ public:
     std::condition_variable detectorQueueCv_;
     std::deque<OrderBookMetrics> detectorQueue_;
     std::atomic<bool> detectorWorkerRunning_{false};
-    size_t detectorQueueMax_ = 1024*16; // default max queue size
+    size_t detectorQueueMax_ = 1024; // default max queue size
     // For rate-limiting the 'queue full' warning
     mutable std::atomic<long long> lastQueueFullWarnMs_{0};
 

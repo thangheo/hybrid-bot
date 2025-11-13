@@ -46,17 +46,7 @@ public:
         double exit_price = 0.0;
         double confidence = 0.0;  // Exit confidence score
     };
-    
-    // struct MarketMicrostructure {
-    //     double volatility_1m = 0.0;      // 1-minute realized volatility
-    //     double spread_ema = 0.0;          // EMA of bid-ask spread
-    //     double spread_std = 0.0;          // Spread standard deviation
-    //     double orderbook_imbalance = 0.0; // Bid/ask volume imbalance
-    //     double trade_intensity = 0.0;     // Trades per second
-    //     double price_impact = 0.0;        // Estimated price impact
-    //     double tick_size = 0.0;           // Minimum price increment
-    //     double volume_profile_skew = 0.0; // Volume distribution asymmetry
-    // };
+     
     
     struct DynamicParameters {
         // Core parameters (dynamically calculated)
@@ -147,6 +137,9 @@ private:
     double calculateAdverseSelectionScore(
         const TradeState& state,
         const MarketMicrostructure& current_micro) const;
+
+    // Internal helper that assumes callers already hold tradesMutex_
+    double calculateTotalPnLUnlocked(const std::string& symbol, double final_pnl) const;
 
 public:
     AdaptiveExitStrategy(double prediction_window_seconds = 1.5);

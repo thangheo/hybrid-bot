@@ -29,6 +29,7 @@ struct MarketMicrostructure {
     double price_impact = 0.0;
     double tick_size = 0.0;
     double volume_profile_skew = 0.0;
+    double mid_price = 0.0;  // mid price
 };
 
 } // namespace strategy

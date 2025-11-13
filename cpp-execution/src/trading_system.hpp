@@ -222,7 +222,7 @@ private:
     std::chrono::steady_clock::time_point startTime_;
     // Warm-up period: do not send real orders during the initial warmupDuration_
     // Default to 2 minutes (120 seconds)
-    std::chrono::seconds warmupDuration_{200};
+    std::chrono::seconds warmupDuration_{10};
     // Count how many orders were suppressed during warmup for diagnostics
     std::atomic<size_t> suppressedOrdersDuringWarmup_{0};
     
