@@ -260,7 +260,24 @@ TradingSignal ImbalanceSignalGenerator::createSignalFromImbalance(
     signal.setMetric("strength_conf_boost", strengthComponents.confidenceBoost);
     signal.setMetric("strength_regime_adj", strengthComponents.regimeAdjustment);
     signal.setMetric("strength_momentum_align", strengthComponents.momentumAlignment);
-    
+    // set bid ask spread metric if available
+    double bidPrice = imbalance.getSupportingMetric("bidPrice", 0.0);
+    double askPrice = imbalance.getSupportingMetric("askPrice", 0.0);
+    double volatility = imbalance.getSupportingMetric("volatility", 0.0);
+    double askVolume = imbalance.getSupportingMetric("askVolume", 0.0);
+    double bidVolume = imbalance.getSupportingMetric("bidVolume", 0.0);    
+    double liquidityProfileScore = imbalance.getSupportingMetric("liquidityProfileScore", 0.0);
+
+    signal.setMetric("volatility", volatility);
+    if (bidPrice > 0.0 && askPrice > 0.0) {
+        double spread = askPrice - bidPrice;
+        signal.setMetric("bidAskSpread", spread);
+    }
+    signal.setMetric("bidVolume", bidVolume);
+    signal.setMetric("askVolume", askVolume);
+    signal.setMetric("liquidityProfileScore", liquidityProfileScore);
+
+
     // auto t3 = std::chrono::steady_clock::now();
     // Generate sophisticated price targets
     signal.targets = generatePriceTargets(imbalance); // có khả nghi 
@@ -276,9 +293,6 @@ TradingSignal ImbalanceSignalGenerator::createSignalFromImbalance(
     for (const auto& metric : imbalance.supportingMetrics) {
         signal.setMetric(metric.first, metric.second);
     }
-    // auto t4 = std::chrono::system_clock::now();
-    // auto t4 = std::chrono::steady_clock::now();
-    // Apply momentum correlation analysis (timed)
     double predictedMove = 0.0;
     double correlation = 0.0;
     auto sub_t1 = std::chrono::steady_clock::now();    
@@ -388,28 +402,21 @@ TradingSignal ImbalanceSignalGenerator::createSignalFromImbalance(
     }
     
 
-    auto dur_us = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - t0).count();
-    auto dur_us6 = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - t6).count();
+    // auto dur_us = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - t0).count();
+    // auto dur_us6 = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - t6).count();
     
-    // Emit both total and sub-step timings to aid diagnosis (debug-level)
-    // LOG_DEBUG("createSignalFromImbalance: id={} total={}us (strength={}us, predict={}us, quality={}us)",
-    //           signal.id, dur_us, sub_dt_strength, sub_dt_predict, sub_dt_quality);
 
-    if (dur_us > 20000) {
-        // LOG_WARN("createSignalFromImbalance: signal id={} creation took {} us", signal.id, dur_us);
-        LOG_WARN("createSignalFromImbalance: id={} total={}us (strength={}us, predict={}us, quality={}us)",
-                  signal.id, dur_us, sub_elapsed_strength, sub_elapsed_predict, sub_elapsed_quality);
-
-    }
+    // if (dur_us > 20000) {
+    //     // LOG_WARN("createSignalFromImbalance: signal id={} creation took {} us", signal.id, dur_us);
+    //     LOG_WARN("createSignalFromImbalance: id={} total={}us (strength={}us, predict={}us, quality={}us)",
+    //               signal.id, dur_us, sub_elapsed_strength, sub_elapsed_predict, sub_elapsed_quality);
+    // }
     // If the generator has a configured strategy id, ensure the signal carries it
     // when the creator didn't set one. This avoids downstream components seeing
     // UNKNOWN strategy identifiers.
     if (!strategyId_.isEmpty() && !signal.strategyId.isValid()) {
         signal.strategyId = strategyId_;
     }
-    // Ensure downstream components always see a standard set of metrics
-    // derived from the signal fields and targets.
-    signal.populateDerivedMetrics();
     
     return signal;
 }
