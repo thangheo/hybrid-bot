@@ -233,6 +233,12 @@ public:
     TradeStatistics getStatistics(const std::string& symbol) const;
     
     /**
+     * Calculate total PnL for a closed position. This aggregates recent tracked
+     * PnL samples and the final realized PnL to produce a single summary value.
+     */
+    double calculateTotalPnL(const std::string& symbol, double final_pnl) const;
+    
+    /**
      * Helpers
      */
     bool hasActivePosition(const std::string& symbol) const;
