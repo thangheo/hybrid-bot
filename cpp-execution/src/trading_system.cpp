@@ -1602,6 +1602,7 @@ void Trading_system::execWorkerLoop(size_t workerId) {
                 double currentPrice = currentPriceOpt.value_or(0.0);
 
                 double finalQty = task.getQuantity();
+                LOG_DEBUG("Exit order detected for {} - qty={}", task.symbol.toString(), finalQty);
                 // Apply precision rounding for exit quantity
                 try {
                     std::string symStr = task.symbol.toString();
