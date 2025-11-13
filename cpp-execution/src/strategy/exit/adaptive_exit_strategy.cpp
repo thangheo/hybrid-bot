@@ -596,9 +596,9 @@ AdaptiveExitStrategy::ExitDecision AdaptiveExitStrategy::evaluateExit(
         decision.reason = ExitReason::PROFIT_TARGET;
         decision.confidence = 0.9;
         {
-            double aggregated = calculateTotalPnLUnlocked(symbol, pnl_ticks);
-            LOG_INFO("AdaptiveExitStrategy: exit triggered on {} reason={} current PnL: {:.4f} ticks (aggregated: {:.4f} ticks)",
-                     symbol, exitReasonToString(decision.reason), pnl_ticks, aggregated);
+            // double aggregated = calculateTotalPnLUnlocked(symbol, pnl_ticks);
+            // LOG_INFO("AdaptiveExitStrategy: exit triggered on {} reason={} current PnL: {:.4f} ticks (aggregated: {:.4f} ticks)",
+            //          symbol, exitReasonToString(decision.reason), pnl_ticks, aggregated);
         }
         return decision;
     }
@@ -611,9 +611,9 @@ AdaptiveExitStrategy::ExitDecision AdaptiveExitStrategy::evaluateExit(
             decision.should_exit = true;
             decision.reason = ExitReason::TRAILING_STOP;
             decision.confidence = 0.85;
-            double aggregated = calculateTotalPnLUnlocked(symbol, pnl_ticks);
-            LOG_INFO("AdaptiveExitStrategy: exit triggered on {} reason={} current PnL: {:.4f} ticks (aggregated: {:.4f} ticks)",
-                     symbol, exitReasonToString(decision.reason), pnl_ticks, aggregated);
+            // double aggregated = calculateTotalPnLUnlocked(symbol, pnl_ticks);
+            // LOG_INFO("AdaptiveExitStrategy: exit triggered on {} reason={} current PnL: {:.4f} ticks (aggregated: {:.4f} ticks)",
+            //          symbol, exitReasonToString(decision.reason), pnl_ticks, aggregated);
             return decision;
         }
     }
@@ -632,9 +632,9 @@ AdaptiveExitStrategy::ExitDecision AdaptiveExitStrategy::evaluateExit(
         decision.should_exit = true;
         decision.reason = ExitReason::SIGNAL_REVERSAL;
         decision.confidence = current_confidence;
-    double aggregated = calculateTotalPnLUnlocked(symbol, pnl_ticks);
-        LOG_INFO("AdaptiveExitStrategy: exit triggered on {} reason={} current PnL: {:.4f} ticks (aggregated: {:.4f} ticks)",
-                 symbol, exitReasonToString(decision.reason), pnl_ticks, aggregated);
+    // double aggregated = calculateTotalPnLUnlocked(symbol, pnl_ticks);
+    //     LOG_INFO("AdaptiveExitStrategy: exit triggered on {} reason={} current PnL: {:.4f} ticks (aggregated: {:.4f} ticks)",
+    //              symbol, exitReasonToString(decision.reason), pnl_ticks, aggregated);
         return decision;
     }
     
@@ -644,9 +644,9 @@ AdaptiveExitStrategy::ExitDecision AdaptiveExitStrategy::evaluateExit(
         decision.should_exit = true;
         decision.reason = ExitReason::LIQUIDITY_CRISIS;
         decision.confidence = 0.7;
-    double aggregated = calculateTotalPnLUnlocked(symbol, pnl_ticks);
-        LOG_INFO("AdaptiveExitStrategy: exit triggered on {} reason={} current PnL: {:.4f} ticks (aggregated: {:.4f} ticks)",
-                 symbol, exitReasonToString(decision.reason), pnl_ticks, aggregated);
+    // double aggregated = calculateTotalPnLUnlocked(symbol, pnl_ticks);
+    //     LOG_INFO("AdaptiveExitStrategy: exit triggered on {} reason={} current PnL: {:.4f} ticks (aggregated: {:.4f} ticks)",
+    //              symbol, exitReasonToString(decision.reason), pnl_ticks, aggregated);
         return decision;
     }
     
@@ -655,9 +655,9 @@ AdaptiveExitStrategy::ExitDecision AdaptiveExitStrategy::evaluateExit(
         decision.should_exit = true;
         decision.reason = ExitReason::TIME_LIMIT;
         decision.confidence = 0.6;
-    double aggregated = calculateTotalPnLUnlocked(symbol, pnl_ticks);
-        LOG_INFO("AdaptiveExitStrategy: exit triggered on {} reason={} current PnL: {:.4f} ticks (aggregated: {:.4f} ticks)",
-                 symbol, exitReasonToString(decision.reason), pnl_ticks, aggregated);
+    // double aggregated = calculateTotalPnLUnlocked(symbol, pnl_ticks);
+    //     LOG_INFO("AdaptiveExitStrategy: exit triggered on {} reason={} current PnL: {:.4f} ticks (aggregated: {:.4f} ticks)",
+    //              symbol, exitReasonToString(decision.reason), pnl_ticks, aggregated);
         return decision;
     }
     
