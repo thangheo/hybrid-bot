@@ -51,150 +51,84 @@
     
     // Initialize balance validator with configuration from file
     BalanceValidatorConfig balanceConfig = BalanceValidatorConfigLoader::loadFromFile("config/balance_validation.json");
+    // Initialize the balance validator instance
     balanceValidator_ = std::make_unique<BalanceValidator>(balanceConfig);
-    
-    // Set exchange gateway for balance validation
+    // Provide the exchange gateway to the validator so it can fetch fresh balances when needed
     balanceValidator_->setExchangeGateway(exchangeGateway_);
-    // If possible, inject a shared DataInterface (MarketDataInterface) so the validator
-    // uses the centralized cached balances rather than calling exchange clients directly.
+}
+
+// Legacy constructor: direct ApiClientManager (no ExchangeGateway)
+ExecutionService::ExecutionService(
+    std::shared_ptr<OrderGenerator> order_generator,
+    std::shared_ptr<SmartOrderRouter> smart_order_router,
+    std::shared_ptr<OrderTypeSelector> order_type_selector,
+    std::shared_ptr<ExecutionAlgorithmFactory> execution_algorithm_factory,
+    std::shared_ptr<OrderLifecycleTracker> order_lifecycle_tracker,
+    std::shared_ptr<FillReconciliation> fill_reconciliation,
+    std::shared_ptr<ApiClientManager> api_client_manager)
+    : exchangeGateway_(nullptr)
+    , order_generator_(std::move(order_generator))
+    , smart_order_router_(std::move(smart_order_router))
+    , order_type_selector_(std::move(order_type_selector))
+    , execution_algorithm_factory_(std::move(execution_algorithm_factory))
+    , order_lifecycle_tracker_(std::move(order_lifecycle_tracker))
+    , fill_reconciliation_(std::move(fill_reconciliation))
+    , api_client_manager_(std::move(api_client_manager))
+{
+    // Initialize balance validator
+    BalanceValidatorConfig balanceConfig = BalanceValidatorConfigLoader::loadFromFile("config/balance_validation.json");
+    balanceValidator_ = std::make_unique<BalanceValidator>(balanceConfig);
+    // No gateway available; validator may use api clients at runtime when provided
+}
+
+ExecutionService::~ExecutionService() {
     try {
-        // Create or obtain a shared MarketDataInterface and inject it into the validator.
-        auto di = trading::risk::MarketDataInterface::createDataInterface(trading::risk::RiskConfig{});
-        if (di) {
-            balanceValidator_->setDataInterface(di);
-            std::cout << "Info: BalanceValidator wired with shared DataInterface (MarketDataInterface)." << std::endl;
-        }
-    } catch (const std::exception& e) {
-        std::cerr << "Warning: failed to create/inject DataInterface into BalanceValidator: " << e.what() << std::endl;
-    }
-    // Optionally wire an HTTP-based authoritative balance service if configured
-    const char* balanceSvcUrl = std::getenv("BALANCE_SERVICE_URL");
-    if (balanceSvcUrl && balanceSvcUrl[0] != '\0') {
-        try {
-            auto httpClient = std::make_shared<trading::execution::HttpBalanceClient>(std::string(balanceSvcUrl));
-            balanceValidator_->setHttpBalanceClient(httpClient);
-            std::cout << "Info: HttpBalanceClient configured with URL=" << balanceSvcUrl << std::endl;
-        } catch (const std::exception& e) {
-            std::cerr << "Warning: failed to create HttpBalanceClient: " << e.what() << std::endl;
-        }
-    }
-    // If we have an API client manager available, attempt to initialize the service
-    // so callers that construct and immediately use the service don't hit "not running".
-    try {
-        if (api_client_manager_) {
-            if (api_client_manager_->initialize()) {
-                // Initialize other components that initialize() would normally start
-                order_lifecycle_tracker_->initialize();
-                fill_reconciliation_->initialize();
-                fill_reconciliation_->start();
-                is_initialized_ = true;
-                is_running_ = true;
-                std::cout << "Info: ExecutionService auto-initialized in constructor." << std::endl;
-            } else {
-                std::cerr << "Warning: ExecutionService auto-initialize failed (api_client_manager_ returned false)." << std::endl;
-            }
-        }
-    } catch (const std::exception& e) {
-        std::cerr << "Warning: Exception during ExecutionService auto-initialize: " << e.what() << std::endl;
+        shutdown();
+    } catch (...) {
+        // swallow
     }
 }
-//old one-> should not use
- ExecutionService::ExecutionService(
-     std::shared_ptr<OrderGenerator> order_generator,
-     std::shared_ptr<SmartOrderRouter> smart_order_router,
-     std::shared_ptr<OrderTypeSelector> order_type_selector,
-     std::shared_ptr<ExecutionAlgorithmFactory> execution_algorithm_factory,
-     std::shared_ptr<OrderLifecycleTracker> order_lifecycle_tracker,
-     std::shared_ptr<FillReconciliation> fill_reconciliation,
-     std::shared_ptr<ApiClientManager> api_client_manager)
-     : order_generator_(std::move(order_generator)),
-       smart_order_router_(std::move(smart_order_router)),
-       order_type_selector_(std::move(order_type_selector)),
-       execution_algorithm_factory_(std::move(execution_algorithm_factory)),
-       order_lifecycle_tracker_(std::move(order_lifecycle_tracker)),
-       fill_reconciliation_(std::move(fill_reconciliation)),
-       api_client_manager_(std::move(api_client_manager)),
-       is_initialized_(false),
-       is_running_(false) {
-     
-     // Initialize balance validator with configuration from file
-     BalanceValidatorConfig balanceConfig = BalanceValidatorConfigLoader::loadFromFile("config/balance_validation.json");
-     balanceValidator_ = std::make_unique<BalanceValidator>(balanceConfig);
-     
-     // Set API client if available
-     if (api_client_manager_) {
-         // We'll need to set this per exchange - for now, use the first available client
-         // This will be improved when we integrate with the gateway
-     }
-    // Optionally wire an HTTP-based authoritative balance service if configured (legacy constructor)
-    const char* balanceSvcUrl = std::getenv("BALANCE_SERVICE_URL");
-    if (balanceSvcUrl && balanceSvcUrl[0] != '\0') {
-        try {
-            auto httpClient = std::make_shared<trading::execution::HttpBalanceClient>(std::string(balanceSvcUrl));
-            balanceValidator_->setHttpBalanceClient(httpClient);
-            std::cout << "Info: HttpBalanceClient configured with URL=" << balanceSvcUrl << std::endl;
-        } catch (const std::exception& e) {
-            std::cerr << "Warning: failed to create HttpBalanceClient: " << e.what() << std::endl;
+
+bool ExecutionService::initialize() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (is_initialized_) {
+        return true; // Already initialized
+    }
+
+    // Initialize all components
+    bool success = true;
+
+    // Initialize API client manager first
+    if (api_client_manager_) {
+        success &= api_client_manager_->initialize();
+        if (!success) {
+            std::cerr << "Failed to initialize API Client Manager." << std::endl;
+            return false;
         }
     }
-    // Try to auto-initialize in legacy constructor if an API client manager was provided
-    try {
-        if (api_client_manager_) {
-            if (api_client_manager_->initialize()) {
-                order_lifecycle_tracker_->initialize();
-                fill_reconciliation_->initialize();
-                fill_reconciliation_->start();
-                is_initialized_ = true;
-                is_running_ = true;
-                std::cout << "Info: ExecutionService auto-initialized in legacy constructor." << std::endl;
-            } else {
-                std::cerr << "Warning: ExecutionService auto-initialize failed in legacy constructor." << std::endl;
-            }
-        }
-    } catch (const std::exception& e) {
-        std::cerr << "Warning: Exception during ExecutionService auto-initialize (legacy ctor): " << e.what() << std::endl;
+
+    // Initialize other components
+    if (order_lifecycle_tracker_) {
+        success &= order_lifecycle_tracker_->initialize();
+        std::cout << "Order Lifecycle Tracker initialized." << std::endl;
     }
- }
- 
- ExecutionService::~ExecutionService() {
-     if (is_running_) {
-         shutdown();
-     }
- }
- 
- bool ExecutionService::initialize() {
-     std::lock_guard<std::mutex> lock(mutex_);
-     
-     if (is_initialized_) {
-         return true; // Already initialized
-     }
-     
-     // Initialize all components
-     bool success = true;
-     
-     // Initialize API client manager first
-     success &= api_client_manager_->initialize();
-     if (!success) {
-        std::cerr << "Failed to initialize API Client Manager." << std::endl;
-         return false;
-     }
-     
-     // Initialize other components
-     success &= order_lifecycle_tracker_->initialize();
-     std::cout << "Order Lifecycle Tracker initialized." << std::endl;
-     success &= fill_reconciliation_->initialize();
-     std::cout << "Fill Reconciliation initialized." << std::endl;
-     // Start reconciliation process
-     if (success) {
-         is_initialized_ = true;
-         is_running_ = true;
-         
-         // Start the fill reconciliation process
-         fill_reconciliation_->start();
-     }
-     
-     return success;
- }
+    if (fill_reconciliation_) {
+        success &= fill_reconciliation_->initialize();
+        std::cout << "Fill Reconciliation initialized." << std::endl;
+    }
+
+    // Start reconciliation process
+    if (success) {
+        is_initialized_ = true;
+        is_running_ = true;
+
+        if (fill_reconciliation_) {
+            fill_reconciliation_->start();
+        }
+    }
+
+    return success;
+}
  
  void ExecutionService::shutdown() {
      std::lock_guard<std::mutex> lock(mutex_);
@@ -415,15 +349,7 @@ ExecutionResponse ExecutionService::executeSignal(const TradingSignal& signal) {
         auto balanceResult = balanceValidator_->validateOrder(*exchange_order, exchangeId, false);
         
         if (!balanceResult.isValid) {
-            // std::cout << "❌ Order rejected due to insufficient balance:" << std::endl;
-            // std::cout << "   Symbol: " << exchange_order->getTradingPair().toString() << std::endl;
-            // std::cout << "   Side: " << (exchange_order->getSide() == models::OrderSide::BUY ? "BUY" : "SELL") << std::endl;
-            // std::cout << "   Quantity: " << exchange_order->getQuantity() << std::endl;
-            // std::cout << "   Price: " << exchange_order->getPrice() << std::endl;
-            // std::cout << "   Asset: " << balanceResult.asset << std::endl;
-            // std::cout << "   Required: " << balanceResult.requiredBalance << std::endl;
-            // std::cout << "   Available: " << balanceResult.availableBalance << std::endl;
-            // std::cout << "   Reason: " << balanceResult.reason << std::endl;
+            std::cerr << "❌ Order rejected due to insufficient balance:" << std::endl;
 
             // Suggest quantity adjustment if possible
             if (balanceResult.canAdjust && balanceResult.suggestedQuantity > 0) {
