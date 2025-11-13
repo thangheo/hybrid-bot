@@ -1636,15 +1636,45 @@ void Trading_system::execWorkerLoop(size_t workerId) {
                 // Tracked quantity (from signal or position tracker)
                 double trackedQty = task.getQuantity();
 
-                // Query available balance from market data / balance cache
+                // Query available balance: prefer RiskManager cached position (PositionSync -> PositionTracker -> ExecutionInterface)
+                // Fallback to marketDataInterface balance cache if RiskManager has no data.
                 double availableQty = trackedQty;
                 try {
-                    if (marketDataInterface_) {
-                        // marketDataInterface_->getBalance expects base asset name
-                        availableQty = marketDataInterface_->getBalance(task.exchangeId, task.symbol.base);
+                    bool resolved = false;
+                    if (riskManager_) {
+                        try {
+                            // Convert Symbol -> TradingPair for RiskManager API
+                            TradingPair tp(task.symbol);
+                            auto cachedOpt = riskManager_->getCachedPosition(task.exchangeId, tp);
+                            if (cachedOpt.has_value()) {
+                                availableQty = *cachedOpt;
+                                resolved = true;
+                                LOG_INFO("Exit: using cached position for {}@{} = {}", task.symbol.toString(), task.exchangeId.toString(), availableQty);
+                            } else {
+                                LOG_TRACE("Exit: no cached position for {}@{}", task.symbol.toString(), task.exchangeId.toString());
+                            }
+                        } catch (const std::exception &e) {
+                            LOG_WARN("Exit: riskManager_->getCachedPosition threw for {}@{}: {}", task.symbol.toString(), task.exchangeId.toString(), e.what());
+                        }
+                    }
+
+                    if (!resolved) {
+                        if (marketDataInterface_) {
+                            // marketDataInterface_->getBalance expects base asset name
+                            try {
+                                availableQty = marketDataInterface_->getBalance(task.exchangeId, task.symbol.base);
+                                LOG_INFO("Exit: fallback to marketDataInterface balance for {}@{} = {}", task.symbol.toString(), task.exchangeId.toString(), availableQty);
+                            } catch (const std::exception &e) {
+                                LOG_WARN("Exit: marketDataInterface balance lookup failed for {}: {}", task.symbol.toString(), e.what());
+                                availableQty = trackedQty; // fall back to trackedQty
+                            }
+                        } else {
+                            // No marketDataInterface - keep trackedQty as fallback
+                            availableQty = trackedQty;
+                        }
                     }
                 } catch (const std::exception &e) {
-                    LOG_WARN("Exit: balance lookup failed for {}: {}", task.symbol.toString(), e.what());
+                    LOG_WARN("Exit: balance/resolved lookup failed for {}: {}", task.symbol.toString(), e.what());
                     // fall back to trackedQty
                     availableQty = trackedQty;
                 }

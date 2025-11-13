@@ -124,25 +124,25 @@ struct PositionSyncConfig {
     std::string publishEndpoint = "inproc://position_pub";
     int publisherHwm = 10000;
     int batchSize = 10;
-    int batchTimeoutMs = 100;
+    int batchTimeoutMs = 50;
     bool enablePriority = true;
     
     // Subscriber settings
     std::vector<std::string> subscribeEndpoints = {"inproc://position_pub"};
     int subscriberHwm = 10000;
-    int cacheTimeout_ms = 30000;
+    int cacheTimeout_ms = 200;
     int maxQueueSize = 1000;
     
     // Reconciliation settings
     int reconciliationIntervalSeconds = 300;  // 5 minutes
     int reconciliationTimeoutMs = 5000;
     int maxRetries = 3;
-    int retryDelayMs = 1000;
+    int retryDelayMs = 100;
     
     // Health check settings
     int healthCheckIntervalMs = 10000;        // 10 seconds
     int maxSequenceGap = 100;
-    int maxEventAge_ms = 60000;               // 1 minute
+    int maxEventAge_ms = 2000;               // 2 seconds
     
     nlohmann::json toJson() const;
     static PositionSyncConfig fromJson(const nlohmann::json& j);
