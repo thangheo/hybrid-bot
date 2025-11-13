@@ -521,27 +521,36 @@ ExecutionResponse ExecutionService::executeSignal(const TradingSignal& signal) {
             auto finalBalanceResult = balanceValidator_->validateOrder(*exchange_order, exchangeId, true);
             
             if (!finalBalanceResult.isValid) {
-                std::cout << "❌ Final balance check failed with fresh data:" << std::endl;
-                std::cout << "   Reason: " << finalBalanceResult.reason << std::endl;
-                std::cout << "   Required: " << finalBalanceResult.requiredBalance << std::endl;
-                std::cout << "   Available: " << finalBalanceResult.availableBalance << std::endl;
+                    std::cout << "❌ Final balance check failed with fresh data:" << std::endl;
+                    std::cout << "   Reason: " << finalBalanceResult.reason << std::endl;
+                    std::cout << "   Required: " << finalBalanceResult.requiredBalance << std::endl;
+                    std::cout << "   Available: " << finalBalanceResult.availableBalance << std::endl;
 
-                order_lifecycle_tracker_->updateOrderState(
-                    exchange_order->getClientOrderId(),
-                    models::OrderState::REJECTED,
-                    exchange_order->getExchangeOrderId(),
-                    "Final balance check failed: " + finalBalanceResult.reason
-                );
+                    // If this is an exit signal, be tolerant and bypass insufficient-balance
+                    // rejections (user requested immediate exits). Only bypass when the
+                    // reason indicates insufficient balance or min-notional.
+                    if (isExitSignalFlag && (finalBalanceResult.reason.find("Insufficient") != std::string::npos ||
+                                             finalBalanceResult.reason.find("minimum notional") != std::string::npos)) {
+                        std::cout << "[BALANCE] Bypassing final balance rejection for exit order " << exchange_order->getClientOrderId() << std::endl;
+                        // allow execution to continue
+                    } else {
+                        order_lifecycle_tracker_->updateOrderState(
+                            exchange_order->getClientOrderId(),
+                            models::OrderState::REJECTED,
+                            exchange_order->getExchangeOrderId(),
+                            "Final balance check failed: " + finalBalanceResult.reason
+                        );
 
-                return ExecutionResponse{
-                    exchange_order->getClientOrderId(),
-                    "",
-                    false,
-                    "Final balance check failed: " + finalBalanceResult.reason,
-                    std::chrono::system_clock::now(),
-                    "REJECTED_FINAL_BALANCE_CHECK"
-                };
-            }
+                        return ExecutionResponse{
+                            exchange_order->getClientOrderId(),
+                            "",
+                            false,
+                            "Final balance check failed: " + finalBalanceResult.reason,
+                            std::chrono::system_clock::now(),
+                            "REJECTED_FINAL_BALANCE_CHECK"
+                        };
+                    }
+                }
             
             std::cout << "✅ Final balance check passed - proceeding to submit order" << std::endl;
         } else {
@@ -554,21 +563,36 @@ ExecutionResponse ExecutionService::executeSignal(const TradingSignal& signal) {
             auto finalValidation = balanceValidator_->validateOrder(*exchange_order, exchangeId, true);
             if (!finalValidation.isValid) {
                 std::cout << "❌ Final forced balance validation failed before submit: " << finalValidation.reason << std::endl;
-                order_lifecycle_tracker_->updateOrderState(
-                    exchange_order->getClientOrderId(),
-                    models::OrderState::REJECTED,
-                    exchange_order->getExchangeOrderId(),
-                    "Final balance validation failed before submit: " + finalValidation.reason
-                );
 
-                return ExecutionResponse{
-                    exchange_order->getClientOrderId(),
-                    "",
-                    false,
-                    std::string("Final balance validation failed before submit: ") + finalValidation.reason,
-                    std::chrono::system_clock::now(),
-                    "REJECTED_FINAL_BALANCE_CHECK"
-                };
+                // If this is an exit order, allow bypass for common non-fatal reasons
+                bool bypassFinal = false;
+                if (isExitSignalFlag) {
+                    std::string low = finalValidation.reason;
+                    std::transform(low.begin(), low.end(), low.begin(), ::tolower);
+                    if (low.find("insufficient") != std::string::npos || low.find("minimum notional") != std::string::npos) {
+                        bypassFinal = true;
+                    }
+                }
+
+                if (bypassFinal) {
+                    std::cout << "[BALANCE] Bypassing final forced validation for exit order " << exchange_order->getClientOrderId() << std::endl;
+                } else {
+                    order_lifecycle_tracker_->updateOrderState(
+                        exchange_order->getClientOrderId(),
+                        models::OrderState::REJECTED,
+                        exchange_order->getExchangeOrderId(),
+                        "Final balance validation failed before submit: " + finalValidation.reason
+                    );
+
+                    return ExecutionResponse{
+                        exchange_order->getClientOrderId(),
+                        "",
+                        false,
+                        std::string("Final balance validation failed before submit: ") + finalValidation.reason,
+                        std::chrono::system_clock::now(),
+                        "REJECTED_FINAL_BALANCE_CHECK"
+                    };
+                }
             }
         } catch (const std::exception& e) {
             std::cerr << "Warning: exception during final balance validation: " << e.what() << " - proceeding to submit (best-effort)" << std::endl;
@@ -1370,14 +1394,14 @@ models::Order ExecutionService::createOrderFromSignal(const TradingSignal& signa
         market_condition.bidPrice = getMetric("bidPrice", 0.0);
         market_condition.askPrice = getMetric("askPrice", 0.0);
         double mid_price = (market_condition.bidPrice + market_condition.askPrice) / 2.0;
-        double spreadPercent = 0.0;
+        double spreadRatio = 0.0;
         if (mid_price > 0.0) {
-            spreadPercent = (market_condition.askPrice - market_condition.bidPrice) / mid_price;
+            spreadRatio = (market_condition.askPrice - market_condition.bidPrice) / mid_price;
         }
-        market_condition.spread = spreadPercent;
+        market_condition.spread = spreadRatio;
         market_condition.volatility = getMetric("volatility", 0.02);
         market_condition.volume = getMetric("bidVolume", 100.0) + getMetric("askVolume", 100.0);
-        market_condition.liquidity_score = getMetric("liquidity_score", 0.8);
+        market_condition.liquidityProfileScore = getMetric("liquidityProfileScore", 0.8);
         market_condition.market_impact_estimate = getMetric("market_impact_estimate", 0.005); //no such thing yet
         // if bidPrice is zero, set to price
         if (market_condition.bidPrice <= 0.0 || market_condition.askPrice <= 0.0) {
@@ -1453,6 +1477,8 @@ models::Order ExecutionService::createOrderFromSignal(const TradingSignal& signa
                   << ", Ask=" << market_condition.askPrice
                   << ", Spread=" << market_condition.spread
                   << ", Vol=" << market_condition.volatility
+                  << ", LiquidityScore=" << market_condition.liquidityProfileScore
+                  << ", MarketImpact=" << market_condition.market_impact_estimate
                   << ", Side=" << (order->getSide() == models::OrderSide::BUY ? "BUY" : "SELL") << std::endl;
         
         if (market_condition.bidPrice <= 0.0 || market_condition.askPrice <= 0.0) {

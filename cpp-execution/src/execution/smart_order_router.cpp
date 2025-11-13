@@ -162,14 +162,14 @@ double SmartOrderRouter::calculateExchangeScore(
     
     // Normalize scores to 0-1 range
     double fee_score = 1.0 - std::min(exchange.trading_fee / 0.01, 1.0); // Assume 1% is max fee
-    double liquidity_score = exchange.liquidity_score; // Already 0-1
+    double liquidityProfileScore = exchange.liquidityProfileScore; // Already 0-1
     double latency_score = 1.0 - std::min(exchange.latency_ms / 500.0, 1.0); // Assume 500ms is worst
     double reliability_score = exchange.success_rate; // Already 0-1
     
     // Weight each factor
     double weighted_score = 
         fee_score * routing_factors_.fee_weight +
-        liquidity_score * routing_factors_.liquidity_weight +
+        liquidityProfileScore * routing_factors_.liquidity_weight +
         latency_score * routing_factors_.latency_weight +
         reliability_score * routing_factors_.success_rate_weight;
     

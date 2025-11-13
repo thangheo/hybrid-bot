@@ -123,7 +123,7 @@ public:
         ExchangeInfo binanceInfo;
         binanceInfo.exchangeId = core::ExchangeId::binance();
         binanceInfo.trading_fee = 0.001;
-        binanceInfo.liquidity_score = 0.9;
+        binanceInfo.liquidityProfileScore = 0.9;
         binanceInfo.latency_ms = 50;
         binanceInfo.success_rate = 0.99;
         exchanges.push_back(binanceInfo);

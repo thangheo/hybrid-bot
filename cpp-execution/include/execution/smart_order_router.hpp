@@ -6,6 +6,7 @@
 #include <vector>
 #include <unordered_map>
 #include <functional>
+#include <mutex>
 #include <core/market_types.hpp>
 
 namespace trading { 
@@ -21,7 +22,7 @@ using namespace core;
 struct ExchangeInfo {
     core::ExchangeId exchangeId;
     double trading_fee;
-    double liquidity_score;
+    double liquidityProfileScore;
     double latency_ms; 
     double success_rate;
     
