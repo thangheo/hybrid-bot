@@ -1345,7 +1345,12 @@ models::Order ExecutionService::createOrderFromSignal(const TradingSignal& signa
         
         market_condition.bidPrice = getMetric("bidPrice", 0.0);
         market_condition.askPrice = getMetric("askPrice", 0.0);
-        market_condition.spread = getMetric("spreadPercent", 1.0);
+        double mid_price = (market_condition.bidPrice + market_condition.askPrice) / 2.0;
+        double spreadPercent = 0.0;
+        if (mid_price > 0.0) {
+            spreadPercent = (market_condition.askPrice - market_condition.bidPrice) / mid_price;
+        }
+        market_condition.spread = spreadPercent;
         market_condition.volatility = getMetric("volatility", 0.02);
         market_condition.volume = getMetric("bidVolume", 100.0) + getMetric("askVolume", 100.0);
         market_condition.liquidity_score = getMetric("liquidity_score", 0.8);
