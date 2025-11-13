@@ -26,6 +26,11 @@ bool PositionSynchronizer::initialize() {
     publisher_.store(std::make_shared<PositionPublisher>(config_, zmqContext_));
     auto subptr = std::make_shared<PositionSubscriber>(config_, zmqContext_);
     subscriber_.store(subptr);
+    // If both publisher and subscriber are local, set subscriber on publisher
+    auto pub = publisher_.load();
+    if (pub && subptr) {
+        try { pub->setLocalSubscriber(subptr); } catch(...) {}
+    }
     std::cerr << "[PositionSynchronizer] Created publisher and subscriber objects pub=" << publisher_.load().get() << " sub=" << subptr.get() << std::endl;
     return true;
 }

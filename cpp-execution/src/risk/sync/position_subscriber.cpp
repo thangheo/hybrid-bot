@@ -13,6 +13,17 @@ PositionSubscriber::PositionSubscriber(const PositionSyncConfig& config, std::sh
     std::cerr << "[PositionSubscriber] ctor this=" << this << "\n";
 }
 
+void PositionSubscriber::deliverEventDirect(const PositionEvent& event) {
+    // Synchronously process event and update cache/callbacks
+    try {
+        processEvent(event);
+    } catch (const std::exception& e) {
+        std::cerr << "[PositionSubscriber] deliverEventDirect error: " << e.what() << std::endl;
+    } catch (...) {
+        std::cerr << "[PositionSubscriber] deliverEventDirect unknown error" << std::endl;
+    }
+}
+
 PositionSubscriber::~PositionSubscriber() {
     std::cerr << "[PositionSubscriber] dtor this=" << this << " (thread " << std::this_thread::get_id() << ")\n";
     shutdown();

@@ -61,6 +61,8 @@ public:
      * Start publishing service
      * @return true if successful
      */
+        // Optional in-process subscriber for synchronous delivery
+        std::weak_ptr<class PositionSubscriber> localSubscriber_;
     bool start();
     
     /**
@@ -167,6 +169,8 @@ private:
     
     // Position tracker callbacks
     void onPositionUpdate(const Position& position, const std::string& updateType);
+    // Optional in-process subscriber for synchronous delivery
+    void setLocalSubscriber(std::shared_ptr<class PositionSubscriber> sub);
     
     // Event creation helpers
     PositionEvent createPositionEvent(
@@ -179,6 +183,8 @@ private:
     bool checkZmqHealth();
     
     // JSON serialization helpers
+        // set a local subscriber for synchronous in-process delivery (optional)
+        void setLocalSubscriber(std::shared_ptr<PositionSubscriber> sub) { localSubscriber_ = sub; }
     std::string serializeEvent(const PositionEvent& event);
     std::string serializeSnapshot(const PositionSnapshot& snapshot);
 };
