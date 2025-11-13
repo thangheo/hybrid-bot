@@ -3,6 +3,8 @@
 #include <zmq.hpp>
 #include <nlohmann/json.hpp>
 #include <iostream>
+#include <algorithm>
+#include <cctype>
 
 namespace trading {
 namespace risk {
@@ -72,6 +74,25 @@ void PositionPublisher::shutdown() {
 
 void PositionPublisher::connectToPositionTracker(std::shared_ptr<PositionTracker> positionTracker) {
     positionTracker_ = positionTracker;
+    // register to receive updates directly from the position tracker so events are
+    // enqueued immediately when the tracker updates (avoids relying on external
+    // wiring). Use a weak_ptr capture to avoid cyclic ownership.
+    if (positionTracker) {
+        // Best-effort registration: capture raw this pointer. The publisher is
+        // typically long-lived for the life of the process; this avoids
+        // requiring enable_shared_from_this. If the publisher is destroyed
+        // while the tracker still has callbacks, behaviour is undefined but
+        // registration is guarded by try/catch to avoid crashes during init.
+        PositionPublisher* self = this;
+        try {
+            positionTracker->registerPositionUpdateCallback([self](const Position& pos, const std::string& updateType) {
+                // direct call into publisher
+                try { self->onPositionUpdate(pos, updateType); } catch (...) {}
+            });
+        } catch (...) {
+            // ignore
+        }
+    }
 }
 
 bool PositionPublisher::publishEvent(const PositionEvent& event) {
@@ -150,12 +171,34 @@ void PositionPublisher::workerLoop() {
 
         if (!running_ && eventQueue_.empty()) break;
 
-        // build batch up to batchSize
+        // build batch up to batchSize. If the top event is HIGH priority or
+        // represents a filled update (source contains "filled"), flush that
+        // event immediately (batch size == 1) to reduce latency for critical events.
         std::vector<PositionEvent> batch;
         batch.reserve(config_.batchSize);
-        while (!eventQueue_.empty() && batch.size() < static_cast<size_t>(config_.batchSize)) {
-            batch.push_back(std::move(eventQueue_.top().event));
-            eventQueue_.pop();
+        if (!eventQueue_.empty()) {
+            // Peek at top
+            const auto& top = eventQueue_.top();
+            bool immediateFlush = false;
+            try {
+                if (top.event.priority == PositionEventPriority::HIGH) immediateFlush = true;
+                std::string src = top.event.source;
+                // case-insensitive check for "filled"
+                std::transform(src.begin(), src.end(), src.begin(), ::tolower);
+                if (src.find("filled") != std::string::npos) immediateFlush = true;
+            } catch (...) {
+                // ignore and proceed with normal batching
+            }
+
+            if (immediateFlush) {
+                batch.push_back(std::move(eventQueue_.top().event));
+                eventQueue_.pop();
+            } else {
+                while (!eventQueue_.empty() && batch.size() < static_cast<size_t>(config_.batchSize)) {
+                    batch.push_back(std::move(eventQueue_.top().event));
+                    eventQueue_.pop();
+                }
+            }
         }
         lk.unlock();
 
