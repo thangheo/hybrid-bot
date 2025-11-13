@@ -27,8 +27,10 @@ struct BalanceValidatorConfig {
     std::map<std::string, double> exchangeTradingFees; // exchange-specific fees
     double balanceBufferPercent = 0.01; // 1% safety buffer
     double safetyMarginPercent = 0.001; // additional safety margin (default 0.1%)
-    std::chrono::milliseconds balanceCacheExpiry{30000}; // 30 seconds
+    std::chrono::milliseconds balanceCacheExpiry{100}; // 100 milliseconds
     bool enableRealTimeValidation = true;
+        // If true, orders marked with extra param is_exit_signal=true will skip balance validation
+        bool skipBalanceForExits = false;
     double minNotionalValue = 10.0;
 };
 
@@ -139,6 +141,8 @@ public:
     void setDataInterface(std::shared_ptr<trading::risk::DataInterface> dataInterface) {
         dataInterface_ = dataInterface;
     }
+
+    bool skipBalanceForExits() const { return config_.skipBalanceForExits; }
     
     // Balance caching
     mutable std::mutex balanceCacheMutex_;
