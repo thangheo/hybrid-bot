@@ -13,7 +13,12 @@
  #include <string>
  
  using namespace trading::execution;
- 
+ using namespace testing;
+ using namespace trading::execution::models;
+ using namespace trading::core;
+//  using namespace trading::core::models;
+using namespace trading;
+
  class OrderStateIntegrationTest : public ::testing::Test {
  protected:
      void SetUp() override {
@@ -92,7 +97,7 @@
  // Test the complete order lifecycle with fill reconciliation
  TEST_F(OrderStateIntegrationTest, CompleteOrderLifecycle) {
      // 1. Create an order
-     Order order = createTestOrder("client-123", "BTC-USDT", OrderSide::BUY, 0.1, 50000.0);
+     Order order = createTestOrder("client-123", core::Symbol("BTC-USDT"), OrderSide::BUY, 0.1, 50000.0);
      
      // 2. Add to lifecycle tracker
      lifecycle_tracker->addOrder(order);
@@ -143,7 +148,7 @@
  // Test partial fills and reconciliation
  TEST_F(OrderStateIntegrationTest, PartialFillsAndReconciliation) {
      // Create an order for 0.3 BTC
-     Order order = createTestOrder("client-123", "BTC-USDT", OrderSide::BUY, 0.3, 50000.0);
+     Order order = createTestOrder("client-123", core::Symbol("BTC-USDT"), OrderSide::BUY, 0.3, 50000.0);
      lifecycle_tracker->addOrder(order);
      lifecycle_tracker->updateOrderState("client-123", OrderState::OPEN, "exchange-456");
      
@@ -213,7 +218,7 @@
  // Test handling of out-of-order fills
  TEST_F(OrderStateIntegrationTest, OutOfOrderFills) {
      // Create an order for 0.3 BTC
-     Order order = createTestOrder("client-123", "BTC-USDT", OrderSide::BUY, 0.3, 50000.0);
+     Order order = createTestOrder("client-123", core::Symbol("BTC-USDT"), OrderSide::BUY, 0.3, 50000.0);
      lifecycle_tracker->addOrder(order);
      lifecycle_tracker->updateOrderState("client-123", OrderState::OPEN, "exchange-456");
      
@@ -263,7 +268,7 @@
  // Test discrepancy handling
  TEST_F(OrderStateIntegrationTest, DiscrepancyHandling) {
      // Create an order
-     Order order = createTestOrder("client-123", "BTC-USDT", OrderSide::BUY, 0.1, 50000.0);
+     Order order = createTestOrder("client-123", core::Symbol("BTC-USDT"), OrderSide::BUY, 0.1, 50000.0);
      lifecycle_tracker->addOrder(order);
      lifecycle_tracker->updateOrderState("client-123", OrderState::OPEN, "exchange-456");
      
@@ -297,7 +302,7 @@
  // Test cancelled order
  TEST_F(OrderStateIntegrationTest, CancelledOrder) {
      // Create an order
-     Order order = createTestOrder("client-123", "BTC-USDT", OrderSide::BUY, 0.1, 50000.0);
+     Order order = createTestOrder("client-123", core::Symbol("BTC-USDT"), OrderSide::BUY, 0.1, 50000.0);
      lifecycle_tracker->addOrder(order);
      lifecycle_tracker->updateOrderState("client-123", OrderState::OPEN, "exchange-456");
      
@@ -326,7 +331,7 @@
  // Test rejected order
  TEST_F(OrderStateIntegrationTest, RejectedOrder) {
      // Create an order
-     Order order = createTestOrder("client-123", "BTC-USDT", OrderSide::BUY, 0.1, 50000.0);
+     Order order = createTestOrder("client-123", core::Symbol("BTC-USDT"), OrderSide::BUY, 0.1, 50000.0);
      lifecycle_tracker->addOrder(order);
      
      // Update to PENDING
@@ -353,7 +358,7 @@
      // Create several orders
      for (int i = 1; i <= 5; i++) {
          std::string client_id = "client-" + std::to_string(i);
-         Order order = createTestOrder(client_id, "BTC-USDT", OrderSide::BUY, 0.1, 50000.0);
+         Order order = createTestOrder(client_id, core::Symbol("BTC-USDT"), OrderSide::BUY, 0.1, 50000.0);
          lifecycle_tracker->addOrder(order);
          
          // Set different states

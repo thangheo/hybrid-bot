@@ -32,7 +32,7 @@ TEST_F(RequestPrioritizerTest, ProcessesSingleRequest) {
     // Submit a request
     prioritizer.submitRequest(
         RequestPriority::Normal,
-        ExchangeRequestType::ORDER_PLACEMENT,
+        ExchangeRequestType::PlaceOrder,
         [&promise]() {
             promise.set_value(true);
             return 42;
@@ -59,7 +59,7 @@ TEST_F(RequestPrioritizerTest, ProcessesMultipleRequests) {
     for (int i = 0; i < requestCount; ++i) {
         futures.push_back(prioritizer.submitRequest(
             RequestPriority::Normal,
-            ExchangeRequestType::ORDER_PLACEMENT,
+            ExchangeRequestType::PlaceOrder,
             [&counter, i]() {
                 counter++;
                 return i;
@@ -103,31 +103,31 @@ TEST_F(RequestPrioritizerTest, RespectsPriorities) {
     // Submit requests with different priorities
     futures.push_back(prioritizer.submitRequest(
         RequestPriority::Normal,
-        ExchangeRequestType::ORDER_PLACEMENT,
+        ExchangeRequestType::PlaceOrder,
         recordExecution, 1
     ));
     
     futures.push_back(prioritizer.submitRequest(
         RequestPriority::Low,
-        ExchangeRequestType::ORDER_STATUS,
+        ExchangeRequestType::GetOrderStatus,
         recordExecution, 2
     ));
     
     futures.push_back(prioritizer.submitRequest(
         RequestPriority::High,
-        ExchangeRequestType::ORDER_CANCELLATION,
+        ExchangeRequestType::CancelOrder,
         recordExecution, 3
     ));
     
     futures.push_back(prioritizer.submitRequest(
         RequestPriority::Critical,
-        ExchangeRequestType::ORDER_CANCELLATION,
+        ExchangeRequestType::CancelOrder,
         recordExecution, 4
     ));
     
     futures.push_back(prioritizer.submitRequest(
         RequestPriority::Normal,
-        ExchangeRequestType::ACCOUNT_BALANCE,
+        ExchangeRequestType::GetAccountBalance,
         recordExecution, 5
     ));
     
@@ -163,7 +163,7 @@ TEST_F(RequestPrioritizerTest, StopAndStart) {
     for (int i = 0; i < 10; ++i) {
         futures.push_back(prioritizer.submitRequest(
             RequestPriority::Normal,
-            ExchangeRequestType::ORDER_PLACEMENT,
+            ExchangeRequestType::PlaceOrder,
             [&counter, i]() {
                 counter++;
                 return i;
@@ -184,7 +184,7 @@ TEST_F(RequestPrioritizerTest, StopAndStart) {
     for (int i = 0; i < 5; ++i) {
         futuresAfterStop.push_back(prioritizer.submitRequest(
             RequestPriority::Normal,
-            ExchangeRequestType::ORDER_PLACEMENT,
+            ExchangeRequestType::PlaceOrder,
             [&counter, i]() {
                 counter++;
                 return i + 100;
@@ -215,7 +215,7 @@ TEST_F(RequestPrioritizerTest, HandlesExceptions) {
     // Submit a request that throws an exception
     auto future1 = prioritizer.submitRequest(
         RequestPriority::Normal,
-        ExchangeRequestType::ORDER_PLACEMENT,
+        ExchangeRequestType::PlaceOrder,
         []() -> int {
             throw std::runtime_error("Test exception");
         }
@@ -224,7 +224,7 @@ TEST_F(RequestPrioritizerTest, HandlesExceptions) {
     // Submit another normal request
     auto future2 = prioritizer.submitRequest(
         RequestPriority::Normal,
-        ExchangeRequestType::ORDER_PLACEMENT,
+        ExchangeRequestType::PlaceOrder,
         [&counter]() {
             counter++;
             return 42;
@@ -245,7 +245,7 @@ TEST_F(RequestPrioritizerTest, QueueSizeTracking) {
     for (int i = 0; i < 5; ++i) {
         prioritizer.submitRequest(
             RequestPriority::Critical,
-            ExchangeRequestType::ORDER_CANCELLATION,
+            ExchangeRequestType::CancelOrder,
             []() {}
         );
     }
@@ -253,7 +253,7 @@ TEST_F(RequestPrioritizerTest, QueueSizeTracking) {
     for (int i = 0; i < 3; ++i) {
         prioritizer.submitRequest(
             RequestPriority::High,
-            ExchangeRequestType::ORDER_CANCELLATION,
+            ExchangeRequestType::CancelOrder,
             []() {}
         );
     }
@@ -261,7 +261,7 @@ TEST_F(RequestPrioritizerTest, QueueSizeTracking) {
     for (int i = 0; i < 10; ++i) {
         prioritizer.submitRequest(
             RequestPriority::Normal,
-            ExchangeRequestType::ORDER_PLACEMENT,
+            ExchangeRequestType::PlaceOrder,
             []() {}
         );
     }
@@ -269,7 +269,7 @@ TEST_F(RequestPrioritizerTest, QueueSizeTracking) {
     for (int i = 0; i < 2; ++i) {
         prioritizer.submitRequest(
             RequestPriority::Low,
-            ExchangeRequestType::ORDER_STATUS,
+            ExchangeRequestType::GetOrderStatus,
             []() {}
         );
     }

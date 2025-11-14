@@ -6,8 +6,13 @@
 #include <chrono>
 #include <thread>
 
+using namespace trading;
 using namespace trading::execution;
-
+using namespace trading::execution::models;
+using namespace trading::core;
+// std::string getExchangeNameMock() {
+//     return "MockExchange";
+// }
 // Mock implementation of ExchangeApiClient for testing
 class MockExchangeApiClient : public ExchangeApiClient {
 public:
@@ -27,7 +32,7 @@ public:
             
             models::ExecutionReport report(order.getOrderId());
             report.setClientOrderId(order.getClientOrderId());
-            report.setExchangeId(getExchangeName());
+            report.setExchangeId(core::ExchangeId::fromString(getExchangeName()));
             report.setExchangeOrderId("mock-exchange-" + order.getOrderId());
             report.setSymbol(order.getTradingPair());
             report.setSide(order.getSide());
@@ -63,7 +68,7 @@ public:
             cancelOrderCalled_++;
             
             models::ExecutionReport report(orderId);
-            report.setExchangeId(getExchangeName());
+            report.setExchangeId(core::ExchangeId::fromString(getExchangeName()));
             report.setSymbol(symbol);
             report.setStatus(models::OrderState::CANCELED);
             
@@ -83,7 +88,7 @@ public:
             getOrderStatusCalled_++;
             
             models::ExecutionReport report(orderId);
-            report.setExchangeId(getExchangeName());
+            report.setExchangeId(core::ExchangeId::fromString(getExchangeName()));
             report.setSymbol(symbol);
             
             // Return a mock status
@@ -130,9 +135,9 @@ public:
             getCurrentPriceCalled_++;
             
             // Return mock prices based on symbol
-            if (symbol == "BTC/USDT") {
+            if (symbol == core::Symbol("BTC/USDT")) {
                 return 45000.0;
-            } else if (symbol == "ETH/USDT") {
+            } else if (symbol == core::Symbol("ETH/USDT")) {
                 return 3000.0;
             } else {
                 return 100.0;  // Default for unknown symbols
@@ -157,7 +162,7 @@ public:
     
     // Exchange information
     std::string getExchangeName() const override {
-        return "MockExchange";
+        return "BINANCE";
     }
     
     std::vector<std::string> getSupportedSymbols() const override {
@@ -239,7 +244,7 @@ TEST_F(ExchangeApiClientTest, ConnectionManagement) {
 
 // Test place order
 TEST_F(ExchangeApiClientTest, PlaceOrder) {
-    auto order = models::Order::createMarketOrder("BTC/USDT", OrderSide::BUY, 1.0);
+    auto order = models::Order::createMarketOrder(core::Symbol("BTC/USDT"), OrderSide::BUY, 1.0);
     order->setOrderId("test-order-id");
     
     auto futureReport = client->placeOrder(*order);
@@ -255,8 +260,8 @@ TEST_F(ExchangeApiClientTest, PlaceOrder) {
 // Test place order with rejection
 TEST_F(ExchangeApiClientTest, PlaceOrderRejection) {
     client->setRejectNextOrder(true);
-    
-    auto order = models::Order::createLimitOrder("ETH/USDT", OrderSide::SELL, 2.0, 3000.0);
+
+    auto order = models::Order::createLimitOrder(core::Symbol("ETH/USDT"), OrderSide::SELL, 2.0, 3000.0);
     order->setOrderId("test-order-id-2");
     
     auto futureReport = client->placeOrder(*order);
@@ -270,7 +275,7 @@ TEST_F(ExchangeApiClientTest, PlaceOrderRejection) {
 
 // Test cancel order
 TEST_F(ExchangeApiClientTest, CancelOrder) {
-    auto futureReport = client->cancelOrder("test-order-id", "BTC/USDT");
+    auto futureReport = client->cancelOrder("test-order-id", core::Symbol("BTC/USDT"));
     auto report = futureReport.get();
     
     EXPECT_EQ(client->getCancelOrderCallCount(), 1);
@@ -280,7 +285,7 @@ TEST_F(ExchangeApiClientTest, CancelOrder) {
 
 // Test get order status
 TEST_F(ExchangeApiClientTest, GetOrderStatus) {
-    auto futureReport = client->getOrderStatus("test-order-id", "BTC/USDT");
+    auto futureReport = client->getOrderStatus("test-order-id", core::Symbol("BTC/USDT"));
     auto report = futureReport.get();
     
     EXPECT_EQ(client->getGetOrderStatusCallCount(), 1);
@@ -303,13 +308,13 @@ TEST_F(ExchangeApiClientTest, GetAccountBalances) {
 
 // Test get current price
 TEST_F(ExchangeApiClientTest, GetCurrentPrice) {
-    auto futurePrice = client->getCurrentPrice("BTC/USDT");
+    auto futurePrice = client->getCurrentPrice(core::Symbol("BTC/USDT"));
     auto price = futurePrice.get();
     
     EXPECT_EQ(client->getGetCurrentPriceCallCount(), 1);
     EXPECT_EQ(price, 45000.0);
-    
-    auto futurePrice2 = client->getCurrentPrice("ETH/USDT");
+
+    auto futurePrice2 = client->getCurrentPrice(core::Symbol("ETH/USDT"));
     auto price2 = futurePrice2.get();
     
     EXPECT_EQ(client->getGetCurrentPriceCallCount(), 2);
@@ -320,8 +325,8 @@ TEST_F(ExchangeApiClientTest, GetCurrentPrice) {
 TEST_F(ExchangeApiClientTest, ExceptionWhenNotConnected) {
     client->disconnect();
     EXPECT_FALSE(client->isConnected());
-    
-    auto order = models::Order::createMarketOrder("BTC/USDT", OrderSide::BUY, 1.0);
+
+    auto order = models::Order::createMarketOrder(core::Symbol("BTC/USDT"), OrderSide::BUY, 1.0);
     auto futureReport = client->placeOrder(*order);
     
     EXPECT_THROW(futureReport.get(), std::runtime_error);
@@ -330,15 +335,15 @@ TEST_F(ExchangeApiClientTest, ExceptionWhenNotConnected) {
 // Test concurrent operations
 TEST_F(ExchangeApiClientTest, ConcurrentOperations) {
     // Create multiple futures for different operations
-    auto order = models::Order::createMarketOrder("BTC/USDT", OrderSide::BUY, 1.0);
+    auto order = models::Order::createMarketOrder(core::Symbol("BTC/USDT"), OrderSide::BUY, 1.0);
     order->setOrderId("test-order-id-concurrent");
     
     auto futurePlaceOrder = client->placeOrder(*order);
-    auto futureCancelOrder = client->cancelOrder("test-order-id-old", "BTC/USDT");
-    auto futureGetStatus = client->getOrderStatus("test-order-id-status", "ETH/USDT");
+    auto futureCancelOrder = client->cancelOrder("test-order-id-old", core::Symbol("BTC/USDT"));
+    auto futureGetStatus = client->getOrderStatus("test-order-id-status", core::Symbol("ETH/USDT"));
     auto futureGetBalances = client->getAccountBalances();
-    auto futureGetPrice = client->getCurrentPrice("LTC/USDT");
-    
+    auto futureGetPrice = client->getCurrentPrice(core::Symbol("LTC/USDT"));
+
     // Get all results
     auto placeOrderResult = futurePlaceOrder.get();
     auto cancelOrderResult = futureCancelOrder.get();
@@ -388,8 +393,8 @@ TEST(ExchangeApiClientUtilTest, UtilityFunctions) {
     // Since these are not part of the public interface, we need to test them indirectly
     // or expose them for testing. This would typically be done in a real test suite.
     // For this example, we'll just test the basic functionality through the mock implementation.
-    
-    auto order = models::Order::createLimitOrder("BTC/USDT", OrderSide::BUY, 1.0, 45000.0);
+
+    auto order = models::Order::createLimitOrder(core::Symbol("BTC/USDT"), OrderSide::BUY, 1.0, 45000.0);
     order->setOrderId("test-util");
     
     auto client = std::make_shared<MockExchangeApiClient>();

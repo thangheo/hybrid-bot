@@ -9,16 +9,23 @@
  #include <gmock/gmock.h>
  #include "execution/execution_service.hpp"
  #include "execution/execution_types.hpp"
+
  // Include mock headers for dependencies
- #include "mocks/mock_order_generator.hpp"
- #include "mocks/mock_smart_order_router.hpp"
- #include "mocks/mock_order_type_selector.hpp"
- #include "mocks/mock_execution_algorithm_factory.hpp"
- #include "mocks/mock_order_lifecycle_tracker.hpp"
- #include "mocks/mock_fill_reconciliation.hpp"
- #include "mocks/mock_api_client_manager.hpp"
- #include "mocks/mock_exchange_api_client.hpp"
+//  #include "../mocks/mock_order_generator.hpp"
+//  #include "../mocks/mock_smart_order_router.hpp"
+//  #include "../mocks/mock_order_type_selector.hpp"
+//  #include "../mocks/mock_execution_algorithm_factory.hpp"
+//  #include "../mocks/mock_order_lifecycle_tracker.hpp"
+//  #include "../mocks/mock_fill_reconciliation.hpp"
+//  #include "../mocks/mock_api_client_manager.hpp"
+//  #include "../mocks/mock_exchange_api_client.hpp"
  
+
+using namespace trading::execution;
+using namespace trading::execution::models;
+using namespace trading::core;
+using namespace trading;
+
  using namespace trading::execution;
  using ::testing::_;
  using ::testing::Return;

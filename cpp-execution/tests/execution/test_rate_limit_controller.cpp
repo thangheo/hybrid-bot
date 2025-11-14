@@ -6,22 +6,30 @@
 #include <atomic>
 #include <future>
 
+
+using namespace trading::execution;
+
+using namespace trading::execution;
+using namespace trading::execution::models;
+using namespace trading::core;
+using namespace trading;
+
 namespace trading {
 namespace execution {
 namespace test {
 
 class RateLimitControllerTest : public ::testing::Test {
 protected:
-    const std::string exchangeId = "binance";
+    const core::ExchangeId exchangeId = core::ExchangeId::fromString("binance");
     RateLimitController controller{exchangeId};
     
     void SetUp() override {
         // Define some default rate limit rules
         std::unordered_map<ExchangeRequestType, RateLimitRule> rules = {
-            {ExchangeRequestType::ORDER_PLACEMENT, {10, std::chrono::milliseconds(1000)}},
-            {ExchangeRequestType::ORDER_CANCELLATION, {20, std::chrono::milliseconds(1000)}},
-            {ExchangeRequestType::ORDER_STATUS, {50, std::chrono::milliseconds(1000)}},
-            {ExchangeRequestType::ACCOUNT_BALANCE, {5, std::chrono::milliseconds(1000)}}
+            {ExchangeRequestType::PlaceOrder, {10, std::chrono::milliseconds(1000)}},
+            {ExchangeRequestType::CancelOrder, {20, std::chrono::milliseconds(1000)}},
+            {ExchangeRequestType::GetOrderStatus, {50, std::chrono::milliseconds(1000)}},
+            {ExchangeRequestType::GetAccountBalance, {5, std::chrono::milliseconds(1000)}}
         };
         
         controller.setRateLimitRules(rules);
@@ -29,44 +37,44 @@ protected:
 };
 
 TEST_F(RateLimitControllerTest, InitiallyNotRateLimited) {
-    EXPECT_FALSE(controller.wouldBeRateLimited(ExchangeRequestType::ORDER_PLACEMENT));
-    EXPECT_FALSE(controller.wouldBeRateLimited(ExchangeRequestType::ORDER_CANCELLATION));
-    EXPECT_FALSE(controller.wouldBeRateLimited(ExchangeRequestType::ORDER_STATUS));
-    EXPECT_FALSE(controller.wouldBeRateLimited(ExchangeRequestType::ACCOUNT_BALANCE));
+    EXPECT_FALSE(controller.wouldBeRateLimited(ExchangeRequestType::PlaceOrder));
+    EXPECT_FALSE(controller.wouldBeRateLimited(ExchangeRequestType::CancelOrder));
+    EXPECT_FALSE(controller.wouldBeRateLimited(ExchangeRequestType::GetOrderStatus));
+    EXPECT_FALSE(controller.wouldBeRateLimited(ExchangeRequestType::GetAccountBalance));
 }
 
 TEST_F(RateLimitControllerTest, UpdateRateLimitStatus) {
     // Update status to indicate we're running out of requests
     controller.updateRateLimitStatus(
-        ExchangeRequestType::ORDER_PLACEMENT,
+        ExchangeRequestType::PlaceOrder,
         1, // Only 1 request remaining
         std::chrono::milliseconds(500) // Reset in 500ms
     );
     
     // Status should show the update
-    auto status = controller.getRateLimitStatus(ExchangeRequestType::ORDER_PLACEMENT);
+    auto status = controller.getRateLimitStatus(ExchangeRequestType::PlaceOrder);
     EXPECT_EQ(status.remainingRequests, 1);
     EXPECT_EQ(status.resetTime, std::chrono::milliseconds(500));
     EXPECT_FALSE(status.isLimited);
     
     // Update status to indicate we're rate limited
     controller.updateRateLimitStatus(
-        ExchangeRequestType::ORDER_PLACEMENT,
+        ExchangeRequestType::PlaceOrder,
         0, // No requests remaining
         std::chrono::milliseconds(1000) // Reset in 1000ms
     );
     
     // Status should show we're rate limited
-    status = controller.getRateLimitStatus(ExchangeRequestType::ORDER_PLACEMENT);
+    status = controller.getRateLimitStatus(ExchangeRequestType::PlaceOrder);
     EXPECT_EQ(status.remainingRequests, 0);
     EXPECT_EQ(status.resetTime, std::chrono::milliseconds(1000));
     EXPECT_TRUE(status.isLimited);
     
     // We should be rate limited for order placement
-    EXPECT_TRUE(controller.wouldBeRateLimited(ExchangeRequestType::ORDER_PLACEMENT));
+    EXPECT_TRUE(controller.wouldBeRateLimited(ExchangeRequestType::PlaceOrder));
     
     // But not for other types
-    EXPECT_FALSE(controller.wouldBeRateLimited(ExchangeRequestType::ORDER_CANCELLATION));
+    EXPECT_FALSE(controller.wouldBeRateLimited(ExchangeRequestType::CancelOrder));
 }
 
 TEST_F(RateLimitControllerTest, ExecuteRequestWithRateLimit) {
@@ -85,7 +93,7 @@ TEST_F(RateLimitControllerTest, ExecuteRequestWithRateLimit) {
     
     for (int i = 0; i < requestCount; ++i) {
         futures.push_back(controller.executeRequest(
-            ExchangeRequestType::ORDER_PLACEMENT,
+            ExchangeRequestType::PlaceOrder,
             testFunc
         ));
     }
@@ -95,7 +103,7 @@ TEST_F(RateLimitControllerTest, ExecuteRequestWithRateLimit) {
     
     // Update rate limit to indicate we're limited
     controller.updateRateLimitStatus(
-        ExchangeRequestType::ORDER_PLACEMENT,
+        ExchangeRequestType::PlaceOrder,
         0, // No requests remaining
         std::chrono::milliseconds(500) // Reset in 500ms
     );
@@ -103,7 +111,7 @@ TEST_F(RateLimitControllerTest, ExecuteRequestWithRateLimit) {
     // Add a few more requests
     for (int i = 0; i < 5; ++i) {
         futures.push_back(controller.executeRequest(
-            ExchangeRequestType::ORDER_PLACEMENT,
+            ExchangeRequestType::PlaceOrder,
             testFunc
         ));
     }
@@ -113,7 +121,7 @@ TEST_F(RateLimitControllerTest, ExecuteRequestWithRateLimit) {
     
     // Update rate limit to indicate reset
     controller.updateRateLimitStatus(
-        ExchangeRequestType::ORDER_PLACEMENT,
+        ExchangeRequestType::PlaceOrder,
         10, // Requests available again
         std::chrono::milliseconds(1000) // Next reset in 1000ms
     );
@@ -146,36 +154,36 @@ TEST_F(RateLimitControllerTest, DifferentRequestTypes) {
     
     // Execute requests of different types
     auto future1 = controller.executeRequest(
-        ExchangeRequestType::ORDER_PLACEMENT,
+        ExchangeRequestType::PlaceOrder,
         testFunc
     );
     
     auto future2 = controller.executeRequest(
-        ExchangeRequestType::ORDER_CANCELLATION,
+        ExchangeRequestType::CancelOrder,
         testFunc
     );
     
     auto future3 = controller.executeRequest(
-        ExchangeRequestType::ACCOUNT_BALANCE,
+        ExchangeRequestType::GetAccountBalance,
         testFunc
     );
     
-    // Rate limit only ORDER_PLACEMENT
+    // Rate limit only PlaceOrder
     controller.updateRateLimitStatus(
-        ExchangeRequestType::ORDER_PLACEMENT,
+        ExchangeRequestType::PlaceOrder,
         0, // No requests remaining
         std::chrono::milliseconds(500) // Reset in 500ms
     );
     
-    // Another ORDER_PLACEMENT request should be limited
+    // Another PlaceOrder request should be limited
     auto future4 = controller.executeRequest(
-        ExchangeRequestType::ORDER_PLACEMENT,
+        ExchangeRequestType::PlaceOrder,
         testFunc
     );
     
-    // But ORDER_CANCELLATION should still work
+    // But CancelOrder should still work
     auto future5 = controller.executeRequest(
-        ExchangeRequestType::ORDER_CANCELLATION,
+        ExchangeRequestType::CancelOrder,
         testFunc
     );
     
@@ -184,7 +192,7 @@ TEST_F(RateLimitControllerTest, DifferentRequestTypes) {
     
     // Reset the rate limit
     controller.updateRateLimitStatus(
-        ExchangeRequestType::ORDER_PLACEMENT,
+        ExchangeRequestType::PlaceOrder,
         10, // Requests available again
         std::chrono::milliseconds(1000) // Next reset in 1000ms
     );

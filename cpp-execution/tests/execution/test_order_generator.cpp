@@ -1,14 +1,18 @@
 #include "execution/order_generator.hpp"
+#include "core/trading_signal.hpp"
 #include <gtest/gtest.h>
 #include <memory>
 #include <string>
 
 using namespace trading::execution;
+using namespace trading::execution::models;
+using namespace trading::core;
+using namespace trading;
 
 // Mock TradingSignal for testing
-class TradingSignal {
+class MockTradingSignal {
 public:
-    TradingSignal(const std::string& pair, const std::string& dir, 
+    MockTradingSignal(const std::string& pair, const std::string& dir, 
                  double size, const std::string& strat, const std::string& sigId)
         : pair_(pair), dir_(dir), size_(size), strategyId_(strat), signalId_(sigId) {}
     
@@ -34,14 +38,14 @@ protected:
 // Test creating a basic order
 TEST_F(OrderGeneratorTest, CreateBasicOrder) {
     OrderGenerationParams params;
-    params.trading_pair = "BTC/USDT";
+    params.tradingPair = core::Symbol::fromString("BTC/USDT");
     params.side = OrderSide::BUY;
     params.quantity = 1.0;
-    params.strategy_id = "test_strategy";
+    params.strategy_id = core::StrategyId("test_strategy");
     
     OrderPtr order = generator.createOrder(params);
-    
-    EXPECT_EQ("BTC/USDT", order->getTradingPair());
+
+    EXPECT_EQ(core::Symbol::fromString("BTC/USDT"), order->getTradingPair());
     EXPECT_EQ(OrderSide::BUY, order->getSide());
     EXPECT_EQ(1.0, order->getQuantity());
     EXPECT_EQ("test_strategy", order->getStrategyId());
@@ -51,16 +55,16 @@ TEST_F(OrderGeneratorTest, CreateBasicOrder) {
 // Test creating a limit order
 TEST_F(OrderGeneratorTest, CreateLimitOrder) {
     OrderGenerationParams params;
-    params.trading_pair = "ETH/USDT";
+    params.tradingPair = core::Symbol::fromString("ETH/USDT");
     params.side = OrderSide::SELL;
     params.type = OrderType::LIMIT;
     params.quantity = 2.0;
     params.price = 3000.0;
-    params.strategy_id = "limit_strategy";
+    params.strategy_id = core::StrategyId("limit_strategy");
     
     OrderPtr order = generator.createOrder(params);
-    
-    EXPECT_EQ("ETH/USDT", order->getTradingPair());
+
+    EXPECT_EQ(core::Symbol::fromString("ETH/USDT"), order->getTradingPair());
     EXPECT_EQ(OrderSide::SELL, order->getSide());
     EXPECT_EQ(OrderType::LIMIT, order->getType());
     EXPECT_EQ(2.0, order->getQuantity());
@@ -80,11 +84,42 @@ TEST_F(OrderGeneratorTest, GenerateClientOrderId) {
 
 // Test order creation from signal
 TEST_F(OrderGeneratorTest, CreateOrderFromSignal) {
-    auto signal = std::make_shared<TradingSignal>("XRP/USDT", "buy", 100.0, "signal_strategy", "sig123");
-    
+
+    // TradingSignal(
+    //     const core::SignalId& sid, 
+    //     core::Direction d, 
+    //     double s, 
+    //     const core::Timestamp& gt
+    // )
+    //   TradingSignal(
+    //     const core::SignalId& sid,
+    //     const core::Symbol& sym,
+    //     const core::ExchangeId& exId,
+    //     core::Direction d,
+    //     double s = 0.0,
+    //     const core::Timestamp& gt = core::Timestamp()
+    // ) : 
+    auto signal = std::make_shared<TradingSignal>(
+        core::SignalId("sig123"),
+        core::Symbol::fromString("XRP/USDT"),
+        core::ExchangeId::fromString("binance"),
+        core::Direction::BUY,
+        100.0
+    );
+
     OrderPtr order = generator.createOrderFromSignal(signal);
-    
-    EXPECT_EQ("XRP/USDT", order->getTradingPair());
+
+    EXPECT_EQ(core::Symbol::fromString("XRP/USDT"), order->getTradingPair());
+    EXPECT_EQ(OrderSide::BUY, order->getSide());
+    //     double s = 0.0,
+    //     const core::Timestamp& gt = core::Timestamp()
+    // ) : TradingSignal(sid, d, s, gt) {
+    //     this->symbol = sym;
+    //     this->exchangeId = exId;
+    // }
+    // OrderPtr order = generator.createOrderFromSignal(signal);
+
+    EXPECT_EQ(core::Symbol::fromString("XRP/USDT"), order->getTradingPair());
     EXPECT_EQ(OrderSide::BUY, order->getSide());
     EXPECT_EQ(100.0, order->getQuantity());
     EXPECT_EQ("signal_strategy", order->getStrategyId());
@@ -101,7 +136,7 @@ TEST_F(OrderGeneratorTest, ParameterTransformer) {
     });
     
     OrderGenerationParams params;
-    params.trading_pair = "BTC/USDT";
+    params.tradingPair = core::Symbol::fromString("BTC/USDT");
     params.side = OrderSide::BUY;
     params.type = OrderType::LIMIT;
     params.quantity = 1.0;
@@ -124,7 +159,7 @@ TEST_F(OrderGeneratorTest, OrderCallback) {
     });
     
     OrderGenerationParams params;
-    params.trading_pair = "BTC/USDT";
+    params.tradingPair = core::Symbol::fromString("BTC/USDT");
     params.side = OrderSide::BUY;
     params.quantity = 1.0;
     
@@ -137,13 +172,13 @@ TEST_F(OrderGeneratorTest, OrderCallback) {
 // Test validation
 TEST_F(OrderGeneratorTest, ValidationFailure) {
     OrderGenerationParams params;
-    params.trading_pair = "";  // Empty trading pair should fail
+    params.tradingPair = core::Symbol::fromString("");  // Empty trading pair should fail
     params.side = OrderSide::BUY;
     params.quantity = 1.0;
     
     EXPECT_THROW(generator.createOrder(params), std::invalid_argument);
-    
-    params.trading_pair = "BTC/USDT";
+
+    params.tradingPair = core::Symbol::fromString("BTC/USDT");
     params.quantity = -1.0;  // Negative quantity should fail
     
     EXPECT_THROW(generator.createOrder(params), std::invalid_argument);

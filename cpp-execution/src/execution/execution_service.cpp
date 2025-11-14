@@ -629,6 +629,11 @@ ExecutionResponse ExecutionService::executeSignal(const TradingSignal& signal) {
     models::ExecutionReport result;
     try {
         result = executionReport;  // Wait for the async operation to complete
+
+        // Diagnostic: print execution report summary for debugging
+        try {
+            std::cerr << "[ExecutionService] Received ExecutionReport: " << result.toString() << std::endl;
+        } catch (...) {}
         
         // Update order state based on exchange response
         if (result.status() != models::OrderState::REJECTED) {

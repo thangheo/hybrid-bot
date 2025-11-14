@@ -436,7 +436,6 @@ void Trading_system::exitMonitorLoop() {
                         posInfo = exitStrategy_->getTradeState(symbol);
                     }
                     
-                    //this code looks duumb.//FUCK YOU STUPID DOG
                     if (!posInfo.has_value() && riskManager_) {
                         try {
                             //fallback to riskManager

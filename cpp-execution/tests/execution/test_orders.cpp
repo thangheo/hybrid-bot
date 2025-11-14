@@ -1,10 +1,15 @@
 #include <gtest/gtest.h>
-#include "models/order.hpp"
+#include "execution/models/order.hpp"
 #include <thread>
 #include <vector>
 #include <future>
 
 using namespace trading::execution;
+
+using namespace trading::execution;
+using namespace trading::execution::models;
+using namespace trading::core;
+using namespace trading;
 
 class OrderTest : public ::testing::Test {
 protected:
@@ -27,7 +32,7 @@ TEST_F(OrderTest, DefaultConstructor) {
     EXPECT_EQ(order.getQuantity(), 0.0);
     EXPECT_EQ(order.getFilledQuantity(), 0.0);
     EXPECT_TRUE(order.getOrderId().empty());
-    EXPECT_TRUE(order.getExchangeId().empty());
+    EXPECT_TRUE(order.getExchangeId().isValid() == false);
     EXPECT_TRUE(order.getExchangeOrderId().empty());
     EXPECT_EQ(order.getTimeInForce(), TimeInForce::GTC);
 }
@@ -79,14 +84,14 @@ TEST_F(OrderTest, Setters) {
     order.setOrderId("order-123");
     EXPECT_EQ(order.getOrderId(), "order-123");
     
-    order.setExchangeId("binance");
-    EXPECT_EQ(order.getExchangeId(), "binance");
-    
+    order.setExchangeId(core::ExchangeId::binance());
+    EXPECT_EQ(order.getExchangeId(), core::ExchangeId::binance());
+
     order.setExchangeOrderId("exchange-order-456");
     EXPECT_EQ(order.getExchangeOrderId(), "exchange-order-456");
     
-    order.setTradingPair("LTC/USDT");
-    EXPECT_EQ(order.getTradingPair(), "LTC/USDT");
+    order.setTradingPair(core::Symbol("LTC/USDT"));
+    EXPECT_EQ(order.getTradingPair(), core::Symbol("LTC/USDT"));
     
     order.setSide(OrderSide::SELL);
     EXPECT_EQ(order.getSide(), OrderSide::SELL);
@@ -123,7 +128,7 @@ TEST_F(OrderTest, Setters) {
 
 // Test state transitions
 TEST_F(OrderTest, StateTransitionsHappyPath) {
-    auto order = Order::createMarketOrder("BTC/USDT", OrderSide::BUY, 1.0);
+    auto order = Order::createMarketOrder(core::Symbol("BTC/USDT"), OrderSide::BUY, 1.0);
     
     // Initial state
     EXPECT_EQ(order->getState(), OrderState::CREATED);
@@ -161,7 +166,7 @@ TEST_F(OrderTest, StateTransitionsHappyPath) {
 
 // Test cancel
 TEST_F(OrderTest, CancelOrder) {
-    auto order = Order::createMarketOrder("BTC/USDT", OrderSide::BUY, 1.0);
+    auto order = Order::createMarketOrder(core::Symbol("BTC/USDT"), OrderSide::BUY, 1.0);
     order->open();
     EXPECT_EQ(order->getState(), OrderState::OPEN);
     
@@ -186,8 +191,8 @@ TEST_F(OrderTest, CancelOrder) {
 
 // Test rejection
 TEST_F(OrderTest, RejectOrder) {
-    auto order = Order::createMarketOrder("BTC/USDT", OrderSide::BUY, 1.0);
-    
+    auto order = Order::createMarketOrder(core::Symbol("BTC/USDT"), OrderSide::BUY, 1.0);
+
     // Reject the order
     std::string rejectReason = "Insufficient funds";
     EXPECT_TRUE(order->reject(rejectReason));
@@ -206,7 +211,7 @@ TEST_F(OrderTest, RejectOrder) {
 
 // Test expire
 TEST_F(OrderTest, ExpireOrder) {
-    auto order = Order::createLimitOrder("BTC/USDT", OrderSide::BUY, 1.0, 40000.0);
+    auto order = Order::createLimitOrder(core::Symbol("BTC/USDT"), OrderSide::BUY, 1.0, 40000.0);
     order->open();
     
     // Expire the order
@@ -226,7 +231,7 @@ TEST_F(OrderTest, ExpireOrder) {
 
 // Test utility methods
 TEST_F(OrderTest, UtilityMethods) {
-    auto order = Order::createLimitOrder("BTC/USDT", OrderSide::BUY, 1.0, 40000.0);
+    auto order = Order::createLimitOrder(core::Symbol("BTC/USDT"), OrderSide::BUY, 1.0, 40000.0);
     
     // Check initial state
     EXPECT_FALSE(order->isActive());
@@ -263,7 +268,7 @@ TEST_F(OrderTest, UtilityMethods) {
 
 // Test toString
 TEST_F(OrderTest, ToString) {
-    auto order = Order::createLimitOrder("BTC/USDT", OrderSide::BUY, 1.0, 40000.0);
+    auto order = Order::createLimitOrder(core::Symbol("BTC/USDT"), OrderSide::BUY, 1.0, 40000.0);
     order->setOrderId("test-order-id");
     
     std::string orderStr = order->toString();
@@ -276,7 +281,7 @@ TEST_F(OrderTest, ToString) {
 
 // Test thread safety - multiple threads updating the same order
 TEST_F(OrderTest, ThreadSafety) {
-    auto order = Order::createMarketOrder("BTC/USDT", OrderSide::BUY, 2.0);
+    auto order = Order::createMarketOrder(core::Symbol("BTC/USDT"), OrderSide::BUY, 2.0);
     order->open();
     EXPECT_EQ(order->getState(), OrderState::OPEN);
     
@@ -315,8 +320,8 @@ TEST_F(OrderTest, ThreadSafety) {
 
 // Test invalid state transitions
 TEST_F(OrderTest, InvalidStateTransitions) {
-    auto order = Order::createMarketOrder("BTC/USDT", OrderSide::BUY, 1.0);
-    
+    auto order = Order::createMarketOrder(core::Symbol("BTC/USDT"), OrderSide::BUY, 1.0);
+
     // Cannot cancel a CREATED order (should move directly to CANCELED)
     EXPECT_TRUE(order->cancel());
     EXPECT_EQ(order->getState(), OrderState::CANCELED);
@@ -326,7 +331,7 @@ TEST_F(OrderTest, InvalidStateTransitions) {
     EXPECT_EQ(order->getState(), OrderState::CANCELED);
     
     // Create a new order for further tests
-    order = Order::createMarketOrder("BTC/USDT", OrderSide::BUY, 1.0);
+    order = Order::createMarketOrder(core::Symbol("BTC/USDT"), OrderSide::BUY, 1.0);
     order->open();
     
     // Fill fully
@@ -355,7 +360,7 @@ TEST_F(OrderTest, InvalidStateTransitions) {
 
 // Test overfilling an order
 TEST_F(OrderTest, OverfillOrder) {
-    auto order = Order::createMarketOrder("BTC/USDT", OrderSide::BUY, 1.0);
+    auto order = Order::createMarketOrder(core::Symbol("BTC/USDT"), OrderSide::BUY, 1.0);
     order->open();
     
     // Fill with more than the order quantity

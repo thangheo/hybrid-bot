@@ -8,6 +8,8 @@
 using namespace trading::execution;
 using namespace trading::execution::algorithms;
 using namespace testing;
+using namespace trading::core;
+using namespace trading;
 
 // Mock Order for testing - same as in previous tests
 class MockOrder : public models::Order {
@@ -118,8 +120,8 @@ protected:
 // Basic initialization test
 TEST_F(IcebergAlgorithmTest, InitializeWithValidConfig) {
     setupBasicConfig();
-    
-    EXPECT_TRUE(algorithm_->initialize("BTC-USD", models::OrderSide::BUY, config_));
+
+    EXPECT_TRUE(algorithm_->initialize(core::Symbol("BTC-USD"), models::OrderSide::BUY, config_));
     EXPECT_FALSE(algorithm_->isRunning());
     EXPECT_FALSE(algorithm_->isComplete());
     EXPECT_EQ(algorithm_->getTotalQuantity(), 100.0);
@@ -136,8 +138,8 @@ TEST_F(IcebergAlgorithmTest, InitializeWithInvalidConfig) {
     config_.price = 50000.0;
     
     setupCompletionCallback();
-    
-    EXPECT_FALSE(algorithm_->initialize("BTC-USD", models::OrderSide::BUY, config_));
+
+    EXPECT_FALSE(algorithm_->initialize(core::Symbol("BTC-USD"), models::OrderSide::BUY, config_));
     EXPECT_TRUE(completion_callback_called_);
     EXPECT_FALSE(completion_success_);
 }
@@ -149,8 +151,8 @@ TEST_F(IcebergAlgorithmTest, InitializeWithVisibleGreaterThanTotal) {
     config_.price = 50000.0;
     
     setupCompletionCallback();
-    
-    EXPECT_FALSE(algorithm_->initialize("BTC-USD", models::OrderSide::BUY, config_));
+
+    EXPECT_FALSE(algorithm_->initialize(core::Symbol("BTC-USD"), models::OrderSide::BUY, config_));
     EXPECT_TRUE(completion_callback_called_);
     EXPECT_FALSE(completion_success_);
 }
@@ -159,15 +161,15 @@ TEST_F(IcebergAlgorithmTest, InitializeWithVisibleGreaterThanTotal) {
 TEST_F(IcebergAlgorithmTest, StartAlgorithm) {
     setupBasicConfig();
     setupOrderCallback();
-    
-    EXPECT_TRUE(algorithm_->initialize("BTC-USD", models::OrderSide::BUY, config_));
+
+    EXPECT_TRUE(algorithm_->initialize(core::Symbol("BTC-USD"), models::OrderSide::BUY, config_));
     EXPECT_TRUE(algorithm_->start());
     EXPECT_TRUE(algorithm_->isRunning());
     
     // The algorithm should create and send the first slice immediately
     EXPECT_TRUE(order_callback_called_);
     ASSERT_NE(last_order_, nullptr);
-    EXPECT_EQ(last_order_->getTradingPair(), "BTC-USD");
+    EXPECT_EQ(last_order_->getTradingPair().toString(), "BTC-USD");
     EXPECT_EQ(last_order_->getSide(), models::OrderSide::BUY);
     EXPECT_EQ(last_order_->getType(), models::OrderType::LIMIT);
     EXPECT_EQ(last_order_->getPrice(), 50000.0);
@@ -184,8 +186,8 @@ TEST_F(IcebergAlgorithmTest, DynamicVisibleQuantity) {
     config_.dynamic_visible_qty = true;
     config_.rand_factor = 0.2; // 20% randomization
     setupOrderCallback();
-    
-    EXPECT_TRUE(algorithm_->initialize("BTC-USD", models::OrderSide::BUY, config_));
+
+    EXPECT_TRUE(algorithm_->initialize(core::Symbol("BTC-USD"), models::OrderSide::BUY, config_));
     EXPECT_TRUE(algorithm_->start());
     
     // The visible quantity should be randomized within ±20% of 10.0
@@ -200,8 +202,8 @@ TEST_F(IcebergAlgorithmTest, PriceDelta) {
     setupBasicConfig();
     config_.price_delta = 100.0; // $100 adjustment per slice
     setupOrderCallback();
-    
-    EXPECT_TRUE(algorithm_->initialize("BTC-USD", models::OrderSide::BUY, config_));
+
+    EXPECT_TRUE(algorithm_->initialize(core::Symbol("BTC-USD"), models::OrderSide::BUY, config_));
     EXPECT_TRUE(algorithm_->start());
     
     // First slice should be at the base price
@@ -238,8 +240,8 @@ TEST_F(IcebergAlgorithmTest, PriceDelta) {
 TEST_F(IcebergAlgorithmTest, PauseAndResume) {
     setupBasicConfig();
     setupOrderCallback();
-    
-    EXPECT_TRUE(algorithm_->initialize("BTC-USD", models::OrderSide::BUY, config_));
+
+    EXPECT_TRUE(algorithm_->initialize(core::Symbol("BTC-USD"), models::OrderSide::BUY, config_));
     EXPECT_TRUE(algorithm_->start());
     EXPECT_TRUE(algorithm_->isRunning());
     
@@ -264,8 +266,8 @@ TEST_F(IcebergAlgorithmTest, PauseAndResume) {
 TEST_F(IcebergAlgorithmTest, Cancel) {
     setupBasicConfig();
     setupCompletionCallback();
-    
-    EXPECT_TRUE(algorithm_->initialize("BTC-USD", models::OrderSide::BUY, config_));
+
+    EXPECT_TRUE(algorithm_->initialize(core::Symbol("BTC-USD"), models::OrderSide::BUY, config_));
     EXPECT_TRUE(algorithm_->start());
     EXPECT_TRUE(algorithm_->isRunning());
     
@@ -284,8 +286,8 @@ TEST_F(IcebergAlgorithmTest, CompleteWithMultipleSlices) {
     setupBasicConfig();
     setupOrderCallback();
     setupCompletionCallback();
-    
-    EXPECT_TRUE(algorithm_->initialize("BTC-USD", models::OrderSide::BUY, config_));
+
+    EXPECT_TRUE(algorithm_->initialize(core::Symbol("BTC-USD"), models::OrderSide::BUY, config_));
     EXPECT_TRUE(algorithm_->start());
     
     // Execute until complete
