@@ -206,6 +206,8 @@ private:
     double calculateLowLiquidityIndicators(const std::vector<double>& recentMovements,
                                                            const std::vector<double>& recentVolumes,
                                                            const std::vector<double>& recentSpreads) const ;
+    bool LowLiquidityRegimeDetector(std::vector<DataPoint> snapshot);
+                                                           
     // calculateMeanAndStd
     // void calculateMeanAndStd(const std::vector<double>& data, double& mean, double& stddev) const;
     //prototype for  [movementMean, movementStd] = calculateMeanAndStd(recentMovements);
