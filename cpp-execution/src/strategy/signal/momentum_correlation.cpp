@@ -843,7 +843,7 @@ void MomentumCorrelation::updateMarketRegime() {
     else if (volatility < 0.001 && activityLevel < 0.002) {
         detectedRegime = MarketRegimeType::QUIET;
     }
-    else if(LowLiquidityRegimeDetector){
+    else if(LowLiquidityRegimeDetector(snapshot)){
         detectedRegime = MarketRegimeType::LOW_LIQUIDITY;
     }
     else{
