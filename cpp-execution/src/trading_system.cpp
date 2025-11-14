@@ -1676,8 +1676,27 @@ void Trading_system::execWorkerLoop(size_t workerId) {
                     LOG_INFO("Exit: using local tracked position for {}@{} = {}", task.symbol.toString(), task.exchangeId.toString(), availableQty);
                 } else {
                     LOG_TRACE("Exit: no local tracked position for {}@{}", task.symbol.toString(), task.exchangeId.toString());
+                    // use fallback to risk manager
+                    try {
+                        if (riskManager_) {
+                            auto pos = riskManager_->getCachedPosition(task.exchangeId, task.symbol);
+                            if (pos.has_value()) {
+                                // getCachedPosition returns std::optional<double>, not a struct,
+                                // so use value() (or *pos) to obtain the double quantity.
+                                availableQty = pos.value();
+                                LOG_INFO("Exit: using RiskManager cached position for {}@{} = {}", task.symbol.toString(), task.exchangeId.toString(), availableQty);
+                            } else {
+                                LOG_TRACE("Exit: no RiskManager cached position for {}@{}", task.symbol.toString(), task.exchangeId.toString());
+                                // MarketDataInterface does not expose an available-balance API in this build,
+                                // so we cannot query balances here; keep availableQty as-is and rely on
+                                // RiskManager / ExecutionInterface or external account service for authoritative values.
+                                LOG_TRACE("Exit: skipping MarketDataInterface balance fallback for {}@{} (API not available)", task.symbol.toString(), task.exchangeId.toString());
+                            }
+                        }
+                    } catch (const std::exception &e) {
+                        LOG_WARN("Exit: failed to get available balance for {}@{}: {}", task.symbol.toString(), task.exchangeId.toString(), e.what());
+                    }
                 }
-               
 
                 LOG_INFO("[EXIT] Detected exit for {} - trackedQty={} availableQty={}",
                          task.symbol.toString(), trackedQty, availableQty);

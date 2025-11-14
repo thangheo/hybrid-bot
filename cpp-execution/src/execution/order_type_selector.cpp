@@ -67,8 +67,10 @@ OrderTypeSelection OrderTypeSelector::defaultSelectionStrategy(
     
     // If already a market order and market conditions are favorable, keep it
     if (order->getType() == models::OrderType::MARKET) {
-        // Check if we should convert to a limit order
-        if (condition.spread > spread_threshold_ || condition.liquidityProfileScore > liquidity_threshold_) {
+        // Check if we should convert to a limit order.
+        //if BUY order prefer LIMIT order while SELL order prefer MARKET if the market is not favorable
+        if ((condition.spread > spread_threshold_ && condition.liquidityProfileScore > liquidity_threshold_ && order->getSide() == models::OrderSide::SELL) ||
+        (condition.spread > spread_threshold_ || condition.liquidityProfileScore > liquidity_threshold_ && order->getSide() == models::OrderSide::BUY)) {
             // Convert to limit order for better price
             selection.type = models::OrderType::LIMIT;
             
