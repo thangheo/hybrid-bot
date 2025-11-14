@@ -36,7 +36,7 @@ int main(int argc, char* argv[]) {
         trading::common::Logger::initialize("TradingApp", parseLogLevel(envLevel));
     } else {
         // Default logger level - set to DEBUG temporarily to debug position tracking
-        trading::common::Logger::initialize("TradingApp", trading::common::LogLevel::INFO);
+        trading::common::Logger::initialize("TradingApp", trading::common::LogLevel::DEBUG);
     }
     try {
         std::cout << "🚀 STARTING FULL TRADING SYSTEM 🚀" << std::endl;
