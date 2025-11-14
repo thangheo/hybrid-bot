@@ -160,6 +160,10 @@ private:
     std::map<std::string, uint64_t> last_update_ms_;
     std::map<std::string, double> feature_importance_;
     MarketRegimeType current_regime_ = MarketRegimeType::NORMAL;
+    // Per-regime consecutive detection counters to implement hysteresis
+    mutable std::map<MarketRegimeType, int> regime_consecutive_counts_;
+    // Required consecutive detections per regime before switching
+    std::map<MarketRegimeType, int> regime_required_counts_;
     // Lock-free snapshots published for fast read access by predictPriceMovement()
     // Updated under correlation_mutex_ via std::atomic_store/std::atomic_load helpers
     mutable std::shared_ptr<std::map<std::string, double>> coeffs_snapshot_;

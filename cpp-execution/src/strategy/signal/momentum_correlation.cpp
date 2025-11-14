@@ -35,6 +35,15 @@ MomentumCorrelation::MomentumCorrelation(size_t window_size)
     params_.top_metrics_count = 10;
     
     LOG_INFO("MomentumCorrelation initialized with window_size: {}", window_size_);
+
+    // Setup default hysteresis counts for regimes (tunable)
+    regime_required_counts_[MarketRegimeType::NORMAL] = 1;
+    regime_required_counts_[MarketRegimeType::HIGH_VOLATILITY] = 2;
+    regime_required_counts_[MarketRegimeType::TRENDING] = 3;
+    regime_required_counts_[MarketRegimeType::MEAN_REVERTING] = 3;
+    regime_required_counts_[MarketRegimeType::QUIET] = 2;
+    regime_required_counts_[MarketRegimeType::STRESS] = 4;
+    regime_required_counts_[MarketRegimeType::LOW_LIQUIDITY] = 2;
 }
 
 MomentumCorrelation::MomentumCorrelation(const MomentumCorrelationConfig& config) {
@@ -343,6 +352,15 @@ void MomentumCorrelation::calculateCorrelations() {
     catch (const std::exception& e) {
         LOG_ERROR("Exception in calculateCorrelations(): {}", e.what());
     }
+
+    // Initialize hysteresis defaults too
+    regime_required_counts_[MarketRegimeType::NORMAL] = 1;
+    regime_required_counts_[MarketRegimeType::HIGH_VOLATILITY] = 2;
+    regime_required_counts_[MarketRegimeType::TRENDING] = 3;
+    regime_required_counts_[MarketRegimeType::MEAN_REVERTING] = 3;
+    regime_required_counts_[MarketRegimeType::QUIET] = 2;
+    regime_required_counts_[MarketRegimeType::STRESS] = 4;
+    regime_required_counts_[MarketRegimeType::LOW_LIQUIDITY] = 2;
 }
 
 // void MomentumCorrelation::calculateCorrelations() {
@@ -817,38 +835,57 @@ void MomentumCorrelation::updateMarketRegime() {
     // Activity level (based on movement frequency and magnitude)
     double activityLevel = oscillation / recentMovements.size();
     
-    // Enhanced regime determination with hierarchical logic
+    // Enhanced regime determination with adaptive thresholds and hierarchical logic
     MarketRegimeType detectedRegime = MarketRegimeType::NORMAL;
-    
-    // 1. Check for market stress first (highest priority)
-    if (stressIndicator > 0.7) {
+
+    // Dynamically compute thresholds based on observed volatility and sample size
+    // Baseline volatility used for normalization (0.1% typical tick)
+    const double baselineVol = 0.001;
+    double volRatio = volatility / (baselineVol + 1e-12);
+
+    // Stress threshold: make it harder to trigger when volatility is low
+    double stressThreshold = 0.75; // base
+    // If stressIndicator is already high by design, require stronger evidence when vol is low
+    if (volatility < baselineVol) stressThreshold = 0.85;
+
+    // Trending thresholds scaled with volRatio and window length
+    double trendDirectionalThreshold = std::max(0.002, 0.003 * volRatio); // normalized
+    double trendPersistenceThreshold = 0.55; // slightly less strict
+    double momentumThreshold = 0.15; // less strict
+
+    // Range thresholds (mean-reverting) - require small net drift but high oscillation
+    double rangeDirectionalMax = std::max(0.001, 0.002 * volRatio);
+    double rangeOscillationMin = std::max(0.004, 0.008 * (baselineVol / (volatility + 1e-12)) );
+
+    // Quiet threshold scaled to volatility
+    double quietVolThreshold = std::max(0.0002, baselineVol * 0.5);
+    double quietActivityThreshold = 0.001;
+
+    // 1. Stress (highest priority)
+    if (stressIndicator > stressThreshold) {
         detectedRegime = MarketRegimeType::STRESS;
     }
-    // 2. Check for high volatility conditions
-    else if (volatility > 0.004) { // 0.4% threshold
-        if (activityLevel < 0.002) {
-            // High vol but low activity - might be gapping/sparse trading
-            detectedRegime = MarketRegimeType::HIGH_VOLATILITY;
-        } else {
-            detectedRegime = MarketRegimeType::HIGH_VOLATILITY;
-        }
-    }
-    // 3. Check for trending conditions
-    else if (directionalMovement > 0.006 && trendPersistence > 0.6 && momentum > 0.3) {
-        detectedRegime = MarketRegimeType::TRENDING;
-    }
-    // 4. Check for range-bound conditions
-    else if (directionalMovement < 0.003 && oscillation > 0.008 && trendPersistence < 0.4) {
-        detectedRegime = MarketRegimeType::MEAN_REVERTING;
-    }
-    // 5. Check for quiet/low activity conditions
-    else if (volatility < 0.001 && activityLevel < 0.002) {
-        detectedRegime = MarketRegimeType::QUIET;
-    }
-    else if(LowLiquidityRegimeDetector(snapshot)){
+    // 2. Low liquidity (check early as it affects signal quality)
+    else if (LowLiquidityRegimeDetector(snapshot)) {
         detectedRegime = MarketRegimeType::LOW_LIQUIDITY;
     }
-    else{
+    // 3. High volatility (scaled)
+    else if (volRatio > 3.0) { // volatility more than ~3x baseline
+        detectedRegime = MarketRegimeType::HIGH_VOLATILITY;
+    }
+    // 4. Trending
+    else if (directionalMovement > trendDirectionalThreshold && trendPersistence > trendPersistenceThreshold && momentum > momentumThreshold) {
+        detectedRegime = MarketRegimeType::TRENDING;
+    }
+    // 5. Mean reversion / range bound
+    else if (directionalMovement < rangeDirectionalMax && oscillation > rangeOscillationMin && trendPersistence < 0.45) {
+        detectedRegime = MarketRegimeType::MEAN_REVERTING;
+    }
+    // 6. Quiet
+    else if (volatility < quietVolThreshold && activityLevel < quietActivityThreshold) {
+        detectedRegime = MarketRegimeType::QUIET;
+    }
+    else {
         detectedRegime = MarketRegimeType::NORMAL;
     }
     
@@ -859,17 +896,35 @@ void MomentumCorrelation::updateMarketRegime() {
     {
         std::lock_guard<std::mutex> lock(correlation_mutex_);
         MarketRegimeType previous = current_regime_;
-        applyRegimeSmoothing(detectedRegime);
 
-        // Debug logging (optional)
-        if (previous != detectedRegime) {
-            LOG_DEBUG("Market regime change: {} -> {} (vol={:.4f}, dir={:.4f}, osc={:.4f}, trend={:.2f}, stress={:.2f})",
-                      marketRegimeToString(previous), marketRegimeToString(detectedRegime),
-                      volatility, directionalMovement, oscillation, trendPersistence, stressIndicator);
+        // Hysteresis using per-regime consecutive detection counters
+        // Increment the counter for detectedRegime, zero others
+        for (auto& kv : regime_consecutive_counts_) {
+            if (kv.first == detectedRegime) kv.second++;
+            else kv.second = 0;
         }
 
-        // commit
-        current_regime_ = detectedRegime;
+        // Ensure map entry exists for detectedRegime
+        if (regime_consecutive_counts_.find(detectedRegime) == regime_consecutive_counts_.end()) {
+            regime_consecutive_counts_[detectedRegime] = 1;
+        }
+
+        int required = 1;
+        auto itreq = regime_required_counts_.find(detectedRegime);
+        if (itreq != regime_required_counts_.end()) required = itreq->second;
+
+        if (regime_consecutive_counts_[detectedRegime] >= required) {
+            current_regime_ = detectedRegime;
+        } else {
+            // keep previous regime until threshold met
+            detectedRegime = current_regime_;
+        }
+
+        if (previous != current_regime_) {
+            LOG_DEBUG("Market regime change: {} -> {} (vol={:.4f}, dir={:.4f}, osc={:.4f}, trend={:.2f}, stress={:.2f})",
+                      marketRegimeToString(previous), marketRegimeToString(current_regime_),
+                      volatility, directionalMovement, oscillation, trendPersistence, stressIndicator);
+        }
     }
 }
 
@@ -1031,25 +1086,28 @@ double MomentumCorrelation::calculateMomentumAcceleration(const std::vector<doub
 // Helper method to calculate market stress indicator
 double MomentumCorrelation::calculateMarketStress(const std::vector<double>& movements, double volatility) const {
     if (movements.empty()) return 0.0;
-    
-    double stressScore = 0.0;
-    
-    // Factor 1: Extreme volatility (normalized to 0-1)
-    double volStress = std::min(1.0, volatility / 0.01); // 1% vol = max stress from volatility
-    stressScore += volStress * 0.4;
-    
-    // Factor 2: Extreme movements (count of movements > 2 standard deviations)
-    double stdDev = volatility;
+
+    // Baseline volatility to normalize against. If not configured elsewhere,
+    // assume a small baseline (0.1% = 0.001). This keeps the measure scale-free.
+    const double baselineVol = 0.001; // 0.1%
+
+    // Helper smooth function: a simple ease (smoothstep-like) to damp extremes.
+    auto smooth = [](double x) {
+        // clamp first
+        x = std::clamp(x, 0.0, 1.0);
+        // smoothstep cubic: 3x^2 - 2x^3
+        return x * x * (3.0 - 2.0 * x);
+    };
+
+    // Compute extreme movement counts and direction changes
+    double stdDev = volatility > 0.0 ? volatility : baselineVol;
     int extremeMovements = 0;
     for (double movement : movements) {
         if (std::abs(movement) > 2.0 * stdDev) {
             extremeMovements++;
         }
     }
-    double extremeStress = std::min(1.0, static_cast<double>(extremeMovements) / movements.size() * 10.0);
-    stressScore += extremeStress * 0.3;
-    
-    // Factor 3: Rapid direction changes (whipsaws)
+
     int directionChanges = 0;
     for (size_t i = 1; i < movements.size(); ++i) {
         if ((movements[i] > 0 && movements[i-1] < 0) || (movements[i] < 0 && movements[i-1] > 0)) {
@@ -1058,9 +1116,19 @@ double MomentumCorrelation::calculateMarketStress(const std::vector<double>& mov
             }
         }
     }
-    double whipsawStress = std::min(1.0, static_cast<double>(directionChanges) / movements.size() * 5.0);
-    stressScore += whipsawStress * 0.3;
-    
+
+    // New formulas from user's request
+    double volStress = std::min(1.0, volatility / (3.0 * baselineVol));
+    double extremeStress = std::min(1.0, static_cast<double>(extremeMovements) / static_cast<double>(movements.size()) * 2.0);
+    double whipsawStress = std::min(1.0, static_cast<double>(directionChanges) / static_cast<double>(movements.size()) * 1.5);
+
+    double stressScore = 0.5 * volStress
+                       + 0.25 * extremeStress
+                       + 0.25 * whipsawStress;
+
+    // Apply smoothing twice as requested
+    stressScore = smooth(smooth(stressScore));
+
     return std::clamp(stressScore, 0.0, 1.0);
 }
 
