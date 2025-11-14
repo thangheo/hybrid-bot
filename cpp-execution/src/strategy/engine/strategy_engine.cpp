@@ -114,7 +114,7 @@ using namespace trading::core;
         // subscribe to MetricsUpdatedEvents for adaptive mechanism
         metricsUpdatedSubscriptionId_ = common::EventBus::getInstance().subscribe<events::MetricsUpdatedEvent>(
             [this](const events::MetricsUpdatedEvent& event) {
-                // this->adaptiveMechanism_->processMetrics(event.metrics);
+                // this->adaptiveMechanism_->processMetrics(event.metrics); //do later
             }
         );
         // Remove signal generated event subscription to avoid circular dependencies
@@ -463,11 +463,11 @@ void StrategyEngine::processQueuedSignals() {
              static std::unordered_map<std::string, std::chrono::steady_clock::time_point> lastAllowedMetricTime;
              bool allowed = true;
              if (imbalanceDetector_->isUnderBackpressure()) {
-                 // when under pressure, allow metrics per symbol at a lower rate (e.g., 1 per 200ms)
+                 // when under pressure, allow metrics per symbol at a lower rate (e.g., 1 per 50ms)
                  auto now_tp = std::chrono::steady_clock::now();
                  auto &last = lastAllowedMetricTime[orderBook.getSymbol().toString()];
                  auto elapsed = std::chrono::duration<double, std::milli>(now_tp - last).count();
-                 if (elapsed < 200.0) {
+                 if (elapsed < 50) {
                      allowed = false; // skip this metric to reduce load
                  } else {
                      last = now_tp;
@@ -481,8 +481,8 @@ void StrategyEngine::processQueuedSignals() {
                 // can read it when buffering training samples or selecting per-regime models.
                 if (momentumCorrelator_) {
                     MarketRegimeType detected = momentumCorrelator_->detectMarketRegime();
-                    metrics.metrics["marketRegime"] = static_cast<double>(detected);
-                    LOG_TRACE("Injected marketRegime={} into metrics for {}", marketRegimeToString(detected), orderBook.getSymbol());
+                    metrics.metrics["marketRegime_momentum"] = static_cast<double>(detected);
+                    LOG_TRACE("Injected marketRegime_momentum={} into metrics for {}", marketRegimeToString(detected), orderBook.getSymbol());
                 }
 
                 imbalanceDetector_->analyzeMetrics(metrics);

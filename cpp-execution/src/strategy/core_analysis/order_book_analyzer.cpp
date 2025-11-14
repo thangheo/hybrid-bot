@@ -284,14 +284,14 @@ void OrderBookAnalyzer::processOrderBook(const data_ingestion::OrderBook& snapsh
             micro.tick_size = params_.getDouble("tickSize", 0.0);
             micro.volume_profile_skew = currentMetrics_.priceLevelImbalance;
             micro.mid_price = currentMetrics_.midPrice;
-            // auto regime = regimeDetector_.detect(micro, vol_samples, spread_samples, price_returns);
+            auto regime = regimeDetector_.detect(micro, vol_samples, spread_samples, price_returns);
             // just for debug
             // LOG_DEBUG("OrderBookAnalyzer:orderbook_regime_detector detected market regime: {}", marketRegimeToString(regime));
             //already did in momentum imbalance engine
             // Expose numeric regime in metrics for downstream components
-            // currentMetrics_.metrics["marketRegime"] = static_cast<double>(static_cast<int>(regime));
+            currentMetrics_.metrics["marketRegime"] = static_cast<double>(static_cast<int>(regime));
             // Optionally also store a small diagnostic value
-            // currentMetrics_.metrics["regime_confidence_dummy"] = 0.0;
+            currentMetrics_.metrics["regime_confidence_dummy"] = 0.0;
         } catch (const std::exception& e) {
             LOG_DEBUG("OrderBookAnalyzer: regime detection failed: {}", e.what());
         }

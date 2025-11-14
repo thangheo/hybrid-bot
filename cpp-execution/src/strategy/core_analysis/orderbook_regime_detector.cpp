@@ -58,9 +58,9 @@ MarketRegimeType OrderbookRegimeDetector::detect(
     constexpr double SPREAD_THRESHOLD = 2.0;
     constexpr double STRESS_VOL = 1.2;
     constexpr double STRESS_SPREAD = 2.0;
-    constexpr double TREND_AC = 0.25;
+    constexpr double TREND_AC = 0.2;
     constexpr double TREND_STRENGTH = 0.6;
-    constexpr double IMBALANCE = 0.3;
+    constexpr double IMBALANCE = 0.35;
     constexpr double MEANREV_AC = -0.25;
     constexpr double MEANREV_STRENGTH = 0.4;
     constexpr double QUIET_VOL = 0.5;

@@ -736,32 +736,64 @@ std::vector<PriceTarget> ImbalanceSignalGenerator::generatePriceTargets(const Im
     auto regime = getCurrentMarketRegime(imbalance);
     double regimeVolAdjustment = 1.0;
     
+    // Adjust regime scaling conservatively. Note: LOW_LIQUIDITY should not
+    // scale volatility (we will increase impact instead), and STRESS uses a
+    // moderate uplift rather than doubling volatility.
+    double lowLiquidityImpactBoost = 1.0;
     switch (regime) {
         case MarketRegimeType::HIGH_VOLATILITY:
-            regimeVolAdjustment = 1.5;
+            regimeVolAdjustment = 1.3; // was 1.5 -> moderate
             break;
         case MarketRegimeType::TRENDING:
-            regimeVolAdjustment = 1.2;
+            regimeVolAdjustment = 1.1; // was 1.2 -> slight reduction
             break;
         case MarketRegimeType::MEAN_REVERTING:
             regimeVolAdjustment = 0.8;
             break;
+        case MarketRegimeType::NORMAL:
+            regimeVolAdjustment = 1.0;
+            break;
+        case MarketRegimeType::QUIET:
+            regimeVolAdjustment = 0.9;
+            break;
+        case MarketRegimeType::LOW_LIQUIDITY:
+            // Do NOT scale volatility for low-liquidity; instead boost impact
+            regimeVolAdjustment = 1.0;
+            lowLiquidityImpactBoost = 1.20; // increase final impact by ~20%
+            break;
         case MarketRegimeType::STRESS:
-            regimeVolAdjustment = 2.0;
+            regimeVolAdjustment = 1.4; // increase modestly (was 1.3, avoid x2)
             break;
         default:
             regimeVolAdjustment = 1.0;
             break;
     }
-    
+
+    // Only scale volatility for regimes other than LOW_LIQUIDITY (we handled that above)
     volatility *= regimeVolAdjustment;
     
     // Calculate impact with enhanced methodology
-    double conservativeVolatility = std::min(volatility, 0.04); // Increased cap to 4%
-    double baseImpactPercent = conservativeVolatility * 0.25; // Increased base impact
-    double normalizedStrength = std::min(imbalance.strength, 0.9); // Higher cap
-    double strengthMultiplier = 0.6 + (std::pow(normalizedStrength, 1.2) * 0.8); // Non-linear
+    // double conservativeVolatility = std::min(volatility, 0.04); // Increased cap to 4%
+    // double baseImpactPercent = conservativeVolatility * 0.25; // Increased base impact
+    // Conservative volatility cap to avoid extreme targets (1.5% cap)
+    double conservativeVolatility = std::min(volatility, 0.015);   // cap 1.5%
+    // Base impact reduced so typical imbalance yields bps-level moves
+    double baseImpactPercent = conservativeVolatility * 0.15; // conservative scaling
+
+    // Strength multiplier tuned to produce moderate amplification for strong signals
+    double normalizedStrength = std::clamp(imbalance.strength, 0.0, 1.0);
+    double strengthMultiplier = 0.7 + std::pow(normalizedStrength, 1.1) * 0.6;
     double finalImpactPercent = baseImpactPercent * strengthMultiplier;
+
+    // For low liquidity we boost impact directly (depth-driven), not volatility
+    if (lowLiquidityImpactBoost > 1.0) {
+        finalImpactPercent *= lowLiquidityImpactBoost;
+    }
+
+    // Ensure final impact is within realistic microstructure bounds: 0.05% - 0.30%
+    const double MIN_IMPACT = 0.0005; // 0.05%
+    const double MAX_IMPACT = 0.0030; // 0.30%
+    finalImpactPercent = std::clamp(finalImpactPercent, MIN_IMPACT, MAX_IMPACT);
     
     // Enhanced type-specific adjustments
     double typeMultiplier = getImbalanceTypeScaling(imbalance.type, regime);
@@ -871,7 +903,7 @@ MarketRegimeType ImbalanceSignalGenerator::getCurrentMarketRegime(const Imbalanc
         // return regimeDetector_->getCurrentRegime();
     }
     
-    auto regime_number = imbalance.getSupportingMetric("marketRegime", static_cast<double>(MarketRegimeType::UNKNOWN));
+    auto regime_number = imbalance.getSupportingMetric("marketRegime_momentum", static_cast<double>(MarketRegimeType::UNKNOWN));
     // sanity check for regime number if it's within valid range from 0-8
     if (regime_number >= 0 && regime_number <= 8) {
         // The market regime can be injected into the ImbalanceEvent by

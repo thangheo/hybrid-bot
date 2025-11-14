@@ -40,6 +40,56 @@ static std::shared_ptr<trading::strategy::AdaptiveExitStrategy> exitStrategy_;
 static std::unordered_map<std::string, double> g_exchangeTickSize;
 static std::unordered_map<std::string, double> g_symbolTickSize;
 
+// Simple PnL statistics for exits (cumulative PnL in basis points and count)
+static std::mutex g_exitPnlMutex;
+static double g_cumulativeExitPnlBps = 0.0;
+static uint64_t g_totalExitCount = 0;
+
+// Load persisted exit PnL stats from disk (JSON). Best-effort, no exceptions thrown
+static void loadExitPnlStats(const std::string& path = "logs/exit_pnl_stats.json") {
+    try {
+        if (!std::filesystem::exists(path)) return;
+        std::ifstream ifs(path);
+        if (!ifs.is_open()) return;
+        nlohmann::json j; ifs >> j;
+        double cum = 0.0; uint64_t cnt = 0;
+        if (j.contains("cumulative_bps")) cum = j["cumulative_bps"].get<double>();
+        if (j.contains("total_count")) cnt = j["total_count"].get<uint64_t>();
+        {
+            std::lock_guard<std::mutex> lk(g_exitPnlMutex);
+            g_cumulativeExitPnlBps = cum;
+            g_totalExitCount = cnt;
+        }
+        LOG_INFO("Loaded exit PnL stats from {}: total_count={}, cumulative_bps={}", path, cnt, cum);
+    } catch (...) {
+        LOG_WARN("Failed to load exit PnL stats from {}", path);
+    }
+}
+
+// Save exit PnL stats to disk (JSON). Best-effort, no throwing.
+static void saveExitPnlStats(const std::string& path = "logs/exit_pnl_stats.json") {
+    try {
+        // Ensure directory exists
+        std::filesystem::path p(path);
+        if (p.has_parent_path()) std::filesystem::create_directories(p.parent_path());
+        nlohmann::json j;
+        {
+            std::lock_guard<std::mutex> lk(g_exitPnlMutex);
+            j["cumulative_bps"] = g_cumulativeExitPnlBps;
+            j["total_count"] = g_totalExitCount;
+        }
+        std::ofstream ofs(path, std::ofstream::trunc);
+        if (!ofs.is_open()) {
+            LOG_WARN("Could not open {} for writing exit PnL stats", path);
+            return;
+        }
+        ofs << j.dump(4);
+        LOG_INFO("Saved exit PnL stats to {}: total_count={}, cumulative_bps={}", path, j["total_count"].get<uint64_t>(), j["cumulative_bps"].get<double>());
+    } catch (...) {
+        LOG_WARN("Failed to save exit PnL stats to {}", path);
+    }
+}
+
 
 static void loadExchangeTickSizes(const std::string& path = "config/exchange_specific_params.json") {
     try {
@@ -491,11 +541,26 @@ void Trading_system::exitMonitorLoop() {
                         auto holdingDurationMs = std::chrono::duration_cast<std::chrono::milliseconds>(
                             now - posInfo->entry_time).count();
                         double holdingSeconds = static_cast<double>(holdingDurationMs) / 1000.0;
-                        LOG_INFO("EXIT TRIGGERED: {} - {} ({:.4f}bps) after {:.3f}s holding",
-                                symbol,
-                                AdaptiveExitStrategy::exitReasonToString(exitDecision.reason),
-                                exitDecision.expected_pnl,
-                                holdingSeconds);
+            // Update simple PnL statistics (thread-safe)
+            double cumulative_bps = 0.0;
+            uint64_t total_exits = 0;
+            {
+                std::lock_guard<std::mutex> lk(g_exitPnlMutex);
+                g_cumulativeExitPnlBps += exitDecision.expected_pnl;
+                ++g_totalExitCount;
+                cumulative_bps = g_cumulativeExitPnlBps;
+                total_exits = g_totalExitCount;
+            }
+            double avg_bps = (total_exits > 0) ? (cumulative_bps / static_cast<double>(total_exits)) : 0.0;
+
+            LOG_INFO("EXIT TRIGGERED: {} - {} ({:.4f}bps) after {:.3f}s holding - exit_count={} cum_pnl={:.4f}bps avg_pnl={:.4f}bps",
+                symbol,
+                AdaptiveExitStrategy::exitReasonToString(exitDecision.reason),
+                exitDecision.expected_pnl,
+                holdingSeconds,
+                total_exits,
+                cumulative_bps,
+                avg_bps);
 
                         // Create exit signal
                         execution::TradingSignal exitSignal;
@@ -654,6 +719,8 @@ bool Trading_system::initialize() {
     
     // 🚨 EMERGENCY: Load current PnL state to block losing symbols
     loadEmergencyState();
+    // Load persisted exit PnL stats so cumulative metrics survive restarts
+    loadExitPnlStats("logs/exit_pnl_stats.json");
     // Load exchange-specific tick sizes early so downstream components can use them
     loadExchangeTickSizes("config/exchange_specific_params.json");
     // Load optional per-symbol tick sizes
@@ -994,7 +1061,10 @@ void Trading_system::shutdown() {
             }
         } catch (...) {}
 
-        // Stop event bus last
+    // Persist exit PnL stats before shutdown so we can reload on next start
+    saveExitPnlStats("logs/exit_pnl_stats.json");
+
+    // Stop event bus last
         std::cout << "Stopping event bus..." << std::endl;
         common::EventBus::getInstance().stop();
 
@@ -1027,6 +1097,20 @@ void Trading_system::printStatus() {
         double avg_ns = static_cast<double>(publishTimeNs_.load()) / static_cast<double>(calls);
         double avg_ms = avg_ns / 1e6;
         std::cout << "Avg publish latency: " << std::fixed << std::setprecision(3) << avg_ms << " ms over " << calls << " calls" << std::endl;
+    }
+    // Print simple exit PnL statistics
+    double cumExitPnl = 0.0;
+    uint64_t exitCount = 0;
+    {
+        std::lock_guard<std::mutex> lk(g_exitPnlMutex);
+        cumExitPnl = g_cumulativeExitPnlBps;
+        exitCount = g_totalExitCount;
+    }
+    if (exitCount > 0) {
+        double avgExit = cumExitPnl / static_cast<double>(exitCount);
+        std::cout << "Exit signals: " << exitCount << "  Cumulative exit PnL: " << std::fixed << std::setprecision(4) << cumExitPnl << " bps  Avg exit PnL: " << avgExit << " bps" << std::endl;
+    } else {
+        std::cout << "Exit signals: 0" << std::endl;
     }
     // Print process RSS to detect memory growth
     try {
