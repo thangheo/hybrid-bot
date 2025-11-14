@@ -1048,7 +1048,8 @@ void StrategyEngine::processImbalanceEvents(const std::vector<ImbalanceEvent>& e
         for (auto &ev : enrichedEvents) {
             ev.supportingMetrics["marketRegime"] = static_cast<double>(detected);
         }
-        // LOG_DEBUG("Injected marketRegime={} into {} imbalance event(s)", marketRegimeToString(detected), enrichedEvents.size());
+        //print current market regime
+        LOG_DEBUG("Momentum marketRegime={} into {} imbalance event(s)", marketRegimeToString(detected), enrichedEvents.size());
     }
 
     // Process all events at once for efficiency
