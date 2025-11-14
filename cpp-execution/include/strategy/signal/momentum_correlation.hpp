@@ -203,6 +203,14 @@ private:
     double calculateVolatilityIndex() const;
     // calculateLiquidityIndex
     double calculateLiquidityIndex();
+    double calculateLowLiquidityIndicators(const std::vector<double>& recentMovements,
+                                                           const std::vector<double>& recentVolumes,
+                                                           const std::vector<double>& recentSpreads) const ;
+    // calculateMeanAndStd
+    // void calculateMeanAndStd(const std::vector<double>& data, double& mean, double& stddev) const;
+    //prototype for  [movementMean, movementStd] = calculateMeanAndStd(recentMovements);
+    std::pair<double, double> calculateMeanAndStd(const std::vector<double>& data) const;
+    
     // calculateMomentumAcceleration
     double calculateMomentumAcceleration(const std::vector<double>& movements) const;
     // calculateMarketStress
