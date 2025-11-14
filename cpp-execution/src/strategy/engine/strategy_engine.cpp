@@ -1056,7 +1056,7 @@ void StrategyEngine::processImbalanceEvents(const std::vector<ImbalanceEvent>& e
     if (momentumCorrelator_) {
         MarketRegimeType detected = momentumCorrelator_->detectMarketRegime();
         for (auto &ev : enrichedEvents) {
-            ev.supportingMetrics["marketRegime"] = static_cast<double>(detected);
+            ev.supportingMetrics["marketRegime_momentum"] = static_cast<double>(detected);
         }
         //print current market regime
         LOG_DEBUG("Momentum marketRegime={} into {} imbalance event(s)", marketRegimeToString(detected), enrichedEvents.size());

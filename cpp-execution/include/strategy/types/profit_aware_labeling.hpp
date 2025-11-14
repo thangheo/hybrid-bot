@@ -57,8 +57,8 @@ public:
         
         auto it = regimeHistory_.find(regime);
         if (it == regimeHistory_.end() || it->second.size() < MIN_SAMPLES_FOR_ESTIMATION) {
-            // Fallback: use simple normalized return as proxy
-            return std::abs(normalizedReturn) - thresholds_.tradingCost;
+            // Fallback: use signed normalized return as proxy (preserve direction)
+            return normalizedReturn - thresholds_.tradingCost;
         }
 
         const auto& history = it->second;
@@ -111,14 +111,14 @@ public:
         }
         
         // Calculate expected profit based on signal direction and magnitude
-        double signalMagnitude = std::abs(normalizedReturn);
-        double expectedProfit = calculateExpectedProfit(signalMagnitude, regime, confidence);
+        // Keep normalizedReturn signed so expected profit estimation keeps direction
+        double expectedProfit = calculateExpectedProfit(normalizedReturn, regime, confidence);
         
         // Only label if expected profit > minimum threshold + trading cost
         double minProfitThreshold = thresholds_.minExpectedProfit + thresholds_.tradingCost;
         
         // DEBUG: Lower threshold temporarily to allow more signals for debugging
-        minProfitThreshold = std::min(minProfitThreshold, 0.0005); // 0.05% minimum for debugging
+        // production: honor configured min threshold (do not lower it silently)
         
         if (expectedProfit > minProfitThreshold) {
             if (normalizedReturn > 0) {
