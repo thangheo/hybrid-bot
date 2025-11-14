@@ -83,6 +83,52 @@ target_link_libraries(test_execution
     Threads::Threads
 )
 
+# Order fill unit tests
+add_executable(test_order_fill ../../tests/execution/test_order_fill.cpp)
+
+target_link_libraries(test_order_fill
+    PRIVATE
+    execution
+    common
+    proto_lib
+    ${Protobuf_LIBRARIES}
+    ${gRPC_LIBRARIES}
+    Boost::system
+    OpenSSL::SSL
+    OpenSSL::Crypto
+    CURL::libcurl
+    jsoncpp_lib
+    ${UUID_LIBRARIES}
+    Threads::Threads
+    GTest::GTest
+    GTest::Main
+)
+
+add_test(NAME test_order_fill COMMAND test_order_fill)
+
+# Order lifecycle unit tests
+add_executable(test_order_lifecycle ../../tests/execution/test_order_lifecycle.cpp)
+
+target_link_libraries(test_order_lifecycle
+    PRIVATE
+    execution
+    common
+    proto_lib
+    ${Protobuf_LIBRARIES}
+    ${gRPC_LIBRARIES}
+    Boost::system
+    OpenSSL::SSL
+    OpenSSL::Crypto
+    CURL::libcurl
+    jsoncpp_lib
+    ${UUID_LIBRARIES}
+    Threads::Threads
+    GTest::GTest
+    GTest::Main
+)
+
+add_test(NAME test_order_lifecycle COMMAND test_order_lifecycle)
+
 # Balance validator unit test (added so test_balance_validator can be run)
 add_executable(test_balance_validator ../../tests/execution/test_balance_validator.cpp)
 

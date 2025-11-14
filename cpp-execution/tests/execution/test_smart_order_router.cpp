@@ -65,14 +65,14 @@ TEST_F(SmartOrderRouterTest, Initialization) {
 // Test getting available exchanges for specific pair
 TEST_F(SmartOrderRouterTest, GetAvailableExchanges) {
     // XMR/USDT not supported by Binance in our mock
-    auto xmr_exchanges = router.getAvailableExchanges("XMR/USDT");
-    EXPECT_EQ(2, xmr_exchanges.size());
-    EXPECT_EQ(xmr_exchanges.end(), std::find(xmr_exchanges.begin(), xmr_exchanges.end(), "binance"));
-    
-    // ADA/USDT not supported by Coinbase in our mock
-    auto ada_exchanges = router.getAvailableExchanges("ADA/USDT");
-    EXPECT_EQ(2, ada_exchanges.size());
-    EXPECT_EQ(ada_exchanges.end(), std::find(ada_exchanges.begin(), ada_exchanges.end(), "coinbase"));
+        auto xmr_exchanges = router.getAvailableExchanges("XMR/USDT");
+        EXPECT_EQ(2, xmr_exchanges.size());
+        EXPECT_EQ(xmr_exchanges.end(), std::find(xmr_exchanges.begin(), xmr_exchanges.end(), "binance"));
+        
+        // ADA/USDT not supported by Coinbase in our mock
+        auto ada_exchanges = router.getAvailableExchanges("ADA/USDT");
+        EXPECT_EQ(2, ada_exchanges.size());
+        EXPECT_EQ(ada_exchanges.end(), std::find(ada_exchanges.begin(), ada_exchanges.end(), "coinbase"));
 }
 
 // Test routing a standard order

@@ -327,6 +327,11 @@ bool Order::fill(const Fill& fill) {
         current_state != OrderState::PARTIALLY_FILLED) {
         return false;
     }
+
+    // Ignore zero or negative fills — they shouldn't affect order state
+    if (fill.quantity <= 0.0) {
+        return false;
+    }
     
     std::lock_guard<std::mutex> lock(mutex_);
     
