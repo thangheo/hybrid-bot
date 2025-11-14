@@ -337,20 +337,29 @@ bool Order::fill(const Fill& fill) {
     
     // Add the fill to our list
     fills_.push_back(fill);
-    
+
     // Update the filled quantity
     double previous_filled = filled_quantity_;
     filled_quantity_ += fill.quantity;
-    
+
     // Calculate the new average fill price
     if (filled_quantity_ > 0) {
         average_fill_price_ = ((previous_filled * average_fill_price_) + 
                              (fill.quantity * fill.price)) / filled_quantity_;
     }
-    
-    // Update the order state
-    if (filled_quantity_ >= quantity_) {
-        // Order is fully filled
+
+    // Tolerate floating point accumulation errors: if the new total is within
+    // a tiny epsilon of the requested quantity, clamp to the exact order
+    // quantity. However, if the fill causes a true overfill (e.g., larger
+    // than the ordered quantity by more than EPS), preserve the overfill.
+    const double EPS = 1e-9;
+    double new_total = previous_filled + fill.quantity;
+    if (new_total + EPS >= quantity_) {
+        // If it's only a tiny overshoot due to floating point, clamp. If it's
+        // a real overfill, keep the overfill amount.
+        if (new_total <= quantity_ + EPS) {
+            filled_quantity_ = quantity_;
+        }
         state_ = OrderState::FILLED;
     } else {
         // Order is partially filled
@@ -376,8 +385,15 @@ bool Order::cancel() {
         }
     }
     
-    // If we're already in PENDING_CANCEL, just return true
+    // If we're already in PENDING_CANCEL, convert to CANCELED (confirmation
+    // from exchange) when cancel() is called again. This allows tests and
+    // external flows to move from pending to final canceled state.
     if (current_state == OrderState::PENDING_CANCEL) {
+        OrderState expected = OrderState::PENDING_CANCEL;
+        if (state_.compare_exchange_strong(expected, OrderState::CANCELED)) {
+            std::lock_guard<std::mutex> lock(mutex_);
+            updated_at_ = std::chrono::system_clock::now();
+        }
         return true;
     }
     

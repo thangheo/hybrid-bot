@@ -9,6 +9,7 @@
 #include <thread>
 #include <atomic>
 #include <future>
+#include <optional>
 #include "exchange_api_client.hpp"
 
 namespace trading {
@@ -26,14 +27,15 @@ struct PrioritizedRequest {
     ExchangeRequestType type;
     std::function<void()> callback;
     std::chrono::steady_clock::time_point timestamp;
+    uint64_t seq;
     
     bool operator<(const PrioritizedRequest& other) const {
         // Higher priority comes first
         if (priority != other.priority) {
             return priority > other.priority;
         }
-        // Within same priority, earlier timestamp comes first
-        return timestamp > other.timestamp;
+        // Within same priority, preserve FIFO by sequence number
+        return seq > other.seq;
     }
 };
 
@@ -88,7 +90,16 @@ private:
     mutable std::mutex mutex_;
     std::condition_variable cv_;
     std::atomic<bool> running_;
+    // When true, the worker thread is paused and will not start executing new requests.
+    std::atomic<bool> paused_{false};
+    // True while a request callback is being executed.
+    std::atomic<bool> processingRequest_{false};
+    // Mutex used to synchronize the start/stop of request processing so stop()
+    // can reliably prevent new requests from being popped and executed.
+    std::mutex processingMutex_;
     std::thread workerThread_;
+    // Sequence counter to preserve FIFO ordering among equal-priority requests
+    std::atomic<uint64_t> nextSeq_{0};
     
     // Process the request queue
     void processQueue();
@@ -98,7 +109,10 @@ private:
                         std::function<void()> callback);
     
     // Execute the next request in the queue
-    void executeNextRequest();
+    // Pop the next callback while the mutex is locked. Returns an empty optional
+    // if the queue is empty. The returned callback can be executed outside
+    // the lock.
+    std::optional<std::function<void()>> popNextCallbackLocked();
 };
 
 } // namespace execution
