@@ -764,19 +764,22 @@ void MomentumCorrelation::updateMarketRegime() {
     std::vector<double> recentVolumes; // If available
     std::vector<double> recentSpreads; // If available
     
+    // Copy snapshot under lock so it is available after the lock scope
+    std::vector<DataPoint> snapshot;
     {
         std::lock_guard<std::mutex> lock(correlation_mutex_);
         // Create a snapshot which provides index access; avoid using operator[] on the custom container directly
-        const auto& snapshot = data_points_.snapshot();
-        size_t total = snapshot.size();
-        size_t startIdx = total > params_.regime_detection_window ? total - params_.regime_detection_window : 0;
-        
-        for (size_t i = startIdx; i < total; ++i) {
-            recentMovements.push_back(snapshot[i].price_movement.percent_change);
-            // Add volume and spread data if available in your data structure
-            recentVolumes.push_back(snapshot[i].volume_ratio);
-            recentSpreads.push_back(snapshot[i].spread_ratio);
-        }
+        snapshot = data_points_.snapshot();
+    }
+
+    size_t total = snapshot.size();
+    size_t startIdx = total > params_.regime_detection_window ? total - params_.regime_detection_window : 0;
+    
+    for (size_t i = startIdx; i < total; ++i) {
+        recentMovements.push_back(snapshot[i].price_movement.percent_change);
+        // Add volume and spread data if available in your data structure
+        recentVolumes.push_back(snapshot[i].volume_ratio);
+        recentSpreads.push_back(snapshot[i].spread_ratio);
     }
     
     // Enhanced statistical calculations
@@ -840,9 +843,106 @@ void MomentumCorrelation::updateMarketRegime() {
     else if (volatility < 0.001 && activityLevel < 0.002) {
         detectedRegime = MarketRegimeType::QUIET;
     }
-    // 6. Default to normal
+   
+    // Additional: Low liquidity detection using orderbook microstructure
     else {
-        detectedRegime = MarketRegimeType::NORMAL;
+        // Compute low-liquidity indicators from the most recent snapshot
+        // Use param-driven level depth (k) and window for depth volatility (M)
+        size_t k = std::min<size_t>(params_.max_level_depth, 5);
+        size_t M = std::min<size_t>(params_.regime_detection_window, 20);
+
+        // Take the latest snapshot if available
+        const OrderBookMetrics* latestOB = nullptr;
+        if (!snapshot.empty()) latestOB = &snapshot.back().metrics;
+
+        double relSpread = 0.0;
+        double totalDepth = 0.0;
+        double thinness = 0.0;
+        double depthStd = 0.0;
+        double meanDepth = 0.0;
+
+        if (latestOB) {
+            double bidP = latestOB->bidPrice;
+            double askP = latestOB->askPrice;
+            double mid = latestOB->midPrice;
+            if (mid <= 0.0) mid = (askP + bidP) / 2.0;
+            double spreadNow = latestOB->spread;
+            if (spreadNow <= 0.0) spreadNow = askP - bidP;
+            if (mid > 0.0) relSpread = spreadNow / mid;
+
+            // depth at top k levels
+            double bidDepth = 0.0, askDepth = 0.0;
+            if (!latestOB->bidVolumesByLevel.empty()) {
+                for (size_t i = 0; i < k && i < latestOB->bidVolumesByLevel.size(); ++i) {
+                    bidDepth += latestOB->bidVolumesByLevel[i];
+                }
+            }
+            if (!latestOB->askVolumesByLevel.empty()) {
+                for (size_t i = 0; i < k && i < latestOB->askVolumesByLevel.size(); ++i) {
+                    askDepth += latestOB->askVolumesByLevel[i];
+                }
+            }
+            totalDepth = bidDepth + askDepth;
+
+            // thinness: slope of depth across levels (simple finite difference)
+            double bidSlope = 0.0, askSlope = 0.0;
+            if (latestOB->bidVolumesByLevel.size() >= 2) {
+                double first = latestOB->bidVolumesByLevel.front();
+                double last = latestOB->bidVolumesByLevel.size() >= k ? latestOB->bidVolumesByLevel[k-1] : latestOB->bidVolumesByLevel.back();
+                bidSlope = (last - first) / static_cast<double>(k);
+            }
+            if (latestOB->askVolumesByLevel.size() >= 2) {
+                double first = latestOB->askVolumesByLevel.front();
+                double last = latestOB->askVolumesByLevel.size() >= k ? latestOB->askVolumesByLevel[k-1] : latestOB->askVolumesByLevel.back();
+                askSlope = (last - first) / static_cast<double>(k);
+            }
+            thinness = (bidSlope + askSlope) / 2.0;
+        }
+
+        // Build recent depth series (total depth over last M snapshots)
+        std::deque<double> depthSeries;
+        size_t totalSnapshots = snapshot.size();
+        size_t startIdx = totalSnapshots > M ? totalSnapshots - M : 0;
+        for (size_t i = startIdx; i < totalSnapshots; ++i) {
+            const auto& obm = snapshot[i].metrics;
+            double b = 0.0, a = 0.0;
+            for (size_t j = 0; j < k && j < obm.bidVolumesByLevel.size(); ++j) b += obm.bidVolumesByLevel[j];
+            for (size_t j = 0; j < k && j < obm.askVolumesByLevel.size(); ++j) a += obm.askVolumesByLevel[j];
+            depthSeries.push_back(b + a);
+        }
+
+        if (!depthSeries.empty()) {
+            // mean
+            double sum = std::accumulate(depthSeries.begin(), depthSeries.end(), 0.0);
+            meanDepth = sum / static_cast<double>(depthSeries.size());
+            // stddev
+            double var = 0.0;
+            for (double v : depthSeries) var += (v - meanDepth) * (v - meanDepth);
+            depthStd = depthSeries.size() > 1 ? std::sqrt(var / static_cast<double>(depthSeries.size() - 1)) : 0.0;
+        }
+
+        // Normalized thinness: relative to mean per-level depth to make threshold scale-free
+        double thinnessRel = 0.0;
+        if (meanDepth > 0.0) {
+            thinnessRel = thinness / (meanDepth / static_cast<double>(std::max<size_t>(1, k)));
+        }
+
+        // Thresholds (tunable per-symbol) - example defaults taken from user's guidance
+        const double SPREAD_THRESHOLD_REL = 0.0015;   // ~15 bps
+        const double DEPTH_THRESHOLD = 300.0;         // e.g., notional-like units (tune per symbol)
+        const double THINNESS_THRESHOLD_REL = 0.10;   // thinness less than 10% of average per-level depth
+        const double INSTABILITY_THRESHOLD_RATIO = 0.40; // std > 40% of mean depth
+
+        bool lowSpreadLiquidity = relSpread > SPREAD_THRESHOLD_REL;
+        bool lowDepth = totalDepth > 0.0 ? (totalDepth < DEPTH_THRESHOLD) : false;
+        bool thinBook = thinnessRel > 0.0 ? (thinnessRel < THINNESS_THRESHOLD_REL) : false;
+        bool unstableDepth = meanDepth > 0.0 ? (depthStd / meanDepth > INSTABILITY_THRESHOLD_RATIO) : false;
+
+        if (lowSpreadLiquidity || lowDepth || thinBook || unstableDepth) {
+            detectedRegime = MarketRegimeType::LOW_LIQUIDITY;
+        } else {
+            detectedRegime = MarketRegimeType::NORMAL;
+        }
     }
     
     // Apply smoothing to prevent rapid regime switching
@@ -858,6 +958,18 @@ void MomentumCorrelation::updateMarketRegime() {
     current_regime_ = detectedRegime;
 }
 
+//Helper function to calculate Low liquidity index
+double calculateLiquidityIndex() {
+    // Placeholder implementation
+    return 0.0;
+}
+
+bool LiquidityRegimeDetector(){
+    // Placeholder implementation
+    return false;
+}
+
+    
 // Helper method to calculate trend persistence
 double MomentumCorrelation::calculateTrendPersistence(const std::vector<double>& movements) const {
     if (movements.size() < 2) return 0.5;
