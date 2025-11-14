@@ -1326,14 +1326,16 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                                         std::vector<std::pair<trading::perception::BayesHandle, std::string>> saveTasks;
                                         if (!bayesModelDirectory_.empty()) {
                                             try {
+                                                // Only persist the regime that was just updated (activeRegime)
                                                 std::string base = bayesModelDirectory_;
                                                 if (!base.empty() && base.back() != '/' && base.back() != '\\') base += '/';
                                                 auto sanitize = [](const std::string &s){ std::string out; for (char c: s) { if (std::isalnum((unsigned char)c) || c=='_' || c=='-') out.push_back(c); else out.push_back('_'); } return out; };
                                                 std::string name = sanitize(exch.toString()) + "_" + sanitize(sym.toString());
-                                                for (int i = 0; i < NUMBER_OF_REGIMES; ++i) {
-                                                    auto h = handles[i];
-                                                    if (!h) continue; // Skip null handles - no warning needed
-                                                    std::string regimeName = marketRegimeToString(static_cast<MarketRegimeType>(i));
+                                                int regimeToSave = activeRegime;
+                                                if (regimeToSave < 0 || regimeToSave >= NUMBER_OF_REGIMES) regimeToSave = 0;
+                                                auto h = handles[regimeToSave];
+                                                if (h) {
+                                                    std::string regimeName = marketRegimeToString(static_cast<MarketRegimeType>(regimeToSave));
                                                     std::string filename = base + name + "_" + regimeName + ".json";
                                                     saveTasks.emplace_back(h, filename);
                                                 }

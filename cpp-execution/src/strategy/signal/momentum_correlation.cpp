@@ -96,6 +96,7 @@ void MomentumCorrelation::updateCorrelationModel(
         calculateFeatureImportance();
         updateMarketRegime();
     }
+    
     //  else {
     //     LOG_INFO("Not enough data points yet. Have: {}, Need: {}", 
     //              data_points_.size(), params_.min_data_points);
