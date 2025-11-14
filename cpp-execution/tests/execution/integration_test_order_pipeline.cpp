@@ -4,8 +4,15 @@
 #include <gtest/gtest.h>
 #include <memory>
 
-using namespace trading::execution;
-using namespace trading::execution::models;
+        // using namespace trading::execution;
+        // using namespace trading::execution::models;
+
+ using namespace trading::execution;
+ using namespace testing;
+ using namespace trading::execution::models;
+ using namespace trading::core;
+
+
 class OrderPipelineIntegrationTest : public ::testing::Test {
 protected:
     OrderGenerator generator;
@@ -48,8 +55,8 @@ protected:
             0.001     // market_impact_estimate
         };
         
-        selector.updateMarketCondition("BTC/USDT", btc_market);
-        selector.updateMarketCondition("ETH/USDT", eth_market);
+        selector.updateMarketCondition(core::Symbol::fromString("BTC/USDT"), btc_market);
+        selector.updateMarketCondition(core::Symbol::fromString("ETH/USDT"), eth_market);
     }
     
     // Process an order through the entire pipeline
@@ -74,7 +81,7 @@ protected:
         RoutingResult routing = router.routeOrder(order);
         
         // Apply routing result if successful
-        if (!routing.exchangeId.empty()) {
+        if (!routing.exchangeId.toString().empty()) {
             order->setExchangeId(routing.exchangeId);
         }
         
@@ -85,7 +92,7 @@ protected:
 // Test complete pipeline for a market buy order
 // TEST_F(OrderPipelineIntegrationTest, MarketBuyOrderPipeline) {
 //     OrderGenerationParams params;
-//     params.tradingPair = TradingPair::fromString("BTC/USDT");
+//     params.tradingPair = core::Symbol::fromString("BTC/USDT");
 //     params.side = OrderSide::BUY;
 //     params.type = OrderType::MARKET;
 //     params.quantity = 0.1;
@@ -107,23 +114,23 @@ protected:
 // Test complete pipeline for a limit sell order
 TEST_F(OrderPipelineIntegrationTest, LimitSellOrderPipeline) {
     OrderGenerationParams params;
-    params.tradingPair = TradingPair::fromString("ETH/USDT");
+    params.tradingPair = core::Symbol::fromString("ETH/USDT");
     params.side = OrderSide::SELL;
     params.type = OrderType::LIMIT;
     params.quantity = 1.0;
     params.price = 3550.0;  // Above current ask
-    params.strategy_id = "test_strategy";
+    params.strategy_id = core::StrategyId("test_strategy");
     
     OrderPtr final_order = processThroughPipeline(params);
     
     // Verify order properties
-    EXPECT_EQ("ETH/USDT", final_order->getTradingPair());
+    EXPECT_EQ("ETH/USDT", final_order->getTradingPair().toString());
     EXPECT_EQ(OrderSide::SELL, final_order->getSide());
     EXPECT_EQ(1.0, final_order->getQuantity());
     
     // Price may have been adjusted by OrderTypeSelector
     // Check if the order has an exchange assigned
-    EXPECT_FALSE(final_order->getExchangeId().empty());
+    EXPECT_FALSE(final_order->getExchangeId().toString().empty());
 }
 
 // Test pipeline with custom behavior at each stage
@@ -131,7 +138,7 @@ TEST_F(OrderPipelineIntegrationTest, CustomizedPipeline) {
     // Set custom parameter transformer
     generator.setParameterTransformer([](OrderGenerationParams& params) {
         // Add a signal ID based on trading pair
-        params.signal_id = "SIG-" + params.tradingPair;
+        params.signal_id = core::SignalId("SIG-" + params.tradingPair.toString());
     });
     
     // Set custom selection strategy
@@ -140,9 +147,9 @@ TEST_F(OrderPipelineIntegrationTest, CustomizedPipeline) {
         OrderTypeSelection selection;
         selection.type = OrderType::LIMIT;
         if (order->getSide() == OrderSide::BUY) {
-            selection.price = mc.ask_price * 1.001;  // Slightly above ask
+            selection.price = mc.askPrice * 1.001;  // Slightly above ask
         } else {
-            selection.price = mc.bid_price * 0.999;  // Slightly below bid
+            selection.price = mc.bidPrice * 0.999;  // Slightly below bid
         }
         selection.time_in_force = TimeInForce::IOC;  // Immediate execution
         selection.reason = "Custom strategy: aggressive limit order";
@@ -160,12 +167,12 @@ TEST_F(OrderPipelineIntegrationTest, CustomizedPipeline) {
         for (const auto& exchange : exchanges) {
             if (exchange.latency_ms < lowest_latency) {
                 lowest_latency = exchange.latency_ms;
-                best_exchange = exchange.exchange_id;
+                best_exchange = exchange.exchangeId.toString();
             }
         }
         
         RoutingResult result;
-        result.exchange_id = best_exchange;
+        result.exchangeId = ExchangeId::fromString(best_exchange);
         result.score = 1.0;
         result.reason = "Custom strategy: lowest latency";
         return result;
@@ -173,11 +180,11 @@ TEST_F(OrderPipelineIntegrationTest, CustomizedPipeline) {
     
     // Process an order through the customized pipeline
     OrderGenerationParams params;
-    params.tradingPair = TradingPair::fromString("BTC/USDT");
+    params.tradingPair = core::Symbol::fromString("BTC/USDT");
     params.side = OrderSide::BUY;
     params.type = OrderType::MARKET;  // Should be converted to limit
     params.quantity = 0.2;
-    params.strategy_id = "custom_strategy";
+    params.strategy_id = core::StrategyId("custom_strategy");
     
     OrderPtr final_order = processThroughPipeline(params);
     
@@ -186,14 +193,14 @@ TEST_F(OrderPipelineIntegrationTest, CustomizedPipeline) {
     EXPECT_EQ(OrderType::LIMIT, final_order->getType());    // From selection strategy
     EXPECT_GT(final_order->getPrice(), 0.0);                // Price should be set
     EXPECT_EQ(TimeInForce::IOC, final_order->getTimeInForce());  // From selection strategy
-    EXPECT_EQ("binance", final_order->getExchangeId());     // Binance has lowest latency in our setup
+    EXPECT_EQ("binance", final_order->getExchangeId().toString());     // Binance has lowest latency in our setup
 }
 
 // Test error handling in the pipeline
 TEST_F(OrderPipelineIntegrationTest, ErrorHandlingInPipeline) {
     // Invalid order params (zero quantity)
     OrderGenerationParams invalid_params;
-    invalid_params.tradingPair = TradingPair::fromString("BTC/USDT");
+    invalid_params.tradingPair = core::Symbol::fromString("BTC/USDT");
     invalid_params.side = OrderSide::BUY;
     invalid_params.quantity = 0.0;  // Invalid
     
@@ -201,12 +208,12 @@ TEST_F(OrderPipelineIntegrationTest, ErrorHandlingInPipeline) {
     
     // Unknown trading pair
     OrderGenerationParams unknown_pair;
-    unknown_pair.tradingPair = TradingPair::fromString("UNKNOWN/USDT");
+    unknown_pair.tradingPair = core::Symbol::fromString("UNKNOWN/USDT");
     unknown_pair.side = OrderSide::BUY;
     unknown_pair.quantity = 1.0;
     
     // This should not throw, but will use default market conditions
     OrderPtr order = processThroughPipeline(unknown_pair);
-    EXPECT_EQ("UNKNOWN/USDT", order->getTradingPair());
-    EXPECT_FALSE(order->getExchangeId().empty());  // Should still be routed
+    EXPECT_EQ("UNKNOWN/USDT", order->getTradingPair().toString());
+    EXPECT_FALSE(order->getExchangeId().toString().empty());  // Should still be routed
 }

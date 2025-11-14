@@ -5,6 +5,13 @@
 
 using namespace trading::execution;
 
+using namespace trading::execution;
+
+using namespace trading::execution;
+using namespace trading::execution::models;
+using namespace trading::core;
+using namespace trading;
+
 class OrderTypeSelectorTest : public ::testing::Test {
 protected:
     OrderTypeSelector selector;
@@ -12,12 +19,12 @@ protected:
     // Create a default market condition for testing
     MarketCondition createDefaultMarketCondition() {
         MarketCondition mc;
-        mc.bid_price = 50000.0;
-        mc.ask_price = 50100.0;
+        mc.bidPrice = 50000.0;
+        mc.askPrice = 50100.0;
         mc.spread = 100.0;
         mc.volatility = 0.01;
         mc.volume = 100.0;
-        mc.liquidity_score = 0.8;
+        mc.liquidityProfileScore = 0.8;
         mc.market_impact_estimate = 0.002;
         return mc;
     }
@@ -25,7 +32,7 @@ protected:
     // Create a test order
     OrderPtr createTestOrder(OrderType type, OrderSide side) {
         OrderPtr order = std::make_shared<Order>();
-        order->setTradingPair("BTC/USDT");
+        order->setTradingPair(core::Symbol::fromString("BTC/USDT"));
         order->setSide(side);
         order->setType(type);
         order->setQuantity(1.0);
@@ -39,23 +46,23 @@ protected:
 // Test market condition update and retrieval
 TEST_F(OrderTypeSelectorTest, MarketConditionUpdateAndRetrieval) {
     MarketCondition mc = createDefaultMarketCondition();
-    selector.updateMarketCondition("BTC/USDT", mc);
+    selector.updateMarketCondition(core::Symbol::fromString("BTC/USDT"), mc);
     
-    MarketCondition retrieved = selector.getMarketCondition("BTC/USDT");
+    MarketCondition retrieved = selector.getMarketCondition(core::Symbol::fromString("BTC/USDT"));
     
-    EXPECT_DOUBLE_EQ(mc.bid_price, retrieved.bid_price);
-    EXPECT_DOUBLE_EQ(mc.ask_price, retrieved.ask_price);
+    EXPECT_DOUBLE_EQ(mc.bidPrice, retrieved.bidPrice);
+    EXPECT_DOUBLE_EQ(mc.askPrice, retrieved.askPrice);
     EXPECT_DOUBLE_EQ(mc.spread, retrieved.spread);
     EXPECT_DOUBLE_EQ(mc.volatility, retrieved.volatility);
-    EXPECT_DOUBLE_EQ(mc.liquidity_score, retrieved.liquidity_score);
+    EXPECT_DOUBLE_EQ(mc.liquidityProfileScore, retrieved.liquidityProfileScore);
 }
 
 // Test that non-existent market condition returns default values
 TEST_F(OrderTypeSelectorTest, NonExistentMarketCondition) {
-    MarketCondition retrieved = selector.getMarketCondition("ETH/USDT");
-    
-    EXPECT_DOUBLE_EQ(0.0, retrieved.bid_price);
-    EXPECT_DOUBLE_EQ(0.0, retrieved.ask_price);
+    MarketCondition retrieved = selector.getMarketCondition(core::Symbol::fromString("ETH/USDT"));
+
+    EXPECT_DOUBLE_EQ(0.0, retrieved.bidPrice);
+    EXPECT_DOUBLE_EQ(0.0, retrieved.askPrice);
     EXPECT_DOUBLE_EQ(0.0, retrieved.spread);
 }
 
@@ -80,7 +87,7 @@ TEST_F(OrderTypeSelectorTest, ConvertMarketToLimitWideSpread) {
     
     // Set wide spread and high liquidity
     mc.spread = 200.0;
-    mc.liquidity_score = 0.9;
+    mc.liquidityProfileScore = 0.9;
     
     // Set threshold for spread conversion
     selector.setSpreadThreshold(0.003);  // 0.3% spread threshold
@@ -129,7 +136,7 @@ TEST_F(OrderTypeSelectorTest, CustomSelectionStrategy) {
         // Always select POST_ONLY limit orders
         OrderTypeSelection selection;
         selection.type = OrderType::LIMIT;
-        selection.price = order->getSide() == OrderSide::BUY ? mc.bid_price * 1.001 : mc.ask_price * 0.999;
+        selection.price = order->getSide() == OrderSide::BUY ? mc.bidPrice * 1.001 : mc.askPrice * 0.999;
         selection.time_in_force = TimeInForce::GTC;
         selection.reason = "Custom strategy: always use POST_ONLY";
         return selection;

@@ -129,6 +129,29 @@ target_link_libraries(test_order_lifecycle
 
 add_test(NAME test_order_lifecycle COMMAND test_order_lifecycle)
 
+# Fill reconciliation unit test
+add_executable(test_fill_reconciliation ../../tests/execution/test_fill_reconciliation.cpp)
+
+target_link_libraries(test_fill_reconciliation
+    PRIVATE
+    execution
+    common
+    proto_lib
+    ${Protobuf_LIBRARIES}
+    ${gRPC_LIBRARIES}
+    Boost::system
+    OpenSSL::SSL
+    OpenSSL::Crypto
+    CURL::libcurl
+    jsoncpp_lib
+    ${UUID_LIBRARIES}
+    Threads::Threads
+    GTest::GTest
+    GTest::Main
+)
+
+add_test(NAME test_fill_reconciliation COMMAND test_fill_reconciliation)
+
 # Balance validator unit test (added so test_balance_validator can be run)
 add_executable(test_balance_validator ../../tests/execution/test_balance_validator.cpp)
 

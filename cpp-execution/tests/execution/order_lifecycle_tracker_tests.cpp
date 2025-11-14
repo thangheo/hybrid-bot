@@ -9,10 +9,12 @@
  #include <gtest/gtest.h>
  #include <chrono>
  #include <thread>
+#include "core/market_types.hpp"
  
  using namespace trading::execution;
  using namespace testing;
  using namespace trading::execution::models;
+ using namespace trading::core;
 
  class OrderLifecycleTrackerTest : public ::testing::Test {
  protected:
@@ -21,12 +23,12 @@
          tracker = std::make_shared<OrderLifecycleTracker>();
      }
  
-     // Helper function to create a test order
-     Order createTestOrder(const std::string& client_id, const core::Symbol& symbol, 
-                           OrderSide side, double qty, double price) {
-         Order order;
-         order.setClientOrderId(client_id);
-         order.setTradingPair(symbol);
+    // Helper function to create a test order
+    Order createTestOrder(const std::string& client_id, const std::string& symbol, 
+                          OrderSide side, double qty, double price) {
+        Order order;
+        order.setClientOrderId(client_id);
+        order.setTradingPair(Symbol::fromString(symbol));
          order.setSide(side);
          order.setQuantity(qty);
          order.setPrice(price);
@@ -49,8 +51,9 @@
      auto retrieved = tracker->getOrderByClientId("client-123");
      ASSERT_NE(retrieved, nullptr);
      EXPECT_EQ(retrieved->getClientOrderId(), "client-123");
-     EXPECT_EQ(retrieved->getTradingPair(), "BTC-USDT");
+     EXPECT_EQ(retrieved->getTradingPair().toString(), "BTC-USDT");
      EXPECT_EQ(retrieved->getSide(), OrderSide::BUY);
+    EXPECT_EQ(retrieved->getTradingPair().toString(), "BTC-USDT");
      EXPECT_DOUBLE_EQ(retrieved->getQuantity(), 0.1);
      EXPECT_DOUBLE_EQ(retrieved->getPrice(), 50000.0);
  }
@@ -60,6 +63,7 @@
      Order order1 = createTestOrder("client-123", "BTC-USDT", OrderSide::BUY, 0.1, 50000.0);
      Order order2 = createTestOrder("client-123", "ETH-USDT", OrderSide::SELL, 1.0, 3000.0);
      
+    Order order3 = createTestOrder("client-123", "BTC-USDT", OrderSide::BUY, 0.1, 50000.0);
      // Add the first order
      bool result1 = tracker->addOrder(order1);
      EXPECT_TRUE(result1);
@@ -74,6 +78,7 @@
      Order order = createTestOrder("client-123", "BTC-USDT", OrderSide::BUY, 0.1, 50000.0);
      tracker->addOrder(order);
      
+    Order order11 = createTestOrder("client-123", "BTC-USDT", OrderSide::BUY, 0.2, 50000.0);
      // Update to PENDING
      bool result1 = tracker->updateOrderState("client-123", OrderState::PENDING);
      EXPECT_TRUE(result1);
@@ -82,6 +87,7 @@
      auto order1 = tracker->getOrderByClientId("client-123");
      ASSERT_NE(order1, nullptr);
      EXPECT_EQ(order1->getState(), OrderState::PENDING);
+    EXPECT_EQ(order1->getTradingPair().toString(), "BTC-USDT");
      
      // Update to OPEN with exchange ID
      bool result2 = tracker->updateOrderState("client-123", OrderState::OPEN, "exchange-456");
@@ -209,6 +215,7 @@
      Order order2 = createTestOrder("client-2", "ETH-USDT", OrderSide::SELL, 1.0, 3000.0);
      Order order3 = createTestOrder("client-3", "SOL-USDT", OrderSide::BUY, 5.0, 100.0);
      
+    // Order order1 = createTestOrder("client-1", "BTC-USDT", OrderSide::BUY, 0.1, 50000.0);
      tracker->addOrder(order1);
      tracker->addOrder(order2);
      tracker->addOrder(order3);
@@ -218,6 +225,7 @@
      tracker->updateOrderState("client-2", OrderState::OPEN);
      tracker->updateOrderState("client-3", OrderState::PENDING);
      
+    auto btc_orders = tracker->getOrdersBySymbol(Symbol::fromString("BTC-USDT"));
      // Get orders by state
      auto open_orders = tracker->getOrdersByState(OrderState::OPEN);
      auto pending_orders = tracker->getOrdersByState(OrderState::PENDING);
@@ -241,9 +249,9 @@
      tracker->addOrder(order3);
      
      // Get orders by symbol
-     auto btc_orders = tracker->getOrdersBySymbol("BTC-USDT");
-     auto eth_orders = tracker->getOrdersBySymbol("ETH-USDT");
-     auto sol_orders = tracker->getOrdersBySymbol("SOL-USDT");
+    auto btc_orders = tracker->getOrdersBySymbol(Symbol::fromString("BTC-USDT"));
+    auto eth_orders = tracker->getOrdersBySymbol(Symbol::fromString("ETH-USDT"));
+    auto sol_orders = tracker->getOrdersBySymbol(Symbol::fromString("SOL-USDT"));
      
      // Check results
      EXPECT_EQ(btc_orders.size(), 2);

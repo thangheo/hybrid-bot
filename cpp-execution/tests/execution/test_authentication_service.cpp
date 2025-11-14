@@ -5,6 +5,12 @@
 #include <thread>
 #include <vector>
 
+ using namespace trading::execution;
+ using namespace testing;
+ using namespace trading::execution::models;
+ using namespace trading::core;
+ using namespace trading;
+
 namespace trading {
 namespace execution {
 namespace test {
@@ -19,7 +25,7 @@ protected:
         "test_api_secret_abcdefghijklmnopqrstuvwxyz"
     };
     
-    const std::string exchangeId = "binance";
+    core::ExchangeId exchangeId = core::ExchangeId::fromString("BINANCE");
 };
 
 TEST_F(AuthenticationServiceTest, InitiallyNoCredentials) {
@@ -77,8 +83,8 @@ TEST_F(AuthenticationServiceTest, ValidateCredentials) {
 }
 
 TEST_F(AuthenticationServiceTest, MultipleExchanges) {
-    const std::string exchange1 = "binance";
-    const std::string exchange2 = "ftx";
+    core::ExchangeId exchange1 = core::ExchangeId::fromString("BINANCE");
+    core::ExchangeId exchange2 = core::ExchangeId::fromString("FTX");
     
     ExchangeCredentials credentials1{
         "api_key_for_exchange1",
@@ -122,7 +128,8 @@ TEST_F(AuthenticationServiceTest, ThreadSafety) {
     // Create multiple threads that set and get credentials
     for (int i = 0; i < numThreads; ++i) {
         threads.emplace_back([this, i, operationsPerThread]() {
-            const std::string exchangeId = "exchange_" + std::to_string(i);
+            // const std::string exchangeId = "exchange_" + std::to_string(i);
+            core::ExchangeId exchangeId = core::ExchangeId::fromString("EXCHANGE_" + std::to_string(i));
             
             for (int j = 0; j < operationsPerThread; ++j) {
                 ExchangeCredentials credentials{

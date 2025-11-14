@@ -65,6 +65,10 @@ std::future<std::unordered_map<std::string, double>> ExchangeGateway::getAccount
 std::future<execution::models::ExecutionReport> ExchangeGateway::placeOrder(const execution::models::Order& order) {
     return std::async(std::launch::async, [this, order]() {
         try {
+            std::cerr << "[ExchangeGateway] placeOrder called clientOrderId=" << order.getClientOrderId()
+                      << " pair=" << order.getTradingPair().toString()
+                      << " qty=" << order.getQuantity() << " price=" << order.getPrice()
+                      << " side=" << static_cast<int>(order.getSide()) << std::endl;
             // CRASH PROTECTION: Validate apiClientManager_
             if (!apiClientManager_) {
                 std::cerr << "[ExchangeGateway] ERROR: apiClientManager_ is null in placeOrder!" << std::endl;
@@ -104,7 +108,12 @@ std::future<execution::models::ExecutionReport> ExchangeGateway::cancelOrder(
         
         // Cancel the order directly through the existing API
         auto future = client->cancelOrder(orderId, symbol);
-        return future.get();
+            auto rep = future.get();
+            try {
+                std::cerr << "[ExchangeGateway] cancelOrder result for clientOrderId=" << orderId
+                          << " => " << rep.toString() << std::endl;
+            } catch (...) {}
+            return rep;
     });
 }
 

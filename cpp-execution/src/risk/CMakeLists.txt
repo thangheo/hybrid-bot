@@ -161,6 +161,9 @@ target_link_libraries(position_sync_demo PRIVATE
         protobuf::libprotobuf
         SQLite::SQLite3
         )
+
+# Add sync tests (position sync integration)
+add_subdirectory(sync/tests)
 # create executable for risk demo
 # add_executable(risk_demo risk_demo.cpp)
 # target_link_libraries(risk_demo PRIVATE 

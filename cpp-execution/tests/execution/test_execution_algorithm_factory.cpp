@@ -9,6 +9,13 @@
 using namespace trading::execution;
 using namespace testing;
 
+using namespace trading::execution;
+
+using namespace trading::execution;
+using namespace trading::execution::models;
+using namespace trading::core;
+using namespace trading;
+
 class ExecutionAlgorithmFactoryTest : public ::testing::Test {
 protected:
     void SetUp() override {
@@ -77,7 +84,7 @@ protected:
 TEST_F(ExecutionAlgorithmFactoryTest, CreateTwapAlgorithm) {
     auto params = createTwapParams();
     auto algorithm = factory_->createAlgorithm(
-        "test-twap", "BTC-USD", models::OrderSide::BUY, params);
+        params, "test-twap", "BTC-USD", models::OrderSide::BUY);
     
     ASSERT_NE(algorithm, nullptr);
     EXPECT_EQ(algorithm->getId(), "test-twap");
@@ -89,7 +96,7 @@ TEST_F(ExecutionAlgorithmFactoryTest, CreateTwapAlgorithm) {
 TEST_F(ExecutionAlgorithmFactoryTest, CreateVwapAlgorithm) {
     auto params = createVwapParams();
     auto algorithm = factory_->createAlgorithm(
-        "test-vwap", "BTC-USD", models::OrderSide::BUY, params);
+        params, "test-vwap", "BTC-USD", models::OrderSide::BUY);
     
     ASSERT_NE(algorithm, nullptr);
     EXPECT_EQ(algorithm->getId(), "test-vwap");
@@ -101,7 +108,7 @@ TEST_F(ExecutionAlgorithmFactoryTest, CreateVwapAlgorithm) {
 TEST_F(ExecutionAlgorithmFactoryTest, CreateIcebergAlgorithm) {
     auto params = createIcebergParams();
     auto algorithm = factory_->createAlgorithm(
-        "test-iceberg", "BTC-USD", models::OrderSide::BUY, params);
+        params, "test-iceberg", "BTC-USD", models::OrderSide::BUY);
     
     ASSERT_NE(algorithm, nullptr);
     EXPECT_EQ(algorithm->getId(), "test-iceberg");
@@ -113,7 +120,7 @@ TEST_F(ExecutionAlgorithmFactoryTest, CreateIcebergAlgorithm) {
 TEST_F(ExecutionAlgorithmFactoryTest, CreateWithGeneratedId) {
     auto params = createTwapParams();
     auto algorithm = factory_->createAlgorithm(
-        "", "BTC-USD", models::OrderSide::BUY, params);
+        params, "", "BTC-USD", models::OrderSide::BUY);
     
     ASSERT_NE(algorithm, nullptr);
     EXPECT_FALSE(algorithm->getId().empty());
@@ -124,7 +131,7 @@ TEST_F(ExecutionAlgorithmFactoryTest, CreateWithGeneratedId) {
 TEST_F(ExecutionAlgorithmFactoryTest, GetAlgorithmById) {
     auto params = createTwapParams();
     auto created = factory_->createAlgorithm(
-        "test-twap-get", "BTC-USD", models::OrderSide::BUY, params);
+        params, "test-twap-get", "BTC-USD", models::OrderSide::BUY);
     
     ASSERT_NE(created, nullptr);
     
@@ -144,7 +151,7 @@ TEST_F(ExecutionAlgorithmFactoryTest, GetNonExistentAlgorithm) {
 TEST_F(ExecutionAlgorithmFactoryTest, CreateWithInvalidParams) {
     // Null parameters
     auto algorithm = factory_->createAlgorithm(
-        "test-null-params", "BTC-USD", models::OrderSide::BUY, nullptr);
+        nullptr, "test-null-params", "BTC-USD", models::OrderSide::BUY);
     EXPECT_EQ(algorithm, nullptr);
     
     // Wrong parameter type
@@ -155,7 +162,7 @@ TEST_F(ExecutionAlgorithmFactoryTest, CreateWithInvalidParams) {
     auto wrong_cast = std::dynamic_pointer_cast<VwapParams>(wrong_type_params);
     
     algorithm = factory_->createAlgorithm(
-        "test-wrong-params", "BTC-USD", models::OrderSide::BUY, wrong_cast);
+        wrong_cast, "test-wrong-params", "BTC-USD", models::OrderSide::BUY);
     EXPECT_EQ(algorithm, nullptr);
 }
 
@@ -163,13 +170,13 @@ TEST_F(ExecutionAlgorithmFactoryTest, CreateWithInvalidParams) {
 TEST_F(ExecutionAlgorithmFactoryTest, CreateWithDuplicateId) {
     auto params1 = createTwapParams();
     auto algorithm1 = factory_->createAlgorithm(
-        "test-duplicate", "BTC-USD", models::OrderSide::BUY, params1);
+        params1, "test-duplicate", "BTC-USD", models::OrderSide::BUY);
     
     ASSERT_NE(algorithm1, nullptr);
     
     auto params2 = createVwapParams();
     auto algorithm2 = factory_->createAlgorithm(
-        "test-duplicate", "ETH-USD", models::OrderSide::SELL, params2);
+        params2, "test-duplicate", "ETH-USD", models::OrderSide::SELL);
     
     // Should fail due to duplicate ID
     EXPECT_EQ(algorithm2, nullptr);
@@ -181,7 +188,7 @@ TEST_F(ExecutionAlgorithmFactoryTest, RegisterOrderCallback) {
     
     auto params = createTwapParams();
     auto algorithm = factory_->createAlgorithm(
-        "test-callback", "BTC-USD", models::OrderSide::BUY, params);
+        params, "test-callback", "BTC-USD", models::OrderSide::BUY);
     
     ASSERT_NE(algorithm, nullptr);
     
@@ -201,7 +208,7 @@ TEST_F(ExecutionAlgorithmFactoryTest, RegisterCompletionCallback) {
     
     auto params = createTwapParams();
     auto algorithm = factory_->createAlgorithm(
-        "test-completion", "BTC-USD", models::OrderSide::BUY, params);
+        params, "test-completion", "BTC-USD", models::OrderSide::BUY);
     
     ASSERT_NE(algorithm, nullptr);
     

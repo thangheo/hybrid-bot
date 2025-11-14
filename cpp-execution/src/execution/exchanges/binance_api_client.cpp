@@ -895,6 +895,7 @@ models::ExecutionReport BinanceApiClient::parseOrderResponse(const std::string& 
     if (root.isMember("code") && root["code"].asInt() != 0) {
         report.setStatus(models::OrderState::REJECTED);
         report.setRejectReason(root["msg"].asString());
+        try { std::cerr << "[BinanceApiClient] parseOrderResponse REJECTED: " << report.toString() << std::endl; } catch(...) {}
         return report;
     }
     
@@ -1011,6 +1012,7 @@ models::ExecutionReport BinanceApiClient::parseOrderResponse(const std::string& 
         report.setExtraData("stopPrice", root["stopPrice"].asString());
     }
     
+    try { std::cerr << "[BinanceApiClient] parseOrderResponse -> " << report.toString() << std::endl; } catch(...) {}
     return report;
 }
 

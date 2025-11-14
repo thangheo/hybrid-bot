@@ -611,6 +611,7 @@ models::ExecutionReport FtxApiClient::parseOrderResponse(const std::string& resp
         models::ExecutionReport report;
         report.setStatus(models::OrderState::REJECTED);
         report.setRejectReason(root["error"].asString());
+        try { std::cerr << "[FtxApiClient] parseOrderResponse REJECTED: " << report.toString() << std::endl; } catch(...) {}
         return report;
     }
     
@@ -680,6 +681,7 @@ models::ExecutionReport FtxApiClient::parseOrderResponse(const std::string& resp
         report.setExtraData("postOnly", result["postOnly"].asBool() ? "true" : "false");
     }
     
+    try { std::cerr << "[FtxApiClient] parseOrderResponse -> " << report.toString() << std::endl; } catch(...) {}
     return report;
 }
 

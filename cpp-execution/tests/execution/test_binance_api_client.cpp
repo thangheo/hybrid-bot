@@ -11,14 +11,18 @@
 using namespace trading::execution;
 using namespace testing;
 
+using namespace trading::execution::models;
+using namespace trading::core;
+using namespace trading;
+
 // Mock for RateLimitController
 class MockRateLimitController : public RateLimitController {
 public:
-    MOCK_METHOD(void, waitForPermission, (ExchangeRequestType requestType), (override));
-    MOCK_METHOD(int, getRemainingRequests, (ExchangeRequestType requestType), (const, override));
-    MOCK_METHOD(std::chrono::milliseconds, getResetTime, (ExchangeRequestType requestType), (const, override));
-    MOCK_METHOD(void, updateLimits, (ExchangeRequestType requestType, int limit, int remaining, 
-                                    std::chrono::milliseconds resetTime), (override));
+    // Use older gmock macro names for compatibility with environments that don't provide MOCK_METHOD
+    MOCK_METHOD1(waitForPermission, void(ExchangeRequestType));
+    MOCK_CONST_METHOD1(getRemainingRequests, int(ExchangeRequestType));
+    MOCK_CONST_METHOD1(getResetTime, std::chrono::milliseconds(ExchangeRequestType));
+    MOCK_METHOD4(updateLimits, void(ExchangeRequestType, int, int, std::chrono::milliseconds));
 };
 
 // Mock for CURL to avoid actual HTTP requests
@@ -34,8 +38,9 @@ public:
     }
     
     static CURLcode easy_perform(CURL* curl) {
-        // Set the HTTP code
-        curl_easy_setinfo(curl, CURLINFO_RESPONSE_CODE, &nextHttpCode);
+        // In real libcurl the response code is provided via curl_easy_getinfo after perform.
+        // Here we avoid calling the non-existent curl_easy_setinfo and simply return the preset result.
+        // If needed, a dedicated curl_easy_getinfo mock can read CurlMock::nextHttpCode.
         return nextResult;
     }
 };
@@ -140,22 +145,22 @@ TEST_F(BinanceApiClientTest, PlaceMarketOrder) {
     
     // Create a market buy order
     Order order;
-    order.setTradingPair("BTCUSDT");
+    order.setTradingPair(core::Symbol::fromString("BTCUSDT"));
     order.setSide(OrderSide::BUY);
     order.setType(OrderType::MARKET);
     order.setQuantity(1.0);
     order.setClientOrderId("my_order_1");
     
     // Expect the rate limit controller to be called
-    EXPECT_CALL(*mockRateLimitController, waitForPermission(ExchangeRequestType::ORDER_PLACEMENT)).Times(1);
+    EXPECT_CALL(*mockRateLimitController, waitForPermission(ExchangeRequestType::PlaceOrder)).Times(1);
     
     // Place the order
     auto futureReport = binanceClient->placeOrder(order);
     auto report = futureReport.get();
     
     // Verify the execution report
-    EXPECT_EQ(report.symbol(), "BTCUSDT");
-    EXPECT_EQ(report.orderId(), "my_order_1");
+    EXPECT_EQ(report.symbol(), core::Symbol::fromString("BTCUSDT"));
+    EXPECT_EQ(report.orderId(), core::OrderId("my_order_1"));
     EXPECT_EQ(report.exchangeOrderId(), "12345");
     EXPECT_EQ(report.status(), OrderState::FILLED);
     EXPECT_EQ(report.side(), OrderSide::BUY);
@@ -184,7 +189,7 @@ TEST_F(BinanceApiClientTest, PlaceLimitOrder) {
     
     // Create a limit sell order
     Order order;
-    order.setTradingPair("BTCUSDT");
+    order.setTradingPair(core::Symbol::fromString("BTCUSDT"));
     order.setSide(OrderSide::SELL);
     order.setType(OrderType::LIMIT);
     order.setQuantity(0.5);
@@ -193,15 +198,15 @@ TEST_F(BinanceApiClientTest, PlaceLimitOrder) {
     order.setTimeInForce(TimeInForce::GTC);
     
     // Expect the rate limit controller to be called
-    EXPECT_CALL(*mockRateLimitController, waitForPermission(ExchangeRequestType::ORDER_PLACEMENT)).Times(1);
+    EXPECT_CALL(*mockRateLimitController, waitForPermission(ExchangeRequestType::PlaceOrder)).Times(1);
     
     // Place the order
     auto futureReport = binanceClient->placeOrder(order);
     auto report = futureReport.get();
     
     // Verify the execution report
-    EXPECT_EQ(report.symbol(), "BTCUSDT");
-    EXPECT_EQ(report.orderId(), "my_order_2");
+    EXPECT_EQ(report.symbol(), core::Symbol::fromString("BTCUSDT"));
+    EXPECT_EQ(report.orderId(), core::OrderId("my_order_2"));
     EXPECT_EQ(report.exchangeOrderId(), "12345");
     EXPECT_EQ(report.status(), OrderState::OPEN);
     EXPECT_EQ(report.side(), OrderSide::SELL);
@@ -230,14 +235,14 @@ TEST_F(BinanceApiClientTest, CancelOrder) {
     })";
     
     // Expect the rate limit controller to be called
-    EXPECT_CALL(*mockRateLimitController, waitForPermission(ExchangeRequestType::ORDER_CANCELLATION)).Times(1);
+    EXPECT_CALL(*mockRateLimitController, waitForPermission(ExchangeRequestType::CancelOrder)).Times(1);
     
     // Cancel the order
-    auto futureReport = binanceClient->cancelOrder("12345", "BTCUSDT");
+    auto futureReport = binanceClient->cancelOrder("12345", core::Symbol::fromString("BTCUSDT"));
     auto report = futureReport.get();
     
     // Verify the execution report
-    EXPECT_EQ(report.symbol(), "BTCUSDT");
+    EXPECT_EQ(report.symbol(), core::Symbol::fromString("BTCUSDT"));
     EXPECT_EQ(report.exchangeOrderId(), "12345");
     EXPECT_EQ(report.status(), OrderState::CANCELED);
 }
@@ -265,14 +270,14 @@ TEST_F(BinanceApiClientTest, GetOrderStatus) {
     })";
     
     // Expect the rate limit controller to be called
-    EXPECT_CALL(*mockRateLimitController, waitForPermission(ExchangeRequestType::ORDER_STATUS)).Times(1);
+    EXPECT_CALL(*mockRateLimitController, waitForPermission(ExchangeRequestType::GetOrderStatus)).Times(1);
     
     // Get order status
-    auto futureReport = binanceClient->getOrderStatus("12345", "BTCUSDT");
+    auto futureReport = binanceClient->getOrderStatus("12345", core::Symbol::fromString("BTCUSDT"));
     auto report = futureReport.get();
     
     // Verify the execution report
-    EXPECT_EQ(report.symbol(), "BTCUSDT");
+    EXPECT_EQ(report.symbol(), core::Symbol::fromString("BTCUSDT"));
     EXPECT_EQ(report.orderId(), "my_order_3");
     EXPECT_EQ(report.exchangeOrderId(), "12345");
     EXPECT_EQ(report.status(), OrderState::PARTIALLY_FILLED);
@@ -316,7 +321,7 @@ TEST_F(BinanceApiClientTest, GetAccountBalances) {
     })";
     
     // Expect the rate limit controller to be called
-    EXPECT_CALL(*mockRateLimitController, waitForPermission(ExchangeRequestType::ACCOUNT_INFO)).Times(1);
+    EXPECT_CALL(*mockRateLimitController, waitForPermission(ExchangeRequestType::GetAccountBalance)).Times(1);
     
     // Get account balances
     auto futureBalances = binanceClient->getAccountBalances();
@@ -339,10 +344,10 @@ TEST_F(BinanceApiClientTest, GetCurrentPrice) {
     })";
     
     // Expect the rate limit controller to be called
-    EXPECT_CALL(*mockRateLimitController, waitForPermission(ExchangeRequestType::MARKET_DATA)).Times(1);
+    EXPECT_CALL(*mockRateLimitController, waitForPermission(ExchangeRequestType::GetMarketData)).Times(1);
     
     // Get current price
-    auto futurePrice = binanceClient->getCurrentPrice("BTCUSDT");
+    auto futurePrice = binanceClient->getCurrentPrice(core::Symbol::fromString("BTCUSDT"));
     auto price = futurePrice.get();
     
     // Verify the price
@@ -361,13 +366,13 @@ TEST_F(BinanceApiClientTest, OrderRejection) {
     
     // Create a market buy order
     Order order;
-    order.setTradingPair("BTCUSDT");
+    order.setTradingPair(core::Symbol::fromString("BTCUSDT"));
     order.setSide(OrderSide::BUY);
     order.setType(OrderType::MARKET);
     order.setQuantity(100.0);  // Very large order
     
     // Expect the rate limit controller to be called
-    EXPECT_CALL(*mockRateLimitController, waitForPermission(ExchangeRequestType::ORDER_PLACEMENT)).Times(1);
+    EXPECT_CALL(*mockRateLimitController, waitForPermission(ExchangeRequestType::PlaceOrder)).Times(1);
     
     // Place the order and expect rejection
     auto futureReport = binanceClient->placeOrder(order);
