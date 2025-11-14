@@ -886,6 +886,8 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                         } else pt.regime = 0;
                     } catch (...) { pt.regime = 0; }
                     pendingTraining_.push_back(pt);
+                    // Diagnostic: log captured regime for this buffered sample
+                    LOG_TRACE("ImbalanceDetectionEngine: buffered training sample for {} regime={}", pt.symbol.toString(), pt.regime);
 
                         // Evaluate warmup gating immediately after buffering a sample.
                         if (!trainingEnabled_.load()) {
@@ -1335,6 +1337,13 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                                                 if (regimeToSave < 0 || regimeToSave >= NUMBER_OF_REGIMES) regimeToSave = 0;
                                                 auto h = handles[regimeToSave];
                                                 if (h) {
+                                                    // Diagnostic: log which regime we're about to persist and its update count
+                                                    try {
+                                                        int mu = trading::perception::bayes_get_num_updates(h);
+                                                        LOG_DEBUG("ImbalanceDetectionEngine: preparing auto-save for regime {} (updates={}) for {}:{}", regimeToSave, mu, exch.toString(), sym.toString());
+                                                    } catch (...) {
+                                                        LOG_TRACE("ImbalanceDetectionEngine: preparing auto-save for regime {} (updates=unknown) for {}:{}", regimeToSave, exch.toString(), sym.toString());
+                                                    }
                                                     std::string regimeName = marketRegimeToString(static_cast<MarketRegimeType>(regimeToSave));
                                                     std::string filename = base + name + "_" + regimeName + ".json";
                                                     saveTasks.emplace_back(h, filename);

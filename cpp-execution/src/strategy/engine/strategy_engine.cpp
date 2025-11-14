@@ -475,7 +475,17 @@ void StrategyEngine::processQueuedSignals() {
                  }
              }
              if (allowed) {
-                 imbalanceDetector_->analyzeMetrics(metrics);
+                // Ensure the imbalance detector sees the momentum-correlator's market regime
+                // MomentumCorrelation is the authoritative source of the regime; copy it into
+                // the OrderBookMetrics.metrics map so downstream consumers (e.g., ImbalanceDetectionEngine)
+                // can read it when buffering training samples or selecting per-regime models.
+                if (momentumCorrelator_) {
+                    MarketRegimeType detected = momentumCorrelator_->detectMarketRegime();
+                    metrics.metrics["marketRegime"] = static_cast<double>(detected);
+                    LOG_TRACE("Injected marketRegime={} into metrics for {}", marketRegimeToString(detected), orderBook.getSymbol());
+                }
+
+                imbalanceDetector_->analyzeMetrics(metrics);
              } else {
                  // skip enqueueing this heavy metric under backpressure
                  // Optionally record a counter/metric here

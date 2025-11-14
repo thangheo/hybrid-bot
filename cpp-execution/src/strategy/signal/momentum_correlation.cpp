@@ -140,7 +140,8 @@ void MomentumCorrelation::updateCorrelationModel(
  }
  
  MarketRegimeType MomentumCorrelation::detectMarketRegime() const {
-     return current_regime_;
+    std::lock_guard<std::mutex> lock(correlation_mutex_);
+    return current_regime_;
  }
   
  
@@ -749,6 +750,7 @@ void MomentumCorrelation::updateHighestCorrelatedMetrics() {
  }
  
 MarketRegimeType MomentumCorrelation::getCurrentMarketRegime() const {
+    std::lock_guard<std::mutex> lock(correlation_mutex_);
     return current_regime_;
 }
 
@@ -852,16 +854,23 @@ void MomentumCorrelation::updateMarketRegime() {
     
     
     // Apply smoothing to prevent rapid regime switching
-    applyRegimeSmoothing(detectedRegime);
-    
-    // Debug logging (optional)
-    if (current_regime_ != detectedRegime) {
-        LOG_DEBUG("Market regime change: {} -> {} (vol={:.4f}, dir={:.4f}, osc={:.4f}, trend={:.2f}, stress={:.2f})",
-                  marketRegimeToString(current_regime_), marketRegimeToString(detectedRegime),
-                  volatility, directionalMovement, oscillation, trendPersistence, stressIndicator);
+    // Hold the correlation mutex while we consult/update the current_regime_
+    // to avoid a read/write race with other threads that call detectMarketRegime()
+    {
+        std::lock_guard<std::mutex> lock(correlation_mutex_);
+        MarketRegimeType previous = current_regime_;
+        applyRegimeSmoothing(detectedRegime);
+
+        // Debug logging (optional)
+        if (previous != detectedRegime) {
+            LOG_DEBUG("Market regime change: {} -> {} (vol={:.4f}, dir={:.4f}, osc={:.4f}, trend={:.2f}, stress={:.2f})",
+                      marketRegimeToString(previous), marketRegimeToString(detectedRegime),
+                      volatility, directionalMovement, oscillation, trendPersistence, stressIndicator);
+        }
+
+        // commit
+        current_regime_ = detectedRegime;
     }
-    // update current regime
-    current_regime_ = detectedRegime;
 }
 
 //Helper function to calculate Low liquidity index
