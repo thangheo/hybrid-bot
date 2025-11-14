@@ -46,7 +46,7 @@ BalanceValidatorConfig BalanceValidatorConfigLoader::createDefault() {
         {"kraken", 0.0026}
     };
     config.balanceBufferPercent = 0.01; // 1%
-    config.balanceCacheExpiry = std::chrono::milliseconds(100); // 100 milliseconds
+    config.balanceCacheExpiry = std::chrono::milliseconds(20); // 20 milliseconds
     config.enableRealTimeValidation = true;
     config.skipBalanceForExits = false;
     config.minNotionalValue = 10.0; // $10 minimum

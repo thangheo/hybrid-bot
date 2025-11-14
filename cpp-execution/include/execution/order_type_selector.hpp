@@ -83,7 +83,7 @@ private:
     // - spread_threshold_: relative spread fraction (e.g. 0.001 == 0.1%)
     double volatility_threshold_ = 0.02;
     double liquidity_threshold_ = 0.5;
-    double spread_threshold_ = 0.001;
+    double spread_threshold_ = 0.0005; // 0.05%
     
     // Custom selection strategy
     std::function<OrderTypeSelection(
