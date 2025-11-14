@@ -197,21 +197,21 @@ TEST_F(RateLimitControllerTest, DifferentRequestTypes) {
         std::chrono::milliseconds(1000) // Next reset in 1000ms
     );
     
-    // Wait for all futures to complete
-    future1.wait();
-    future2.wait();
-    future3.wait();
-    future4.wait();
-    future5.wait();
-    
+    // Wait for all futures to complete and capture results (get() can be called only once)
+    auto r1 = future1.get();
+    auto r2 = future2.get();
+    auto r3 = future3.get();
+    auto r4 = future4.get();
+    auto r5 = future5.get();
+
     // We should have executed all requests eventually
     EXPECT_EQ(executionCount, 5);
-    
+
     // The first 3 and 5th requests should have executed before the 4th
-    EXPECT_LT(future1.get(), future4.get());
-    EXPECT_LT(future2.get(), future4.get());
-    EXPECT_LT(future3.get(), future4.get());
-    EXPECT_LT(future5.get(), future4.get());
+    EXPECT_LT(r1, r4);
+    EXPECT_LT(r2, r4);
+    EXPECT_LT(r3, r4);
+    EXPECT_LT(r5, r4);
 }
 
 } // namespace test

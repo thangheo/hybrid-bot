@@ -25,6 +25,7 @@ TEST_F(RequestPrioritizerTest, InitiallyEmpty) {
 }
 
 TEST_F(RequestPrioritizerTest, ProcessesSingleRequest) {
+    prioritizer.start();
     // Use a promise to verify the request was processed
     std::promise<bool> promise;
     auto future = promise.get_future();
@@ -51,6 +52,7 @@ TEST_F(RequestPrioritizerTest, ProcessesSingleRequest) {
 }
 
 TEST_F(RequestPrioritizerTest, ProcessesMultipleRequests) {
+    prioritizer.start();
     const int requestCount = 100;
     std::vector<std::future<int>> futures;
     std::atomic<int> counter{0};
@@ -89,6 +91,7 @@ TEST_F(RequestPrioritizerTest, ProcessesMultipleRequests) {
 }
 
 TEST_F(RequestPrioritizerTest, RespectsPriorities) {
+    prioritizer.start();
     std::vector<std::future<int>> futures;
     std::vector<int> executionOrder;
     std::mutex mutex;
@@ -156,6 +159,7 @@ TEST_F(RequestPrioritizerTest, RespectsPriorities) {
 }
 
 TEST_F(RequestPrioritizerTest, StopAndStart) {
+    prioritizer.start();
     std::atomic<int> counter{0};
     std::vector<std::future<int>> futures;
     
@@ -210,6 +214,7 @@ TEST_F(RequestPrioritizerTest, StopAndStart) {
 }
 
 TEST_F(RequestPrioritizerTest, HandlesExceptions) {
+    prioritizer.start();
     std::atomic<int> counter{0};
     
     // Submit a request that throws an exception

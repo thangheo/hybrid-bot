@@ -26,6 +26,8 @@ file(GLOB_RECURSE DATA_INGESTION_SOURCES
     "websocket/exchanges/*.cpp"    
 
     ${CMAKE_SOURCE_DIR}/src/execution/rate_limit_controller.cpp
+    ${CMAKE_SOURCE_DIR}/src/execution/request_prioritizer.cpp
+    
 )
 
 # Remove example files from sources

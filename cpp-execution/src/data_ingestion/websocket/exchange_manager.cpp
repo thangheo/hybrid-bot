@@ -16,7 +16,7 @@
 
 // #include "iostream"
 // using namespace trading::common;
-#define LOG_DEBUG(msg) Logger::getLogger()->debug(msg)
+// #define LOG_DEBUG(msg) Logger::getLogger()->debug(msg)
 namespace trading {
 namespace data_ingestion {
 
