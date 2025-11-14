@@ -276,9 +276,14 @@ void PositionTracker::processExecutionReport(const ExecutionReport& executionRep
             return;
         }
         
-        if (!std::isfinite(executionReport.quantity()) || executionReport.quantity() <= 0.0) {
+        // Accept reports where the declared order quantity may be zero
+        // (some execution adapters populate only filledQuantity for FILLED reports).
+        // Only skip if both quantity and filledQuantity are invalid/zero.
+        bool hasValidQuantity = std::isfinite(executionReport.quantity()) && executionReport.quantity() > 0.0;
+        bool hasValidFilled = std::isfinite(executionReport.filledQuantity()) && executionReport.filledQuantity() > 0.0;
+        if (!hasValidQuantity && !hasValidFilled) {
             std::cerr << "PositionTracker: Invalid quantity in execution report: " 
-                      << executionReport.quantity() << " - skipping" << std::endl;
+                      << executionReport.quantity() << " filled=" << executionReport.filledQuantity() << " - skipping" << std::endl;
             return;
         }
         

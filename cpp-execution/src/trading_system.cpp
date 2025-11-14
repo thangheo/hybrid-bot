@@ -9,7 +9,7 @@
 #include <fstream>
 #include "common/logger.hpp"
 #include "execution/models/order.hpp"
-#include "position.hpp"
+// position.hpp (local in-memory cache) removed: prefer canonical RiskManager/PositionTracker
 
 #include <memory>
 #include <unordered_map>
@@ -547,10 +547,20 @@ void Trading_system::exitMonitorLoop() {
                         //         qtyResolved = true;
                         //     }
                         // } catch (...) {}
-                        exitQty = getLocalPosition(sym.toString()).value_or(0.0);
-                        LOG_DEBUG("Exit monitor: local cached position for {} = {}", symbol, exitQty);
-                        if (exitQty > 1e-12) {
-                            qtyResolved = true;
+                        // Prefer authoritative cached position from RiskManager (PositionTracker/PositionSync)
+                        try {
+                            if (riskManager_) {
+                                auto posOpt = riskManager_->getCachedPosition(exchangeId, sym);
+                                if (posOpt.has_value() && std::abs(posOpt.value()) > 1e-12) {
+                                    exitQty = std::abs(posOpt.value());
+                                    qtyResolved = true;
+                                    LOG_DEBUG("Exit monitor: riskManager cached position for {}@{} = {}", sym.toString(), exchangeId.toString(), exitQty);
+                                } else {
+                                    LOG_TRACE("Exit monitor: no cached position in RiskManager for {}@{}", sym.toString(), exchangeId.toString());
+                                }
+                            }
+                        } catch (const std::exception& e) {
+                            LOG_WARN("Exit monitor: failed to query RiskManager cached position: {}", e.what());
                         }
 
                         // Fallback to RiskManager cached position only if local cache missing
@@ -1667,35 +1677,25 @@ void Trading_system::execWorkerLoop(size_t workerId) {
                 // Query available balance: prefer RiskManager cached position (PositionSync -> PositionTracker -> ExecutionInterface)
                 // Fallback to marketDataInterface balance cache if RiskManager has no data.
                 double availableQty = trackedQty;
-                //use local getLocalPosition
-                // write the fucking code to get local position getLocalPosition(const std::string &symbol) {
-                auto symbol = task.symbol.toString();
-                auto ret = getLocalPosition(symbol);
-                if (ret.has_value()) {
-                    availableQty = ret.value();
-                    LOG_INFO("Exit: using local tracked position for {}@{} = {}", task.symbol.toString(), task.exchangeId.toString(), availableQty);
-                } else {
-                    LOG_TRACE("Exit: no local tracked position for {}@{}", task.symbol.toString(), task.exchangeId.toString());
-                    // use fallback to risk manager
-                    try {
-                        if (riskManager_) {
-                            auto pos = riskManager_->getCachedPosition(task.exchangeId, task.symbol);
-                            if (pos.has_value()) {
-                                // getCachedPosition returns std::optional<double>, not a struct,
-                                // so use value() (or *pos) to obtain the double quantity.
-                                availableQty = pos.value();
-                                LOG_INFO("Exit: using RiskManager cached position for {}@{} = {}", task.symbol.toString(), task.exchangeId.toString(), availableQty);
-                            } else {
-                                LOG_TRACE("Exit: no RiskManager cached position for {}@{}", task.symbol.toString(), task.exchangeId.toString());
-                                // MarketDataInterface does not expose an available-balance API in this build,
-                                // so we cannot query balances here; keep availableQty as-is and rely on
-                                // RiskManager / ExecutionInterface or external account service for authoritative values.
-                                LOG_TRACE("Exit: skipping MarketDataInterface balance fallback for {}@{} (API not available)", task.symbol.toString(), task.exchangeId.toString());
-                            }
+                // Prefer authoritative RiskManager cached position instead of the local ad-hoc cache.
+                try {
+                    if (riskManager_) {
+                        auto pos = riskManager_->getCachedPosition(task.exchangeId, task.symbol);
+                        if (pos.has_value()) {
+                            availableQty = pos.value();
+                            LOG_INFO("Exit: using RiskManager cached position for {}@{} = {}", task.symbol.toString(), task.exchangeId.toString(), availableQty);
+                        } else {
+                            LOG_TRACE("Exit: no RiskManager cached position for {}@{}", task.symbol.toString(), task.exchangeId.toString());
+                            // MarketDataInterface does not expose an available-balance API in this build,
+                            // so we cannot query balances here; keep availableQty as-is and rely on
+                            // RiskManager / ExecutionInterface or external account service for authoritative values.
+                            LOG_TRACE("Exit: skipping MarketDataInterface balance fallback for {}@{} (API not available)", task.symbol.toString(), task.exchangeId.toString());
                         }
-                    } catch (const std::exception &e) {
-                        LOG_WARN("Exit: failed to get available balance for {}@{}: {}", task.symbol.toString(), task.exchangeId.toString(), e.what());
+                    } else {
+                        LOG_TRACE("Exit: riskManager_ not available for {}@{}", task.symbol.toString(), task.exchangeId.toString());
                     }
+                } catch (const std::exception &e) {
+                    LOG_WARN("Exit: failed to get available balance for {}@{}: {}", task.symbol.toString(), task.exchangeId.toString(), e.what());
                 }
 
                 LOG_INFO("[EXIT] Detected exit for {} - trackedQty={} availableQty={}",
@@ -1928,7 +1928,6 @@ void Trading_system::execWorkerLoop(size_t workerId) {
                       << " qty=" << finalQty
                       << " notional=$" << (currentPrice * finalQty)
                       << std::endl;
-            addLocalPosition(task.symbol.toString(), 0.0); // touch local cache to avoid missing key
 
             // 🚨 RECORD TRADE FOR EMERGENCY FREQUENCY TRACKING
             recordTradeWithType(task.symbol.toString(), "ENTRY");
@@ -1962,12 +1961,27 @@ void Trading_system::execWorkerLoop(size_t workerId) {
                     // Update local authoritative cache for executed ENTRY
                     try {
                         double signedQty = (task.direction == core::Direction::BUY) ? finalQty : -finalQty;
-                        auto prevOpt = getLocalPosition(task.symbol.toString());
-                        double prev = prevOpt.has_value() ? *prevOpt : 0.0;
-                        addLocalPosition(task.symbol.toString(), signedQty);
-                        auto nowOpt = getLocalPosition(task.symbol.toString());
-                        double now = nowOpt.has_value() ? *nowOpt : 0.0;
-                        LOG_INFO("Exec worker: updated local cache for {} prev={} -> now={}", task.symbol.toString(), prev, now);
+                        // Query authoritative position before and after; PositionTracker should be updated
+                        double prev = 0.0;
+                        double now = 0.0;
+                        try {
+                            if (riskManager_) {
+                                auto prevOpt = riskManager_->getCachedPosition(task.exchangeId, task.symbol);
+                                prev = prevOpt.has_value() ? prevOpt.value() : 0.0;
+                            }
+                        } catch (...) {}
+
+                        // Do not mutate a local cache here. Position updates are handled by RiskManager/PositionTracker
+                        // Attempt to read updated position from RiskManager (best-effort, may be async)
+                        try {
+                            if (riskManager_) {
+                                auto nowOpt = riskManager_->getCachedPosition(task.exchangeId, task.symbol);
+                                now = nowOpt.has_value() ? nowOpt.value() : prev;
+                            }
+                        } catch (...) { now = prev; }
+
+                        LOG_INFO("Exec worker: authoritative cached position for {} @ {} prev={} -> now={} (delta approx={})",
+                                 task.symbol.toString(), task.exchangeId.toString(), prev, now, signedQty);
                     } catch (...) {
                         LOG_WARN("Exec worker: failed to update local position cache for {}", task.symbol.toString());
                     }
@@ -2040,16 +2054,41 @@ void Trading_system::setupComponentConnections() {
         try {
             executionService_->registerExecutionCallback([this](const execution::ExecutionResponse& resp) {
                 try {
-                    // Convert ExecutionResponse -> ExecutionReport (best-effort)
+                    // Best-effort: build a rich ExecutionReport from the underlying Order
+                    // so downstream consumers (PositionTracker, PortfolioManager)
+                    // receive quantity/filledQuantity and fills instead of zeros.
                     execution::models::ExecutionReport report;
                     report.setOrderId(resp.client_order_id);
-                    // Exchange/order ids may be empty for failures; best-effort only
-                    // Try to populate status
+
                     if (resp.success) {
-                        report.setStatus(execution::models::OrderState::FILLED);
+                        // Try to fetch the authoritative order state from the execution service
+                        try {
+                            auto status = executionService_->getOrderStatus(resp.client_order_id);
+                            if (status.found && status.order) {
+                                // Create report from order to capture fills/quantities
+                                auto rpt_ptr = execution::models::ExecutionReport::createFromOrder(status.order);
+                                if (rpt_ptr) {
+                                    report = *rpt_ptr; // copy
+                                } else {
+                                    // Fallback to mark as FILLED if we couldn't create from order
+                                    report.setStatus(execution::models::OrderState::FILLED);
+                                }
+                            } else {
+                                // Order not found in tracker; still mark as FILLED so risk sees it,
+                                // but quantities will remain empty (best-effort). This path should be
+                                // rare; consider improving ExecutionResponse to carry quantities.
+                                report.setStatus(execution::models::OrderState::FILLED);
+                            }
+                        } catch (const std::exception& e) {
+                            // If fetching status failed, still set FILLED to avoid losing event
+                            std::cerr << "Warning: failed to enrich ExecutionResponse with order status: " << e.what() << std::endl;
+                            report.setStatus(execution::models::OrderState::FILLED);
+                        }
                     } else {
                         report.setStatus(execution::models::OrderState::REJECTED);
+                        report.setRejectReason(resp.error_message);
                     }
+
                     // Forward to RiskManager
                     if (riskManager_) {
                         riskManager_->processExecutionReport(report);
