@@ -1125,30 +1125,53 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                         std::vector<std::tuple<std::vector<double>, int, core::ExchangeId, core::Symbol, int>> toTrain;
                         {
                             std::lock_guard<std::mutex> lk_pending2(pendingTrainingMutex_);
-                            auto now = m.timestamp;
+                            auto workerNow = m.timestamp;
                             while (!pendingTraining_.empty()) {
                                 const auto &pt = pendingTraining_.front();
-                                if (now - pt.timestamp >= labelingDelay_) {
-                                        // Use the stored reference at capture if available, otherwise re-evaluate current reference
+                                // Determine 'now' relative to this pending sample's symbol.
+                                // Prefer the latest per-symbol snapshot timestamp; fallback to workerNow.
+                                core::Timestamp nowForPt = workerNow;
+                                try {
+                                    std::lock_guard<std::mutex> lk(latestSnapshotsMutex_);
+                                    std::string key = pt.exchangeId.toString() + "_" + pt.symbol.toString();
+                                    auto it = latestSnapshots_.find(key);
+                                    if (it != latestSnapshots_.end()) nowForPt = it->second.timestamp;
+                                } catch (...) {}
+
+                                if (nowForPt - pt.timestamp >= labelingDelay_) {
+                                        // Use the stored reference at capture if available, otherwise re-evaluate using
+                                        // the *latest snapshot for the same exchange+symbol* to avoid cross-symbol leakage.
                                         double baseRef = pt.referenceValue;
                                         double target = pt.referenceValue;
-                                        // try to read current counterpart for same reference type
                                         try {
+                                            // Try find latest snapshot for this exchange+symbol
+                                            OrderBookMetrics snapshot;
+                                            bool haveSnapshot = false;
+                                            try {
+                                                std::lock_guard<std::mutex> lk(latestSnapshotsMutex_);
+                                                std::string key = pt.exchangeId.toString() + "_" + pt.symbol.toString();
+                                                auto it = latestSnapshots_.find(key);
+                                                if (it != latestSnapshots_.end()) { snapshot = it->second; haveSnapshot = true; }
+                                            } catch (...) { haveSnapshot = false; }
+
+                                            // Prefer snapshot values; fallback to current 'm' if same symbol or snapshot missing
+                                            const OrderBookMetrics *useMetrics = nullptr;
+                                            if (haveSnapshot) useMetrics = &snapshot;
+                                            else useMetrics = &m; // fallback
+
                                             if (pt.referenceType == 1) { // vwap
-                                                double cur = m.getMetric("vwap", 0.0);
-                                                // If current VWAP missing, keep target == baseRef to avoid
-                                                // comparing different reference types (apples vs oranges)
+                                                double cur = useMetrics->getMetric("vwap", 0.0);
                                                 if (cur > 0.0) target = cur; else target = baseRef;
                                             } else if (pt.referenceType == 2) { // sma
-                                                double cur = m.getMetric("sma", 0.0);
+                                                double cur = useMetrics->getMetric("sma", 0.0);
                                                 if (cur > 0.0) target = cur; else target = baseRef;
                                             } else if (pt.referenceType == 3) { // micro
-                                                double bidP = m.bidPrice; double askP = m.askPrice;
-                                                double bidV = (m.bidVolumesByLevel.empty() ? m.totalBidVolume : m.bidVolumesByLevel.front());
-                                                double askV = (m.askVolumesByLevel.empty() ? m.totalAskVolume : m.askVolumesByLevel.front());
+                                                double bidP = useMetrics->bidPrice; double askP = useMetrics->askPrice;
+                                                double bidV = (useMetrics->bidVolumesByLevel.empty() ? useMetrics->totalBidVolume : useMetrics->bidVolumesByLevel.front());
+                                                double askV = (useMetrics->askVolumesByLevel.empty() ? useMetrics->totalAskVolume : useMetrics->askVolumesByLevel.front());
                                                 double denom = bidV + askV;
                                                 if (denom > 0.0) target = (bidP * askV + askP * bidV) / denom; else target = baseRef;
-                                            } else { target = m.midPrice; }
+                                            } else { target = useMetrics->midPrice; }
                                         } catch (...) { target = baseRef; }
 
                                         double priceChangeLogRet = 0.0;
@@ -1157,7 +1180,15 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                                         }
 
                                         // FIXED: More robust volatility normalization with strict bounds
-                                        double vol = std::clamp(m.realizedVolatility, 0.001, 0.1); // Tighter vol range: 0.1% - 10%
+                                        // Use volatility from the same snapshot used for target calculation when possible
+                                        double vol = 0.0;
+                                        try {
+                                            std::lock_guard<std::mutex> lk(latestSnapshotsMutex_);
+                                            std::string key = pt.exchangeId.toString() + "_" + pt.symbol.toString();
+                                            auto it = latestSnapshots_.find(key);
+                                            if (it != latestSnapshots_.end()) vol = it->second.realizedVolatility; else vol = m.realizedVolatility;
+                                        } catch (...) { vol = m.realizedVolatility; }
+                                        vol = std::clamp(vol, 0.001, 0.1); // Tighter vol range: 0.1% - 10%
                                         double normalizedReturn = 0.0;
                                         if (vol > 0.0 && std::isfinite(vol) && std::isfinite(priceChangeLogRet)) {
                                             normalizedReturn = priceChangeLogRet / vol;
@@ -1235,10 +1266,11 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
 
                                         // Thread-safe statistics tracking with proper logging
                                         trackLabelingEvent(labelDirection, pt.symbol.toString(), normalizedReturn, 
-                                                        std::chrono::duration_cast<std::chrono::milliseconds>(now - pt.timestamp));
+                                                        std::chrono::duration_cast<std::chrono::milliseconds>(nowForPt - pt.timestamp));
 
                                         // Calculate realized profit (after trading fees) 
-                                        double realizedPct = std::abs(std::exp(priceChangeLogRet) - 1.0);
+                                        // preserve sign: positive if price moved in predicted direction, negative otherwise
+                                        double realizedPct = std::exp(priceChangeLogRet) - 1.0;
                                         double tradingFee = 0.001; // 0.1% fee
                                         double realizedProfit = realizedPct - tradingFee;
                                         
@@ -1582,6 +1614,12 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
         if (detectorWorkerRunning_.load()) {
             if (detectorQueue_.size() < detectorQueueMax_) {
                 detectorQueue_.push_back(metrics);
+                // Store latest per-symbol snapshot for accurate labeling later
+                try {
+                    std::lock_guard<std::mutex> lk(latestSnapshotsMutex_);
+                    std::string key = metrics.exchangeId.toString() + "_" + metrics.symbol.toString();
+                    latestSnapshots_[key] = metrics;
+                } catch (...) {}
                 detectorQueueCv_.notify_one();
                 // LOG_TRACE("ImbalanceDetectionEngine: enqueued metrics for {}:{} (queue size={})", metrics.exchangeId, metrics.symbol, detectorQueue_.size());
                 return false; // enqueued for async processing
@@ -1618,6 +1656,12 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                 }
 
                 // Build features (same helper used by worker)
+                // Store latest snapshot for synchronous path as well
+                try {
+                    std::lock_guard<std::mutex> lk(latestSnapshotsMutex_);
+                    std::string key = metrics.exchangeId.toString() + "_" + metrics.symbol.toString();
+                    latestSnapshots_[key] = metrics;
+                } catch (...) {}
                 try {
                     std::vector<double> features = buildFeatures(metrics, results);
 

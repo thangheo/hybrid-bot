@@ -301,7 +301,7 @@ public:
     mutable std::mutex pendingTrainingMutex_;
 
     // Labeling configuration (milliseconds to wait before labelling a prediction)
-    std::chrono::milliseconds labelingDelay_{50000};
+    std::chrono::milliseconds labelingDelay_{2000};
     // Increased buffer to hold samples while labelingDelay is long (e.g., 60s)
     // Default enlarged to avoid dropping samples: ~65k
     size_t maxPendingTraining_ = 65536;
@@ -321,6 +321,9 @@ public:
     std::unordered_map<std::string, std::array<trading::perception::BayesHandle, NUMBER_OF_REGIMES>> bayesHandles_;
     mutable std::mutex bayesHandlesMutex_;
 
+        // Latest per-(exchange,symbol) snapshot used for correct labeling (avoid using unrelated 'm')
+        std::unordered_map<std::string, OrderBookMetrics> latestSnapshots_;
+        mutable std::mutex latestSnapshotsMutex_;
     // Regime information is now sourced from OrderBookMetrics.metrics["marketRegime"].
     // The old RegimeSubscriber is no longer used.
 
