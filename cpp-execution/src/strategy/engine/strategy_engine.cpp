@@ -481,8 +481,11 @@ void StrategyEngine::processQueuedSignals() {
                 // can read it when buffering training samples or selecting per-regime models.
                 if (momentumCorrelator_) {
                     MarketRegimeType detected = momentumCorrelator_->detectMarketRegime();
-                    metrics.metrics["marketRegime"] = static_cast<double>(detected);
-                    LOG_TRACE("Injected momentumCorrelator_ marketRegime={} into metrics for {}", marketRegimeToString(detected), orderBook.getSymbol());
+                    // only save if valid regime
+                    if (detected != MarketRegimeType::UNKNOWN) {
+                        metrics.metrics["marketRegime"] = static_cast<double>(detected);
+                        LOG_TRACE("Injected momentumCorrelator_ marketRegime={} into metrics for {}", marketRegimeToString(detected), orderBook.getSymbol());
+                    }
                 }
 
                 imbalanceDetector_->analyzeMetrics(metrics);
