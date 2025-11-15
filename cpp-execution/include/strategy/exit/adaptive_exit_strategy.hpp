@@ -110,6 +110,9 @@ private:
     std::map<std::string, MarketHistory> marketHistory_;
     std::map<std::string, TradeState> activeTrades_;
     std::map<std::string, std::deque<double>> historicalPnLs_;  // For Sharpe calculation
+    // historicalPnLs_ stores realized trade PnL in basis points (bps). Do NOT
+    // populate this with tick-level or expected PnL values; use
+    // recordRealizedPnlBps() when a trade is actually closed and realized.
 
     // Store latest strategy/execution signal per symbol for exit logic
     std::unordered_map<std::string, core::TradingSignal> latestSignalBySymbol_;
@@ -221,6 +224,13 @@ public:
     void closePosition(const std::string& symbol, 
                       ExitReason reason, 
                       double final_pnl);
+
+    /**
+     * Record a realized trade-level PnL expressed in basis points (bps).
+     * This should be called only when a trade is actually closed and the
+     * realized PnL is known (e.g., from execution/fill confirmation).
+     */
+    void recordRealizedPnlBps(const std::string& symbol, double realized_pnl_bps);
 
     /**
      * Mark a position as having an exit in-flight. This avoids immediate closing

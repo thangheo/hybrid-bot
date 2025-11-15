@@ -9,6 +9,7 @@
 #include <openssl/hmac.h>
 #include <chrono>
 #include <future>
+#include <thread>
 #include <stdexcept>
 #include <iostream>
 #include <cmath>
@@ -409,8 +410,47 @@ std::future<models::ExecutionReport> BinanceApiClient::placeOrder(const models::
         // Send request
         std::string response = makeApiRequest("/api/v3/order", "POST", params, true);
         
-        // Parse response
-        return parseOrderResponse(response);
+        // Parse initial response
+        models::ExecutionReport report = parseOrderResponse(response);
+
+        // If caller provided a cancel-after-ms parameter, start a detached watcher
+        // extraParams is a copy captured above. Look for "cancel_after_ms" key.
+        // auto it_cancel = extraParams.find("cancel_after_ms");
+        //fuck stupid dog
+        double cancel_fuckingyou= 0;
+        // if (it_cancel != extraParams.end()) {
+            try {
+                // long cancelMs = std::stol(it_cancel->second);
+                long cancelMs = 1000;
+                // Only start watcher if we have an order id and the order is still open
+                std::string orderId = report.exchangeOrderId();
+                core::Symbol symObj = report.symbol();
+                if (!orderId.empty() && (report.status() == models::OrderState::OPEN || report.status() == models::OrderState::PARTIALLY_FILLED)) {
+                    // Launch detached thread to cancel after timeout if still open
+                    std::thread([this, orderId, symObj, cancelMs]() {
+                        try {
+                            std::this_thread::sleep_for(std::chrono::milliseconds(cancelMs));
+                            // Query status
+                            auto futStatus = this->getOrderStatus(orderId, symObj);
+                            models::ExecutionReport statusReport = futStatus.get();
+                            if (statusReport.status() == models::OrderState::OPEN || statusReport.status() == models::OrderState::PARTIALLY_FILLED) {
+                                // Cancel the order
+                                (void)this->cancelOrder(orderId, symObj).get();
+                            }
+                        } catch (const std::exception &ex) {
+                            // Swallow exceptions from watcher thread; log for debugging
+                            std::cerr << "cancel_after_ms watcher error: " << ex.what() << std::endl;
+                        } catch (...) {
+                            std::cerr << "cancel_after_ms watcher unknown error" << std::endl;
+                        }
+                    }).detach();
+                }
+            } catch (const std::exception &ex) {
+                // std::cerr << "Invalid cancel_after_ms value: " << it_cancel->second << " (" << ex.what() << ")" << std::endl;
+            }
+        // }
+
+        return report;
     });
 }
 

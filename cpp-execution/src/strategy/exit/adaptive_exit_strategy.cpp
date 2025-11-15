@@ -203,7 +203,12 @@ AdaptiveExitStrategy::DynamicParameters AdaptiveExitStrategy::calculateDynamicPa
         // spr_ticks is number of ticks; convert ticks -> price -> bps
         double spread_price = cur.spread_ema; // raw price spread
         double spread_bps = (cur.mid_price > 0.0) ? (spread_price / cur.mid_price * 10000.0) : (spread_price * 10000.0);
-        p.expected_edge = spread_bps * 0.1; // default: 10% of spread in bps
+        // p.expected_edge = spread_bps * 0.1; // default: 10% of spread in bps
+        p.expected_edge = spread_bps * 0.25;         // 25% của spread
+        p.expected_edge = std::clamp(p.expected_edge, 
+                                    0.2,            // min 0.2 bps
+                                    5.0);           // max 5 bps
+
         p.sharpe_estimate = 0.5;
     }
 
@@ -588,8 +593,8 @@ bool AdaptiveExitStrategy::shouldEnterPosition(
     if (params.expected_edge < spread_bps * 1.2) {
         LOG_INFO("Rejecting entry for {}: Expected edge too small ({:.4f} bps < {:.4f} bps (=1.2*spread))",
                   symbol, params.expected_edge, spread_bps * 1.2);
-        LOG_TRACE("Details for {}: expected_edge(bps)={:.6f}, spread_price={} mid={} spread_bps={:.6f}",
-                  symbol, params.expected_edge, micro.spread_ema, micro.mid_price, spread_bps);
+        // LOG_INFO("Rejecting!! Details for {}: expected_edge(bps)={:.6f}, spread_price={} mid={} spread_bps={:.6f}",
+        //           symbol, params.expected_edge, micro.spread_ema, micro.mid_price, spread_bps);
         return false;  // Edge too small vs spread cost
     }
     //debug with reject reason
@@ -729,12 +734,25 @@ void AdaptiveExitStrategy::closePosition(const std::string& symbol,
     // double total_pnl = calculateTotalPnLUnlocked(symbol, final_pnl);
         LOG_INFO("AdaptiveExitStrategy: closed position on {} due to {} with final PnL: {:.4f} ticks )",
                  symbol, exitReasonToString(reason), final_pnl);
-        // Update historical PnL for future Kelly calculations
-        historicalPnLs_[symbol].push_back(final_pnl);
-        if (historicalPnLs_[symbol].size() > 100) {
-            historicalPnLs_[symbol].pop_front();
-        }
+        // NOTE: do not record tick-level or expected PnL here. Historically the
+        // code pushed the "final_pnl" value (which often contains expected_pnl
+        // in bps coming from evaluateExit) into historicalPnLs_. That caused
+        // expected_edge estimates to collapse (tick updates) and resulted in
+        // permanent rejects. Only realized trade-level PnL (in bps) should be
+        // recorded via recordRealizedPnlBps() when an execution/fill confirms
+        // the closed trade's realized PnL.
     }
+}
+
+void AdaptiveExitStrategy::recordRealizedPnlBps(const std::string& symbol, double realized_pnl_bps) {
+    std::lock_guard<std::mutex> lock(tradesMutex_);
+    historicalPnLs_[symbol].push_back(realized_pnl_bps);
+    // cap history
+    if (historicalPnLs_[symbol].size() > 100) {
+        historicalPnLs_[symbol].pop_front();
+    }
+    LOG_INFO("AdaptiveExitStrategy: recorded realized PnL for {} = {:.4f} bps (history size={})",
+             symbol, realized_pnl_bps, historicalPnLs_[symbol].size());
 }
 
 double AdaptiveExitStrategy::calculateTotalPnL(const std::string& symbol, double final_pnl) const {
