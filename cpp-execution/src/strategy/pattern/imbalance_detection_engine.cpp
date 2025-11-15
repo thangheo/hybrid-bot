@@ -1052,7 +1052,6 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                                         bool allowEntry = true;
                                         if (opt) {
                                             if (!opt->shouldEnterPosition(symbol_str, microstructure, signal.probability)) {
-                                                LOG_INFO("ENTRY_BLOCKED_BY_ENTRY_FILTER: {}", symbol_str);
                                                 allowEntry = false;
                                             }
                                         } else {
