@@ -78,7 +78,7 @@ PositionLimitChecker* PreTradeRiskFilter::getPositionLimitChecker() const {
 }
 bool PreTradeRiskFilter::initialize() {
     try {
-        LOG_INFO("Initializing pre-trade risk filter...");
+        LOG_TRACE("Initializing pre-trade risk filter...");
 
         // Create DataInterface first
         if (!m_dataInterface) {
@@ -96,7 +96,7 @@ bool PreTradeRiskFilter::initialize() {
         if (!m_positionTracker) {
             m_positionTracker = std::make_shared<PositionTracker>(m_config, m_dataInterface);
         } else {
-            LOG_INFO("PreTradeRiskFilter: using injected PositionTracker (ptr={})", m_positionTracker.get());
+            LOG_TRACE("PreTradeRiskFilter: using injected PositionTracker (ptr={})", m_positionTracker.get());
         }
 
         // Initialize position tracker and data interface. initialize() is idempotent
@@ -137,7 +137,7 @@ bool PreTradeRiskFilter::initialize() {
             return false;
         }
         
-        LOG_INFO("Pre-trade risk filter initialized successfully");
+        LOG_TRACE("Pre-trade risk filter initialized successfully");
         return true;
     } catch (const std::exception& ex) {
         LOG_ERROR("Failed to initialize pre-trade risk filter: {}", ex.what());
@@ -146,36 +146,36 @@ bool PreTradeRiskFilter::initialize() {
 }
 
 bool PreTradeRiskFilter::shutdown() {
-    LOG_INFO("Shutting down PreTradeRiskFilter components...");
+    LOG_TRACE("Shutting down PreTradeRiskFilter components...");
 
     if (m_positionLimitChecker) {
         m_positionLimitChecker.reset();
-        LOG_INFO("PositionLimitChecker shut down");
+        LOG_TRACE("PositionLimitChecker shut down");
     }
     if (m_exposureCalculator) {
         m_exposureCalculator.reset();
-        LOG_INFO("ExposureCalculator shut down");
+        LOG_TRACE("ExposureCalculator shut down");
     }
     if (m_orderValidator) {
         m_orderValidator.reset();
-        LOG_INFO("OrderValidator shut down");
+        LOG_TRACE("OrderValidator shut down");
     }
     if (m_fatFingerProtection) {
         m_fatFingerProtection.reset();
-        LOG_INFO("FatFingerProtection shut down");
+        LOG_TRACE("FatFingerProtection shut down");
     }
     if (m_positionTracker) {
         m_positionTracker->shutdown();
         m_positionTracker.reset();
-        LOG_INFO("PositionTracker shut down");
+        LOG_TRACE("PositionTracker shut down");
     }
     if (m_dataInterface) {
         m_dataInterface->shutdown();
         m_dataInterface.reset();
-        LOG_INFO("DataInterface shut down");
+        LOG_TRACE("DataInterface shut down");
     }
 
-    LOG_INFO("PreTradeRiskFilter shutdown complete");
+    LOG_TRACE("PreTradeRiskFilter shutdown complete");
     return true;
 }
 
@@ -292,7 +292,7 @@ ValidationResult PreTradeRiskFilter::validateOrder(const OrderRequest& orderRequ
         );
         if (marketPrice > 0) {
             mutableOrder.price = marketPrice;
-            LOG_INFO("Order {}: Limit price was zero, set to market price {}", mutableOrder.clientOrderId, marketPrice);
+            LOG_TRACE("Order {}: Limit price was zero, set to market price {}", mutableOrder.clientOrderId, marketPrice);
         } else {
             ValidationResult result;
             result.signalId = mutableOrder.clientOrderId;
@@ -318,7 +318,7 @@ ValidationResult PreTradeRiskFilter::validateOrder(const OrderRequest& orderRequ
 
 bool PreTradeRiskFilter::updateRiskParameters(const RiskParameters& params) {
     try {
-        LOG_INFO("Updating risk parameters for {}/{}/{}",
+        LOG_TRACE("Updating risk parameters for {}/{}/{}",
                 params.exchangeId.toString(), params.tradingPair.toString(), params.strategyId);
 
         // Update position limits if provided
@@ -488,19 +488,19 @@ ValidationResult PreTradeRiskFilter::performAllChecks(const TradingSignal& signa
             LOG_DEBUG("  Violation: type={} desc='{}' limit={} actual={}",
                       toString(v.type), v.description, v.limitValue, v.actualValue);
         }
-        // LOG_INFO("Signal {} rejected: failed order validation", signal.getSignalId());
+        // LOG_TRACE("Signal {} rejected: failed order validation", signal.getSignalId());
     }
     
     // Check fat finger protection
     if (!m_fatFingerProtection->checkFatFinger(signal, result.violations)) {
         result.approved = false;
-        LOG_INFO("Signal {} rejected: failed fat finger check", signal.getSignalId());
+        LOG_TRACE("Signal {} rejected: failed fat finger check", signal.getSignalId());
     }
     
     // If approved, adjust size if needed (e.g., due to risk constraints)
     if (result.approved) {
         result.adjustedSize = signal.getTargetSize();
-        LOG_INFO("Signal {} approved", signal.getSignalId());
+        LOG_TRACE("Signal {} approved", signal.getSignalId());
     }
     
     return result;
@@ -516,10 +516,10 @@ ValidationResult PreTradeRiskFilter::performAllChecks(const OrderRequest& orderR
     // Check basic validation first
     if (!passesBasicValidation(orderRequest, result.violations)) {
         result.approved = false;
-        LOG_INFO("Order {} rejected: failed basic validation", orderRequest.clientOrderId);
+        LOG_TRACE("Order {} rejected: failed basic validation", orderRequest.clientOrderId);
         // Log detailed violations for easier debugging
         for (const auto& v : result.violations) {
-            LOG_INFO("  Violation: type={} desc='{}' limit={} actual={}",
+            LOG_TRACE("  Violation: type={} desc='{}' limit={} actual={}",
                      toString(v.type), v.description, v.limitValue, v.actualValue);
         }
         return result;
@@ -528,7 +528,7 @@ ValidationResult PreTradeRiskFilter::performAllChecks(const OrderRequest& orderR
     // Check position limits
     if (!m_positionLimitChecker->checkPositionLimit(orderRequest, result.violations)) {
         result.approved = false;
-        LOG_INFO("Order {} rejected: failed position limit check", orderRequest.clientOrderId);
+        LOG_TRACE("Order {} rejected: failed position limit check", orderRequest.clientOrderId);
     }
     
     // Check exposure limits
@@ -560,23 +560,23 @@ ValidationResult PreTradeRiskFilter::performAllChecks(const OrderRequest& orderR
                                     "Price unavailable for capping BUY order; rejecting order",
                                     0.0, 0.0);
                     result.violations.push_back(v);
-                    LOG_INFO("Order {} rejected: price unavailable for capping", orderRequest.clientOrderId);
+                    LOG_TRACE("Order {} rejected: price unavailable for capping", orderRequest.clientOrderId);
                 } else {
                     double cappedQty = allowedSize / currentPrice;
                     double adjustedQty = std::min(allowedSize, orderRequest.quantity);
                     adjustedQty = std::min(orderRequest.quantity, cappedQty);
                     result.approved = true;
                     result.adjustedSize = adjustedQty;
-                    LOG_INFO("Order {} exposure would exceed limits; capping BUY qty from {} to {} (cappedQty={})",
+                    LOG_TRACE("Order {} exposure would exceed limits; capping BUY qty from {} to {} (cappedQty={})",
                              orderRequest.clientOrderId, orderRequest.quantity, adjustedQty, cappedQty);
                 }
             } else {
                 result.approved = false;
-                LOG_INFO("Order {} rejected: failed exposure check and no allowed BUY quantity available", orderRequest.clientOrderId);
+                LOG_TRACE("Order {} rejected: failed exposure check and no allowed BUY quantity available", orderRequest.clientOrderId);
             }
 
             for (const auto& v : exposureViolations) {
-                LOG_INFO("  Exposure Violation: type={} desc='{}' limit={} actual={}'",
+                LOG_TRACE("  Exposure Violation: type={} desc='{}' limit={} actual={}'",
                          toString(v.type), v.description, v.limitValue, v.actualValue);
             }
         } else {
@@ -600,7 +600,7 @@ ValidationResult PreTradeRiskFilter::performAllChecks(const OrderRequest& orderR
                     result.approved = true;
                     result.adjustedSize = allowedSize;
                     handledByCapping = true;
-                    LOG_INFO("Order {} exposure would exceed limits; capping BUY quantity from {} to {}",
+                    LOG_TRACE("Order {} exposure would exceed limits; capping BUY quantity from {} to {}",
                              orderRequest.clientOrderId, orderRequest.quantity, allowedSize);
                 }
             } else if (orderRequest.side == core::Direction::SELL) {
@@ -615,7 +615,7 @@ ValidationResult PreTradeRiskFilter::performAllChecks(const OrderRequest& orderR
                         result.approved = true;
                         result.adjustedSize = available;
                         handledByCapping = true;
-                        LOG_INFO("Order {} would SELL more than available; capping SELL quantity from {} to {}",
+                        LOG_TRACE("Order {} would SELL more than available; capping SELL quantity from {} to {}",
                                  orderRequest.clientOrderId, orderRequest.quantity, available);
                     }
                 } catch (const std::exception& ex) {
@@ -625,9 +625,9 @@ ValidationResult PreTradeRiskFilter::performAllChecks(const OrderRequest& orderR
 
             if (!handledByCapping) {
                 result.approved = false;
-                LOG_INFO("Order {} rejected: failed exposure check", orderRequest.clientOrderId);
+                LOG_TRACE("Order {} rejected: failed exposure check", orderRequest.clientOrderId);
                 for (const auto& v : exposureViolations) {
-                    LOG_INFO("  Exposure Violation: type={} desc='{}' limit={} actual={}'",
+                    LOG_TRACE("  Exposure Violation: type={} desc='{}' limit={} actual={}'",
                              toString(v.type), v.description, v.limitValue, v.actualValue);
                 }
             }
@@ -639,22 +639,22 @@ ValidationResult PreTradeRiskFilter::performAllChecks(const OrderRequest& orderR
         result.approved = false;
         // Print detailed violations at info level for orders
         for (const auto& v : result.violations) {
-            LOG_INFO("  Violation: type={} desc='{}' limit={} actual={}'",
+            LOG_TRACE("  Violation: type={} desc='{}' limit={} actual={}'",
                      toString(v.type), v.description, v.limitValue, v.actualValue);
         }
-        // LOG_INFO("Order {} rejected: failed order validation", orderRequest.clientOrderId);
+        // LOG_TRACE("Order {} rejected: failed order validation", orderRequest.clientOrderId);
     }
     
     // Check fat finger protection
     if (!m_fatFingerProtection->checkFatFinger(orderRequest, result.violations)) {
         result.approved = false;
-        LOG_INFO("Order {} rejected: failed fat finger check", orderRequest.clientOrderId);
+        LOG_TRACE("Order {} rejected: failed fat finger check", orderRequest.clientOrderId);
     }
     
     // If approved, adjust size if needed (e.g., due to risk constraints)
     if (result.approved) {
         result.adjustedSize = orderRequest.quantity;
-        LOG_INFO("Order {} approved", orderRequest.clientOrderId);
+        LOG_TRACE("Order {} approved", orderRequest.clientOrderId);
     }
     
     return result;
@@ -664,7 +664,7 @@ bool PreTradeRiskFilter::passesBasicValidation(const TradingSignal& signal,
                                               std::vector<RiskViolation>& violations) {
     // Check for missing required fields
     if (signal.getSignalId().empty()) {
-        LOG_INFO("Signal rejected: missing Signal ID");
+        LOG_TRACE("Signal rejected: missing Signal ID");
         RiskViolation violation(
             ViolationType::OTHER,
             "Signal ID is missing",
@@ -676,7 +676,7 @@ bool PreTradeRiskFilter::passesBasicValidation(const TradingSignal& signal,
     }
 
     if (signal.getTradingPair().isEmpty()) {
-        LOG_INFO("Signal {} rejected: missing Trading Pair", signal.getSignalId());
+        LOG_TRACE("Signal {} rejected: missing Trading Pair", signal.getSignalId());
         RiskViolation violation(
             ViolationType::OTHER,
             "Trading pair is missing",
@@ -689,7 +689,7 @@ bool PreTradeRiskFilter::passesBasicValidation(const TradingSignal& signal,
     
     // Check for invalid values
     if (signal.getTargetSize() <= 0) {
-        LOG_INFO("Signal {} rejected: non-positive target size", signal.getSignalId());
+        LOG_TRACE("Signal {} rejected: non-positive target size", signal.getSignalId());
         RiskViolation violation(
             ViolationType::ORDER_SIZE_LIMIT,
             "Target size must be positive",
@@ -703,7 +703,7 @@ bool PreTradeRiskFilter::passesBasicValidation(const TradingSignal& signal,
     // Check for valid direction
     if (signal.getDirection() != core::Direction::BUY && 
         signal.getDirection() != core::Direction::SELL) {
-        LOG_INFO("Signal {} rejected: invalid direction", signal.getSignalId());
+        LOG_TRACE("Signal {} rejected: invalid direction", signal.getSignalId());
         RiskViolation violation(
             ViolationType::OTHER,
             "Invalid direction value",
