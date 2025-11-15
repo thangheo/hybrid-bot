@@ -159,11 +159,17 @@ private:
     // Last update times (milliseconds since epoch) for EWMA smoothing per metric
     std::map<std::string, uint64_t> last_update_ms_;
     std::map<std::string, double> feature_importance_;
-    MarketRegimeType current_regime_ = MarketRegimeType::NORMAL;
+    // Make current_regime_ atomic so reads/writes can be done lock-free where
+    // appropriate. Use .load()/.store() to access the value.
+    std::atomic<MarketRegimeType> current_regime_{MarketRegimeType::NORMAL};
     // Per-regime consecutive detection counters to implement hysteresis
     mutable std::map<MarketRegimeType, int> regime_consecutive_counts_;
     // Required consecutive detections per regime before switching
     std::map<MarketRegimeType, int> regime_required_counts_;
+    // Last detected regime (working detector) and a consecutive counter used
+    // by the smoothing logic. Protected by correlation_mutex_ when mutated.
+    mutable MarketRegimeType last_detection_ = MarketRegimeType::NORMAL;
+    mutable int consecutive_count_ = 0;
     // Lock-free snapshots published for fast read access by predictPriceMovement()
     // Updated under correlation_mutex_ via std::atomic_store/std::atomic_load helpers
     mutable std::shared_ptr<std::map<std::string, double>> coeffs_snapshot_;
@@ -221,7 +227,10 @@ private:
     double calculateMomentumAcceleration(const std::vector<double>& movements) const;
     // calculateMarketStress
     double calculateMarketStress(const std::vector<double>& movements, double volatility) const;
-    void applyRegimeSmoothing(MarketRegimeType& detectedRegime);
+    // Take detectedRegime by value; the smoothing implementation will acquire
+    // the correlation mutex and update `current_regime_` atomically when
+    // sufficient consecutive detections accumulate.
+    void applyRegimeSmoothing(MarketRegimeType detectedRegime);
     // regimeToString
     // std::string regimeToString(MarketRegime regime) const {
 };
