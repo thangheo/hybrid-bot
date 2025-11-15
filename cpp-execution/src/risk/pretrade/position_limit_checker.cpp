@@ -76,7 +76,7 @@ bool PositionLimitChecker::checkPositionLimit(const TradingSignal& signal,
     StrategyId strategyId = signal.getStrategyId();
     core::ExchangeId exchangeId = signal.exchangeId;
 
-    LOG_WARN("POSITION_CHECK_START: signal={} asset={} pair={} qty={} target={}", 
+    LOG_TRACE("POSITION_CHECK_START: signal={} asset={} pair={} qty={} target={}", 
               signal.getSignalId(), asset, tradingPair.toString(), signal.getQuantity(), signal.getTargetSize());
 
     // We treat configured limits as USD notional limits. Convert current
@@ -96,7 +96,7 @@ bool PositionLimitChecker::checkPositionLimit(const TradingSignal& signal,
         }
     } catch (...) { currentPrice = 0.0; }
 
-    LOG_WARN("PRICE_DEBUG: pair={} currentPrice={} positionTracker={}", 
+    LOG_TRACE("PRICE_DEBUG: pair={} currentPrice={} positionTracker={}", 
               tradingPair.toString(), currentPrice, (m_positionTracker ? "YES" : "NO"));
 
     double currentNotional = 0.0;
@@ -121,7 +121,7 @@ bool PositionLimitChecker::checkPositionLimit(const TradingSignal& signal,
     double assetLimitUsd = getPositionLimit(asset, strategyId.toString());
     double orderQuantity = std::abs(signal.getQuantity());
 
-    LOG_WARN("DEBUG_LIMITS: signal={} assetLimitUsd={} orderQuantity={} currentPrice={}", 
+    LOG_WARN("LOG_TRACE: signal={} assetLimitUsd={} orderQuantity={} currentPrice={}", 
               signal.getSignalId(), assetLimitUsd, orderQuantity, currentPrice);
 
     if (orderQuantity > 0.0) {
@@ -129,7 +129,7 @@ bool PositionLimitChecker::checkPositionLimit(const TradingSignal& signal,
         if (currentPrice > 0.0) {
             orderNotional = orderQuantity * currentPrice;
         } else {
-            LOG_WARN("PRICE_UNAVAILABLE_1: signal={} asset={}", 
+            LOG_TRACE("PRICE_UNAVAILABLE_1: signal={} asset={}", 
                      signal.getSignalId(), asset);
             RiskViolation violation(
                 ViolationType::PRICE_DEVIATION,
@@ -185,8 +185,7 @@ bool PositionLimitChecker::checkPositionLimit(const TradingSignal& signal,
         }
     }
 
-    LOG_DEBUG("PositionLimitChecker", 
-              "Calculated notionals for signal {}: orderQuantity={}, targetSize={}, orderNotional={}", 
+    LOG_TRACE("PositionLimitChecker: Calculated notionals for signal {}: orderQuantity={}, targetSize={}, orderNotional={}", 
               signal.getSignalId(), orderQuantity, targetSize, orderNotional);
 
     double proposedNotional = currentNotional + orderNotional;
