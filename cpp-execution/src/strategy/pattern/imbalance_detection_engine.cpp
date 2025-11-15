@@ -1078,7 +1078,7 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                                             if (opt2) {
                                                 try {
                                                     opt2->startPosition(symbol_str, m.midPrice, dir, signal.probability, micro);
-                                                    LOG_INFO("STARTED TRACKING POSITION: {} dir={} entry={:.6f} conf={:.3f} spread_ema={:.3f}% spread_cur={:.3f}%",
+                                                    LOG_TRACE("STARTED TRACKING POSITION: {} dir={} entry={:.6f} conf={:.3f} spread_ema={:.3f}% spread_cur={:.3f}%",
                                                             symbol_str,
                                                             (dir == core::Direction::BUY ? "BUY" : "SELL"),
                                                             m.midPrice,
