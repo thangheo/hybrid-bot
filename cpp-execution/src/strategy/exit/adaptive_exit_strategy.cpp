@@ -613,7 +613,7 @@ bool AdaptiveExitStrategy::shouldEnterPosition(
 
         case MarketRegimeType::HIGH_VOLATILITY:
             // Allow entry but require higher confidence and prefer reduced exposure (checked elsewhere)
-            if (confidence < 0.9) {
+            if (confidence < 0.76) {
                 LOG_INFO("Rejecting entry for {}: Low confidence in high volatility ({} < 0.90)",
                           symbol, confidence);
                 return false;
@@ -629,7 +629,7 @@ bool AdaptiveExitStrategy::shouldEnterPosition(
 
         case MarketRegimeType::TRENDING:
             // Allow entries in trending regime but require decent confidence; longer holding allowed (handled in params)
-            if (confidence < 0.75) {
+            if (confidence < 0.65) {
                 LOG_INFO("Rejecting entry for {}: Low confidence in trending regime ({} < 0.75)",
                          symbol, confidence);
                 return false;
@@ -638,7 +638,7 @@ bool AdaptiveExitStrategy::shouldEnterPosition(
 
         case MarketRegimeType::MEAN_REVERTING:
             // Use short-term countertrend exits; require slightly higher confidence
-            if (confidence < 0.80) {
+            if (confidence < 0.70) {
                 LOG_INFO("Rejecting entry for {}: Low confidence in mean reverting regime ({} < 0.80)",
                          symbol, confidence);
                 return false;
@@ -657,7 +657,7 @@ bool AdaptiveExitStrategy::shouldEnterPosition(
         case MarketRegimeType::NORMAL:
         default:
             // Default operation: require a baseline confidence
-            if (confidence < 0.65) {
+            if (confidence < 0.62) {
                 LOG_INFO("Rejecting entry for {}: Low confidence in default/normal regime ({} < 0.65)",
                          symbol, confidence);
                 return false;
