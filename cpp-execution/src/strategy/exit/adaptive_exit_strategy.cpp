@@ -669,7 +669,7 @@ bool AdaptiveExitStrategy::shouldEnterPosition(
     if (spread_history.size() >= 10) {
         double spread_percentile_80 = calculatePercentile(spread_history, 0.80);
         if (micro.spread_ema > spread_percentile_80) {
-            LOG_INFO("Rejecting entry for {}: Current spread worse than 80th percentile ({} > {})",
+            LOG_TRACE("Rejecting entry for {}: Current spread worse than 80th percentile ({} > {})",
                       symbol, micro.spread_ema, spread_percentile_80);
             return false;  // Current spread worse than 80% of recent
         }
