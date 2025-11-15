@@ -1085,16 +1085,16 @@ void StrategyEngine::processImbalanceEvents(const std::vector<ImbalanceEvent>& e
     // detected market regime from the momentum correlator). This ensures
     // the signal generator can read `event.getSupportingMetric("marketRegime")`.
     std::vector<ImbalanceEvent> enrichedEvents = events;
-    if (momentumCorrelator_) {
-        MarketRegimeType detected = momentumCorrelator_->detectMarketRegime();
-        if (detected != MarketRegimeType::UNKNOWN) {
-            for (auto &ev : enrichedEvents) {
-                ev.supportingMetrics["marketRegime"] = static_cast<double>(detected);
-            }
-            //print current market regime
-            LOG_DEBUG("Momentum marketRegime={} into {} imbalance event(s)", marketRegimeToString(detected), enrichedEvents.size());   
-        }        
-    }
+    // if (momentumCorrelator_) {
+    //     MarketRegimeType detected = momentumCorrelator_->detectMarketRegime();
+    //     if (detected != MarketRegimeType::UNKNOWN) {
+    //         for (auto &ev : enrichedEvents) {
+    //             ev.supportingMetrics["marketRegime"] = static_cast<double>(detected);
+    //         }
+    //         //print current market regime
+    //         LOG_DEBUG("Momentum marketRegime={} into {} imbalance event(s)", marketRegimeToString(detected), enrichedEvents.size());   
+    //     }        
+    // }
 
     // Process all events at once for efficiency
     signalGenerator_->processImbalances(enrichedEvents);
