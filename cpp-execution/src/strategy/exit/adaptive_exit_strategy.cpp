@@ -196,6 +196,7 @@ AdaptiveExitStrategy::DynamicParameters AdaptiveExitStrategy::calculateDynamicPa
         p.sharpe_estimate = (stdp>0) ? (p.expected_edge/stdp * std::sqrt(252.0)) : 0.5;
 
     } else {
+
         p.kelly_fraction = 0.02;
         // Default expected edge: express in basis points (bps) to match
         // historicalPnLs_ which are stored as bps (see evaluateExit -> decision.expected_pnl)
@@ -208,8 +209,6 @@ AdaptiveExitStrategy::DynamicParameters AdaptiveExitStrategy::calculateDynamicPa
 
     return p;
 }
-
-
 
 void AdaptiveExitStrategy::startPosition(
     const std::string& symbol,
@@ -728,8 +727,8 @@ void AdaptiveExitStrategy::closePosition(const std::string& symbol,
         it->second.is_active = false;
         // Calculate total PnL including recent tracked PnLs and the final realized PnL
     // double total_pnl = calculateTotalPnLUnlocked(symbol, final_pnl);
-    //     LOG_INFO("AdaptiveExitStrategy: closed position on {} due to {} with final PnL: {:.4f} ticks (total PnL: {:.4f} ticks)",
-    //              symbol, exitReasonToString(reason), final_pnl, total_pnl);
+        LOG_INFO("AdaptiveExitStrategy: closed position on {} due to {} with final PnL: {:.4f} ticks )",
+                 symbol, exitReasonToString(reason), final_pnl);
         // Update historical PnL for future Kelly calculations
         historicalPnLs_[symbol].push_back(final_pnl);
         if (historicalPnLs_[symbol].size() > 100) {
