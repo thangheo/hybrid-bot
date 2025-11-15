@@ -133,12 +133,12 @@ using namespace trading::core;
             tradingPairStates_[pairId] = std::move(state);
 
             // Create VolumeProfileAnalyzer for this trading pair using the factory
-            try {
-                auto analyzer = createVolumeProfileAnalyzer(pair.second, pair.first, config_.volumeProfileConfig.params);
-                volumeProfileAnalyzers_[pairId] = analyzer;
-            } catch (const std::exception& e) {
-                LOG_ERROR("Failed to create VolumeProfileAnalyzer for {}: {}", pairId, e.what());
-            }
+            // try {
+            //     auto analyzer = createVolumeProfileAnalyzer(pair.second, pair.first, config_.volumeProfileConfig.params);
+            //     volumeProfileAnalyzers_[pairId] = analyzer;
+            // } catch (const std::exception& e) {
+            //     LOG_ERROR("Failed to create VolumeProfileAnalyzer for {}: {}", pairId, e.what());
+            // }
 
             LOG_INFO("Monitoring trading pair: {} on exchange {}", 
                      pair.first.toString(), pair.second.toString());

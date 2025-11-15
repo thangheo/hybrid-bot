@@ -761,56 +761,7 @@ std::chrono::milliseconds ImbalanceSignalGenerator::calculateSignalTTL(
 
     return std::chrono::milliseconds(ttlMs);
 }
-
-// // Enhanced TTL calculation
-// std::chrono::milliseconds ImbalanceSignalGenerator::calculateSignalTTL(
-//     const ImbalanceEvent& imbalance, double deltaPrice) const {
-    
-//     // Get volatility metrics
-//     double volatilityPerTime = imbalance.getSupportingMetric("volatilityPerUnitTime", 0.001);
-//     if (volatilityPerTime <= 0.0) {
-//         volatilityPerTime = 0.001;
-//     }
-    
-//     double price = imbalance.getSupportingMetric("midPrice", 1.0);
-//     double relativeMove = deltaPrice / price;
-    
-//     // Base TTL calculation with regime awareness
-//     auto regime = getCurrentMarketRegime(imbalance);
-//     double regimeFactor = 1.0;
-    
-//     switch (regime) {
-//         case MarketRegimeType::HIGH_VOLATILITY:
-//             regimeFactor = 0.6; // Shorter TTL in volatile markets
-//             break;
-//         case MarketRegimeType::TRENDING:
-//             regimeFactor = 1.4; // Longer TTL in trending markets
-//             break;
-//         case MarketRegimeType::MEAN_REVERTING:
-//             regimeFactor = 1.1; // Slightly longer in range-bound
-//             break;
-//         case MarketRegimeType::STRESS:
-//             regimeFactor = 0.5; // Much shorter during stress
-//             break;
-//         default:
-//             regimeFactor = 1.0;
-//             break;
-//     }
-    
-//     // Enhanced TTL formula
-//     double strengthFactor = std::pow(imbalance.strength, 0.7); // Non-linear strength impact
-//     double baseTTL = (4.0 * relativeMove * regimeFactor) / (volatilityPerTime * strengthFactor);
-    
-//     uint64_t ttlMs = static_cast<uint64_t>(baseTTL * 1000);
-    
-//     // Dynamic bounds based on regime
-//     uint64_t minTTL = (regime == MarketRegimeType::HIGH_VOLATILITY || regime == MarketRegimeType::STRESS) ? 200 : 500;
-//     uint64_t maxTTL = (regime == MarketRegimeType::TRENDING) ? 90000 : 60000;
-    
-//     ttlMs = std::clamp(ttlMs, minTTL, maxTTL);
-    
-//     return std::chrono::milliseconds(ttlMs);
-// }
+ 
 
 // Enhanced price target generation
 std::vector<PriceTarget> ImbalanceSignalGenerator::generatePriceTargets(const ImbalanceEvent& imbalance) const {
