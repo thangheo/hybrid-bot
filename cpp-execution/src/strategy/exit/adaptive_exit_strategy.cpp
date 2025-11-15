@@ -186,8 +186,11 @@ AdaptiveExitStrategy::DynamicParameters AdaptiveExitStrategy::calculateDynamicPa
             double k = (wr*b - (1-wr)) / b;
             p.kelly_fraction = std::clamp(k, 0.0, 0.25);
         }
+        double avgW_bps = (avgW / cur.mid_price) * 10000.0;
+        double avgL_bps = (avgL / cur.mid_price) * 10000.0;
 
-        p.expected_edge = wr*avgW - (1-wr)*avgL;
+        p.expected_edge = wr*avgW_bps - (1-wr)*avgL_bps;   // bps
+        // p.expected_edge = wr*avgW - (1-wr)*avgL;
 
         double stdp = calculateStandardDeviation(pnls);
         p.sharpe_estimate = (stdp>0) ? (p.expected_edge/stdp * std::sqrt(252.0)) : 0.5;
