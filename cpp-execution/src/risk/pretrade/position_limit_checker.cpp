@@ -121,8 +121,6 @@ bool PositionLimitChecker::checkPositionLimit(const TradingSignal& signal,
     double assetLimitUsd = getPositionLimit(asset, strategyId.toString());
     double orderQuantity = std::abs(signal.getQuantity());
 
-    LOG_WARN("LOG_TRACE: signal={} assetLimitUsd={} orderQuantity={} currentPrice={}", 
-              signal.getSignalId(), assetLimitUsd, orderQuantity, currentPrice);
 
     if (orderQuantity > 0.0) {
         // Explicit absolute quantity provided on the signal -> convert to USD using current price
