@@ -533,35 +533,34 @@ void Trading_system::exitMonitorLoop() {
                         currentConfidence
                     );
 
-                    if (exitDecision.should_exit and exitDecision.confidence >= 0.8
-                        && posInfo.has_value()) {
+                    if (exitDecision.should_exit and exitDecision.confidence >= 0.8 && posInfo.has_value()) {
                         // Log exit trigger with holding time
                         auto now = std::chrono::steady_clock::now();
                         // holdingDurationMs is milliseconds; convert to seconds for log
                         auto holdingDurationMs = std::chrono::duration_cast<std::chrono::milliseconds>(
                             now - posInfo->entry_time).count();
                         double holdingSeconds = static_cast<double>(holdingDurationMs) / 1000.0;
-            // Update simple PnL statistics (thread-safe)
-            double cumulative_bps = 0.0;
-            uint64_t total_exits = 0;
-            {
-                std::lock_guard<std::mutex> lk(g_exitPnlMutex);
-                g_cumulativeExitPnlBps += exitDecision.expected_pnl;
-                ++g_totalExitCount;
-                cumulative_bps = g_cumulativeExitPnlBps;
-                total_exits = g_totalExitCount;
-            }
-            double avg_bps = (total_exits > 0) ? (cumulative_bps / static_cast<double>(total_exits)) : 0.0;
+                        // Update simple PnL statistics (thread-safe)
+                        double cumulative_bps = 0.0;
+                        uint64_t total_exits = 0;
+                        {
+                            std::lock_guard<std::mutex> lk(g_exitPnlMutex);
+                            g_cumulativeExitPnlBps += exitDecision.expected_pnl;
+                            ++g_totalExitCount;
+                            cumulative_bps = g_cumulativeExitPnlBps;
+                            total_exits = g_totalExitCount;
+                        }
+                        double avg_bps = (total_exits > 0) ? (cumulative_bps / static_cast<double>(total_exits)) : 0.0;
 
-            LOG_INFO("EXIT TRIGGERED: {} - {} ({:.4f}bps) after {:.3f}s holding - exit_count={} cum_pnl={:.4f}bps avg_pnl={:.4f}bps",
-                symbol,
-                AdaptiveExitStrategy::exitReasonToString(exitDecision.reason),
-                exitDecision.expected_pnl,
-                holdingSeconds,
-                total_exits,
-                cumulative_bps,
-                avg_bps);
-
+                        LOG_INFO("EXIT TRIGGERED: {} - {} ({:.4f}bps) after {:.3f}s holding - exit_count={} cum_pnl={:.4f}bps avg_pnl={:.4f}bps",
+                            symbol,
+                            AdaptiveExitStrategy::exitReasonToString(exitDecision.reason),
+                            exitDecision.expected_pnl,
+                            holdingSeconds,
+                            total_exits,
+                            cumulative_bps,
+                            avg_bps);
+                        
                         // Create exit signal
                         execution::TradingSignal exitSignal;
                         exitSignal.id = "EXIT_" + symbol + "_" + std::to_string(std::chrono::system_clock::now().time_since_epoch().count());
@@ -585,7 +584,6 @@ void Trading_system::exitMonitorLoop() {
                         exitSignal.signalMetrics["spread_ema"] = spreadEMA;
                         exitSignal.signalMetrics["volatility_1m"] = realize_volatility_1m;
                         // meta data
-
                     
                         exitSignal.signalMetrics["volatility"] = volatility;
                         if (bidPrice > 0.0 && askPrice > 0.0) {
@@ -601,16 +599,8 @@ void Trading_system::exitMonitorLoop() {
                         // Determine exit quantity: always try authoritative source first
                         double exitQty = 0.0;
                         bool qtyResolved = false;
+                                                   
 
-                        // Prefer local in-memory authoritative cache for simplicity/debuggability
-                        // try {
-                        //     std::lock_guard<std::mutex> lk(g_localPositionsMutex);
-                        //     auto it = g_localPositions.find(sym.toString());
-                        //     if (it != g_localPositions.end() && std::abs(it->second) > 1e-12) {
-                        //         exitQty = std::abs(it->second);
-                        //         qtyResolved = true;
-                        //     }
-                        // } catch (...) {}
                         // Prefer authoritative cached position from RiskManager (PositionTracker/PositionSync)
                         try {
                             if (riskManager_) {
@@ -625,21 +615,7 @@ void Trading_system::exitMonitorLoop() {
                             }
                         } catch (const std::exception& e) {
                             LOG_WARN("Exit monitor: failed to query RiskManager cached position: {}", e.what());
-                        }
-
-                        // Fallback to RiskManager cached position only if local cache missing
-                        // if (!qtyResolved) {
-                        //     try {
-                        //         if (riskManager_) {
-                        //             auto trackedOpt = riskManager_->getCachedPosition(exchangeId, sym);
-                        //             if (trackedOpt.has_value() && std::abs(*trackedOpt) > 1e-12) {
-                        //                 exitQty = std::abs(*trackedOpt);
-                        //                 qtyResolved = true;
-                        //             }
-                        //         }
-                        //     } catch (...) {}
-                        // }
-                        
+                        }                                     
 
                         // If no authoritative position found, skip issuing an exit order.
                         if (!qtyResolved) {
@@ -673,16 +649,10 @@ void Trading_system::exitMonitorLoop() {
                             }
                             
                         }
-                        // Mark exit as pending on the exitStrategy but DO NOT call closePosition() here
-                        // because that may remove authoritative position info before execution completes.
-                        try {
-                            if (exitStrategy_) {
-                                exitStrategy_->closePosition(symbol, exitDecision.reason, exitDecision.expected_pnl);                               
-                            }
-                        } catch (...) {
-                            LOG_DEBUG("Exit monitor: failed to mark pending exit for {}", symbol);
-                        }
-                    }
+                        //exit the simulating trade because we dont want it keep calling 
+                        exitStrategy_->closePosition(symbol, exitDecision.reason, exitDecision.expected_pnl);   
+                       
+                }
                     
                 } catch (const std::exception& e) {
                     LOG_ERROR("Exit monitor error for {}: {}", symbol, e.what());
