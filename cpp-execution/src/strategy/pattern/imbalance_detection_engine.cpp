@@ -1258,7 +1258,7 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                                                     dyn.buyThreshold, dyn.sellThreshold, normalizedReturn,
                                                     minReturn, maxReturn, dataPoints);
                                             } else {
-                                                LOG_INFO("Label stats: BUY={}, SELL={}, NEUTRAL={}, "
+                                                LOG_TRACE("Label stats: BUY={}, SELL={}, NEUTRAL={}, "
                                                     "BuyThresh={:.3f}, SellThresh={:.3f}, NormRet={:.3f}", 
                                                     buyCount, sellCount, neutralCount, 
                                                     dyn.buyThreshold, dyn.sellThreshold, normalizedReturn);
