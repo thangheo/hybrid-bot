@@ -902,15 +902,15 @@ MarketRegimeType ImbalanceSignalGenerator::getCurrentMarketRegime(const Imbalanc
         // Use actual regime detector if available
         // return regimeDetector_->getCurrentRegime();
     }
-    
-    auto regime_number = imbalance.getSupportingMetric("marketRegime_momentum", static_cast<double>(MarketRegimeType::UNKNOWN));
+
+    auto regime_number = imbalance.getSupportingMetric("marketRegime", static_cast<double>(MarketRegimeType::UNKNOWN));
     // sanity check for regime number if it's within valid range from 0-8
     if (regime_number >= 0 && regime_number <= 8) {
         // The market regime can be injected into the ImbalanceEvent by
         // OrderBookAnalyzer via currentMetrics_.metrics["marketRegime"] = (double)int(regime).
         // Use that metric value as the authoritative regime when present.
-        LOG_TRACE("Current market regime (from metric): {} ({})",
-                  static_cast<int>(regime_number),
+        LOG_DEBUG("Current market regime (from metric): {} {}",
+                 regime_number,
                   marketRegimeToString(static_cast<MarketRegimeType>(static_cast<int>(regime_number))));
         return static_cast<MarketRegimeType>(static_cast<int>(regime_number));
     }

@@ -481,8 +481,11 @@ void StrategyEngine::processQueuedSignals() {
                 // can read it when buffering training samples or selecting per-regime models.
                 if (momentumCorrelator_) {
                     MarketRegimeType detected = momentumCorrelator_->detectMarketRegime();
-                    metrics.metrics["marketRegime_momentum"] = static_cast<double>(detected);
-                    LOG_TRACE("Injected marketRegime_momentum={} into metrics for {}", marketRegimeToString(detected), orderBook.getSymbol());
+                    // only save if valid regime
+                    if (detected != MarketRegimeType::UNKNOWN) {
+                        metrics.metrics["marketRegime"] = static_cast<double>(detected);
+                        LOG_TRACE("Injected momentumCorrelator_ marketRegime={} into metrics for {}", marketRegimeToString(detected), orderBook.getSymbol());
+                    }
                 }
 
                 imbalanceDetector_->analyzeMetrics(metrics);
@@ -885,6 +888,7 @@ TradingSignal StrategyEngine::enhanceSignalWithEventContext(
     // VOLUME PROFILE ENHANCEMENT: Add volume profile context to signal
     std::string symbol = enhancedSignal.symbol.toString();
     auto vpMetricsIt = volumeProfileMetrics_.find(symbol);
+    MarketRegimeType regime;
     if (vpMetricsIt != volumeProfileMetrics_.end()) {
         const auto& vpMetrics = vpMetricsIt->second;
         
@@ -1029,14 +1033,18 @@ TradingSignal StrategyEngine::enhanceSignalWithEventContext(
                  pocDistance * 100.0,
                  inValueArea,
                  contextWeight,
-                 inValueArea && nearPOC ? "mean_reversion" : (!inValueArea ? "breakout" : "neutral"));
+                 inValueArea && nearPOC ? "MEAN_REVERTING" : (!inValueArea ? "TRENDING" : "NEUTRAL"));
+        regime = (inValueArea && nearPOC) ? MarketRegimeType::MEAN_REVERTING : (!inValueArea ? MarketRegimeType::TRENDING : MarketRegimeType::UNKNOWN);
     }
     
     // Copy event context into signal
     enhancedSignal.sourceEventId = sourceEvent.eventId;
     enhancedSignal.setMetric("sourceEventStrength", sourceEvent.strength);
     enhancedSignal.setMetric("sourceEventConfidence", static_cast<double>(sourceEvent.confidence));
-    
+    // set regime again
+    if (regime != MarketRegimeType::UNKNOWN) {
+        enhancedSignal.setMetric("marketRegime", static_cast<double>(regime));
+    }
     // Copy supporting metrics from the original imbalance event
     for (const auto& [metricName, metricValue] : sourceEvent.supportingMetrics) {
         enhancedSignal.setMetric("event_" + metricName, metricValue);
@@ -1055,11 +1063,13 @@ void StrategyEngine::processImbalanceEvents(const std::vector<ImbalanceEvent>& e
     std::vector<ImbalanceEvent> enrichedEvents = events;
     if (momentumCorrelator_) {
         MarketRegimeType detected = momentumCorrelator_->detectMarketRegime();
-        for (auto &ev : enrichedEvents) {
-            ev.supportingMetrics["marketRegime_momentum"] = static_cast<double>(detected);
-        }
-        //print current market regime
-        LOG_DEBUG("Momentum marketRegime={} into {} imbalance event(s)", marketRegimeToString(detected), enrichedEvents.size());
+        if (detected != MarketRegimeType::UNKNOWN) {
+            for (auto &ev : enrichedEvents) {
+                ev.supportingMetrics["marketRegime"] = static_cast<double>(detected);
+            }
+            //print current market regime
+            LOG_DEBUG("Momentum marketRegime={} into {} imbalance event(s)", marketRegimeToString(detected), enrichedEvents.size());   
+        }        
     }
 
     // Process all events at once for efficiency
