@@ -121,7 +121,8 @@ void MomentumCorrelation::updateCorrelationModel(
         stats.coefficients = correlation_coefficients_;
         stats.feature_importance = feature_importance_;
         stats.data_points = data_points_.size();
-        stats.market_regime = current_regime_;
+        // Load atomically to avoid races when readers don't hold the mutex
+        stats.market_regime = current_regime_.load();
     }
 
     // Calculate overall predictive power from the snapshot
@@ -145,12 +146,12 @@ void MomentumCorrelation::updateCorrelationModel(
     //  data_points_.clear();
      correlation_coefficients_.clear();
      feature_importance_.clear();
-     current_regime_ = MarketRegimeType::NORMAL;
+    current_regime_.store(MarketRegimeType::NORMAL);
  }
  
  MarketRegimeType MomentumCorrelation::detectMarketRegime() const {
-    std::lock_guard<std::mutex> lock(correlation_mutex_);
-    return current_regime_;
+    // Use atomic load for fast, thread-safe read without taking the main mutex.
+    return current_regime_.load();
  }
   
  
@@ -890,6 +891,12 @@ void MomentumCorrelation::updateMarketRegime() {
     }
     
     applyRegimeSmoothing(detectedRegime);
+    if (detectedRegime != current_regime_) {
+        LOG_INFO("Market regime changed from {} to {}", 
+                 static_cast<int>(current_regime_.load()), 
+                 static_cast<int>(detectedRegime));
+        current_regime_.store(detectedRegime);
+    }
     
 }
 
@@ -1097,38 +1104,32 @@ double MomentumCorrelation::calculateMarketStress(const std::vector<double>& mov
     return std::clamp(stressScore, 0.0, 1.0);
 }
 
-// Helper method to apply regime smoothing
-void MomentumCorrelation::applyRegimeSmoothing(MarketRegimeType& detectedRegime) {
-    // Simple smoothing: require 2-3 consecutive detections before switching
-    static MarketRegimeType lastDetection = MarketRegimeType::NORMAL;
-    static int consecutiveCount = 0;
-    
-    if (detectedRegime == lastDetection) {
-        consecutiveCount++;
+// Helper method to apply regime smoothing (thread-safe)
+void MomentumCorrelation::applyRegimeSmoothing(MarketRegimeType detectedRegime) {
+    // Acquire lock because we update shared counters used by the hysteresis logic
+    std::lock_guard<std::mutex> lock(correlation_mutex_);
+
+    // Compare with last_detection_, update consecutive_count_
+    if (detectedRegime == last_detection_) {
+        ++consecutive_count_;
     } else {
-        lastDetection = detectedRegime;
-        consecutiveCount = 1;
+        last_detection_ = detectedRegime;
+        consecutive_count_ = 1;
     }
-    
-    // Different thresholds for different regime changes
-    int requiredConsecutive = 2; // Default
-    
-    // Require more evidence for stress regime
-    if (detectedRegime == MarketRegimeType::STRESS) {
-        requiredConsecutive = 3;
-    }
-    // Require less evidence when moving from stress back to normal
-    else if (current_regime_ == MarketRegimeType::STRESS && detectedRegime != MarketRegimeType::STRESS) {
+
+    // Determine required consecutive detections
+    int requiredConsecutive = 2; // default
+    if (detectedRegime == MarketRegimeType::STRESS) requiredConsecutive = 3;
+    // If moving away from stress, be quicker to revert
+    if (current_regime_.load() == MarketRegimeType::STRESS && detectedRegime != MarketRegimeType::STRESS) {
         requiredConsecutive = 1;
     }
-    
-    // Only update if we have enough consecutive detections
-    if (consecutiveCount >= requiredConsecutive) {
-        current_regime_ = detectedRegime;
-    }
-    // If not enough evidence, keep current regime but update the working detection
-    else {
-        detectedRegime = current_regime_;
+
+    if (consecutive_count_ >= requiredConsecutive) {
+        // Commit the new regime atomically
+        current_regime_.store(detectedRegime);
+    } else {
+        // Keep current regime; nothing to do (last_detection_ already updated)
     }
 }
 
