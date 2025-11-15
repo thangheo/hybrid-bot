@@ -27,15 +27,19 @@
   * Convert MarketRegimeType to string representation
   */
 inline std::string marketRegimeToString(trading::strategy::MarketRegimeType regime) {
+    // Order of enum values (see market_regime.hpp):
+    // STRESS, HIGH_VOLATILITY, LOW_LIQUIDITY, TRENDING,
+    // MEAN_REVERTING, QUIET, NORMAL, UNKNOWN
     using MR = trading::strategy::MarketRegimeType;
     switch (regime) {
-        case MR::NORMAL: return "normal";
-        case MR::TRENDING: return "trending";
-        case MR::MEAN_REVERTING: return "range_bound";
-        case MR::HIGH_VOLATILITY: return "volatility";
-        case MR::QUIET: return "quiet";
-       case MR::STRESS: return "stress";
-        default: return "unknown";
+        case MR::NORMAL: return "NORMAL";
+        case MR::TRENDING: return "TRENDING";
+        case MR::MEAN_REVERTING: return "MEAN_REVERTING";
+        case MR::HIGH_VOLATILITY: return "HIGH_VOLATILITY";
+        case MR::LOW_LIQUIDITY: return "LOW_LIQUIDITY";
+        case MR::QUIET: return "QUIET";
+        case MR::STRESS: return "STRESS";
+        default: return "UNKNOWN";
     }
 }
  
