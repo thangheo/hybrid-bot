@@ -103,7 +103,7 @@ void MomentumCorrelation::updateCorrelationModel(
         // LOG_INFO("Calculating correlations with {} data points", data_points_.size());
         calculateCorrelations();
         calculateFeatureImportance();
-        updateMarketRegime();
+        // updateMarketRegime();
     }
     
     //  else {
