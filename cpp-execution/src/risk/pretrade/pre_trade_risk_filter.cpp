@@ -215,7 +215,7 @@ ValidationResult PreTradeRiskFilter::validateSignal(const TradingSignal& signal)
     // Start timing the validation
     auto startTime = std::chrono::high_resolution_clock::now();
 
-    LOG_DEBUG("Validating signal: id={}, pair={}, direction={}, size={}",
+    LOG_TRACE("Validating signal: id={}, pair={}, direction={}, size={}",
               signal.getSignalId(), signal.getTradingPair(),
               (signal.getDirection() == core::Direction::BUY ? "BUY" : "SELL"),
               signal.getTargetSize());

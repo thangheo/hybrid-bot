@@ -1052,7 +1052,7 @@ TradingSignal StrategyEngine::enhanceSignalWithEventContext(
         enhancedSignal.setMetric("vp_context_weight", contextWeight);
         
         // Enhanced logging with context information
-        LOG_DEBUG("Enhanced signal {} with VP context: POC_dist={:.3f}%, in_VA={}, ctx_weight={:.3f}, regime={}", 
+        LOG_TRACE("Enhanced signal {} with VP context: POC_dist={:.3f}%, in_VA={}, ctx_weight={:.3f}, regime={}", 
                  enhancedSignal.id, 
                  pocDistance * 100.0,
                  inValueArea,
@@ -1659,8 +1659,8 @@ double StrategyEngine::calculateAdaptiveThreshold(const std::string& symbol, dou
         // Normalize distance relative to POC itself
         double pocDistance = std::abs(currentPrice - pocIt->second) / pocIt->second;
         nearPOC = pocDistance < 0.005; // Within 0.5% of POC
-        LOG_DEBUG("Current price {:.4f}, POC {:.4f}, pocDistance {:.4f}%, nearPOC={}",
-                  currentPrice, pocIt->second, pocDistance * 100.0, nearPOC);
+        // LOG_DEBUG("Current price {:.4f}, POC {:.4f}, pocDistance {:.4f}%, nearPOC={}",
+        //           currentPrice, pocIt->second, pocDistance * 100.0, nearPOC);
     }
 
     if (vahIt != metrics.end() && valIt != metrics.end()) {
@@ -1682,7 +1682,7 @@ double StrategyEngine::calculateAdaptiveThreshold(const std::string& symbol, dou
 
 bool StrategyEngine::isImbalanceSignificant(const std::string& symbol, double imbalanceStrength, double threshold) const {
     bool isSignificant = imbalanceStrength > threshold;
-    LOG_DEBUG("Imbalance check {}: strength={:.4f}, threshold={:.4f}, significant={}",
+    LOG_TRACE("Imbalance check {}: strength={:.4f}, threshold={:.4f}, significant={}",
               symbol, imbalanceStrength, threshold, isSignificant);
     return isSignificant;
 }
