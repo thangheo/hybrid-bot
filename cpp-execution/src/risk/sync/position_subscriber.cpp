@@ -130,7 +130,6 @@ bool PositionSubscriber::hasPosition(const std::string& symbol, const std::strin
 
 std::optional<Position> PositionSubscriber::getPosition(const std::string& symbol, const std::string& exchangeId) const {
     // diagnostic: print 'this' pointer before touching members (non-dereferencing)
-    std::cerr << "[PositionSubscriber] getPosition called this=" << this << " symbol=" << symbol << " exchange=" << exchangeId << " (thread " << std::this_thread::get_id() << ")\n";
     if (!initialized_.load()) return std::nullopt;
     std::shared_lock lock(cacheMutex_);
     auto it = positionCache_.find(createCacheKey(symbol, exchangeId));
