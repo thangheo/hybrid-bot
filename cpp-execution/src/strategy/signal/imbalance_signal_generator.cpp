@@ -1109,9 +1109,9 @@ MarketRegimeType ImbalanceSignalGenerator::getCurrentMarketRegime(const Imbalanc
         // The market regime can be injected into the ImbalanceEvent by
         // OrderBookAnalyzer via currentMetrics_.metrics["marketRegime"] = (double)int(regime).
         // Use that metric value as the authoritative regime when present.
-        LOG_DEBUG("Current market regime (from metric): {} {}",
-                 regime_number,
-                  marketRegimeToString(static_cast<MarketRegimeType>(static_cast<int>(regime_number))));
+        // LOG_DEBUG("Current market regime (from metric): {} {}",
+                //  regime_number,
+                //   marketRegimeToString(static_cast<MarketRegimeType>(static_cast<int>(regime_number))));
         return static_cast<MarketRegimeType>(static_cast<int>(regime_number));
     }
 

@@ -590,13 +590,13 @@ bool AdaptiveExitStrategy::shouldEnterPosition(
         // Fallback: treat spread as price and scale by 10000 for visibility
         spread_bps = micro.spread_ema * 10000.0;
     }
-    if (params.expected_edge < spread_bps * 1.2) {
-        LOG_INFO("Rejecting entry for {}: Expected edge too small ({:.4f} bps < {:.4f} bps (=1.2*spread))",
-                  symbol, params.expected_edge, spread_bps * 1.2);
-        // LOG_INFO("Rejecting!! Details for {}: expected_edge(bps)={:.6f}, spread_price={} mid={} spread_bps={:.6f}",
-        //           symbol, params.expected_edge, micro.spread_ema, micro.mid_price, spread_bps);
-        return false;  // Edge too small vs spread cost
-    }
+    // if (params.expected_edge < spread_bps * 1.2) {
+    //     LOG_INFO("Rejecting entry for {}: Expected edge too small ({:.4f} bps < {:.4f} bps (=1.2*spread))",
+    //               symbol, params.expected_edge, spread_bps * 1.2);
+    //     // LOG_INFO("Rejecting!! Details for {}: expected_edge(bps)={:.6f}, spread_price={} mid={} spread_bps={:.6f}",
+    //     //           symbol, params.expected_edge, micro.spread_ema, micro.mid_price, spread_bps);
+    //     return false;  // Edge too small vs spread cost
+    // }
     //debug with reject reason
     // 2. Kelly criterion check
     if (params.kelly_fraction < 0.01) {
