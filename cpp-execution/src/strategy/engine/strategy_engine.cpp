@@ -439,6 +439,25 @@ void StrategyEngine::processQueuedSignals() {
             {
                 // Protect concurrent access to volumeProfileMetrics_
                 std::lock_guard<std::recursive_mutex> guard(mutex_);
+                // Determine nearest high-volume nodes (HVN) above/below current price
+                double hvnAbove = -1.0;
+                double hvnBelow = -1.0;
+                if (!anomalies.high_volume_nodes.empty()) {
+                    // Find smallest HVN > currentPrice and largest HVN < currentPrice
+                    double minAbove = std::numeric_limits<double>::infinity();
+                    double maxBelow = -std::numeric_limits<double>::infinity();
+                    for (double nodePrice : anomalies.high_volume_nodes) {
+                        if (nodePrice > currentPrice && nodePrice < minAbove) {
+                            minAbove = nodePrice;
+                        }
+                        if (nodePrice < currentPrice && nodePrice > maxBelow) {
+                            maxBelow = nodePrice;
+                        }
+                    }
+                    if (std::isfinite(minAbove)) hvnAbove = minAbove;
+                    if (maxBelow > -std::numeric_limits<double>::infinity()) hvnBelow = maxBelow;
+                }
+
                 volumeProfileMetrics_[symbol] = {
                  {"poc", poc},
                  {"value_area_high", valueArea.first},
@@ -446,7 +465,9 @@ void StrategyEngine::processQueuedSignals() {
                  {"total_volume", profile.total_volume},
                  {"vwap", profile.vwap},
                  {"has_anomalies", anomalies.hasAnomalies() ? 1.0 : 0.0},
-                 {"density_ratio", densityRatio}
+                 {"density_ratio", densityRatio},
+                 {"hvn_above", hvnAbove},
+                 {"hvn_below", hvnBelow}
                 };
             }
             //  update every 30 counts
@@ -483,8 +504,8 @@ void StrategyEngine::processQueuedSignals() {
                     MarketRegimeType detected = momentumCorrelator_->detectMarketRegime();
                     // only save if valid regime
                     if (detected != MarketRegimeType::UNKNOWN) {
-                        metrics.metrics["marketRegime"] = static_cast<double>(detected);
-                        LOG_TRACE("Injected momentumCorrelator_ marketRegime={} into metrics for {}", marketRegimeToString(detected), orderBook.getSymbol());
+                        metrics.metrics["momentum_marketRegime"] = static_cast<double>(detected);
+                        LOG_TRACE("Injected momentum_marketRegime={} into metrics for {}", marketRegimeToString(detected), orderBook.getSymbol());
                     }
                 }
 
@@ -840,7 +861,10 @@ TradingSignal StrategyEngine::enhanceSignalWithEventContext(
         // Market regime and other event-level metrics
         double regime = sourceEvent.getSupportingMetric("marketRegime", static_cast<double>(0));
         enhancedSignal.setMetric("marketRegime", regime);
+        regime = sourceEvent.getSupportingMetric("momentum_marketRegime", static_cast<double>(0));
+        enhancedSignal.setMetric("momentum_marketRegime", regime);
 
+        
         // Copy any additional supporting metrics from the event into the signal
         for (const auto &kv : sourceEvent.supportingMetrics) {
             // Avoid overwriting already populated metrics from the base signal
@@ -1043,7 +1067,7 @@ TradingSignal StrategyEngine::enhanceSignalWithEventContext(
     enhancedSignal.setMetric("sourceEventConfidence", static_cast<double>(sourceEvent.confidence));
     // set regime again
     if (regime != MarketRegimeType::UNKNOWN) {
-        enhancedSignal.setMetric("marketRegime", static_cast<double>(regime));
+        enhancedSignal.setMetric("VP_marketRegime", static_cast<double>(regime));
     }
     // Copy supporting metrics from the original imbalance event
     for (const auto& [metricName, metricValue] : sourceEvent.supportingMetrics) {

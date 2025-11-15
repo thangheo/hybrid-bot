@@ -1030,6 +1030,11 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                                 // microstructure.volume_profile_skew = m.volumeProfileSkew;
                                 microstructure.mid_price = m.midPrice;
 
+                                // Debug: log spread units to verify whether spread_ema is raw price or percent
+                                LOG_TRACE("imbalance_engine: symbol={} raw_spread={} mid={} spread_pct={}",
+                                          symbol_str, m.spread, m.midPrice,
+                                          (m.midPrice>0.0 ? (m.spread / m.midPrice * 100.0) : 0.0));
+
                                 if (authoritativeHasPosition) {
                                     LOG_INFO("ENTRY_BLOCKED_BY_POSITION: {} has position qty={}", symbol_str, authoritativeQty);
                                 } 

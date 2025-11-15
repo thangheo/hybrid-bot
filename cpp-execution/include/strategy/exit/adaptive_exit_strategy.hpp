@@ -2,6 +2,7 @@
 
 #include "core/types.hpp"
 #include "core/direction.hpp"
+#include "core/trading_signal.hpp"
 #include <strategy/core_analysis/orderbook_regime_detector.hpp>
 #include <chrono>
 #include <string>
@@ -109,6 +110,10 @@ private:
     std::map<std::string, MarketHistory> marketHistory_;
     std::map<std::string, TradeState> activeTrades_;
     std::map<std::string, std::deque<double>> historicalPnLs_;  // For Sharpe calculation
+
+    // Store latest strategy/execution signal per symbol for exit logic
+    std::unordered_map<std::string, core::TradingSignal> latestSignalBySymbol_;
+    mutable std::mutex latestSignalMutex_;
     
     mutable std::mutex tradesMutex_;
     mutable std::mutex historyMutex_;
@@ -173,7 +178,21 @@ public:
         double current_price,
         const MarketMicrostructure& current_micro,
         core::Direction current_signal_direction,
-        double current_confidence);
+        double current_confidence,
+        const std::vector<core::PriceTarget>& signal_targets = std::vector<core::PriceTarget>(),
+        const core::Duration& signal_ttl = core::Duration::zero(),
+        const core::Timestamp& signal_generation_time = core::Timestamp());
+
+    /**
+     * Update latest signal seen for a symbol. The exit engine will consult
+     * this stored signal when evaluateExit is called without explicit signal params.
+     */
+    void updateLatestSignal(const std::string& symbol, const core::TradingSignal& signal);
+
+    /**
+     * Clear stored signal for a symbol (e.g., after full execution or cancellation).
+     */
+    void clearLatestSignal(const std::string& symbol);
     
     /**
      * Get current dynamic parameters for symbol

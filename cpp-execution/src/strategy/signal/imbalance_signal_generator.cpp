@@ -280,7 +280,7 @@ TradingSignal ImbalanceSignalGenerator::createSignalFromImbalance(
 
     // auto t3 = std::chrono::steady_clock::now();
     // Generate sophisticated price targets
-    signal.targets = generatePriceTargets(imbalance); // có khả nghi 
+    signal.targets = generatePriceTargets(imbalance);  
     
     // Calculate adaptive TTL
     auto deltaPrice = signal.targets.empty() ? 0.001 : 
@@ -664,55 +664,153 @@ double ImbalanceSignalGenerator::calculateTargetSize(
     return std::clamp(finalSize, 0.05, 1.0);
 }
 
-// Enhanced TTL calculation
 std::chrono::milliseconds ImbalanceSignalGenerator::calculateSignalTTL(
-    const ImbalanceEvent& imbalance, double deltaPrice) const {
-    
-    // Get volatility metrics
-    double volatilityPerTime = imbalance.getSupportingMetric("volatilityPerUnitTime", 0.001);
-    if (volatilityPerTime <= 0.0) {
-        volatilityPerTime = 0.001;
-    }
-    
-    double price = imbalance.getSupportingMetric("midPrice", 1.0);
-    double relativeMove = deltaPrice / price;
-    
-    // Base TTL calculation with regime awareness
+    const ImbalanceEvent& imbalance,
+    double deltaPrice) const 
+{
+    // ---------------------------
+    // 1. Extract volatility rate
+    // ---------------------------
+    double volRate = imbalance.getSupportingMetric("volatilityPerUnitTime", 0.001);
+    if (volRate <= 0.0) volRate = 0.001;
+
+    // ---------------------------
+    // 2. Normalize target move
+    // ---------------------------
+    double midPrice = imbalance.getSupportingMetric("midPrice", 1.0);
+    double relMove = deltaPrice / midPrice;
+    if (relMove < 1e-6) relMove = 1e-6;
+
+    // ---------------------------
+    // 3. Core TTL model:
+    //    time = move / (volRate * strength)
+    // ---------------------------
+    double strength = std::clamp(imbalance.strength, 0.05, 1.0);
+    double strengthFactor = std::pow(strength, 0.8);  // smoother than old 0.7
+
+    double ttlSeconds = relMove / (volRate * strengthFactor);
+
+    // ---------------------------
+    // 4. Apply regime effects
+    // ---------------------------
     auto regime = getCurrentMarketRegime(imbalance);
     double regimeFactor = 1.0;
-    
+
     switch (regime) {
         case MarketRegimeType::HIGH_VOLATILITY:
-            regimeFactor = 0.6; // Shorter TTL in volatile markets
-            break;
-        case MarketRegimeType::TRENDING:
-            regimeFactor = 1.4; // Longer TTL in trending markets
-            break;
-        case MarketRegimeType::MEAN_REVERTING:
-            regimeFactor = 1.1; // Slightly longer in range-bound
+            regimeFactor = 0.55;   // targets hit faster
             break;
         case MarketRegimeType::STRESS:
-            regimeFactor = 0.5; // Much shorter during stress
+            regimeFactor = 0.45;   // even faster TTL, market unstable
+            break;
+        case MarketRegimeType::TRENDING:
+            regimeFactor = 1.30;   // trending signals last longer
+            break;
+        case MarketRegimeType::MEAN_REVERTING:
+            regimeFactor = 1.10;   // slower move toward target
+            break;
+        // case MarketRegimeType::NORMAL:
+        //     regimeFactor = 1;
+        //     break;
+        case MarketRegimeType::LOW_LIQUIDITY:
+            regimeFactor = 0.75;
+            break;
+        case MarketRegimeType::QUIET:
+            regimeFactor = 1.20;
             break;
         default:
-            regimeFactor = 1.0;
             break;
     }
-    
-    // Enhanced TTL formula
-    double strengthFactor = std::pow(imbalance.strength, 0.7); // Non-linear strength impact
-    double baseTTL = (4.0 * relativeMove * regimeFactor) / (volatilityPerTime * strengthFactor);
-    
-    uint64_t ttlMs = static_cast<uint64_t>(baseTTL * 1000);
-    
-    // Dynamic bounds based on regime
-    uint64_t minTTL = (regime == MarketRegimeType::HIGH_VOLATILITY || regime == MarketRegimeType::STRESS) ? 200 : 500;
-    uint64_t maxTTL = (regime == MarketRegimeType::TRENDING) ? 90000 : 60000;
-    
+
+    ttlSeconds *= regimeFactor;
+
+    // ---------------------------
+    // 5. Convert to ms and clamp
+    // ---------------------------
+    uint64_t ttlMs = static_cast<uint64_t>(ttlSeconds * 1000.0);
+
+    // dynamic windows per regime
+    uint64_t minTTL = 0;
+    uint64_t maxTTL = 0;
+
+    switch (regime) {
+        case MarketRegimeType::HIGH_VOLATILITY:
+        case MarketRegimeType::STRESS:
+            minTTL = 150;
+            maxTTL = 25000;
+            break;
+
+        case MarketRegimeType::TRENDING:
+            minTTL = 500;
+            maxTTL = 120000;   // up to 2 minutes for long trends
+            break;
+
+        case MarketRegimeType::MEAN_REVERTING:
+        case MarketRegimeType::QUIET:
+            minTTL = 400;
+            maxTTL = 60000;
+            break;
+
+        default:
+            minTTL = 300;
+            maxTTL = 60000;
+            break;
+    }
+
     ttlMs = std::clamp(ttlMs, minTTL, maxTTL);
-    
+
     return std::chrono::milliseconds(ttlMs);
 }
+
+// // Enhanced TTL calculation
+// std::chrono::milliseconds ImbalanceSignalGenerator::calculateSignalTTL(
+//     const ImbalanceEvent& imbalance, double deltaPrice) const {
+    
+//     // Get volatility metrics
+//     double volatilityPerTime = imbalance.getSupportingMetric("volatilityPerUnitTime", 0.001);
+//     if (volatilityPerTime <= 0.0) {
+//         volatilityPerTime = 0.001;
+//     }
+    
+//     double price = imbalance.getSupportingMetric("midPrice", 1.0);
+//     double relativeMove = deltaPrice / price;
+    
+//     // Base TTL calculation with regime awareness
+//     auto regime = getCurrentMarketRegime(imbalance);
+//     double regimeFactor = 1.0;
+    
+//     switch (regime) {
+//         case MarketRegimeType::HIGH_VOLATILITY:
+//             regimeFactor = 0.6; // Shorter TTL in volatile markets
+//             break;
+//         case MarketRegimeType::TRENDING:
+//             regimeFactor = 1.4; // Longer TTL in trending markets
+//             break;
+//         case MarketRegimeType::MEAN_REVERTING:
+//             regimeFactor = 1.1; // Slightly longer in range-bound
+//             break;
+//         case MarketRegimeType::STRESS:
+//             regimeFactor = 0.5; // Much shorter during stress
+//             break;
+//         default:
+//             regimeFactor = 1.0;
+//             break;
+//     }
+    
+//     // Enhanced TTL formula
+//     double strengthFactor = std::pow(imbalance.strength, 0.7); // Non-linear strength impact
+//     double baseTTL = (4.0 * relativeMove * regimeFactor) / (volatilityPerTime * strengthFactor);
+    
+//     uint64_t ttlMs = static_cast<uint64_t>(baseTTL * 1000);
+    
+//     // Dynamic bounds based on regime
+//     uint64_t minTTL = (regime == MarketRegimeType::HIGH_VOLATILITY || regime == MarketRegimeType::STRESS) ? 200 : 500;
+//     uint64_t maxTTL = (regime == MarketRegimeType::TRENDING) ? 90000 : 60000;
+    
+//     ttlMs = std::clamp(ttlMs, minTTL, maxTTL);
+    
+//     return std::chrono::milliseconds(ttlMs);
+// }
 
 // Enhanced price target generation
 std::vector<PriceTarget> ImbalanceSignalGenerator::generatePriceTargets(const ImbalanceEvent& imbalance) const {
@@ -827,10 +925,112 @@ std::vector<PriceTarget> ImbalanceSignalGenerator::generatePriceTargets(const Im
         target.probability = targetProbabilities[i];
         target.expected_time = calculateSignalTTL(imbalance, std::abs(target.percentage * midPrice));
         
+        //----------------------------------------------------
+        // NEW INTEGRATION: refine using Volume Profile (VP)
+        //----------------------------------------------------
+        // volumeProfileMetrics_ is optional and may not exist in this class
+        // We check for its presence and for an entry for this symbol. If
+        // present we refine the impact-based price target by blending it
+        // with a VP-structural target.
+        // Do a short locked lookup for VP metrics for this symbol and copy
+        std::map<std::string, double> vpEntry;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            auto vpIt = volumeProfileMetrics_.find(imbalance.getTradingPair());
+            if (vpIt != volumeProfileMetrics_.end()) {
+                vpEntry = vpIt->second;
+            }
+        }
+        if (!vpEntry.empty()) {
+            const auto& vp = vpEntry;
+            double poc  = getVP(vp, "poc");
+            double vah  = getVP(vp, "value_area_high");
+            double val  = getVP(vp, "value_area_low");
+            double vwap = getVP(vp, "vwap");
+            double hvnAbove = getVP(vp, "hvn_above");
+            double hvnBelow = getVP(vp, "hvn_below");
+            
+            double imbalanceDir = imbalance.supportingMetrics.count("imbalance_direction")
+                ? imbalance.supportingMetrics.at("imbalance_direction")
+                : 0.0;
+
+            // Only refine when VP metrics look valid (poc/vwap present)
+            if (poc > 0.0 || vwap > 0.0) {
+                target.price = refineTargetWithVP(
+                    target.price,
+                    midPrice,
+                    poc, vah, val,
+                    vwap,
+                    imbalanceDir,
+                    hvnAbove, hvnBelow
+                );
+            }
+        }
+
         targets.push_back(target);
     }
     
     return targets;
+}
+
+// Small helper to safely extract VP metrics from map
+double ImbalanceSignalGenerator::getVP(const std::map<std::string,double>& m,
+                                      const std::string& k) const {
+    auto it = m.find(k);
+    return (it != m.end() ? it->second : -1.0);
+}
+
+// Hybrid VP refinement: blends impact-based target with a structural VP target
+double ImbalanceSignalGenerator::refineTargetWithVP(
+    double impactPrice,
+    double midPrice,
+    double poc,
+    double vah,
+    double val,
+    double vwap,
+    double imbalanceDir,
+    double hvnAbove,
+    double hvnBelow) const {
+
+    // Basic VP-driven target selection. Prefer POC for mean-reversion,
+    // VAH/VAL extensions for breakouts, and HVN nodes as magnets when available.
+    double vpTarget = impactPrice;
+
+    // If we have POC and we're likely mean-reverting (imbalanceDir small or
+    // price near POC), push to POC.
+    double distMidToPOC = (poc > 0.0) ? std::abs(midPrice - poc) / midPrice : 1.0;
+
+    if (distMidToPOC < 0.01 && std::abs(imbalanceDir) < 0.5) {
+        vpTarget = poc;
+    }
+
+    // Breakout preference: if price above VAH and direction is buy, aim for
+    // VAH extension or HVN above if available. Symmetric for short.
+    if (midPrice > vah && imbalanceDir > 0) {
+        if (hvnAbove > 0.0) vpTarget = hvnAbove;
+        else vpTarget = vah * (1.0 + 0.005); // small extension beyond VAH
+    } else if (midPrice < val && imbalanceDir < 0) {
+        if (hvnBelow > 0.0) vpTarget = hvnBelow;
+        else vpTarget = val * (1.0 - 0.005);
+    }
+
+    // If the impact target sits inside noise clusters (close to POC/VWAP),
+    // prefer VP structural target
+    double distImpact = std::abs(impactPrice - midPrice) / midPrice;
+    double distVP     = std::abs(vpTarget    - midPrice) / midPrice;
+
+    double wVp = 0.0;
+    if (distVP < 0.003) {
+        wVp = 0.75;
+    } else if ((midPrice > vah && imbalanceDir > 0) || (midPrice < val && imbalanceDir < 0)) {
+        wVp = 0.60;
+    } else {
+        wVp = 0.35;
+    }
+
+    double wImpact = 1.0 - wVp;
+
+    return impactPrice * wImpact + vpTarget * wVp;
 }
 
 // Enhanced momentum correlation methods
@@ -1032,6 +1232,11 @@ void ImbalanceSignalGenerator::setMarketRegimeDetector(std::shared_ptr<MarketReg
 void ImbalanceSignalGenerator::setSignalPerformanceTracker(std::shared_ptr<SignalPerformanceTracker> performanceTracker) {
     std::lock_guard<std::mutex> lock(mutex_);
     performanceTracker_ = performanceTracker;
+}
+
+void ImbalanceSignalGenerator::setVolumeProfileMetrics(const std::map<std::string, std::map<std::string, double>>& vp) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    volumeProfileMetrics_ = vp;
 }
 
 // Callback management
