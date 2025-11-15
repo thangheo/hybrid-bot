@@ -1520,14 +1520,7 @@ void Trading_system::signalWorkerLoop(size_t workerId) {
             if (!signalWorkersRunning_.load()) {
                 break;
             }
-            // Debug: log incoming signal direction so we can trace missing SELLs
-            try {
-                std::cout << "SignalWorker: incoming signal id=" << signal.id
-                          << " symbol=" << signal.symbol.toString()
-                          << " dir=" << (signal.direction == core::Direction::BUY ? "BUY" : (signal.direction == core::Direction::SELL ? "SELL" : "NEUTRAL"))
-                          << " strength=" << signal.strength << std::endl;
-            } catch (...) {}
-            
+                        
             try {
                 //if signal is neutral, skip
                 if (signal.direction == core::Direction::NEUTRAL) continue;
