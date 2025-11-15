@@ -832,57 +832,6 @@ bool Trading_system::initialize() {
         LOG_WARN("Failed to ensure global AdaptiveExitStrategy: {}", e.what());
     }
 
-    // Reconciliation pass: import authoritative open positions from PositionTracker
-    // into the AdaptiveExitStrategy so entry tracking (entry_price, entry_time) is present.
-    // Note: AdaptiveExitStrategy currently sets entry_time internally in startPosition();
-    // to preserve authoritative entry timestamps we'd need startPositionWithTime(...) —
-    // for now we import positions so the strategy can evaluate exits going forward.
-    // try {
-    //     if (exitStrategy_ && sharedPositionTracker) {
-    //         auto positions = sharedPositionTracker->getAllPositions();
-    //         LOG_INFO("Reconciliation: scanning {} positions from PositionTracker to import into exit strategy", positions.size());
-    //         for (const auto& pos : positions) {
-    //             try {
-    //                 double qty = pos.getQuantity();
-    //                 if (std::abs(qty) < 1e-12) continue; // skip zero positions
-
-    //                 std::string sym = pos.getTradingPair().toString();
-    //                 // Skip if already tracked
-    //                 if (exitStrategy_->hasActivePosition(sym)) continue;
-
-    //                 // Build a minimal microstructure snapshot. We prefer cached price if available.
-    //                 trading::strategy::MarketMicrostructure micro;
-    //                 micro.tick_size = getExchangeTickSize(pos.getExchangeId());
-    //                 // Use current price from position tracker if available
-    //                 // // auto obMetrics = sharedOrderBookTracker->getMetrics(pos.getTradingPair());
-    //                 // micro.volatility_1m = obMetrics.volatility_1m;
-    //                 // micro.spread_ema = obMetrics.spread_ema;
-    //                 // micro.orderbook_imbalance = obMetrics.orderbook_imbalance;
-    //                 // micro.trade_intensity = obMetrics.totalVolume;
-    //                 // micro.price_impact = obMetrics.price_impact;
-
-    //                 auto direction = (qty >= 0.0) ? core::Direction::BUY : core::Direction::SELL;
-    //                 double entryPrice = pos.getAverageEntryPrice();
-    //                 double confidence = 1.0; // authoritative positions are high confidence
-    //                 //why?
-    //                 exitStrategy_->startPosition(sym, entryPrice, direction, confidence, micro);
-    //                 // Also update local authoritative cache so exitMonitor can resolve quantities
-    //                 try {
-    //                     setLocalPosition(sym, qty);
-    //                     LOG_INFO("Reconciliation: imported position {} qty={} price={} into exit strategy (cached locally)", sym, qty, entryPrice);
-    //                 } catch (...) {
-    //                     LOG_WARN("Reconciliation: failed to update local position cache for {}", sym);
-    //                 }
-    //             } catch (const std::exception& e) {
-    //                 LOG_WARN("Reconciliation: failed to import position: {}", e.what());
-    //             }
-    //         }
-    //     } else {
-    //         LOG_INFO("Reconciliation: skipping import - exitStrategy_ or PositionTracker not available");
-    //     }
-    // } catch (const std::exception& e) {
-    //     LOG_WARN("Reconciliation pass failed: {}", e.what());
-    // }
     
     // Load symbol volatility configuration
     std::string volatilityConfigPath = "config/symbol_volatility_config.json";
@@ -1648,6 +1597,16 @@ void Trading_system::signalWorkerLoop(size_t workerId) {
                     continue;
                 }
 
+                // Inform exit strategy about this latest signal so exit logic can
+                // consult targets/ttl even when evaluateExit is invoked elsewhere.
+                if (exitStrategy_) {
+                    try {
+                        exitStrategy_->updateLatestSignal(signal.symbol.toString(), execSignal);
+                    } catch (...) {
+                        LOG_WARN("Failed to update latest signal in exit strategy for {}", signal.symbol.toString());
+                    }
+                }
+
                 // Basic filtering
                 // if (execSignal.direction == core::Direction::BUY) {
                 //     // if (execSignal.strength < 0.5) continue;
@@ -1986,26 +1945,10 @@ void Trading_system::execWorkerLoop(size_t workerId) {
                           << ", StrategyId: " << task.strategyId
                           << ", ExchangeId: " << task.exchangeId.toString()
                           << std::endl;
-                // Print local position cache for this symbol to help debugging
-                // try {
-                //     std::lock_guard<std::mutex> lk(g_localPositionsMutex);
-                //     auto it = g_localPositions.find(task.symbol.toString());
-                //     if (it != g_localPositions.end()) {
-                //         std::cout << "[LOCAL POS] " << task.symbol.toString() << " cachedQty=" << it->second << std::endl;
-                //     } else {
-                //         std::cout << "[LOCAL POS] " << task.symbol.toString() << " cachedQty=<none>" << std::endl;
-                //     }
-                // } catch (...) {}
-
+                        // Print local position cache for this symbol to help debugging         
                 continue;
             }
-
-            // Note: execution reporting is now centralized via ExecutionService callbacks.
-            // The ExecutionService / ExecutionInterface will invoke the registered
-            // execution callback which will forward a canonical ExecutionReport to
-            // the RiskManager. Avoid constructing and sending a local ExecutionReport
-            // here to prevent duplicate processing.
-
+ 
             std::cout << "📈 Executed: " << task.symbol.toString() << " " 
                       << (task.direction == core::Direction::BUY ? "BUY" : "SELL") 
                       << " qty=" << finalQty
@@ -2018,26 +1961,44 @@ void Trading_system::execWorkerLoop(size_t workerId) {
             // Start tracking position in the exit strategy if we successfully executed an ENTRY
             try {
                 if (exitStrategy_) {
-                    double spreadRatio = 0.0;
-                    if (marketDataInterface_) {
-                        // use market data to populate microstructure fields
+                    double spread = 0.0;
+                    // Try to populate microstructure from cached orderbook metrics (thread-safe cache)
+                    trading::strategy::OrderBookMetrics obMetrics;
+                    MarketMicrostructure micro;
+
+                    // Attempt to read latest cached metrics (populated from EventBus subscription)
+                    bool haveMetrics = false;
+                    try {
+                        haveMetrics = getLatestOrderbookMetrics(task.symbol, task.exchangeId, obMetrics);
+                    } catch (...) { haveMetrics = false; }
+
+                    if (haveMetrics) {
+                        // Map available OrderBookMetrics fields to MarketMicrostructure
+                        micro.volatility_1m = obMetrics.realize_volatility_1m; // 1m realized vol
+                        micro.spread_ema = obMetrics.emaSpread;                 // ema spread
+                        micro.orderbook_imbalance = obMetrics.volumeImbalance;  // use volume imbalance as proxy
+                        micro.trade_intensity = obMetrics.totalVolume;         // total volume as intensity
+                        micro.price_impact = obMetrics.liquidityPressure;      // proxy for price impact
+                        micro.mid_price = obMetrics.midPrice;
+                    } else {
+                        LOG_DEBUG("Exec worker: no cached orderbook metrics for {}@{} - using fallback microstructure",
+                                  task.symbol.toString(), task.exchangeId.toString());
+
+                        // Fallback: estimate spread ratio from market data if available
                         try {
-                            auto sp = marketDataInterface_->getCurrentSpread(task.symbol, task.exchangeId.toString());
-                            if (sp.has_value() && currentPrice > 0.0) spreadRatio = sp.value() / currentPrice;
+                            if (marketDataInterface_) {
+                                auto sp = marketDataInterface_->getCurrentSpread(task.symbol, task.exchangeId.toString());
+                                if (sp.has_value() && currentPrice > 0.0) spread = sp.value() ;
+                            }
                         } catch (...) {}
+
+                        micro.volatility_1m = 0.0;
+                        micro.spread_ema = spread;
+                        micro.orderbook_imbalance = 0.0;
+                        micro.trade_intensity = 0.0;
+                        micro.price_impact = 0.0;
                     }
 
-                    // Build microstructure and call startPosition
-                    // get micro structure from oderbook metrics
-
-
-                    MarketMicrostructure micro;
-                    //get vol1m from orderbook metric we subscribed
-                    micro.volatility_1m = 0.0;
-                    micro.spread_ema = spreadRatio * currentPrice; // best-effort
-                    micro.orderbook_imbalance = 0.0;
-                    micro.trade_intensity = 0.0;
-                    // micro.
                     micro.tick_size = getExchangeTickSize(task.exchangeId);
 
                     exitStrategy_->startPosition(task.symbol.toString(), currentPrice, task.direction, task.confidence, micro);

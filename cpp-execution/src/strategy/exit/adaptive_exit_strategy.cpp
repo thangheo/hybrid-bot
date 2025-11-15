@@ -194,7 +194,12 @@ AdaptiveExitStrategy::DynamicParameters AdaptiveExitStrategy::calculateDynamicPa
 
     } else {
         p.kelly_fraction = 0.02;
-        p.expected_edge = spr_ticks * 0.1;
+        // Default expected edge: express in basis points (bps) to match
+        // historicalPnLs_ which are stored as bps (see evaluateExit -> decision.expected_pnl)
+        // spr_ticks is number of ticks; convert ticks -> price -> bps
+        double spread_price = cur.spread_ema; // raw price spread
+        double spread_bps = (cur.mid_price > 0.0) ? (spread_price / cur.mid_price * 10000.0) : (spread_price * 10000.0);
+        p.expected_edge = spread_bps * 0.1; // default: 10% of spread in bps
         p.sharpe_estimate = 0.5;
     }
 
@@ -248,7 +253,10 @@ AdaptiveExitStrategy::ExitDecision AdaptiveExitStrategy::evaluateExit(
     double current_price,
     const MarketMicrostructure& current_micro,
     core::Direction current_signal_direction,
-    double current_confidence) {
+    double current_confidence,
+    const std::vector<core::PriceTarget>& signal_targets,
+    const core::Duration& signal_ttl,
+    const core::Timestamp& signal_generation_time) {
     
     std::lock_guard<std::mutex> lock(tradesMutex_);
     
@@ -262,6 +270,37 @@ AdaptiveExitStrategy::ExitDecision AdaptiveExitStrategy::evaluateExit(
     // Get current dynamic parameters
     auto regime = detectMarketRegime(current_micro, marketHistory_[symbol]);
     auto params = calculateDynamicParameters(symbol, current_micro, regime);
+
+    // If caller didn't pass signal targets/ttl, consult stored latest signal for this symbol
+    std::vector<core::PriceTarget> actual_targets = signal_targets;
+    core::Duration actual_ttl = signal_ttl;
+    core::Timestamp actual_generation_time = signal_generation_time;
+    if (actual_targets.empty() && actual_ttl == core::Duration::zero()) {
+        std::lock_guard<std::mutex> lk(latestSignalMutex_);
+        auto sit = latestSignalBySymbol_.find(symbol);
+        if (sit != latestSignalBySymbol_.end()) {
+            const auto& s = sit->second;
+            // check validity by TTL/expiration
+            auto now_ts = core::now();
+            if (s.expirationTime.time_since_epoch().count() != 0) {
+                if (now_ts < s.expirationTime) {
+                    actual_targets = s.targets;
+                    actual_ttl = s.ttl;
+                    actual_generation_time = s.generationTime;
+                } else {
+                    // expired: clear stored entry
+                    // we will clear outside the locked map to be safe
+                }
+            } else {
+                // if expirationTime not set, use generationTime+ttl
+                if ((s.generationTime + s.ttl) > now_ts) {
+                    actual_targets = s.targets;
+                    actual_ttl = s.ttl;
+                    actual_generation_time = s.generationTime;
+                }
+            }
+        }
+    }
     
     // Calculate PnL in ticks
     double pnl_ticks = 0.0;
@@ -331,12 +370,7 @@ AdaptiveExitStrategy::ExitDecision AdaptiveExitStrategy::evaluateExit(
         decision.should_exit = true;
         decision.reason = ExitReason::STOP_LOSS;
         decision.confidence = 1.0;
-        // Log current and aggregated PnL at exit trigger
-        // {
-        //     double aggregated = calculateTotalPnLUnlocked(symbol, pnl_ticks);
-        //     LOG_INFO("AdaptiveExitStrategy: exit triggered on {} reason={} current PnL: {:.4f} ticks (aggregated: {:.4f} ticks)",
-        //              symbol, exitReasonToString(decision.reason), pnl_ticks, aggregated);
-        // }
+      
         return decision;
     }
     
@@ -351,9 +385,7 @@ AdaptiveExitStrategy::ExitDecision AdaptiveExitStrategy::evaluateExit(
             // Confidence scales with how bad the relative spike is
             double rel_spike = current_micro.volatility_1m / std::max(1e-12, state.entry_microstructure.volatility_1m);
             decision.confidence = std::min(1.0, 0.5 + (rel_spike - params.volatility_spike_threshold) / (params.volatility_spike_threshold * 2.0));
-            // double aggregated = calculateTotalPnLUnlocked(symbol, pnl_ticks);
-            // LOG_INFO("AdaptiveExitStrategy: exit triggered on {} reason={} current PnL: {:.4f} ticks (aggregated: {:.4f} ticks)",
-            //          symbol, exitReasonToString(decision.reason), pnl_ticks, aggregated);
+            
             return decision;
         }
     } else {
@@ -366,26 +398,47 @@ AdaptiveExitStrategy::ExitDecision AdaptiveExitStrategy::evaluateExit(
         decision.should_exit = true;
         decision.reason = ExitReason::ADVERSE_SELECTION;
         decision.confidence = adverse_score;
-        {
-            // double aggregated = calculateTotalPnLUnlocked(symbol, pnl_ticks);
-            // LOG_INFO("AdaptiveExitStrategy: exit triggered on {} reason={} current PnL: {:.4f} ticks (aggregated: {:.4f} ticks)",
-            //          symbol, exitReasonToString(decision.reason), pnl_ticks, aggregated);
-        }
+       
         return decision;
     }
     
     
     // 4. PROFIT TARGET
-    if (pnl_ticks >= params.profit_target_ticks) {
-        decision.should_exit = true;
-        decision.reason = ExitReason::PROFIT_TARGET;
-        decision.confidence = 0.9;
-        {
-            // double aggregated = calculateTotalPnLUnlocked(symbol, pnl_ticks);
-            // LOG_INFO("AdaptiveExitStrategy: exit triggered on {} reason={} current PnL: {:.4f} ticks (aggregated: {:.4f} ticks)",
-            //          symbol, exitReasonToString(decision.reason), pnl_ticks, aggregated);
+    // Use strategy-provided targets when available (prefer them over generic profit_target)
+    if (!actual_targets.empty()) {
+        for (const auto& t : actual_targets) {
+            // check target according to entry direction
+            if (state.entry_direction == core::Direction::BUY) {
+                if (current_price >= t.price) {
+                    decision.should_exit = true;
+                    decision.reason = ExitReason::PROFIT_TARGET;
+                    // confidence: combine target probability and current signal/conf
+                    decision.confidence = std::min(1.0, 0.5 + 0.5 * t.probability * current_confidence);
+                    return decision;
+                }
+            } else {
+                if (current_price <= t.price) {
+                    decision.should_exit = true;
+                    decision.reason = ExitReason::PROFIT_TARGET;
+                    decision.confidence = std::min(1.0, 0.5 + 0.5 * t.probability * current_confidence);
+                    return decision;
+                }
+            }
         }
-        return decision;
+        // If no explicit signal target hit, still consider generic profit target as fallback
+        if (pnl_ticks >= params.profit_target_ticks) {
+            decision.should_exit = true;
+            decision.reason = ExitReason::PROFIT_TARGET;
+            decision.confidence = 0.9;
+            return decision;
+        }
+    } else {
+        if (pnl_ticks >= params.profit_target_ticks) {
+            decision.should_exit = true;
+            decision.reason = ExitReason::PROFIT_TARGET;
+            decision.confidence = 0.9;
+            return decision;
+        }
     }
     
     
@@ -396,9 +449,7 @@ AdaptiveExitStrategy::ExitDecision AdaptiveExitStrategy::evaluateExit(
             decision.should_exit = true;
             decision.reason = ExitReason::TRAILING_STOP;
             decision.confidence = 0.85;
-            // double aggregated = calculateTotalPnLUnlocked(symbol, pnl_ticks);
-            // LOG_INFO("AdaptiveExitStrategy: exit triggered on {} reason={} current PnL: {:.4f} ticks (aggregated: {:.4f} ticks)",
-            //          symbol, exitReasonToString(decision.reason), pnl_ticks, aggregated);
+           
             return decision;
         }
     }
@@ -417,9 +468,7 @@ AdaptiveExitStrategy::ExitDecision AdaptiveExitStrategy::evaluateExit(
         decision.should_exit = true;
         decision.reason = ExitReason::SIGNAL_REVERSAL;
         decision.confidence = current_confidence;
-    // double aggregated = calculateTotalPnLUnlocked(symbol, pnl_ticks);
-    //     LOG_INFO("AdaptiveExitStrategy: exit triggered on {} reason={} current PnL: {:.4f} ticks (aggregated: {:.4f} ticks)",
-    //              symbol, exitReasonToString(decision.reason), pnl_ticks, aggregated);
+   
         return decision;
     }
     
@@ -429,20 +478,43 @@ AdaptiveExitStrategy::ExitDecision AdaptiveExitStrategy::evaluateExit(
         decision.should_exit = true;
         decision.reason = ExitReason::LIQUIDITY_CRISIS;
         decision.confidence = 0.7;
-    // double aggregated = calculateTotalPnLUnlocked(symbol, pnl_ticks);
-    //     LOG_INFO("AdaptiveExitStrategy: exit triggered on {} reason={} current PnL: {:.4f} ticks (aggregated: {:.4f} ticks)",
-    //              symbol, exitReasonToString(decision.reason), pnl_ticks, aggregated);
+   
         return decision;
     }
     
     // 8. TIME LIMIT
+    // TTL-aware behavior: if a signal TTL is provided, and we're approaching expiration,
+    // prefer to exit toward targets (or tighten trailing/time limits).
+    if (actual_ttl != core::Duration::zero()) {
+        auto now_ts = core::now();
+        auto expiry = actual_generation_time + actual_ttl;
+        // compute remaining milliseconds
+        auto rem_ms = std::chrono::duration_cast<std::chrono::milliseconds>(expiry - now_ts).count();
+        auto ttl_ms = std::chrono::duration_cast<std::chrono::milliseconds>(actual_ttl).count();
+        if (ttl_ms > 0 && rem_ms <= static_cast<long long>(std::max<int64_t>(100, ttl_ms / 5))) {
+            // less than 20% of TTL remaining (or <100ms): increase exit eagerness
+            // If close to expiry and PnL is positive, exit to secure profit
+            if (pnl_ticks > 0.0) {
+                decision.should_exit = true;
+                decision.reason = ExitReason::TIME_LIMIT;
+                decision.confidence = std::min(1.0, 0.6 + (std::min(1.0, pnl_ticks / std::max(1.0, params.profit_target_ticks))));
+                return decision;
+            }
+            // If we're close to target and ttl is expiring, consider exit when within 50% of profit target
+            if (pnl_ticks >= params.profit_target_ticks * 0.5) {
+                decision.should_exit = true;
+                decision.reason = ExitReason::TIME_LIMIT;
+                decision.confidence = 0.7;
+                return decision;
+            }
+        }
+    }
+
     if (seconds_held >= params.max_holding_time) {
         decision.should_exit = true;
         decision.reason = ExitReason::TIME_LIMIT;
         decision.confidence = 0.6;
-    // double aggregated = calculateTotalPnLUnlocked(symbol, pnl_ticks);
-    //     LOG_INFO("AdaptiveExitStrategy: exit triggered on {} reason={} current PnL: {:.4f} ticks (aggregated: {:.4f} ticks)",
-    //              symbol, exitReasonToString(decision.reason), pnl_ticks, aggregated);
+
         return decision;
     }
     
@@ -502,9 +574,20 @@ bool AdaptiveExitStrategy::shouldEnterPosition(
     // Entry filters
     
     // 1. Minimum expected edge
-    if (params.expected_edge < micro.spread_ema * 1.2) {
-        LOG_INFO("Rejecting entry for {}: Expected edge too small ({:.4f} < {:.4f})",
-                  symbol, params.expected_edge, micro.spread_ema * 1.2);
+    // Ensure we compare like-for-like: params.expected_edge is in bps (see calculateDynamicParameters),
+    // so convert current spread to bps before comparing.
+    double spread_bps = 0.0;
+    if (micro.mid_price > 0.0) {
+        spread_bps = micro.spread_ema / micro.mid_price * 10000.0; // basis points
+    } else {
+        // Fallback: treat spread as price and scale by 10000 for visibility
+        spread_bps = micro.spread_ema * 10000.0;
+    }
+    if (params.expected_edge < spread_bps * 1.2) {
+        LOG_INFO("Rejecting entry for {}: Expected edge too small ({:.4f} bps < {:.4f} bps (=1.2*spread))",
+                  symbol, params.expected_edge, spread_bps * 1.2);
+        LOG_TRACE("Details for {}: expected_edge(bps)={:.6f}, spread_price={} mid={} spread_bps={:.6f}",
+                  symbol, params.expected_edge, micro.spread_ema, micro.mid_price, spread_bps);
         return false;  // Edge too small vs spread cost
     }
     //debug with reject reason
@@ -676,6 +759,16 @@ void AdaptiveExitStrategy::markPendingExit(const std::string& symbol) {
         it->second.pending_exit = true;
         LOG_INFO("AdaptiveExitStrategy: marked pending exit for {}", symbol);
     }
+}
+
+void AdaptiveExitStrategy::updateLatestSignal(const std::string& symbol, const core::TradingSignal& signal) {
+    std::lock_guard<std::mutex> lk(latestSignalMutex_);
+    latestSignalBySymbol_[symbol] = signal;
+}
+
+void AdaptiveExitStrategy::clearLatestSignal(const std::string& symbol) {
+    std::lock_guard<std::mutex> lk(latestSignalMutex_);
+    latestSignalBySymbol_.erase(symbol);
 }
 
 const char* AdaptiveExitStrategy::exitReasonToString(ExitReason reason) {

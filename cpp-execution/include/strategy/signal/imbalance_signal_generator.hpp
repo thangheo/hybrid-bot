@@ -310,7 +310,7 @@ private:
         const ImbalanceEvent& imbalance, 
         double deltaPrice
     ) const;
-    
+    // function to boost signal confident based 
     /**
      * @brief Generate sophisticated price targets
      * @param imbalance Source imbalance event
@@ -392,11 +392,34 @@ private:
      * @return Performance-based adjustment factor
      */
     double getHistoricalPerformanceAdjustment(ImbalanceType type) const;
+
+    /**
+     * @brief Set volume profile metrics map which can be used to refine targets
+     * @param vp Map from symbol -> (metric name -> value)
+     */
+    void setVolumeProfileMetrics(const std::map<std::string, std::map<std::string, double>>& vp);
+
+    // VP integration helpers
+    double refineTargetWithVP(
+        double impactPrice,
+        double midPrice,
+        double poc,
+        double vah,
+        double val,
+        double vwap,
+        double imbalanceDir,
+        double hvnAbove,
+        double hvnBelow) const;
+
+    double getVP(const std::map<std::string, double>& m, const std::string& k) const;
     
     // Static lookup tables for regime-aware scaling
     static const std::array<std::array<double, 7>, 19> REGIME_TYPE_SCALING_MATRIX;
     static const std::array<double, 7> REGIME_BASE_ADJUSTMENTS;
     // static const std::array<std::string, 7> REGIME_NAMES;
+
+    // Optional volume-profile metrics provided externally (symbol -> metric map)
+    std::map<std::string, std::map<std::string, double>> volumeProfileMetrics_;
 };
 
 // Type aliases
