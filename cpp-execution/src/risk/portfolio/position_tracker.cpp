@@ -738,21 +738,17 @@ double PositionTracker::calculateTotalExposure() const {
 double PositionTracker::getCachedPrice(const TradingPair& tradingPair) const {
     const std::string key = tradingPair.toString();
     
-    LOG_WARN("PRICE_LOOKUP_START: pair={} dataInterface={}", 
-             key, (m_dataInterface ? "YES" : "NO"));
     
     // Use MarketDataInterface cache directly (5s TTL from config)
     try {
         if (m_dataInterface) {
             double p = m_dataInterface->getCurrentPrice(tradingPair.toString());
-            LOG_WARN("PRICE_FROM_INTERFACE: pair={} price={}", key, p);
+            // LOG_WARN("PRICE_FROM_INTERFACE: pair={} price={}", key, p);
             if (p > 0.0) return p;
         }
     } catch (const std::exception& e) {
         LOG_WARN("PRICE_INTERFACE_ERROR: pair={} error={}", key, e.what());
-    } catch (...) {
-        LOG_WARN("PRICE_INTERFACE_UNKNOWN_ERROR: pair={}", key);
-    }
+    } 
     
     LOG_WARN("PRICE_NOT_FOUND: pair={}", key);
     return 0.0;
