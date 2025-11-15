@@ -1105,7 +1105,7 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                                             createImbalanceEventForBayesModel(ImbalanceType::CUSTOM, signal.position_size,
                                                                             dir, mcopy, signal.probability, signal.uncertainty);
 
-                                            LOG_INFO("ENTRY SIGNAL: {} {} @ {:.6f} (conf={:.3f})",
+                                            LOG_TRACE("ENTRY SIGNAL: {} {} @ {:.6f} (conf={:.3f})",
                                                     symbol_str, (dir == core::Direction::BUY ? "BUY" : "SELL"),
                                                     m.midPrice, signal.probability);
                                         }
