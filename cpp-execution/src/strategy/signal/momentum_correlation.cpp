@@ -844,7 +844,7 @@ void MomentumCorrelation::updateMarketRegime() {
     double volRatio = volatility / (baselineVol + 1e-12);
 
     // Stress threshold: make it harder to trigger when volatility is low
-    double stressThreshold = 0.75; // base
+    double stressThreshold = 0.78; // base
     // If stressIndicator is already high by design, require stronger evidence when vol is low
     if (volatility < baselineVol) stressThreshold = 0.85;
 
@@ -889,43 +889,8 @@ void MomentumCorrelation::updateMarketRegime() {
         detectedRegime = MarketRegimeType::NORMAL;
     }
     
+    applyRegimeSmoothing(detectedRegime);
     
-    // Apply smoothing to prevent rapid regime switching
-    // Hold the correlation mutex while we consult/update the current_regime_
-    // to avoid a read/write race with other threads that call detectMarketRegime()
-    {
-        std::lock_guard<std::mutex> lock(correlation_mutex_);
-        MarketRegimeType previous = current_regime_;
-
-        // Hysteresis using per-regime consecutive detection counters
-        // Increment the counter for detectedRegime, zero others
-        for (auto& kv : regime_consecutive_counts_) {
-            if (kv.first == detectedRegime) kv.second++;
-            else kv.second = 0;
-        }
-
-        // Ensure map entry exists for detectedRegime
-        if (regime_consecutive_counts_.find(detectedRegime) == regime_consecutive_counts_.end()) {
-            regime_consecutive_counts_[detectedRegime] = 1;
-        }
-
-        int required = 1;
-        auto itreq = regime_required_counts_.find(detectedRegime);
-        if (itreq != regime_required_counts_.end()) required = itreq->second;
-
-        if (regime_consecutive_counts_[detectedRegime] >= required) {
-            current_regime_ = detectedRegime;
-        } else {
-            // keep previous regime until threshold met
-            detectedRegime = current_regime_;
-        }
-
-        if (previous != current_regime_) {
-            LOG_DEBUG("Market regime change: {} -> {} (vol={:.4f}, dir={:.4f}, osc={:.4f}, trend={:.2f}, stress={:.2f})",
-                      marketRegimeToString(previous), marketRegimeToString(current_regime_),
-                      volatility, directionalMovement, oscillation, trendPersistence, stressIndicator);
-        }
-    }
 }
 
 //Helper function to calculate Low liquidity index
