@@ -1525,13 +1525,13 @@ void Trading_system::signalWorkerLoop(size_t workerId) {
                 //if signal is neutral, skip
                 if (signal.direction == core::Direction::NEUTRAL) continue;
                 
-                // 🚨 EMERGENCY FREQUENCY & RISK CHECK - Determine order type
-                std::string orderType = "ENTRY"; // Default to ENTRY for new signals
-                // Note: This is for ENTRY signals. EXIT signals are handled separately in optimal_exit_strategy.cpp
+                // // 🚨 EMERGENCY FREQUENCY & RISK CHECK - Determine order type
+                // std::string orderType = "ENTRY"; // Default to ENTRY for new signals
+                // // Note: This is for ENTRY signals. EXIT signals are handled separately in optimal_exit_strategy.cpp
                 
-                if (!emergencyFrequencyCheckWithType(signal.symbol.toString(), orderType)) {
-                    continue; // Skip if trading too frequently
-                }
+                // if (!emergencyFrequencyCheckWithType(signal.symbol.toString(), orderType)) {
+                //     continue; // Skip if trading too frequently
+                // }
                 
                 signalsGenerated_++;
                 double adjustedStrength = signal.strength;              
