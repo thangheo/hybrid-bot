@@ -50,6 +50,16 @@ void AdaptiveExitStrategy::updateMarketData(
 
 }
 
+void AdaptiveExitStrategy::updateRegime(const std::string& symbol, const MarketMicrostructure& microstructure) {
+    std::lock_guard<std::mutex> lock(historyMutex_);
+    auto it = marketHistory_.find(symbol);
+    if (it != marketHistory_.end()) {
+        MarketRegimeType regime = detectMarketRegime(microstructure, it->second);
+        std::lock_guard<std::mutex> regime_lock(regimeMutex_);
+        regimeCache_[symbol] = regime;
+    }
+}
+
 MarketRegimeType AdaptiveExitStrategy::detectMarketRegime(
     const MarketMicrostructure& micro,
     const MarketHistory& history) const {
@@ -252,7 +262,7 @@ void AdaptiveExitStrategy::startPosition(
     // Detect entry regime
     auto it = marketHistory_.find(symbol);
     if (it != marketHistory_.end()) {
-        state.entry_regime = detectMarketRegime(microstructure, it->second);
+        state.entry_regime = getCurrentMarketRegime(symbol);
     } else {
         state.entry_regime = MarketRegimeType::NORMAL;
     }
@@ -850,6 +860,29 @@ AdaptiveExitStrategy::TradeState AdaptiveExitStrategy::getTradeState(const std::
     }
     return TradeState{};
 }
+
+AdaptiveExitStrategy::DynamicParameters AdaptiveExitStrategy::getCurrentParameters(const std::string& symbol) const {
+    std::lock_guard<std::mutex> regime_lock(regimeMutex_);
+    auto regime_it = regimeCache_.find(symbol);
+    MarketRegimeType regime = (regime_it != regimeCache_.end()) ? regime_it->second : MarketRegimeType::NORMAL;
+    
+    std::lock_guard<std::mutex> history_lock(historyMutex_);
+    auto history_it = marketHistory_.find(symbol);
+    if (history_it != marketHistory_.end()) {
+        // Need current microstructure - for now return default
+        MarketMicrostructure micro;
+        return calculateDynamicParameters(symbol, micro, regime);
+    }
+    return DynamicParameters{};
+}
+
+MarketRegimeType AdaptiveExitStrategy::getCurrentMarketRegime(const std::string& symbol) const {
+    std::lock_guard<std::mutex> lock(regimeMutex_);
+    auto it = regimeCache_.find(symbol);
+    return (it != regimeCache_.end()) ? it->second : MarketRegimeType::NORMAL;
+}
+
+
 
 } // namespace strategy
 } // namespace trading

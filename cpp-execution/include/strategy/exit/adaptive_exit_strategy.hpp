@@ -121,6 +121,10 @@ private:
     mutable std::mutex tradesMutex_;
     mutable std::mutex historyMutex_;
     
+    // Cache for current market regime per symbol
+    std::unordered_map<std::string, MarketRegimeType> regimeCache_;
+    mutable std::mutex regimeMutex_;
+    
     // Configuration
     double predictionWindow_ = 1.5;  // Default prediction window in seconds (1.5s)
     double riskFreeRate_ = 0.0;       // For Sharpe calculation
@@ -164,6 +168,11 @@ public:
         double price_return);
     
     /**
+     * Update current market regime for a symbol
+     */
+    void updateRegime(const std::string& symbol, const MarketMicrostructure& microstructure);
+    
+    /**
      * Start tracking a new position with adaptive parameters
      */
     void startPosition(
@@ -201,7 +210,10 @@ public:
      * Get current dynamic parameters for symbol
      */
     DynamicParameters getCurrentParameters(const std::string& symbol) const;
-    
+     /**
+     * Get current market regime for symbol
+     */
+    MarketRegimeType getCurrentMarketRegime(const std::string& symbol) const;
     /**
      * Calculate optimal position size using Kelly Criterion
      */
@@ -238,7 +250,7 @@ public:
      * simulation/monitoring where no execution/fill is present but the
      * strategy wants to record the PnL of a signal pair (entry->exit).
      */
-    void recordSimulatedRealizedPnl(const std::string& symbol, double exit_price, ExitReason reason);
+    // void recordSimulatedRealizedPnl(const std::string& symbol, double exit_price, ExitReason reason);
 
     /**
      * Mark a position as having an exit in-flight. This avoids immediate closing
