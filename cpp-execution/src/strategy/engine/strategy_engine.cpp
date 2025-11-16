@@ -505,7 +505,7 @@ void StrategyEngine::processQueuedSignals() {
          double currentPrice = orderBook.getMidPrice();
          
          // Update shock detector with current price
-         updateShockDetectorPrice(symbol.toString(), currentPrice);
+        //  updateShockDetectorPrice(symbol.toString(), currentPrice);
          
          // Check for emergency exit conditions on every price update
          //skip this for now
