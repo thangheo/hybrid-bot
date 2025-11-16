@@ -542,33 +542,12 @@ void Trading_system::exitMonitorLoop() {
                     );
 
                     if (exitDecision.should_exit and exitDecision.confidence >= 0.8 && posInfo.has_value()) {
-                        // Log exit trigger with holding time
+                        // Prepare to log exit trigger with holding time (actual logging after we confirm an authoritative qty)
                         auto now = std::chrono::steady_clock::now();
                         // holdingDurationMs is milliseconds; convert to seconds for log
                         auto holdingDurationMs = std::chrono::duration_cast<std::chrono::milliseconds>(
                             now - posInfo->entry_time).count();
                         double holdingSeconds = static_cast<double>(holdingDurationMs) / 1000.0;
-                        // Update simple PnL statistics (thread-safe)
-                        double cumulative_bps = 0.0;
-                        uint64_t total_exits = 0;
-                        {
-                            std::lock_guard<std::mutex> lk(g_exitPnlMutex);
-                            g_cumulativeExitPnlBps += exitDecision.expected_pnl;
-                            ++g_totalExitCount;
-                            cumulative_bps = g_cumulativeExitPnlBps;
-                            total_exits = g_totalExitCount;
-                        }
-                        double avg_bps = (total_exits > 0) ? (cumulative_bps / static_cast<double>(total_exits)) : 0.0;
-
-                        LOG_INFO("EXIT TRIGGERED: {} - {} ({:.4f}bps) after {:.3f}s holding - exit_count={} cum_pnl={:.4f}bps avg_pnl={:.4f}bps",
-                            symbol,
-                            AdaptiveExitStrategy::exitReasonToString(exitDecision.reason),
-                            exitDecision.expected_pnl,
-                            holdingSeconds,
-                            total_exits,
-                            cumulative_bps,
-                            avg_bps);
-                        
                         // Create exit signal
                         execution::TradingSignal exitSignal;
                         exitSignal.id = "EXIT_" + symbol + "_" + std::to_string(std::chrono::system_clock::now().time_since_epoch().count());
@@ -654,11 +633,33 @@ void Trading_system::exitMonitorLoop() {
                                 std::lock_guard<std::mutex> lk(execQueueMutex_);
                                 execQueue_.push_back(std::move(exitSignal));
                                 execQueueCv_.notify_one();
+
+                                // Update simple PnL statistics (thread-safe) only for authoritative exits that were queued
+                                double cumulative_bps = 0.0;
+                                uint64_t total_exits = 0;
+                                {
+                                    std::lock_guard<std::mutex> lk2(g_exitPnlMutex);
+                                    g_cumulativeExitPnlBps += exitDecision.expected_pnl;
+                                    ++g_totalExitCount;
+                                    cumulative_bps = g_cumulativeExitPnlBps;
+                                    total_exits = g_totalExitCount;
+                                }
+                                double avg_bps = (total_exits > 0) ? (cumulative_bps / static_cast<double>(total_exits)) : 0.0;
+
+                                LOG_INFO("EXIT TRIGGERED: {} - {} ({:.4f}bps) after {:.3f}s holding - exit_count={} cum_pnl={:.4f}bps avg_pnl={:.4f}bps",
+                                    symbol,
+                                    AdaptiveExitStrategy::exitReasonToString(exitDecision.reason),
+                                    exitDecision.expected_pnl,
+                                    holdingSeconds,
+                                    total_exits,
+                                    cumulative_bps,
+                                    avg_bps);
+
+                                // Mark the exitStrategy closed for this symbol locally. Note: ideally the position
+                                // should be closed upon execution/fill confirmation and realized PnL recorded there.
+                                exitStrategy_->closePosition(symbol, exitDecision.reason, exitDecision.expected_pnl);
                             }
-                            
                         }
-                        //exit the simulating trade because we dont want it keep calling 
-                        exitStrategy_->closePosition(symbol, exitDecision.reason, exitDecision.expected_pnl);   
                        
                 }
                     
@@ -1533,14 +1534,7 @@ void Trading_system::signalWorkerLoop(size_t workerId) {
                 //if signal is neutral, skip
                 if (signal.direction == core::Direction::NEUTRAL) continue;
                 
-                // // 🚨 EMERGENCY FREQUENCY & RISK CHECK - Determine order type
-                // std::string orderType = "ENTRY"; // Default to ENTRY for new signals
-                // // Note: This is for ENTRY signals. EXIT signals are handled separately in optimal_exit_strategy.cpp
-                
-                // if (!emergencyFrequencyCheckWithType(signal.symbol.toString(), orderType)) {
-                //     continue; // Skip if trading too frequently
-                // }
-                
+               
                 signalsGenerated_++;
                 double adjustedStrength = signal.strength;              
 
