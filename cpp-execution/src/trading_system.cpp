@@ -5,6 +5,7 @@
 #include "strategy/pattern/imbalance_detection_engine.hpp"
 #include "risk/interfaces/execution_interface.hpp"
 #include "risk/risk_types.hpp"
+#include "strategy/types/market_regime.hpp"
 #include "common/thread_pool.hpp"
 #include <nlohmann/json.hpp>
 #include <fstream>
@@ -361,6 +362,18 @@ void Trading_system::marketDataUpdaterLoop()
                     try {
                         exitStrategy_->updateMarketData(sym.toString(),
                             vol_1m, spread_ema, imbalance, intensity, price_return);
+                        
+                        // Update regime cache
+                        ::trading::strategy::MarketMicrostructure micro;
+                        micro.volatility_1m = vol_1m;
+                        micro.spread_ema = spread_ema;
+                        micro.orderbook_imbalance = imbalance;
+                        micro.trade_intensity = intensity;
+                        micro.mid_price = mid_price;
+                        micro.tick_size = getExchangeTickSize(exch);
+                        // Other fields can be set to 0 or default
+                        
+                        exitStrategy_->updateRegime(sym.toString(), micro);
                     }
                     catch (const std::exception& e) {
                         LOG_WARN("exitStrategy->updateMarketData failed for {}@{}: {}",
@@ -373,7 +386,7 @@ void Trading_system::marketDataUpdaterLoop()
                 }
             }));
         }
-
+        
         // 4. Chờ tất cả worker hoàn thành
         for (auto& f : futures) {
             if (!marketDataUpdaterRunning_.load(std::memory_order_relaxed)) break;
@@ -1696,7 +1709,7 @@ void Trading_system::execWorkerLoop(size_t workerId) {
         
         try {
             // Small delay to simulate processing/network latency for entries
-            std::this_thread::sleep_for(1ms);
+            std::this_thread::sleep_for(2ms);
 
             if (!executionService_) {
                 std::cerr << "Execution service not initialized!" << std::endl;
@@ -1834,7 +1847,6 @@ void Trading_system::execWorkerLoop(size_t workerId) {
                 continue;
             }
 
-            // ENTRY ORDERS: existing logic preserved below
             // --- Step 1: Get allowed position size from risk manager ---
             double allowedSize = 0.0;
             if (riskManager_) {
@@ -1874,21 +1886,28 @@ void Trading_system::execWorkerLoop(size_t workerId) {
             double targetMultiplier = 0.5 + 0.5 * clampedTarget;
             double notionalUsd = positionSize * targetMultiplier;
 
+            //get price from orderbook metric
+            trading::strategy::OrderBookMetrics obMetrics;
+            double currentPrice = obMetrics.midPrice;
             // --- Step 4: Get current price and convert to quantity ---
-            std::optional<double> currentPriceOpt = dataIngestionService_->getLastPrice(task.exchangeId, task.symbol);
-            
-            if (!currentPriceOpt.has_value() || currentPriceOpt.value() <= 0.0) {
-                LOG_WARN("ExecWorker: current price unavailable for {} - skipping order", task.symbol.toString());
-                std::cout << "❌ Execution skipped for signal " << task.id 
-                          << ": Price unavailable" << std::endl;
-                continue;
+
+            if (currentPrice <= 0.0) {
+                //fallback to data ingestion service
+                auto priceOpt = dataIngestionService_->getLastPrice(task.exchangeId, task.symbol);
+                if (priceOpt.has_value()) {
+                    currentPrice = priceOpt.value();
+                }
+                if (currentPrice <= 0.0) {
+                    LOG_WARN("ExecWorker: unable to fetch price for {} - skipping order", task.symbol.toString());
+                    std::cout << "❌ Execution skipped for signal " << task.id 
+                              << ": Price unavailable" << std::endl;
+                    continue;
+                }
             }
             
-            double currentPrice = currentPriceOpt.value();
             double finalQty = notionalUsd / currentPrice;
  
             try {
-                // Use symbol.toString() which yields e.g. "XRP/USDT"; the
                 // precision helper will normalize it internally (remove '/').
                 std::string symStr = task.symbol.toString();
 
@@ -1945,7 +1964,7 @@ void Trading_system::execWorkerLoop(size_t workerId) {
             std::cout << "[EXEC] Prepared order: symbol=" << task.symbol.toString()
                       << " qty=" << finalQty 
                       << " price=" << currentPrice
-                      << " notionalUsd=" << finalNotionalUsd
+                      << " notionalUsd=" << notionalUsd
                       << " minNotionalUsd=" << minNotionalUsd 
                       << std::endl;
 
@@ -1978,13 +1997,13 @@ void Trading_system::execWorkerLoop(size_t workerId) {
 
             // 🚨 RECORD TRADE FOR EMERGENCY FREQUENCY TRACKING
             recordTradeWithType(task.symbol.toString(), "ENTRY");
+            // trading::strategy::OrderBookMetrics obMetrics;
 
             // Start tracking position in the exit strategy if we successfully executed an ENTRY
             try {
                 if (exitStrategy_) {
                     double spread = 0.0;
                     // Try to populate microstructure from cached orderbook metrics (thread-safe cache)
-                    trading::strategy::OrderBookMetrics obMetrics;
                     MarketMicrostructure micro;
 
                     // Attempt to read latest cached metrics (populated from EventBus subscription)
