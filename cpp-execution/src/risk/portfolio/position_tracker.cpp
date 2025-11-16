@@ -742,9 +742,10 @@ double PositionTracker::getCachedPrice(const TradingPair& tradingPair) const {
     // Use MarketDataInterface cache directly (5s TTL from config)
     try {
         if (m_dataInterface) {
-            double p = m_dataInterface->getCurrentPrice(tradingPair.toString());
+            double p = m_dataInterface->getCurrentPrice(tradingPair.toString(), core::ExchangeId::binance());
             // LOG_WARN("PRICE_FROM_INTERFACE: pair={} price={}", key, p);
-            if (p > 0.0) return p;
+            if (p > 0.0) return p;            
+            
         }
     } catch (const std::exception& e) {
         LOG_WARN("PRICE_INTERFACE_ERROR: pair={} error={}", key, e.what());

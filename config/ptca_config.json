@@ -11,18 +11,18 @@
       "adaptive_learning_factor": 0.05
     },
     "integration_config": {
-      "outcome_evaluation_delay_minutes": 2,
-      "signal_tracking_window_minutes": 15,
+  "outcome_evaluation_delay_minutes": 3,
+  "signal_tracking_window_minutes": 3,
       "minimum_pnl_threshold": 0.0005,
       "price_movement_threshold": 0.003,
       "pnl_success_threshold": 0.008,
       "strong_outcome_threshold": 0.02,
       "use_realtime_price_updates": true,
-      "price_update_interval_seconds": 10
+  "price_update_interval_seconds": 180
     },
     "persistence": {
       "model_save_directory": "models/ptca/",
-      "model_save_interval_minutes": 20,
+  "model_save_interval_minutes": 3,
       "enable_continuous_learning": true,
       "enable_detailed_logging": true,
       "auto_save_on_shutdown": true
@@ -30,7 +30,7 @@
     "performance": {
       "max_signals_to_track": 500,
       "enable_memory_optimization": true,
-      "cleanup_interval_seconds": 60
+  "cleanup_interval_seconds": 180
     },
     "trading_filters": {
       "enable_ptca_filter": true,
@@ -44,18 +44,18 @@
       "pnl": {
         "enabled": true,
         "weight": 1.0,
-        "evaluation_delay_minutes": 2
+  "evaluation_delay_minutes": 3
       },
       "price_movement": {
         "enabled": true,
         "weight": 0.7,
-        "evaluation_delay_minutes": 1,
-        "timeframes_ms": [30000, 60000, 300000]
+  "evaluation_delay_minutes": 3,
+  "timeframes_ms": [180000, 300000, 600000]
       },
       "execution_success": {
         "enabled": true,
         "weight": 0.5,
-        "evaluation_delay_minutes": 0
+  "evaluation_delay_minutes": 3
       }
     }
   },
@@ -63,12 +63,12 @@
     "BTC/USDT": {
       "strong_threshold": 0.025,
       "weak_threshold": 0.005,
-      "outcome_evaluation_delay_minutes": 3
+  "outcome_evaluation_delay_minutes": 3
     },
     "ETH/USDT": {
       "strong_threshold": 0.03,
       "weak_threshold": 0.007,
-      "outcome_evaluation_delay_minutes": 2
+  "outcome_evaluation_delay_minutes": 3
     }
   },
   "event_type_weights": {

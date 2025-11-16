@@ -90,9 +90,9 @@
         "isHigherBetter": false
       }
     },
-    "coolingPeriodSeconds": 300,
-    "warmupPeriodSeconds": 60,
-    "mandatoryHaltPeriodSeconds": 60,
+  "coolingPeriodSeconds": 180,
+  "warmupPeriodSeconds": 180,
+  "mandatoryHaltPeriodSeconds": 180,
     "autoResume": true,
     "maxTriggersPerDay": 10,
     "maxTriggersBeforeExtendedHalt": 3,
@@ -115,7 +115,7 @@
     "trailingStopDistance": 0.015,
     "enableTrailingStop": true,
     "forceLiquidation": true,
-    "liquidationDelaySeconds": 2,
+  "liquidationDelaySeconds": 180,
     "perSymbolLimit": -50.0,
     "emergencyMode": true
   },
@@ -191,18 +191,18 @@
     ]
   },
   "balanceReconciliation": {
-    "reconciliationFrequencyMinutes": 30,
+  "reconciliationFrequencyMinutes": 3,
     "maxDiscrepancyPercent": 1.0,
     "autoCorrectDiscrepancies": false,
     "alertOnDiscrepancy": true,
     "maxConsecutiveFailures": 3,
     "minimumPositionSize": 0.001,
-    "exchangeTimeoutSeconds": 30,
+  "exchangeTimeoutSeconds": 180,
     "enableDetailedLogging": true,
     "reconcileOnStartup": true,
     "maxDiscrepanciesPerRun": 100,
     "maxRetryAttempts": 3,
-    "retryDelaySeconds": 5,
+  "retryDelaySeconds": 180,
     "enableProgressiveBackoff": true,
     "absoluteToleranceThreshold": 0.0001,
     "ignoreZeroPositions": true,
@@ -216,7 +216,7 @@
     "enableBatchProcessing": true,
     "maxConcurrentExchangeQueries": 5,
     "enablePositionCaching": true,
-    "cacheValidityPeriodMinutes": 5,
+  "cacheValidityPeriodMinutes": 3,
     "validateTimestamps": true,
     "maxPositionAgeMinutes": 60,
     "enableDataQualityChecks": true,
@@ -226,9 +226,9 @@
     "autoRebalancingEnabled": true,
     "autoExecuteRebalancing": false,
     "parallelExecution": false,
-    "rebalancingIntervalMinutes": 60,
-    "rebalanceWindowMinutes": 15,
-    "staggerWindowMinutes": 30,
+  "rebalancingIntervalMinutes": 3,
+  "rebalanceWindowMinutes": 3,
+  "staggerWindowMinutes": 3,
     "allocationDeviationThreshold": 0.08,
     "allocationDeviationThresholdMin": 0.03,
     "volatilityMultiplier": 0.5,
@@ -242,7 +242,7 @@
       "limitOffsetPercent": 0.002,
       "useTwapForLargeOrders": true,
       "twapSliceCount": 6,
-      "sliceIntervalSeconds": 60
+  "sliceIntervalSeconds": 180
     },
     "targetAllocations": {
       "BTC": 0.4,
@@ -490,7 +490,7 @@
     "autoExecuteRebalancing": false,
     "enableRealTimeMetrics": true,
     "enableAllocationTracking": true,
-    "metricsUpdateIntervalMinutes": 5,
+  "metricsUpdateIntervalMinutes": 3,
     "minimumPortfolioValue": 1000.0,
     "baseCurrency": "USD",
     "supportedAssets": [

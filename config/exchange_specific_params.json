@@ -1,7 +1,7 @@
 {
   "BINANCE": {
     "numeric": {
-      "latency_adjustment": 1.0,
+  "latency_adjustment": 3.0,
       "volume_scaling_factor": 1.0,
       "spread_multiplier": 1.0,
       "order_book_depth": 20,
@@ -25,7 +25,7 @@
   },
   "COINBASE": {
     "numeric": {
-      "latency_adjustment": 1.2,
+  "latency_adjustment": 3.0,
       "volume_scaling_factor": 0.9,
       "spread_multiplier": 1.1,
       "order_book_depth": 15,

@@ -66,8 +66,8 @@
     double priceSpikeThreshold = 0.6;            // Threshold for price spike detection
     double liquidityPressureThreshold = 0.5;     // Threshold for liquidity pressure changes
     // Window and history settings (shorter default windows for low-latency orderbook signals)
-    int detectionWindowMs = 1500;                // Detection window in milliseconds (1.5s)
-     int maxHistorySize = 1000;                   // Maximum history size for metrics
+    int detectionWindowMs = 180000;                // Detection window in milliseconds (3s)
+     int maxHistorySize = 5000;                   // Maximum history size for metrics
      
      // Advanced configuration
      double global_sensitivity = 1.0;             // Global sensitivity for all thresholds
@@ -80,7 +80,7 @@
     // If empty, persistence is disabled. Set via configuration to enable.
     std::string bayesModelPath = "";
     // Labeling delay in milliseconds for online training buffer
-    int labelingDelayMs = 1500;
+    int labelingDelayMs = 180000;          // Default 3 minutes
     // Warmup / gating for online training: delay (ms) to wait after startup
     // before allowing training to begin. If 0, no delay-based gating is applied.
     int trainingStartDelayMs = 0;
