@@ -1810,9 +1810,22 @@ void Trading_system::execWorkerLoop(size_t workerId) {
                     // Inform exit strategy that position is closed if we have one
                     try {
                         if (exitStrategy_) {
-                            //pending
-                            exitStrategy_->markPendingExit(task.symbol.toString());
-                            // exitStrategy_->closePosition(task.symbol.toString(), trading::strategy::AdaptiveExitStrategy::ExitReason::PROFIT_TARGET, 0.0);
+                            // Calculate realized PnL in basis points for proper position closure
+                            double realizedPnlBps = 0.0;
+                            try {
+                                auto tradeState = exitStrategy_->getTradeState(task.symbol.toString());
+                                if (tradeState.is_active && tradeState.entry_price > 0.0) {
+                                    realizedPnlBps = trading::strategy::AdaptiveExitStrategy::computeSignalPnlBps(
+                                        tradeState.entry_price, currentPrice, tradeState.entry_direction);
+                                }
+                            } catch (...) {
+                                // Fallback: assume neutral PnL if we can't calculate
+                                realizedPnlBps = 0.0;
+                            }
+                            
+                            exitStrategy_->closePosition(task.symbol.toString(), 
+                                trading::strategy::AdaptiveExitStrategy::ExitReason::PROFIT_TARGET, 
+                                realizedPnlBps);
                         }
                     } catch (...) {}
                 }
