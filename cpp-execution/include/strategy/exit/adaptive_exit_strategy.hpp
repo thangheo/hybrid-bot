@@ -233,6 +233,14 @@ public:
     void recordRealizedPnlBps(const std::string& symbol, double realized_pnl_bps);
 
     /**
+     * Compute and record a simulated realized PnL (in bps) using the stored
+     * TradeState entry_price and the provided exit_price. This is intended for
+     * simulation/monitoring where no execution/fill is present but the
+     * strategy wants to record the PnL of a signal pair (entry->exit).
+     */
+    void recordSimulatedRealizedPnl(const std::string& symbol, double exit_price, ExitReason reason);
+
+    /**
      * Mark a position as having an exit in-flight. This avoids immediate closing
      * of trade state while we wait for execution/fill confirmation.
      */
@@ -263,6 +271,13 @@ public:
     /**
      * Helpers
      */
+    /**
+     * Compute signal PnL in basis points (bps) from entry->exit prices and direction.
+     * This is a pure price-based calculation (exit_price vs entry_price) and is
+     * intended to measure the PnL of the signal itself (independent of any
+     * execution/risk layer). Returns 0.0 for invalid entry_price.
+     */
+    static double computeSignalPnlBps(double entry_price, double exit_price, core::Direction direction);
     bool hasActivePosition(const std::string& symbol) const;
     TradeState getTradeState(const std::string& symbol) const;
     static const char* exitReasonToString(ExitReason reason);

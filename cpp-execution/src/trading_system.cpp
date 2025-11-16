@@ -45,6 +45,10 @@ static std::unordered_map<std::string, double> g_symbolTickSize;
 static std::mutex g_exitPnlMutex;
 static double g_cumulativeExitPnlBps = 0.0;
 static uint64_t g_totalExitCount = 0;
+// Separate counters for simulated (non-authoritative) signal PnL so we don't
+// mix them with realized/authoritative exit statistics.
+static double g_cumulativeSimulatedExitPnlBps = 0.0;
+static uint64_t g_totalSimulatedExitCount = 0;
 
 // Load persisted exit PnL stats from disk (JSON). Best-effort, no exceptions thrown
 static void loadExitPnlStats(const std::string& path = "logs/exit_pnl_stats.json") {
@@ -54,12 +58,17 @@ static void loadExitPnlStats(const std::string& path = "logs/exit_pnl_stats.json
         if (!ifs.is_open()) return;
         nlohmann::json j; ifs >> j;
         double cum = 0.0; uint64_t cnt = 0;
+        double sim_cum = 0.0; uint64_t sim_cnt = 0;
         if (j.contains("cumulative_bps")) cum = j["cumulative_bps"].get<double>();
         if (j.contains("total_count")) cnt = j["total_count"].get<uint64_t>();
+        if (j.contains("simulated_cumulative_bps")) sim_cum = j["simulated_cumulative_bps"].get<double>();
+        if (j.contains("simulated_total_count")) sim_cnt = j["simulated_total_count"].get<uint64_t>();
         {
             std::lock_guard<std::mutex> lk(g_exitPnlMutex);
             g_cumulativeExitPnlBps = cum;
             g_totalExitCount = cnt;
+            g_cumulativeSimulatedExitPnlBps = sim_cum;
+            g_totalSimulatedExitCount = sim_cnt;
         }
         LOG_INFO("Loaded exit PnL stats from {}: total_count={}, cumulative_bps={}", path, cnt, cum);
     } catch (...) {
@@ -78,6 +87,8 @@ static void saveExitPnlStats(const std::string& path = "logs/exit_pnl_stats.json
             std::lock_guard<std::mutex> lk(g_exitPnlMutex);
             j["cumulative_bps"] = g_cumulativeExitPnlBps;
             j["total_count"] = g_totalExitCount;
+            j["simulated_cumulative_bps"] = g_cumulativeSimulatedExitPnlBps;
+            j["simulated_total_count"] = g_totalSimulatedExitCount;
         }
         std::ofstream ofs(path, std::ofstream::trunc);
         if (!ofs.is_open()) {
@@ -604,9 +615,39 @@ void Trading_system::exitMonitorLoop() {
                             LOG_WARN("Exit monitor: failed to query RiskManager cached position: {}", e.what());
                         }                                     
 
-                        // If no authoritative position found, skip issuing an exit order.
+                        // If no authoritative position found, record a simulated signal-level exit
+                        // so the strategy can close its internal state and we can still observe
+                        // the signal PnL. Do NOT issue an execution order here.
                         if (!qtyResolved) {
-                            LOG_INFO("Exit monitor: no authoritative position found for {} - skipping exit signal", symbol);
+                            double simulated_pnl_bps = 0.0;
+                            if (posInfo.has_value() && posInfo->entry_price > 0.0) {
+                                simulated_pnl_bps = trading::strategy::AdaptiveExitStrategy::computeSignalPnlBps(
+                                    posInfo->entry_price, currentPrice, posInfo->entry_direction);
+                            }
+
+                            // Update simulated counters (thread-safe)
+                            double sim_cum = 0.0;
+                            uint64_t sim_count = 0;
+                            {
+                                std::lock_guard<std::mutex> lk(g_exitPnlMutex);
+                                g_cumulativeSimulatedExitPnlBps += simulated_pnl_bps;
+                                ++g_totalSimulatedExitCount;
+                                sim_cum = g_cumulativeSimulatedExitPnlBps;
+                                sim_count = g_totalSimulatedExitCount;
+                            }
+                            // Persist simulated stats immediately so a crash won't lose them
+                            try { saveExitPnlStats("logs/exit_pnl_stats.json"); } catch (...) {}
+
+                            double sim_avg = (sim_count > 0) ? (sim_cum / static_cast<double>(sim_count)) : 0.0;
+                            LOG_INFO("Exit monitor: no authoritative position for {} - simulated_exit_pnl={:.4f}bps simulated_count={} simulated_cum={:.4f}bps simulated_avg={:.4f}bps",
+                                symbol, simulated_pnl_bps, sim_count, sim_cum, sim_avg);
+
+                            // Close the trade in the strategy's internal state using the signal-level PnL
+                            try {
+                                exitStrategy_->closePosition(symbol, exitDecision.reason, simulated_pnl_bps);
+                            } catch (const std::exception& e) {
+                                LOG_WARN("Exit monitor: failed to closePosition for {}: {}", symbol, e.what());
+                            }
                         } else {
                             // Ensure the exit notional respects minimum notional by increasing quantity if necessary
                             const double minNotionalUsd = 12.0;
@@ -644,6 +685,8 @@ void Trading_system::exitMonitorLoop() {
                                     cumulative_bps = g_cumulativeExitPnlBps;
                                     total_exits = g_totalExitCount;
                                 }
+                                // Persist authoritative stats immediately as well
+                                try { saveExitPnlStats("logs/exit_pnl_stats.json"); } catch (...) {}
                                 double avg_bps = (total_exits > 0) ? (cumulative_bps / static_cast<double>(total_exits)) : 0.0;
 
                                 LOG_INFO("EXIT TRIGGERED: {} - {} ({:.4f}bps) after {:.3f}s holding - exit_count={} cum_pnl={:.4f}bps avg_pnl={:.4f}bps",

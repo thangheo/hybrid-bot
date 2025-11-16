@@ -231,7 +231,7 @@ void AdaptiveExitStrategy::startPosition(
     // and again on execution confirmation. Ignore duplicate starts to avoid
     // corrupting entry_time/entry_price and inflating historical stats.
     if (state.is_active) {
-        LOG_WARN("AdaptiveExitStrategy::startPosition called but position already active for {} - ignoring duplicate start", symbol);
+        // LOG_WARN("AdaptiveExitStrategy::startPosition called but position already active for {} - ignoring duplicate start", symbol);
         return;
     }
     state.entry_price = entry_price;
@@ -371,7 +371,9 @@ AdaptiveExitStrategy::ExitDecision AdaptiveExitStrategy::evaluateExit(
         LOG_WARN("AdaptiveExitStrategy::evaluateExit: entry_price <= 0 ({}). expected_pnl set to 0 for symbol={}", state.entry_price, symbol);
         decision.expected_pnl = 0.0;
     } else {
-        decision.expected_pnl = pnl_ticks * current_micro.tick_size / state.entry_price * 10000; // to bps
+        // Use dedicated helper to compute signal PnL in bps to avoid mixing tick-level
+        // and expected/realized PnL semantics.
+        decision.expected_pnl = AdaptiveExitStrategy::computeSignalPnlBps(state.entry_price, current_price, state.entry_direction);
     }
     
     // ===== EXIT CONDITIONS (Priority Order) =====
@@ -710,6 +712,22 @@ double AdaptiveExitStrategy::calculateStandardDeviation(const std::deque<double>
     
     return std::sqrt(sq_sum / (data.size() - 1));
 }
+
+double AdaptiveExitStrategy::computeSignalPnlBps(double entry_price, double exit_price, core::Direction direction) {
+    if (entry_price <= 0.0) return 0.0;
+    double pnl_price = 0.0;
+    if (direction == core::Direction::BUY) {
+        pnl_price = exit_price - entry_price;
+    } else if (direction == core::Direction::SELL) {
+        pnl_price = entry_price - exit_price;
+    } else {
+        // For NEUTRAL or unknown, treat as zero
+        return 0.0;
+    }
+    double pnl_bps = (pnl_price / entry_price) * 10000.0;
+    return pnl_bps;
+}
+
 
 double AdaptiveExitStrategy::calculateAutoCorrelation(const std::deque<double>& data, int lag) const {
     if (data.size() < lag + 2) return 0.0;
