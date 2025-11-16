@@ -34,10 +34,11 @@
 #include <nlohmann/json.hpp>
 #include <fstream>
 #include <mutex>
+#include <common/thread_pool.hpp>
 
  using namespace trading::core;
  using namespace std::chrono_literals;
-
+using namespace trading::common;
 namespace trading {
 namespace strategy {
 // Local tick-size loader: read symbol-level and exchange-level tick sizes
@@ -472,72 +473,6 @@ bool trading::strategy::ImbalanceDetectionEngine::saveBayesForSymbol(trading::pe
     }
 }
 
-
-// Internal simple thread-pool used to run detectors without creating a new
-// OS thread for each call. Kept internal to this translation unit.
-namespace {
-class SimpleThreadPool {
-public:
-    explicit SimpleThreadPool(size_t threads = std::max(1u, std::thread::hardware_concurrency())) {
-        stop_.store(false);
-        for (size_t i = 0; i < threads; ++i) {
-            workers_.emplace_back([this] {
-                while (true) {
-                    std::function<void()> task;
-                    {
-                        std::unique_lock<std::mutex> lk(mutex_);
-                        cv_.wait(lk, [this] { return stop_.load() || !tasks_.empty(); });
-                        if (stop_.load() && tasks_.empty()) return;
-                        task = std::move(tasks_.front());
-                        tasks_.pop();
-                    }
-                    try {
-                        task();
-                    } catch (...) {
-                        // swallow - detector exceptions are handled by their packaged_task
-                    }
-                }
-            });
-        }
-    }
-
-    ~SimpleThreadPool() {
-        stop();
-    }
-
-    void stop() {
-        bool expected = false;
-        if (!stop_.compare_exchange_strong(expected, true)) return;
-        cv_.notify_all();
-        for (auto &t : workers_) if (t.joinable()) t.join();
-    }
-
-    template<typename F>
-    auto submit(F f) -> std::future<decltype(f())> {
-        using R = decltype(f());
-        auto taskPtr = std::make_shared<std::packaged_task<R()>>(std::move(f));
-        std::future<R> fut = taskPtr->get_future();
-        {
-            std::lock_guard<std::mutex> lk(mutex_);
-            tasks_.emplace([taskPtr]() { (*taskPtr)(); });
-        }
-        cv_.notify_one();
-        return fut;
-    }
-
-private:
-    std::vector<std::thread> workers_;
-    std::queue<std::function<void()>> tasks_;
-    std::mutex mutex_;
-    std::condition_variable cv_;
-    std::atomic<bool> stop_;
-};
-
-SimpleThreadPool &getDetectorThreadPool() {
-    static SimpleThreadPool pool(std::max(1u, std::thread::hardware_concurrency()));
-    return pool;
-}
-} // namespace
 // Helper utilities for feature extraction and reference selection
 namespace {
 // Compute microprice from an OrderBookMetrics snapshot. Returns 0.0 if cannot compute.
@@ -1124,6 +1059,8 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
 
                 // Process pending training samples (only when training enabled)
                 if (trainingEnabled_.load()) {
+                    getTrainingThreadPool().submit([this, m]() {
+
                     try {
                         // tuple: features, label, exchange, symbol, regime
                         std::vector<std::tuple<std::vector<double>, int, core::ExchangeId, core::Symbol, int>> toTrain;
@@ -1418,7 +1355,8 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                         }
                         // end if(trainingEnabled_)
                     } catch (...) {}
-                }
+                });
+               }
             }
         
         });
@@ -3898,10 +3836,6 @@ void ImbalanceDetectionEngine::createImbalanceEventForBayesModel(ImbalanceType t
     }
 
     // Publish to EventBus / callbacks unless publishing is disabled for debugging
-    if (!publishEvents_.load()) {
-        LOG_TRACE("ImbalanceDetectionEngine: publishing disabled, skipping ImbalanceEvent id={}", event.eventId);
-        return;
-    }
 
     // Option 2: Event bus only (better for decoupling)
     common::EventBus::getInstance().publish(events::ImbalanceDetectedEvent{event});    
