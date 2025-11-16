@@ -374,6 +374,12 @@ void Trading_system::marketDataUpdaterLoop()
                         // Other fields can be set to 0 or default
                         
                         exitStrategy_->updateRegime(sym.toString(), micro);
+                        // sometime print regime for debug
+                        int cnt = debugCounter.fetch_add(1, std::memory_order_relaxed);
+                        if (cnt % 100 == 0) {
+                            LOG_TRACE("Regime updated for {}: vol_1m={:.6f}, spread_ema={:.6f}, imbalance={:.3f}, intensity={:.0f}, mid={:.6f}",
+                                     sym.toString(), vol_1m, spread_ema, imbalance, intensity, mid_price);
+                        }
                     }
                     catch (const std::exception& e) {
                         LOG_WARN("exitStrategy->updateMarketData failed for {}@{}: {}",

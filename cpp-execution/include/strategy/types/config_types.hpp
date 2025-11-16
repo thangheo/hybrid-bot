@@ -319,8 +319,8 @@
     // Runtime intervals (milliseconds) - tunable at runtime via config
     // These govern internal polling/loop intervals. Default to 100ms for
     // low-latency orderbook-driven strategies.
-    int marketDataUpdaterIntervalMs = 200; // interval between market-data updater cycles
-    int exitMonitorIntervalMs = 200;       // interval between exit-monitor wakeups
+    int marketDataUpdaterIntervalMs = 100; // interval between market-data updater cycles
+    int exitMonitorIntervalMs = 100;       // interval between exit-monitor wakeups
      // Constructor
      StrategyConfig() : strategy_id(core::StrategyId("integrated_strategy", "1.0.0")), version("1.0.0") {}
 

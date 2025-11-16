@@ -162,7 +162,7 @@ using namespace trading::core;
         // Initialize signal filters
         try {
             meta_filter_ = std::make_unique<engine::MetaFilter>();
-            shock_detector_ = std::make_unique<engine::ShockDetector>();
+            // shock_detector_ = std::make_unique<engine::ShockDetector>();
             LOG_INFO("Signal filters initialized successfully");
         } catch (const std::exception& e) {
             LOG_ERROR("Failed to initialize signal filters: {}", e.what());
@@ -191,33 +191,6 @@ void StrategyEngine::handleSignalGenerated(const TradingSignal& signal) {
         return;
     }
 
-    // VOLATILITY FILTER: Check if volatility is sufficient for trading
-    // // Only apply volatility filter to BUY/entry signals, allow sell/exit signals to pass through
-    // if (orderBookAnalyzer_ && signal.direction == core::Direction::BUY) {
-    //     try {
-    //         // Request metrics for the specific symbol/exchange for this signal
-    //         auto metrics = orderBookAnalyzer_->getMetrics(signal.symbol, signal.exchangeId);
-    //         double vol_1m = metrics.realize_volatility_1m;
-            
-    //         // Get symbol-specific threshold or use default
-    //         double symbolThreshold = getSymbolVolatilityThreshold(signal.symbol.toString());
-            
-    //         // Skip trading if volatility is below threshold
-    //         if (vol_1m < symbolThreshold) {
-    //             LOG_TRACE("Signal {} rejected: volatility too low ({:.6f} < {:.6f}) for symbol {}", 
-    //                      signal.id, vol_1m, symbolThreshold, signal.symbol.toString());
-    //             return;
-    //         }
-            
-    //         // Optional: Log volatility info for debugging
-    //         LOG_TRACE("Signal {} volatility check passed: vol_1m={:.6f} >= {:.6f} for symbol {}", 
-    //                  signal.id, vol_1m, symbolThreshold, signal.symbol.toString());
-                     
-    //     } catch (const std::exception& e) {
-    //         LOG_WARN("Error checking volatility for signal {}: {}", signal.id, e.what());
-    //         // Continue processing signal even if volatility check fails
-    //     }
-    // }
     // Ensure the signal carries a valid strategy id/version. Some generators
     // create signals without populating strategy information (left as the
     // default StrategyId which is "UNKNOWN:1.0"). Fill it from the
@@ -1384,40 +1357,40 @@ bool StrategyEngine::applySignalFilters(const TradingSignal& signal) const {
     // }
     
     // Apply ShockDetector (volatility-based filter)  
-    if (shock_detector_) {
-        auto shock_result = shock_detector_->checkTradingSuspended(symbol);
-        if (shock_result.suspend_trading) {
-            LOG_WARN("ShockDetector BLOCKED entry signal {} for {}: {} (recent_vol={:.6f}, baseline_vol={:.6f}, ratio={:.2f})",
-                     signal.id, symbol, shock_result.suspend_reason,
-                     shock_result.recent_volatility, shock_result.baseline_volatility, shock_result.volatility_ratio);
-            return false;
-        }
-    }
+    // if (shock_detector_) {
+    //     auto shock_result = shock_detector_->checkTradingSuspended(symbol);
+    //     if (shock_result.suspend_trading) {
+    //         LOG_WARN("ShockDetector BLOCKED entry signal {} for {}: {} (recent_vol={:.6f}, baseline_vol={:.6f}, ratio={:.2f})",
+    //                  signal.id, symbol, shock_result.suspend_reason,
+    //                  shock_result.recent_volatility, shock_result.baseline_volatility, shock_result.volatility_ratio);
+    //         return false;
+    //     }
+    // }
     
     // All filters passed
     return true;
 }
 
-void StrategyEngine::updateShockDetectorPrice(const std::string& symbol, double price) const {
-    if (shock_detector_) {
-        shock_detector_->updatePrice(symbol, price);
-    }
-}
+// void StrategyEngine::updateShockDetectorPrice(const std::string& symbol, double price) const {
+//     if (shock_detector_) {
+//         shock_detector_->updatePrice(symbol, price);
+//     }
+// }
 
-// Configuration update methods
-void StrategyEngine::updateMetaFilterConfig(const engine::MetaFilterConfig& config) {
-    if (meta_filter_) {
-        meta_filter_->updateConfig(config);
-        LOG_INFO("MetaFilter configuration updated");
-    }
-}
+// // Configuration update methods
+// void StrategyEngine::updateMetaFilterConfig(const engine::MetaFilterConfig& config) {
+//     if (meta_filter_) {
+//         meta_filter_->updateConfig(config);
+//         LOG_INFO("MetaFilter configuration updated");
+//     }
+// }
 
-void StrategyEngine::updateShockDetectorConfig(const engine::ShockDetectorConfig& config) {
-    if (shock_detector_) {
-        shock_detector_->updateConfig(config);
-        LOG_INFO("ShockDetector configuration updated");
-    }
-}
+// void StrategyEngine::updateShockDetectorConfig(const engine::ShockDetectorConfig& config) {
+//     if (shock_detector_) {
+//         shock_detector_->updateConfig(config);
+//         LOG_INFO("ShockDetector configuration updated");
+//     }
+// }
 
 // Statistics methods  
 std::string StrategyEngine::getMetaFilterStatistics() const {
@@ -1427,12 +1400,12 @@ std::string StrategyEngine::getMetaFilterStatistics() const {
     return "{}";
 }
 
-std::string StrategyEngine::getShockDetectorStatistics() const {
-    if (shock_detector_) {
-        return shock_detector_->getStatistics();
-    }
-    return "{}";
-}
+// std::string StrategyEngine::getShockDetectorStatistics() const {
+//     if (shock_detector_) {
+//         return shock_detector_->getStatistics();
+//     }
+//     return "{}";
+// }
 
 void StrategyEngine::registerEmergencyExitCallback(const EmergencyExitCallback& callback) {
     std::lock_guard<std::mutex> lock(emergency_callback_mutex_);

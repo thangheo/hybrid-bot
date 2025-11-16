@@ -264,7 +264,7 @@ void AdaptiveExitStrategy::startPosition(
     if (it != marketHistory_.end()) {
         state.entry_regime = getCurrentMarketRegime(symbol);
     } else {
-        state.entry_regime = MarketRegimeType::NORMAL;
+        state.entry_regime = MarketRegimeType::UNKNOWN;
     }
     
     // Reset tracking
