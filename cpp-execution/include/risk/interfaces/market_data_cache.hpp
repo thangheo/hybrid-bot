@@ -68,7 +68,7 @@ struct MarketDataCacheEntry {
  */
 struct MarketDataCacheConfig {
     std::chrono::milliseconds cacheValidityDuration{2000};  // 2 seconds
-    size_t maxHistorySize{1000};
+    size_t maxHistorySize{2000};
     size_t maxCacheEntries{10000};
     std::chrono::hours cleanupInterval{1};
     bool enableVolatilityCalculation{true};

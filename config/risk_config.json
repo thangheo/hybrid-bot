@@ -98,7 +98,7 @@
     "maxTriggersBeforeExtendedHalt": 3,
     "extendedHaltMultiplier": 2,
     "triggerCountResetMinutes": 60,
-    "maxHistorySize": 1000,
+    "maxHistorySize": 2000,
     "gradualTradingResumption": true
   },
   "persistence": {
