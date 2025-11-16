@@ -8,10 +8,11 @@
  * 
  * Created on: December 2024
  */
-#include "exchange_gateway.hpp"
+#include "execution/exchange_gateway.hpp"
 #include <stdexcept>
 #include <sstream>
 #include <iostream>
+#include "common/thread_pool.hpp"
 namespace trading {
 namespace execution {
 
@@ -28,7 +29,8 @@ ExchangeGateway::~ExchangeGateway() = default;
 // === ORDER OPERATIONS (Direct passthrough) ===
 // getAccountBalancesAsync
 std::future<std::unordered_map<std::string, double>> ExchangeGateway::getAccountBalancesAsync(const core::ExchangeId& exchangeId) {
-    return std::async(std::launch::async, [this, exchangeId]() {
+    static ThreadPool pool(std::max(1u, std::thread::hardware_concurrency()/2));
+    return pool.enqueue([this, exchangeId]() {
         try {
             // CRASH PROTECTION: Validate apiClientManager_
             if (!apiClientManager_) {
@@ -63,7 +65,8 @@ std::future<std::unordered_map<std::string, double>> ExchangeGateway::getAccount
 }
 
 std::future<execution::models::ExecutionReport> ExchangeGateway::placeOrder(const execution::models::Order& order) {
-    return std::async(std::launch::async, [this, order]() {
+    static ThreadPool pool(std::max(1u, std::thread::hardware_concurrency()/2));
+    return pool.enqueue([this, order]() {
         try {
             std::cerr << "[ExchangeGateway] placeOrder called clientOrderId=" << order.getClientOrderId()
                       << " pair=" << order.getTradingPair().toString()
@@ -102,7 +105,8 @@ std::future<execution::models::ExecutionReport> ExchangeGateway::cancelOrder(
     const core::Symbol& symbol,
     const core::ExchangeId& exchangeId) {
     
-    return std::async(std::launch::async, [this, orderId, symbol, exchangeId]() {
+    static ThreadPool pool(std::max(1u, std::thread::hardware_concurrency()/2));
+    return pool.enqueue([this, orderId, symbol, exchangeId]() {
         // Get the appropriate exchange client
         auto client = apiClientManager_->getClient(exchangeId);
         
@@ -138,7 +142,8 @@ std::future<std::unordered_map<std::string, double>> ExchangeGateway::getAccount
     const core::ExchangeId& exchangeId, 
     bool forceRefresh) {
     
-    return std::async(std::launch::async, [this, exchangeId, forceRefresh]() {
+    static ThreadPool pool(std::max(1u, std::thread::hardware_concurrency()/2));
+    return pool.enqueue([this, exchangeId, forceRefresh]() {
         try {
             // Check cache first (unless force refresh)
             if (!forceRefresh) {
@@ -190,7 +195,8 @@ std::future<double> ExchangeGateway::getCurrentPrice(
     const core::Symbol& symbol,
     bool forceRefresh) {
     
-    return std::async(std::launch::async, [this, exchangeId, symbol, forceRefresh]() {
+    static ThreadPool pool(std::max(1u, std::thread::hardware_concurrency()/2));
+    return pool.enqueue([this, exchangeId, symbol, forceRefresh]() {
         // 1) Try local cache first (unless force refresh)
         if (!forceRefresh) {
             auto cached = getCachedPrice(exchangeId, symbol);
