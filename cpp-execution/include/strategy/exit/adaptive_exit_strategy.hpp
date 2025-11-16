@@ -61,7 +61,7 @@ public:
         double signal_reversal_threshold;
         double spread_emergency_multiplier;
         double volatility_spike_threshold;
-        int volatility_window_seconds = 60; // For dynamic calculations
+        int volatility_window_seconds = 180; // For dynamic calculations
         // Calculated metrics
         double expected_edge;             // Expected profit per trade
         double sharpe_estimate;           // Risk-adjusted return estimate
@@ -126,7 +126,7 @@ private:
     mutable std::mutex regimeMutex_;
     
     // Configuration
-    double predictionWindow_ = 1.5;  // Default prediction window in seconds (1.5s)
+    double predictionWindow_ = 180;  // Default prediction window in seconds (180s)
     double riskFreeRate_ = 0.0;       // For Sharpe calculation
     
     // Statistical functions
@@ -154,7 +154,7 @@ private:
     double calculateTotalPnLUnlocked(const std::string& symbol, double final_pnl) const;
 
 public:
-    AdaptiveExitStrategy(double prediction_window_seconds = 1.5);
+    AdaptiveExitStrategy(double prediction_window_seconds = 180);
     
     /**
      * Update market microstructure data

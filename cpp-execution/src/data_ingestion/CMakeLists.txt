@@ -73,30 +73,30 @@ add_subdirectory(websocket)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../../bin)
 
 # Create executable for pipeline example
-add_executable(data_ingestion_main
-    data_ingestion_main.cpp
-)
+# add_executable(data_ingestion_main
+#     data_ingestion_main.cpp
+# )
 
 # Include directories for pipeline example
-target_include_directories(data_ingestion_main
-    PRIVATE
-        ${CMAKE_SOURCE_DIR}/include
-        ${CMAKE_SOURCE_DIR}/include/data_ingestion
-        ${CMAKE_SOURCE_DIR}/src/data_ingestion
+# target_include_directories(data_ingestion_main
+#     PRIVATE
+#         ${CMAKE_SOURCE_DIR}/include
+#         ${CMAKE_SOURCE_DIR}/include/data_ingestion
+#         ${CMAKE_SOURCE_DIR}/src/data_ingestion
 
-)
+# )
 
 # Link libraries for pipeline example
-target_link_libraries(data_ingestion_main
-    PRIVATE
-        data_ingestion
-        common
-        proto_lib
-        Boost::system
-        Boost::filesystem
-        OpenSSL::SSL
-        OpenSSL::Crypto
-)
+# target_link_libraries(data_ingestion_main
+#     PRIVATE
+#         data_ingestion
+#         common
+#         proto_lib
+#         Boost::system
+#         Boost::filesystem
+#         OpenSSL::SSL
+#         OpenSSL::Crypto
+# )
 
 # # Set output directory for pipeline example
 # set_target_properties(data_ingestion_main PROPERTIES
