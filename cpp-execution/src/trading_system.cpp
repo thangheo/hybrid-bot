@@ -317,7 +317,7 @@ void Trading_system::marketDataUpdaterLoop()
         // 1. Kiểm tra exitStrategy
         if (!exitStrategy_) {
             // Use a short retry interval while exit strategy is not ready
-            std::this_thread::sleep_for(std::chrono::milliseconds(std::min(200, mdIntervalMs)));
+            std::this_thread::sleep_for(std::chrono::milliseconds(std::min(500, mdIntervalMs)));
             continue;
         }
 
@@ -731,7 +731,7 @@ void Trading_system::exitMonitorLoop() {
             }
             
             // Sleep based on configured exit monitor interval (default 100ms)
-            std::this_thread::sleep_for(std::chrono::milliseconds(std::max(1, strategyConfig_.exitMonitorIntervalMs)));
+            std::this_thread::sleep_for(std::chrono::milliseconds(std::max(100, strategyConfig_.exitMonitorIntervalMs)));
             
         } catch (const std::exception& e) {
             LOG_ERROR("Exit monitor loop error: {}", e.what());
@@ -787,7 +787,7 @@ bool Trading_system::initialize() {
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
     // Short startup pause - scale with marketDataUpdaterIntervalMs to avoid long blocking
-    int startupWaitMs = std::min(2000, std::max(50, strategyConfig_.marketDataUpdaterIntervalMs * 5));
+    int startupWaitMs = std::min(2000, std::max(500, strategyConfig_.marketDataUpdaterIntervalMs * 5));
     std::this_thread::sleep_for(std::chrono::milliseconds(startupWaitMs));
     if (!dataIngestionService_->initialize()) {
         std::cerr << "Failed to initialize data ingestion service" << std::endl;
@@ -1717,7 +1717,7 @@ void Trading_system::execWorkerLoop(size_t workerId) {
         
         try {
             // Small delay to simulate processing/network latency for entries
-            std::this_thread::sleep_for(2ms);
+            std::this_thread::sleep_for(50ms);
 
             std::cout << "🔄 ExecWorker processing signal " << task.id << " for " << task.symbol.toString() << std::endl;
 
