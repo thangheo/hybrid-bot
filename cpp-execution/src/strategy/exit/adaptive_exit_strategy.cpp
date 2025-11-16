@@ -225,6 +225,15 @@ void AdaptiveExitStrategy::startPosition(
     std::lock_guard<std::mutex> lock(tradesMutex_);
     
     auto& state = activeTrades_[symbol];
+    // Guard against duplicate startPosition calls: if a position is already
+    // being tracked as active for this symbol, do not overwrite it. This can
+    // happen when the system calls startPosition both at signal generation
+    // and again on execution confirmation. Ignore duplicate starts to avoid
+    // corrupting entry_time/entry_price and inflating historical stats.
+    if (state.is_active) {
+        LOG_WARN("AdaptiveExitStrategy::startPosition called but position already active for {} - ignoring duplicate start", symbol);
+        return;
+    }
     state.entry_price = entry_price;
     state.entry_time = std::chrono::steady_clock::now();
     state.peak_price = entry_price;
@@ -741,6 +750,9 @@ void AdaptiveExitStrategy::closePosition(const std::string& symbol,
         // permanent rejects. Only realized trade-level PnL (in bps) should be
         // recorded via recordRealizedPnlBps() when an execution/fill confirms
         // the closed trade's realized PnL.
+    }
+    else {
+        LOG_WARN("AdaptiveExitStrategy::closePosition called for {} but no active position found - ignoring", symbol);
     }
 }
 
