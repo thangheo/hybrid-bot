@@ -1,4 +1,3 @@
-
 //execution_types.hpp
 #pragma once
 #include "execution/models/order.hpp"
@@ -34,6 +33,8 @@ struct ExecutionResponse {
     std::string error_message;
     std::chrono::system_clock::time_point timestamp;
     std::string order_status;
+    std::string symbol;  // Add symbol
+    std::string exchange_id;  // Add exchange_id
 };
 } // namespace execution
 } // namespace trading
