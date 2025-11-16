@@ -57,8 +57,9 @@ public:
         
         auto it = regimeHistory_.find(regime);
         if (it == regimeHistory_.end() || it->second.size() < MIN_SAMPLES_FOR_ESTIMATION) {
-            // Fallback: use signed normalized return as proxy (preserve direction)
-            return normalizedReturn - thresholds_.tradingCost;
+            // Fallback: be conservative when we don't have enough historical data
+            // Don't assume profitability without evidence
+            return 0.0;  // No expected profit without historical data
         }
 
         const auto& history = it->second;

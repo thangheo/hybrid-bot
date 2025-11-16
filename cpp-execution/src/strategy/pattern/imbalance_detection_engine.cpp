@@ -1276,7 +1276,7 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                                         // preserve sign: positive if price moved in predicted direction, negative otherwise
                                         double realizedPct = std::exp(priceChangeLogRet) - 1.0;
                                         double tradingFee = 0.001; // 0.1% fee
-                                        double realizedProfit = realizedPct - tradingFee;
+                                        double realizedProfit = (labelDirection == core::Direction::BUY ? realizedPct : -realizedPct) - tradingFee;
                                         
                                         // Update profit-aware labeling with realized outcome
                                         g_profitLabeling.updateHistory(normalizedReturn, realizedProfit, 
@@ -2676,14 +2676,14 @@ DetectorResult ImbalanceDetectionEngine::detectLargeOrderDisappearance(const Ord
     size_t topSignals = std::max(1UL, static_cast<size_t>(strengths.size() * 0.6));
     
     for (size_t i = 0; i < topSignals; ++i) {
-        double weight = 1.0 / (i + 1.0);  // Decreasing weight
+        double weight = 1.0 / (i + 1.0);  // Decreasing weight: 1.0, 0.5, 0.33, ...
         compositeStrength += strengths[i] * weight;
         totalWeight += weight;
     }
     
     compositeStrength /= totalWeight;
     
-    // Apply smoothing (thread-safe)
+    // Apply smoothing if enabled (thread-safe)
     static thread_local double smoothedStrength = 0.0;
     static const double SMOOTHING_ALPHA = 0.3;
     smoothedStrength = SMOOTHING_ALPHA * compositeStrength + (1.0 - SMOOTHING_ALPHA) * smoothedStrength;
@@ -3129,9 +3129,9 @@ DetectorResult ImbalanceDetectionEngine::detectTrendReversal(const OrderBookMetr
             result.strength *= 1.4; // Volatility spike suggests strong reversal
         }
         
-        // Additional confirmation from spread behavior
-        if (metrics.spread > 1.5 * lastMetrics_->spread) {
-            result.strength *= 1.2; // Widening spread supports reversal thesis
+        // Additional boost for high volatility per unit time
+        if (metrics.volatilityPerUnitTime > 1.0) {
+            result.strength *= (1.0 + metrics.volatilityPerUnitTime * 0.2);
         }
     }
     
@@ -3315,7 +3315,7 @@ DetectorResult ImbalanceDetectionEngine::detectHiddenLiquidityImbalance(const Or
     }
     
     // 6. Market Impact Resistance
-    // Price movements are smaller than volume would suggest
+    // Price movements are smaller than volume/pressure would suggest
     if (detectMarketImpactResistance(metrics)) {
         hiddenLiquiditySignals++;
     }
