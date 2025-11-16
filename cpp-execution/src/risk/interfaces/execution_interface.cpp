@@ -116,6 +116,8 @@ public:
             if (executionReportCallback_) {
                 ExecutionReport report;
                 report.setOrderId(response.client_order_id);
+                report.setSymbol(orderRequest.tradingPair); // NEW
+                report.setExchangeId(orderRequest.exchangeId); // NEW
                 // Ensure exchangeId is propagated so downstream components (PositionTracker)
                 // can perform exchange-specific price lookups instead of receiving UNKNOWN.
                 try {

@@ -2161,6 +2161,9 @@ void Trading_system::setupComponentConnections() {
                     // receive quantity/filledQuantity and fills instead of zeros.
                     execution::models::ExecutionReport report;
                     report.setOrderId(resp.client_order_id);
+                    report.setSymbol(resp.symbol);        // NEW
+                    report.setExchangeId(core::ExchangeId::fromString(resp.exchange_id)); // NEW
+
 
                     if (resp.success) {
                         // Try to fetch the authoritative order state from the execution service

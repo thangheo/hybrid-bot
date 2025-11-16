@@ -167,7 +167,8 @@ ExecutionResponse ExecutionService::executeSignal(const TradingSignal& signal) {
         
         // 2. Validate order (UNCHANGED)
         if (!validateOrder(order)) {
-            return ExecutionResponse{order.getOrderId(), "", false, "Order validation failed", std::chrono::system_clock::now(), ""};
+            return ExecutionResponse{order.getOrderId(), "", false, "Order validation failed", 
+                std::chrono::system_clock::now(), "", signal.symbol.toString(), signal.exchangeId.toString()};
         }
         
         // 3. Place order - delegate to placeOrder to ensure consistent pre-submit validation,
@@ -176,7 +177,7 @@ ExecutionResponse ExecutionService::executeSignal(const TradingSignal& signal) {
         return placeOrder(order);
         
     } catch (const std::exception& e) {
-        return ExecutionResponse{"", "", false, e.what(), std::chrono::system_clock::now(), ""};
+        return ExecutionResponse{"", "", false, e.what(), std::chrono::system_clock::now(), "", signal.symbol.toString(), signal.exchangeId.toString()};
     }
 }
  
@@ -194,7 +195,7 @@ ExecutionResponse ExecutionService::executeSignal(const TradingSignal& signal) {
             "", "", false, "Execution service not running", 
              std::chrono::system_clock::now(),
              //orderstatus
-            ""
+            "", "", ""
         };
     }
     
@@ -204,7 +205,7 @@ ExecutionResponse ExecutionService::executeSignal(const TradingSignal& signal) {
             order.getClientOrderId(), "", false, 
             "Invalid order parameters",  
             std::chrono::system_clock::now(),
-            ""
+            "", "", ""
         };
     }
     ExecutionResponse response;
@@ -225,7 +226,7 @@ ExecutionResponse ExecutionService::executeSignal(const TradingSignal& signal) {
             order.getClientOrderId(), "", false, 
             "No suitable exchange found",  
             std::chrono::system_clock::now(),
-            ""
+            "", "", ""
         };
     }
     
@@ -270,7 +271,8 @@ ExecutionResponse ExecutionService::executeSignal(const TradingSignal& signal) {
             false, 
             "Exchange API client not available",
             std::chrono::system_clock::now(),
-            ""
+            "",
+            "", ""
         };
     }
     
@@ -318,7 +320,8 @@ ExecutionResponse ExecutionService::executeSignal(const TradingSignal& signal) {
                         false,
                         reason,
                         std::chrono::system_clock::now(),
-                        "REJECTED_PRE_SUBMIT"
+                        "REJECTED_PRE_SUBMIT",
+                        "", ""
                     };
                 }
             } else {
@@ -416,7 +419,8 @@ ExecutionResponse ExecutionService::executeSignal(const TradingSignal& signal) {
                                     false,
                                     adjResult.reason,
                                     std::chrono::system_clock::now(),
-                                    "REJECTED_INSUFFICIENT_BALANCE"
+                                    "REJECTED_INSUFFICIENT_BALANCE",
+                                    "", ""
                                 };
                             }
                         } catch (const std::exception& e) {
@@ -435,7 +439,8 @@ ExecutionResponse ExecutionService::executeSignal(const TradingSignal& signal) {
                                 false,
                                 balanceResult.reason,
                                 std::chrono::system_clock::now(),
-                                "REJECTED_INSUFFICIENT_BALANCE"
+                                "REJECTED_INSUFFICIENT_BALANCE",
+                                "", ""
                             };
                     }
                         
@@ -477,7 +482,8 @@ ExecutionResponse ExecutionService::executeSignal(const TradingSignal& signal) {
                                     false,
                                     freshResult.reason,
                                     std::chrono::system_clock::now(),
-                                    "REJECTED_INSUFFICIENT_BALANCE"
+                                    "REJECTED_INSUFFICIENT_BALANCE",
+                                    "", ""
                                 };
                             }
                         }
@@ -497,7 +503,8 @@ ExecutionResponse ExecutionService::executeSignal(const TradingSignal& signal) {
                             false,
                             balanceResult.reason,
                             std::chrono::system_clock::now(),
-                            "REJECTED_INSUFFICIENT_BALANCE"
+                            "REJECTED_INSUFFICIENT_BALANCE",
+                            "", ""
                         };
                     }
                 }
@@ -547,7 +554,8 @@ ExecutionResponse ExecutionService::executeSignal(const TradingSignal& signal) {
                             false,
                             "Final balance check failed: " + finalBalanceResult.reason,
                             std::chrono::system_clock::now(),
-                            "REJECTED_FINAL_BALANCE_CHECK"
+                            "REJECTED_FINAL_BALANCE_CHECK",
+                            "", ""
                         };
                     }
                 }
@@ -590,7 +598,8 @@ ExecutionResponse ExecutionService::executeSignal(const TradingSignal& signal) {
                         false,
                         std::string("Final balance validation failed before submit: ") + finalValidation.reason,
                         std::chrono::system_clock::now(),
-                        "REJECTED_FINAL_BALANCE_CHECK"
+                        "REJECTED_FINAL_BALANCE_CHECK",
+                        "", ""
                     };
                 }
             }
@@ -617,7 +626,8 @@ ExecutionResponse ExecutionService::executeSignal(const TradingSignal& signal) {
                     exchange_order->getClientOrderId(), "", false,
                     "Exchange API client not available",
                     std::chrono::system_clock::now(),
-                    ""
+                    "",
+                    "", ""
                 };
             }
 
@@ -737,6 +747,8 @@ ExecutionResponse ExecutionService::executeSignal(const TradingSignal& signal) {
         response.error_message = result.rejectReason();
         response.order_status = orderStateToString(result.status());
         response.timestamp = std::chrono::system_clock::now();
+        response.symbol = exchange_order->getTradingPair().toString();
+        response.exchange_id = exchange_order->getExchangeId().toString();
         
         return response;
     } catch (const std::exception& e) {
@@ -750,7 +762,8 @@ ExecutionResponse ExecutionService::executeSignal(const TradingSignal& signal) {
         return ExecutionResponse{
             exchange_order->getClientOrderId(), "", false, 
             std::string("Exception during order placement: ") + e.what(), std::chrono::system_clock::now(),
-            ""
+            "",
+            "", ""
         };
     }
 }
@@ -1075,7 +1088,7 @@ std::string ExecutionService::executeSignalJson(const std::string& signal_json) 
     } catch (const std::exception& e) {
         ExecutionResponse error_response{
             "", "", false, std::string("JSON parsing error: ") + e.what(), 
-            std::chrono::system_clock::now(), ""
+            std::chrono::system_clock::now(), "", "", ""
         };
         return executionResponseToJson(error_response);
     }
@@ -1089,7 +1102,7 @@ std::string ExecutionService::placeOrderJson(const std::string& order_json) {
     } catch (const std::exception& e) {
         ExecutionResponse error_response{
             "", "", false, std::string("JSON parsing error: ") + e.what(), 
-            std::chrono::system_clock::now(), ""
+            std::chrono::system_clock::now(), "", "", ""
         };
         return executionResponseToJson(error_response);
     }
@@ -1226,6 +1239,8 @@ std::string ExecutionService::executionResponseToJson(const ExecutionResponse& r
     j["success"] = response.success;
     j["error_message"] = response.error_message;
     j["order_status"] = response.order_status;
+    j["symbol"] = response.symbol;
+    j["exchange_id"] = response.exchange_id;
     
     // Convert timestamp
     auto duration = response.timestamp.time_since_epoch();
@@ -1233,6 +1248,7 @@ std::string ExecutionService::executionResponseToJson(const ExecutionResponse& r
     auto nanos = std::chrono::duration_cast<std::chrono::nanoseconds>(duration - seconds);
     j["timestamp"]["seconds"] = seconds.count();
     j["timestamp"]["nanos"] = nanos.count();
+
     
     return j.dump();
 }
@@ -1693,6 +1709,7 @@ ExecutionResponse ExecutionService::executeOrderWithAlgorithm(const models::Orde
                 order.getClientOrderId(), "", false,
                 "Unsupported algorithm type: " + algorithmName, 
                 std::chrono::system_clock::now(),
+                "", "",
                 ""
             };
         }
@@ -1714,7 +1731,7 @@ ExecutionResponse ExecutionService::executeOrderWithAlgorithm(const models::Orde
                     order.getClientOrderId(), "", false,
                     "No algorithm available for order type", 
                     std::chrono::system_clock::now(),
-                    ""
+                    "", "", ""
                 };
         }
     }
@@ -1727,7 +1744,7 @@ ExecutionResponse ExecutionService::executeOrderWithAlgorithm(const models::Orde
             order.getClientOrderId(), "", false,
             "Failed to create execution algorithm", 
             std::chrono::system_clock::now(),
-            ""
+            "", "", ""
         };
     }
     
