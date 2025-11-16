@@ -604,7 +604,7 @@ bool AdaptiveExitStrategy::shouldEnterPosition(
                   symbol, params.kelly_fraction);
         return false;  // Position size would be too small
     }
-     
+    confidence += 0.5;
     switch (regime) {
         case MarketRegimeType::STRESS:
             // In stress regime we force exit / disable new entries
@@ -657,8 +657,8 @@ bool AdaptiveExitStrategy::shouldEnterPosition(
         case MarketRegimeType::NORMAL:
         default:
             // Default operation: require a baseline confidence
-            if (confidence < 0.62) {
-                LOG_INFO("Rejecting entry for {}: Low confidence in default/normal regime ({} < 0.65)",
+            if (confidence < 0.6) {
+                LOG_INFO("Rejecting entry for {}: Low confidence in default/normal regime ({} < 0.6)",
                          symbol, confidence);
                 return false;
             }
