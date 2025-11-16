@@ -1662,7 +1662,9 @@ void Trading_system::signalWorkerLoop(size_t workerId) {
                 
                 // Validate with risk manager (with additional safety check)
                 if (riskManager_ && signalWorkersRunning_.load()) {
+                    std::cout << "🔄 Validating signal " << execSignal.id << " with risk manager" << std::endl;
                     auto validationResult = riskManager_->validateSignal(execSignal);
+                    std::cout << "🔄 Risk validation result: approved=" << validationResult.approved << std::endl;
                     signalsValidated_++;
                     if (validationResult.approved) {
                         signalsApproved_++;
@@ -1717,6 +1719,8 @@ void Trading_system::execWorkerLoop(size_t workerId) {
             // Small delay to simulate processing/network latency for entries
             std::this_thread::sleep_for(2ms);
 
+            std::cout << "🔄 ExecWorker processing signal " << task.id << " for " << task.symbol.toString() << std::endl;
+
             if (!executionService_) {
                 std::cerr << "Execution service not initialized!" << std::endl;
                 continue;
@@ -1733,6 +1737,9 @@ void Trading_system::execWorkerLoop(size_t workerId) {
             } catch (...) {
                 // ignore metadata parsing errors, treat as ENTRY
             }
+            
+            std::cout << "🔄 Signal " << task.id << " isExitOrder=" << isExitOrder << ", direction=" << 
+                (task.direction == core::Direction::BUY ? "BUY" : (task.direction == core::Direction::SELL ? "SELL" : "NEUTRAL")) << std::endl;
 
             if (isExitOrder) {
                 // EXIT ORDERS: Use actual available wallet balance instead of relying
@@ -1790,8 +1797,8 @@ void Trading_system::execWorkerLoop(size_t workerId) {
 
                 // --- Enforce minimum notional for exits as well ---
                 const double minNotionalUsd = 10.0;
-                double finalNotionalUsd = currentPrice * finalQty;
-                if (finalNotionalUsd < minNotionalUsd) {
+                double finalNotional = currentPrice * finalQty;
+                if (finalNotional < minNotionalUsd) {
                     // Try bumping up to a small threshold (e.g., $12) and re-round
                     double minQtyForNotional = 12.0 / std::max(1e-12, currentPrice);
                     try {
@@ -1800,7 +1807,7 @@ void Trading_system::execWorkerLoop(size_t workerId) {
                         // Only accept bumped qty if it's <= availableQty
                         if (bumped <= availableQty && (bumped * currentPrice) >= minNotionalUsd) {
                             finalQty = bumped;
-                            finalNotionalUsd = currentPrice * finalQty;
+                            finalNotional = currentPrice * finalQty;
                         } else {
                             LOG_WARN("Exec: Exit adjusted quantity still insufficient or exceeds available balance for {}: bumped={} available={}",
                                      task.symbol.toString(), bumped, availableQty);
@@ -1817,9 +1824,12 @@ void Trading_system::execWorkerLoop(size_t workerId) {
                 task.setQuantity(finalQty);
 
                 LOG_INFO("[EXIT] Executing exit: symbol={} qty={} price={} notional=${:.2f}", 
-                         task.symbol.toString(), finalQty, currentPrice, finalNotionalUsd);
+                         task.symbol.toString(), finalQty, currentPrice, finalNotional);
 
+                std::cout << "🔄 Attempting EXIT execution for " << task.symbol.toString() << std::endl;
                 ExecutionResponse response = executionService_->executeSignal(task);
+                std::cout << "🔄 EXIT execution response: success=" << response.success << ", error='" << response.error_message << "'" << std::endl;
+
                 if (!response.success) {
                     LOG_ERROR("❌ EXIT FAILED: {} - {}", task.symbol.toString(), response.error_message);
                 } else {
@@ -1975,8 +1985,10 @@ void Trading_system::execWorkerLoop(size_t workerId) {
                       << std::endl;
 
             // --- Step 7: Execute the signal ---
+            std::cout << "🔄 Attempting execution for signal " << task.id << " on " << task.symbol.toString() << std::endl;
             ExecutionResponse response = executionService_->executeSignal(task);
-            
+            std::cout << "🔄 Execution response received: success=" << response.success << ", error='" << response.error_message << "'" << std::endl;
+
             if (!response.success) {
 
                 std::cout << "❌ Execution failed for signal " << task.id 
@@ -2295,14 +2307,17 @@ void Trading_system::setupComponentConnections() {
 }
 
 void Trading_system::realExecution(const execution::TradingSignal& signal) {
+    std::cout << "🔄 realExecution called for signal " << signal.id << std::endl;
     // If we're in the warmup period, suppress sending real orders. Count them
     // for diagnostics and return early. This prevents large orders at startup.
     if (isWarmupActive()) {
+        std::cout << "🔄 Warmup active - suppressing execution" << std::endl;
         suppressedOrdersDuringWarmup_.fetch_add(1);
         LOG_INFO("Warmup", "Suppressing execution for signal {} (warmup active)", signal.id);
         return;
     }
 
+    std::cout << "🔄 Enqueuing signal " << signal.id << " for execution" << std::endl;
     // Enqueue execution task to worker pool to avoid thread explosion
     ordersExecuted_++;
     std::unique_lock<std::mutex> lk(execQueueMutex_);
