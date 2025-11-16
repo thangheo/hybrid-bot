@@ -5,6 +5,7 @@
 #include "strategy/pattern/imbalance_detection_engine.hpp"
 #include "risk/interfaces/execution_interface.hpp"
 #include "risk/risk_types.hpp"
+#include "common/thread_pool.hpp"
 #include <nlohmann/json.hpp>
 #include <fstream>
 #include "common/logger.hpp"
@@ -290,6 +291,12 @@ void Trading_system::marketDataUpdaterLoop()
     const std::chrono::milliseconds targetPeriod{mdIntervalMs};
     const unsigned int maxWorkers = std::max(1u, std::min(std::thread::hardware_concurrency(), 8u));
 
+    // Use a reusable thread pool to avoid spawning short-lived threads each
+    // market-data cycle (std::async with launch::async creates threads which
+    // under debuggers like gdb produce heavy churn). A static pool here keeps
+    // a fixed set of worker threads for the lifetime of the process.
+    static ThreadPool pool(std::max(1u, std::min(std::thread::hardware_concurrency(), 8u)));
+
     std::atomic<int> debugCounter{0};
 
     while (marketDataUpdaterRunning_.load(std::memory_order_acquire)) {
@@ -323,7 +330,8 @@ void Trading_system::marketDataUpdaterLoop()
         for (size_t start = 0; start < total; start += chunkSize) {
             size_t end = std::min(total, start + chunkSize);
 
-            futures.emplace_back(std::async(std::launch::async, [this, &pairs, start, end, &debugCounter]() {
+            // Submit to reusable pool instead of spawning a new thread via std::async
+            futures.emplace_back(pool.enqueue([this, &pairs, start, end, &debugCounter]() {
                 for (size_t i = start; i < end; ++i) {
                     if (!marketDataUpdaterRunning_.load(std::memory_order_relaxed)) {
                         return;
