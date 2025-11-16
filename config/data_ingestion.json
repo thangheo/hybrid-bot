@@ -11,10 +11,10 @@
     "intel_max_publish_rate": 50,
     "internal_max_publish_rate": 5000,
     "trading_intent_max_publish_rate": 1000,
-    "intel_publish_interval_ms": 15000,
-    "internal_publish_interval_ms": 10,
-    "trading_intent_publish_interval_ms": 1000,
-    "heartbeat_interval_ms": 30000,
+  "intel_publish_interval_ms": 180000,
+  "internal_publish_interval_ms": 180000,
+  "trading_intent_publish_interval_ms": 180000,
+  "heartbeat_interval_ms": 180000,
     "intel_zmq_linger_ms": 1000,
     "internal_zmq_linger_ms": 1000,
     "trading_intent_zmq_linger_ms": 1000,
@@ -35,8 +35,8 @@
       "rest_url": "https://api.binance.com",
       "enable_websocket": true,
       "enable_rest": true,
-      "connection_timeout_ms": 30000,
-      "reconnect_interval_ms": 5000,
+  "connection_timeout_ms": 180000,
+  "reconnect_interval_ms": 180000,
       "max_reconnect_attempts": 10,
       "use_authentication": false,
       "api_key": "",
@@ -59,8 +59,8 @@
       "rest_url": "https://api.pro.coinbase.com",
       "enable_websocket": true,
       "enable_rest": true,
-      "connection_timeout_ms": 30000,
-      "reconnect_interval_ms": 5000,
+  "connection_timeout_ms": 180000,
+  "reconnect_interval_ms": 180000,
       "max_reconnect_attempts": 10,
       "use_authentication": false,
       "api_key": "",
@@ -82,8 +82,8 @@
   "order_book": {
     "depth": 10,
     "track_orders": false,
-    "snapshot_interval_ms": 60000,
-    "cleanup_interval_ms": 300000
+  "snapshot_interval_ms": 180000,
+  "cleanup_interval_ms": 180000
   },
   "data_quality": {
     "max_price_deviation": 0.1,
@@ -102,9 +102,9 @@
   },
   "time_sync": {
     "ntp_server": "pool.ntp.org",
-    "sync_interval_ms": 300000,
+  "sync_interval_ms": 180000,
     "max_drift_ms": 1000,
-    "max_time_skew_ms": 5000,
+  "max_time_skew_ms": 180000,
     "enable_ntp_sync": true
   },
   "storage": {
@@ -114,7 +114,7 @@
     "database": "crypto_trading",
     "retention_policy": "30d",
     "batch_size": 100,
-    "flush_interval_seconds": 10
+  "flush_interval_seconds": 180
   },
   "enabled_exchanges": ["BINANCE"]
 

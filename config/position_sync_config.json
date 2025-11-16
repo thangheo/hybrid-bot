@@ -38,7 +38,7 @@
     
     "reconciliation": {
       "enabled": true,
-      "interval_seconds": 300,
+  "interval_seconds": 180,
       "timeout_ms": 5000,
       "full_sync_interval_seconds": 3600,
       "discrepancy_handling": {

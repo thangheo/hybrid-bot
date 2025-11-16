@@ -11,6 +11,6 @@
   "minSamplesForStability": 10,
   "emaAlpha": 0.1,
   "emergencyMode": true,
-  "minTradeGapSeconds": 60,
+  "minTradeGapSeconds": 180,
   "lastUpdated": "2025-11-06T21:33:37.446995"
 }

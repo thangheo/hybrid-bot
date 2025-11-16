@@ -195,7 +195,7 @@
     },
     "array": {
       "price_levels": [5, 10, 20, 50],
-          "time_windows": [1500, 3000, 6000, 12000],
+          "time_windows": [180000, 300000, 600000, 1200000],
       "volume_thresholds": [0.1, 0.25, 0.5, 1.0]
     }
   },
@@ -229,9 +229,9 @@
         "trendReversalThreshold": 0.4,
         "tradeImbalanceThreshold": 0.6,
         "cancellationImbalanceThreshold": 0.6,
-        "priceVolatilityImbalanceThreshold": 0.3,      
-  "detectionWindowMs": 1500,
-        "maxHistorySize": 500,
+        "priceVolatilityImbalanceThreshold": 0.3,
+        "detectionWindowMs": 180000,
+        "maxHistorySize": 5000,
         "global_sensitivity": 0.75,
         "thresholds": {
           "volume_imbalance": 0.35,
@@ -240,10 +240,10 @@
           "order_flow": 0.3
         },
         "bayesModelPath": "models/bayesian/",
-  "labelingDelayMs": 1500,
+        "labelingDelayMs": 180000,
         "bayesSaveAfterUpdates": 25,
         "requireModelReadyUpdates": 50,
-        "bayesMinSaveIntervalMs": 30000,
+        "bayesMinSaveIntervalMs": 180000,
         "bayesSaveIntervalMs": 180000,
         "beta": 0.05,
         "logTransformConfig": {
@@ -252,7 +252,7 @@
           "log_transform_threshold": 0.0,
           "comment": "Critical fix for extreme feature values (e.g., FLOKI feature_2 mean=202k)"
         },
-  "trainingStartDelayMs": 1000,
+  "trainingStartDelayMs": 180000,
         "minOrderbookLevels": 0,
         "bayesMinUpdatesToTrade": 1000,
         "min_profitable_return": 0.003
@@ -260,11 +260,11 @@
     },
     "liquidityMonitor": {
       "parameters": {
-        "historySize": 200,
+        "historySize": 2000,
         "flowImbalanceThreshold": 0.4,
         "exchangeId": "BINANCE",
         "largeOrderThreshold": 5000.0,
-        "historyWindowSeconds": 300,
+  "historyWindowSeconds": 180,
         "largeOrderVolume": 10000.0,
         "cancellationRatio": 0.2,
         "pressureIndex": 0.0,
@@ -285,19 +285,19 @@
             "enable_cancellation_tracking": true
           },
           "array": {
-            "flow_windows": [2, 3, 5, 10]
+            "flow_windows": [180, 300, 600, 1200]
           }
         }
       }
     },
     "volumeProfileAnalyzer": {
       "parameters": {
-  "timeWindowMs": 1500,
+  "timeWindowMs": 180000,
         "priceLevels": 50,
         "exchangeId": "BINANCE",
         "tradingPair": "BTC/USDT",
         "rangeSizePercent": 2.0,
-        "timeFrameMinutes": 15,
+  "timeFrameMinutes": 3,
         "numPriceRanges": 20,
         "params": {
           "numeric": {
@@ -314,7 +314,7 @@
             "enable_value_area_calculation": true
           },
           "array": {
-            "profile_intervals": [2, 5, 10, 20]
+            "profile_intervals": [3, 5, 10, 20]
           }
         }
       }
@@ -323,13 +323,13 @@
       "parameters": {
   "minSignalStrength": 0.6,
   "confidenceThreshold": 0.7,
-  "signalTtlMs": 1500
+  "signalTtlMs": 180000
       }
     },
     "momentumCorrelator": {
       "parameters": {
-  "correlationWindowMs": 1500,
-  "predictionHorizonMs": 1500,
+  "correlationWindowMs": 180000,
+  "predictionHorizonMs": 180000,
   "ewmaHalfLifeMs": 30000
       }
     },
@@ -348,7 +348,7 @@
     "exchangeCalibration": {
       "parameters": {
         "enableAutoCalibration": true,
-        "calibrationIntervalMs": 300000,
+  "calibrationIntervalMs": 180000,
         "calibrationThreshold": 0.05,
         "calibrationParameters": {
           "latency_adjustment": 1.2,
@@ -377,7 +377,7 @@
       "parameters": {
         "enableAdaptation": true,
         "adaptationRate": 0.05,
-        "adaptationIntervalMs": 600000
+  "adaptationIntervalMs": 180000
       }
     }
   }
