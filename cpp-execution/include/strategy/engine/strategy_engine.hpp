@@ -22,7 +22,7 @@
 #include "strategy/optimization/exchange_calibration.hpp"
 #include "strategy/optimization/adaptive_mechanism.hpp"
 #include "strategy/engine/meta_filter.hpp"
-#include "strategy/engine/shock_detector.hpp"
+// #include "strategy/engine/shock_detector.hpp"
 #include "data_ingestion/orderbook/order_book.hpp"
 
 #include <string>
@@ -202,7 +202,7 @@ public:
      * @brief Update ShockDetector configuration  
      * @param config New ShockDetector configuration
      */
-    void updateShockDetectorConfig(const engine::ShockDetectorConfig& config);
+    // void updateShockDetectorConfig(const engine::ShockDetectorConfig& config);
 
     /**
      * @brief Get MetaFilter statistics
@@ -265,7 +265,7 @@ private:
     
     // Signal filtering components
     std::unique_ptr<engine::MetaFilter> meta_filter_;
-    std::unique_ptr<engine::ShockDetector> shock_detector_;
+    // std::unique_ptr<engine::ShockDetector> shock_detector_;
     
     // Strategy state
     StrategyConfig config_;
