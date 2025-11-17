@@ -16,6 +16,12 @@ file(GLOB_RECURSE STRATEGY_SOURCES
 list(FILTER STRATEGY_SOURCES EXCLUDE REGEX "signal/hawkes/imbalance_signal_generator\\.cpp$")
 list(FILTER STRATEGY_SOURCES EXCLUDE REGEX "signal/hawkes/hawkes_predictor\\.cpp$")
 
+# Exclude any tests directory under strategy from the library source list so
+# test code is built into separate test targets that link to GTest. This
+# prevents GoogleTest symbols leaking into the shared `strategy` library and
+# causing undefined reference errors when `semi_hft` links it.
+list(FILTER STRATEGY_SOURCES EXCLUDE REGEX "tests/.*\\.cpp$")
+
 # Remove strategy_app.cpp from the library sources if it exists
 list(FILTER STRATEGY_SOURCES EXCLUDE REGEX "strategy_app\\.cpp$")
 

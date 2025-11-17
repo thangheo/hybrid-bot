@@ -131,6 +131,10 @@ public:
         auto taskPtr = std::make_shared<std::packaged_task<R()>>(std::move(f));
         std::future<R> fut = taskPtr->get_future();
 
+        if (stop_.load()) {
+            throw std::runtime_error("submit on stopped SimpleThreadPool");
+        }
+
         // Fast path: attempt lock-free-ish push via spin on atomic_flag
         if (try_acquire_spinlock()) {
             tasks_.emplace([taskPtr]() { (*taskPtr)(); });
@@ -141,6 +145,11 @@ public:
 
         // If fast spin failed, check soft queue limit and fallback to mutex-protected push
         {
+            // Acquire fallback mutex only for backpressure checks. We intentionally
+            // do *not* hold fallback_mutex_ while mutating the queue to avoid
+            // concurrent access with fast-path spinlock. Instead, once backpressure
+            // checks are complete we acquire the spinlock in a blocking manner to
+            // serialize access to `tasks_`.
             std::unique_lock<std::mutex> lk(fallback_mutex_);
             // Optional soft backpressure: if queue too large, yield briefly to avoid unbounded growth.
             // This does not change API but reduces risk of memory blow-up under spike.
@@ -152,7 +161,13 @@ public:
                 std::this_thread::sleep_for(std::chrono::microseconds(10));
                 lk.lock();
             }
+            // Release fallback mutex before acquiring the spinlock to avoid
+            // contention with worker threads which may hold the spinlock then
+            // wait on `fallback_mutex_`.
+            lk.unlock();
+            acquire_spinlock_blocking();
             tasks_.emplace([taskPtr]() { (*taskPtr)(); });
+            release_spinlock();
         }
         cv_.notify_one();
         return fut;
@@ -216,12 +231,17 @@ private:
                 release_spinlock();
                 try { task(); } catch (...) { /* packaged_task will propagate exceptions */ }
             } else {
-                // If cannot get spinlock, fallback to mutex
-                std::unique_lock<std::mutex> lk(fallback_mutex_);
-                if (tasks_.empty()) break;
+                // If we can't acquire the spinlock quickly, block until we can
+                // take it. This avoids unsynchronized access to `tasks_` which
+                // is otherwise protected by the spinlock.
+                acquire_spinlock_blocking();
+                if (tasks_.empty()) {
+                    release_spinlock();
+                    break;
+                }
                 auto task = std::move(tasks_.front());
                 tasks_.pop();
-                lk.unlock();
+                release_spinlock();
                 try { task(); } catch (...) { }
             }
         }
@@ -237,6 +257,14 @@ private:
             std::this_thread::yield();
         }
         return false;
+    }
+    // Acquire spinlock in a blocking manner. Used by fallback paths that need
+    // to ensure exclusive access to `tasks_` without holding `fallback_mutex_`.
+    void acquire_spinlock_blocking() {
+        while (spin_.test_and_set(std::memory_order_acquire)) {
+            // Busy-wait with a pause to avoid CPU spin storms
+            std::this_thread::yield();
+        }
     }
     void release_spinlock() {
         spin_.clear(std::memory_order_release);

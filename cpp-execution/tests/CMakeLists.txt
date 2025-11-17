@@ -17,6 +17,7 @@ include_directories(
 # Enable risk tests (posttrade/pretrade/integration)
 add_subdirectory(risk)
 add_subdirectory(execution)
+add_subdirectory(strategy)
 # add_subdirectory(strategy)
 
 # Python tests - We'll use CMake to run Python unit tests
