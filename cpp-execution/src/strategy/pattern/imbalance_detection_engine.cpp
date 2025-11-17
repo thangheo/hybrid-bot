@@ -1057,306 +1057,24 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                     }
                 }
 
-                // Process pending training samples (only when training enabled)
+                
                 if (trainingEnabled_.load()) {
-                    getTrainingThreadPool().submit([this, m]() {
+                    // weakSelf capture...
+                    std::weak_ptr<ImbalanceDetectionEngine> weakSelf = this->shared_from_this();
 
-                    try {
-                        // tuple: features, label, exchange, symbol, regime
-                        std::vector<std::tuple<std::vector<double>, int, core::ExchangeId, core::Symbol, int>> toTrain;
-                        {
-                            std::lock_guard<std::mutex> lk_pending2(pendingTrainingMutex_);
-                            auto workerNow = m.timestamp;
-                            while (!pendingTraining_.empty()) {
-                                const auto &pt = pendingTraining_.front();
-                                // Determine 'now' relative to this pending sample's symbol.
-                                // Prefer the latest per-symbol snapshot timestamp; fallback to workerNow.
-                                core::Timestamp nowForPt = workerNow;
-                                try {
-                                    std::lock_guard<std::mutex> lk(latestSnapshotsMutex_);
-                                    std::string key = pt.exchangeId.toString() + "_" + pt.symbol.toString();
-                                    auto it = latestSnapshots_.find(key);
-                                    if (it != latestSnapshots_.end()) nowForPt = it->second.timestamp;
-                                } catch (...) {}
+                    getTrainingThreadPool().submit([weakSelf, m]() {
+                        auto self = weakSelf.lock();
+                        if (!self) return;
 
-                                if (nowForPt - pt.timestamp >= labelingDelay_) {
-                                        // Use the stored reference at capture if available, otherwise re-evaluate using
-                                        // the *latest snapshot for the same exchange+symbol* to avoid cross-symbol leakage.
-                                        double baseRef = pt.referenceValue;
-                                        double target = pt.referenceValue;
-                                        try {
-                                            // Try find latest snapshot for this exchange+symbol
-                                            OrderBookMetrics snapshot;
-                                            bool haveSnapshot = false;
-                                            try {
-                                                std::lock_guard<std::mutex> lk(latestSnapshotsMutex_);
-                                                std::string key = pt.exchangeId.toString() + "_" + pt.symbol.toString();
-                                                auto it = latestSnapshots_.find(key);
-                                                if (it != latestSnapshots_.end()) { snapshot = it->second; haveSnapshot = true; }
-                                            } catch (...) { haveSnapshot = false; }
+                        // All of the training processing has been extracted into processPendingTraining()
+                        // so that we can safely call it from a worker thread with a weak_ptr lock.
+                        try {
+                            self->processPendingTraining(m);
+                        } catch (...) {}
 
-                                            // Prefer snapshot values; fallback to current 'm' if same symbol or snapshot missing
-                                            const OrderBookMetrics *useMetrics = nullptr;
-                                            if (haveSnapshot) useMetrics = &snapshot;
-                                            else useMetrics = &m; // fallback
+                    }); // END submit
+                } // END if(trainingEnabled_.load())                
 
-                                            if (pt.referenceType == 1) { // vwap
-                                                double cur = useMetrics->getMetric("vwap", 0.0);
-                                                if (cur > 0.0) target = cur; else target = baseRef;
-                                            } else if (pt.referenceType == 2) { // sma
-                                                double cur = useMetrics->getMetric("sma", 0.0);
-                                                if (cur > 0.0) target = cur; else target = baseRef;
-                                            } else if (pt.referenceType == 3) { // micro
-                                                double bidP = useMetrics->bidPrice; double askP = useMetrics->askPrice;
-                                                double bidV = (useMetrics->bidVolumesByLevel.empty() ? useMetrics->totalBidVolume : useMetrics->bidVolumesByLevel.front());
-                                                double askV = (useMetrics->askVolumesByLevel.empty() ? useMetrics->totalAskVolume : useMetrics->askVolumesByLevel.front());
-                                                double denom = bidV + askV;
-                                                if (denom > 0.0) target = (bidP * askV + askP * bidV) / denom; else target = baseRef;
-                                            } else { target = useMetrics->midPrice; }
-                                        } catch (...) { target = baseRef; }
-
-                                        double priceChangeLogRet = 0.0;
-                                        if (baseRef > 0.0 && std::isfinite(baseRef) && std::isfinite(target) && target > 0.0) {
-                                            priceChangeLogRet = std::log(target) - std::log(baseRef);
-                                        }
-
-                                        // FIXED: More robust volatility normalization with strict bounds
-                                        // Use volatility from the same snapshot used for target calculation when possible
-                                        double vol = 0.0;
-                                        try {
-                                            std::lock_guard<std::mutex> lk(latestSnapshotsMutex_);
-                                            std::string key = pt.exchangeId.toString() + "_" + pt.symbol.toString();
-                                            auto it = latestSnapshots_.find(key);
-                                            if (it != latestSnapshots_.end()) vol = it->second.realizedVolatility; else vol = m.realizedVolatility;
-                                        } catch (...) { vol = m.realizedVolatility; }
-                                        vol = std::clamp(vol, 0.001, 0.1); // Tighter vol range: 0.1% - 10%
-                                        double normalizedReturn = 0.0;
-                                        if (vol > 0.0 && std::isfinite(vol) && std::isfinite(priceChangeLogRet)) {
-                                            normalizedReturn = priceChangeLogRet / vol;
-                                            // CRITICAL: Clamp normalized return to prevent extreme outliers
-                                            normalizedReturn = std::clamp(normalizedReturn, -10.0, 10.0);
-                                        }
-
-                                        int regimeIdx = pt.regime;
-
-                                        // Use configured minimum profitable return (if set) to prevent trading on tiny expected profits
-                                        double cfgMinProf = config_.min_profitable_return;
-                                        auto dyn = g_statThresholdAdapter.calculateThresholds(regimeIdx, vol, cfgMinProf);
-
-                                        // Calculate confidence based on signal strength
-                                        double confidence = 0.5 + 0.3 * std::abs(normalizedReturn) / std::max(vol, 1e-6);
-                                        confidence = std::clamp(confidence, 0.0, 1.0);
-
-                                        // ENHANCED: Profit-aware labeling - only label if expected profit > fees
-                                        core::Direction labelDirection = g_profitLabeling.generateProfitAwareLabel(
-                                            normalizedReturn, regimeIdx, confidence, vol
-                                        );
-                                        
-                                        // DEBUG: Track labeling attempts
-                                        static int labelCount = 0;
-                                        static int buyCount = 0, sellCount = 0, neutralCount = 0;
-                                        labelCount++;
-                                        
-                                        // Fallback to traditional thresholding if profit-aware doesn't have enough data
-                                        if (labelDirection == core::Direction::NEUTRAL && 
-                                            confidence > 0.6) { // Reduced fallback threshold from 0.7 to 0.6
-                                            if (normalizedReturn > dyn.buyThreshold) {
-                                                labelDirection = core::Direction::BUY;
-                                            } else if (normalizedReturn < dyn.sellThreshold) {
-                                                labelDirection = core::Direction::SELL;
-                                            }
-                                        }
-                                        
-                                        // Count labels for debugging
-                                        if (labelDirection == core::Direction::BUY) buyCount++;
-                                        else if (labelDirection == core::Direction::SELL) sellCount++;
-                                        else neutralCount++;
-                                        
-                                        // FIX 4: Add diagnostic logging to track the issue
-                                        if (labelCount % 100 == 0) {
-                                            // Add diagnostic info about the data distribution
-                                            auto dataRange = g_statThresholdAdapter.getDataRange(regimeIdx);
-                                            size_t dataPoints = g_statThresholdAdapter.getDataSize(regimeIdx);
-                                            double minReturn = dataRange.first;
-                                            double maxReturn = dataRange.second;
-                                            
-                                            // Check for data quality issues
-                                            bool dataIssue = (std::abs(dyn.buyThreshold) > 10.0 || 
-                                                            std::abs(dyn.sellThreshold) > 10.0 || 
-                                                            std::abs(normalizedReturn) > 20.0 ||
-                                                            std::abs(minReturn) > 100.0 ||
-                                                            std::abs(maxReturn) > 100.0);
-                                            
-                                            if (dataIssue) {
-                                                LOG_WARN("DATA ISSUE: BUY={}, SELL={}, NEUTRAL={}, "
-                                                    "BuyThresh={:.3f}, SellThresh={:.3f}, NormRet={:.3f}, "
-                                                    "DataRange=[{:.3f}, {:.3f}], DataPoints={}", 
-                                                    buyCount, sellCount, neutralCount, 
-                                                    dyn.buyThreshold, dyn.sellThreshold, normalizedReturn,
-                                                    minReturn, maxReturn, dataPoints);
-                                            } else {
-                                                LOG_TRACE("Label stats: BUY={}, SELL={}, NEUTRAL={}, "
-                                                    "BuyThresh={:.3f}, SellThresh={:.3f}, NormRet={:.3f}", 
-                                                    buyCount, sellCount, neutralCount, 
-                                                    dyn.buyThreshold, dyn.sellThreshold, normalizedReturn);
-                                            }
-                                        }
-                                        
-                                        // Type-safe conversion to integer label
-                                        int label = static_cast<int>(labelDirection);
-
-                                        // Thread-safe statistics tracking with proper logging
-                                        trackLabelingEvent(labelDirection, pt.symbol.toString(), normalizedReturn, 
-                                                        std::chrono::duration_cast<std::chrono::milliseconds>(nowForPt - pt.timestamp));
-
-                                        // Calculate realized profit (after trading fees) 
-                                        // preserve sign: positive if price moved in predicted direction, negative otherwise
-                                        double realizedPct = std::exp(priceChangeLogRet) - 1.0;
-                                        double tradingFee = 0.001; // 0.1% fee
-                                        double realizedProfit = (labelDirection == core::Direction::BUY ? realizedPct : -realizedPct) - tradingFee;
-                                        
-                                        // Update profit-aware labeling with realized outcome
-                                        g_profitLabeling.updateHistory(normalizedReturn, realizedProfit, 
-                                                                    regimeIdx, confidence, vol);
-                                        
-                                        // record for training and update stats with realized (non-normalized) absolute return
-                                        toTrain.emplace_back(pt.features, label, pt.exchangeId, pt.symbol, pt.regime);
-                                        g_statThresholdAdapter.updateStats(regimeIdx, priceChangeLogRet, vol);
-                                        pendingTraining_.pop_front();
-                                } else break;
-                            }
-                        }
-                        for (auto &t : toTrain) {
-                            try {
-                                const auto &features = std::get<0>(t);
-                                int label = std::get<1>(t);
-                                const auto &exch = std::get<2>(t);
-                                const auto &sym = std::get<3>(t);
-                                int sampleRegime = std::get<4>(t);
-
-                                // Get the per-regime handles
-                                auto handles = getBayesHandlesForSymbol(exch, sym);
-                                bool anyHandle = false;
-                                for (int i = 0; i < ImbalanceDetectionEngine::NUMBER_OF_REGIMES; ++i) if (handles[i]) { anyHandle = true; break; }
-                                if (!anyHandle) continue;
-
-                                // Single-regime update: use the regime snapshot captured with the sample
-                                bool anyUpdated = false;
-                                int activeRegime = 0;
-                                if (sampleRegime >= 0 && sampleRegime < ImbalanceDetectionEngine::NUMBER_OF_REGIMES) activeRegime = sampleRegime;
-                                // Lazy create handle if needed
-                                if (!handles[activeRegime]) {
-                                    try {
-                                        handles[activeRegime] = trading::perception::bayes_create();
-                                        // Update cached handles
-                                        {
-                                            std::lock_guard<std::mutex> lk(bayesHandlesMutex_);
-                                            std::string key = exch.toString() + "_" + sym.toString();
-                                            bayesHandles_[key] = handles;
-                                        }
-                                        LOG_TRACE("ImbalanceDetectionEngine: lazy created bayes handle for regime {} ({}:{})", 
-                                                activeRegime, exch.toString(), sym.toString());
-                                    } catch (...) {
-                                        handles[activeRegime] = nullptr;
-                                    }
-                                }
-                                if (handles[activeRegime]) {
-                                    trading::perception::bayes_update(handles[activeRegime], features, label);
-                                    anyUpdated = true;
-                                    LOG_TRACE("ImbalanceDetectionEngine: Updated regime {} for {}:{}", activeRegime, exch.toString(), sym.toString());
-                                }
-                                
-                                if (!anyUpdated) {
-                                    LOG_TRACE("ImbalanceDetectionEngine: no bayes handle available for active regime {} ({}:{}), skipping update", 
-                                            activeRegime, exch.toString(), sym.toString());
-                                    continue;
-                                }
-
-                                // Runtime persistence policy: increment update counter and
-                                // save model when thresholds / intervals are reached.
-                                try {
-                                    // Update counters atomically with bayes mutex to avoid races
-                                    std::lock_guard<std::mutex> lk_bayes(bayesMutex_);
-                                    updatesSinceLastSave_++;
-                                    auto now = std::chrono::steady_clock::now();
-                                    bool minIntervalPassed = (now - lastSaveTime_) >= bayesMinSaveInterval_;
-                                    bool intervalPassed = (bayesSaveInterval_.count() > 0) && ((now - lastSaveTime_) >= bayesSaveInterval_);
-                                    bool enoughUpdates = (bayesSaveAfterUpdates_ > 0) && (updatesSinceLastSave_ >= bayesSaveAfterUpdates_);
-
-                                    // Check model readiness if configured - use maximum updates across all handles
-                                    int maxModelUpdates = 0;
-                                    bool anyModelReady = false;
-                                    for (int i = 0; i < ImbalanceDetectionEngine::NUMBER_OF_REGIMES; ++i) {
-                                        if (!handles[i]) continue;
-                                        try {
-                                            int mu = trading::perception::bayes_get_num_updates(handles[i]);
-                                            if (mu > maxModelUpdates) maxModelUpdates = mu;
-                                            if (trading::perception::bayes_is_ready(handles[i])) anyModelReady = true;
-                                        } catch (...) {}
-                                    }
-                                    bool modelReady = (maxModelUpdates >= requireModelReadyUpdates_) || anyModelReady;
-
-                                    if (modelReady && minIntervalPassed && (enoughUpdates || intervalPassed)) {
-                                        // Collect save tasks while holding lock then perform I/O outside
-                                        std::vector<std::pair<trading::perception::BayesHandle, std::string>> saveTasks;
-                                        if (!bayesModelDirectory_.empty()) {
-                                            try {
-                                                // Only persist the regime that was just updated (activeRegime)
-                                                std::string base = bayesModelDirectory_;
-                                                if (!base.empty() && base.back() != '/' && base.back() != '\\') base += '/';
-                                                auto sanitize = [](const std::string &s){ std::string out; for (char c: s) { if (std::isalnum((unsigned char)c) || c=='_' || c=='-') out.push_back(c); else out.push_back('_'); } return out; };
-                                                std::string name = sanitize(exch.toString()) + "_" + sanitize(sym.toString());
-                                                int regimeToSave = activeRegime;
-                                                if (regimeToSave < 0 || regimeToSave >= NUMBER_OF_REGIMES) regimeToSave = 0;
-                                                auto h = handles[regimeToSave];
-                                                if (h) {
-                                                    // Diagnostic: log which regime we're about to persist and its update count
-                                                    try {
-                                                        int mu = trading::perception::bayes_get_num_updates(h);
-                                                        LOG_DEBUG("ImbalanceDetectionEngine: preparing auto-save for regime {} (updates={}) for {}:{}", regimeToSave, mu, exch.toString(), sym.toString());
-                                                    } catch (...) {
-                                                        LOG_TRACE("ImbalanceDetectionEngine: preparing auto-save for regime {} (updates=unknown) for {}:{}", regimeToSave, exch.toString(), sym.toString());
-                                                    }
-                                                    std::string regimeName = marketRegimeToString(static_cast<MarketRegimeType>(regimeToSave));
-                                                    std::string filename = base + name + "_" + regimeName + ".json";
-                                                    saveTasks.emplace_back(h, filename);
-                                                }
-                                            } catch (const std::exception &ex) { LOG_WARN("error preparing per-symbol save tasks: {}", ex.what()); } catch(...) { LOG_WARN("error preparing per-symbol save tasks (unknown)"); }
-                                        } else if (!bayesModelPath_.empty() && bayes_handle_) {
-                                            saveTasks.emplace_back(bayes_handle_, bayesModelPath_);
-                                        }
-
-                                        // Reset counters / timestamp now while still holding lock
-                                        lastSaveTime_ = now;
-                                        updatesSinceLastSave_ = 0;
-
-                                        // release lock scope here
-                                        // Perform I/O for save tasks outside of bayesMutex_
-                                        for (auto &st : saveTasks) {
-                                            try {
-                                                if (trading::perception::bayes_save(st.first, st.second)) {
-                                                    LOG_INFO("ImbalanceDetectionEngine: auto-saved bayes model to {}", st.second);
-                                                } else {
-                                                    LOG_WARN("ImbalanceDetectionEngine: auto-save returned false for {}", st.second);
-                                                }
-                                            } catch (const std::exception &ex) {
-                                                LOG_WARN("ImbalanceDetectionEngine: exception during auto-save for {}: {}", st.second, ex.what());
-                                            } catch (...) {
-                                                LOG_WARN("ImbalanceDetectionEngine: unknown error during auto-save for {}", st.second);
-                                            }
-                                        }
-                                    }
-                                } catch (const std::exception &ex) {
-                                    LOG_WARN("save bookkeeping threw: {}", ex.what());
-                                } catch (...) {
-                                    LOG_WARN("save bookkeeping threw unknown");
-                                }
-                            } catch (...) {}
-                        }
-                        // end if(trainingEnabled_)
-                    } catch (...) {}
-                });
-               }
             }
         
         });
@@ -1583,14 +1301,16 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                     // Per-detector timeout (ms)
                     std::chrono::milliseconds perDetectorTimeout(50);
 
-                    results.push_back(runDetectorWithTimeout("large_order_appearance", [&]{ return detectLargeOrderAppearance(metrics); }, perDetectorTimeout));
-                    results.push_back(runDetectorWithTimeout("large_order_disappearance", [&]{ return detectLargeOrderDisappearance(metrics); }, perDetectorTimeout));
-                    results.push_back(runDetectorWithTimeout("order_flow_imbalance", [&]{ return detectOrderFlowImbalance(metrics); }, perDetectorTimeout));
-                    results.push_back(runDetectorWithTimeout("price_level_concentration", [&]{ return detectPriceLevelConcentration(metrics); }, perDetectorTimeout));
-                    results.push_back(runDetectorWithTimeout("liquidity_imbalance", [&]{ return detectLiquidityImbalance(metrics); }, perDetectorTimeout));
-                    results.push_back(runDetectorWithTimeout("trend_continuation", [&]{ return detectTrendContinuation(metrics); }, perDetectorTimeout));
-                    results.push_back(runDetectorWithTimeout("trend_reversal", [&]{ return detectTrendReversal(metrics); }, perDetectorTimeout));
-                    results.push_back(runDetectorWithTimeout("trade_imbalance", [&]{ return detectTradeImbalance(metrics); }, perDetectorTimeout));
+                    // Use weak_ptr to call member detector safely from the detector thread.
+                    std::weak_ptr<ImbalanceDetectionEngine> weakSelf = this->shared_from_this();
+                    results.push_back(runDetectorWithTimeout("large_order_appearance", [weakSelf, metrics]{ auto s = weakSelf.lock(); return s ? s->detectLargeOrderAppearance(metrics) : DetectorResult{}; }, perDetectorTimeout));
+                    results.push_back(runDetectorWithTimeout("large_order_disappearance", [weakSelf, metrics]{ auto s = weakSelf.lock(); return s ? s->detectLargeOrderDisappearance(metrics) : DetectorResult{}; }, perDetectorTimeout));
+                    results.push_back(runDetectorWithTimeout("order_flow_imbalance", [weakSelf, metrics]{ auto s = weakSelf.lock(); return s ? s->detectOrderFlowImbalance(metrics) : DetectorResult{}; }, perDetectorTimeout));
+                    results.push_back(runDetectorWithTimeout("price_level_concentration", [weakSelf, metrics]{ auto s = weakSelf.lock(); return s ? s->detectPriceLevelConcentration(metrics) : DetectorResult{}; }, perDetectorTimeout));
+                    results.push_back(runDetectorWithTimeout("liquidity_imbalance", [weakSelf, metrics]{ auto s = weakSelf.lock(); return s ? s->detectLiquidityImbalance(metrics) : DetectorResult{}; }, perDetectorTimeout));
+                    results.push_back(runDetectorWithTimeout("trend_continuation", [weakSelf, metrics]{ auto s = weakSelf.lock(); return s ? s->detectTrendContinuation(metrics) : DetectorResult{}; }, perDetectorTimeout));
+                    results.push_back(runDetectorWithTimeout("trend_reversal", [weakSelf, metrics]{ auto s = weakSelf.lock(); return s ? s->detectTrendReversal(metrics) : DetectorResult{}; }, perDetectorTimeout));
+                    results.push_back(runDetectorWithTimeout("trade_imbalance", [weakSelf, metrics]{ auto s = weakSelf.lock(); return s ? s->detectTradeImbalance(metrics) : DetectorResult{}; }, perDetectorTimeout));
                 } catch (const std::exception &ex) {
                     LOG_WARN("ImbalanceDetectionEngine: synchronous fallback detectors threw: {}", ex.what());
                 } catch (...) {
@@ -1637,6 +1357,303 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
     }
 
     return false;
+}
+
+// Process buffered training samples; this is extracted so it can be invoked from a
+// thread-pool worker via a weak_ptr to avoid accessing `this` after destruction.
+void ImbalanceDetectionEngine::processPendingTraining(const OrderBookMetrics& m) {
+    try {
+        // tuple: features, label, exchange, symbol, regime
+        std::vector<std::tuple<std::vector<double>, int, core::ExchangeId, core::Symbol, int>> toTrain;
+        {
+            std::lock_guard<std::mutex> lk_pending2(pendingTrainingMutex_);
+            auto workerNow = m.timestamp;
+            while (!pendingTraining_.empty()) {
+                const auto &pt = pendingTraining_.front();
+                // Determine 'now' relative to this pending sample's symbol.
+                // Prefer the latest per-symbol snapshot timestamp; fallback to workerNow.
+                core::Timestamp nowForPt = workerNow;
+                try {
+                    std::lock_guard<std::mutex> lk(latestSnapshotsMutex_);
+                    std::string key = pt.exchangeId.toString() + "_" + pt.symbol.toString();
+                    auto it = latestSnapshots_.find(key);
+                    if (it != latestSnapshots_.end()) nowForPt = it->second.timestamp;
+                } catch (...) {}
+
+                if (nowForPt - pt.timestamp >= labelingDelay_) {
+                    // Use the stored reference at capture if available, otherwise re-evaluate using
+                    // the *latest snapshot for the same exchange+symbol* to avoid cross-symbol leakage.
+                    double baseRef = pt.referenceValue;
+                    double target = pt.referenceValue;
+                    try {
+                        // Try find latest snapshot for this exchange+symbol
+                        OrderBookMetrics snapshot;
+                        bool haveSnapshot = false;
+                        try {
+                            std::lock_guard<std::mutex> lk(latestSnapshotsMutex_);
+                            std::string key = pt.exchangeId.toString() + "_" + pt.symbol.toString();
+                            auto it = latestSnapshots_.find(key);
+                            if (it != latestSnapshots_.end()) { snapshot = it->second; haveSnapshot = true; }
+                        } catch (...) { haveSnapshot = false; }
+
+                        // Prefer snapshot values; fallback to current 'm' if same symbol or snapshot missing
+                        const OrderBookMetrics *useMetrics = nullptr;
+                        if (haveSnapshot) useMetrics = &snapshot;
+                        else useMetrics = &m; // fallback
+
+                        if (pt.referenceType == 1) { // vwap
+                            double cur = useMetrics->getMetric("vwap", 0.0);
+                            if (cur > 0.0) target = cur; else target = baseRef;
+                        } else if (pt.referenceType == 2) { // sma
+                            double cur = useMetrics->getMetric("sma", 0.0);
+                            if (cur > 0.0) target = cur; else target = baseRef;
+                        } else if (pt.referenceType == 3) { // micro
+                            double bidP = useMetrics->bidPrice; double askP = useMetrics->askPrice;
+                            double bidV = (useMetrics->bidVolumesByLevel.empty() ? useMetrics->totalBidVolume : useMetrics->bidVolumesByLevel.front());
+                            double askV = (useMetrics->askVolumesByLevel.empty() ? useMetrics->totalAskVolume : useMetrics->askVolumesByLevel.front());
+                            double denom = bidV + askV;
+                            if (denom > 0.0) target = (bidP * askV + askP * bidV) / denom; else target = baseRef;
+                        } else { target = useMetrics->midPrice; }
+                    } catch (...) { target = baseRef; }
+
+                    double priceChangeLogRet = 0.0;
+                    if (baseRef > 0.0 && std::isfinite(baseRef) && std::isfinite(target) && target > 0.0) {
+                        priceChangeLogRet = std::log(target) - std::log(baseRef);
+                    }
+
+                    // FIXED: More robust volatility normalization with strict bounds
+                    // Use volatility from the same snapshot used for target calculation when possible
+                    double vol = 0.0;
+                    try {
+                        std::lock_guard<std::mutex> lk(latestSnapshotsMutex_);
+                        std::string key = pt.exchangeId.toString() + "_" + pt.symbol.toString();
+                        auto it = latestSnapshots_.find(key);
+                        if (it != latestSnapshots_.end()) vol = it->second.realizedVolatility; else vol = m.realizedVolatility;
+                    } catch (...) { vol = m.realizedVolatility; }
+                    vol = std::clamp(vol, 0.001, 0.1); // Tighter vol range: 0.1% - 10%
+                    double normalizedReturn = 0.0;
+                    if (vol > 0.0 && std::isfinite(vol) && std::isfinite(priceChangeLogRet)) {
+                        normalizedReturn = priceChangeLogRet / vol;
+                        // CRITICAL: Clamp normalized return to prevent extreme outliers
+                        normalizedReturn = std::clamp(normalizedReturn, -10.0, 10.0);
+                    }
+
+                    int regimeIdx = pt.regime;
+
+                    // Use configured minimum profitable return (if set) to prevent trading on tiny expected profits
+                    double cfgMinProf = config_.min_profitable_return;
+                    auto dyn = g_statThresholdAdapter.calculateThresholds(regimeIdx, vol, cfgMinProf);
+
+                    // Calculate confidence based on signal strength
+                    double confidence = 0.5 + 0.3 * std::abs(normalizedReturn) / std::max(vol, 1e-6);
+                    confidence = std::clamp(confidence, 0.0, 1.0);
+
+                    // ENHANCED: Profit-aware labeling - only label if expected profit > fees
+                    core::Direction labelDirection = g_profitLabeling.generateProfitAwareLabel(
+                        normalizedReturn, regimeIdx, confidence, vol
+                    );
+
+                    // DEBUG: Track labeling attempts
+                    static int labelCount = 0;
+                    static int buyCount = 0, sellCount = 0, neutralCount = 0;
+                    labelCount++;
+
+                    // Fallback to traditional thresholding if profit-aware doesn't have enough data
+                    if (labelDirection == core::Direction::NEUTRAL && confidence > 0.6) {
+                        if (normalizedReturn > dyn.buyThreshold) {
+                            labelDirection = core::Direction::BUY;
+                        } else if (normalizedReturn < dyn.sellThreshold) {
+                            labelDirection = core::Direction::SELL;
+                        }
+                    }
+
+                    // Count labels for debugging
+                    if (labelDirection == core::Direction::BUY) buyCount++;
+                    else if (labelDirection == core::Direction::SELL) sellCount++;
+                    else neutralCount++;
+
+                    // FIX 4: Add diagnostic logging to track the issue
+                    if (labelCount % 100 == 0) {
+                        // Add diagnostic info about the data distribution
+                        auto dataRange = g_statThresholdAdapter.getDataRange(regimeIdx);
+                        size_t dataPoints = g_statThresholdAdapter.getDataSize(regimeIdx);
+                        double minReturn = dataRange.first;
+                        double maxReturn = dataRange.second;
+
+                        // Check for data quality issues
+                        bool dataIssue = (std::abs(dyn.buyThreshold) > 10.0 ||
+                                        std::abs(dyn.sellThreshold) > 10.0 ||
+                                        std::abs(normalizedReturn) > 20.0 ||
+                                        std::abs(minReturn) > 100.0 ||
+                                        std::abs(maxReturn) > 100.0);
+
+                        if (dataIssue) {
+                            LOG_WARN("DATA ISSUE: BUY={}, SELL={}, NEUTRAL={}, "
+                                "BuyThresh={:.3f}, SellThresh={:.3f}, NormRet={:.3f}, "
+                                "DataRange=[{:.3f}, {:.3f}], DataPoints={}",
+                                buyCount, sellCount, neutralCount,
+                                dyn.buyThreshold, dyn.sellThreshold, normalizedReturn,
+                                minReturn, maxReturn, dataPoints);
+                        } else {
+                            LOG_TRACE("Label stats: BUY={}, SELL={}, NEUTRAL={}, "
+                                "BuyThresh={:.3f}, SellThresh={:.3f}, NormRet={:.3f}",
+                                buyCount, sellCount, neutralCount,
+                                dyn.buyThreshold, dyn.sellThreshold, normalizedReturn);
+                        }
+                    }
+
+                    // Type-safe conversion to integer label
+                    int label = static_cast<int>(labelDirection);
+
+                    // Thread-safe statistics tracking with proper logging
+                    trackLabelingEvent(labelDirection, pt.symbol.toString(), normalizedReturn,
+                                    std::chrono::duration_cast<std::chrono::milliseconds>(nowForPt - pt.timestamp));
+
+                    // Calculate realized profit (after trading fees) 
+                    // preserve sign: positive if price moved in predicted direction, negative otherwise
+                    double realizedPct = std::exp(priceChangeLogRet) - 1.0;
+                    double tradingFee = 0.001; // 0.1% fee
+                    double realizedProfit = (labelDirection == core::Direction::BUY ? realizedPct : -realizedPct) - tradingFee;
+
+                    // Update profit-aware labeling with realized outcome
+                    g_profitLabeling.updateHistory(normalizedReturn, realizedProfit,
+                                                regimeIdx, confidence, vol);
+
+                    // record for training and update stats with realized (non-normalized) absolute return
+                    toTrain.emplace_back(pt.features, label, pt.exchangeId, pt.symbol, pt.regime);
+                    g_statThresholdAdapter.updateStats(regimeIdx, priceChangeLogRet, vol);
+                    pendingTraining_.pop_front();
+                } else break;
+            }
+        }
+        for (auto &t : toTrain) {
+            try {
+                const auto &features = std::get<0>(t);
+                int label = std::get<1>(t);
+                const auto &exch = std::get<2>(t);
+                const auto &sym = std::get<3>(t);
+                int sampleRegime = std::get<4>(t);
+
+                // Get the per-regime handles
+                auto handles = getBayesHandlesForSymbol(exch, sym);
+                bool anyHandle = false;
+                for (int i = 0; i < ImbalanceDetectionEngine::NUMBER_OF_REGIMES; ++i) if (handles[i]) { anyHandle = true; break; }
+                if (!anyHandle) continue;
+
+                // Single-regime update: use the regime snapshot captured with the sample
+                bool anyUpdated = false;
+                int activeRegime = 0;
+                if (sampleRegime >= 0 && sampleRegime < ImbalanceDetectionEngine::NUMBER_OF_REGIMES) activeRegime = sampleRegime;
+                // Lazy create handle if needed
+                if (!handles[activeRegime]) {
+                    try {
+                        handles[activeRegime] = trading::perception::bayes_create();
+                        // Update cached handles
+                        {
+                            std::lock_guard<std::mutex> lk(bayesHandlesMutex_);
+                            std::string key = exch.toString() + "_" + sym.toString();
+                            bayesHandles_[key] = handles;
+                        }
+                        LOG_TRACE("ImbalanceDetectionEngine: lazy created bayes handle for regime {} ({}:{})",
+                                activeRegime, exch.toString(), sym.toString());
+                    } catch (...) {
+                        handles[activeRegime] = nullptr;
+                    }
+                }
+                if (handles[activeRegime]) {
+                    trading::perception::bayes_update(handles[activeRegime], features, label);
+                    anyUpdated = true;
+                    LOG_TRACE("ImbalanceDetectionEngine: Updated regime {} for {}:{}", activeRegime, exch.toString(), sym.toString());
+                }
+                
+                if (!anyUpdated) {
+                    LOG_TRACE("ImbalanceDetectionEngine: no bayes handle available for active regime {} ({}:{}), skipping update",
+                            activeRegime, exch.toString(), sym.toString());
+                    continue;
+                }
+
+                // Runtime persistence policy: increment update counter and
+                // save model when thresholds / intervals are reached.
+                try {
+                    // Update counters atomically with bayes mutex to avoid races
+                    std::lock_guard<std::mutex> lk_bayes(bayesMutex_);
+                    updatesSinceLastSave_++;
+                    auto now = std::chrono::steady_clock::now();
+                    bool minIntervalPassed = (now - lastSaveTime_) >= bayesMinSaveInterval_;
+                    bool intervalPassed = (bayesSaveInterval_.count() > 0) && ((now - lastSaveTime_) >= bayesSaveInterval_);
+                    bool enoughUpdates = (bayesSaveAfterUpdates_ > 0) && (updatesSinceLastSave_ >= bayesSaveAfterUpdates_);
+
+                    // Check model readiness if configured - use maximum updates across all handles
+                    int maxModelUpdates = 0;
+                    bool anyModelReady = false;
+                    for (int i = 0; i < ImbalanceDetectionEngine::NUMBER_OF_REGIMES; ++i) {
+                        if (!handles[i]) continue;
+                        try {
+                            int mu = trading::perception::bayes_get_num_updates(handles[i]);
+                            if (mu > maxModelUpdates) maxModelUpdates = mu;
+                            if (trading::perception::bayes_is_ready(handles[i])) anyModelReady = true;
+                        } catch (...) {}
+                    }
+                    bool modelReady = (maxModelUpdates >= requireModelReadyUpdates_) || anyModelReady;
+
+                    if (modelReady && minIntervalPassed && (enoughUpdates || intervalPassed)) {
+                        // Collect save tasks while holding lock then perform I/O outside
+                        std::vector<std::pair<trading::perception::BayesHandle, std::string>> saveTasks;
+                        if (!bayesModelDirectory_.empty()) {
+                            try {
+                                // Only persist the regime that was just updated (activeRegime)
+                                std::string base = bayesModelDirectory_;
+                                if (!base.empty() && base.back() != '/' && base.back() != '\\') base += '/';
+                                auto sanitize = [](const std::string &s){ std::string out; for (char c: s) { if (std::isalnum((unsigned char)c) || c=='_' || c=='-') out.push_back(c); else out.push_back('_'); } return out; };
+                                std::string name = sanitize(exch.toString()) + "_" + sanitize(sym.toString());
+                                int regimeToSave = activeRegime;
+                                if (regimeToSave < 0 || regimeToSave >= NUMBER_OF_REGIMES) regimeToSave = 0;
+                                auto h = handles[regimeToSave];
+                                if (h) {
+                                    // Diagnostic: log which regime we're about to persist and its update count
+                                    try {
+                                        int mu = trading::perception::bayes_get_num_updates(h);
+                                        LOG_DEBUG("ImbalanceDetectionEngine: preparing auto-save for regime {} (updates={}) for {}:{}", regimeToSave, mu, exch.toString(), sym.toString());
+                                    } catch (...) {
+                                        LOG_TRACE("ImbalanceDetectionEngine: preparing auto-save for regime {} (updates=unknown) for {}:{}", regimeToSave, exch.toString(), sym.toString());
+                                    }
+                                    std::string regimeName = marketRegimeToString(static_cast<MarketRegimeType>(regimeToSave));
+                                    std::string filename = base + name + "_" + regimeName + ".json";
+                                    saveTasks.emplace_back(h, filename);
+                                }
+                            } catch (const std::exception &ex) { LOG_WARN("error preparing per-symbol save tasks: {}", ex.what()); } catch(...) { LOG_WARN("error preparing per-symbol save tasks (unknown)"); }
+                        } else if (!bayesModelPath_.empty() && bayes_handle_) {
+                            saveTasks.emplace_back(bayes_handle_, bayesModelPath_);
+                        }
+
+                        // Reset counters / timestamp now while still holding lock
+                        lastSaveTime_ = now;
+                        updatesSinceLastSave_ = 0;
+
+                        // release lock scope here
+                        // Perform I/O for save tasks outside of bayesMutex_
+                        for (auto &st : saveTasks) {
+                            try {
+                                if (trading::perception::bayes_save(st.first, st.second)) {
+                                    LOG_INFO("ImbalanceDetectionEngine: auto-saved bayes model to {}", st.second);
+                                } else {
+                                    LOG_WARN("ImbalanceDetectionEngine: auto-save returned false for {}", st.second);
+                                }
+                            } catch (const std::exception &ex) {
+                                LOG_WARN("ImbalanceDetectionEngine: exception during auto-save for {}: {}", st.second, ex.what());
+                            } catch (...) {
+                                LOG_WARN("ImbalanceDetectionEngine: unknown error during auto-save for {}", st.second);
+                            }
+                        }
+                    }
+                } catch (const std::exception &ex) {
+                    LOG_WARN("save bookkeeping threw: {}", ex.what());
+                } catch (...) {
+                    LOG_WARN("save bookkeeping threw unknown");
+                }
+            } catch (...) {}
+        }
+    } catch (...) {}
 }
 
 bool ImbalanceDetectionEngine::isUnderBackpressure() const {
