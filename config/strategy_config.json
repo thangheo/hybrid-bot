@@ -230,8 +230,8 @@
         "tradeImbalanceThreshold": 0.6,
         "cancellationImbalanceThreshold": 0.6,
         "priceVolatilityImbalanceThreshold": 0.3,
-        "detectionWindowMs": 180000,
-        "maxHistorySize": 5000,
+        "detectionWindowMs": 60000,
+        "maxHistorySize": 2000,
         "global_sensitivity": 0.75,
         "thresholds": {
           "volume_imbalance": 0.35,
@@ -240,11 +240,11 @@
           "order_flow": 0.3
         },
         "bayesModelPath": "models/bayesian/",
-        "labelingDelayMs": 180000,
+        "labelingDelayMs": 60000,
         "bayesSaveAfterUpdates": 25,
         "requireModelReadyUpdates": 50,
-        "bayesMinSaveIntervalMs": 180000,
-        "bayesSaveIntervalMs": 180000,
+        "bayesMinSaveIntervalMs": 60000,
+        "bayesSaveIntervalMs": 60000,
         "beta": 0.05,
         "logTransformConfig": {
           "enable_log_transform": true,
@@ -252,7 +252,7 @@
           "log_transform_threshold": 0.0,
           "comment": "Critical fix for extreme feature values (e.g., FLOKI feature_2 mean=202k)"
         },
-  "trainingStartDelayMs": 180000,
+  "trainingStartDelayMs": 60000,
         "minOrderbookLevels": 0,
         "bayesMinUpdatesToTrade": 1000,
         "min_profitable_return": 0.003
@@ -264,7 +264,7 @@
         "flowImbalanceThreshold": 0.4,
         "exchangeId": "BINANCE",
         "largeOrderThreshold": 5000.0,
-  "historyWindowSeconds": 180,
+  "historyWindowSeconds": 60,
         "largeOrderVolume": 10000.0,
         "cancellationRatio": 0.2,
         "pressureIndex": 0.0,
@@ -285,19 +285,19 @@
             "enable_cancellation_tracking": true
           },
           "array": {
-            "flow_windows": [180, 300, 600, 1200]
+            "flow_windows": [60, 120, 200, 600]
           }
         }
       }
     },
     "volumeProfileAnalyzer": {
       "parameters": {
-  "timeWindowMs": 180000,
+  "timeWindowMs": 60000,
         "priceLevels": 50,
         "exchangeId": "BINANCE",
         "tradingPair": "BTC/USDT",
         "rangeSizePercent": 2.0,
-  "timeFrameMinutes": 3,
+  "timeFrameMinutes": 1,
         "numPriceRanges": 20,
         "params": {
           "numeric": {
@@ -323,13 +323,13 @@
       "parameters": {
   "minSignalStrength": 0.6,
   "confidenceThreshold": 0.7,
-  "signalTtlMs": 180000
+  "signalTtlMs": 60000
       }
     },
     "momentumCorrelator": {
       "parameters": {
-  "correlationWindowMs": 180000,
-  "predictionHorizonMs": 180000,
+  "correlationWindowMs": 60000,
+  "predictionHorizonMs": 60000,
   "ewmaHalfLifeMs": 30000
       }
     },
@@ -348,7 +348,7 @@
     "exchangeCalibration": {
       "parameters": {
         "enableAutoCalibration": true,
-  "calibrationIntervalMs": 180000,
+  "calibrationIntervalMs": 60000,
         "calibrationThreshold": 0.05,
         "calibrationParameters": {
           "latency_adjustment": 1.2,
@@ -377,7 +377,7 @@
       "parameters": {
         "enableAdaptation": true,
         "adaptationRate": 0.05,
-  "adaptationIntervalMs": 180000
+  "adaptationIntervalMs": 60000
       }
     }
   }

@@ -17,8 +17,8 @@ print('✅ Configuration validated successfully!')
 
 # Check critical parameters
 imbalance = config['components']['imbalanceDetector']['parameters']
-assert imbalance['labelingDelayMs'] == 30000, 'Labeling delay should be 30s'
-assert imbalance['detectionWindowMs'] == 30000, 'Detection window should be 30s'
+assert imbalance['labelingDelayMs'] == 60000, 'Labeling delay should be 60s'
+assert imbalance['detectionWindowMs'] == 60000, 'Detection window should be 60s'
 assert 'logTransformConfig' in imbalance, 'Log transform config missing'
 assert imbalance['logTransformConfig']['enable_log_transform'] == True, 'Log transform should be enabled'
 

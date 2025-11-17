@@ -126,7 +126,7 @@ private:
     mutable std::mutex regimeMutex_;
     
     // Configuration
-    double predictionWindow_ = 180000;  // Default prediction window in seconds (180s)
+    double predictionWindow_ = 60000;  // Default prediction window in milliseconds (60s)
     double riskFreeRate_ = 0.0;       // For Sharpe calculation
     
     // Statistical functions
