@@ -135,6 +135,8 @@ public:
     
     // JSON methods remain the same
     std::string executeSignalJson(const std::string& signal_json);
+    // ExecutionResponse ExecutionService::executeSignalAsync(const TradingSignal& signal);
+
     std::string placeOrderJson(const std::string& order_json);
     std::string cancelOrderJson(const std::string& request_json);
     std::string getOrderStatusJson(const std::string& request_json);

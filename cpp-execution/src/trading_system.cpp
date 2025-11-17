@@ -1859,30 +1859,21 @@ void Trading_system::execWorkerLoop(size_t workerId) {
                 LOG_INFO("ExecWorker: Allowed size for {}: {}", task.symbol.toString(), allowedSize);
             }
             // Clamp allowed USD budget to min/max order size
-            allowedSize = std::clamp(allowedSize, 15.0, 5000.0);
+            allowedSize = std::clamp(allowedSize, 15.0, 1000.0);
 
             // --- Step 2: Apply position sizing (only for BUY orders) ---
             double sizerFraction = 1.0;
+            trading::strategy::OrderBookMetrics obMetrics;
             if (positionSizer_ && task.direction == core::Direction::BUY) {
                 std::map<std::string, double> metrics;
                 metrics["win_rate"] = task.confidence;
                 
                 // Fetch real volatility from market data
-                double vol = 0.05;
-                try {
-                    if (marketDataInterface_) {
-                        vol = marketDataInterface_->getVolatility(task.symbol, "1d", task.exchangeId.toString());
-                        vol = std::clamp(vol, 0.0001, 1.0);
-                    }
-                } catch (const std::exception& e) {
-                    LOG_WARN("Failed to get volatility for {}: {}", task.symbol.toString(), e.what());
-                    vol = 0.05;
-                }
+                double vol = obMetrics.realize_volatility_1m;
                 metrics["volatility"] = vol;
-                
+
                 std::map<std::string, double> portfolio;
                 sizerFraction = positionSizer_->calculateSize(task.symbol.toString(), metrics, portfolio);
-
                 LOG_INFO("ExecWorker: Sizer fraction for {}: {}", task.symbol.toString(), sizerFraction);
             }
 
@@ -1895,7 +1886,6 @@ void Trading_system::execWorkerLoop(size_t workerId) {
             double notionalUsd = positionSize * targetMultiplier;
 
             //get price from orderbook metric
-            trading::strategy::OrderBookMetrics obMetrics;
             double currentPrice = obMetrics.midPrice;
             // --- Step 4: Get current price and convert to quantity ---
 
@@ -1912,7 +1902,7 @@ void Trading_system::execWorkerLoop(size_t workerId) {
             }
             
             double finalQty = notionalUsd / currentPrice;
- 
+            
             try {
                 // precision helper will normalize it internally (remove '/').
                 std::string symStr = task.symbol.toString();
@@ -1972,7 +1962,23 @@ void Trading_system::execWorkerLoop(size_t workerId) {
 
             // --- Step 7: Execute the signal ---
             LOG_INFO("[EXEC] Attempting execution for signal {} on {}", task.id, task.symbol.toString());
-            ExecutionResponse response = executionService_->executeSignal(task);
+            
+            // ExecutionResponse response = executionService_->executeSignal(task);
+            // use executeSignalAsync instead for non-blocking
+            ExecutionResponse response;
+            try {
+                auto fut = executionService_->executeSignalAsync(task);
+                response = fut.get();
+            } catch (const std::exception& e) {
+                LOG_ERROR("[EXEC] executeSignalAsync threw exception: {}", e.what());
+                response.success = false;
+                response.error_message = e.what();
+            } catch (...) {
+                LOG_ERROR("[EXEC] executeSignalAsync threw unknown exception");
+                response.success = false;
+                response.error_message = "unknown exception";
+            }
+
             LOG_INFO("[EXEC] Right after executeSignal call for {}", task.symbol.toString());  // Temporary debug log
             LOG_INFO("[EXEC] Execution response received: success={}, error='{}'", response.success, response.error_message);
 

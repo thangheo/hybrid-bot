@@ -102,7 +102,7 @@ bool ExecutionService::initialize() {
     if (api_client_manager_) {
         success &= api_client_manager_->initialize();
         if (!success) {
-            std::cerr << "Failed to initialize API Client Manager." << std::endl;
+            LOG_ERROR("Failed to initialize API Client Manager.");
             return false;
         }
     }
@@ -110,11 +110,11 @@ bool ExecutionService::initialize() {
     // Initialize other components
     if (order_lifecycle_tracker_) {
         success &= order_lifecycle_tracker_->initialize();
-        std::cout << "Order Lifecycle Tracker initialized." << std::endl;
+        LOG_INFO("Order Lifecycle Tracker initialized.");
     }
     if (fill_reconciliation_) {
         success &= fill_reconciliation_->initialize();
-        std::cout << "Fill Reconciliation initialized." << std::endl;
+        LOG_INFO("Fill Reconciliation initialized.");
     }
 
     // Start reconciliation process
@@ -162,6 +162,8 @@ ExecutionResponse ExecutionService::executeSignal(const TradingSignal& signal) {
     ExecutionResponse response;
 
     try {
+        LOG_DEBUG("ExecutionService: Executing signal for {} on exchange {}", 
+            signal.symbol.toString(), signal.exchangeId.toString());
         // 1. Generate order from signal (UNCHANGED)
         auto order = createOrderFromSignal(signal);
         
@@ -362,37 +364,35 @@ ExecutionResponse ExecutionService::executeSignal(const TradingSignal& signal) {
         }
 
         if (skipAllBalanceValidation) {
-            std::cout << "[BALANCE] SKIPPING all balance validation for exit order " << exchange_order->getClientOrderId() << std::endl;
+            LOG_INFO("[BALANCE] SKIPPING all balance validation for exit order {}", exchange_order->getClientOrderId());
         } else {
             // Use the new balance validator for comprehensive checking (cached read)
-            std::cout << "[BALANCE] Preflight (cached) validation for order " << exchange_order->getClientOrderId()
-                      << " on exchange " << exchangeId.toString() << std::endl;
+            LOG_INFO("[BALANCE] Preflight (cached) validation for order {} on exchange {}", exchange_order->getClientOrderId(), exchangeId.toString());
             auto balanceResult = balanceValidator_->validateOrder(*exchange_order, exchangeId, false);
             
             if (!balanceResult.isValid) {
-                std::cerr << "❌ Order rejected due to insufficient balance:" << std::endl;
+                LOG_ERROR("❌ Order rejected due to insufficient balance: {}", balanceResult.reason);
 
                 // If the only reason is minimum notional requirement and this is an
                 // exit flow, bypass that check (user requested exits to be tolerant).
                 if (isExitSignalFlag && balanceResult.reason.find("minimum notional") != std::string::npos) {
-                    std::cout << "[BALANCE] Bypassing min-notional rejection for exit order " << exchange_order->getClientOrderId() << std::endl;
+                    LOG_INFO("[BALANCE] Bypassing min-notional rejection for exit order {}", exchange_order->getClientOrderId());
                     // Treat as valid and continue (do not early-return)
                 } else {
                     // Suggest quantity adjustment if possible
                     if (balanceResult.canAdjust && balanceResult.suggestedQuantity > 0) {
-                        std::cout << "   💡 Suggested quantity: " << balanceResult.suggestedQuantity << std::endl;
+                        LOG_INFO("   💡 Suggested quantity: {}", balanceResult.suggestedQuantity);
 
                         // Attempt to adjust the order quantity to suggestedQuantity and re-run validation.
                         try {
                             double origQty = exchange_order->getQuantity();
                             exchange_order->setQuantity(balanceResult.suggestedQuantity);
 
-                            std::cout << "[BALANCE] Attempting adjusted quantity " << balanceResult.suggestedQuantity
-                                    << " for order " << exchange_order->getClientOrderId() << std::endl;
+                            LOG_INFO("[BALANCE] Attempting adjusted quantity {} for order {}", balanceResult.suggestedQuantity, exchange_order->getClientOrderId());
 
                             auto adjResult = balanceValidator_->validateOrder(*exchange_order, exchangeId, false);
                             if (adjResult.isValid) {
-                                std::cout << "✅ Adjusted quantity passed balance validation; proceeding with adjusted order." << std::endl;
+                                LOG_INFO("✅ Adjusted quantity passed balance validation; proceeding with adjusted order.");
                                 // overwrite balanceResult so subsequent logging reflects adjusted quantity/requirements
                                 balanceResult = adjResult;
 
@@ -405,7 +405,7 @@ ExecutionResponse ExecutionService::executeSignal(const TradingSignal& signal) {
                             } else {
                                 // restore original quantity for reporting
                                 exchange_order->setQuantity(origQty);
-                                std::cout << "Adjusted quantity still insufficient: " << adjResult.reason << std::endl;
+                                LOG_ERROR("Adjusted quantity still insufficient: {}", adjResult.reason);
                                 order_lifecycle_tracker_->updateOrderState(
                                     exchange_order->getClientOrderId(),
                                     models::OrderState::REJECTED,
@@ -424,7 +424,7 @@ ExecutionResponse ExecutionService::executeSignal(const TradingSignal& signal) {
                                 };
                             }
                         } catch (const std::exception& e) {
-                            std::cerr << "Warning: failed to attempt suggested quantity adjustment: " << e.what() << std::endl;
+                            LOG_WARN("Warning: failed to attempt suggested quantity adjustment: {}", e.what());
                             // Fallback to original rejection path below
                             order_lifecycle_tracker_->updateOrderState(
                                 exchange_order->getClientOrderId(),
@@ -450,11 +450,10 @@ ExecutionResponse ExecutionService::executeSignal(const TradingSignal& signal) {
                     // This helps avoid false negatives when a recent fill hasn't propagated to
                     // the cached DataInterface or local cache yet (common after immediate fills).
                     try {
-                        std::cout << "[BALANCE] Cached validation failed - attempting forced fresh validation for order "
-                                  << exchange_order->getClientOrderId() << std::endl;
+                        LOG_INFO("[BALANCE] Cached validation failed - attempting forced fresh validation for order {}", exchange_order->getClientOrderId());
                         auto freshResult = balanceValidator_->validateOrder(*exchange_order, exchangeId, true);
                         if (freshResult.isValid) {
-                            std::cout << "\u2705 Fresh balance validation PASSED after cache refresh; proceeding with order." << std::endl;
+                            LOG_INFO("\u2705 Fresh balance validation PASSED after cache refresh; proceeding with order.");
                             // overwrite balanceResult so subsequent logging reflects fresh data
                             balanceResult = freshResult;
                             // continue to submission
@@ -463,8 +462,7 @@ ExecutionResponse ExecutionService::executeSignal(const TradingSignal& signal) {
                             // If this is an exit signal and the failure is due solely to
                             // minimum notional, bypass and proceed. Otherwise reject.
                             if (isExitSignalFlag && freshResult.reason.find("minimum notional") != std::string::npos) {
-                                std::cout << "[BALANCE] Fresh validation failed only due to min-notional; bypassing for exit order "
-                                          << exchange_order->getClientOrderId() << std::endl;
+                                LOG_INFO("[BALANCE] Fresh validation failed only due to min-notional; bypassing for exit order {}", exchange_order->getClientOrderId());
                                 // allow submission to proceed
                                 balanceResult = freshResult; // keep the reason for logs but continue
                             } else {
@@ -512,14 +510,14 @@ ExecutionResponse ExecutionService::executeSignal(const TradingSignal& signal) {
         }
             
             // Log successful validation
-            std::cout << "✅ Balance validation passed:" << std::endl;
-            std::cout << "   Asset: " << balanceResult.asset << std::endl;
-            std::cout << "   Required: " << balanceResult.requiredBalance << std::endl;
-            std::cout << "   Available: " << balanceResult.availableBalance << std::endl;
-            std::cout << "   Est. fees: " << balanceResult.estimatedFees << std::endl;
+            LOG_INFO("✅ Balance validation passed:");
+            LOG_INFO("   Asset: {}", balanceResult.asset);
+            LOG_INFO("   Required: {}", balanceResult.requiredBalance);
+            LOG_INFO("   Available: {}", balanceResult.availableBalance);
+            LOG_INFO("   Est. fees: {}", balanceResult.estimatedFees);
         }
     } catch (const std::exception& e) {
-        std::cerr << "Warning: balance validation failed with error: " << e.what() << ". Proceeding with legacy checks." << std::endl;
+        LOG_WARN("Warning: balance validation failed with error: {}; Proceeding with legacy checks.", e.what());
 
         
         // === Final Balance Check with Fresh Data ===
@@ -528,17 +526,17 @@ ExecutionResponse ExecutionService::executeSignal(const TradingSignal& signal) {
             auto finalBalanceResult = balanceValidator_->validateOrder(*exchange_order, exchangeId, true);
             
             if (!finalBalanceResult.isValid) {
-                    std::cout << "❌ Final balance check failed with fresh data:" << std::endl;
-                    std::cout << "   Reason: " << finalBalanceResult.reason << std::endl;
-                    std::cout << "   Required: " << finalBalanceResult.requiredBalance << std::endl;
-                    std::cout << "   Available: " << finalBalanceResult.availableBalance << std::endl;
+                    LOG_WARN("❌ Final balance check failed with fresh data:");
+                    LOG_WARN("   Reason: {}", finalBalanceResult.reason);
+                    LOG_WARN("   Required: {}", finalBalanceResult.requiredBalance);
+                    LOG_WARN("   Available: {}", finalBalanceResult.availableBalance);
 
                     // If this is an exit signal, be tolerant and bypass insufficient-balance
                     // rejections (user requested immediate exits). Only bypass when the
                     // reason indicates insufficient balance or min-notional.
                     if (isExitSignalFlag && (finalBalanceResult.reason.find("Insufficient") != std::string::npos ||
                                              finalBalanceResult.reason.find("minimum notional") != std::string::npos)) {
-                        std::cout << "[BALANCE] Bypassing final balance rejection for exit order " << exchange_order->getClientOrderId() << std::endl;
+                        LOG_INFO("[BALANCE] Bypassing final balance rejection for exit order {}", exchange_order->getClientOrderId());
                         // allow execution to continue
                     } else {
                         order_lifecycle_tracker_->updateOrderState(
@@ -559,10 +557,10 @@ ExecutionResponse ExecutionService::executeSignal(const TradingSignal& signal) {
                         };
                     }
                 }
-            
-            std::cout << "✅ Final balance check passed - proceeding to submit order" << std::endl;
+
+            LOG_INFO("✅ Final balance check passed - proceeding to submit order");
         } else {
-            std::cout << "[BALANCE] Skipped final forced balance validation for exit order " << exchange_order->getClientOrderId() << std::endl;
+            LOG_INFO("[BALANCE] Skipped final forced balance validation for exit order {}", exchange_order->getClientOrderId());
         }
     }
 
@@ -570,7 +568,7 @@ ExecutionResponse ExecutionService::executeSignal(const TradingSignal& signal) {
         try {
             auto finalValidation = balanceValidator_->validateOrder(*exchange_order, exchangeId, true);
             if (!finalValidation.isValid) {
-                std::cout << "❌ Final forced balance validation failed before submit: " << finalValidation.reason << std::endl;
+                LOG_WARN("❌ Final forced balance validation failed before submit: {}", finalValidation.reason);
 
                 // If this is an exit order, allow bypass for common non-fatal reasons
                 bool bypassFinal = false;
@@ -583,7 +581,7 @@ ExecutionResponse ExecutionService::executeSignal(const TradingSignal& signal) {
                 }
 
                 if (bypassFinal) {
-                    std::cout << "[BALANCE] Bypassing final forced validation for exit order " << exchange_order->getClientOrderId() << std::endl;
+                    LOG_INFO("[BALANCE] Bypassing final forced validation for exit order {}", exchange_order->getClientOrderId());
                 } else {
                     order_lifecycle_tracker_->updateOrderState(
                         exchange_order->getClientOrderId(),
@@ -684,24 +682,24 @@ ExecutionResponse ExecutionService::executeSignal(const TradingSignal& signal) {
                 }
 
                 if (looksLikeInsufficient) {
-                    std::cout << "🔄 Insufficient balance detected, refreshing cache for exchange: " << exchangeId.toString() << std::endl;
+                    LOG_INFO("🔄 Insufficient balance detected, refreshing cache for exchange: {}", exchangeId.toString());
 
                     // Use our balance validator to refresh the cache
                     try {
                         balanceValidator_->clearBalanceCache(exchangeId);
-                        std::cout << "✅ Balance cache cleared for exchange: " << exchangeId.toString() << std::endl;
+                        LOG_INFO("✅ Balance cache cleared for exchange: {}", exchangeId.toString());
                     } catch (const std::exception& e) {
-                        std::cerr << "Warning: failed to clear balance cache after rejection: " << e.what() << std::endl;
+                        LOG_WARN("Warning: failed to clear balance cache after rejection: {}", e.what());
                     }
 
                     // After clearing cache, revalidate with fresh data and optionally retry once
                     try {
-                        std::cout << "[BALANCE] Performing forced fresh validation before optional retry for order " << exchange_order->getClientOrderId() << std::endl;
+                        LOG_INFO("[BALANCE] Performing forced fresh validation before optional retry for order {}", exchange_order->getClientOrderId());
                         auto freshValidation = balanceValidator_->validateOrder(*exchange_order, exchangeId, true);
                         if (freshValidation.isValid) {
-                            std::cout << "[BALANCE] Fresh validation PASSED, attempting one retry submit for " << exchange_order->getClientOrderId() << std::endl;
-                                try {
-                                    // perform one resubmit attempt using the possibly-adjusted exchange_order
+                            LOG_INFO("[BALANCE] Fresh validation PASSED, attempting one retry submit for order {}", exchange_order->getClientOrderId());
+                            try {
+                                // perform one resubmit attempt using the possibly-adjusted exchange_order
                                     if (exchangeGateway_) {
                                         auto retryFuture = exchangeGateway_->placeOrder(*exchange_order);
                                         executionReport = retryFuture.get();
@@ -722,20 +720,20 @@ ExecutionResponse ExecutionService::executeSignal(const TradingSignal& signal) {
                                     // If executionReport cannot be converted for some reason, ignore and leave original result
                                 }
 
-                                std::cout << "[RETRY] Resubmit attempt completed for " << exchange_order->getClientOrderId() << std::endl;
+                                LOG_DEBUG("[RETRY] Resubmit attempt completed for {}", exchange_order->getClientOrderId());
                             } catch (const std::exception& e) {
-                                std::cerr << "Warning: retry submit failed with exception: " << e.what() << std::endl;
+                                LOG_WARN("Warning: retry submit failed with exception: {}", e.what());
                             }
                         } else {
-                            std::cout << "[BALANCE] Fresh validation still fails after cache refresh: " << freshValidation.reason << std::endl;
+                            LOG_WARN("[BALANCE] Fresh validation still fails after cache refresh: {}", freshValidation.reason);
                         }
                     } catch (const std::exception& e) {
-                        std::cerr << "Warning: fresh validation before retry failed: " << e.what() << std::endl;
+                        LOG_WARN("Warning: fresh validation before retry failed: {}", e.what());
                     }
                 }
             } catch (const std::exception& e) {
                 // Non-critical; just log
-                std::cerr << "Warning: error while handling rejection refresh: " << e.what() << std::endl;
+                LOG_WARN("Warning: error while handling rejection refresh: {}", e.what());
             }
         }
         
@@ -1375,7 +1373,7 @@ models::Order ExecutionService::createOrderFromSignal(const TradingSignal& signa
         }
         
         // ADD DEBUG HERE:
-        std::cout << "DEBUG: About to select exchange for pair: " << signal.getTradingPair() << std::endl;
+        LOG_DEBUG("DEBUG: About to select exchange for pair: {}", signal.getTradingPair());
 
         // Check if smart_order_router_ is valid
         if (!smart_order_router_) {
@@ -1386,10 +1384,10 @@ models::Order ExecutionService::createOrderFromSignal(const TradingSignal& signa
         RoutingResult routing_result = smart_order_router_->selectExchange(order);
 
         // ADD MORE DEBUG:
-        std::cout << "DEBUG: Routing result - ExchangeId: " << routing_result.exchangeId.toString() << std::endl;
-        std::cout << "DEBUG: Routing result - Score: " << routing_result.score << std::endl;
-        std::cout << "DEBUG: Routing result - Reason: " << routing_result.reason << std::endl;
-        std::cout << "DEBUG: ExchangeId isValid(): " << routing_result.exchangeId.isValid() << std::endl;
+        LOG_DEBUG("DEBUG: Routing result - ExchangeId: {}", routing_result.exchangeId.toString());
+        LOG_DEBUG("DEBUG: Routing result - Score: {}", routing_result.score);
+        LOG_DEBUG("DEBUG: Routing result - Reason: {}", routing_result.reason);
+        LOG_DEBUG("DEBUG: ExchangeId isValid(): {}", routing_result.exchangeId.isValid());
 
         // if (!routing_result.exchangeId.isValid()) {
         //     throw std::runtime_error("No suitable exchange found: " + routing_result.reason);
@@ -1493,20 +1491,15 @@ models::Order ExecutionService::createOrderFromSignal(const TradingSignal& signa
             }
         }
         // Enhanced debug logging for price issues
-        std::cout << "Market Data for " << order->getTradingPair().toString() 
-                  << ": Bid=" << market_condition.bidPrice 
-                  << ", Ask=" << market_condition.askPrice
-                  << ", Spread=" << market_condition.spread
-                  << ", Vol=" << market_condition.volatility
-                  << ", LiquidityScore=" << market_condition.liquidityProfileScore
-                  << ", MarketImpact=" << market_condition.market_impact_estimate
-                  << ", Side=" << (order->getSide() == models::OrderSide::BUY ? "BUY" : "SELL") << std::endl;
-        
+        LOG_DEBUG("Market Data for {}: Bid={}, Ask={}, Spread={}, Vol={}, LiquidityScore={}", order->getTradingPair().toString(),
+                  market_condition.bidPrice, market_condition.askPrice, market_condition.spread,
+                  market_condition.volatility, market_condition.liquidityProfileScore);
+                  LOG_DEBUG(", MarketImpact={}, Side={}", market_condition.market_impact_estimate,
+                  (order->getSide() == models::OrderSide::BUY ? "BUY" : "SELL"));
+
         if (market_condition.bidPrice <= 0.0 || market_condition.askPrice <= 0.0) {
-            std::cerr << "WARNING: Invalid market data for " << order->getTradingPair().toString()
-                     << ": Bid=" << market_condition.bidPrice
-                     << ", Ask=" << market_condition.askPrice 
-                     << " - this may cause pricing issues!" << std::endl;
+            LOG_WARN("WARNING: Invalid market data for {}: Bid={}, Ask={} - this may cause pricing issues!", order->getTradingPair().toString(),
+                     market_condition.bidPrice, market_condition.askPrice);
         }
         // Select the most appropriate order type
         OrderTypeSelection selection = order_type_selector_->selectOrderType(order, market_condition);
