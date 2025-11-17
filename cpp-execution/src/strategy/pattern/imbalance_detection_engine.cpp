@@ -508,6 +508,15 @@ static std::vector<double> buildFeatures(const OrderBookMetrics &m, const std::v
     features.reserve(results.size() + 16);
     for (const auto &r : results) {
         double v = 0.0;
+        // Skip features that have been identified as noisy during training
+        // (see repository issue/discussion). In particular: trend continuation
+        // and trend reversal features often have unstable statistics and can
+        // overload the Bayesian filter. We still keep detectors in the code but
+        // avoid using their output here to reduce feature noise and CPU.
+        if (r.type == ImbalanceType::TREND_CONTINUATION || r.type == ImbalanceType::TREND_REVERSAL) {
+            continue; // omit this detector's feature (was indexes 5/6)
+        }
+
         if (std::isfinite(r.strength) && r.strength > 0.0) {
             v = r.strength;
         } else if (std::isfinite(r.imbalanceValue)) {
@@ -532,13 +541,21 @@ static std::vector<double> buildFeatures(const OrderBookMetrics &m, const std::v
         else strength = 0.0;
         features.push_back(std::min(1.0, std::max(0.0, strength)));
     }
-    features.push_back(safe(m.priceVelocity, 0.0));
-    features.push_back(std::tanh(safe(m.volumeVelocity, 0.0) / 1000.0));
-    features.push_back(std::tanh(safe(m.spreadVelocity, 0.0) * 10.0));
+    // Feature removed: priceVelocity (index 9). This was found to be noisy
+    // and to have very large posterior sigma in practice. Commented-out to
+    // reduce feature dimensionality and speed up training/prediction.
+    // features.push_back(safe(m.priceVelocity, 0.0));
+    // Feature removed: volumeVelocity (index 10). See comment above.
+    // features.push_back(std::tanh(safe(m.volumeVelocity, 0.0) / 1000.0));
+    // Feature removed: spreadVelocity (index 11). See comment above.
+    // features.push_back(std::tanh(safe(m.spreadVelocity, 0.0) * 10.0));
 
     features.push_back(std::clamp(safe(m.liquidityPressure, 0.0), -10.0, 10.0));
     features.push_back(std::clamp(safe(m.volatilityExpectation, 0.0), 0.0, 10.0));
-    features.push_back(std::clamp(safe(m.realizedVolatility, 0.0), 0.0, 100.0));
+    // Feature removed: realizedVolatility (index 14). We still use
+    // realizedVolatility elsewhere for normalization/thresholds, but don't
+    // provide it directly as an input to the Bayesian model here.
+    // features.push_back(std::clamp(safe(m.realizedVolatility, 0.0), 0.0, 100.0));
     features.push_back(std::clamp(safe(m.volatilityPerUnitTime, 0.0), 0.0, 100.0));
 
     double totalBid = safe(m.totalBidVolume, 0.0);
@@ -773,8 +790,12 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                     results.push_back(detectOrderFlowImbalance(m));
                     results.push_back(detectPriceLevelConcentration(m));
                     results.push_back(detectLiquidityImbalance(m));
-                    results.push_back(detectTrendContinuation(m));
-                    results.push_back(detectTrendReversal(m));
+                    // Trend detectors (continuation/reversal) frequently produce
+                    // unstable features; removed from the default detection set to
+                    // reduce noise and runtime cost. Keep function definitions
+                    // available for experiments.
+                    // results.push_back(detectTrendContinuation(m));
+                    // results.push_back(detectTrendReversal(m));
                     results.push_back(detectTradeImbalance(m));
                     // results.push_back(detectCancellationImbalance(m)); 
                     // results.push_back(detectPriceVolatilityImbalance(m));
@@ -1308,8 +1329,10 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                     results.push_back(runDetectorWithTimeout("order_flow_imbalance", [weakSelf, metrics]{ auto s = weakSelf.lock(); return s ? s->detectOrderFlowImbalance(metrics) : DetectorResult{}; }, perDetectorTimeout));
                     results.push_back(runDetectorWithTimeout("price_level_concentration", [weakSelf, metrics]{ auto s = weakSelf.lock(); return s ? s->detectPriceLevelConcentration(metrics) : DetectorResult{}; }, perDetectorTimeout));
                     results.push_back(runDetectorWithTimeout("liquidity_imbalance", [weakSelf, metrics]{ auto s = weakSelf.lock(); return s ? s->detectLiquidityImbalance(metrics) : DetectorResult{}; }, perDetectorTimeout));
-                    results.push_back(runDetectorWithTimeout("trend_continuation", [weakSelf, metrics]{ auto s = weakSelf.lock(); return s ? s->detectTrendContinuation(metrics) : DetectorResult{}; }, perDetectorTimeout));
-                    results.push_back(runDetectorWithTimeout("trend_reversal", [weakSelf, metrics]{ auto s = weakSelf.lock(); return s ? s->detectTrendReversal(metrics) : DetectorResult{}; }, perDetectorTimeout));
+                    // Trend detectors removed from synchronous fallback to speed up
+                    // processing and prevent noisy features from entering training.
+                    // results.push_back(runDetectorWithTimeout("trend_continuation", [weakSelf, metrics]{ auto s = weakSelf.lock(); return s ? s->detectTrendContinuation(metrics) : DetectorResult{}; }, perDetectorTimeout));
+                    // results.push_back(runDetectorWithTimeout("trend_reversal", [weakSelf, metrics]{ auto s = weakSelf.lock(); return s ? s->detectTrendReversal(metrics) : DetectorResult{}; }, perDetectorTimeout));
                     results.push_back(runDetectorWithTimeout("trade_imbalance", [weakSelf, metrics]{ auto s = weakSelf.lock(); return s ? s->detectTradeImbalance(metrics) : DetectorResult{}; }, perDetectorTimeout));
                 } catch (const std::exception &ex) {
                     LOG_WARN("ImbalanceDetectionEngine: synchronous fallback detectors threw: {}", ex.what());
