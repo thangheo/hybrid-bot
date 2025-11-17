@@ -1716,11 +1716,12 @@ void Trading_system::execWorkerLoop(size_t workerId) {
         }
         
         try {
-            // Small delay to simulate processing/network latency for entries
-            std::this_thread::sleep_for(50ms);
+            //this is a production code, do not sleep
+            // std::this_thread::sleep_for(50ms);
 
-            std::cout << "🔄 ExecWorker processing signal " << task.id << " for " << task.symbol.toString() << std::endl;
-
+            // std::cout << "🔄 ExecWorker processing signal " << task.id << " for " << task.symbol.toString() << std::endl;
+            LOG_INFO("🔄 ExecWorker: Processing signal {} for {} direction={}", task.id, task.symbol.toString(), 
+                    (task.direction == core::Direction::BUY ? "BUY" : "SELL"));
             if (!executionService_) {
                 std::cerr << "Execution service not initialized!" << std::endl;
                 continue;
@@ -1867,6 +1868,7 @@ void Trading_system::execWorkerLoop(size_t workerId) {
             double allowedSize = 0.0;
             if (riskManager_) {
                 allowedSize = riskManager_->getAllowedPositionSize(task.symbol);
+                LOG_INFO("ExecWorker: Allowed size for {}: {}", task.symbol.toString(), allowedSize);
             }
             // Clamp allowed USD budget to min/max order size
             allowedSize = std::clamp(allowedSize, 10.0, 5000.0);
@@ -1892,6 +1894,8 @@ void Trading_system::execWorkerLoop(size_t workerId) {
                 
                 std::map<std::string, double> portfolio;
                 sizerFraction = positionSizer_->calculateSize(task.symbol.toString(), metrics, portfolio);
+
+                LOG_INFO("ExecWorker: Sizer fraction for {}: {}", task.symbol.toString(), sizerFraction);
             }
 
             // --- Step 3: Calculate position size with signal strength tilt ---
@@ -1955,7 +1959,7 @@ void Trading_system::execWorkerLoop(size_t workerId) {
                 // Best-effort: keep previous finalQty if helper fails.
                 LOG_WARN("Exec: Quantity precision helper failed for {}: {}", task.symbol.toString(), e.what());
             }
-
+            
             // --- Step 5: Enforce minimum notional AFTER precision rounding ---
             const double minNotionalUsd = 10.0;
             double finalNotionalUsd = currentPrice * finalQty;
