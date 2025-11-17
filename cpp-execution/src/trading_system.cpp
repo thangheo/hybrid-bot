@@ -10,6 +10,7 @@
 #include <nlohmann/json.hpp>
 #include <fstream>
 #include "common/logger.hpp"
+// #include "spdlog/spdlog.h"
 #include "execution/models/order.hpp"
 // position.hpp (local in-memory cache) removed: prefer canonical RiskManager/PositionTracker
 
@@ -753,10 +754,10 @@ bool Trading_system::initialize() {
     setupExecutionEngine();
     // Debug: Verify execution service and router
     if (!executionService_) {
-        std::cerr << "Execution Service failed to initialize!" << std::endl;
+        LOG_ERROR("Execution Service failed to initialize!");
         return false;
     }
-    std::cout << "=== INITIALIZING FULL TRADING SYSTEM ===" << std::endl;
+    LOG_INFO("=== INITIALIZING FULL TRADING SYSTEM ===");
     
     // 🚨 EMERGENCY: Load current PnL state to block losing symbols
     loadEmergencyState();
@@ -780,7 +781,7 @@ bool Trading_system::initialize() {
     // the bind to exist prior to connects in the same context).
     if (!zmq_server_->isRunning()) {
         if (!zmq_server_->start()) {
-            std::cerr << "Failed to start internal ZMQ server during initialization: " << zmq_server_->getLastError() << std::endl;
+            LOG_ERROR("Failed to start internal ZMQ server during initialization: {}", zmq_server_->getLastError());
             return false;
         }
         // brief pause to let sockets bind
@@ -790,7 +791,7 @@ bool Trading_system::initialize() {
     int startupWaitMs = std::min(2000, std::max(500, strategyConfig_.marketDataUpdaterIntervalMs * 5));
     std::this_thread::sleep_for(std::chrono::milliseconds(startupWaitMs));
     if (!dataIngestionService_->initialize()) {
-        std::cerr << "Failed to initialize data ingestion service" << std::endl;
+        LOG_ERROR("Failed to initialize data ingestion service");
         return false;
     }
     // 3. Initialize market data interface
@@ -802,13 +803,13 @@ bool Trading_system::initialize() {
             riskConfig_, std::move(zmq_client_), zmq_context_);
         marketDataInterface_ = std::dynamic_pointer_cast<MarketDataInterface>(mdi_base);
         if (!marketDataInterface_) {
-            std::cerr << "Failed to obtain MarketDataInterface singleton" << std::endl;
+            LOG_ERROR("Failed to obtain MarketDataInterface singleton");
             return false;
         }
     }
 
     if (!marketDataInterface_->initialize()) {
-        std::cerr << "Failed to initialize MarketDataInterface" << std::endl;
+        LOG_ERROR("Failed to initialize MarketDataInterface");
         return false;
     }
     // Diagnostic: log health & cache stats immediately after initialization
@@ -841,16 +842,16 @@ bool Trading_system::initialize() {
         return false;
     }
     if (!riskManager_->initialize()) {
-        std::cerr << "Failed to initialize risk manager" << std::endl;
+        LOG_ERROR("Failed to initialize risk manager");
         return false;
     }
     
     // 4. Initialize strategy engine
-    std::cout << "Initializing strategy engine..." << std::endl;
+    LOG_INFO("Initializing strategy engine...");
     strategyEngine_ = std::make_unique<strategy::StrategyEngine>(StrategyId("integrated_strategy_test_v1"));
     
     if (!strategyEngine_->initialize(strategyConfig_)) {
-        std::cerr << "Failed to initialize strategy engine" << std::endl;
+        LOG_ERROR("Failed to initialize strategy engine");
         return false;
     }
 
@@ -877,23 +878,23 @@ bool Trading_system::initialize() {
     // Load symbol volatility configuration
     std::string volatilityConfigPath = "config/symbol_volatility_config.json";
     if (!strategyEngine_->loadSymbolVolatilityConfig(volatilityConfigPath)) {
-        std::cout << "Warning: Failed to load symbol volatility config from " << volatilityConfigPath << std::endl;
-        std::cout << "Using default volatility thresholds..." << std::endl;
+        LOG_WARN("Failed to load symbol volatility config from {}", volatilityConfigPath);
+        LOG_INFO("Using default volatility thresholds...");
     } else {
-        std::cout << "Successfully loaded symbol volatility configuration" << std::endl;
+        LOG_INFO("Successfully loaded symbol volatility configuration");
     }
       
     lastPriceUpdate_ = std::chrono::steady_clock::now();
     // 6. Setup component connections
     setupComponentConnections();
-    
-    std::cout << "System initialization complete!" << std::endl;
+
+    LOG_INFO("System initialization complete!");
     return true;
 }
 
 bool Trading_system::start() {
     if (!running_) {
-        std::cout << "\n=== STARTING FULL TRADING SYSTEM ===" << std::endl;
+        LOG_INFO("\n=== STARTING FULL TRADING SYSTEM ===");
         
         running_ = true;
         systemHealthy_ = true;
@@ -901,7 +902,7 @@ bool Trading_system::start() {
         
         if (!zmq_server_->isRunning()) {
             if (!zmq_server_->start()) {
-                std::cerr << "Failed to start internal ZMQ server: " << zmq_server_->getLastError() << std::endl;
+                LOG_ERROR("Failed to start internal ZMQ server: {}", zmq_server_->getLastError());
                 return false;
             }
         }
@@ -915,15 +916,11 @@ bool Trading_system::start() {
             symbols.push_back(name);
         } 
         // 1. Start data ingestion
-        std::cout << "Starting data ingestion with symbols: ";
-        for (const auto& symbol : symbols) {
-            std::cout << symbol << " ";
-        }
-        std::cout << std::endl;
+        // LOG_INFO("Starting data ingestion with symbols...");
         //order book depth from config
         int depth = 20;//strategyConfig_.orderBookDepth;        
         if (!dataIngestionService_->start(symbols,depth)) {
-            std::cerr << "Failed to start data ingestion service" << std::endl;
+            LOG_ERROR("Failed to start data ingestion service");
             return false;
         }
         // Start orderbook worker pool after data ingestion starts
@@ -933,7 +930,7 @@ bool Trading_system::start() {
         
         // 2. Start strategy engine
         if (!strategyEngine_->start()) {
-            std::cerr << "Failed to start strategy engine" << std::endl;
+            LOG_ERROR("Failed to start strategy engine");
             return false;
         }
 
@@ -943,9 +940,9 @@ bool Trading_system::start() {
         lastPriceUpdate_ = std::chrono::steady_clock::now();
         // Start exec worker pool
         startExecWorkerPool();
-        
-        std::cout << "🚀 FULL TRADING SYSTEM IS NOW LIVE!" << std::endl;
-        std::cout << "Monitoring system health and processing..." << std::endl;
+
+        LOG_INFO("🚀 FULL TRADING SYSTEM IS NOW LIVE!");
+        LOG_INFO("Monitoring system health and processing...");
 
         // Start exit monitor thread
 
@@ -982,19 +979,19 @@ void Trading_system::runIndefinitely() {
         }
         
         if (!checkSystemHealth()) {
-            std::cout << "⚠️ System health issues detected!" << std::endl;
+            LOG_WARN("⚠️ System health issues detected!");
             systemHealthy_ = false;
         }
     }
 } 
 void Trading_system::shutdown() {
     if (running_) {
-        std::cout << "\n=== SHUTTING DOWN TRADING SYSTEM ===" << std::endl;
+        LOG_INFO("\n=== SHUTTING DOWN TRADING SYSTEM ===");
         
         running_ = false;
         // Stop data ingestion FIRST and wait for cleanup
         if (dataIngestionService_) {
-            std::cout << "Stopping data ingestion service..." << std::endl;
+            LOG_INFO("Stopping data ingestion service...");
             dataIngestionService_->stop();
             dataIngestionService_.reset();
 
@@ -1003,7 +1000,7 @@ void Trading_system::shutdown() {
         }        
         // Stop other services
         if (strategyEngine_) {
-            std::cout << "Stopping strategy engine..." << std::endl;
+            LOG_INFO("Stopping strategy engine...");
             strategyEngine_->stop();
         }
     // Stop exit monitor thread
@@ -1030,19 +1027,16 @@ void Trading_system::shutdown() {
         zmq_server_->stop();
     }
         if (riskManager_) {
-            std::cout << "Stopping risk manager..." << std::endl;
+            LOG_INFO("Stopping risk manager...");
             // riskManager_->
             riskManager_.reset();
         }
         if (executionService_) {
-            std::cout << "Stopping execution service..." << std::endl;
+            LOG_INFO("Stopping execution service...");
             executionService_->shutdown();
             executionService_.reset();
         }
-            
-        // // Clear data ingestion service pointer after shutdown
-        // std::cout << "Clearing data ingestion service..." << std::endl;
-        
+             
         // Unsubscribe from EventBus metrics subscription if present
         try {
             if (metricsSubscriptionId_ != 0) {
@@ -1055,7 +1049,7 @@ void Trading_system::shutdown() {
     saveExitPnlStats("logs/exit_pnl_stats.json");
 
     // Stop event bus last
-        std::cout << "Stopping event bus..." << std::endl;
+        LOG_INFO("Stopping event bus...");
         common::EventBus::getInstance().stop();
 
         // Join monitoring threads if any - ensure they terminate after running_==false
@@ -1065,7 +1059,7 @@ void Trading_system::shutdown() {
             } catch (...) {}
         }
 
-        std::cout << "System shutdown complete" << std::endl;
+        LOG_INFO("System shutdown complete");
     }
 }
  
@@ -1074,11 +1068,11 @@ void Trading_system::printStatus() {
     auto now = std::chrono::steady_clock::now();
     auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - startTime_).count();
 
-    std::cout << "\n=== FULL TRADING SYSTEM STATUS ===" << std::endl;
-    std::cout << "Runtime: " << elapsed << "s" << std::endl;  //this will be always 0s
-    std::cout << "Service Health: " << (dataIngestionService_->isHealthy() ? "HEALTHY" : "UNHEALTHY") << std::endl;
-    std::cout << "Order book updates received: " << messagesProcessed_.load() << std::endl;
-    // std::cout << "internal zmq msg sent: " << orderBookUpdatesReceived_.load() << std::endl;
+    LOG_INFO("\n=== FULL TRADING SYSTEM STATUS ===");
+    LOG_INFO("Runtime: {}s", elapsed);  //this will be always 0s
+    LOG_INFO("Service Health: {}", (dataIngestionService_->isHealthy() ? "HEALTHY" : "UNHEALTHY"));
+    LOG_INFO("Order book updates received: {}", messagesProcessed_.load());
+    // LOG_INFO("internal zmq msg sent: {}", orderBookUpdatesReceived_.load());
     // List active symbols with intelligence
 
     // Print publish stats if available
@@ -1086,7 +1080,7 @@ void Trading_system::printStatus() {
     if (calls > 0) {
         double avg_ns = static_cast<double>(publishTimeNs_.load()) / static_cast<double>(calls);
         double avg_ms = avg_ns / 1e6;
-        std::cout << "Avg publish latency: " << std::fixed << std::setprecision(3) << avg_ms << " ms over " << calls << " calls" << std::endl;
+        LOG_INFO("Avg publish latency: {} ms over {} calls", avg_ms, calls);
     }
     // Print simple exit PnL statistics
     double cumExitPnl = 0.0;
@@ -1098,9 +1092,9 @@ void Trading_system::printStatus() {
     }
     if (exitCount > 0) {
         double avgExit = cumExitPnl / static_cast<double>(exitCount);
-        std::cout << "Exit signals: " << exitCount << "  Cumulative exit PnL: " << std::fixed << std::setprecision(4) << cumExitPnl << " bps  Avg exit PnL: " << avgExit << " bps" << std::endl;
+        LOG_INFO("Exit signals: {}  Cumulative exit PnL: {} bps  Avg exit PnL: {} bps", exitCount, cumExitPnl, avgExit);
     } else {
-        std::cout << "Exit signals: 0" << std::endl;
+        LOG_INFO("Exit signals: 0") ;
     }
     // Print process RSS to detect memory growth
     try {
@@ -1110,7 +1104,7 @@ void Trading_system::printStatus() {
             if (fscanf(f, "%ld %ld", &size, &resident) >= 2) {
                 long pageSizeKb = sysconf(_SC_PAGESIZE) / 1024; // in KB
                 long rssKb = resident * pageSizeKb;
-                std::cout << "RSS: " << (rssKb / 1024) << " MB" << std::endl;
+                LOG_INFO("RSS: {} MB", (rssKb / 1024));
             }
             fclose(f);
         }
@@ -1122,11 +1116,11 @@ void Trading_system::printStatus() {
                 if (isWarmupActive()) {
                     auto now = std::chrono::steady_clock::now();
                     auto remaining = std::chrono::duration_cast<std::chrono::seconds>(warmupDuration_ - (now - startTime_)).count();
-                    std::cout << "Warmup active - time remaining: " << remaining << "s" << std::endl;
-                    std::cout << "Suppressed orders during warmup: " << suppressedOrdersDuringWarmup_.load() << std::endl;
+                    LOG_INFO("Warmup active - time remaining: {}s", remaining);
+                    LOG_INFO("Suppressed orders during warmup: {}", suppressedOrdersDuringWarmup_.load());
                 }
 
-                std::cout << "=========================================" << std::endl;
+                LOG_INFO("=========================================");
 }
 
 bool Trading_system::getLatestOrderbookMetrics(const core::Symbol& symbol, const core::ExchangeId& exchangeId, trading::strategy::OrderBookMetrics& out) const {
@@ -1167,16 +1161,16 @@ bool Trading_system::checkSystemHealth() {
         bool overallHealthy = dataIngestionHealthy && strategyEngineHealthy &&
                             riskManagerHealthy && zmqHealthy ;
         if (!overallHealthy) {
-            std::cerr << "System health check failed:" << std::endl;
-            std::cerr << "  Data Ingestion: " << (dataIngestionHealthy ? "HEALTHY" : "UNHEALTHY") << std::endl;
-            std::cerr << "  Strategy Engine: " << (strategyEngineHealthy ? "HEALTHY" : "UNHEALTHY") << std::endl;
-            std::cerr << "  Risk Manager: " << (riskManagerHealthy ? "HEALTHY" : "UNHEALTHY") << std::endl;
-            std::cerr << "  ZMQ Server: " << (zmqHealthy ? "HEALTHY" : "UNHEALTHY") << std::endl;
+            LOG_ERROR("System health check failed:");
+            LOG_ERROR("  Data Ingestion: {}", dataIngestionHealthy ? "HEALTHY" : "UNHEALTHY");
+            LOG_ERROR("  Strategy Engine: {}", strategyEngineHealthy ? "HEALTHY" : "UNHEALTHY");
+            LOG_ERROR("  Risk Manager: {}", riskManagerHealthy ? "HEALTHY" : "UNHEALTHY");
+            LOG_ERROR("  ZMQ Server: {}", zmqHealthy ? "HEALTHY" : "UNHEALTHY");
             return false;
         }        
         return true;
     } catch (const std::exception& e) {
-        std::cerr << "Error in system health check: " << e.what() << std::endl;
+        LOG_ERROR("Error in system health check: {}", e.what());
         return false;
     }
 }
@@ -1196,8 +1190,7 @@ void Trading_system::createStrategyConfig() {
     strategyConfig_ = loadStrategyConfigFromFile(configPath);
         //  std::map<std::string, core::ExchangeId> tradingPairs;
     for (const auto& [symbol, exchange] : strategyConfig_.tradingPairs) {
-        std::cout << "Configured trading pair: " << symbol.toString()
-                    << " on exchange " << exchange.toString() << std::endl;            
+        LOG_INFO("Configured trading pair: {} on exchange {}", symbol.toString(), exchange.toString());
     }
 }
 
@@ -1206,8 +1199,7 @@ void Trading_system::onMarketPriceUpdate(const core::Symbol& symbol, double pric
 }
     // Ad
 void Trading_system::onExecutionResponse(const execution::ExecutionResponse& response) {
-    std::cout << "📈 Execution: " << response.client_order_id
-            << " Status: " << response.order_status  << std::endl;
+    LOG_INFO("📈 Execution: {} Status: {}", response.client_order_id, response.order_status);
 
     ordersExecuted_++;
      
@@ -1264,7 +1256,7 @@ void Trading_system::setupStatistics() {
 }
 
 void Trading_system::setupExecutionEngine() {
-    std::cout << "=== SETTING UP EXECUTION ENGINE ===" << std::endl;
+    LOG_INFO("=== SETTING UP EXECUTION ENGINE ===");
     // Create the authentication service first
     auto authService = std::make_shared<AuthenticationService>();
     // Create API client manager with auth service
@@ -1288,10 +1280,10 @@ void Trading_system::setupExecutionEngine() {
     api_client_manager->addClient(core::ExchangeId::binance(),
         std::make_shared<BinanceApiClient>(credentials, 
         std::make_shared<RateLimitController>(core::ExchangeId::binance())));
-    std::cout << "=== DEBUG API CLIENT MANAGER ===" << std::endl;
-    std::cout << "ApiClientManager created, checking status..." << std::endl;
+    LOG_INFO("=== DEBUG API CLIENT MANAGER ===");
+    LOG_INFO("ApiClientManager created, checking status...");
     if (!api_client_manager->initialize()) {
-        std::cerr << "Failed to initialize ApiClientManager" << std::endl;
+        LOG_ERROR("Failed to initialize ApiClientManager");
         systemHealthy_ = false;
         return;
     }
@@ -1327,8 +1319,8 @@ void Trading_system::setupExecutionEngine() {
     }
     exchangeGateway_ = std::make_shared<execution::ExchangeGateway>(api_client_manager, sharedMdIface);
     if (!exchangeGateway_->isHealthy()) {
-        std::cout << "ExchangeId Gateway is not healthy!" << std::endl;
-        std::cout << "start using fallback ExecutionService" << std::endl;
+        LOG_ERROR("ExchangeId Gateway is not healthy!");
+        LOG_INFO("start using fallback ExecutionService");
         executionService_ = std::make_shared<ExecutionService>(
         order_generator,
         smart_order_router,
@@ -1340,7 +1332,7 @@ void Trading_system::setupExecutionEngine() {
         );
         executionService_->setLimitOrderHandling(trading::execution::ExecutionService::LimitOrderHandling::REJECT_IF_NO_PRICE);
     } else {
-        std::cout << "ExchangeId Gateway initialized and healthy." << std::endl;
+        LOG_INFO("ExchangeId Gateway initialized and healthy.");
         executionService_ = std::make_shared<ExecutionService>(
         exchangeGateway_,
         order_generator,
@@ -1359,14 +1351,14 @@ void Trading_system::setupExecutionEngine() {
         try {
             init_ok = executionService_->initialize();
         } catch (const std::exception& e) {
-            std::cerr << "ExecutionService::initialize threw exception: " << e.what() << std::endl;
+            LOG_ERROR("ExecutionService::initialize threw exception: {}", e.what());
         }
         if (!init_ok) {
-            std::cerr << "Failed to initialize ExecutionService - marking system unhealthy." << std::endl;
+            LOG_ERROR("Failed to initialize ExecutionService - marking system unhealthy.");
             systemHealthy_ = false;
             return;
         } else {
-            std::cout << "ExecutionService initialized and running." << std::endl;
+            LOG_INFO("ExecutionService initialized and running.");
         }
     }
 }
@@ -1380,7 +1372,7 @@ void Trading_system::startOrderbookWorkerPool() {
             this->orderbookWorkerLoop(i);
         });
     }
-    std::cout << "Started " << orderbookWorkers_.size() << " orderbook worker(s)" << std::endl;
+    LOG_INFO("Started {} orderbook worker(s)", orderbookWorkers_.size());
 }
 
 void Trading_system::stopOrderbookWorkerPool() {
@@ -1402,8 +1394,8 @@ void Trading_system::stopOrderbookWorkerPool() {
         orderbookQueue_.clear();
         orderbookQueue_.shrink_to_fit(); // Force deallocation
     }
-    
-    std::cout << "Orderbook worker pool stopped and memory cleared" << std::endl;
+
+    LOG_INFO("Orderbook worker pool stopped and memory cleared");
 }
 
 void Trading_system::startStrategyOrderbookWorkerPool() {
@@ -1412,7 +1404,7 @@ void Trading_system::startStrategyOrderbookWorkerPool() {
     for (size_t i = 0; i < strategyOrderbookWorkerCount_; ++i) {
         strategyOrderbookWorkers_.emplace_back([this, i]() { this->strategyOrderbookWorkerLoop(i); });
     }
-    std::cout << "Started " << strategyOrderbookWorkers_.size() << " strategy orderbook worker(s)" << std::endl;
+    LOG_INFO("Started {} strategy orderbook worker(s)", strategyOrderbookWorkers_.size());
 }
 
 void Trading_system::stopStrategyOrderbookWorkerPool() {
@@ -1424,13 +1416,13 @@ void Trading_system::stopStrategyOrderbookWorkerPool() {
         std::lock_guard<std::mutex> lk(strategyOrderbookQueueMutex_);
         strategyOrderbookQueue_.clear();
     }
-    std::cout << "Strategy orderbook worker pool stopped" << std::endl;
+    LOG_INFO("Strategy orderbook worker pool stopped");
 }
 
 void Trading_system::orderbookWorkerLoop(size_t workerId) {
     std::vector<OrderBookUpdate> batch;
     batch.reserve(orderbookBatchSize_);
-    std::cout << "Orderbook worker " << workerId << " started" << std::endl;
+    LOG_INFO("Orderbook worker {} started", workerId);
     while (orderbookWorkersRunning_.load()) {
         // Wait for data
         std::unique_lock<std::mutex> lk(orderbookQueueMutex_);
@@ -1490,7 +1482,7 @@ void Trading_system::orderbookWorkerLoop(size_t workerId) {
 void Trading_system::strategyOrderbookWorkerLoop(size_t workerId) {
     // Use a local deque to swap the shared queue with -- this minimizes lock hold time
     std::deque<std::shared_ptr<OrderBook>> localDeque;
-    std::cout << "Strategy orderbook worker " << workerId << " started" << std::endl;
+    LOG_INFO("Strategy orderbook worker {} started", workerId);
     while (strategyOrderbookWorkersRunning_.load()) {
         // Wait until there's work or we are shutting down
         std::unique_lock<std::mutex> lk(strategyOrderbookQueueMutex_);
@@ -1536,7 +1528,7 @@ void Trading_system::strategyOrderbookWorkerLoop(size_t workerId) {
             strategyOrderbookQueueCv_.notify_one();
         }
     }
-    std::cout << "Strategy orderbook worker " << workerId << " stopped" << std::endl;
+    LOG_INFO("Strategy orderbook worker {} stopped", workerId);
 }
 // Signal worker pool control
 void Trading_system::startSignalWorkerPool() {
@@ -1547,7 +1539,7 @@ void Trading_system::startSignalWorkerPool() {
             this->signalWorkerLoop(i);
         });
     }
-    std::cout << "Started " << signalWorkers_.size() << " signal worker(s)" << std::endl;
+    LOG_INFO("Started {} signal worker(s)", signalWorkers_.size());
 }
 
 void Trading_system::stopSignalWorkerPool() {
@@ -1559,7 +1551,7 @@ void Trading_system::stopSignalWorkerPool() {
         std::lock_guard<std::mutex> lk(signalQueueMutex_);
         signalQueue_.clear();
     }
-    std::cout << "Signal worker pool stopped" << std::endl;
+    LOG_INFO("Signal worker pool stopped");
 }
 
 void Trading_system::signalWorkerLoop(size_t workerId) {
@@ -1648,10 +1640,7 @@ void Trading_system::signalWorkerLoop(size_t workerId) {
                 //check if price target percentage > 0.2%
                 for (const auto& target : execSignal.targets) {
                     if (target.percentage > 0.2) {
-                        std::cout << "  Target size: " << target.size
-                                    << " at " << target.price 
-                                    << " (" << target.percentage * 100 << "%)" 
-                                    << std::endl;
+                        LOG_INFO("  Target size: {} at {} ({}%)", target.size, target.price, target.percentage * 100);
                     }
                 }                   
 
@@ -1662,9 +1651,9 @@ void Trading_system::signalWorkerLoop(size_t workerId) {
                 
                 // Validate with risk manager (with additional safety check)
                 if (riskManager_ && signalWorkersRunning_.load()) {
-                    std::cout << "🔄 Validating signal " << execSignal.id << " with risk manager" << std::endl;
+                    LOG_INFO("🔄 Validating signal {} with risk manager", execSignal.id);
                     auto validationResult = riskManager_->validateSignal(execSignal);
-                    std::cout << "🔄 Risk validation result: approved=" << validationResult.approved << std::endl;
+                    LOG_INFO("🔄 Risk validation result: approved={}", validationResult.approved);
                     signalsValidated_++;
                     if (validationResult.approved) {
                         signalsApproved_++;
@@ -1686,7 +1675,7 @@ void Trading_system::startExecWorkerPool() {
     for (size_t i = 0; i < execWorkerCount_; ++i) {
         execWorkers_.emplace_back([this, i]() { this->execWorkerLoop(i); });
     }
-    std::cout << "Started " << execWorkers_.size() << " exec worker(s)" << std::endl;
+    LOG_INFO("Started {} exec worker(s)", execWorkers_.size());
 }
 
 void Trading_system::stopExecWorkerPool() {
@@ -1698,7 +1687,7 @@ void Trading_system::stopExecWorkerPool() {
         std::lock_guard<std::mutex> lk(execQueueMutex_);
         execQueue_.clear();
     }
-    std::cout << "Exec worker pool stopped" << std::endl;
+    LOG_INFO("Exec worker pool stopped");
 }
 
 void Trading_system::execWorkerLoop(size_t workerId) {
@@ -1716,14 +1705,11 @@ void Trading_system::execWorkerLoop(size_t workerId) {
         }
         
         try {
-            //this is a production code, do not sleep
-            // std::this_thread::sleep_for(50ms);
 
-            // std::cout << "🔄 ExecWorker processing signal " << task.id << " for " << task.symbol.toString() << std::endl;
             LOG_INFO("🔄 ExecWorker: Processing signal {} for {} direction={}", task.id, task.symbol.toString(), 
                     (task.direction == core::Direction::BUY ? "BUY" : "SELL"));
             if (!executionService_) {
-                std::cerr << "Execution service not initialized!" << std::endl;
+                LOG_ERROR("Execution service not initialized!");
                 continue;
             }
 
@@ -1738,9 +1724,9 @@ void Trading_system::execWorkerLoop(size_t workerId) {
             } catch (...) {
                 // ignore metadata parsing errors, treat as ENTRY
             }
-            
-            std::cout << "🔄 Signal " << task.id << " isExitOrder=" << isExitOrder << ", direction=" << 
-                (task.direction == core::Direction::BUY ? "BUY" : (task.direction == core::Direction::SELL ? "SELL" : "NEUTRAL")) << std::endl;
+
+            LOG_INFO("🔄 Signal {} isExitOrder={}, direction={}", task.id, isExitOrder, 
+                (task.direction == core::Direction::BUY ? "BUY" : (task.direction == core::Direction::SELL ? "SELL" : "NEUTRAL")));
 
             if (isExitOrder) {
                 // EXIT ORDERS: Use actual available wallet balance instead of relying
@@ -1781,7 +1767,7 @@ void Trading_system::execWorkerLoop(size_t workerId) {
                 if (availableQty <= 0.0) {
                     LOG_WARN("Exit aborted for {}: no available balance (available={})", task.symbol.toString(), availableQty);
                     // Record attempt for observability and skip
-                    std::cout << "❌ EXIT SKIPPED for " << task.symbol.toString() << ": no available balance" << std::endl;
+                    LOG_INFO("❌ EXIT SKIPPED for {}: no available balance", task.symbol.toString());
                     continue;
                 }
 
@@ -1812,12 +1798,12 @@ void Trading_system::execWorkerLoop(size_t workerId) {
                         } else {
                             LOG_WARN("Exec: Exit adjusted quantity still insufficient or exceeds available balance for {}: bumped={} available={}",
                                      task.symbol.toString(), bumped, availableQty);
-                            std::cout << "❌ EXIT FAILED for " << task.symbol.toString() << ": Order value below minimum notional requirement or exceeds available balance" << std::endl;
+                            LOG_ERROR("❌ EXIT FAILED for {}: Order value below minimum notional requirement or exceeds available balance", task.symbol.toString());
                             continue; // Skip this exit - cannot meet min notional
                         }
                     } catch (const std::exception &e) {
                         LOG_WARN("Exit: precision helper failed during minNotional adjustment: {}", e.what());
-                        std::cout << "❌ EXIT FAILED for " << task.symbol.toString() << ": Order value below minimum notional requirement" << std::endl;
+                        LOG_ERROR("❌ EXIT FAILED for {}: Order value below minimum notional requirement", task.symbol.toString());
                         continue;
                     }
                 }
@@ -1827,9 +1813,9 @@ void Trading_system::execWorkerLoop(size_t workerId) {
                 LOG_INFO("[EXIT] Executing exit: symbol={} qty={} price={} notional=${:.2f}", 
                          task.symbol.toString(), finalQty, currentPrice, finalNotional);
 
-                std::cout << "🔄 Attempting EXIT execution for " << task.symbol.toString() << std::endl;
+                LOG_INFO("🔄 Attempting EXIT execution for {}", task.symbol.toString());
                 ExecutionResponse response = executionService_->executeSignal(task);
-                std::cout << "🔄 EXIT execution response: success=" << response.success << ", error='" << response.error_message << "'" << std::endl;
+                LOG_INFO("🔄 EXIT execution response: success={}, error='{}'", response.success, response.error_message);
 
                 if (!response.success) {
                     LOG_ERROR("❌ EXIT FAILED: {} - {}", task.symbol.toString(), response.error_message);
@@ -1871,7 +1857,7 @@ void Trading_system::execWorkerLoop(size_t workerId) {
                 LOG_INFO("ExecWorker: Allowed size for {}: {}", task.symbol.toString(), allowedSize);
             }
             // Clamp allowed USD budget to min/max order size
-            allowedSize = std::clamp(allowedSize, 10.0, 5000.0);
+            allowedSize = std::clamp(allowedSize, 15.0, 5000.0);
 
             // --- Step 2: Apply position sizing (only for BUY orders) ---
             double sizerFraction = 1.0;
@@ -1919,8 +1905,6 @@ void Trading_system::execWorkerLoop(size_t workerId) {
                 }
                 if (currentPrice <= 0.0) {
                     LOG_WARN("ExecWorker: unable to fetch price for {} - skipping order", task.symbol.toString());
-                    std::cout << "❌ Execution skipped for signal " << task.id 
-                              << ": Price unavailable" << std::endl;
                     continue;
                 }
             }
@@ -1973,7 +1957,6 @@ void Trading_system::execWorkerLoop(size_t workerId) {
                 // If still below minimum after rounding, increase by one step
                 if (finalNotionalUsd < minNotionalUsd) {
                     LOG_WARN("Exec: Adjusted quantity still insufficient: {}", "Order value below minimum notional requirement");
-                    std::cout << "❌ Adjusted quantity still insufficient: Order value below minimum notional requirement" << std::endl;
                     continue; // Skip this order
                 }
             }
@@ -1981,41 +1964,37 @@ void Trading_system::execWorkerLoop(size_t workerId) {
             task.setQuantity(finalQty);
 
             // --- Step 6: Log resolved sizing before execution ---
-            std::cout << "[EXEC] Prepared order: symbol=" << task.symbol.toString()
-                      << " qty=" << finalQty 
-                      << " price=" << currentPrice
-                      << " notionalUsd=" << notionalUsd
-                      << " minNotionalUsd=" << minNotionalUsd 
-                      << std::endl;
+            //use LOG_INFO for structured logging
+            LOG_INFO("[EXEC] Prepared order: symbol={} qty={} price={} notionalUsd=${:.2f} minNotionalUsd={}",
+                     task.symbol.toString(), finalQty, currentPrice, finalNotionalUsd, minNotionalUsd);
 
             // --- Step 7: Execute the signal ---
-            std::cout << "🔄 Attempting execution for signal " << task.id << " on " << task.symbol.toString() << std::endl;
+            LOG_INFO("[EXEC] Attempting execution for signal {} on {}", task.id, task.symbol.toString());
             ExecutionResponse response = executionService_->executeSignal(task);
-            std::cout << "🔄 Execution response received: success=" << response.success << ", error='" << response.error_message << "'" << std::endl;
+            LOG_INFO("[EXEC] Execution response received: success={}, error='{}'", response.success, response.error_message);
 
             if (!response.success) {
 
-                std::cout << "❌ Execution failed for signal " << task.id 
-                          << ": " << response.error_message << std::endl;
-                std::cout << "Signal details - Symbol: " << task.symbol.toString()
-                          << ", Direction: " << (task.direction == core::Direction::BUY ? "BUY" : 
-                                                 (task.direction == core::Direction::SELL ? "SELL" : "NEUTRAL"))
-                          << ", Strength: " << task.strength
-                          << ", Confidence: " << task.confidence
-                          << ", Quality: " << task.quality
-                          << ", TargetSize: " << task.targetSize
-                          << ", StrategyId: " << task.strategyId
-                          << ", ExchangeId: " << task.exchangeId.toString()
-                          << std::endl;
+                LOG_ERROR("[EXEC] Execution failed for signal {}: {}", task.id, response.error_message);
+                LOG_INFO("[EXEC] Signal details - Symbol: {}, Direction: {}, Strength: {}, Confidence: {}",
+                         task.symbol.toString(),
+                         (task.direction == core::Direction::BUY ? "BUY" :
+                          (task.direction == core::Direction::SELL ? "SELL" : "NEUTRAL")),
+                         task.strength,
+                         task.confidence);
+                LOG_INFO("[EXEC] Signal details - Quality: {}, TargetSize: {}, StrategyId: {}, ExchangeId: {}",
+                         task.quality,
+                         task.targetSize,
+                         task.strategyId,
+                         task.exchangeId.toString());
                         // Print local position cache for this symbol to help debugging         
                 continue;
             }
- 
-            std::cout << "📈 Executed: " << task.symbol.toString() << " " 
-                      << (task.direction == core::Direction::BUY ? "BUY" : "SELL") 
-                      << " qty=" << finalQty
-                      << " notional=$" << (currentPrice * finalQty)
-                      << std::endl;
+
+            LOG_INFO("[EXEC] Executed: {} {}", task.symbol.toString(),
+                     (task.direction == core::Direction::BUY ? "BUY" : "SELL"),
+                     finalQty,
+                     (currentPrice * finalQty));
 
             // 🚨 RECORD TRADE FOR EMERGENCY FREQUENCY TRACKING
             recordTradeWithType(task.symbol.toString(), "ENTRY");
@@ -2096,7 +2075,7 @@ void Trading_system::execWorkerLoop(size_t workerId) {
                     // (subscription moved to setupComponentConnections to ensure a single global subscription)
                       
         } catch (const std::exception &e) {
-            std::cerr << "Exec worker " << workerId << " error: " << e.what() << std::endl;
+            LOG_ERROR("Exec worker {}: {}", workerId, e.what());
         }
     }
 }
@@ -2132,7 +2111,6 @@ void Trading_system::setupComponentConnections() {
         // quick enqueue
         signalsGenerated_++;
         std::unique_lock<std::mutex> lk(signalQueueMutex_);
-        // std::cout << "Enqueuing signal " << signal.id << " from strategy " << signal.strategyId << std::endl;
         //print debug info for every 20th signal
         static std::atomic<int> signalCount{0};
         int count = signalCount.fetch_add(1);
@@ -2149,8 +2127,7 @@ void Trading_system::setupComponentConnections() {
     // 3. Connect risk manager events
     riskManager_->registerRiskEventCallback([this](const risk::RiskEvent& event) {
         riskEventsTriggered_++;
-        std::cout << "🚨 Risk Event: " << event.description 
-                    << " (Severity: " << event.severity << ")" << std::endl;
+        LOG_INFO("🚨 Risk Event: {} (Severity: {})", event.description, event.severity);
     });
 
     // 3.a Register ExecutionService callback to forward canonical execution
@@ -2190,7 +2167,7 @@ void Trading_system::setupComponentConnections() {
                             }
                         } catch (const std::exception& e) {
                             // If fetching status failed, still set FILLED to avoid losing event
-                            std::cerr << "Warning: failed to enrich ExecutionResponse with order status: " << e.what() << std::endl;
+                            LOG_WARN("Failed to enrich ExecutionResponse with order status: {}", e.what());
                             report.setStatus(execution::models::OrderState::FILLED);
                         }
                     } else {
@@ -2314,17 +2291,17 @@ void Trading_system::setupComponentConnections() {
 }
 
 void Trading_system::realExecution(const execution::TradingSignal& signal) {
-    std::cout << "🔄 realExecution called for signal " << signal.id << std::endl;
+    // LOG_INFO("🔄 realExecution called for signal {}", signal.id);
     // If we're in the warmup period, suppress sending real orders. Count them
     // for diagnostics and return early. This prevents large orders at startup.
     if (isWarmupActive()) {
-        std::cout << "🔄 Warmup active - suppressing execution" << std::endl;
+        LOG_INFO("🔄 Warmup active - suppressing execution");
         suppressedOrdersDuringWarmup_.fetch_add(1);
         LOG_INFO("Warmup", "Suppressing execution for signal {} (warmup active)", signal.id);
         return;
     }
 
-    std::cout << "🔄 Enqueuing signal " << signal.id << " for execution" << std::endl;
+    LOG_INFO("🔄 Enqueuing signal {} for execution", signal.id);
     // Enqueue execution task to worker pool to avoid thread explosion
     ordersExecuted_++;
     std::unique_lock<std::mutex> lk(execQueueMutex_);
@@ -2347,7 +2324,7 @@ bool Trading_system::emergencyFrequencyCheckWithType(const std::string& symbol, 
     std::lock_guard<std::mutex> lock(emergencyMutex_);
     
     if (emergencyStop_.load()) {
-        std::cout << "🚫 EMERGENCY STOP ACTIVE - Blocking all signals for " << symbol << std::endl;
+        LOG_INFO("🚫 EMERGENCY STOP ACTIVE - Blocking all signals for {}", symbol);
         return false;
     }
     
@@ -2363,12 +2340,10 @@ bool Trading_system::emergencyFrequencyCheckWithType(const std::string& symbol, 
         
         if (elapsed.count() < requiredGap) {
             if (orderType != "EXIT") { // Don't block exit orders for frequency
-                std::cout << "🚫 FREQUENCY BLOCK (" << orderType << "): " << symbol << " - " << elapsed.count() 
-                          << "s < " << requiredGap << "s required gap" << std::endl;
+                LOG_INFO("🚫 FREQUENCY BLOCK ({}): {} - {}s < {}s required gap", orderType, symbol, elapsed.count(), requiredGap);
                 return false;
             } else {
-                std::cout << "⚠️ EXIT ORDER frequency warning: " << symbol << " - " << elapsed.count() 
-                          << "s gap (allowed for risk management)" << std::endl;
+                LOG_WARN("⚠️ EXIT ORDER frequency warning: {} - {}s gap (allowed for risk management)", symbol, elapsed.count());
             }
         }
     }
@@ -2382,20 +2357,17 @@ bool Trading_system::emergencyFrequencyCheckWithType(const std::string& symbol, 
     
     if (hourlyTradeCount_[hourKey] >= maxTradesThisType) {
         if (orderType != "EXIT") { // Don't block exit orders for hourly limits
-            std::cout << "🚫 HOURLY LIMIT (" << orderType << "): " << symbol << " - " << hourlyTradeCount_[hourKey] 
-                      << "/" << maxTradesThisType << " trades this hour" << std::endl;
+            LOG_INFO("🚫 HOURLY LIMIT ({}): {} - {}/{} trades this hour", orderType, symbol, hourlyTradeCount_[hourKey], maxTradesThisType);
             return false;
         } else {
-            std::cout << "⚠️ EXIT ORDER hourly limit warning: " << symbol << " - " << hourlyTradeCount_[hourKey] 
-                      << "/" << maxTradesThisType << " (allowed for risk management)" << std::endl;
+            LOG_WARN("⚠️ EXIT ORDER hourly limit warning: {} - {}/{} (allowed for risk management)", symbol, hourlyTradeCount_[hourKey], maxTradesThisType);
         }
     }
     
     // 3. Check symbol PnL limit
     auto pnlIt = symbolPnL_.find(symbol);
     if (pnlIt != symbolPnL_.end() && pnlIt->second < MAX_LOSS_PER_SYMBOL) {
-        std::cout << "🚫 LOSS LIMIT: " << symbol << " - Current PnL " << pnlIt->second 
-                  << " below limit " << MAX_LOSS_PER_SYMBOL << std::endl;
+        LOG_INFO("🚫 LOSS LIMIT: {} - Current PnL {} below limit {}", symbol, pnlIt->second, MAX_LOSS_PER_SYMBOL);
         return false;
     }
     
@@ -2406,8 +2378,7 @@ bool Trading_system::emergencyFrequencyCheckWithType(const std::string& symbol, 
     }
     if (totalLoss < MAX_TOTAL_DAILY_LOSS) {
         emergencyStop_.store(true);
-        std::cout << "🚨 EMERGENCY STOP TRIGGERED: Total loss " << totalLoss 
-                  << " exceeds limit " << MAX_TOTAL_DAILY_LOSS << std::endl;
+        LOG_INFO("🚨 EMERGENCY STOP TRIGGERED: Total loss {} exceeds limit {}", totalLoss, MAX_TOTAL_DAILY_LOSS);
         return false;
     }
     
@@ -2420,8 +2391,7 @@ bool Trading_system::emergencyRiskCheck(const std::string& symbol, double curren
     symbolPnL_[symbol] = currentPnL;
     
     if (currentPnL < MAX_LOSS_PER_SYMBOL) {
-        std::cout << "🚫 RISK BLOCK: " << symbol << " PnL " << currentPnL 
-                  << " below safety limit " << MAX_LOSS_PER_SYMBOL << std::endl;
+        LOG_INFO("🚫 RISK BLOCK: {} PnL {} below safety limit {}", symbol, currentPnL, MAX_LOSS_PER_SYMBOL);
         return false;
     }
     
@@ -2448,8 +2418,7 @@ void Trading_system::recordTradeWithType(const std::string& symbol, const std::s
     hourlyTradeCount_[generalKey]++;
     
     int maxForType = (orderType == "EXIT") ? (MAX_TRADES_PER_HOUR * 2) : MAX_TRADES_PER_HOUR;
-    std::cout << "📊 TRADE RECORDED (" << orderType << "): " << symbol << " (Count: " 
-              << hourlyTradeCount_[hourKey] << "/" << maxForType << ")" << std::endl;
+    LOG_INFO("📊 TRADE RECORDED ({}): {} (Count: {}/{})", orderType, symbol, hourlyTradeCount_[hourKey], maxForType);
 }
 
 void Trading_system::loadEmergencyState() {
@@ -2466,18 +2435,18 @@ void Trading_system::loadEmergencyState() {
                 for (auto& [symbol, pairData] : data["pairs"].items()) {
                     double totalPnl = pairData.value("total_pnl", 0.0);
                     symbolPnL_[symbol] = totalPnl;
-                    
-                    std::cout << "💰 LOADED PnL: " << symbol << " = $" << totalPnl << std::endl;
-                    
+
+                    LOG_INFO("💰 LOADED PnL: {} = ${}", symbol, totalPnl);
+
                     // Auto-block symbols already at loss limit
                     if (totalPnl < MAX_LOSS_PER_SYMBOL) {
-                        std::cout << "🚫 AUTO-BLOCKED: " << symbol << " due to existing losses" << std::endl;
+                        LOG_WARN("🚫 AUTO-BLOCKED: {} due to existing losses", symbol);
                     }
                 }
             }
         }
     } catch (const std::exception& e) {
-        std::cout << "⚠️  Could not load PnL state: " << e.what() << std::endl;
+        LOG_WARN("⚠️  Could not load PnL state: {}", e.what());
     }
 }
 

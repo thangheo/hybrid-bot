@@ -7,7 +7,7 @@ using namespace trading;
 std::unique_ptr<Trading_system> E8Instance;
 
 void signalHandler(int sig) {
-    std::cout << "\nShutdown signal received..." << std::endl;
+    LOG_INFO("Shutdown signal received...");
     if (E8Instance) {
         E8Instance->shutdown();
     }
@@ -36,14 +36,14 @@ int main(int argc, char* argv[]) {
         trading::common::Logger::initialize("TradingApp", parseLogLevel(envLevel));
     } else {
         // Default logger level - set to DEBUG temporarily to debug position tracking
-        trading::common::Logger::initialize("TradingApp", trading::common::LogLevel::TRACE);
+        trading::common::Logger::initialize("TradingApp", trading::common::LogLevel::DEBUG);
     }
     try {
-        std::cout << "🚀 STARTING FULL TRADING SYSTEM 🚀" << std::endl;
-        std::cout << "=====================================================" << std::endl;
-        
+        LOG_INFO("🚀 STARTING FULL TRADING SYSTEM 🚀");
+        LOG_INFO("=====================================================");
+
         // Check system capabilities and log warnings for missing RT features
-        std::cout << "Checking system capabilities..." << std::endl;
+        LOG_INFO("Checking system capabilities...");
         trading::system::SystemCapabilities::initializeAndLog();
         
         E8Instance = std::make_unique<Trading_system>();
