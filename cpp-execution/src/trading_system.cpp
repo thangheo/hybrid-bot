@@ -430,7 +430,7 @@ void Trading_system::exitMonitorLoop() {
     while (exitMonitorRunning_.load()) {
         try {
             if (!exitStrategy_) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(std::max(1, strategyConfig_.exitMonitorIntervalMs)));
+                std::this_thread::sleep_for(std::chrono::milliseconds(std::max(10, strategyConfig_.exitMonitorIntervalMs)));
                 continue;
             }
             
@@ -1720,6 +1720,7 @@ void Trading_system::execWorkerLoop(size_t workerId) {
                 auto it = task.metadata.find("is_exit_signal");
                 if (it != task.metadata.end() && it->second == "true") isExitOrder = true;
                 // Fallback to strategyId prefix. This is incorrect bc our strategy name is order_imbalance, and exit strategy is a separate for exit
+               
                 if (!isExitOrder && !task.strategyId.toString().empty() && task.strategyId.toString().find("EXIT_") != std::string::npos) isExitOrder = true;
             } catch (...) {
                 // ignore metadata parsing errors, treat as ENTRY
@@ -1815,6 +1816,7 @@ void Trading_system::execWorkerLoop(size_t workerId) {
 
                 LOG_INFO("🔄 Attempting EXIT execution for {}", task.symbol.toString());
                 ExecutionResponse response = executionService_->executeSignal(task);
+                LOG_INFO("[EXEC] Right after executeSignal call for {}", task.symbol.toString());  // Temporary debug log
                 LOG_INFO("🔄 EXIT execution response: success={}, error='{}'", response.success, response.error_message);
 
                 if (!response.success) {
@@ -1971,6 +1973,7 @@ void Trading_system::execWorkerLoop(size_t workerId) {
             // --- Step 7: Execute the signal ---
             LOG_INFO("[EXEC] Attempting execution for signal {} on {}", task.id, task.symbol.toString());
             ExecutionResponse response = executionService_->executeSignal(task);
+            LOG_INFO("[EXEC] Right after executeSignal call for {}", task.symbol.toString());  // Temporary debug log
             LOG_INFO("[EXEC] Execution response received: success={}, error='{}'", response.success, response.error_message);
 
             if (!response.success) {
