@@ -279,6 +279,11 @@ public:
     // Bayesian perception model for fusing detector outputs
     // Adapter handle to a perception bayesian model (opaque, implemented in perception)
     trading::perception::BayesHandle bayes_handle_ = nullptr;
+
+    // Allow external control of online training for deployments that run
+    // either training-only (model warmup) or execution-only (no training)
+    void setTrainingEnabled(bool enable) { trainingEnabled_.store(enable); }
+    bool isTrainingEnabled() const { return trainingEnabled_.load(); }
     // Mutex to protect bayes_handle_ and related operations
     mutable std::mutex bayesMutex_;
     // True after initialize() successfully created/allocated the bayes handle

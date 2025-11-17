@@ -224,8 +224,8 @@
   * Configuration for MomentumCorrelation
   */
  struct MomentumCorrelationConfig {
-     int correlationWindowMs = 10000;       // Window for correlation analysis in milliseconds
-     int predictionHorizonMs = 5000;        // Prediction horizon in milliseconds
+     int correlationWindowMs = 30000;       // Window for correlation analysis in milliseconds
+     int predictionHorizonMs = 20000;        // Prediction horizon in milliseconds
      
      MomentumCorrelationConfig() = default;
  };
@@ -316,6 +316,9 @@
      
      // Map of trading pairs to monitor (symbol -> exchange ID)
     std::map<core::Symbol, core::ExchangeId> tradingPairs;
+    // Operation mode applied to the system; default EXECUTE.
+    enum class Mode { EXECUTE = 0, TRAINING = 1 };
+    Mode mode = Mode::EXECUTE;
     // Runtime intervals (milliseconds) - tunable at runtime via config
     // These govern internal polling/loop intervals. Default to 100ms for
     // low-latency orderbook-driven strategies.

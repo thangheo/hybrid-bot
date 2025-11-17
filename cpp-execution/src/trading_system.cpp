@@ -691,7 +691,14 @@ void Trading_system::exitMonitorLoop() {
                             } else {
                                 exitSignal.setQuantity(exitQty);
                                 std::lock_guard<std::mutex> lk(execQueueMutex_);
-                                execQueue_.push_back(std::move(exitSignal));
+                                if (operationMode_ == OperationMode::TRAINING) {
+                                    // Training-only: skip actual exit execution but record simulated closure
+                                    LOG_INFO("Trading_system: Training mode - skipping actual exit execution for {}", symbol);
+                                    // Close position in strategy internal state so model labels remain consistent
+                                    try { exitStrategy_->closePosition(symbol, exitDecision.reason, exitDecision.expected_pnl); } catch (...) {}
+                                } else {
+                                    execQueue_.push_back(std::move(exitSignal));
+                                }
                                 execQueueCv_.notify_one();
 
                                 // Update simple PnL statistics (thread-safe) only for authoritative exits that were queued
@@ -854,6 +861,9 @@ bool Trading_system::initialize() {
         return false;
     }
 
+    // Apply the configured operation mode (training vs execute) to strategy components
+    applyOperationModeToComponents();
+
     // Ensure a single AdaptiveExitStrategy instance is created and registered
     // early so other components (ImbalanceDetectionEngine, monitor threads)
     // can reference it without startup-order races.
@@ -889,6 +899,28 @@ bool Trading_system::initialize() {
     
     std::cout << "System initialization complete!" << std::endl;
     return true;
+}
+
+// Private helper to apply operation mode settings to dependent components.
+void Trading_system::applyOperationModeToComponents() {
+    try {
+        if (strategyEngine_) {
+            auto imb = strategyEngine_->getImbalanceDetector();
+            if (imb) {
+                if (operationMode_ == OperationMode::TRAINING) {
+                    imb->setTrainingEnabled(true);
+                    LOG_INFO("Trading_system: Operation mode TRAINING - enabled model training and disabled live execution");
+                } else {
+                    imb->setTrainingEnabled(false);
+                    LOG_INFO("Trading_system: Operation mode EXECUTE - disabled model training and enabled live execution");
+                }
+            }
+        }
+    } catch (const std::exception &e) {
+        LOG_WARN("Trading_system: failed to apply operation mode to components: {}", e.what());
+    } catch (...) {
+        LOG_WARN("Trading_system: unknown error applying operation mode to components");
+    }
 }
 
 bool Trading_system::start() {
@@ -1194,6 +1226,18 @@ void Trading_system::createStrategyConfig() {
     
     std::string configPath = "config/strategy_config.json";
     strategyConfig_ = loadStrategyConfigFromFile(configPath);
+    // Honour the configuration file mode only if it wasn't set via CLI/env
+    if (!modeOverridden_) {
+        if (strategyConfig_.mode == trading::strategy::StrategyConfig::Mode::TRAINING) {
+            setMode(Trading_system::Mode::TRAINING);
+            LOG_INFO("Trading_system: strategy_config.json mode=training -> setting system to TRAINING");
+        } else {
+            setMode(Trading_system::Mode::EXECUTE);
+            LOG_INFO("Trading_system: strategy_config.json mode=execute -> setting system to EXECUTE");
+        }
+    } else {
+        LOG_INFO("Trading_system: mode already set externally (CLI/env) - ignoring strategy_config.json mode");
+    }
         //  std::map<std::string, core::ExchangeId> tradingPairs;
     for (const auto& [symbol, exchange] : strategyConfig_.tradingPairs) {
         std::cout << "Configured trading pair: " << symbol.toString()
@@ -2317,6 +2361,13 @@ void Trading_system::realExecution(const execution::TradingSignal& signal) {
         std::cout << "🔄 Warmup active - suppressing execution" << std::endl;
         suppressedOrdersDuringWarmup_.fetch_add(1);
         LOG_INFO("Warmup", "Suppressing execution for signal {} (warmup active)", signal.id);
+        return;
+    }
+
+    // If we are running in training mode, do not execute orders
+    if (operationMode_ == OperationMode::TRAINING) {
+        std::cout << "⚠️ Training mode active - skipping execution for signal " << signal.id << std::endl;
+        LOG_INFO("Trading_system: Training mode active - skipping execution for signal {}", signal.id);
         return;
     }
 
