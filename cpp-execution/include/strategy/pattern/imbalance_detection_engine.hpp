@@ -52,7 +52,7 @@ struct DetectorResult {
  * that may predict short-term price movements. It processes order book metrics
  * and identifies patterns that cross configured thresholds.
  */
-class ImbalanceDetectionEngine {
+class ImbalanceDetectionEngine : public std::enable_shared_from_this<ImbalanceDetectionEngine> {
 public:
     /**
      * @brief Constructor
@@ -304,6 +304,10 @@ public:
     };
     std::deque<PendingTraining> pendingTraining_;
     mutable std::mutex pendingTrainingMutex_;
+
+    // Process buffered training samples; extracted into a member function so it can be
+    // safely invoked from worker threads via a weak_ptr capture.
+    void processPendingTraining(const OrderBookMetrics& m);
 
     // Labeling configuration (milliseconds to wait before labelling a prediction)
     std::chrono::milliseconds labelingDelay_{2000*90}; // default 3 minutes
