@@ -47,6 +47,26 @@ int main(int argc, char* argv[]) {
         trading::system::SystemCapabilities::initializeAndLog();
         
         E8Instance = std::make_unique<Trading_system>();
+            // Parse command-line or environment for operation mode
+            Trading_system::Mode defaultMode = Trading_system::Mode::EXECUTE;
+            const char* envMode = std::getenv("HYBRID_MODE");
+            if (envMode) {
+                std::string m(envMode);
+                for (auto &c: m) c = static_cast<char>(std::tolower(c));
+                if (m == "training" || m == "train") defaultMode = Trading_system::Mode::TRAINING;
+            }
+            // Override with CLI parameter --mode=training if provided
+            for (int i = 1; i < argc; ++i) {
+                std::string arg(argv[i]);
+                if (arg.rfind("--mode=", 0) == 0) {
+                    std::string v = arg.substr(7);
+                    for (auto &c: v) c = static_cast<char>(std::tolower(c));
+                    if (v == "training" || v == "train") defaultMode = Trading_system::Mode::TRAINING;
+                    else defaultMode = Trading_system::Mode::EXECUTE;
+                }
+            }
+            E8Instance->setMode(defaultMode);
+            std::cout << "Operation mode: " << (defaultMode == Trading_system::Mode::TRAINING ? "TRAINING" : "EXECUTE") << std::endl;
         
         // Initialize system
         if (!E8Instance->initialize()) {

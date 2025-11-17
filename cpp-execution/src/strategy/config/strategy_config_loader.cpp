@@ -77,6 +77,14 @@ StrategyConfig loadStrategyConfigFromFile(const std::string& filePath) {
         config.strategy_id = configJson.value("strategy_id", "default_strategy");
         config.version = configJson.value("version", "1.0.0");
 
+        // Operation mode - optional string "training" or "execute"
+        if (configJson.contains("mode") && configJson["mode"].is_string()) {
+            std::string m = configJson["mode"].get<std::string>();
+            for (auto &c : m) c = static_cast<char>(std::tolower(c));
+            if (m == "training" || m == "train") config.mode = StrategyConfig::Mode::TRAINING;
+            else config.mode = StrategyConfig::Mode::EXECUTE;
+        }
+
         // Parse optional runtime intervals (ms)
         if (configJson.contains("marketDataUpdaterIntervalMs") && configJson["marketDataUpdaterIntervalMs"].is_number_integer()) {
             config.marketDataUpdaterIntervalMs = configJson["marketDataUpdaterIntervalMs"].get<int>();
@@ -677,6 +685,8 @@ bool saveStrategyConfigToFile(const StrategyConfig& config, const std::string& f
         // General settings
         configJson["strategy_id"] = config.strategy_id.id;
         configJson["version"] = config.version;
+        // Operation mode
+        configJson["mode"] = (config.mode == StrategyConfig::Mode::TRAINING) ? "training" : "execute";
         
         // Trading pairs
         json pairsJson = json::array();

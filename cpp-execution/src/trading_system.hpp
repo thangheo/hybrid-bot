@@ -121,6 +121,14 @@ public:
     // Real exit flow: OptimalExitStrategy -> registerGlobalOptimalExitCallback() -> ExecutionInterface
 
     void printStatus();
+
+    // Set operation mode from outside (public). Accepts training-only or execute-only.
+    enum class Mode { EXECUTE = 0, TRAINING = 1 };
+    void setMode(Mode m) { setOperationMode(static_cast<OperationMode>(m)); applyOperationModeToComponents(); modeOverridden_ = true; }
+    Mode getMode() const { return (operationMode_ == OperationMode::TRAINING) ? Mode::TRAINING : Mode::EXECUTE; }
+    // When true, the mode has been set externally (CLI/env) and should not be
+    // overridden by config files.
+    bool modeOverridden_ = false;
     
 
     // void generateMarketIntelligence(const OrderBookUpdate& update, std::shared_ptr<OrderBook> orderBook) ;
@@ -132,6 +140,17 @@ public:
     bool checkSystemHealth() ;
 
 private:
+    // Operation mode controls whether the system trains models or executes trades.
+    enum class OperationMode { EXECUTE = 0, TRAINING = 1 };
+    OperationMode operationMode_ = OperationMode::EXECUTE;
+
+    // Set operation mode; applied during initialize() and can be used to toggle
+    // behavior for training vs execution. Default is EXECUTE.
+    void setOperationMode(OperationMode m) { operationMode_ = m; }
+    OperationMode getOperationMode() const { return operationMode_; }
+
+    // Apply the operation mode to components (e.g., enable/disable training)
+    void applyOperationModeToComponents();
     // Event bus for internal communication
     // EventBus eventBus_;
 
@@ -175,7 +194,7 @@ private:
     std::condition_variable execQueueCv_;
     std::vector<std::thread> execWorkers_;
     std::atomic<bool> execWorkersRunning_{false};
-    size_t execQueueLimit_ = 5000;
+    size_t execQueueLimit_ = 500;
     size_t execWorkerCount_ = 1; // tune for VPS
 
     //market intel
