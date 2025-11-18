@@ -1,6 +1,7 @@
 # Tests for strategy
 
 find_package(GTest REQUIRED)
+include(GoogleTest)
 add_executable(strategy_config_loader_tests test_strategy_config_loader.cpp)
 add_executable(adaptive_exit_history_tests test_adaptive_exit_history.cpp)
 
