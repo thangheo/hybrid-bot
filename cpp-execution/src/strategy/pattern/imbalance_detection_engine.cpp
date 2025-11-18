@@ -927,11 +927,11 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                         if (activeHandle) {
                             try {
                                 activeSignal = trading::perception::bayes_predict(activeHandle, features);
-                                LOG_TRACE("ImbalanceDetectionEngine: Active regime {} prediction: prob={:.3f}, dir={}, should_trade={}", 
-                                         activeRegime, activeSignal.probability, 
-                                         (activeSignal.direction == core::Direction::BUY ? "BUY" : 
-                                          activeSignal.direction == core::Direction::SELL ? "SELL" : "NEUTRAL"),
-                                         activeSignal.should_trade);
+                                // Diagnostic: log bayes prediction metadata for easier debugging
+                                std::string dirStr = (activeSignal.direction == core::Direction::BUY ? "BUY" : 
+                                              (activeSignal.direction == core::Direction::SELL ? "SELL" : "NEUTRAL"));
+                                LOG_TRACE("ImbalanceDetectionEngine: Active regime {} prediction: prob={} dir={} should_trade={} pos_size={}",
+                                       activeRegime, activeSignal.probability, dirStr, activeSignal.should_trade, activeSignal.position_size);
                             } catch (const std::exception &ex) {
                                 LOG_WARN("bayes_predict threw exception for regime {}: {}", activeRegime, ex.what());
                             } catch (...) {
