@@ -437,10 +437,24 @@ BayesianTradingModel::TradingSignal BayesianTradingModel::predict(const std::vec
     signal.probability = max_prob;
     
     // Clean position sizing based on prediction confidence
-    signal.position_size = calculatePositionSize(prob_class2, prob_class0); // BUY vs SELL probabilities
+    // Use the probability for the predicted class as the primary probability
+    // and the opposite class as the neutral comparator. Previously this code
+    // always passed prob_class2 as primary (BUY), which produced zero
+    // position sizes for SELL predictions. Fix by selecting primary based on
+    // predicted direction so SELL signals also get a positive position size.
+    if (predicted_direction == Direction::BUY) {
+        signal.position_size = calculatePositionSize(prob_class2, prob_class0);
+    } else if (predicted_direction == Direction::SELL) {
+        signal.position_size = calculatePositionSize(prob_class0, prob_class2);
+    } else {
+        signal.position_size = 0.0;
+    }
     
     // Calculate entropy-based uncertainty (order doesn't matter for entropy)
     signal.uncertainty = calculateEntropy(prob_class0, prob_class1, prob_class2);
+    // LOG_TRACE("BayesianTradingModel: predict direction={} prob_buy={} prob_sell={} pos_size={} uncertainty={} max_prob={}",
+    //           (predicted_direction == Direction::BUY ? "BUY" : (predicted_direction == Direction::SELL ? "SELL" : "NEUTRAL")),
+    //           prob_class2, prob_class0, signal.position_size, signal.uncertainty, max_prob);
     
     return signal;
 }
