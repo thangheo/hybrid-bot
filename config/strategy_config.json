@@ -3,7 +3,7 @@
   "version": "1.2.0",
   "marketDataUpdaterIntervalMs": 1000,
   "exitMonitorIntervalMs": 500,
-  "mode": "EXECUTE",
+  "mode": "TRAINING",
   "tradingPairs": [
     {
       "symbol": "BTC/USDT",
