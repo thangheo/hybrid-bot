@@ -195,6 +195,39 @@ using namespace trading;
      EXPECT_EQ(response.order_status, "OPEN");
      EXPECT_TRUE(response.error_message.empty());
  }
+
+// Ensure execution callback is fired after order submission with a populated response
+TEST_F(ExecutionServiceTest, PlaceOrderCallbackContainsPopulatedResponse) {
+    service->initialize();
+    Order test_order = createTestOrder();
+
+    // Mock execution client to return success
+    ExchangeApiClient::OrderResult success_result;
+    success_result.success = true;
+    success_result.exchange_order_id = "ex_order_456";
+    success_result.error_message = "";
+
+    EXPECT_CALL(*exchange_client, placeOrder(_))
+        .WillOnce(Return(success_result));
+
+    // Capture callback response
+    std::atomic<bool> callback_called{false};
+    ExecutionResponse captured_response;
+
+    service->registerExecutionCallback([&](const ExecutionResponse& resp) {
+        captured_response = resp;
+        callback_called.store(true);
+    });
+
+    // Execute the test
+    ExecutionResponse response = service->placeOrder(test_order);
+
+    // Verify callback fired and contains populated fields
+    EXPECT_TRUE(callback_called.load());
+    EXPECT_EQ(captured_response.client_order_id, test_order.getClientOrderId());
+    EXPECT_EQ(captured_response.symbol, test_order.getTradingPair().toString());
+    EXPECT_EQ(captured_response.exchange_order_id, "ex_order_456");
+}
  
  // Test place order failure
  TEST_F(ExecutionServiceTest, PlaceOrderFailure) {

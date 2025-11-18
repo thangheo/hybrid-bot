@@ -288,114 +288,114 @@ models::Order ExecutionService::createExchangeOrder(const models::Order& order, 
     return exchange_order;
 }
 
-ExecutionResponse ExecutionService::placeOrder(const models::Order& order) {
-    // 1. Early validations
-    if (!is_running_) {
-        return createErrorResponse(order, "Execution service not running");
-    }
+// ExecutionResponse ExecutionService::placeOrder(const models::Order& order) {
+//     // 1. Early validations
+//     if (!is_running_) {
+//         return createErrorResponse(order, "Execution service not running");
+//     }
     
-    if (!validateOrder(order)) {
-        return createErrorResponse(order, "Invalid order parameters");
-    }
+//     if (!validateOrder(order)) {
+//         return createErrorResponse(order, "Invalid order parameters");
+//     }
 
-    // 2. Route order
-    auto order_ptr = std::make_shared<models::Order>(order);
-    RoutingResult routing_result = smart_order_router_->routeOrder(order_ptr);
-    ExchangeId exchangeId = routing_result.exchangeId;
+//     // 2. Route order
+//     auto order_ptr = std::make_shared<models::Order>(order);
+//     RoutingResult routing_result = smart_order_router_->routeOrder(order_ptr);
+//     ExchangeId exchangeId = routing_result.exchangeId;
     
-    if (!exchangeId.isValid()) {
-        return createErrorResponse(order, "No suitable exchange found");
-    }
+//     if (!exchangeId.isValid()) {
+//         return createErrorResponse(order, "No suitable exchange found");
+//     }
 
-    // 3. Create exchange order (fix duplicate setOrderId) use order generator if needed
-    auto exchange_order = createExchangeOrder(order, exchangeId);
-    order_lifecycle_tracker_->addOrder(exchange_order); // Track exchange-level order
+//     // 3. Create exchange order (fix duplicate setOrderId) use order generator if needed
+//     auto exchange_order = createExchangeOrder(order, exchangeId);
+//     order_lifecycle_tracker_->addOrder(exchange_order); // Track exchange-level order
 
-    // 4. Get API client
-    auto api_client = api_client_manager_->getClient(exchangeId);
-    if (!api_client) {
-        return createErrorResponse(exchange_order, "Exchange API client not available");
-    }
+//     // 4. Get API client
+//     auto api_client = api_client_manager_->getClient(exchangeId);
+//     if (!api_client) {
+//         return createErrorResponse(exchange_order, "Exchange API client not available");
+//     }
 
-    // 5. Pre-submit price validation (keep as-is, this is good)
-    if (!validatePriceDeviation(exchange_order, exchangeId)) {
-        return createErrorResponse(exchange_order, "Price deviation too large");
-    }
+//     // 5. Pre-submit price validation (keep as-is, this is good)
+//     if (!validatePriceDeviation(exchange_order, exchangeId)) {
+//         return createErrorResponse(exchange_order, "Price deviation too large");
+//     }
 
-    // 6. Balance validation - SIMPLIFIED to ONE check with optional retry
-    bool isExitSignal = isExitOrder(exchange_order);
-    bool skipBalance = balanceValidator_->skipBalanceForExits() && isExitSignal;
+//     // 6. Balance validation - SIMPLIFIED to ONE check with optional retry
+//     bool isExitSignal = isExitOrder(exchange_order);
+//     bool skipBalance = balanceValidator_->skipBalanceForExits() && isExitSignal;
     
-    if (!skipBalance) {
-        // Try cached first
-        auto balanceResult = balanceValidator_->validateOrder(exchange_order, exchangeId, false);
+//     if (!skipBalance) {
+//         // Try cached first
+//         auto balanceResult = balanceValidator_->validateOrder(exchange_order, exchangeId, false);
         
-        if (!balanceResult.isValid) {
-            // Try fresh validation once
-            balanceResult = balanceValidator_->validateOrder(exchange_order, exchangeId, true);
+//         if (!balanceResult.isValid) {
+//             // Try fresh validation once
+//             balanceResult = balanceValidator_->validateOrder(exchange_order, exchangeId, true);
             
-            if (!balanceResult.isValid) {
-                // Handle quantity adjustment if possible
-                if (balanceResult.canAdjust && balanceResult.suggestedQuantity > 0) {
-                        if (!tryAdjustQuantity(exchange_order)) {
-                        return createErrorResponse(exchange_order, balanceResult.reason);
-                    }
-                    } else if (shouldBypassBalanceCheck(exchange_order)) {
-                    LOG_WARN("Bypassing balance check for exit order");
-                } else {
-                    return createErrorResponse(exchange_order, balanceResult.reason);
-                }
-            }
-        }
-    }
+//             if (!balanceResult.isValid) {
+//                 // Handle quantity adjustment if possible
+//                 if (balanceResult.canAdjust && balanceResult.suggestedQuantity > 0) {
+//                         if (!tryAdjustQuantity(exchange_order)) {
+//                         return createErrorResponse(exchange_order, balanceResult.reason);
+//                     }
+//                     } else if (shouldBypassBalanceCheck(exchange_order)) {
+//                     LOG_WARN("Bypassing balance check for exit order");
+//                 } else {
+//                     return createErrorResponse(exchange_order, balanceResult.reason);
+//                 }
+//             }
+//         }
+//     }
 
-    // 7. Submit order (remove redundant code)
-    try {
-        execution::models::ExecutionReport executionReport;
+//     // 7. Submit order (remove redundant code)
+//     try {
+//         execution::models::ExecutionReport executionReport;
         
-        if (exchangeGateway_) {
-            executionReport = exchangeGateway_->placeOrder(exchange_order).get();
-        } else {
-            executionReport = api_client->placeOrder(exchange_order).get();
-        }
+//         if (exchangeGateway_) {
+//             executionReport = exchangeGateway_->placeOrder(exchange_order).get();
+//         } else {
+//             executionReport = api_client->placeOrder(exchange_order).get();
+//         }
         
-        // 8. Handle result
-        ExecutionResponse response = (
-            ExecutionResponse{
-                exchange_order.getClientOrderId(),
-                executionReport.exchangeOrderId(),
-                executionReport.status() != OrderState::REJECTED,
-                executionReport.rejectReason(),
-                std::chrono::system_clock::now(),
-                executionReport.isComplete() ? "COMPLETED" : "PENDING",
-                exchange_order.getTradingPair().toString(),
-                exchangeId.toString(),
-                exchange_order.getQuantity(),
-                executionReport.filledQuantity()
-            }
-        );
+//         // 8. Handle result
+//         ExecutionResponse response = (
+//             ExecutionResponse{
+//                 exchange_order.getClientOrderId(),
+//                 executionReport.exchangeOrderId(),
+//                 executionReport.status() != OrderState::REJECTED,
+//                 executionReport.rejectReason(),
+//                 std::chrono::system_clock::now(),
+//                 executionReport.isComplete() ? "COMPLETED" : "PENDING",
+//                 exchange_order.getTradingPair().toString(),
+//                 exchangeId.toString(),
+//                 exchange_order.getQuantity(),
+//                 executionReport.filledQuantity()
+//             }
+//         );
         
-        // 9. Trigger callback AFTER execution succeeds
-        if (execution_callback_ && response.success) {
-            try {
-                execution_callback_(response);
-            } catch (const std::exception& e) {
-                LOG_ERROR("Execution callback failed: {}", e.what());
-            }
-        }
+//         // 9. Trigger callback AFTER execution succeeds
+//         if (execution_callback_ && response.success) {
+//             try {
+//                 execution_callback_(response);
+//             } catch (const std::exception& e) {
+//                 LOG_ERROR("Execution callback failed: {}", e.what());
+//             }
+//         }
         
-        return response;
+//         return response;
         
-    } catch (const std::exception& e) {
-        return createErrorResponse(exchange_order, 
-            std::string("Exception during order placement: ") + e.what());
-    }
-}
+//     } catch (const std::exception& e) {
+//         return createErrorResponse(exchange_order, 
+//             std::string("Exception during order placement: ") + e.what());
+//     }
+// }
 
- ExecutionResponse ExecutionService::placeOrder_2(const models::Order& order) {
+ ExecutionResponse ExecutionService::placeOrder(const models::Order& order) {
     // Validate service state
     if (!is_running_) {
-        LOG_WARN("ExecutionService::placeOrder", "Execution service not running for clientOrderId={}", order.getClientOrderId());
+        LOG_WARN("ExecutionService::placeOrder - Execution service not running for clientOrderId={}", order.getClientOrderId());
         return ExecutionResponse{
             "", "", false, "Execution service not running",
             std::chrono::system_clock::now(),
@@ -406,7 +406,7 @@ ExecutionResponse ExecutionService::placeOrder(const models::Order& order) {
     
     // Validate order
     if (!validateOrder(order)) {
-        LOG_INFO("ExecutionService::placeOrder", "Order validation failed for clientOrderId={}", order.getClientOrderId());
+        LOG_INFO("ExecutionService::placeOrder - Order validation failed for clientOrderId={}", order.getClientOrderId());
         return ExecutionResponse{
             order.getClientOrderId(), "", false,
             "Invalid order parameters",
@@ -420,18 +420,11 @@ ExecutionResponse ExecutionService::placeOrder(const models::Order& order) {
     RoutingResult routing_result = smart_order_router_->routeOrder(order_ptr);
     ExchangeId exchangeId = routing_result.exchangeId;
     
-    // ✅ NEW: Trigger callback
-    if (execution_callback_) {
-        try {
-            LOG_INFO("ExecutionService::placeOrder ,Triggering execution callback for clientOrderId={}", order.getClientOrderId());
-            execution_callback_(response);
-            LOG_INFO("ExecutionService::placeOrder ,Execution callback completed for clientOrderId={}", order.getClientOrderId());
-        } catch (const std::exception& e) {
-            std::cerr << "Error in execution callback: " << e.what() << std::endl;
-        }
-    }
+    // NOTE: Do not call execution callback here; wait until after we have a full
+    // execution response to avoid downstream components receiving incomplete
+    // data (e.g. missing symbol leading to '/USDT' parsing issues).
     if (!exchangeId.isValid()) {
-        LOG_WARN("ExecutionService::placeOrder", "No suitable exchange found for clientOrderId={}", order.getClientOrderId());
+        LOG_WARN("ExecutionService::placeOrder - No suitable exchange found for clientOrderId={}", order.getClientOrderId());
         return ExecutionResponse{
             order.getClientOrderId(), "", false,
             "No suitable exchange found",
@@ -447,7 +440,7 @@ ExecutionResponse ExecutionService::placeOrder(const models::Order& order) {
     // *exchange_order = order;  // Copy the order
         // Do this:
     exchange_order->setOrderId(order.getOrderId());
-    exchange_order->setOrderId(order.getClientOrderId());
+    exchange_order->setClientOrderId(order.getClientOrderId());
     exchange_order->setTradingPair(order.getTradingPair());
     exchange_order->setSide(order.getSide());
     exchange_order->setType(order.getType());
@@ -461,9 +454,9 @@ ExecutionResponse ExecutionService::placeOrder(const models::Order& order) {
     exchange_order->setExchangeId(exchangeId);
     exchange_order->setExchangeOrderId(order.getExchangeOrderId());
     exchange_order->setState(order.getState());
-    for (const auto& param : order.getExtraParams()) {
-        exchange_order->setExtraParam(param.first, param.second);
-    }
+    // for (const auto& param : order.getExtraParams()) {
+    //     exchange_order->setExtraParam(param.first, param.second);
+    // }
     // exchange_order->setExtraParam(order.getExtraParams());
 
     // Register the order with the lifecycle tracker
@@ -472,7 +465,7 @@ ExecutionResponse ExecutionService::placeOrder(const models::Order& order) {
     // Get the exchange API client
     auto api_client = api_client_manager_->getClient(exchangeId);
     if (!api_client) {
-        LOG_WARN("ExecutionService::placeOrder", "No API client available for exchange {} for clientOrderId={}", exchangeId.toString(), order.getClientOrderId());
+        LOG_WARN("ExecutionService::placeOrder - No API client available for exchange {} for clientOrderId={}", exchangeId.toString(), order.getClientOrderId());
         order_lifecycle_tracker_->updateOrderState(
             exchange_order->getClientOrderId(), 
             models::OrderState::REJECTED, 
@@ -500,6 +493,7 @@ ExecutionResponse ExecutionService::placeOrder(const models::Order& order) {
     // from the exchange (if available). If deviation is too large, reject the
     // order locally to avoid exchange -1013 / filter rejections.
     try {
+        LOG_INFO("ExecutionService::placeOrder - Performing pre-submit validation for clientOrderId={}", exchange_order->getClientOrderId());
         if (exchange_order->getType() == models::OrderType::LIMIT) {
             const double requestedPrice = exchange_order->getPrice();
             const std::string normalizedSymbol = trading::execution::util::normalizeSymbolForExchange(exchange_order->getTradingPair().toString());
@@ -507,14 +501,18 @@ ExecutionResponse ExecutionService::placeOrder(const models::Order& order) {
 
             // Try to get market price via gateway (preferred) or via client
             if (exchangeGateway_) {
+                LOG_TRACE("ExecutionService::placeOrder - Fetching market price via ExchangeGateway for clientOrderId={}", exchange_order->getClientOrderId());
                 auto fut = exchangeGateway_->getCurrentPrice(exchangeId, exchange_order->getTradingPair(), false);
                 marketPrice = fut.get();
             } else if (api_client) {
+                LOG_TRACE("ExecutionService::placeOrder - Fetching market price via ApiClient for clientOrderId={}", exchange_order->getClientOrderId());
                 auto fut = api_client->getCurrentPrice(exchange_order->getTradingPair());
                 marketPrice = fut.get();
             }
 
             if (marketPrice > 0.0 && requestedPrice > 0.0) {
+                LOG_INFO("ExecutionService::placeOrder - Market price fetched for pre-submit validation for clientOrderId={} (symbol={}) requestedPrice={} marketPrice={}",
+                         exchange_order->getClientOrderId(), exchange_order->getTradingPair().toString(), requestedPrice, marketPrice);
                 double deviation = std::abs(requestedPrice - marketPrice) / marketPrice;
                 const double kMaxDeviation = 0.50; // 50% default pre-submit threshold (configurable later)
                 if (deviation > kMaxDeviation) {
@@ -531,7 +529,7 @@ ExecutionResponse ExecutionService::placeOrder(const models::Order& order) {
                         exchange_order->getExchangeOrderId(),
                         reason
                     );
-                    LOG_WARN("ExecutionService::placeOrder", "Pre-submit validation failed for clientOrderId={} reason={}", exchange_order->getClientOrderId(), reason);
+                    LOG_WARN("ExecutionService::placeOrder - Pre-submit validation failed for clientOrderId={} reason={}", exchange_order->getClientOrderId(), reason);
                     return ExecutionResponse{
                         exchange_order->getClientOrderId(),
                         "",
@@ -547,13 +545,14 @@ ExecutionResponse ExecutionService::placeOrder(const models::Order& order) {
                 }
             } else {
                 // marketPrice not available or requestedPrice invalid; log a warning and continue
-                LOG_WARN("ExecutionService::placeOrder", "Could not fetch market price for pre-submit validation for clientOrderId={} (symbol={}) or invalid requested price={}. Proceeding without exchange filter checks.",
+                LOG_WARN("ExecutionService::placeOrder -Could not fetch market price for pre-submit validation for clientOrderId={} (symbol={}) or invalid requested price={}. Proceeding without exchange filter checks.",
                          exchange_order->getClientOrderId(), exchange_order->getTradingPair().toString(), exchange_order->getPrice());
             }
         }
     } catch (const std::exception& e) {
         // If validation cannot complete (temporary error), do not block submission; log and continue.
-        std::cerr << "Pre-submit validation error: " << e.what() << ". Proceeding to submit order." << std::endl;
+        LOG_ERROR("ExecutionService::placeOrder - Exception during pre-submit validation for clientOrderId={}: {}. Proceeding without exchange filter checks.",
+                  exchange_order->getClientOrderId(), e.what());
     }
 
     // Submit the order to the exchange
@@ -568,6 +567,7 @@ ExecutionResponse ExecutionService::placeOrder(const models::Order& order) {
     bool skipAllBalanceValidation = false;
     bool isExitSignalFlag = false;
     try {
+        LOG_TRACE("ExecutionService::placeOrder - Checking is_exit_signal for clientOrderId={}", exchange_order->getClientOrderId());
         std::string v = exchange_order->getExtraParam("is_exit_signal");
         if (!v.empty() && v == "true") isExitSignalFlag = true;
     } catch (...) { /* ignore */ }
@@ -580,7 +580,7 @@ ExecutionResponse ExecutionService::placeOrder(const models::Order& order) {
                 if (!v.empty() && v == "true") skipAllBalanceValidation = true;
             } catch (...) { /* ignore */ }
         }
-
+        LOG_TRACE("ExecutionService::placeOrder - skipAllBalanceValidation={}", skipAllBalanceValidation);
         if (skipAllBalanceValidation) {
             std::cout << "[BALANCE] SKIPPING all balance validation for exit order " << exchange_order->getClientOrderId() << std::endl;
         } else {
@@ -737,12 +737,6 @@ ExecutionResponse ExecutionService::placeOrder(const models::Order& order) {
             }
         }
             
-            // Log successful validation
-            std::cout << "✅ Balance validation passed:" << std::endl;
-            std::cout << "   Asset: " << balanceResult.asset << std::endl;
-            std::cout << "   Required: " << balanceResult.requiredBalance << std::endl;
-            std::cout << "   Available: " << balanceResult.availableBalance << std::endl;
-            std::cout << "   Est. fees: " << balanceResult.estimatedFees << std::endl;
         }
     } catch (const std::exception& e) {
         std::cerr << "Warning: balance validation failed with error: " << e.what() << ". Proceeding with legacy checks." << std::endl;
@@ -992,6 +986,16 @@ ExecutionResponse ExecutionService::placeOrder(const models::Order& order) {
             response.filled_quantity = 0.0;
         }
         
+        // Trigger execution callback AFTER the response is fully populated so
+        // downstream components receive a consistent execution report.
+        if (execution_callback_) {
+            try {
+                execution_callback_(response);
+            } catch (const std::exception& e) {
+                LOG_ERROR("Execution callback failed: {}", e.what());
+            }
+        }
+
         return response;
     } catch (const std::exception& e) {
         // Handle exception from the async operation
