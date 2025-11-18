@@ -122,6 +122,9 @@ public:
 
     void printStatus();
 
+    // Test helper for enqueuing external signals for quick integration tests
+    void enqueueSignalForExecution(const execution::TradingSignal& signal) { realExecution(signal); }
+
     // Set operation mode from outside (public). Accepts training-only or execute-only.
     enum class Mode { EXECUTE = 0, TRAINING = 1 };
     void setMode(Mode m) { setOperationMode(static_cast<OperationMode>(m)); applyOperationModeToComponents(); modeOverridden_ = true; }

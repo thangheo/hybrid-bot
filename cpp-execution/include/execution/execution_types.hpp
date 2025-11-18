@@ -35,6 +35,8 @@ struct ExecutionResponse {
     std::string order_status;
     std::string symbol;  // Add symbol
     std::string exchange_id;  // Add exchange_id
+    double quantity;       // Add quantity
+    double filled_quantity; // Add filled quantity
 };
 } // namespace execution
 } // namespace trading

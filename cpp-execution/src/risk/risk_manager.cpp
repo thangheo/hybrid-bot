@@ -162,11 +162,11 @@ bool RiskManager::initialize() {
         
         // ✅ Check if DataInterface is connected after initialization
         if (!m_dataInterface->isConnected()) {
-            LOG_WARN(std::format("{} {}", "RiskManager", "DataInterface initialized but not connected - this may cause issues"));
+            LOG_WARN("RiskManager DataInterface initialized but not connected - this may cause issues");
             // Try to establish connection if DataInterface has connect method
             // Note: Some DataInterface implementations auto-connect during initialize()
         }
-        LOG_INFO(std::format("{} {}", "RiskManager", "DataInterface initialization complete"));
+        // LOG_INFO(std::format("{} {}", "RiskManager", "DataInterface initialization complete"));
 
         // Register RiskManager to receive market data updates so updateMarketData()
         // is invoked automatically when new market data arrives from the DataInterface.

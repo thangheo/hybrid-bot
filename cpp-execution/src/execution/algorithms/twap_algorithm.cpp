@@ -290,12 +290,16 @@ ExecutionResponse TwapAlgorithm::execute(const models::Order& parentOrder, Execu
     // Initialize the algorithm
     if (!initialize(parentOrder.getTradingPair(), parentOrder.getSide(), config)) {
         return ExecutionResponse{
-            parentOrder.getClientOrderId(), 
-            "", 
+            parentOrder.getClientOrderId(),
+            "",
             false,
             "Failed to initialize TWAP algorithm: " + error_message_,
             std::chrono::system_clock::now(),
-            "REJECTED", 
+            "REJECTED",
+            parentOrder.getTradingPair().toString(),
+            "",
+            parentOrder.getQuantity(),
+            0.0
         };
     }
     
@@ -324,12 +328,16 @@ ExecutionResponse TwapAlgorithm::execute(const models::Order& parentOrder, Execu
     // Start the algorithm
     if (!start()) {
         return ExecutionResponse{
-            parentOrder.getClientOrderId(), 
-            "", 
+            parentOrder.getClientOrderId(),
+            "",
             false,
             "Failed to start TWAP algorithm",
             std::chrono::system_clock::now(),
-            "REJECTED"
+            "REJECTED",
+            parentOrder.getTradingPair().toString(),
+            "",
+            parentOrder.getQuantity(),
+            0.0
         };
     }
     
@@ -341,7 +349,10 @@ ExecutionResponse TwapAlgorithm::execute(const models::Order& parentOrder, Execu
         "",
         std::chrono::system_clock::now(),
         "ACCEPTED",  // Parent order is accepted for algorithmic execution
-
+        parentOrder.getTradingPair().toString(),
+        "",
+        parentOrder.getQuantity(),
+        0.0
     };
 }
 

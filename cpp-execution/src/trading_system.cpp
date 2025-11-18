@@ -1713,7 +1713,7 @@ void Trading_system::signalWorkerLoop(size_t workerId) {
                     signalsValidated_++;
                     if (validationResult.approved) {
                         signalsApproved_++;
-                        realExecution(execSignal); 
+                        realExecution(execSignal);
                     } else {
                         signalsRejected_++;
                     }

@@ -162,7 +162,23 @@ ExecutionResponse ExecutionService::executeSignal(const TradingSignal& signal) {
     LOG_TRACE("ExecutionService::executeSignal START: id={} sym={} direction={} targetSize={} conf={}",
               signal.id, signal.symbol.toString(), (signal.direction==core::Direction::BUY?"BUY":"SELL"), signal.targetSize, signal.confidence);
     std::unique_lock<std::mutex> lk(mutex_);
+    // Generate order from signal first so we can initialize a safe ExecutionResponse
+    auto order = createOrderFromSignal(signal);
+
     ExecutionResponse response;
+    // Initialize response with safe defaults so any early callback or error path
+    // does not see uninitialized memory (avoids weird values in position tracker)
+    response.client_order_id = order.getClientOrderId();
+    response.exchange_order_id = "";
+    response.success = false;
+    response.error_message = "";
+    response.timestamp = std::chrono::system_clock::now();
+    response.order_status = "";
+    // default to the parent order's symbol and quantity
+    response.symbol = order.getTradingPair().toString();
+    response.exchange_id = "";
+    response.quantity = order.getQuantity();
+    response.filled_quantity = 0.0;
 
     try {
         // 1. Generate order from signal (UNCHANGED)
@@ -172,7 +188,7 @@ ExecutionResponse ExecutionService::executeSignal(const TradingSignal& signal) {
         // 2. Validate order (UNCHANGED)
         if (!validateOrder(order)) {
             return ExecutionResponse{order.getOrderId(), "", false, "Order validation failed", 
-                std::chrono::system_clock::now(), "", signal.symbol.toString(), signal.exchangeId.toString()};
+                std::chrono::system_clock::now(), "", signal.symbol.toString(), signal.exchangeId.toString(), order.getQuantity(), 0.0};
         }
         
         // 3. Place order - delegate to placeOrder to ensure consistent pre-submit validation,
@@ -190,7 +206,7 @@ ExecutionResponse ExecutionService::executeSignal(const TradingSignal& signal) {
         return res;
         
     } catch (const std::exception& e) {
-        return ExecutionResponse{"", "", false, e.what(), std::chrono::system_clock::now(), "", signal.symbol.toString(), signal.exchangeId.toString()};
+        return ExecutionResponse{"", "", false, e.what(), std::chrono::system_clock::now(), "", signal.symbol.toString(), signal.exchangeId.toString(), 0.0, 0.0};
     }
 }
  
@@ -205,20 +221,21 @@ ExecutionResponse ExecutionService::executeSignal(const TradingSignal& signal) {
     // Validate service state
     if (!is_running_) {
         return ExecutionResponse{
-            "", "", false, "Execution service not running", 
-             std::chrono::system_clock::now(),
-             //orderstatus
-            "", "", ""
+            "", "", false, "Execution service not running",
+            std::chrono::system_clock::now(),
+            "",
+            "", "", 0.0, 0.0
         };
     }
     
     // Validate order
     if (!validateOrder(order)) {
         return ExecutionResponse{
-            order.getClientOrderId(), "", false, 
-            "Invalid order parameters",  
+            order.getClientOrderId(), "", false,
+            "Invalid order parameters",
             std::chrono::system_clock::now(),
-            "", "", ""
+            "",
+            "", "", order.getQuantity(), 0.0
         };
     }
     ExecutionResponse response;
@@ -236,10 +253,11 @@ ExecutionResponse ExecutionService::executeSignal(const TradingSignal& signal) {
     }
     if (!exchangeId.isValid()) {
         return ExecutionResponse{
-            order.getClientOrderId(), "", false, 
-            "No suitable exchange found",  
+            order.getClientOrderId(), "", false,
+            "No suitable exchange found",
             std::chrono::system_clock::now(),
-            "", "", ""
+            "",
+            "", "", order.getQuantity(), 0.0
         };
     }
     
@@ -279,13 +297,16 @@ ExecutionResponse ExecutionService::executeSignal(const TradingSignal& signal) {
         );
         
         return ExecutionResponse{
-            exchange_order->getClientOrderId(), 
-            "", 
-            false, 
+            exchange_order->getClientOrderId(),
+            "",
+            false,
             "Exchange API client not available",
             std::chrono::system_clock::now(),
             "",
-            "", ""
+            "",
+            "",
+            exchange_order->getQuantity(),
+            0.0
         };
     }
     
@@ -334,7 +355,10 @@ ExecutionResponse ExecutionService::executeSignal(const TradingSignal& signal) {
                         reason,
                         std::chrono::system_clock::now(),
                         "REJECTED_PRE_SUBMIT",
-                        "", ""
+                        "",
+                        "",
+                        exchange_order->getQuantity(),
+                        0.0
                     };
                 }
             } else {
@@ -435,7 +459,7 @@ ExecutionResponse ExecutionService::executeSignal(const TradingSignal& signal) {
                                     adjResult.reason,
                                     std::chrono::system_clock::now(),
                                     "REJECTED_INSUFFICIENT_BALANCE",
-                                    "", ""
+                                    "", "", exchange_order->getQuantity(), 0.0
                                 };
                             }
                         } catch (const std::exception& e) {
@@ -455,7 +479,7 @@ ExecutionResponse ExecutionService::executeSignal(const TradingSignal& signal) {
                                 balanceResult.reason,
                                 std::chrono::system_clock::now(),
                                 "REJECTED_INSUFFICIENT_BALANCE",
-                                "", ""
+                                "", "", exchange_order->getQuantity(), 0.0
                             };
                     }
                         
@@ -502,7 +526,7 @@ ExecutionResponse ExecutionService::executeSignal(const TradingSignal& signal) {
                                     freshResult.reason,
                                     std::chrono::system_clock::now(),
                                     "REJECTED_INSUFFICIENT_BALANCE",
-                                    "", ""
+                                    "", "", exchange_order->getQuantity(), 0.0
                                 };
                             }
                         }
@@ -523,7 +547,7 @@ ExecutionResponse ExecutionService::executeSignal(const TradingSignal& signal) {
                             balanceResult.reason,
                             std::chrono::system_clock::now(),
                             "REJECTED_INSUFFICIENT_BALANCE",
-                            "", ""
+                            "", "", exchange_order->getQuantity(), 0.0
                         };
                     }
                 }
@@ -775,6 +799,15 @@ ExecutionResponse ExecutionService::executeSignal(const TradingSignal& signal) {
         response.timestamp = std::chrono::system_clock::now();
         response.symbol = exchange_order->getTradingPair().toString();
         response.exchange_id = exchange_order->getExchangeId().toString();
+        // Populate quantity fields so downstream components (position tracker, risk)
+        // can inspect declared and filled quantities. These are vital for integration
+        // tests where filled quantity may be zero but declared quantity is non-zero.
+        response.quantity = exchange_order->getQuantity();
+        try {
+            response.filled_quantity = result.filledQuantity();
+        } catch (...) {
+            response.filled_quantity = 0.0;
+        }
         
         return response;
     } catch (const std::exception& e) {

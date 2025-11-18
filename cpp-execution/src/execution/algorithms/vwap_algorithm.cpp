@@ -121,10 +121,14 @@ ExecutionResponse VwapAlgorithm::execute(const models::Order& parentOrder, Execu
             false,
             "Algorithm not running",
             std::chrono::system_clock::now(),
-            ""
+            "",
+            "",
+            "",
+            parentOrder.getQuantity(),
+            0.0
         };
     }
-    
+     
     // Create child orders based on the volume profile
     for (const auto& bucket : time_buckets_) {
         if (!bucket.processed) {
@@ -161,7 +165,11 @@ ExecutionResponse VwapAlgorithm::execute(const models::Order& parentOrder, Execu
         true,
         "",
         std::chrono::system_clock::now(),
-        "RUNNING"
+        "RUNNING",
+        "",
+        "",
+        parentOrder.getQuantity(),
+        0.0
     };
 }
 

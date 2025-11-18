@@ -237,7 +237,7 @@ bool PositionTracker::initialize() {
         return true;
     } catch (const std::exception& e) {
         // std::cerr << "Error initializing PositionTracker: " << e.what() << std::endl;
-        LOG_ERROR(std::format("PositionTracker", "Error initializing: {}", e.what()));
+        LOG_ERROR("PositionTracker Error initializing: {}", e.what());
         return false;
     }
 }
@@ -258,7 +258,7 @@ bool PositionTracker::shutdown() {
                 m_dataInterface->shutdown();
                 LOG_INFO("PositionTracker", "DataInterface shut down successfully");
             } catch (const std::exception& e) {
-                LOG_WARN("PositionTracker", std::format("DataInterface shutdown threw: {}", e.what()));
+                LOG_WARN("PositionTracker DataInterface shutdown threw: {}", e.what());
             }
         }
         return true;
