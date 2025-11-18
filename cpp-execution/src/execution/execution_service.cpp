@@ -158,12 +158,16 @@ bool ExecutionService::initialize() {
 
 // EXAMPLE: Modified executeSignal method (only the API call part changes!)
 ExecutionResponse ExecutionService::executeSignal(const TradingSignal& signal) {
+    auto start = std::chrono::steady_clock::now();
+    LOG_TRACE("ExecutionService::executeSignal START: id={} sym={} direction={} targetSize={} conf={}",
+              signal.id, signal.symbol.toString(), (signal.direction==core::Direction::BUY?"BUY":"SELL"), signal.targetSize, signal.confidence);
     std::lock_guard<std::mutex> lock(mutex_);
     ExecutionResponse response;
 
     try {
         // 1. Generate order from signal (UNCHANGED)
         auto order = createOrderFromSignal(signal);
+        LOG_TRACE("ExecutionService::executeSignal: created order id={} symbol={}", order.getOrderId(), order.getTradingPair().toString());
         
         // 2. Validate order (UNCHANGED)
         if (!validateOrder(order)) {
@@ -174,7 +178,11 @@ ExecutionResponse ExecutionService::executeSignal(const TradingSignal& signal) {
         // 3. Place order - delegate to placeOrder to ensure consistent pre-submit validation,
         //    routing and lifecycle handling. This prevents bypassing the BalanceValidator
         //    when callers use executeSignal().
-        return placeOrder(order);
+        ExecutionResponse res = placeOrder(order);
+        auto end = std::chrono::steady_clock::now();
+        auto dur = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+        LOG_TRACE("ExecutionService::executeSignal END: id={} dur_ms={} success={}", signal.id, dur, res.success);
+        return res;
         
     } catch (const std::exception& e) {
         return ExecutionResponse{"", "", false, e.what(), std::chrono::system_clock::now(), "", signal.symbol.toString(), signal.exchangeId.toString()};
@@ -368,6 +376,8 @@ ExecutionResponse ExecutionService::executeSignal(const TradingSignal& signal) {
             std::cout << "[BALANCE] Preflight (cached) validation for order " << exchange_order->getClientOrderId()
                       << " on exchange " << exchangeId.toString() << std::endl;
             auto balanceResult = balanceValidator_->validateOrder(*exchange_order, exchangeId, false);
+            auto bstart = std::chrono::steady_clock::now();
+            LOG_TRACE("BalanceValidator: cached validateOrder called for {} (exchange={})", exchange_order->getClientOrderId(), exchangeId.toString());
             
             if (!balanceResult.isValid) {
                 std::cerr << "❌ Order rejected due to insufficient balance:" << std::endl;
@@ -452,7 +462,11 @@ ExecutionResponse ExecutionService::executeSignal(const TradingSignal& signal) {
                     try {
                         std::cout << "[BALANCE] Cached validation failed - attempting forced fresh validation for order "
                                   << exchange_order->getClientOrderId() << std::endl;
+                        auto freshStart = std::chrono::steady_clock::now();
+                        LOG_TRACE("BalanceValidator: forced fresh validateOrder called for {} (exchange={})", exchange_order->getClientOrderId(), exchangeId.toString());
                         auto freshResult = balanceValidator_->validateOrder(*exchange_order, exchangeId, true);
+                        auto freshEnd = std::chrono::steady_clock::now();
+                        LOG_TRACE("BalanceValidator: forced fresh validation duration_ms={} for {}", std::chrono::duration_cast<std::chrono::milliseconds>(freshEnd - freshStart).count(), exchange_order->getClientOrderId());
                         if (freshResult.isValid) {
                             std::cout << "\u2705 Fresh balance validation PASSED after cache refresh; proceeding with order." << std::endl;
                             // overwrite balanceResult so subsequent logging reflects fresh data
@@ -526,6 +540,7 @@ ExecutionResponse ExecutionService::executeSignal(const TradingSignal& signal) {
         // Perform one more balance validation with forced refresh before submitting
         if (!skipAllBalanceValidation) {
             auto finalBalanceResult = balanceValidator_->validateOrder(*exchange_order, exchangeId, true);
+                LOG_TRACE("BalanceValidator: final forced validation result for {}: isValid={} reason={}", exchange_order->getClientOrderId(), finalBalanceResult.isValid, finalBalanceResult.reason);
             
             if (!finalBalanceResult.isValid) {
                     std::cout << "❌ Final balance check failed with fresh data:" << std::endl;
@@ -609,8 +624,11 @@ ExecutionResponse ExecutionService::executeSignal(const TradingSignal& signal) {
 
         if (exchangeGateway_) {
             // NEW: Use ExchangeGateway (with caching and rate limiting)
+                LOG_TRACE("ExecutionService::placeOrder: calling ExchangeGateway::placeOrder for clientOrderId={}", exchange_order->getClientOrderId());
             auto executionFuture = exchangeGateway_->placeOrder(*exchange_order);
+                LOG_TRACE("ExecutionService::placeOrder: ExchangeGateway::placeOrder returned future for clientOrderId={}", exchange_order->getClientOrderId());
             executionReport = executionFuture.get();
+                LOG_TRACE("ExecutionService::placeOrder: ExchangeGateway::placeOrder finished for clientOrderId={}", exchange_order->getClientOrderId());
         } else {
             // EXISTING: Use direct API client (legacy mode)
             auto client = api_client_manager_->getClient(exchange_order->getExchangeId());
@@ -631,8 +649,11 @@ ExecutionResponse ExecutionService::executeSignal(const TradingSignal& signal) {
                 };
             }
 
+            LOG_TRACE("ExecutionService::placeOrder: direct api_client->placeOrder for clientOrderId={}", exchange_order->getClientOrderId());
             auto executionFuture = client->placeOrder(*exchange_order);
+            LOG_TRACE("ExecutionService::placeOrder: direct api_client->placeOrder returned future for clientOrderId={}", exchange_order->getClientOrderId());
             executionReport = executionFuture.get();
+            LOG_TRACE("ExecutionService::placeOrder: api_client->placeOrder get() finished for clientOrderId={}", exchange_order->getClientOrderId());
         }
     
     // Wait for the result

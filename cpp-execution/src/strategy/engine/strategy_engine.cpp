@@ -224,6 +224,8 @@ void StrategyEngine::handleSignalGenerated(const TradingSignal& signal) {
     }
 
     activeSignals_[s.id] = s;
+    LOG_TRACE("StrategyEngine: signal generated id={} symbol={} dir={} strength={} targetSize={} conf={}",
+              s.id, s.symbol.toString(), (s.direction==core::Direction::BUY?"BUY":"SELL"), s.strength, s.targetSize, s.confidence);
     for (const auto& [id, callback] : signalCallbacks_) {
         try {
             callback(s);

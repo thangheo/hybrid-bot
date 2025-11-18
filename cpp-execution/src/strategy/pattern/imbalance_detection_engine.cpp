@@ -1054,11 +1054,16 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                                             OrderBookMetrics mcopy = m;
                                             mcopy.metrics["bayes_probability"] = signal.probability;
                                             mcopy.metrics["bayes_expected_value"] = signal.expected_value;
+                                            // Bayes no longer emits a hard position_size. Let downstream
+                                            // signal generator compute `targetSize` using the `strength`
+                                            // metric; keep bayes_position_size for backward compat but
+                                            // set to zero to avoid misleading data.
                                             mcopy.metrics["bayes_position_size"] = signal.position_size;
+                                            mcopy.metrics["bayes_recommended_strength"] = signal.probability;
                                             mcopy.metrics["bayes_uncertainty"] = signal.uncertainty;
                                             mcopy.metrics["entry_signal"] = 1.0;
 
-                                            createImbalanceEventForBayesModel(ImbalanceType::CUSTOM, signal.position_size,
+                                            createImbalanceEventForBayesModel(ImbalanceType::CUSTOM, signal.probability,
                                                                             dir, mcopy, signal.probability, signal.uncertainty);
 
                                             LOG_TRACE("ENTRY SIGNAL: {} {} @ {:.6f} (conf={:.3f})",
