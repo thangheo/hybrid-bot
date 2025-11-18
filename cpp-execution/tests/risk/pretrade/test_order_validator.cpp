@@ -21,7 +21,9 @@
  public:
      MockDataInterface() : DataInterface() {}
      
-     MOCK_METHOD(double, getPrice, (const std::string&), (const));
+    MOCK_METHOD(double, getPrice, (const std::string&), (const));
+    // Mock the modern getCurrentPrice API used by OrderValidator
+    MOCK_METHOD(double, getCurrentPrice, (const core::Symbol&, const std::optional<std::string>&), (override));
  };
  
  class OrderValidatorTest : public ::testing::Test {
@@ -65,6 +67,10 @@
          // Create order validator
          orderValidator = std::make_unique<OrderValidator>(config, mockDataInterface);
          orderValidator->initialize();
+
+        // default market price mock to avoid uninteresting getPrice calls
+        ON_CALL(*mockDataInterface, getCurrentPrice(_, _))
+            .WillByDefault(Return(50000.0));
      }
      
      std::shared_ptr<::MockDataInterface> mockDataInterface;
@@ -85,8 +91,8 @@
      orderRequest.exchangeId = ExchangeId::fromString("exchange1");
      
      // Set up mock to return current market price
-     EXPECT_CALL(*mockDataInterface, getPrice("BTC/USDT"))
-         .WillOnce(Return(51000.0));  // Within 10% of order price
+    EXPECT_CALL(*mockDataInterface, getCurrentPrice(_, _))
+        .WillOnce(Return(51000.0));  // Within 10% of order price
      
      // Validate the order
      std::vector<RiskViolation> violations;
@@ -172,7 +178,7 @@
      orderRequest.tradingPair = TradingPair("BTC/USDT");
      orderRequest.side = OrderSide::BUY;
      orderRequest.type = OrderType::LIMIT;
-     orderRequest.quantity = 0.0005;  // Below min of 0.001
+     orderRequest.quantity = 0.0001;  // Below min of 0.001
      orderRequest.price = 50000.0;
      orderRequest.exchangeId = ExchangeId::fromString("exchange1");
      
@@ -225,8 +231,8 @@
      orderRequest.exchangeId = ExchangeId::fromString("exchange1");
      
      // Set up mock to return current market price
-     EXPECT_CALL(*mockDataInterface, getPrice("BTC/USDT"))
-         .WillOnce(Return(50000.0));
+    EXPECT_CALL(*mockDataInterface, getCurrentPrice(_, _))
+        .WillOnce(Return(50000.0));
      
      // Validate the order
      std::vector<RiskViolation> violations;
@@ -301,8 +307,8 @@
      orderRequest.exchangeId = ExchangeId::fromString("exchange1");
      
      // Set up mock for price check
-     EXPECT_CALL(*mockDataInterface, getPrice("BTC/USDT"))
-         .WillOnce(Return(51000.0));
+    EXPECT_CALL(*mockDataInterface, getCurrentPrice(_, _))
+        .WillOnce(Return(51000.0));
      
      // Validate the order
      std::vector<RiskViolation> violations;

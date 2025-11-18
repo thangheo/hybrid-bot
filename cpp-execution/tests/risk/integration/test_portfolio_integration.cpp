@@ -118,10 +118,16 @@ public:
          m_config.portfolioConfig.autoRebalancingEnabled = false;
          m_config.portfolioConfig.autoExecuteRebalancing = false;
          
-        // Rebalancing config
-        // The RiskConfig in this codebase does not expose a `rebalancingConfig` member;
-        // use portfolioConfig defaults or configure rebalancing through the portfolioConfig
-        // or manager APIs as needed.
+        // Rebalancing config - set target allocations for integration test
+        RebalancingConfig rb;
+        rb.targetAllocations["BINANCE:BTC/USD"] = 0.25;
+        rb.targetAllocations["BINANCE:ETH/USD"] = 0.25;
+        rb.targetAllocations["FTX:BTC/USD"] = 0.25;
+        rb.targetAllocations["FTX:ETH/USD"] = 0.25;
+        rb.allocationDeviationThreshold = 0.01; // 1% deviation triggers rebalancing
+        rb.minimumRebalancingValue = 100.0; // $100 minimum
+        rb.minimumOrderSize = 0.001;
+        m_config.setRebalancingConfig(rb);
         
         // Collateral config
         m_config.collateralConfig.baseCurrency = "USD";
@@ -293,6 +299,10 @@ TEST_F(PortfolioIntegrationTest, RebalancingIntegration) {
     auto positionTracker = m_portfolioManager->getPositionTracker();
     ASSERT_NE(rebalancingEngine, nullptr);
     ASSERT_NE(positionTracker, nullptr);
+
+    // Confirm rebalancing target allocations are configured
+    auto rbConfig = rebalancingEngine->getConfiguration();
+    EXPECT_FALSE(rbConfig.targetAllocations.empty());
     
     // Create unbalanced portfolio
     positionTracker->updatePosition(core::ExchangeId::binance(), core::Symbol("BTC/USD"), 1.5, 50000.0);  // 75% of portfolio

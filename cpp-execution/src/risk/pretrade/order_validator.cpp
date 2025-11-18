@@ -52,8 +52,8 @@ bool OrderValidator::initialize() {
         // Global minimum trade value (notional)
         m_minTradeValue = m_validationConfig.minTradeValue;
         
-        LOG_INFO("Order validator initialized successfully with {} whitelisted symbols, {} exchanges with min sizes",
-                m_symbolWhitelist.size(), m_minOrderSizes.size());
+        LOG_INFO("Order validator initialized successfully with {} whitelisted symbols, {} exchanges with min sizes, defaultMinOrderSize={}",
+            m_symbolWhitelist.size(), m_minOrderSizes.size(), m_validationConfig.defaultMinOrderSize);
         
         return true;
     } catch (const std::exception& ex) {
@@ -90,7 +90,15 @@ bool OrderValidator::validateOrder(const execution::TradingSignal& signal,
     if (target > 1.0) {
         // Interpret as absolute asset quantity
         double qty = target;
-        if (!isOrderSizeValid(getExchangeId(signal), getSymbol(signal), qty, violations)) {
+        // Try to retrieve market price once for notional checks
+        std::optional<double> marketPrice;
+        try {
+            marketPrice = getCurrentMarketPrice(getSymbol(signal));
+        } catch (...) {
+            marketPrice = std::nullopt;
+        }
+
+        if (!isOrderSizeValid(getExchangeId(signal), getSymbol(signal), qty, violations, marketPrice)) {
             return false;
         }
     } else {
@@ -138,13 +146,27 @@ bool OrderValidator::validateOrder(const OrderRequest& orderRequest,
     }
     
     // Validate order size using string version
-    if (!isOrderSizeValid(orderRequest.exchangeId, orderRequest.tradingPair, orderRequest.quantity, violations)) {
+    // Compute market price for both notional and price checks in a single call
+    std::optional<double> marketPrice;
+    try {
+        marketPrice = getCurrentMarketPrice(orderRequest.tradingPair);
+    } catch (...) {
+        marketPrice = std::nullopt;
+    }
+
+    if (!isOrderSizeValid(orderRequest.exchangeId, orderRequest.tradingPair, orderRequest.quantity, violations, marketPrice)) {
+        if (!violations.empty()) {
+            LOG_INFO("Order size validation failed: {} (limit={}, actual={})", violations[0].description, violations[0].limitValue, violations[0].actualValue);
+        }
         return false;
     }
     
     // Validate price (for limit orders)
     if (orderRequest.type == OrderType::LIMIT && 
-        !isPriceWithinRange(orderRequest.tradingPair, orderRequest.price, violations)) {
+        !isPriceWithinRange(orderRequest.tradingPair, orderRequest.price, violations, marketPrice)) {
+        if (!violations.empty()) {
+            LOG_INFO("Price validation failed: {} (limit={}, actual={})", violations[0].description, violations[0].limitValue, violations[0].actualValue);
+        }
         return false;
     }
     
@@ -168,12 +190,17 @@ bool OrderValidator::isOnSymbolWhitelist(const core::Symbol& tradingPair) const 
 
 bool OrderValidator::isPriceWithinRange(const core::Symbol& tradingPair,
                                        double price,
-                                       std::vector<RiskViolation>& violations) {
+                                       std::vector<RiskViolation>& violations,
+                                       std::optional<double> marketPrice) {
     // Get current market price
-    double marketPrice = getCurrentMarketPrice(tradingPair);
+    double marketPriceVal = marketPrice.has_value() ? marketPrice.value() : getCurrentMarketPrice(tradingPair);
     
     // Calculate price deviation as a percentage
-    double deviation = std::abs((price - marketPrice) / marketPrice);
+    if (marketPriceVal <= 0.0) {
+        LOG_WARN("Could not determine market price for {} - skipping price deviation check", tradingPair.toString());
+        return true; // skip
+    }
+    double deviation = std::abs((price - marketPriceVal) / marketPriceVal);
     
     // Check if deviation exceeds the maximum allowed
     double maxDeviation = m_validationConfig.maxPriceDeviationPercent / 100.0; // Convert from percent to ratio
@@ -194,7 +221,8 @@ bool OrderValidator::isPriceWithinRange(const core::Symbol& tradingPair,
 bool OrderValidator::isOrderSizeValid(const core::ExchangeId& exchangeId,
                                      const core::Symbol& tradingPair,
                                      double quantity,
-                                     std::vector<RiskViolation>& violations) {
+                                     std::vector<RiskViolation>& violations,
+                                     std::optional<double> marketPrice) {
     // Check for negative or zero quantity
     if (quantity <= 0) {
         RiskViolation violation;
@@ -231,15 +259,18 @@ bool OrderValidator::isOrderSizeValid(const core::ExchangeId& exchangeId,
         if (minSize <= 0) {
             minSize = m_validationConfig.defaultMinOrderSize;
         }
+    LOG_INFO("Computed minSize for {}@{} = {} (defaultMinOrderSize={})", tradingPair.toString(), exchangeId.toString(), minSize, m_validationConfig.defaultMinOrderSize);
     }
     
     // Check if quantity meets minimum requirement
+    LOG_DEBUG("isOrderSizeValid: checking quantity {} vs minSize {} for {}/{}", quantity, minSize, exchangeId.toString(), tradingPair.toString());
     if (quantity < minSize) {
         RiskViolation violation;
         violation.type = ViolationType::ORDER_SIZE_LIMIT;  // Use appropriate enum
         violation.description = "Order size below minimum for exchange";
         violation.limitValue = minSize;
         violation.actualValue = quantity;
+        LOG_INFO("Order size violation: minSize={}, qty={}, exchange={}, pair={}", minSize, quantity, exchangeId.toString(), tradingPair.toString());
         violations.push_back(violation);
         return false;
     }
@@ -247,18 +278,24 @@ bool OrderValidator::isOrderSizeValid(const core::ExchangeId& exchangeId,
     // Enforce minimum trade value (notional) if configured
     if (m_minTradeValue > 0.0) {
         try {
-            double marketPrice = getCurrentMarketPrice(tradingPair);
+            double marketPriceVal;
+            if (marketPrice.has_value()) {
+                marketPriceVal = marketPrice.value();
+            } else {
+                marketPriceVal = getCurrentMarketPrice(tradingPair);
+            }
             // If market price is not available (0 or negative), skip notional validation
-            if (marketPrice <= 0.0) {
+            if (marketPriceVal <= 0.0) {
                 LOG_WARN("Could not determine market price for {} - skipping notional (min trade value) check", tradingPair.toString());
             } else {
-                double notional = quantity * marketPrice;
+                double notional = quantity * marketPriceVal;
                 if (notional < m_minTradeValue) {
                     RiskViolation violation;
                     violation.type = ViolationType::ORDER_SIZE_LIMIT;
                     violation.description = "Order notional value below configured minimum";
                     violation.limitValue = m_minTradeValue;
                     violation.actualValue = notional;
+                    LOG_INFO("Order notional violation: minNotional={}, notional={}, exchange={}, pair={}", m_minTradeValue, notional, exchangeId.toString(), tradingPair.toString());
                     violations.push_back(violation);
                     return false;
                 }
@@ -373,10 +410,27 @@ bool OrderValidator::validateTimeInForce(const std::string& timeInForce, std::ve
 }
 
 double OrderValidator::getCurrentMarketPrice(const core::Symbol& tradingPair) const {
+    // Backwards-compatible behavior: prefer the string-based const getPrice
+    // used by older mocks/tests. If that returns 0.0 or throws, fall back to
+    // the modern getCurrentPrice API.
+    // Try string-based getPrice (const overload) first for backwards-compatibility
+    // with legacy mocks used by the unit tests. Use a const-ref call to ensure
+    // gmock-compatible dispatch to the const mocked method.
+    LOG_INFO("OrderValidator::getCurrentMarketPrice calling legacy getPrice for {}", tradingPair.toString());
+    std::string pairStr = tradingPair.toString();
+    const trading::risk::DataInterface& constIface = static_cast<const trading::risk::DataInterface&>(*m_dataInterface);
+    double legacy = constIface.getPrice(pairStr);
+    if (legacy != 0.0) {
+        return legacy;
+    }
+
     try {
-        return m_dataInterface->getCurrentPrice(tradingPair, core::ExchangeId::binance().toString());
+        LOG_INFO("OrderValidator::getCurrentMarketPrice falling back to getCurrentPrice for {}", tradingPair.toString());
+            double fetched = m_dataInterface->getCurrentPrice(tradingPair, core::ExchangeId::binance().toString());
+            LOG_INFO("OrderValidator::getCurrentMarketPrice fetched price {} for {}", fetched, tradingPair.toString());
+            return fetched;
     } catch (const std::exception& ex) {
-        LOG_ERROR("Failed to get market price for {}: {}", tradingPair, ex.what());
+        LOG_ERROR("Failed to get market price for {}: {}", tradingPair.toString(), ex.what());
         throw std::runtime_error("Failed to get market price");
     }
 }

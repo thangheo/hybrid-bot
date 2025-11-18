@@ -28,6 +28,13 @@ public:
         if (symbol.toString() == "ETH/USDT") return 3000.0;
         return 1.0;  // Default
     }
+    
+    // Backwards-compatible const string-based overload used by OrderValidator
+    double getPrice(const std::string& tradingPair) const override {
+        if (tradingPair == "BTC/USDT") return 50000.0;
+        if (tradingPair == "ETH/USDT") return 3000.0;
+        return 1.0;
+    }
 
     // match DataInterface signature for volatility
     double getVolatility(const core::Symbol& tradingPair, const std::string& /*timeframe*/, const std::optional<std::string>& /*exchangeId*/ = std::nullopt) override {
@@ -136,8 +143,9 @@ protected:
              trading::common::OrderType::STOP_LIMIT
          };
          validationConfig.allowedTimeInForce = {"GTC", "IOC", "FOK"};
-         validationConfig.symbolWhitelist = {"BTC/USDT", "ETH/USDT"};
-         // Note: OrderValidationConfig has no 'enforceWhitelist' member; remove the invalid assignment.
+        validationConfig.symbolWhitelist = {"BTC/USDT", "ETH/USDT"};
+        // Enforce the whitelist in integration tests to validate behaviour
+        validationConfig.enforceSymbolWhitelist = true;
          config.setOrderValidationConfig(validationConfig);
          
          // Fat finger config
@@ -150,13 +158,16 @@ protected:
          config.setFatFingerConfig(ffConfig);
          
          // Create test data interface and position tracker
-    testDataInterface = std::make_shared<TestDataInterface>();
-    testPositionTracker = std::make_shared<TestPositionTracker>();
+        // Create the pre-trade risk filter using the data interface (inject tracker before initialize)
+        testDataInterface = std::make_shared<TestDataInterface>();
+        testPositionTracker = std::make_shared<TestPositionTracker>();
 
-    // Create the pre-trade risk filter using the data interface; let it initialize components
-    riskFilter = std::make_unique<PreTradeRiskFilter>(config, testDataInterface);
-    // initialize will set up subcomponents internally
-    riskFilter->initialize();
+        // Create the pre-trade risk filter using the data interface and inject the
+        // test position tracker before initialization so subcomponents pick it up.
+        riskFilter = std::make_unique<PreTradeRiskFilter>(config, testDataInterface);
+        riskFilter->setPositionTracker(testPositionTracker);
+        // initialize will set up subcomponents internally
+        riskFilter->initialize();
      }
      
      std::unique_ptr<PreTradeRiskFilter> riskFilter;

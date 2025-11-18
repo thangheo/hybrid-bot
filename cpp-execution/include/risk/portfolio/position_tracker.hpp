@@ -94,7 +94,7 @@ public:
      * @param exchangeId The exchange identifier
      * @return Vector of positions for the exchange
      */
-    std::vector<Position> getExchangePositions(const ExchangeId& exchangeId) const;
+    virtual std::vector<Position> getExchangePositions(const ExchangeId& exchangeId) const;
     
     /**
      * Get position for a specific trading pair across all exchanges
@@ -109,14 +109,14 @@ public:
      * @param tradingPair The trading pair
      * @return Optional position, or nullopt if not found
      */
-    std::optional<Position> getPosition(const ExchangeId& exchangeId, const TradingPair& tradingPair) const;
+    virtual std::optional<Position> getPosition(const ExchangeId& exchangeId, const TradingPair& tradingPair) const;
     
     /**
      * Get positions for a specific strategy
      * @param strategyId The strategy identifier
      * @return Vector of positions for the strategy
      */
-    std::vector<Position> getStrategyPositions(const StrategyId& strategyId) const;
+    virtual std::vector<Position> getStrategyPositions(const StrategyId& strategyId) const;
     
     /**
      * Update position manually (for reconciliation)
@@ -155,7 +155,7 @@ public:
     /**
      * Get last cached price for a trading pair (returns 0.0 if unavailable)
      */
-    double getCachedPrice(const TradingPair& tradingPair) const;
+    virtual double getCachedPrice(const TradingPair& tradingPair) const;
 
 private:
     std::shared_ptr<DataInterface> m_dataInterface;

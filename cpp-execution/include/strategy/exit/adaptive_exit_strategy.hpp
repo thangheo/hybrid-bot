@@ -61,7 +61,7 @@ public:
         double signal_reversal_threshold;
         double spread_emergency_multiplier;
         double volatility_spike_threshold;
-        int volatility_window_seconds = 180; // For dynamic calculations
+        int volatility_window_seconds = 60; // For dynamic calculations
         // Calculated metrics
         double expected_edge;             // Expected profit per trade
         double sharpe_estimate;           // Risk-adjusted return estimate
