@@ -3,6 +3,7 @@
 # Find Google Test
 find_package(GTest REQUIRED)
 find_package(GMock REQUIRED)
+find_package(Threads REQUIRED)
 
 # Include directories for tests
 include_directories(
@@ -27,6 +28,30 @@ add_test(
     NAME python_monitoring_tests
     COMMAND ${Python3_EXECUTABLE} -m unittest discover -s ${CMAKE_SOURCE_DIR}/tests/monitoring
 )
+
+# Integration test executable for manual buy/sell flow
+add_executable(integration_test integration_test.cpp)
+target_link_libraries(integration_test
+    PRIVATE
+        common
+        execution
+        risk
+        strategy
+        data_ingestion
+        communication
+        monitoring
+        GTest::GTest
+        GMock::GMock
+        Threads::Threads
+)
+target_include_directories(integration_test PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/src
+    # Add cpp-execution sources so tests can include local headers like trading_system.hpp
+    ${CMAKE_SOURCE_DIR}/cpp-execution/src
+    ${CMAKE_SOURCE_DIR}/tests
+)
+add_test(NAME integration_test COMMAND integration_test)
 
 add_test(
     NAME python_alerts_tests

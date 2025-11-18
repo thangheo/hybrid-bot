@@ -142,6 +142,10 @@ ExecutionResponse IcebergAlgorithm::execute(
                 "Parent order must be in OPEN state",
                 std::chrono::system_clock::now(),
                 "",
+                parentOrder.getTradingPair().toString(),
+                "",
+                parentOrder.getQuantity(),
+                0.0
             };
     }
     
@@ -157,6 +161,10 @@ ExecutionResponse IcebergAlgorithm::execute(
             "Iceberg algorithm started",
             std::chrono::system_clock::now(),
             "RUNNING",
+            parentOrder.getTradingPair().toString(),
+            "",
+            parentOrder.getQuantity(),
+            0.0
         } : ExecutionResponse{
             parentOrder.getClientOrderId(),
             parentOrder.getExchangeOrderId(),
@@ -164,6 +172,10 @@ ExecutionResponse IcebergAlgorithm::execute(
             "Failed to start Iceberg algorithm: " + error_message_,
             std::chrono::system_clock::now(),
             "ERROR",
+            parentOrder.getTradingPair().toString(),
+            "",
+            parentOrder.getQuantity(),
+            0.0
         };
 }
 void IcebergAlgorithm::setOrderCallback(const OrderCallback& callback) {
