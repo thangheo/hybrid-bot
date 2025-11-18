@@ -16,7 +16,15 @@ static std::mutex g_tickWarnMutex;
 // AdaptiveExitStrategy::AdaptiveExitStrategy(double prediction_window_seconds) 
 //     : predictionWindow_(prediction_window_seconds) {}
 AdaptiveExitStrategy::AdaptiveExitStrategy(double prediction_window_seconds) 
-    : predictionWindow_(prediction_window_seconds * 1000.0) {}  // Convert to milliseconds
+    : predictionWindow_(prediction_window_seconds * 1000.0) {
+        // Set history depth based on prediction window
+        size_t default_samples = static_cast<size_t>(std::max(1.0, prediction_window_seconds));
+        // store as member for potential reuse in other routines
+        default_history_samples_ = default_samples;
+        //init history.max_samples to default_samples
+        // for all symbols when they are first seen    
+
+    }  // Convert to milliseconds
 void AdaptiveExitStrategy::updateMarketData(
     const std::string& symbol,
     double volatility_1m,
@@ -28,6 +36,14 @@ void AdaptiveExitStrategy::updateMarketData(
     auto& history = marketHistory_[symbol];
 
     bool was_empty = history.volatility_samples.empty() && history.spread_samples.empty() && history.price_returns.empty();
+
+    // Initialize max_samples on first observation for this symbol.
+    if (was_empty) {
+        // predictionWindow_ stored in ms; default_history_samples_ is in seconds sampling at ~1Hz
+        history.max_samples = default_history_samples_;
+        LOG_DEBUG("AdaptiveExitStrategy: initialized history for {} with max_samples={} (prediction_window_seconds={:.1f})",
+                  symbol, history.max_samples, predictionWindow_/1000.0);
+    }
 
     // Update rolling windows
     history.volatility_samples.push_back(volatility_1m);
@@ -49,6 +65,44 @@ void AdaptiveExitStrategy::updateMarketData(
         history.price_returns.pop_front();
     }
 
+}
+
+void AdaptiveExitStrategy::ensureHistoryInitialized(const std::string& symbol) {
+    std::lock_guard<std::mutex> lk(historyMutex_);
+    auto it = marketHistory_.find(symbol);
+    if (it == marketHistory_.end()) return; // nothing to init
+    if (it->second.max_samples == 0) {
+        it->second.max_samples = default_history_samples_;
+        LOG_DEBUG("AdaptiveExitStrategy: ensureHistoryInitialized set max_samples for {} -> {} samples",
+                  symbol, it->second.max_samples);
+    }
+}
+
+size_t AdaptiveExitStrategy::getHistoryMaxSamples(const std::string& symbol) const {
+    std::lock_guard<std::mutex> lk(historyMutex_);
+    auto it = marketHistory_.find(symbol);
+    if (it == marketHistory_.end()) return 0;
+    return it->second.max_samples;
+}
+
+void AdaptiveExitStrategy::setPredictionWindow(double prediction_window_seconds) {
+    std::lock_guard<std::mutex> lk(historyMutex_);
+    predictionWindow_ = prediction_window_seconds * 1000.0;
+    // update default sample count assuming approximate 1Hz updates
+    default_history_samples_ = static_cast<size_t>(std::max(1.0, prediction_window_seconds));
+
+    // resize and trim existing histories
+    for (auto& kv : marketHistory_) {
+        auto& history = kv.second;
+        history.max_samples = default_history_samples_;
+
+        while (history.volatility_samples.size() > history.max_samples) history.volatility_samples.pop_front();
+        while (history.spread_samples.size() > history.max_samples) history.spread_samples.pop_front();
+        while (history.volume_samples.size() > history.max_samples) history.volume_samples.pop_front();
+        while (history.price_returns.size() > history.max_samples) history.price_returns.pop_front();
+    }
+
+    LOG_INFO("AdaptiveExitStrategy::setPredictionWindow: new window={}s, default_history_samples_={}", predictionWindow_/1000.0, default_history_samples_);
 }
 
 void AdaptiveExitStrategy::updateRegime(const std::string& symbol, const MarketMicrostructure& microstructure) {
@@ -156,8 +210,8 @@ AdaptiveExitStrategy::DynamicParameters AdaptiveExitStrategy::calculateDynamicPa
 
     // ===== Holding time =====
     double T_max = pw_sec * decay;
-    double T_min = std::max(1.0, std::max( (spr_ticks / vol_ticks) * 2.0, pw_sec * 0.5 ));
-
+    // double T_min = std::max(1.0, std::max( (spr_ticks / vol_ticks) * 2.0, pw_sec * 0.5 ));
+    double T_min = std::max(1.0, pw_sec * 0.5);  // Should use pw_sec, not hardcoded
     p.max_holding_time = T_max;
     p.min_holding_time = T_min;
 
@@ -233,6 +287,8 @@ void AdaptiveExitStrategy::startPosition(
     double confidence,
     const MarketMicrostructure& microstructure) {
     
+    // Ensure history is initialized for symbol before using it in regime detection.
+    ensureHistoryInitialized(symbol);
     std::lock_guard<std::mutex> lock(tradesMutex_);
     
     auto& state = activeTrades_[symbol];

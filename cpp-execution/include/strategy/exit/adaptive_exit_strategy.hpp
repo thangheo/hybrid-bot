@@ -104,7 +104,7 @@ private:
         std::deque<double> spread_samples;
         std::deque<double> volume_samples;
         std::deque<double> price_returns;
-        size_t max_samples = 60;  // 1 minute of data at 1Hz
+        size_t max_samples = 0;  // 0 => uninitialized; 1 minute of data at 1Hz (default set in ctor)
     };
     
     std::map<std::string, MarketHistory> marketHistory_;
@@ -128,6 +128,10 @@ private:
     // Configuration
     double predictionWindow_ = 60000;  // Default prediction window in milliseconds (60s)
     double riskFreeRate_ = 0.0;       // For Sharpe calculation
+    // Default number of historical samples to keep in rolling windows.
+    // This corresponds to prediction window in seconds assuming 1 Hz sampling
+    // in updateMarketData(). It's set in the ctor based on prediction_window_seconds.
+    size_t default_history_samples_ = 60; 
     
     // Statistical functions
     double calculatePercentile(const std::deque<double>& data, double percentile) const;
@@ -138,6 +142,9 @@ private:
     // Market regime detection
     MarketRegimeType detectMarketRegime(const MarketMicrostructure& micro, 
                                    const MarketHistory& history) const;
+
+    // Ensure a MarketHistory entry has sensible defaults (e.g., max_samples)
+    void ensureHistoryInitialized(const std::string& symbol);
     
     // Dynamic parameter calculation
     DynamicParameters calculateDynamicParameters(
@@ -273,6 +280,13 @@ public:
     };
     
     TradeStatistics getStatistics(const std::string& symbol) const;
+
+    // For testing/diagnostics: return configured max sample window for symbol
+    size_t getHistoryMaxSamples(const std::string& symbol) const;
+
+    // Allow runtime update of prediction window (seconds). This will also
+    // rescale default history depth and trim existing deques accordingly.
+    void setPredictionWindow(double prediction_window_seconds);
     
     /**
      * Calculate total PnL for a closed position. This aggregates recent tracked

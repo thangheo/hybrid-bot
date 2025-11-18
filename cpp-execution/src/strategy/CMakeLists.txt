@@ -56,6 +56,9 @@ target_link_libraries(strategy
 # Set output directory
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../../bin)
 
+# Include tests subdirectory so that unit tests under src/strategy/tests are built
+add_subdirectory(tests)
+
 # Create the executable - DISABLED (test file removed)
 # add_executable(strategy_app strategy_app.cpp)
 # 
