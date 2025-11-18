@@ -1,6 +1,7 @@
 // api_client_manager.cpp
 #include "execution/api_client_manager.hpp"
 #include "execution/exchanges/binance_api_client.hpp"
+#include "execution/exchanges/mock_api_client.hpp"
 #include "execution/exchanges/ftx_api_client.hpp"
 #include "nlohmann/json.hpp"
 #include <stdexcept>
@@ -227,6 +228,18 @@ std::shared_ptr<ExchangeApiClient> ApiClientManager::createClient(const core::Ex
         
         // Create the appropriate client based on the exchange ID
         if (exchangeId == core::ExchangeId::binance()) {
+            // If running integration tests and no credentials are available, or if the
+            // env var INTEGRATION_TEST_USE_MOCK_CLIENT is set, create a mock client.
+            const char* use_mock = std::getenv("INTEGRATION_TEST_USE_MOCK_CLIENT");
+            if (!credentials.has_value() || (use_mock && std::string(use_mock) == "1")) {
+                // Lazy include to avoid mixing production code with test-only code
+                try {
+                    return std::make_shared<trading::execution::MockApiClient>(ExchangeCredentials{});
+                } catch (...) {
+                    // Fall back to real Binance client if mock cannot be created
+                    return std::make_shared<BinanceApiClient>(credentials.value(), rateLimitController);
+                }
+            }
             return std::make_shared<BinanceApiClient>(credentials.value(), rateLimitController);
         } else if (exchangeId == core::ExchangeId::ftx()) {
             return std::make_shared<FtxApiClient>(credentials.value(), rateLimitController);

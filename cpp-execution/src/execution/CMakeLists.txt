@@ -21,6 +21,7 @@ file(GLOB_RECURSE EXECUTION_SOURCES
     "filter/*.cpp"
     "preflight/*.cpp"
     "http_balance_client.cpp"
+    "exchanges/mock_api_client.cpp"
     # "risk/risk_config.cpp"
 )
 
