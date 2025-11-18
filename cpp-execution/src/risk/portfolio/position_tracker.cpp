@@ -453,7 +453,12 @@ void PositionTracker::processExecutionReport(const ExecutionReport& executionRep
                 } else {
                     // Safe to apply update
                     it->second.updatePosition(totalFillQuantity, weightedAvgPrice);
-                    updatePositionCurrentPrice(it->second);
+                    // Do not overwrite the fill price if the fill provided a valid
+                    // price; use DataInterface only as a fallback when fill price
+                    // is not available (e.g., MARKET orders without explicit price).
+                    if (!(weightedAvgPrice > 0.0)) {
+                        updatePositionCurrentPrice(it->second);
+                    }
                     try {
                         std::ostringstream _pt_upd;
                         _pt_upd << "[POSITION_TRACKER_DBG] updated position: key=" << positionKey
@@ -476,8 +481,11 @@ void PositionTracker::processExecutionReport(const ExecutionReport& executionRep
                     needReconcile = true;
                 } else {
                     Position newPosition(exchangeId, tradingPair, strategyId, 
-                                       totalFillQuantity, weightedAvgPrice);
-                    updatePositionCurrentPrice(newPosition);
+                                           totalFillQuantity, weightedAvgPrice);
+                    // Do NOT override the entry price for a newly created position using
+                    // the DataInterface price. Using the fill price (weightedAvgPrice)
+                    // preserves fidelity for end-to-end tests. Market-data updates will
+                    // update price via updateMarketData explicitly.
                     auto [it2, inserted] = m_positions.emplace(positionKey, std::move(newPosition));
                     if (inserted) {
                         try {
@@ -658,6 +666,7 @@ std::vector<Position> PositionTracker::getStrategyPositions(const StrategyId& st
 bool PositionTracker::updatePosition(const ExchangeId& exchangeId, const TradingPair& tradingPair, 
                                    double quantity, std::optional<double> price) {
     try {
+        bool priceProvided = price.has_value();
         double currentPrice = price.value_or(getCurrentPrice(tradingPair));
         if (currentPrice <= 0.0) {
             std::cerr << "Invalid price for position update: " << currentPrice << std::endl;
@@ -689,7 +698,11 @@ bool PositionTracker::updatePosition(const ExchangeId& exchangeId, const Trading
                 reconciliationStrategy.version = "1.0";
 
                 Position newPosition(exchangeId, tradingPair, reconciliationStrategy, quantity, currentPrice);
-                updatePositionCurrentPrice(newPosition);
+                // If a price was explicitly provided by the caller, prefer it
+                // and do not override it with the data interface price.
+                if (!priceProvided) {
+                    updatePositionCurrentPrice(newPosition);
+                }
                 auto [it2, inserted] = m_positions.emplace(key, std::move(newPosition));
                 if (inserted) {
                     toNotifyPos = it2->second;

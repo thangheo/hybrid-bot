@@ -45,7 +45,8 @@ public:
     
     std::string submitOrder(const trading::risk::OrderRequest& orderRequest) override {
         lastSubmittedOrder = "test_order_123";
-        return lastSubmittedOrder;
+        // Return standard success string expected by RebalancingEngine
+        return "SUCCESS";
     }
     
     bool cancelOrder(const std::string& orderId) override { return true; }
@@ -109,8 +110,11 @@ public:
          // Setup mock data
          setupMockData();
          
-         // Create portfolio manager
-         m_portfolioManager = std::make_shared<PortfolioManager>(m_config);
+        // Create portfolio manager and inject our MockDataInterface
+        // so sub-components (CollateralManager, RebalancingEngine) can use market data
+        m_portfolioManager = std::make_shared<PortfolioManager>(m_config, m_dataInterface);
+        // Inject our TestExecutionInterface to avoid creating a real execution client
+        m_portfolioManager->setExecutionInterface(m_executionInterface);
      }
      
      void setupConfig() {
@@ -133,8 +137,8 @@ public:
         m_config.collateralConfig.baseCurrency = "USD";
         m_config.collateralConfig.minimumFreeCollateralRatio = 0.2;
         m_config.collateralConfig.managedExchanges = {
-            trading::common::ExchangeId::fromString("binance"), 
-            trading::common::ExchangeId::fromString("ftx")
+            core::ExchangeId::fromString("binance"),
+            core::ExchangeId::fromString("ftx")
         };
         m_config.collateralConfig.minimumBalances = {
             {"USD", 10000.0},
@@ -164,13 +168,15 @@ public:
         for (const auto& balance : binanceBalances) {
             binanceMap[balance.asset] = balance.available;
         }
-        m_executionInterface->mockBalances["BINANCE"] = binanceMap;
+        // Use ExchangeId::toString() to ensure we use the same casing and format
+        // as the rest of the codebase (core::ExchangeId uses uppercase internally).
+        m_executionInterface->mockBalances[core::ExchangeId::binance().toString()] = binanceMap;
         
         std::map<std::string, double> ftxMap;
         for (const auto& balance : ftxBalances) {
             ftxMap[balance.asset] = balance.available;
         }
-        m_executionInterface->mockBalances["FTX"] = ftxMap;
+        m_executionInterface->mockBalances[core::ExchangeId::ftx().toString()] = ftxMap;
     }
     
     trading::execution::models::ExecutionReport createExecutionReport(const std::string& exchangeId, 
@@ -181,7 +187,7 @@ public:
         trading::execution::models::ExecutionReport report;
         report.setExchangeId(trading::common::ExchangeId::fromString(exchangeId));
         report.setSymbol(trading::core::Symbol::fromString(tradingPair));
-        report.setSide(side == "buy" ? trading::core::Direction::BUY : trading::core::Direction::SELL);
+        report.setSide(side == "buy" || side == "BUY" ? trading::core::Direction::BUY : trading::core::Direction::SELL);
         report.setStatus(trading::execution::models::OrderState::FILLED);
         report.setQuantity(quantity);
         report.setFilledQuantity(quantity);
