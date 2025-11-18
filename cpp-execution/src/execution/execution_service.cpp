@@ -288,7 +288,7 @@ models::Order ExecutionService::createExchangeOrder(const models::Order& order, 
     return exchange_order;
 }
 
-ExecutionResponse ExecutionService::placeOrder_2(const models::Order& order) {
+ExecutionResponse ExecutionService::placeOrder(const models::Order& order) {
     // 1. Early validations
     if (!is_running_) {
         return createErrorResponse(order, "Execution service not running");
@@ -309,41 +309,41 @@ ExecutionResponse ExecutionService::placeOrder_2(const models::Order& order) {
 
     // 3. Create exchange order (fix duplicate setOrderId) use order generator if needed
     auto exchange_order = createExchangeOrder(order, exchangeId);
-    order_lifecycle_tracker_->addOrder(order); // Track original order
+    order_lifecycle_tracker_->addOrder(exchange_order); // Track exchange-level order
 
     // 4. Get API client
     auto api_client = api_client_manager_->getClient(exchangeId);
     if (!api_client) {
-        return createErrorResponse(order, "Exchange API client not available");
+        return createErrorResponse(exchange_order, "Exchange API client not available");
     }
 
     // 5. Pre-submit price validation (keep as-is, this is good)
-    if (!validatePriceDeviation(order, exchangeId)) {
-        return createErrorResponse(order, "Price deviation too large");
+    if (!validatePriceDeviation(exchange_order, exchangeId)) {
+        return createErrorResponse(exchange_order, "Price deviation too large");
     }
 
     // 6. Balance validation - SIMPLIFIED to ONE check with optional retry
-    bool isExitSignal = isExitOrder(order);
+    bool isExitSignal = isExitOrder(exchange_order);
     bool skipBalance = balanceValidator_->skipBalanceForExits() && isExitSignal;
     
     if (!skipBalance) {
         // Try cached first
-        auto balanceResult = balanceValidator_->validateOrder(order, exchangeId, false);
+        auto balanceResult = balanceValidator_->validateOrder(exchange_order, exchangeId, false);
         
         if (!balanceResult.isValid) {
             // Try fresh validation once
-            balanceResult = balanceValidator_->validateOrder(order, exchangeId, true);
+            balanceResult = balanceValidator_->validateOrder(exchange_order, exchangeId, true);
             
             if (!balanceResult.isValid) {
                 // Handle quantity adjustment if possible
                 if (balanceResult.canAdjust && balanceResult.suggestedQuantity > 0) {
-                    if (!tryAdjustQuantity(const_cast<models::Order&>(order))) {
-                        return createErrorResponse(order, balanceResult.reason);
+                        if (!tryAdjustQuantity(exchange_order)) {
+                        return createErrorResponse(exchange_order, balanceResult.reason);
                     }
-                } else if (shouldBypassBalanceCheck(order)) {
+                    } else if (shouldBypassBalanceCheck(exchange_order)) {
                     LOG_WARN("Bypassing balance check for exit order");
                 } else {
-                    return createErrorResponse(order, balanceResult.reason);
+                    return createErrorResponse(exchange_order, balanceResult.reason);
                 }
             }
         }
@@ -362,15 +362,15 @@ ExecutionResponse ExecutionService::placeOrder_2(const models::Order& order) {
         // 8. Handle result
         ExecutionResponse response = (
             ExecutionResponse{
-                order.getClientOrderId(),
+                exchange_order.getClientOrderId(),
                 executionReport.exchangeOrderId(),
                 executionReport.status() != OrderState::REJECTED,
                 executionReport.rejectReason(),
                 std::chrono::system_clock::now(),
                 executionReport.isComplete() ? "COMPLETED" : "PENDING",
-                order.getTradingPair().toString(),
+                exchange_order.getTradingPair().toString(),
                 exchangeId.toString(),
-                order.getQuantity(),
+                exchange_order.getQuantity(),
                 executionReport.filledQuantity()
             }
         );
@@ -392,7 +392,7 @@ ExecutionResponse ExecutionService::placeOrder_2(const models::Order& order) {
     }
 }
 
- ExecutionResponse ExecutionService::placeOrder(const models::Order& order) {
+ ExecutionResponse ExecutionService::placeOrder_2(const models::Order& order) {
     // Validate service state
     if (!is_running_) {
         LOG_WARN("ExecutionService::placeOrder", "Execution service not running for clientOrderId={}", order.getClientOrderId());
