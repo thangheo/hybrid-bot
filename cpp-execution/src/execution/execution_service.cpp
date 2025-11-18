@@ -509,6 +509,10 @@ models::Order ExecutionService::createExchangeOrder(const models::Order& order, 
                 auto fut = api_client->getCurrentPrice(exchange_order->getTradingPair());
                 marketPrice = fut.get();
             }
+            else{
+                LOG_WARN("ExecutionService::placeOrder - No method available to fetch market price for pre-submit validation for clientOrderId={}", exchange_order->getClientOrderId());
+                
+            }
 
             if (marketPrice > 0.0 && requestedPrice > 0.0) {
                 LOG_INFO("ExecutionService::placeOrder - Market price fetched for pre-submit validation for clientOrderId={} (symbol={}) requestedPrice={} marketPrice={}",
