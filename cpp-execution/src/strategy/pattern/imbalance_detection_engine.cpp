@@ -952,7 +952,7 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                         if (maxModelUpdates < bayesMinUpdatesToTrade_) {
                             // not enough training yet — don't trade
                             LOG_TRACE("ImbalanceDetectionEngine: bayes model updates too low (max={} < min={}), skipping trade", maxModelUpdates, bayesMinUpdatesToTrade_);
-                        } else if (signal.should_trade && signal.position_size > 0.0) {
+                        } else if (signal.should_trade){  //&& signal.position_size >= 0.0) {
                             core::Direction dir = signal.direction;
                             std::string symbol_str = m.symbol.toString();
                             // ❌ EXIT LOGIC REMOVED: Only handle ENTRY signals here
@@ -1069,6 +1069,8 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
 
                             }
 
+                        }else {
+                            LOG_TRACE("ImbalanceDetectionEngine: bayes signal indicates no trade");
                         }
                     }
                     catch (const std::exception &ex) {
