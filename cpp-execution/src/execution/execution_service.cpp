@@ -161,7 +161,7 @@ ExecutionResponse ExecutionService::executeSignal(const TradingSignal& signal) {
     auto start = std::chrono::steady_clock::now();
     LOG_TRACE("ExecutionService::executeSignal START: id={} sym={} direction={} targetSize={} conf={}",
               signal.id, signal.symbol.toString(), (signal.direction==core::Direction::BUY?"BUY":"SELL"), signal.targetSize, signal.confidence);
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::unique_lock<std::mutex> lk(mutex_);
     ExecutionResponse response;
 
     try {
@@ -178,7 +178,12 @@ ExecutionResponse ExecutionService::executeSignal(const TradingSignal& signal) {
         // 3. Place order - delegate to placeOrder to ensure consistent pre-submit validation,
         //    routing and lifecycle handling. This prevents bypassing the BalanceValidator
         //    when callers use executeSignal().
+        // Unlock before performing the potentially blocking placeOrder call so that
+        // other threads can still interact with the service (e.g., query active orders)
+        // during network I/O. We re-lock only for a brief moment if needed.
+        lk.unlock();
         ExecutionResponse res = placeOrder(order);
+        lk.lock();
         auto end = std::chrono::steady_clock::now();
         auto dur = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
         LOG_TRACE("ExecutionService::executeSignal END: id={} dur_ms={} success={}", signal.id, dur, res.success);
