@@ -25,7 +25,25 @@
          
          // Load configuration from file
          config = std::make_shared<RiskConfig>();
-         config->loadFromFile("/home/e8/works/hybrid-bot/cpp-execution/build/config/risk_config.json");
+         // Try multiple common locations for configuration file. If none are
+         // available, fall back to defaults to allow tests to run in CI/dev
+         // where paths may differ.
+         std::vector<std::string> paths = {
+             "build/config/risk_config.json",
+             "config/risk_config.json",
+             "tests/risk/test_risk_config.json",
+         };
+         bool loaded = false;
+         for (const auto& p : paths) {
+             if (config->loadFromFile(p)) {
+                 loaded = true;
+                 break;
+             }
+         }
+         if (!loaded) {
+             // Leave risk config defaults in place and log a warning.
+             std::cerr << "Warning: risk_config.json not found in typical locations; using default RiskConfig values.\n";
+         }
          
          // Create the risk manager
          riskManager = std::make_shared<RiskManager>(*config);
