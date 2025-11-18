@@ -11,6 +11,7 @@
 #include <fstream>
 #include "common/logger.hpp"
 #include "execution/models/order.hpp"
+#include "execution/exchanges/mock_api_client.hpp"
 
 #include <memory>
 #include <unordered_map>
@@ -138,20 +139,31 @@ bool INTEGRATION_TEST::initialize() {
     std::shared_ptr<trading::risk::PositionTracker> sharedPositionTracker = 
         std::make_shared<trading::risk::PositionTracker>(riskConfig_, marketDataInterface_);
     
-    riskManager_ = trading::risk::RiskManager::create(
+    bool skipRisk = false;
+    const char* noRiskEnv = std::getenv("INTEGRATION_TEST_NO_RISK");
+    if (noRiskEnv && std::string(noRiskEnv) == "1") {
+        skipRisk = true;
+        std::cout << "INTEGRATION_TEST: skipping risk manager (INTEGRATION_TEST_NO_RISK=1)" << std::endl;
+    }
+
+    if (!skipRisk) {
+        riskManager_ = trading::risk::RiskManager::create(
         executionService_, 
         riskConfig_, 
         marketDataInterface_,
         zmq_context_,
         sharedPositionTracker  // Pass shared PositionTracker
     );
-    if (!riskManager_) {
+        if (!riskManager_) {
         LOG_ERROR("Application", "Failed to initialize risk manager");
         return false;
     }
     if (!riskManager_->initialize()) {
         std::cerr << "Failed to initialize risk manager" << std::endl;
         return false;
+    }
+    } else {
+        std::cout << "Integration test will not use RiskManager; proceeding without risk components" << std::endl;
     }
     
     // 4. Initialize strategy engine
@@ -196,7 +208,6 @@ bool INTEGRATION_TEST::start() {
             }
         }
 
-        // CRITICAL DEBUG - Check if threads are actually running
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
  
         //load symbols from strategy config
@@ -211,15 +222,14 @@ bool INTEGRATION_TEST::start() {
         }
         std::cout << std::endl;
         //order book depth from config
-        int depth = 20;//strategyConfig_.orderBookDepth;        
+        int depth = 10;//strategyConfig_.orderBookDepth;        
         if (!dataIngestionService_->start(symbols,depth)) {
             std::cerr << "Failed to start data ingestion service" << std::endl;
             return false;
         }
         // Start orderbook worker pool after data ingestion starts
         startOrderbookWorkerPool(); 
-        // Start signal worker pool (if available) and execution workers to process enqueued trading signals
-        // Note: INTEGRATION_TEST uses a simplified flow where signals are enqueued via realExecution();
+     
         // ensure exec workers are active to consume the queue.
         startExecWorkerPool();
         // 2. Start strategy engine
@@ -313,21 +323,33 @@ void INTEGRATION_TEST::setupExecutionEngine() {
     //get from environment .env file
     const char* apiKey = std::getenv("BINANCE_API_KEY");
     const char* apiSecret = std::getenv("BINANCE_API_SECRET");
-    if(!apiKey || !apiSecret) {
-        std::cerr << "Error: Missing Binance API credentials in environment variables." << std::endl;
-        systemHealthy_ = false;
-        return;
+    const char* useMockEnv = std::getenv("INTEGRATION_TEST_USE_MOCK_CLIENT");
+    bool forceMock = useMockEnv && std::string(useMockEnv) == "1";
+    if(!apiKey || !apiSecret || forceMock) {
+        std::cerr << "Warning: Missing Binance credentials or mock mode; using MockApiClient for integration test." << std::endl;
+        // Use a mock client for deterministic testing so CI can run without external secrets
+        api_client_manager->addClient(core::ExchangeId::binance(), 
+        std::make_shared<execution::MockApiClient>(ExchangeCredentials{}));
+    } else {
+        auto credentials = ExchangeCredentials{
+            apiKey,
+            apiSecret,
+            "",
+            true
+        };
+        authService->setCredentials(core::ExchangeId::binance(), credentials);
+        api_client_manager->addClient(core::ExchangeId::binance(),
+            std::make_shared<BinanceApiClient>(credentials, 
+            std::make_shared<RateLimitController>(core::ExchangeId::binance())));
     }
-    auto credentials = ExchangeCredentials{
-        apiKey,
-        apiSecret,
-        "", 
-        true
-    };
-    authService->setCredentials(core::ExchangeId::binance(), credentials);
-    api_client_manager->addClient(core::ExchangeId::binance(),
-        std::make_shared<BinanceApiClient>(credentials, 
-        std::make_shared<RateLimitController>(core::ExchangeId::binance())));
+    // If we're using live credentials, add the Binance client; otherwise the mock client
+    if (apiKey && apiSecret && !forceMock) {
+        auto credentials = ExchangeCredentials{apiKey, apiSecret, "", true};
+        authService->setCredentials(core::ExchangeId::binance(), credentials);
+        api_client_manager->addClient(core::ExchangeId::binance(),
+            std::make_shared<BinanceApiClient>(credentials,
+                std::make_shared<RateLimitController>(core::ExchangeId::binance())));
+    }
     std::cout << "=== DEBUG API CLIENT MANAGER ===" << std::endl;
     std::cout << "ApiClientManager created, checking status..." << std::endl;
     if (!api_client_manager->initialize()) {
@@ -739,7 +761,9 @@ void INTEGRATION_TEST::setupComponentConnections() {
                 report.setExchangeId(core::ExchangeId::fromString(resp.exchange_id)); // NEW
                 report.setQuantity(resp.quantity);    // NEW
                 report.setFilledQuantity(resp.filled_quantity); // NEW - ensure PositionTracker sees fills when available
-
+                // report.setPrice(resp.);          // NEW
+                LOG_INFO("INTEGRATION_TEST ,Execution callback received: clientOrder={} success={} filledQty={}",
+                         resp.client_order_id, resp.success, resp.filled_quantity);
                 if (resp.success) {
                     // Try to fetch the authoritative order state from the execution service
                     try {
@@ -767,9 +791,13 @@ void INTEGRATION_TEST::setupComponentConnections() {
                     report.setRejectReason(resp.error_message);
                 }
 
-                // Forward to RiskManager
+                // Forward to RiskManager if configured; otherwise just log and skip
                 if (riskManager_) {
                     riskManager_->processExecutionReport(report);
+                } else {
+                    // No RiskManager configured in this integration test run - just print
+                    std::cout << "[INTEG] Exec callback (no-risk): clientOrder=" << resp.client_order_id
+                              << " status=" << static_cast<int>(report.status()) << " qty=" << report.quantity() << " filled=" << report.filledQuantity() << std::endl;
                 }
             } catch (...) {
                 // swallow - reporting must not crash execution thread
@@ -906,7 +934,7 @@ int main() {
     ts.realExecution(buy);
 
     // Wait for 1 second before placing exit (sell) order
-    std::this_thread::sleep_for(std::chrono::seconds(10));
+    std::this_thread::sleep_for(std::chrono::seconds(2));
 
     // Build a SELL signal (exit)
     trading::execution::TradingSignal sell;

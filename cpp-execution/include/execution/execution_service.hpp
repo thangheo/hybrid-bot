@@ -120,6 +120,7 @@ public:
     ExecutionResponse executeSignal(const TradingSignal& signal);
     std::future<ExecutionResponse> executeSignalAsync(const TradingSignal& signal);
     ExecutionResponse placeOrder(const models::Order& order);
+    ExecutionResponse placeOrder_2(const models::Order& order);
     CancelResponse cancelOrder(const std::string& client_order_id);
     std::string orderStateToString(models::OrderState state);
     CancelResponse cancelOrderByExchangeId(const std::string& exchange_order_id, 
@@ -197,6 +198,26 @@ private:
     
     // NEW: Helper to get API client (abstracts gateway vs direct access)
     std::shared_ptr<ExchangeApiClient> getExchangeClient(const core::ExchangeId& exchangeId);
+    // NEW: Helper to validate balances before order placement
+    // createErrorResponse()
+    // ExecutionResponse validateBalancesForOrder(const models::Order& order);
+    // ExecutionResponse response = processExecutionReport(const ExecutionResponse& response);
+    BalanceValidationResult validateBalancesForOrder(const models::Order& order);
+    // validatePriceDeviation
+    bool validatePriceDeviation(const models::Order& order, const core::ExchangeId& exchangeId);
+    // handleRejection()
+    ExecutionResponse createErrorResponse(const models::Order& order, const std::string& error_message);
+    // isExitOrder()
+    bool isExitOrder(const models::Order& order);
+    // shouldBypassBalanceCheck()
+    bool shouldBypassBalanceCheck(const models::Order& order);
+    // tryAdjustQuantity()
+    bool tryAdjustQuantity(models::Order& order);
+    // processExecutionReport()
+    ExecutionResponse  processExecutionReport(ExecutionResponse& response, const models::Order& order);
+    // handleRejection(exchange_order, "Exchange API client not available");
+    //  createExchangeOrder(order, exchangeId);
+    models::Order createExchangeOrder(const models::Order& order, const core::ExchangeId& exchangeId);
 };
 
 } // namespace execution
