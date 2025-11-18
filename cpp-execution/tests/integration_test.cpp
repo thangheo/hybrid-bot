@@ -703,12 +703,7 @@ void INTEGRATION_TEST::shutdown() {
 
 void INTEGRATION_TEST::realExecution(const execution::TradingSignal& signal) {
    
-    // If we are running in training mode, do not execute orders
-    if (operationMode_ == OperationMode::TRAINING) {
-        LOG_INFO("INTEGRATION_TEST: Training mode active - skipping execution for signal {}", signal.id);
-        return;
-    }
-
+     
     // Enqueue execution task to worker pool to avoid thread explosion
     ordersExecuted_++;
     std::unique_lock<std::mutex> lk(execQueueMutex_);
@@ -898,7 +893,7 @@ static std::string generateSignalId() {
 int main() {
     // Create the trading system and initialize
     INTEGRATION_TEST ts;
-
+    trading::common::Logger::initialize("TradingApp", trading::common::LogLevel::TRACE);
     std::cout << "=== Starting integration test: single buy -> sell flow ===" << std::endl;
 
     if (!ts.initialize()) {
