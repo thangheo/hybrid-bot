@@ -13,9 +13,10 @@ namespace strategy {
 static std::unordered_set<std::string> g_tickSizeWarnedSymbols;
 static std::mutex g_tickWarnMutex;
 
+// AdaptiveExitStrategy::AdaptiveExitStrategy(double prediction_window_seconds) 
+//     : predictionWindow_(prediction_window_seconds) {}
 AdaptiveExitStrategy::AdaptiveExitStrategy(double prediction_window_seconds) 
-    : predictionWindow_(prediction_window_seconds) {}
-
+    : predictionWindow_(prediction_window_seconds * 1000.0) {}  // Convert to milliseconds
 void AdaptiveExitStrategy::updateMarketData(
     const std::string& symbol,
     double volatility_1m,

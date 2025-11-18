@@ -78,7 +78,7 @@ public:
      * @param violations Vector to fill with any violations
      * @return true if within range, false otherwise
      */
-    bool isPriceWithinRange(const core::Symbol& tradingPair, double price, std::vector<RiskViolation>& violations);
+    bool isPriceWithinRange(const core::Symbol& tradingPair, double price, std::vector<RiskViolation>& violations, std::optional<double> marketPrice = std::nullopt);
     
     /**
      * Check if an order size meets minimum requirements for the exchange
@@ -88,7 +88,7 @@ public:
      * @param violations Vector to fill with any violations
      * @return true if size is valid, false otherwise
      */
-    bool isOrderSizeValid(const core::ExchangeId& exchangeId, const core::Symbol& tradingPair, double quantity, std::vector<RiskViolation>& violations);
+    bool isOrderSizeValid(const core::ExchangeId& exchangeId, const core::Symbol& tradingPair, double quantity, std::vector<RiskViolation>& violations, std::optional<double> marketPrice = std::nullopt);
     
     /**
      * Update the symbol whitelist

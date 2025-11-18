@@ -81,13 +81,15 @@ public:
         double sizeAnomalyThreshold;         // 3 sigma
         double notionalValueThreshold;       // $10k
         double minimumHistorySize;           // Min samples needed
+        double defaultTypicalSize;          // Default typical size for symbols with no history
         bool rejectHighNotionalOrders;
         
         Config() 
             : priceDeviationThreshold(0.05)
             , sizeAnomalyThreshold(3.0)
             , notionalValueThreshold(10000.0)
-            , minimumHistorySize(10.0)
+            , minimumHistorySize(1.0)
+            , defaultTypicalSize(1.0)
             , rejectHighNotionalOrders(false)
         {}
         
@@ -95,7 +97,7 @@ public:
             return priceDeviationThreshold > 0.0 && priceDeviationThreshold < 1.0 &&
                    sizeAnomalyThreshold > 0.0 &&
                    notionalValueThreshold > 0.0 &&
-                   minimumHistorySize > 0.0;
+                   minimumHistorySize > 0.0 && defaultTypicalSize > 0.0;
         }
     };
 
@@ -118,7 +120,10 @@ public:
         config_.priceDeviationThreshold = ff.priceDeviationThreshold;
         config_.sizeAnomalyThreshold = ff.sizeAnomalyThreshold;
         config_.notionalValueThreshold = ff.notionalValueThreshold;
-        config_.minimumHistorySize = ff.defaultTypicalSize;
+        // defaultTypicalSize controls the fallback typical order size for symbols
+        // with no history. minimumHistorySize is a separate parameter (min samples
+        // needed) and should remain the default unless explicitly configured.
+        config_.defaultTypicalSize = ff.defaultTypicalSize;
         config_.rejectHighNotionalOrders = ff.rejectHighNotionalOrders;
         totalValidations_ = 0;
         rejectedOrders_ = 0;

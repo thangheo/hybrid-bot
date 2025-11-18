@@ -93,7 +93,11 @@ OrderPatternAnalyzer::Statistics OrderPatternAnalyzer::calculateStatistics() con
         double diff = sample - stats.mean;
         variance += diff * diff;
     }
-    variance /= (sortedSamples.size() - 1);
+    if (sortedSamples.size() > 1) {
+        variance /= (sortedSamples.size() - 1);
+    } else {
+        variance = 0.0;
+    }
     stats.stdDev = std::sqrt(variance);
     
     return stats;
@@ -171,13 +175,32 @@ bool FatFingerProtection::checkFatFinger(const OrderRequest& orderRequest,
         priceOk = checkPriceDeviation(orderRequest.tradingPair, orderRequest.price, violations);
     }
     
-    // Check size anomaly
-    sizeOk = checkSizeAnomaly(orderRequest.tradingPair, orderRequest.quantity, violations);
-    
-    // Check notional value
+    // Check notional value first; if it requires additional verification without
+    // rejecting, we do not apply the size anomaly rule to avoid double-flagging
+    // the same order for both notional and size issues.
     double price = (orderRequest.type != OrderType::MARKET) ?
                   orderRequest.price : getCurrentMarketPrice(orderRequest.tradingPair);
-    notionalOk = checkNotionalValue(orderRequest.tradingPair, price, orderRequest.quantity, violations);
+    bool highNotionalTriggered = false;
+    if (!checkNotionalValue(orderRequest.tradingPair, price, orderRequest.quantity, violations)) {
+        // If notional check indicates rejection, we must mark size as invalid too
+        notionalOk = false;
+    } else {
+        // If a non-rejecting verification violation was added, skip size anomaly
+        // to avoid duplicate violation types.
+        for (const auto& v : violations) {
+            if (v.violationType == "REQUIRES_ADDITIONAL_VERIFICATION") {
+                highNotionalTriggered = true;
+                break;
+            }
+        }
+    }
+
+    if (!highNotionalTriggered) {
+        // Check size anomaly unless high-notional verification was triggered
+        sizeOk = checkSizeAnomaly(orderRequest.tradingPair, orderRequest.quantity, violations);
+    } else {
+        sizeOk = true;
+    }
     
     return priceOk && sizeOk && notionalOk;
 }
@@ -222,7 +245,8 @@ double FatFingerProtection::getTypicalOrderSize(const core::Symbol& symbol) cons
         }
     }
     
-    return 1.0; // Default value if no history
+    // Use configured default typical size when no history available
+    return config_.defaultTypicalSize;
 }
 
 std::optional<OrderPatternAnalyzer::Statistics> 
@@ -256,6 +280,7 @@ bool FatFingerProtection::checkPriceDeviation(const core::Symbol& symbol,
             violation.description = "Price deviates significantly from market price";
             violation.limitValue = config_.priceDeviationThreshold * 100;
             violation.actualValue = deviation * 100;
+            violation.violationType = "PRICE_DEVIATION_TOO_LARGE";
             violations.push_back(violation);
             return false;
         }
@@ -305,16 +330,24 @@ bool FatFingerProtection::checkSizeAnomaly(const core::Symbol& symbol,
                  symbol, stats.sampleSize);
         return true;
     }
-    
-    const double anomalyScore = analyzer.getAnomalyScore(quantity);
-    
-    if (anomalyScore > config_.sizeAnomalyThreshold) {
+    // Determine typical size and a threshold level based on configured multiplier
+    double typical = stats.median;
+    if (!std::isfinite(typical) || typical <= 0.0) {
+        typical = config_.defaultTypicalSize;
+    }
+
+    double thresholdSize = typical * config_.sizeAnomalyThreshold;
+
+    if (quantity > thresholdSize) {
         ++rejectedOrders_;
         RiskViolation violation;
         violation.type = ViolationType::ORDER_SIZE_LIMIT;
         violation.description = "Order size significantly larger than typical";
-        violation.limitValue = config_.sizeAnomalyThreshold;
-        violation.actualValue = anomalyScore;
+        // Provide a human-friendly limit (size-based) rather than sigma units
+        violation.limitValue = thresholdSize;
+        violation.actualValue = quantity;
+        // Backwards-compatible string label expected by unit tests
+        violation.violationType = "ORDER_SIZE_ANOMALY";
         violations.push_back(violation);
         return false;
     }
@@ -339,9 +372,16 @@ bool FatFingerProtection::checkNotionalValue(const core::Symbol& symbol,
             violations.push_back(violation);
             return false;
         } else {
-            LOG_WARN("High notional value order for {}: ${:.2f} (limit: ${:.2f}) - "
-                    "requires additional verification",
+            LOG_WARN("High notional value order for {}: ${:.2f} (limit: ${:.2f}) - requires additional verification",
                     symbol, notionalValue, config_.notionalValueThreshold);
+            // Add a soft violation to indicate the order requires additional verification
+            RiskViolation violation;
+            violation.type = ViolationType::OTHER;
+            violation.description = "Order requires additional verification due to high notional value";
+            violation.limitValue = config_.notionalValueThreshold;
+            violation.actualValue = notionalValue;
+            violation.violationType = "REQUIRES_ADDITIONAL_VERIFICATION";
+            violations.push_back(violation);
         }
     }
     

@@ -1,7 +1,7 @@
 {
   "strategy_id": "order_imbalance",
   "version": "1.2.0",
-  "marketDataUpdaterIntervalMs": 500,
+  "marketDataUpdaterIntervalMs": 1000,
   "exitMonitorIntervalMs": 500,
   "mode": "TRAINING",
   "tradingPairs": [
