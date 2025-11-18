@@ -323,10 +323,15 @@ std::shared_ptr<models::Order> OrderLifecycleTracker::getOrderByOrderId(const st
      for (const auto& pair : orders_by_client_id_) {
          auto& order = pair.second;
          
-         // Only check active orders that aren't in a terminal state
-         if (!order->isActive()) {
-             continue;
-         }
+        // Only check orders that are not in a terminal state. Previously this
+        // used isActive() which only returned true for OPEN / PARTIALLY_FILLED.
+        // That meant PENDING orders would never time out. Consider PENDING and
+        // PENDING_CANCEL as valid candidates for timeout detection as well.
+        auto state = order->getState();
+        if (state == models::OrderState::FILLED || state == models::OrderState::CANCELED ||
+            state == models::OrderState::REJECTED || state == models::OrderState::EXPIRED) {
+            continue; // skip terminal states
+        }
          
          // Check if order has timed out
          auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
