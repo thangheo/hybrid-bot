@@ -1768,7 +1768,9 @@ void Trading_system::execWorkerLoop(size_t workerId) {
             // Small delay to simulate processing/network latency for entries
             std::this_thread::sleep_for(50ms);
 
-            std::cout << "🔄 ExecWorker processing signal " << task.id << " for " << task.symbol.toString() << std::endl;
+            auto workerStart = std::chrono::steady_clock::now();
+            std::cout << "🔄 ExecWorker processing signal " << task.id << " for " << task.symbol.toString() 
+                      << " (execQueueSize=" << execQueue_.size() << ")" << std::endl;
 
             if (!executionService_) {
                 std::cerr << "Execution service not initialized!" << std::endl;
@@ -2035,10 +2037,17 @@ void Trading_system::execWorkerLoop(size_t workerId) {
 
             // --- Step 7: Execute the signal ---
             std::cout << "🔄 Attempting execution for signal " << task.id << " on " << task.symbol.toString() << std::endl;
+            auto t0 = std::chrono::steady_clock::now();
             ExecutionResponse response = executionService_->executeSignal(task);
-            std::cout << "🔄 Execution response received: success=" << response.success << ", error='" << response.error_message << "'" << std::endl;
+            auto t1 = std::chrono::steady_clock::now();
+            auto dur = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
+            std::cout << "🔄 Execution response received: success=" << response.success << ", error='" << response.error_message << "' (exec_duration_ms=" << dur << ")" << std::endl;
 
             if (!response.success) {
+                // Log a longer duration as warn for backpressure troubleshooting
+                if (dur > 500) {
+                    LOG_WARN("ExecWorker: executeSignal slow ({} ms) for {}: {}", dur, task.symbol.toString(), response.error_message);
+                }
 
                 std::cout << "❌ Execution failed for signal " << task.id 
                           << ": " << response.error_message << std::endl;
