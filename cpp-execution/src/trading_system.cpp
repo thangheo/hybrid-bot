@@ -1110,6 +1110,7 @@ void Trading_system::printStatus() {
     std::cout << "Runtime: " << elapsed << "s" << std::endl;  //this will be always 0s
     std::cout << "Service Health: " << (dataIngestionService_->isHealthy() ? "HEALTHY" : "UNHEALTHY") << std::endl;
     std::cout << "Order book updates received: " << messagesProcessed_.load() << std::endl;
+    std::cout << "Signal queue size: " << signalQueue_.size() << "  Exec queue size: " << execQueue_.size() << std::endl;
     // std::cout << "internal zmq msg sent: " << orderBookUpdatesReceived_.load() << std::endl;
     // List active symbols with intelligence
 
@@ -1731,6 +1732,7 @@ void Trading_system::startExecWorkerPool() {
         execWorkers_.emplace_back([this, i]() { this->execWorkerLoop(i); });
     }
     std::cout << "Started " << execWorkers_.size() << " exec worker(s)" << std::endl;
+    LOG_TRACE("Exec workers started (count={})", execWorkers_.size());
 }
 
 void Trading_system::stopExecWorkerPool() {
@@ -1750,11 +1752,14 @@ void Trading_system::execWorkerLoop(size_t workerId) {
         execution::TradingSignal task;
         {
             std::unique_lock<std::mutex> lk(execQueueMutex_);
+            // Diagnostic: Log when waiting so we can see wakeups
+            LOG_TRACE("ExecWorker {} waiting. execQueueSize={} execWorkersRunning={}", workerId, execQueue_.size(), execWorkersRunning_.load());
             execQueueCv_.wait_for(lk, std::chrono::milliseconds(50), [this]() {
                 return !execQueue_.empty() || !execWorkersRunning_.load();
             });
             if (!execWorkersRunning_.load() && execQueue_.empty()) break;
             if (execQueue_.empty()) continue;
+            LOG_TRACE("ExecWorker {} woke up, execQueueSize={}", workerId, execQueue_.size());
             task = std::move(execQueue_.front());
             execQueue_.pop_front();
         }
@@ -2372,6 +2377,8 @@ void Trading_system::realExecution(const execution::TradingSignal& signal) {
     }
 
     std::cout << "🔄 Enqueuing signal " << signal.id << " for execution" << std::endl;
+    // Diagnostic: print current exec queue size and worker status to help track stuck signals
+    std::cout << "🔍 ExecQueue size=" << execQueue_.size() << " execWorkersRunning=" << execWorkersRunning_.load() << std::endl;
     // Enqueue execution task to worker pool to avoid thread explosion
     ordersExecuted_++;
     std::unique_lock<std::mutex> lk(execQueueMutex_);
