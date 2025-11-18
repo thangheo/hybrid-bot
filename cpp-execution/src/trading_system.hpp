@@ -195,7 +195,7 @@ private:
     std::vector<std::thread> execWorkers_;
     std::atomic<bool> execWorkersRunning_{false};
     size_t execQueueLimit_ = 500;
-    size_t execWorkerCount_ = 1; // tune for VPS
+    size_t execWorkerCount_ = std::max<size_t>(1, std::thread::hardware_concurrency() / 2); // tune for VPS - allow concurrency
 
     //market intel
     std::atomic<uint64_t> messagesProcessed_{0};
