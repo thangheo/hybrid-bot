@@ -99,7 +99,7 @@
     // Minimum model updates required before allowing trades
     int bayesMinUpdatesToTrade = 5000;         // Default 5000 updates required
     // Minimum profitable return required to consider a label/trade (decimal, e.g., 0.003 = 0.3%)
-    double min_profitable_return = 0.003;
+    double min_profitable_return = 0.005;        // Default 0.5%
      
      ImbalanceDetectionConfig() = default;
      

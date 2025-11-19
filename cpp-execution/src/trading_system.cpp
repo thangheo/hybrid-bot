@@ -570,7 +570,7 @@ void Trading_system::exitMonitorLoop() {
                         currentSignalDir,
                         currentConfidence
                     );
-                    exitDecision.should_exit = 0; //disable exit for now, use signal only
+                    // exitDecision.should_exit = 0; //disable exit for now, use signal only
                     if (exitDecision.should_exit and exitDecision.confidence >= 0.8 && posInfo.has_value()) {
                         // Prepare to log exit trigger with holding time (actual logging after we confirm an authoritative qty)
                         auto now = std::chrono::steady_clock::now();
