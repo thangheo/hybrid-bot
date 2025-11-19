@@ -54,7 +54,7 @@ MarketRegimeType OrderbookRegimeDetector::detect(
 {
     // Configurable parameters (should move to struct in production)
     constexpr size_t MIN_SAMPLES = 20;
-    constexpr double VOL_THRESHOLD = 1.2;
+    constexpr double VOL_THRESHOLD = 1.5;
     constexpr double SPREAD_THRESHOLD = 2.0;
     constexpr double STRESS_VOL = 1.2;
     constexpr double STRESS_SPREAD = 2.0;

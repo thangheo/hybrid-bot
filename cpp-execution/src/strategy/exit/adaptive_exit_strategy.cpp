@@ -447,7 +447,7 @@ AdaptiveExitStrategy::ExitDecision AdaptiveExitStrategy::evaluateExit(
     
     // Skip remaining checks if minimum hold time not met
     if (seconds_held < params.min_holding_time) {
-        return decision;
+        // return decision; //just dont exit or we lost since the bps is too damn low
     }
 
     // 1. STOP LOSS (immediate)
@@ -599,7 +599,6 @@ AdaptiveExitStrategy::ExitDecision AdaptiveExitStrategy::evaluateExit(
         decision.should_exit = true;
         decision.reason = ExitReason::TIME_LIMIT;
         decision.confidence = 0.6;
-
         return decision;
     }
     
