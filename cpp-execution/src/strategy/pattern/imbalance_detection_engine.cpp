@@ -550,37 +550,40 @@ static std::vector<double> buildFeatures(const OrderBookMetrics &m, const std::v
     // Feature removed: spreadVelocity (index 11). See comment above.
     features.push_back(std::tanh(safe(m.spreadVelocity, 0.0) * 10.0));
 
-    features.push_back(std::clamp(safe(m.liquidityPressure, 0.0), -10.0, 10.0));
-    features.push_back(std::clamp(safe(m.volatilityExpectation, 0.0), 0.0, 10.0));
+    // features.push_back(std::clamp(safe(m.liquidityPressure, 0.0), -10.0, 10.0));
+    // features.push_back(std::clamp(safe(m.volatilityExpectation, 0.0), 0.0, 10.0));
     // Feature removed: realizedVolatility (index 14). We still use
     // realizedVolatility elsewhere for normalization/thresholds, but don't
     // provide it directly as an input to the Bayesian model here.
-    // features.push_back(std::clamp(safe(m.realizedVolatility, 0.0), 0.0, 100.0));
-    features.push_back(std::clamp(safe(m.volatilityPerUnitTime, 0.0), 0.0, 100.0));
+    features.push_back(std::clamp(safe(m.depthImbalance, 0.0), 0.0, 1.0));
+    // features.push_back(std::clamp(safe(m.volatilityPerUnitTime, 0.0), 0.0, 100.0));
+    features.push_back(std::clamp(safe(m.realize_volatility_1m, 0.0), 0.0, 100.0));
+    features.push_back(std::clamp(safe((m.bidFlow-m.askFlow)/m.askFlow, 0.0), 0.0, 10.0));
+    
 
-    double totalBid = safe(m.totalBidVolume, 0.0);
-    double totalAsk = safe(m.totalAskVolume, 0.0);
-    {
-        double ratio = (totalBid + 1.0) / (totalAsk + 1.0);
-        double threshold = 1.0; double strength;
-        if (ratio > threshold) strength = (ratio - threshold) / threshold;
-        else if (ratio < 1.0/threshold) strength = (1.0/threshold - ratio) / (1.0/threshold);
-        else strength = 0.0;
-        features.push_back(std::min(1.0, std::max(0.0, strength)));
-    }
+    // double totalBid = safe(m.totalBidVolume, 0.0);
+    // double totalAsk = safe(m.totalAskVolume, 0.0);
+    // {
+    //     double ratio = (totalBid + 1.0) / (totalAsk + 1.0);
+    //     double threshold = 1.0; double strength;
+    //     if (ratio > threshold) strength = (ratio - threshold) / threshold;
+    //     else if (ratio < 1.0/threshold) strength = (1.0/threshold - ratio) / (1.0/threshold);
+    //     else strength = 0.0;
+    //     features.push_back(std::min(1.0, std::max(0.0, strength)));
+    // }
 
-    double topBidSum = 0.0;
-    double topAskSum = 0.0;
-    for (size_t i = 0; i < std::min<size_t>(3, m.bidVolumesByLevel.size()); ++i) topBidSum += safe(m.bidVolumesByLevel[i], 0.0);
-    for (size_t i = 0; i < std::min<size_t>(3, m.askVolumesByLevel.size()); ++i) topAskSum += safe(m.askVolumesByLevel[i], 0.0);
-    {
-        double ratio = (topBidSum + 1.0) / (topAskSum + 1.0);
-        double threshold = 1.0; double strength;
-        if (ratio > threshold) strength = (ratio - threshold) / threshold;
-        else if (ratio < 1.0/threshold) strength = (1.0/threshold - ratio) / (1.0/threshold);
-        else strength = 0.0;
-        features.push_back(std::min(1.0, std::max(0.0, strength)));
-    }
+    // double topBidSum = 0.0;
+    // double topAskSum = 0.0;
+    // for (size_t i = 0; i < std::min<size_t>(3, m.bidVolumesByLevel.size()); ++i) topBidSum += safe(m.bidVolumesByLevel[i], 0.0);
+    // for (size_t i = 0; i < std::min<size_t>(3, m.askVolumesByLevel.size()); ++i) topAskSum += safe(m.askVolumesByLevel[i], 0.0);
+    // {
+    //     double ratio = (topBidSum + 1.0) / (topAskSum + 1.0);
+    //     double threshold = 1.0; double strength;
+    //     if (ratio > threshold) strength = (ratio - threshold) / threshold;
+    //     else if (ratio < 1.0/threshold) strength = (1.0/threshold - ratio) / (1.0/threshold);
+    //     else strength = 0.0;
+    //     features.push_back(std::min(1.0, std::max(0.0, strength)));
+    // }
 
     return features;
 }
@@ -795,7 +798,7 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                     // reduce noise and runtime cost. Keep function definitions
                     // available for experiments.
                     results.push_back(detectTrendContinuation(m));
-                    // results.push_back(detectTrendReversal(m));
+                    results.push_back(detectTrendReversal(m));
                     results.push_back(detectTradeImbalance(m));
                     results.push_back(detectCancellationImbalance(m)); 
                     // results.push_back(detectPriceVolatilityImbalance(m));
