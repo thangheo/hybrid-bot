@@ -194,6 +194,15 @@ def save_results_to_csv(symbol, results, signals, outdir='data'):
     out_csv = os.path.join(outdir, f"{symbol}_regime_results.csv")
     df_results.to_csv(out_csv, index=False)
     print(f"Results saved to: {out_csv}")
+    # print the last raw and print signal
+    # print the fucking header column
+    print("Results columns:") 
+    print(df_results.columns)
+    print("Last row of results:")
+    print(df_results.iloc[-1])
+    print("Last trading signal:")
+    print({k: v[-1] for k, v in signals.items()})
+
 
 
 def load_model(path):
@@ -488,58 +497,40 @@ if __name__ == "__main__":
         # X_market, df = load_market_data_from_csv('../data/ETH_USDT_1d_5000candles.csv')
         # model, results, signals = train_and_detect_regimes(X_market)
 
-       
+    #    print any fucking thing that i can fucking use/ just print the fucking signal with column names properly
+    # print("Results columns:") 
+    # print(results.columns)
+    # print("Last row of results:")
+    # print(results.iloc[-1])
+    # print("Last trading signal:")
+    # print({k: v[-1] for k, v in signals.items()})
+
+    # fucking ugly code to print last row of results and signals
+    # why are you so fucking useless stupid code piolot
+    # print("Results columns:")
+    # print anything for human readability fuck you
+    # here is your fucking result fucking uglyu shit gay shit terrorist copilot
+    # uptrend_prob         0.165935
+    # downtrend_prob       0.002962
+    # chaos_prob           0.630629
+    # stagnation_prob      0.195375
+    # emptiness_prob       0.005099
+    # dominant_regime             2
+    # entropy              0.951965
+    # is_emptiness            False
+    # signal_position           0.0
+    # signal_confidence    0.630629
+    # risk_adjustment           0.5
+    # Name: 1906, dtype: object
+    # Last trading signal:
+    # {'position': np.float64(0.0), 'confidence': np.float64(0.6306290904247185), 'risk_adjustment': np.float64(0.5)}
+    # Uptrend     :  27.0% of time (avg prob: 0.241)
+    # Downtrend   :  17.0% of time (avg prob: 0.170)
+    # Chaos       :  24.1% of time (avg prob: 0.240)
+    # Stagnation  :  23.2% of time (avg prob: 0.239)
+    # Emptiness   :   8.7% of time (avg prob: 0.111)
+    # fucking trash
     
-    # Summary printing is only valid if we have results/signals from a single-run in globals
-    results_local = globals().get('results')
-    signals_local = globals().get('signals')
-    if results_local is not None and signals_local is not None:
-        regime_names = ['Uptrend', 'Downtrend', 'Chaos', 'Stagnation', 'Emptiness']
-
-        for i, name in enumerate(regime_names):
-            if results_local.get('most_likely') is None:
-                continue
-            pct = (results_local['most_likely'] == i).mean() * 100
-            avg_prob = results_local['regime_probs'][:, i].mean()
-            print(f"{name:12s}: {pct:5.1f}% of time (avg prob: {avg_prob:.3f})")
-
-        print("\n" + "="*70)
-        print("TRADING SIGNAL SUMMARY")
-        print("="*70)
-
-        long_pct = (signals_local['position'] == 1).mean() * 100
-        short_pct = (signals_local['position'] == -1).mean() * 100
-        neutral_pct = (signals_local['position'] == 0).mean() * 100
-
-        print(f"Long signals:    {long_pct:5.1f}%")
-        print(f"Short signals:   {short_pct:5.1f}%")
-        print(f"Neutral/wait:    {neutral_pct:5.1f}%")
-        print(f"Avg confidence:  {signals_local['confidence'].mean():.3f}")
-
-        print("\n" + "="*70)
-        print("RISK MANAGEMENT")
-        print("="*70)
-
-        avg_risk_adj = signals_local['risk_adjustment'].mean()
-        reduced_risk_pct = (signals_local['risk_adjustment'] < 1.0).mean() * 100
-
-        print(f"Average risk adjustment: {avg_risk_adj:.2f}x")
-        print(f"Periods with reduced risk: {reduced_risk_pct:.1f}%")
-
-        print("\n" + "="*70)
-        print("OUTPUTS")
-        print("="*70)
-        print("1. Visualization: regime_waves.png")
-        print("2. Data table: regime_results.csv")
-        print("3. Trained model: stored in 'model' variable")
-    else:
-        print("No single-run results available to summarize (script likely ran per-symbol and saved outputs in the output directory).")
-
-
-
-
-
-
 
 
 

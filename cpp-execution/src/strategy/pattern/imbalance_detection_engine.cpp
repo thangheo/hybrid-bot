@@ -544,11 +544,11 @@ static std::vector<double> buildFeatures(const OrderBookMetrics &m, const std::v
     // Feature removed: priceVelocity (index 9). This was found to be noisy
     // and to have very large posterior sigma in practice. Commented-out to
     // reduce feature dimensionality and speed up training/prediction.
-    // features.push_back(safe(m.priceVelocity, 0.0));
+    features.push_back(safe(m.priceVelocity, 0.0));
     // Feature removed: volumeVelocity (index 10). See comment above.
-    // features.push_back(std::tanh(safe(m.volumeVelocity, 0.0) / 1000.0));
+    features.push_back(std::tanh(safe(m.volumeVelocity, 0.0) / 1000.0));
     // Feature removed: spreadVelocity (index 11). See comment above.
-    // features.push_back(std::tanh(safe(m.spreadVelocity, 0.0) * 10.0));
+    features.push_back(std::tanh(safe(m.spreadVelocity, 0.0) * 10.0));
 
     features.push_back(std::clamp(safe(m.liquidityPressure, 0.0), -10.0, 10.0));
     features.push_back(std::clamp(safe(m.volatilityExpectation, 0.0), 0.0, 10.0));
@@ -781,10 +781,10 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                 std::vector<DetectorResult> results;
                 try {
                     // results.push_back(detectVolumeImbalance(m));
-                    // results.push_back(detectPriceLevelImbalance(m));
-                    // results.push_back(detectLiquidityFlowImbalance(m));
-                    // results.push_back(detectAbnormalSpread(m));
-                    // results.push_back(detectMarketDepthChange(m));
+                    results.push_back(detectPriceLevelImbalance(m));
+                    results.push_back(detectLiquidityFlowImbalance(m));
+                    results.push_back(detectAbnormalSpread(m));
+                    results.push_back(detectMarketDepthChange(m));
                     results.push_back(detectLargeOrderAppearance(m));
                     results.push_back(detectLargeOrderDisappearance(m));
                     results.push_back(detectOrderFlowImbalance(m));
@@ -794,10 +794,10 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                     // unstable features; removed from the default detection set to
                     // reduce noise and runtime cost. Keep function definitions
                     // available for experiments.
-                    // results.push_back(detectTrendContinuation(m));
+                    results.push_back(detectTrendContinuation(m));
                     // results.push_back(detectTrendReversal(m));
                     results.push_back(detectTradeImbalance(m));
-                    // results.push_back(detectCancellationImbalance(m)); 
+                    results.push_back(detectCancellationImbalance(m)); 
                     // results.push_back(detectPriceVolatilityImbalance(m));
                     // results.push_back(detectHiddenLiquidityImbalance(m));
                     // results.push_back(detectCustomImbalance(m));
