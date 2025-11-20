@@ -576,7 +576,7 @@ AdaptiveExitStrategy::ExitDecision AdaptiveExitStrategy::evaluateExit(
         // compute remaining milliseconds
         auto rem_ms = std::chrono::duration_cast<std::chrono::milliseconds>(expiry - now_ts).count();
         auto ttl_ms = std::chrono::duration_cast<std::chrono::milliseconds>(actual_ttl).count();
-        if (ttl_ms > 0 && rem_ms <= static_cast<long long>(std::max<int64_t>(100, ttl_ms / 5))) {
+        if (ttl_ms > 0 && rem_ms <= static_cast<long long>(std::max<int64_t>(20000, ttl_ms / 5))) {
             // less than 20% of TTL remaining (or <100ms): increase exit eagerness
             // If close to expiry and PnL is positive, exit to secure profit
             if (pnl_ticks > 0.0) {
@@ -595,7 +595,7 @@ AdaptiveExitStrategy::ExitDecision AdaptiveExitStrategy::evaluateExit(
         }
     }
 
-    if (seconds_held >= params.max_holding_time) {
+    if (seconds_held >= params.max_holding_time*10) {
         decision.should_exit = true;
         decision.reason = ExitReason::TIME_LIMIT;
         decision.confidence = 0.6;
