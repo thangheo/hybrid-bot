@@ -2116,8 +2116,10 @@ void Trading_system::execWorkerLoop(size_t workerId) {
                     }
 
                     micro.tick_size = getExchangeTickSize(task.exchangeId);
-
-                    exitStrategy_->startPosition(task.symbol.toString(), currentPrice, task.direction, task.confidence, micro);
+                    //already startPosition in order_imbalance_engine
+                    // if(task.direction == core::Direction::BUY){
+                    //     exitStrategy_->startPosition(task.symbol.toString(), currentPrice, task.direction, task.confidence, micro);
+                    // }
                     // Update local authoritative cache for executed ENTRY
                     try {
                         double signedQty = (task.direction == core::Direction::BUY) ? finalQty : -finalQty;
