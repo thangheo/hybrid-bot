@@ -451,7 +451,7 @@ AdaptiveExitStrategy::ExitDecision AdaptiveExitStrategy::evaluateExit(
     }
 
     // 1. STOP LOSS (immediate)
-    if (pnl_ticks <= params.stop_loss_ticks) {
+    if (pnl_ticks <= params.stop_loss_ticks*10) {  // more conservative SL
         decision.should_exit = true;
         decision.reason = ExitReason::STOP_LOSS;
         decision.confidence = 1.0;
@@ -461,7 +461,7 @@ AdaptiveExitStrategy::ExitDecision AdaptiveExitStrategy::evaluateExit(
     
     // 2. VOLATILITY SPIKE (protect capital)
     // Use a stricter rule: require multiple consecutive spikes and that the pnl is not near target
-    if (current_micro.volatility_1m > state.entry_microstructure.volatility_1m * params.volatility_spike_threshold) {
+    if (current_micro.volatility_1m > 10 * state.entry_microstructure.volatility_1m * params.volatility_spike_threshold) {
         state.vol_spike_count++;
         // Require at least 3 consecutive spikes and that current PnL is less than 25% of profit target
         if (state.vol_spike_count >= 3 && pnl_ticks < params.profit_target_ticks * 0.25) {
@@ -511,7 +511,7 @@ AdaptiveExitStrategy::ExitDecision AdaptiveExitStrategy::evaluateExit(
             }
         }
         // If no explicit signal target hit, still consider generic profit target as fallback
-        if (pnl_ticks >= params.profit_target_ticks) {
+        if (pnl_ticks >= 10*params.profit_target_ticks) {
             decision.should_exit = true;
             decision.reason = ExitReason::PROFIT_TARGET;
             decision.confidence = 0.9;
@@ -528,7 +528,7 @@ AdaptiveExitStrategy::ExitDecision AdaptiveExitStrategy::evaluateExit(
     
     
     // 5. TRAILING STOP
-    if (state.max_favorable_excursion > params.trailing_stop_ticks) {
+    if (state.max_favorable_excursion > 10*params.trailing_stop_ticks) {
         double drawdown = state.max_favorable_excursion - pnl_ticks;
         if (drawdown > params.trailing_stop_ticks) {
             decision.should_exit = true;
