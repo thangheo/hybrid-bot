@@ -105,13 +105,7 @@ MarketRegimeType OrderbookRegimeDetector::detect(
     if (high_vol && high_spread) {
         detected = MarketRegimeType::STRESS;
     }
-    // Priority 2: Single-factor regimes
-    else if (high_vol) {
-        detected = MarketRegimeType::HIGH_VOLATILITY;
-    }
-    else if (high_spread) {
-        detected = MarketRegimeType::LOW_LIQUIDITY;
-    }
+    
     // Priority 3: Dynamic regimes
     else if (returns_ac > TREND_AC && trend_strength > TREND_STRENGTH && std::abs(micro.orderbook_imbalance) > IMBALANCE) {
         detected = MarketRegimeType::TRENDING;
@@ -121,6 +115,13 @@ MarketRegimeType OrderbookRegimeDetector::detect(
     }
     else if (vol_now < vol_p75 * QUIET_VOL && activity < QUIET_ACTIVITY) {
         detected = MarketRegimeType::QUIET;
+    }
+    // Priority 2: Single-factor regimes
+    else if (high_vol) {
+        detected = MarketRegimeType::HIGH_VOLATILITY;
+    }
+    else if (high_spread) {
+        detected = MarketRegimeType::LOW_LIQUIDITY;
     }
 
     // ---------- 4. Regime smoothing (state machine) ----------
