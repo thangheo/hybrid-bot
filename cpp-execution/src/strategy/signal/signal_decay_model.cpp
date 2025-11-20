@@ -335,8 +335,8 @@ bool SignalDecayModel::isSignalValid(const TradingSignal& signal, uint64_t curre
     // return static_cast<uint64_t>(base_ttl * ttl_adjustment);
     uint64_t adjusted_ttl = static_cast<uint64_t>(base_ttl * ttl_adjustment);
     
-    // Safety: Never go below absolute minimum
-    const uint64_t ABSOLUTE_MIN_TTL = 200;  // 200ms absolute minimum
+    // Safety: Never go below absolute minimum // use predtion windows ms in strategy config
+    const uint64_t ABSOLUTE_MIN_TTL = 20000; // 200ms
     return std::max(adjusted_ttl, ABSOLUTE_MIN_TTL);
 }
 
