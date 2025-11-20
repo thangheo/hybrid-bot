@@ -1011,7 +1011,26 @@ void ImbalanceDetectionEngine::startDetectorWorker(size_t threads) {
                                         bool allowEntry = true;
                                         if (opt) {
                                             if (!opt->shouldEnterPosition(symbol_str, microstructure, signal.probability)) {
-                                                allowEntry = false;
+                                                // allowEntry = false;
+                                                //test signal performance by allowing all entries in training mode
+                                                if(!trainingEnabled_.load()) {
+                                                    allowEntry = false;
+                                                    LOG_TRACE("ENTRY_BLOCKED_BY_EXIT_STRATEGY: {} dir={} entry={:.6f} conf={:.3f} spread_ema={:.3f}% spread_cur={:.3f}%",
+                                                            symbol_str,
+                                                            (dir == core::Direction::BUY ? "BUY" : "SELL"),
+                                                            m.midPrice,
+                                                            signal.probability,
+                                                            ema_spread_percent,
+                                                            current_spread_percent);
+                                                } else {
+                                                    LOG_TRACE("ENTRY_ALLOWED_IN_TRAINING_MODE: {} dir={} entry={:.6f} conf={:.3f} spread_ema={:.3f}% spread_cur={:.3f}%",
+                                                            symbol_str,
+                                                            (dir == core::Direction::BUY ? "BUY" : "SELL"),
+                                                            m.midPrice,
+                                                            signal.probability,
+                                                            ema_spread_percent,
+                                                            current_spread_percent);
+                                                }
                                             }
                                         } else {
                                             // Warn only periodically to avoid log spam
