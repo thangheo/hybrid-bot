@@ -46,6 +46,7 @@ BalanceValidatorConfig BalanceValidatorConfigLoader::createDefault() {
         {"kraken", 0.0026}
     };
     config.balanceBufferPercent = 0.01; // 1%
+    config.enabled = true;
     config.balanceCacheExpiry = std::chrono::milliseconds(20); // 20 milliseconds
     config.enableRealTimeValidation = true;
     config.skipBalanceForExits = false;
@@ -109,6 +110,10 @@ BalanceValidatorConfig BalanceValidatorConfigLoader::parseJson(const nlohmann::j
             if (bv.contains("skipBalanceForExits")) {
                 config.skipBalanceForExits = bv["skipBalanceForExits"].get<bool>();
             }
+
+            if (bv.contains("enabled")) {
+                config.enabled = bv["enabled"].get<bool>();
+            }
             
             if (bv.contains("minNotionalValue")) {
                 config.minNotionalValue = bv["minNotionalValue"].get<double>();
@@ -155,6 +160,7 @@ nlohmann::json BalanceValidatorConfigLoader::configToJson(const BalanceValidator
     j["balanceValidation"]["exchangeTradingFees"] = config.exchangeTradingFees;
     j["balanceValidation"]["balanceBufferPercent"] = config.balanceBufferPercent;
     j["balanceValidation"]["safetyMarginPercent"] = config.safetyMarginPercent;
+    j["balanceValidation"]["enabled"] = config.enabled;
     j["balanceValidation"]["balanceCacheExpiryMs"] = config.balanceCacheExpiry.count();
     j["balanceValidation"]["enableRealTimeValidation"] = config.enableRealTimeValidation;
     j["balanceValidation"]["skipBalanceForExits"] = config.skipBalanceForExits;

@@ -54,6 +54,23 @@ BalanceValidationResult BalanceValidator::validateOrder(
     BalanceValidationResult result;
 
     try {
+        // Check whether validation has been disabled via config or environment
+        bool enabled = config_.enabled;
+        const char* disableEnv = std::getenv("ENABLE_BALANCE_VALIDATOR");
+        if (disableEnv) {
+            std::string v(disableEnv);
+            for (auto &c : v) c = std::tolower(c);
+            if (v == "1" || v == "true" || v == "yes") {
+                enabled = true;
+            }
+        }
+
+        if (!enabled) {
+            result.isValid = true;
+            result.reason = "Balance validation disabled";
+            std::cerr << "[BalanceValidator] Skipping validation because it is disabled" << std::endl;
+            return result;
+        }
         // === FIX 1: Cải thiện xử lý giá cho market orders ===
         double priceForValidation = order.getPrice();
         
