@@ -34,6 +34,8 @@ std::shared_ptr<ExchangeApiClient> ApiClientManager::getClient(const core::Excha
         if (it != clients_.end() && it->second) {
             // CRASH PROTECTION: Verify client is still connected/valid
             if (it->second->isConnected()) {
+                std::cerr << "[ApiClientManager] getClient returning existing client for " << exchangeId.toString()
+                          << " (ptr=" << static_cast<const void*>(it->second.get()) << ") type=" << it->second->getExchangeName() << std::endl;
                 return it->second;
             } else {
                 // Client disconnected, remove and recreate
@@ -47,6 +49,8 @@ std::shared_ptr<ExchangeApiClient> ApiClientManager::getClient(const core::Excha
         auto client = createClient(exchangeId);
         if (client) {
             clients_[exchangeId.toString()] = client;
+            std::cerr << "[ApiClientManager] getClient created new client for " << exchangeId.toString()
+                      << " (ptr=" << static_cast<const void*>(client.get()) << ") type=" << client->getExchangeName() << std::endl;
             
             // Create a rate limit controller for this exchange if it doesn't exist
             if (rateLimitControllers_.find(exchangeId.toString()) == rateLimitControllers_.end()) {
