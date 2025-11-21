@@ -1,6 +1,6 @@
 {
   "balanceValidation": {
-    "enabled": true,
+    "enabled": false,
     "defaultTradingFee": 0.001,
     "exchangeTradingFees": {
       "binance": 0.001,
