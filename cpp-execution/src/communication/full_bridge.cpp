@@ -55,7 +55,7 @@ public:
         adaptiveIntel_ = std::make_unique<trading::intelligence::AdaptiveMarketIntelligence>();
         
         // Initialize data ingestion service
-        dataService_ = std::make_unique<DataIngestionService>("data_ingestion.json");
+        dataService_ = std::make_unique<DataIngestionService>("config/data_ingestion.json");
         
         // Initialize ZMQ communication
         //config
