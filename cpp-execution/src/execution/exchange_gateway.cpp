@@ -88,7 +88,13 @@ std::future<execution::models::ExecutionReport> ExchangeGateway::placeOrder(cons
             
             // Place the order directly through the existing API
             auto future = client->placeOrder(order);
-            return future.get();
+            auto rep = future.get();
+            try {
+                // Log the report for debugging so callers can see exactly what the
+                // underlying client returned.
+                std::cerr << "[ExchangeGateway] placeOrder returned report: " << rep.toString() << std::endl;
+            } catch (...) {}
+            return rep;
             
         } catch (const std::exception& e) {
             std::cerr << "[ExchangeGateway] ERROR in placeOrder: " << e.what() << std::endl;

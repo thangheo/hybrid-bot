@@ -19,6 +19,9 @@ std::future<models::ExecutionReport> MockApiClient::placeOrder(const models::Ord
         report.setFilledQuantity(order.getQuantity());
         report.setStatus(models::OrderState::FILLED);
         report.setAverageFillPrice(order.getPrice() > 0 ? order.getPrice() : 1.0);
+        try {
+            std::cerr << "[MockApiClient] placeOrder created ExecutionReport: " << report.toString() << std::endl;
+        } catch (...) {}
         return report;
     });
 }

@@ -891,6 +891,11 @@ models::Order ExecutionService::createExchangeOrder(const models::Order& order, 
         try {
             std::cerr << "[ExecutionService] Received ExecutionReport: " << result.toString() << std::endl;
         } catch (...) {}
+        // Also emit structured log so it shows in configured log sinks
+        try {
+            LOG_INFO("ExecutionService::placeOrder - Received ExecutionReport for clientOrderId={} => {}",
+                     exchange_order->getClientOrderId(), result.toString());
+        } catch (...) {}
         
         // Update order state based on exchange response
         if (result.status() != models::OrderState::REJECTED) {
