@@ -27,7 +27,7 @@ struct BalanceValidatorConfig {
     std::map<std::string, double> exchangeTradingFees; // exchange-specific fees
     double balanceBufferPercent = 0.01; // 1% safety buffer
     // Whether balance validation is enabled. Set to false to bypass validation entirely.
-    bool enabled = false;
+    bool enabled = true;
     double safetyMarginPercent = 0.001; // additional safety margin (default 0.1%)
     std::chrono::milliseconds balanceCacheExpiry{100}; // 100 milliseconds
     bool enableRealTimeValidation = true;

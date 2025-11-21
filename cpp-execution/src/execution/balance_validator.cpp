@@ -56,12 +56,12 @@ BalanceValidationResult BalanceValidator::validateOrder(
     try {
         // Check whether validation has been disabled via config or environment
         bool enabled = config_.enabled;
-        const char* disableEnv = std::getenv("ENABLE_BALANCE_VALIDATOR");
+        const char* disableEnv = std::getenv("DISABLE_BALANCE_VALIDATOR");
         if (disableEnv) {
             std::string v(disableEnv);
             for (auto &c : v) c = std::tolower(c);
             if (v == "1" || v == "true" || v == "yes") {
-                enabled = true;
+                enabled = false;
             }
         }
 
