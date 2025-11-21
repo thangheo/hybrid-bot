@@ -1,6 +1,6 @@
 #include "execution/exchanges/mock_api_client.hpp"
 #include <future>
-
+#include <iostream> // For debug output
 namespace trading {
 namespace execution {
 

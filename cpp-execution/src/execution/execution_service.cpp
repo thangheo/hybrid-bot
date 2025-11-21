@@ -393,14 +393,22 @@ models::Order ExecutionService::createExchangeOrder(const models::Order& order, 
 // }
 
  ExecutionResponse ExecutionService::placeOrder(const models::Order& order) {
+    // DIAGNOSTIC: Log entry point with key state
+    std::cerr << "🔍 [DIAGNOSTIC] placeOrder called: clientOrderId=" << order.getClientOrderId()
+              << " symbol=" << order.getTradingPair().toString()
+              << " is_running=" << is_running_
+              << " callback_registered=" << (execution_callback_ ? "YES" : "NO")
+              << std::endl;
+
     // Validate service state
     if (!is_running_) {
+        std::cerr << "🚨 CRITICAL: ExecutionService not running! Order rejected: " << order.getClientOrderId() << std::endl;
         LOG_WARN("ExecutionService::placeOrder - Execution service not running for clientOrderId={}", order.getClientOrderId());
         return ExecutionResponse{
-            "", "", false, "Execution service not running",
+            order.getClientOrderId(), "", false, "Execution service not running",
             std::chrono::system_clock::now(),
             "",
-            "", "", 0.0, 0.0
+            order.getTradingPair().toString(), "", order.getQuantity(), 0.0
         };
     }
     
@@ -424,13 +432,14 @@ models::Order ExecutionService::createExchangeOrder(const models::Order& order, 
     // execution response to avoid downstream components receiving incomplete
     // data (e.g. missing symbol leading to '/USDT' parsing issues).
     if (!exchangeId.isValid()) {
+        std::cerr << "❌ No suitable exchange found for order: " << order.getClientOrderId() << " symbol: " << order.getTradingPair().toString() << std::endl;
         LOG_WARN("ExecutionService::placeOrder - No suitable exchange found for clientOrderId={}", order.getClientOrderId());
         return ExecutionResponse{
             order.getClientOrderId(), "", false,
             "No suitable exchange found",
             std::chrono::system_clock::now(),
             "",
-            "", "", order.getQuantity(), 0.0
+            order.getTradingPair().toString(), "", order.getQuantity(), 0.0
         };
     }
     
@@ -468,14 +477,15 @@ models::Order ExecutionService::createExchangeOrder(const models::Order& order, 
     // Get the exchange API client
     auto api_client = api_client_manager_->getClient(exchangeId);
     if (!api_client) {
+        std::cerr << "❌ No API client available for exchange: " << exchangeId.toString() << " order: " << order.getClientOrderId() << std::endl;
         LOG_WARN("ExecutionService::placeOrder - No API client available for exchange {} for clientOrderId={}", exchangeId.toString(), order.getClientOrderId());
         order_lifecycle_tracker_->updateOrderState(
-            exchange_order->getClientOrderId(), 
-            models::OrderState::REJECTED, 
+            exchange_order->getClientOrderId(),
+            models::OrderState::REJECTED,
             exchange_order->getExchangeOrderId(),
             "Exchange API client not available"
         );
-        
+
         return ExecutionResponse{
             exchange_order->getClientOrderId(),
             "",
@@ -483,8 +493,8 @@ models::Order ExecutionService::createExchangeOrder(const models::Order& order, 
             "Exchange API client not available",
             std::chrono::system_clock::now(),
             "",
-            "",
-            "",
+            exchange_order->getTradingPair().toString(),
+            exchangeId.toString(),
             exchange_order->getQuantity(),
             0.0
         };
@@ -536,6 +546,7 @@ models::Order ExecutionService::createExchangeOrder(const models::Order& order, 
                         exchange_order->getExchangeOrderId(),
                         reason
                     );
+                    std::cerr << "❌ Pre-submit validation failed: " << reason << std::endl;
                     LOG_WARN("ExecutionService::placeOrder - Pre-submit validation failed for clientOrderId={} reason={}", exchange_order->getClientOrderId(), reason);
                     return ExecutionResponse{
                         exchange_order->getClientOrderId(),
@@ -544,8 +555,8 @@ models::Order ExecutionService::createExchangeOrder(const models::Order& order, 
                         reason,
                         std::chrono::system_clock::now(),
                         "REJECTED_PRE_SUBMIT",
-                        "",
-                        "",
+                        exchange_order->getTradingPair().toString(),
+                        exchangeId.toString(),
                         exchange_order->getQuantity(),
                         0.0
                     };
@@ -645,6 +656,7 @@ models::Order ExecutionService::createExchangeOrder(const models::Order& order, 
                                     adjResult.reason
                                 );
 
+                                std::cerr << "❌ Balance validation failed after adjustment: " << adjResult.reason << std::endl;
                                 LOG_INFO("ExecutionService::placeOrder - Final decision: rejecting order {} after attempted adjustment: reason='{}' suggestedQty={}",
                                          exchange_order->getClientOrderId(), adjResult.reason, adjResult.suggestedQuantity);
                                 return ExecutionResponse{
@@ -654,7 +666,7 @@ models::Order ExecutionService::createExchangeOrder(const models::Order& order, 
                                     adjResult.reason,
                                     std::chrono::system_clock::now(),
                                     "REJECTED_INSUFFICIENT_BALANCE",
-                                    "", "", exchange_order->getQuantity(), 0.0
+                                    exchange_order->getTradingPair().toString(), exchangeId.toString(), exchange_order->getQuantity(), 0.0
                                 };
                             }
                         } catch (const std::exception& e) {
@@ -667,6 +679,7 @@ models::Order ExecutionService::createExchangeOrder(const models::Order& order, 
                                 balanceResult.reason
                             );
 
+                            std::cerr << "❌ Balance validation failure: " << balanceResult.reason << std::endl;
                             LOG_INFO("ExecutionService::placeOrder - Final decision: rejecting order {} due to balance validation failure: reason='{}'",
                                      exchange_order->getClientOrderId(), balanceResult.reason);
                             return ExecutionResponse{
@@ -676,7 +689,7 @@ models::Order ExecutionService::createExchangeOrder(const models::Order& order, 
                                 balanceResult.reason,
                                 std::chrono::system_clock::now(),
                                 "REJECTED_INSUFFICIENT_BALANCE",
-                                "", "", exchange_order->getQuantity(), 0.0
+                                exchange_order->getTradingPair().toString(), exchangeId.toString(), exchange_order->getQuantity(), 0.0
                             };
                     }
                         
@@ -716,6 +729,7 @@ models::Order ExecutionService::createExchangeOrder(const models::Order& order, 
                                     freshResult.reason
                                 );
 
+                                std::cerr << "❌ Fresh validation failed: " << freshResult.reason << std::endl;
                                 LOG_INFO("ExecutionService::placeOrder - Final decision: rejecting order {} after fresh validation failed: reason='{}' required={} available={}",
                                          exchange_order->getClientOrderId(), freshResult.reason, freshResult.requiredBalance, freshResult.availableBalance);
                                 return ExecutionResponse{
@@ -725,7 +739,7 @@ models::Order ExecutionService::createExchangeOrder(const models::Order& order, 
                                     freshResult.reason,
                                     std::chrono::system_clock::now(),
                                     "REJECTED_INSUFFICIENT_BALANCE",
-                                    "", "", exchange_order->getQuantity(), 0.0
+                                    exchange_order->getTradingPair().toString(), exchangeId.toString(), exchange_order->getQuantity(), 0.0
                                 };
                             }
                         }
@@ -739,6 +753,7 @@ models::Order ExecutionService::createExchangeOrder(const models::Order& order, 
                             balanceResult.reason
                         );
 
+                        std::cerr << "❌ Validation exception: " << balanceResult.reason << std::endl;
                         LOG_INFO("ExecutionService::placeOrder - Final decision: rejecting order {} after forced fresh validation threw: reason='{}'",
                                  exchange_order->getClientOrderId(), balanceResult.reason);
                         return ExecutionResponse{
@@ -748,7 +763,7 @@ models::Order ExecutionService::createExchangeOrder(const models::Order& order, 
                             balanceResult.reason,
                             std::chrono::system_clock::now(),
                             "REJECTED_INSUFFICIENT_BALANCE",
-                            "", "", exchange_order->getQuantity(), 0.0
+                            exchange_order->getTradingPair().toString(), exchangeId.toString(), exchange_order->getQuantity(), 0.0
                         };
                     }
                 }
@@ -787,6 +802,7 @@ models::Order ExecutionService::createExchangeOrder(const models::Order& order, 
                             "Final balance check failed: " + finalBalanceResult.reason
                         );
 
+                        std::cerr << "❌ Final balance check failed: " << finalBalanceResult.reason << std::endl;
                         LOG_INFO("ExecutionService::placeOrder - Final decision: rejecting order {} after final balance check failed: reason='{}' required={} available={}",
                                  exchange_order->getClientOrderId(), finalBalanceResult.reason, finalBalanceResult.requiredBalance, finalBalanceResult.availableBalance);
                         return ExecutionResponse{
@@ -796,7 +812,7 @@ models::Order ExecutionService::createExchangeOrder(const models::Order& order, 
                             "Final balance check failed: " + finalBalanceResult.reason,
                             std::chrono::system_clock::now(),
                             "REJECTED_FINAL_BALANCE_CHECK",
-                            "", ""
+                            exchange_order->getTradingPair().toString(), exchangeId.toString()
                         };
                     }
                 }
@@ -807,48 +823,11 @@ models::Order ExecutionService::createExchangeOrder(const models::Order& order, 
         }
     }
 
-        // Before submitting, perform a forced fresh validation to avoid cached-stale passes
-        try {
-            auto finalValidation = balanceValidator_->validateOrder(*exchange_order, exchangeId, true);
-            if (!finalValidation.isValid) {
-                std::cout << "❌ Final forced balance validation failed before submit: " << finalValidation.reason << std::endl;
+    // === Submit order to exchange ===
+    // The validation above (lines 573-808) already performed comprehensive checks including
+    // forced fresh validation when cached validation failed. No need for another validation here.
 
-                // If this is an exit order, allow bypass for common non-fatal reasons
-                bool bypassFinal = false;
-                if (isExitSignalFlag) {
-                    std::string low = finalValidation.reason;
-                    std::transform(low.begin(), low.end(), low.begin(), ::tolower);
-                    if (low.find("insufficient") != std::string::npos || low.find("minimum notional") != std::string::npos) {
-                        bypassFinal = true;
-                    }
-                }
-
-                if (bypassFinal) {
-                    std::cout << "[BALANCE] Bypassing final forced validation for exit order " << exchange_order->getClientOrderId() << std::endl;
-                } else {
-                    order_lifecycle_tracker_->updateOrderState(
-                        exchange_order->getClientOrderId(),
-                        models::OrderState::REJECTED,
-                        exchange_order->getExchangeOrderId(),
-                        "Final balance validation failed before submit: " + finalValidation.reason
-                    );
-
-                    return ExecutionResponse{
-                        exchange_order->getClientOrderId(),
-                        "",
-                        false,
-                        std::string("Final balance validation failed before submit: ") + finalValidation.reason,
-                        std::chrono::system_clock::now(),
-                        "REJECTED_FINAL_BALANCE_CHECK",
-                        "", ""
-                    };
-                }
-            }
-        } catch (const std::exception& e) {
-            std::cerr << "Warning: exception during final balance validation: " << e.what() << " - proceeding to submit (best-effort)" << std::endl;
-        }
-
-        if (exchangeGateway_) {
+    if (exchangeGateway_) {
             // NEW: Use ExchangeGateway (with caching and rate limiting)
                 LOG_TRACE("ExecutionService::placeOrder: calling ExchangeGateway::placeOrder for clientOrderId={}", exchange_order->getClientOrderId());
             auto executionFuture = exchangeGateway_->placeOrder(*exchange_order);
@@ -859,6 +838,7 @@ models::Order ExecutionService::createExchangeOrder(const models::Order& order, 
             // EXISTING: Use direct API client (legacy mode)
             auto client = api_client_manager_->getClient(exchange_order->getExchangeId());
             if (!client) {
+                std::cerr << "❌ Exchange API client not available (legacy path) for: " << exchange_order->getClientOrderId() << std::endl;
                 order_lifecycle_tracker_->updateOrderState(
                     exchange_order->getClientOrderId(),
                     models::OrderState::REJECTED,
@@ -871,7 +851,7 @@ models::Order ExecutionService::createExchangeOrder(const models::Order& order, 
                     "Exchange API client not available",
                     std::chrono::system_clock::now(),
                     "",
-                    "", ""
+                    exchange_order->getTradingPair().toString(), exchangeId.toString()
                 };
             }
 
@@ -1024,17 +1004,18 @@ models::Order ExecutionService::createExchangeOrder(const models::Order& order, 
         return response;
     } catch (const std::exception& e) {
         // Handle exception from the async operation
+        std::cerr << "❌ Exception during order placement: " << e.what() << " for order: " << exchange_order->getClientOrderId() << std::endl;
         order_lifecycle_tracker_->updateOrderState(
             exchange_order->getClientOrderId(),
             models::OrderState::REJECTED,
             std::string("Exception during order placement: ") + e.what()
         );
-        
+
         return ExecutionResponse{
-            exchange_order->getClientOrderId(), "", false, 
+            exchange_order->getClientOrderId(), "", false,
             std::string("Exception during order placement: ") + e.what(), std::chrono::system_clock::now(),
             "",
-            "", ""
+            exchange_order->getTradingPair().toString(), exchangeId.toString()
         };
     }
 }
@@ -1853,27 +1834,8 @@ models::Order ExecutionService::createOrderFromSignal(const TradingSignal& signa
                           << order->getTradingPair().toString() << "." << std::endl;
                 order->setType(models::OrderType::MARKET);
                 order->setPrice(0.0);
-            }           
-            
-            if (order->getSide() == models::OrderSide::BUY) {
-                if (market_condition.askPrice > 0.0) fallback_price = market_condition.askPrice * 1.0;
-                else if (market_condition.bidPrice > 0.0) fallback_price = market_condition.bidPrice * 1.001;
-            } else {
-                if (market_condition.bidPrice > 0.0) fallback_price = market_condition.bidPrice * 1.0;
-                else if (market_condition.askPrice > 0.0) fallback_price = market_condition.askPrice * 0.999;
             }
-
-            if (fallback_price > 0.0) {
-                std::cerr << "createOrderFromSignal: OrderTypeSelector returned LIMIT without price; derived fallback price=" << fallback_price
-                          << " for " << order->getTradingPair().toString() << ". Proceeding as LIMIT." << std::endl;
-                order->setType(models::OrderType::LIMIT);
-                order->setPrice(fallback_price);
-            } else {
-                std::cerr << "createOrderFromSignal: OrderTypeSelector returned LIMIT without price and no market price available; reverting to MARKET for "
-                          << order->getTradingPair().toString() << "." << std::endl;
-                order->setType(models::OrderType::MARKET);
-                order->setPrice(0.0);
-            }
+            // NOTE: Removed duplicate fallback logic that was here (was overwriting the correct values set above)
         } else {
             order->setType(selection.type);
             if (selection.type == models::OrderType::LIMIT && selection.price > 0.0) {
