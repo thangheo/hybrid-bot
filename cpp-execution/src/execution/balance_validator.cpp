@@ -64,10 +64,21 @@ BalanceValidationResult BalanceValidator::validateOrder(
             
             try {
                 if (exchangeGateway_) {
-                    priceForValidation = exchangeGateway_->getCurrentPrice(
-                        exchangeId, order.getTradingPair(), false).get();
+                    // protect against gateway/API hangs by waiting with timeout
+                    auto fut = exchangeGateway_->getCurrentPrice(
+                        exchangeId, order.getTradingPair(), false);
+                    if (fut.wait_for(std::chrono::seconds(3)) == std::future_status::ready) {
+                        priceForValidation = fut.get();
+                    } else {
+                        throw std::runtime_error("Timeout while fetching price from ExchangeGateway");
+                    }
                 } else if (apiClient_) {
-                    priceForValidation = apiClient_->getCurrentPrice(order.getTradingPair()).get();
+                    auto fut = apiClient_->getCurrentPrice(order.getTradingPair());
+                    if (fut.wait_for(std::chrono::seconds(3)) == std::future_status::ready) {
+                        priceForValidation = fut.get();
+                    } else {
+                        throw std::runtime_error("Timeout while fetching price from ApiClient");
+                    }
                 }
                 
                 if (priceForValidation <= 0.0) {
@@ -317,7 +328,16 @@ std::future<std::map<std::string, double>> BalanceValidator::getBalances(
     std::cerr << "[BalanceValidator] Fetching fresh balances..." << std::endl;
     
     return std::async(std::launch::async, [this, exchangeId]() {
-        auto freshBalances = fetchFreshBalances(exchangeId).get();
+        // protect against long/blocked balance fetches
+        auto fut = fetchFreshBalances(exchangeId);
+        std::map<std::string, double> freshBalances;
+        if (fut.wait_for(std::chrono::seconds(5)) == std::future_status::ready) {
+            freshBalances = fut.get();
+        } else {
+            std::cerr << "[BalanceValidator] Timeout waiting for fresh balances" << std::endl;
+            // return whatever (empty) so caller can decide; we avoid indefinite blocking
+            freshBalances = {};
+        }
 
         // Update cache
         {
