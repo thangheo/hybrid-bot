@@ -829,11 +829,14 @@ models::Order ExecutionService::createExchangeOrder(const models::Order& order, 
 
     if (exchangeGateway_) {
             // NEW: Use ExchangeGateway (with caching and rate limiting)
-                LOG_TRACE("ExecutionService::placeOrder: calling ExchangeGateway::placeOrder for clientOrderId={}", exchange_order->getClientOrderId());
+            std::cerr << "⏳ [EXEC] Calling ExchangeGateway::placeOrder for: " << exchange_order->getClientOrderId() << std::endl;
+            LOG_TRACE("ExecutionService::placeOrder: calling ExchangeGateway::placeOrder for clientOrderId={}", exchange_order->getClientOrderId());
             auto executionFuture = exchangeGateway_->placeOrder(*exchange_order);
-                LOG_TRACE("ExecutionService::placeOrder: ExchangeGateway::placeOrder returned future for clientOrderId={}", exchange_order->getClientOrderId());
+            std::cerr << "⏳ [EXEC] Future obtained, waiting for response... clientOrderId=" << exchange_order->getClientOrderId() << std::endl;
+            LOG_TRACE("ExecutionService::placeOrder: ExchangeGateway::placeOrder returned future for clientOrderId={}", exchange_order->getClientOrderId());
             executionReport = executionFuture.get();
-                LOG_TRACE("ExecutionService::placeOrder: ExchangeGateway::placeOrder finished for clientOrderId={}", exchange_order->getClientOrderId());
+            std::cerr << "✅ [EXEC] Response received from exchange! clientOrderId=" << exchange_order->getClientOrderId() << std::endl;
+            LOG_TRACE("ExecutionService::placeOrder: ExchangeGateway::placeOrder finished for clientOrderId={}", exchange_order->getClientOrderId());
         } else {
             // EXISTING: Use direct API client (legacy mode)
             auto client = api_client_manager_->getClient(exchange_order->getExchangeId());

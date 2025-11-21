@@ -1,6 +1,6 @@
 {
   "hedging": {
-    "enabled": false,
+    "enabled": true,
     "api_key": "",
     "api_secret": "",
     "testnet": true,
@@ -8,7 +8,7 @@
     "close_p_trend_threshold": 0.5,
     "hedge_amount": 0.01,
     "leverage": 10,
-    "take_profit_pct": 0.01,
+    "take_profit_pct": 0.02,
     "stop_loss_pct": 0.02,
     "max_hold_minutes": 60,
     "symbols": ["BTC/USDT"],
