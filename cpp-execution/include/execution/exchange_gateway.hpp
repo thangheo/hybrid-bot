@@ -64,6 +64,11 @@ struct CachedPrice {
  */
 class ExchangeGateway {
 public:
+    // Protected/default construction support for unit tests and mocks
+protected:
+    ExchangeGateway() = default;
+
+public:
     
     // for future use
     // std::shared_ptr<TradingInterface> getTradingInterface();        // For Execution
@@ -79,17 +84,17 @@ public:
     /**
      * Destructor
      */
-    ~ExchangeGateway();
+    virtual ~ExchangeGateway();
     
     // === ORDER OPERATIONS (Direct passthrough to ApiClientManager) ===
     // getAccountBalancesAsync
-    std::future<std::unordered_map<std::string, double>> getAccountBalancesAsync(const core::ExchangeId& exchangeId);
+    virtual std::future<std::unordered_map<std::string, double>> getAccountBalancesAsync(const core::ExchangeId& exchangeId);
     /**
      * Place an order through the gateway
      * @param order The order to place
      * @return Future containing execution report
      */
-    std::future<execution::models::ExecutionReport> placeOrder(const execution::models::Order& order);
+    virtual std::future<execution::models::ExecutionReport> placeOrder(const execution::models::Order& order);
     
     /**
      * Cancel an order through the gateway
@@ -98,7 +103,7 @@ public:
      * @param exchangeId Exchange identifier
      * @return Future containing execution report
      */
-    std::future<execution::models::ExecutionReport> cancelOrder(
+    virtual std::future<execution::models::ExecutionReport> cancelOrder(
         const std::string& orderId, 
         const core::Symbol& symbol,
         const core::ExchangeId& exchangeId);
@@ -110,7 +115,7 @@ public:
      * @param exchangeId Exchange identifier
      * @return Future containing execution report
      */
-    std::future<execution::models::ExecutionReport> getOrderStatus(
+    virtual std::future<execution::models::ExecutionReport> getOrderStatus(
         const std::string& orderId, 
         const core::Symbol& symbol,
         const core::ExchangeId& exchangeId);
@@ -123,7 +128,7 @@ public:
      * @param forceRefresh If true, bypass cache and fetch fresh data
      * @return Future containing balance map
      */
-    std::future<std::unordered_map<std::string, double>> getAccountBalances(
+    virtual std::future<std::unordered_map<std::string, double>> getAccountBalances(
         const core::ExchangeId& exchangeId, 
         bool forceRefresh = false);
     
@@ -136,7 +141,7 @@ public:
      * @param forceRefresh If true, bypass cache and fetch fresh data
      * @return Future containing current price
      */
-    std::future<double> getCurrentPrice(
+    virtual std::future<double> getCurrentPrice(
         const core::ExchangeId& exchangeId, 
         const core::Symbol& symbol,
         bool forceRefresh = false);

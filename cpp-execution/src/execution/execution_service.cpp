@@ -461,6 +461,9 @@ models::Order ExecutionService::createExchangeOrder(const models::Order& order, 
 
     // Register the order with the lifecycle tracker
     order_lifecycle_tracker_->addOrder(*exchange_order);
+    // Diagnostic trace so we can correlate lifecycle entries with incoming logs
+    LOG_TRACE("ExecutionService::placeOrder - Order registered in lifecycle (clientOrderId={} exchange={}) qty={} price={}",
+              exchange_order->getClientOrderId(), exchange_order->getExchangeId().toString(), exchange_order->getQuantity(), exchange_order->getPrice());
     
     // Get the exchange API client
     auto api_client = api_client_manager_->getClient(exchangeId);
@@ -597,6 +600,9 @@ models::Order ExecutionService::createExchangeOrder(const models::Order& order, 
             
             if (!balanceResult.isValid) {
                 std::cerr << "❌ Order rejected due to insufficient balance:" << std::endl;
+                // Log for debugging to make it easy to trace failures in CI/UI
+                LOG_INFO("ExecutionService::placeOrder - BalanceValidator rejected clientOrderId={} reason='{}' required={} available={} canAdjust={}",
+                         exchange_order->getClientOrderId(), balanceResult.reason, balanceResult.requiredBalance, balanceResult.availableBalance, balanceResult.canAdjust);
 
                 // If the only reason is minimum notional requirement and this is an
                 // exit flow, bypass that check (user requested exits to be tolerant).
@@ -639,6 +645,8 @@ models::Order ExecutionService::createExchangeOrder(const models::Order& order, 
                                     adjResult.reason
                                 );
 
+                                LOG_INFO("ExecutionService::placeOrder - Final decision: rejecting order {} after attempted adjustment: reason='{}' suggestedQty={}",
+                                         exchange_order->getClientOrderId(), adjResult.reason, adjResult.suggestedQuantity);
                                 return ExecutionResponse{
                                     exchange_order->getClientOrderId(),
                                     "",
@@ -659,6 +667,8 @@ models::Order ExecutionService::createExchangeOrder(const models::Order& order, 
                                 balanceResult.reason
                             );
 
+                            LOG_INFO("ExecutionService::placeOrder - Final decision: rejecting order {} due to balance validation failure: reason='{}'",
+                                     exchange_order->getClientOrderId(), balanceResult.reason);
                             return ExecutionResponse{
                                 exchange_order->getClientOrderId(),
                                 "",
@@ -706,6 +716,8 @@ models::Order ExecutionService::createExchangeOrder(const models::Order& order, 
                                     freshResult.reason
                                 );
 
+                                LOG_INFO("ExecutionService::placeOrder - Final decision: rejecting order {} after fresh validation failed: reason='{}' required={} available={}",
+                                         exchange_order->getClientOrderId(), freshResult.reason, freshResult.requiredBalance, freshResult.availableBalance);
                                 return ExecutionResponse{
                                     exchange_order->getClientOrderId(),
                                     "",
@@ -727,6 +739,8 @@ models::Order ExecutionService::createExchangeOrder(const models::Order& order, 
                             balanceResult.reason
                         );
 
+                        LOG_INFO("ExecutionService::placeOrder - Final decision: rejecting order {} after forced fresh validation threw: reason='{}'",
+                                 exchange_order->getClientOrderId(), balanceResult.reason);
                         return ExecutionResponse{
                             exchange_order->getClientOrderId(),
                             "",
@@ -773,6 +787,8 @@ models::Order ExecutionService::createExchangeOrder(const models::Order& order, 
                             "Final balance check failed: " + finalBalanceResult.reason
                         );
 
+                        LOG_INFO("ExecutionService::placeOrder - Final decision: rejecting order {} after final balance check failed: reason='{}' required={} available={}",
+                                 exchange_order->getClientOrderId(), finalBalanceResult.reason, finalBalanceResult.requiredBalance, finalBalanceResult.availableBalance);
                         return ExecutionResponse{
                             exchange_order->getClientOrderId(),
                             "",
