@@ -8,10 +8,10 @@
       "coinbase": 0.005,
       "kraken": 0.0026
     },
-    "balanceBufferPercent": 0.01,
+    "balanceBufferPercent": 0.005,
     "balanceCacheExpiryMs": 30000,
     "enableRealTimeValidation": true,
-    "minNotionalValue": 10.0,
+    "minNotionalValue": 12.0,
     "forceRefreshOnRejection": true,
     "logBalanceDetails": true
   },

@@ -5,6 +5,7 @@ find_package(PkgConfig REQUIRED)
 find_package(CURL REQUIRED)
 find_package(jsoncpp REQUIRED)
 find_package(GTest REQUIRED)
+find_package(GMock REQUIRED)
 
 set(CMAKE_CXX_STANDARD 23)
 
@@ -170,6 +171,7 @@ target_link_libraries(test_balance_validator
     jsoncpp_lib
     ${UUID_LIBRARIES}
     Threads::Threads
+    GMock::GMock
     GTest::GTest
     GTest::Main
 )
