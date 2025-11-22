@@ -22,6 +22,8 @@ class DataIngestionManager:
             logger.error("No symbols provided in configuration")
             raise ValueError("No symbols provided in configuration")
         # UPDATED: Support both 4h and 1d timeframes
+        # Use configured timeframes (defaults were previously 4h/1d)
+        # config/trading_bot.yaml typically contains ['5m', '1h'] for the strategy
         self.timeframes = config.get('timeframes', ['4h', '1d'])
         # Log all symbols
         for symbol in self.symbols:
@@ -215,9 +217,12 @@ class DataIngestionManager:
             since = latest_ts + 1
             limit = 200  # Small limit for updates
             
-            # Check staleness
+            # Check staleness (map common timeframe to hours)
             hours_old = (datetime.now().timestamp() * 1000 - latest_ts) / (1000 * 3600)
-            timeframe_hours = {'4h': 4, '1d': 24}
+            timeframe_hours = {
+                '1m': 1/60, '5m': 5/60, '15m': 15/60,
+                '1h': 1, '4h': 4, '1d': 24
+            }
             required_hours = timeframe_hours.get(timeframe, 24)
             
             if hours_old < required_hours:
@@ -287,12 +292,15 @@ class DataIngestionManager:
             df = self.get_symbol_data(symbol, days=100, timeframe=timeframe)
             record_count = len(df)
             
-            # Define minimum requirements
-            min_requirements = {
-                '4h': 60,   # ~10 days for EMA26 + buffer
-                '1d': 60,   # ~2 months for daily strategies
-                '1h': 120   # ~5 days for hourly
-            }
+                # Define minimum requirements (bars)
+                min_requirements = {
+                    '1m': 1500, # ~25 hours
+                    '5m': 500,  # multiple days of 5m bars
+                    '15m': 400,
+                    '1h': 240,  # ~10 days
+                    '4h': 60,
+                    '1d': 60
+                }
             
             min_needed = min_requirements.get(timeframe, 50)
             
@@ -316,7 +324,7 @@ class DataIngestionManager:
             logger.info(f"Fetching additional historical data for {symbol} {timeframe}")
             
             # Calculate how far back to go
-            timeframe_hours = {'1h': 1, '4h': 4, '1d': 24}
+            timeframe_hours = {'1m': 1/60, '5m': 5/60, '15m': 15/60, '1h': 1, '4h': 4, '1d': 24}
             hours_per_bar = timeframe_hours.get(timeframe, 24)
             days_back = int((min_needed * hours_per_bar) / 24) + 10  # Extra buffer
             
@@ -419,26 +427,30 @@ class DataIngestionManager:
             logger.error(f"Error aggregating 4h to 1d: {e}")
             return pd.DataFrame()
     
-    # NEW METHOD: Get both timeframes
+    # NEW METHOD: Get multiple timeframes
     def get_multi_timeframe_data(self, symbol: str, days: int = 100, 
+                                timeframes: Optional[List[str]] = None,
                                 end_date: Optional[datetime] = None) -> Dict[str, pd.DataFrame]:
-        """Get both 4h and 1d data for a symbol"""
+        """Get historical data for this symbol across multiple timeframes.
+
+        If `timeframes` is not provided, uses `self.timeframes` from configuration.
+        Returns a dict mapping timeframe -> DataFrame.
+        """
         result = {}
-        
-        # Get 4h data (need more days since 6 bars per day)
-        h4_data = self.get_symbol_data(symbol, days=days, timeframe='4h', end_date=end_date)
-        result['4h'] = h4_data
-        
-        # Get 1d data
-        d1_data = self.get_symbol_data(symbol, days=days, timeframe='1d', end_date=end_date)
-        
-        # If we have 4h data but no 1d data, aggregate 4h to 1d
-        if not h4_data.empty and d1_data.empty:
-            logger.info(f"No 1d data for {symbol}, aggregating from 4h")
-            d1_data = self.aggregate_4h_to_1d(h4_data)
-        
-        # result['1d'] = d1_data
-        result['1d'] = d1_data
+        timeframes = timeframes or self.timeframes
+
+        for tf in timeframes:
+            df = self.get_symbol_data(symbol, days=days, timeframe=tf, end_date=end_date)
+
+            # if timeframe is '1d' and data is empty, try to aggregate from smaller timeframe
+            if tf == '1d' and df.empty:
+                # try 4h -> 1d aggregation first
+                h4 = self.get_symbol_data(symbol, days=days, timeframe='4h', end_date=end_date)
+                if not h4.empty:
+                    logger.info(f"No 1d data for {symbol}, aggregating from 4h")
+                    df = self.aggregate_4h_to_1d(h4)
+
+            result[tf] = df
 
         return result
     

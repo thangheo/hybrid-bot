@@ -546,12 +546,65 @@ class EnhancedTradingBot:
                 self.logger.warning(f"No data available for {symbol}")
                 return
             
-            # Calculate indicators
+            # Provide both primary and trend timeframe data to strategy
+            primary_tf = getattr(self.strategy_manager, 'primary_tf', '5m')
+            trend_tf = getattr(self.strategy_manager, 'trend_tf', '1h')
+
+            # Prefer primary timeframe from the multi-timeframe result
+            market_data = multi_tf_data.get(primary_tf, None) or next((df for df in multi_tf_data.values() if not df.empty), None)
+
+            # Set trend data on strategy if available
+            trend_df = multi_tf_data.get(trend_tf)
+            if trend_df is not None and not trend_df.empty and hasattr(self.strategy_manager, 'set_trend_data'):
+                self.strategy_manager.set_trend_data(trend_df)
+
+            if market_data is None or market_data.empty:
+                self.logger.warning(f"No usable primary timeframe data for {symbol}")
+                return
+
+            # Calculate indicators (strategy expects (data, indicators) signature)
             indicators = self.strategy_manager.calculate_indicators(market_data)
-            #get current volatility from indicators
-            current_volatility = indicators['volatility'].iloc[-1]
-            # Generate signals - DIRECT CALL
-            signals = await self.strategy_manager.generate_signals(symbol, market_data, indicators)
+
+            # === INJECT C++ MARKET INTELLIGENCE DATA ===
+            # Get real-time orderbook snapshot from C++ if available
+            if hasattr(self.strategy_manager, 'get_cpp_orderbook_snapshot'):
+                cpp_snapshot = self.strategy_manager.get_cpp_orderbook_snapshot(symbol)
+                if cpp_snapshot:
+                    # Update indicators with C++ intelligence
+                    # Set the latest value for all orderbook indicators
+                    indicators['bid_imbalance'].iloc[-1] = cpp_snapshot['bid_imbalance']
+                    indicators['ask_imbalance'].iloc[-1] = cpp_snapshot['ask_imbalance']
+                    indicators['bid_volume_surge'].iloc[-1] = cpp_snapshot['bid_volume_surge']
+                    indicators['has_bid_walls'].iloc[-1] = cpp_snapshot['has_large_bid_walls']
+                    indicators['has_ask_walls'].iloc[-1] = cpp_snapshot['has_large_ask_walls']
+
+                    # Log for debugging (first few times)
+                    if not hasattr(self, '_cpp_inject_log_count'):
+                        self._cpp_inject_log_count = 0
+                    if self._cpp_inject_log_count < 5:
+                        self.logger.info(f"✅ C++ Intelligence injected for {symbol}:")
+                        self.logger.info(f"   bid_imb={cpp_snapshot['bid_imbalance']:.3f}, "
+                                       f"ask_imb={cpp_snapshot['ask_imbalance']:.3f}, "
+                                       f"vol_surge={cpp_snapshot['bid_volume_surge']:.2f}")
+                        self.logger.info(f"   Raw: OB_imb={cpp_snapshot['_raw_order_book_imbalance']:.3f}, "
+                                       f"liq={cpp_snapshot['_liquidity_ratio']:.3f}, "
+                                       f"age={cpp_snapshot['_data_age']:.1f}s")
+                        self._cpp_inject_log_count += 1
+                else:
+                    if not hasattr(self, '_cpp_unavailable_log_count'):
+                        self._cpp_unavailable_log_count = 0
+                    if self._cpp_unavailable_log_count < 3:
+                        self.logger.warning(f"⚠️ No C++ intelligence available for {symbol}")
+                        self._cpp_unavailable_log_count += 1
+
+            # Determine a volatility metric from indicators (ATR if available) or fallback to close-return STD
+            if 'atr' in indicators and not indicators['atr'].empty:
+                current_volatility = float(indicators['atr'].iloc[-1])
+            else:
+                current_volatility = float(market_data['close'].pct_change().tail(20).std())
+
+            # Generate signals - synchronous call (strategy returns DataFrame)
+            signals = self.strategy_manager.generate_signals(market_data, indicators)
             
             if signals.empty:
                 self.logger.warning(f"No signals for {symbol}")

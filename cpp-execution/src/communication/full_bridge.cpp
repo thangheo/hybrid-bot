@@ -231,8 +231,8 @@ private:
             }
 
             // Validate order book has data
-            auto bids = orderBook->getBids(5);
-            auto asks = orderBook->getAsks(5);
+            auto bids = orderBook->getBids(20);
+            auto asks = orderBook->getAsks(20);
 
             if (bids.empty() || asks.empty()) {
                 return;
