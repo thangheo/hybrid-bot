@@ -310,13 +310,13 @@ class RegimeDetectionValidator:
             print(f"\n  Signal rate: {total_signals/tradeable_bars*100:.2f}% of tradeable bars")
 
         # Regime breakdown
-        print(f"\n📈 Regime Breakdown:")
-        for regime in signals['regime'].unique():
-            regime_mask = signals['regime'] == regime
-            regime_count = regime_mask.sum()
-            regime_signals = (signals.loc[regime_mask, 'signal'] != 0).sum()
+        # print(f"\n📈 Regime Breakdown:")
+        # for regime in signals['regime'].unique():
+        #     regime_mask = signals['regime'] == regime
+        #     regime_count = regime_mask.sum()
+        #     regime_signals = (signals.loc[regime_mask, 'signal'] != 0).sum()
 
-            print(f"  {regime:15s}: {regime_count:4d} bars, {regime_signals:3d} signals")
+        #     print(f"  {regime:15s}: {regime_count:4d} bars, {regime_signals:3d} signals")
 
         return {
             'total_signals': total_signals,

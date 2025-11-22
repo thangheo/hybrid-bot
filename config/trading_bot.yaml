@@ -162,8 +162,8 @@ data_ingestion:
   
   # NEW: Historical data requirements
   historical_data:
-    minimum_periods: 200      # 200 * 4h = 33 days minimum
-    preferred_periods: 500    # 500 * 4h = 83 days optimal
+    minimum_periods: 200      # 200 * 1h = 33 days minimum
+    preferred_periods: 500    # 500 * 1h = 83 days optimal
     backfill_enabled: true
     max_backfill_days: 90
   performance:
@@ -265,50 +265,34 @@ ema_pullback_with_imbalance:
   'trend_timeframe': '1h'
   'min_periods': 50
 
-  # === REGIME FILTER (NEW!) ===
-  # Filter out unfavorable market conditions (ranging, choppy, mean-reverting)
-  'use_regime_filter': True  # Set False to disable regime filtering
-  'min_regime_confidence': 0.6  # Only trade when confidence >= 60%
+  # === SIMPLE TREND FILTER (SIMPLIFIED v3.0) ===
+  # Philosophy: Only avoid flat EMA periods, all trending markets are tradeable
+  'use_trend_filter': True  # Set False to disable filtering
 
-  # Regime detection configuration (IMPROVED v2.0)
-  'regime_config':
-    # === Core Indicators ===
-    # ADX (Average Directional Index) - Measures trend strength
-    'adx_trending': 25        # ADX > 25 = trending market
-    'adx_strong_trend': 40    # ADX > 40 = very strong trend
+  # Filter configuration (MINIMAL - only 2 core filters!)
+  'filter_config':
+    # === Core Filter 1: ADX (trend existence) ===
+    'adx_period': 14
+    'adx_min': 20              # ADX > 20 = có trend
 
-    # Choppiness Index - Detects ranging/choppy markets
-    'chop_threshold': 61.8    # CI > 61.8 = choppy (avoid trading)
+    # === Core Filter 2: EMA Separation (trend persistence) ===
+    'ema_sep_min': 0.012       # 1.2% minimum gap between EMAs
 
-    # Hurst Exponent - Detects trending vs mean-reverting behavior
-    'hurst_trending_min': 0.55    # H > 0.55 = trending
-    'hurst_window': 100           # Lookback window for Hurst calculation
-    'use_hurst': False            # NEW: Disable Hurst (unreliable at low timeframes)
+    # === Optional Filters (disabled by default) ===
+    # Only enable if you see specific problems in backtest
 
-    # EMA Separation - Ensures EMAs are far enough apart
-    'ema_separation_min': 0.015   # 1.5% minimum gap between EMA20 and EMA50
+    # Detect EMA flattening (usually not needed)
+    'use_ema_curvature': True
+    'ema_curve_window': 5
+    'ema_curve_min': 0.0003    # 0.03% minimum slope
 
-    # === Volatility Detection (IMPROVED) ===
-    'atr_percentile': 30              # ATR must be > 30th percentile (for trending)
-    'volatile_atr_threshold': 85      # ATR > 85th percentile = volatile
-    'volatile_return_threshold': 90   # Returns > 90th percentile = volatile
+    # Block extreme volatility (usually not needed for crypto)
+    'use_vol_ceiling': False
+    'atr_max_percentile': 95   # Block top 5% volatile bars
 
-    # Bollinger Band Squeeze Detection
-    'bb_squeeze_threshold': 0.5   # BB width < 50% of average = squeeze (avoid)
-
-    # === Regime Smoothing (NEW) ===
-    # Reduce flickering by applying consensus filter
-    'regime_smoothing_window': 3  # Use mode over last 3 bars
-
-    # === Score Thresholds (Priority Hierarchy) ===
-    # Lower threshold = easier to trigger that regime
-    'volatile_score_threshold': 6   # Volatile if score >= 6/10
-    'choppy_score_threshold': 6     # Choppy if score >= 6/10
-    'ranging_score_threshold': 6    # Ranging if score >= 6/10
-    'trending_score_threshold': 6   # Trending if score >= 6/10
-
-
-
+    # Avoid tight ranges (usually not needed)
+    'use_squeeze_filter': False
+    'squeeze_threshold': 0.005  # 0.5% range
 
 
   # Markov Strategy Parameters

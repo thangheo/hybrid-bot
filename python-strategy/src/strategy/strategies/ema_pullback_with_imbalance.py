@@ -5,10 +5,11 @@
 
 import pandas as pd
 import numpy as np
+import time
 from typing import Dict, Optional
 from ..base_strategy import BaseStrategy
 from ..indicators.technical_indicators import TechnicalIndicators
-from ..filters.regime_detector import MarketRegimeDetector
+from ..filters.simple_trend_filter import SimpleTrendFilter
 
 class EMAPullbackImbalanceStrategy(BaseStrategy):
     """
@@ -95,16 +96,18 @@ class EMAPullbackImbalanceStrategy(BaseStrategy):
         self.trend_data = None
         self.trend_indicators = None
 
-        # === Regime Filter (NEW!) ===
-        self.use_regime_filter = cfg.get('use_regime_filter', True)
-        self.min_regime_confidence = cfg.get('min_regime_confidence', 0.6)
-        regime_config = cfg.get('regime_config', {})
-        self.regime_detector = MarketRegimeDetector(regime_config)
+        # === Simple Trend Filter (SIMPLIFIED!) ===
+        self.use_trend_filter = cfg.get('use_trend_filter', True)
+        filter_config = cfg.get('filter_config', {})
+        self.trend_filter = SimpleTrendFilter(filter_config)
 
-        # Track entry regime for exit logic
-        self.entry_regime = None
-        self.position_open = False
+        # === C++ Market Intelligence Integration ===
+        self.intelligence_bridge = None  # Will be set by main.py
         
+    def set_intelligence_bridge(self, bridge):
+        """Set C++ market intelligence bridge"""
+        self.intelligence_bridge = bridge
+
     def set_trend_data(self, trend_data: pd.DataFrame):
         """Set higher timeframe data for trend confirmation"""
         if trend_data is not None and not trend_data.empty:
@@ -116,6 +119,64 @@ class EMAPullbackImbalanceStrategy(BaseStrategy):
                 'ema_long': TechnicalIndicators.ema(close, self.ema_long),
                 'rsi': TechnicalIndicators.rsi(close, self.rsi_period)
             }
+
+    def get_cpp_orderbook_snapshot(self, symbol: str) -> Optional[Dict]:
+        """
+        Extract current orderbook intelligence from C++ bridge
+
+        Returns:
+            Dict with orderbook metrics or None if unavailable
+        """
+        if not self.intelligence_bridge or not self.intelligence_bridge.is_available():
+            return None
+
+        # Get intelligence state from bridge
+        intel = self.intelligence_bridge.get_intelligence(symbol)
+        if not intel:
+            return None
+
+        # Map C++ MarketIntelligence fields to strategy requirements
+        # order_book_imbalance: positive means more bids, negative means more asks
+        # Convert to separate bid/ask imbalance ratios (0-1 scale)
+
+        if intel.order_book_imbalance >= 0:
+            # More bid pressure
+            bid_imbalance = 0.5 + (intel.order_book_imbalance * 0.5)  # Scale to 0.5-1.0
+            ask_imbalance = 1.0 - bid_imbalance
+        else:
+            # More ask pressure
+            ask_imbalance = 0.5 + (abs(intel.order_book_imbalance) * 0.5)
+            bid_imbalance = 1.0 - ask_imbalance
+
+        # Estimate volume surge from aggressive buy ratio vs sell ratio
+        # High aggressive_buy_ratio indicates strong buying pressure
+        bid_volume_surge = intel.liquidity_ratio * (1.0 + intel.order_book_imbalance)
+
+        # Detect large walls from depth_imbalance (if available)
+        # Large positive depth_imbalance suggests bid walls, negative suggests ask walls
+        has_large_bid_walls = False
+        has_large_ask_walls = False
+
+        if hasattr(intel, 'spread'):
+            # Use spread as proxy: tight spread + high liquidity = potential walls
+            if intel.spread < 0.001 and intel.liquidity_ratio > 0.7:
+                if intel.order_book_imbalance > 0.3:
+                    has_large_bid_walls = True
+                elif intel.order_book_imbalance < -0.3:
+                    has_large_ask_walls = True
+
+        return {
+            'bid_imbalance': bid_imbalance,
+            'ask_imbalance': ask_imbalance,
+            'bid_volume_surge': bid_volume_surge,
+            'has_large_bid_walls': has_large_bid_walls,
+            'has_large_ask_walls': has_large_ask_walls,
+            # Additional context for debugging
+            '_raw_order_book_imbalance': intel.order_book_imbalance,
+            '_liquidity_ratio': intel.liquidity_ratio,
+            '_regime': intel.current_regime,
+            '_data_age': time.time() - intel.last_update
+        }
     
     def calculate_indicators(self, data: pd.DataFrame) -> Dict[str, pd.Series]:
         """Calculate all required indicators for M5 timeframe"""
@@ -275,7 +336,7 @@ class EMAPullbackImbalanceStrategy(BaseStrategy):
     def generate_signals(self, data: pd.DataFrame, indicators: Dict[str, pd.Series]) -> pd.DataFrame:
         """
         Generate trading signals with multi-stage filtering:
-        1. Regime detection (NEW!)
+        1. Simple trend filter (SIMPLIFIED!)
         2. Trend alignment (H1)
         3. Pullback to EMA zone (M5)
         4. RSI confirmation
@@ -307,25 +368,27 @@ class EMAPullbackImbalanceStrategy(BaseStrategy):
         signals['take_profit_1'] = 0.0
         signals['take_profit_2'] = 0.0
 
-        # === STAGE 0: Regime Detection (NEW!) ===
-        if self.use_regime_filter:
-            regime_data = self.regime_detector.detect_regime(data)
+        # === STAGE 0: Simple Trend Filter (SIMPLIFIED!) ===
+        if self.use_trend_filter:
+            filter_results = self.trend_filter.apply_filters(
+                data,
+                indicators['ema_short'],
+                indicators['ema_long']
+            )
 
-            # Add regime columns to signals
-            signals['regime'] = regime_data['regime']
-            signals['is_tradeable'] = regime_data['is_tradeable']
-            signals['regime_confidence'] = regime_data['confidence']
+            # Add filter columns to signals
+            signals['is_tradeable'] = filter_results['is_tradeable']
+            signals['filter_reason'] = filter_results['filter_reasons']
 
             # Debug columns
-            signals['adx'] = regime_data['adx']
-            signals['chop_index'] = regime_data['chop_index']
-            signals['hurst'] = regime_data['hurst']
-            signals['ema_separation'] = regime_data['ema_separation']
+            signals['adx'] = filter_results['adx']
+            signals['ema_separation'] = filter_results['ema_separation']
+            if self.trend_filter.use_ema_curvature:
+                signals['ema_curvature'] = filter_results['ema_curvature']
         else:
-            # If regime filter disabled, allow all trades
+            # If filter disabled, allow all trades
             signals['is_tradeable'] = True
-            signals['regime_confidence'] = 1.0
-            signals['regime'] = 'unknown'
+            signals['filter_reason'] = 'Filter disabled'
         
         # Check trend alignment once (H1 doesn't change every M5 bar)
         trend_direction = self.check_trend_alignment(data.index[-1] if not data.empty else None)
@@ -427,8 +490,7 @@ class EMAPullbackImbalanceStrategy(BaseStrategy):
                 rsi_buy_ok and
                 bullish_pattern and
                 volatile_enough and
-                signals.loc[idx, 'is_tradeable'] and  # ← NEW: Regime check
-                signals.loc[idx, 'regime_confidence'] >= self.min_regime_confidence):  # ← NEW
+                signals.loc[idx, 'is_tradeable']):  # ← SIMPLIFIED: Only check tradeable
 
                 if not self.use_imbalance:
                     # Pure EMA strategy
@@ -465,8 +527,7 @@ class EMAPullbackImbalanceStrategy(BaseStrategy):
                   rsi_sell_ok and
                   bearish_pattern and
                   volatile_enough and
-                  signals.loc[idx, 'is_tradeable'] and  # ← NEW: Regime check
-                  signals.loc[idx, 'regime_confidence'] >= self.min_regime_confidence):  # ← NEW
+                  signals.loc[idx, 'is_tradeable']):  # ← SIMPLIFIED: Only check tradeable
 
                 if not self.use_imbalance:
                     signals.loc[idx, 'signal'] = -1
@@ -494,42 +555,6 @@ class EMAPullbackImbalanceStrategy(BaseStrategy):
                     signals.loc[idx, 'take_profit_2'] = current_price - (risk * self.risk_reward_tp2)
         
         return signals
-    
-    def check_regime_exit(self, current_regime: str, current_confidence: float) -> bool:
-        """
-        Check if position should be exited due to regime change
-
-        Args:
-            current_regime: Current market regime
-            current_confidence: Current regime confidence
-
-        Returns:
-            True if should exit position
-        """
-        if not self.use_regime_filter or not self.position_open or self.entry_regime is None:
-            return False
-
-        return self.regime_detector.should_exit_position(
-            current_regime=current_regime,
-            entry_regime=self.entry_regime,
-            confidence=current_confidence,
-            min_confidence=self.min_regime_confidence * 0.7  # Exit at 70% of entry confidence
-        )
-
-    def on_position_opened(self, entry_regime: str):
-        """
-        Call this when a position is opened to track entry regime
-
-        Args:
-            entry_regime: Market regime when position was entered
-        """
-        self.position_open = True
-        self.entry_regime = entry_regime
-
-    def on_position_closed(self):
-        """Call this when a position is closed"""
-        self.position_open = False
-        self.entry_regime = None
 
     def get_strategy_info(self) -> Dict:
         """Return strategy metadata"""
@@ -539,7 +564,7 @@ class EMAPullbackImbalanceStrategy(BaseStrategy):
             'primary_timeframe': self.primary_tf,
             'trend_timeframe': self.trend_tf,
             'uses_orderbook': self.use_imbalance,
-            'uses_regime_filter': self.use_regime_filter,
+            'uses_trend_filter': self.use_trend_filter,
             'parameters': {
                 'ema_short': self.ema_short,
                 'ema_long': self.ema_long,
@@ -547,7 +572,8 @@ class EMAPullbackImbalanceStrategy(BaseStrategy):
                 'imbalance_threshold_strong': self.imbalance_threshold_strong,
                 'imbalance_threshold_weak': self.imbalance_threshold_weak,
                 'atr_threshold_ratio': self.atr_threshold_ratio,
-                'min_regime_confidence': self.min_regime_confidence if self.use_regime_filter else None
+                'filter_adx_min': self.trend_filter.adx_min if self.use_trend_filter else None,
+                'filter_ema_sep_min': self.trend_filter.ema_sep_min if self.use_trend_filter else None
             }
         })
         return info
