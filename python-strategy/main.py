@@ -632,16 +632,16 @@ class EnhancedTradingBot:
                 return
             
             latest_signal = signals.iloc[-1]
-            
-            # Extract regime info
+
+            # Extract regime info from latest signal (Series, not DataFrame)
             regime_info = {
-                'current_regime': signals.get('regime', 'balanced'),
-                'confidence': signals.get('regime_confidence', 0.5),
-                'strength': signals.get('regime_strength', 0.5)
+                'current_regime': latest_signal.get('regime', 'balanced'),
+                'confidence': latest_signal.get('regime_confidence', 0.5),
+                'strength': latest_signal.get('regime_strength', 0.5)
             }
 
             # Update risk management
-            self._update_risk_management_with_regime(regime_info, current_volatility)
+            # self._update_risk_management_with_regime(regime_info, current_volatility)
             
             # Log signal info
             self._log_signal_info(symbol, latest_signal)
@@ -694,21 +694,40 @@ class EnhancedTradingBot:
         """Log signal information"""
         signal_value = signal_data.get('signal', 0)
         signal_strength = signal_data.get('signal_strength', 0)
-        confidence = signal_data.get('confidence', 0)
-        
-        log_message = f"{symbol} Signal: {signal_value} " \
-                    f"(strength: {signal_strength:.3f}, confidence: {confidence:.2f})"
-        
+        confidence = signal_data.get('confidence', 'none')
+
+        # Format signal_strength and confidence properly
+        # signal_strength is always float, confidence can be string ('high', 'medium', 'low', 'none')
+        try:
+            strength_str = f"{signal_strength:.3f}"
+        except (ValueError, TypeError):
+            strength_str = str(signal_strength)
+
+        # confidence is a string in EMA Pullback strategy
+        if isinstance(confidence, str):
+            confidence_str = confidence
+        else:
+            # Fallback for numeric confidence (legacy strategies)
+            try:
+                confidence_str = f"{confidence:.2f}"
+            except (ValueError, TypeError):
+                confidence_str = str(confidence)
+
+        log_message = f"{symbol} Signal: {signal_value} (strength: {strength_str}, confidence: {confidence_str})"
+
         # Add regime info if available
-        if 'regime' in signal_data:
+        if 'regime' in signal_data.index:
             regime = signal_data.get('regime', 'unknown')
             log_message += f", Regime: {regime}"
-        
+
         # Add ETF info if available
-        if 'etf_flow_strength' in signal_data:
+        if 'etf_flow_strength' in signal_data.index:
             etf_strength = signal_data.get('etf_flow_strength', 0)
-            log_message += f", ETF Flow: {etf_strength:.3f}"
-        
+            try:
+                log_message += f", ETF Flow: {etf_strength:.3f}"
+            except (ValueError, TypeError):
+                log_message += f", ETF Flow: {etf_strength}"
+
         self.logger.info(log_message)
 
     async def _process_signal(self, symbol: str, signal_data: pd.Series, market_data: pd.DataFrame):
