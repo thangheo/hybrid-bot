@@ -624,18 +624,18 @@ void INTEGRATION_TEST::execWorkerLoop(size_t workerId) {
                 // Log a longer duration as warn for backpressure troubleshooting
                 if (dur > 500) {
                     LOG_WARN("ExecWorker: executeSignal slow ({} ms) for {}: {}", dur, task.symbol.toString(), response.error_message);
-                }             
-                break;
+                }
+                // Continue to next signal even if this one failed
+                std::cerr << "⚠️ Order failed but worker continues: " << response.error_message << std::endl;
             }
  
-            std::cout << "📈 Executed: " << task.symbol.toString() << " " 
-                      << (task.direction == core::Direction::BUY ? "BUY" : "SELL") 
+            std::cout << "📈 Executed: " << task.symbol.toString() << " "
+                      << (task.direction == core::Direction::BUY ? "BUY" : "SELL")
                       << " qty=" << finalQty
                       << " notional=$" << (currentPrice * finalQty)
                       << std::endl;
 
-         
-            break; //no more trades in this loop
+            // Continue processing more signals (don't break after each trade)
         } catch (const std::exception &e) {
             std::cerr << "ExecWorker " << workerId << " error: " << e.what() << std::endl;
         }
