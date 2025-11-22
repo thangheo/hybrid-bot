@@ -63,11 +63,15 @@ using namespace trading::core;
         orderBookAnalyzer_ = std::make_shared<OrderBookAnalyzerManager>(config_.orderBookAnalyzerConfig);
         // we should use factory method to create order book analyzer manager with depth parameter for all pairs
         
-        imbalanceDetector_ = std::make_shared<ImbalanceDetectionEngine>(config_.imbalanceDetectionConfig);
+        if (_use_imbalance_detection) {
+            imbalanceDetector_ = std::make_shared<ImbalanceDetectionEngine>(config_.imbalanceDetectionConfig);
+        }
         // Ensure the detector is initialized so it creates/loads the bayes model and starts its worker
         try {
-            if (!imbalanceDetector_->initialize(config_.imbalanceDetectionConfig)) {
-                LOG_WARN("StrategyEngine: imbalanceDetector initialize() returned false");
+            if (_use_imbalance_detection) {
+                if (!imbalanceDetector_->initialize(config_.imbalanceDetectionConfig)) {
+                    LOG_WARN("StrategyEngine: imbalanceDetector initialize() returned false");
+                }
             }
         } catch (const std::exception &ex) {
             LOG_WARN("StrategyEngine: exception while initializing imbalanceDetector: {}", ex.what());
@@ -146,18 +150,7 @@ using namespace trading::core;
          
         // Load default parameters
         loadDefaultParameters();
-        
-        // Create regime subscriber (non-blocking) - will be started in start()
-        // try {
-        //     regime_subscriber_ = std::make_unique<trading::strategy::core_analysis::RegimeSubscriber>();
-        //     // Connect regime subscriber to imbalance detector
-        //     if (imbalanceDetector_) {
-        //         imbalanceDetector_->setRegimeSubscriber(regime_subscriber_.get());
-        //         LOG_INFO("Connected RegimeSubscriber to ImbalanceDetectionEngine");
-        //     }
-        // } catch (const std::exception& e) {
-        //     LOG_WARN("Failed to create RegimeSubscriber: {}", e.what());
-        // }
+         
         
         // Initialize signal filters
         try {
@@ -458,7 +451,7 @@ void StrategyEngine::processQueuedSignals() {
              // apply a lightweight per-symbol throttle (leaky-bucket) to reduce pressure.
              static std::unordered_map<std::string, std::chrono::steady_clock::time_point> lastAllowedMetricTime;
              bool allowed = true;
-             if (imbalanceDetector_->isUnderBackpressure()) {
+             if (_use_imbalance_detection && imbalanceDetector_->isUnderBackpressure()) {
                  // when under pressure, allow metrics per symbol at a lower rate (e.g., 1 per 50ms)
                  auto now_tp = std::chrono::steady_clock::now();
                  auto &last = lastAllowedMetricTime[orderBook.getSymbol().toString()];
@@ -483,8 +476,9 @@ void StrategyEngine::processQueuedSignals() {
                         LOG_TRACE("Injected momentum_marketRegime={} into metrics for {}", marketRegimeToString(detected), orderBook.getSymbol());
                     }
                 }
-
-                imbalanceDetector_->analyzeMetrics(metrics);
+                if(_use_imbalance_detection){
+                    imbalanceDetector_->analyzeMetrics(metrics);
+                }
              } else {
                  // skip enqueueing this heavy metric under backpressure
                  // Optionally record a counter/metric here
@@ -493,12 +487,12 @@ void StrategyEngine::processQueuedSignals() {
              LOG_ERROR("std::bad_alloc during imbalanceDetector_->analyzeMetrics for {}: {}", orderBook.getSymbol(), e.what());
              return false;
          }
-         //print detected imbalances
-         auto imbalances = imbalanceDetector_->getDetectedImbalances();
-         for (const auto& imb : imbalances) {
-             LOG_DEBUG("Detected imbalance: Type={} Strength={} Confidence={}",
-                       static_cast<int>(imb.type), imb.strength, static_cast<int>(imb.confidence));
-         }
+         //print detected imbalances // for hybrid strategy, we
+        //  auto imbalances = imbalanceDetector_->getDetectedImbalances();
+        //  for (const auto& imb : imbalances) {
+        //      LOG_DEBUG("Detected imbalance: Type={} Strength={} Confidence={}",
+        //                static_cast<int>(imb.type), imb.strength, static_cast<int>(imb.confidence));
+        //  }
          // Prepare data for locked section
          auto symbol = orderBook.getSymbol();
          ExchangeId exchangeId = orderBook.getExchangeId();
@@ -517,8 +511,6 @@ void StrategyEngine::processQueuedSignals() {
          // Variables to store data for processing outside the lock
          bool shouldUpdateCorrelation = false;
          PriceMovement movement;
-         //print to know if we reach here
-        // std::cout << "imbalanceDetector_ reached" << std::endl;
          // Update the trading pair state - LOCK HERE (minimize lock duration)
          {
              std::lock_guard<std::recursive_mutex> lock(mutex_);
@@ -692,34 +684,7 @@ bool StrategyEngine::updateParameters(const ParameterSet& params) {
      std::lock_guard<std::recursive_mutex> lock(mutex_);
      return performance_;
  }
- 
- // Manually trigger signal evaluation
-//  bool StrategyEngine::triggerSignalEvaluation() {
-//      if (state_ != StrategyState::RUNNING) {
-//          LOG_ERROR("Cannot trigger signal evaluation in current state: {}", 
-//                           static_cast<int>(state_.load()));
-//          return false;
-//      }
-     
-//      try {
-//          // Get latest metrics from analyzers
-//          auto metrics = orderBookAnalyzer_->getMetrics();
-//          auto liquidityMetrics = liquidityMonitor_->getLiquidityMetrics();
-         
-//          // Detect imbalances
-//          auto isImbalances = imbalanceDetector_->analyzeMetrics(metrics);
-//          // Get detected imbalances
-//          auto imbalances = imbalanceDetector_->getDetectedImbalances();
-         
-//          // Process any detected imbalances
-//          processImbalanceEvents(imbalances);
-         
-//          return true;
-//      } catch (const std::exception& e) {
-//          LOG_ERROR("Exception during signal evaluation: {}", e.what());
-//          return false;
-//      }
-//  }
+  
  
  // Record signal execution result for feedback
  bool StrategyEngine::recordSignalResult(const std::string& signalId, const SignalExecutionResult& result) {
@@ -1245,7 +1210,9 @@ void StrategyEngine::loadDefaultParameters() {
              
              // Propagate updated parameters to components
              orderBookAnalyzer_->updateParameters(parameters_);
-             imbalanceDetector_->updateParameters(parameters_);
+             if (_use_imbalance_detection) {
+                 imbalanceDetector_->updateParameters(parameters_);
+             }
              liquidityMonitor_->updateParameters(parameters_);
              for (auto &entry : volumeProfileAnalyzers_) {
                  if (entry.second) entry.second->updateParameters(parameters_);
