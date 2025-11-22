@@ -11,7 +11,7 @@ LOG_DIR=`pwd`/logs
 CPP_LOG_FILE="$LOG_DIR/tactical.log"
 PYTHON_LOG_FILE="$LOG_DIR/python_strategy.log"
 BUILD_LOG_FILE="$LOG_DIR/cpp_build.log"
-PID_DIR="pids"
+PID_DIR="$(pwd)/pids"
 CPP_PID_FILE="$PID_DIR/tactical.pid"
 PYTHON_PID_FILE="$PID_DIR/python_strategy.pid"
 ENV_FILE=`pwd`/.env
@@ -266,8 +266,8 @@ start_python() {
     nohup python3 "$PYTHON_SCRIPT_PATH" --config "$config_path" > "$PYTHON_LOG_FILE" 2>&1 &
     local python_pid=$!
     
-    # Save PID
-    cd - > /dev/null
+    # Save PID (ensure pid dir exists in case script was invoked from different cwd)
+    mkdir -p "$(dirname "$PYTHON_PID_FILE")"
     echo "$python_pid" > "$PYTHON_PID_FILE"
     
     # Wait a moment and check if it's still running
