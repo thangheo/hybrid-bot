@@ -5,16 +5,16 @@
 
 # Configuration
 CPP_BUILD_DIR="cpp-execution/build"
-CPP_EXEC_PATH="cpp-execution/bin/semi_hft"
-PYTHON_SCRIPT_PATH="python-strategy/regime_publisher.py"
+CPP_EXEC_PATH="cpp-execution/bin/tactical"
+PYTHON_SCRIPT_PATH="python-strategy/main.py"
 LOG_DIR=`pwd`/logs
-CPP_LOG_FILE="$LOG_DIR/semi_hft.log"
+CPP_LOG_FILE="$LOG_DIR/tactical.log"
 PYTHON_LOG_FILE="$LOG_DIR/python_strategy.log"
 BUILD_LOG_FILE="$LOG_DIR/cpp_build.log"
 PID_DIR="pids"
-CPP_PID_FILE="$PID_DIR/semi_hft.pid"
+CPP_PID_FILE="$PID_DIR/tactical.pid"
 PYTHON_PID_FILE="$PID_DIR/python_strategy.pid"
-ENV_FILE=`pwd`/python-strategy/.env
+ENV_FILE=`pwd`/.env
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -31,7 +31,7 @@ export DISABLE_THREAD_PRIORITY=1
 export PTHREAD_INHERIT_SCHED=1
 
 #source environment
-source venv/bin/activate
+source .venv/bin/activate
 # Add this function after the existing functions in trading_manager.sh:
 
 # Function to monitor and auto-restart C++ if it crashes
@@ -228,7 +228,6 @@ start_cpp() {
 
 # Function to start Python strategy
 start_python() {
-    return 0
 
     if is_running "$PYTHON_PID_FILE"; then
         print_status "$YELLOW" "Python strategy is already running (PID: $(cat $PYTHON_PID_FILE))"

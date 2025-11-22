@@ -361,7 +361,7 @@ class EnhancedTradingBot:
         caps = self.system_capabilities
         
         self.logger.info("📊 System Capabilities Detected:")
-        self.logger.info(f"   🚀 ETF Integration: {'✅' if caps['etf_integration']['enabled'] else '❌'}")
+        # self.logger.info(f"   🚀 ETF Integration: {'✅' if caps['etf_integration']['enabled'] else '❌'}")
         self.logger.info(f"   🧠 Primary Strategy: {caps['strategies']['primary']}")
         self.logger.info(f"   📊 Total Strategies: {caps['strategies']['total']}")
         
