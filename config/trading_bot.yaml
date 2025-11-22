@@ -235,11 +235,11 @@ strategy:
 
   # Fallback hierarchy
   strategy_fallback_order:
-    - "stastical_mean_reversion"
+    - "statistical_mean_reversion"
     
 
 ema_pullback_with_imbalance:
-  enabled: false
+  enabled: true
   # EMA parameters
   'ema_short': 20
   'ema_long': 50
@@ -433,10 +433,10 @@ scheduling:
     start: 6
     end: 22
   
-  # UPDATED: Aligned with 4h timeframe
-  signal_interval: 7200             # 4 hours (match primary timeframe)
-  data_interval: 3600                # 1 hour data updates
-  intelligent_interval: 60 #update C++ intelligence
+  # UPDATED: Aligned for 5m primary / 1h trend timeframe
+  signal_interval: 300              # 5 minutes (match primary timeframe)
+  data_interval: 300                # 5 minute data updates (support primary timeframe)
+  intelligent_interval: 20 #update C++ intelligence
   etf_update_interval: 1800          # 30 minutes ETF updates
   
   # Markov-specific scheduling
@@ -463,9 +463,9 @@ monitoring:
       extreme_flow_detected: 5.0
       etf_data_stale_hours: 2
   
-  # Markov monitoring
+  # Markov monitoring (disabled — system no longer uses Markov features)
   markov_monitoring:
-    enabled: true
+    enabled: false
     
     track_metrics:
       - regime_classification_accuracy
@@ -493,22 +493,22 @@ alerts:
   slack:
     enabled: true
     webhook_url: ${SLACK_WEBHOOK_URL}
-    channel: "#markov-trading-bot"
+    channel: "#trading-bot"
     
     # Enhanced alerts
     alert_types:
       regime_changes: true
       etf_flow_anomalies: true
-      markov_forecasts: true
+      markov_forecasts: false
       api_failures: true
       extreme_movements: true
     
-    # Markov-specific alerts
+    # Markov-specific alerts (disabled -- markov not used)
     markov_alerts:
-      regime_change: true
-      high_confidence_forecast: true
-      low_forecast_accuracy: true
-      transition_matrix_retrain: true
+      regime_change: false
+      high_confidence_forecast: false
+      low_forecast_accuracy: false
+      transition_matrix_retrain: false
   
   telegram:
     enabled: false
@@ -526,7 +526,7 @@ logging:
   # Component-specific logging
   component_logging:
     etf_manager: "DEBUG"
-    markov_strategy: "INFO"
+    markov_strategy: "WARN"
     regime_detector: "INFO"
     transition_forecaster: "INFO"
     strategy_manager: "INFO"
@@ -547,11 +547,11 @@ system:
 
 # 🔬 BACKTESTING
 backtesting:
-  enabled: true
+  enabled: false
   
   # Markov backtesting
   markov_backtesting:
-    enabled: true
+    enabled: false
     simulate_etf_data: true
     etf_data_source: "alpha_vantage"
     backtest_start_date: "2024-01-01"
@@ -571,11 +571,11 @@ backtesting:
 
 # 💾 DATA STORAGE
 data_storage:
-  # Markov-specific storage
+  # Markov-specific storage (disabled)
   markov_data:
-    store_transition_history: true
-    store_forecast_history: true
-    store_regime_duration: true
+    store_transition_history: false
+    store_forecast_history: false
+    store_regime_duration: false
     
     # Retention periods
     transition_history_days: 365
@@ -589,11 +589,11 @@ feature_flags:
     rollout_percentage: 100
     
   markov_strategy:
-    enabled: true
+    enabled: false
     fallback_to_traditional: true
   
   regime_9_system:
-    enabled: true
+    enabled: false
     fallback_to_3_regime: false
 
 # 🌱 ENVIRONMENT VARIABLES
@@ -657,7 +657,7 @@ compatibility:
 # 🗄️ MARKOV PERSISTENCE (Added by install script)
 # ================================================================
 markov_persistence:
-  enabled: true
+  enabled: false
   db_path: "data/markov_persistence.db"
   save_frequency: 30  # Tăng lên 50 (từ 10)
   auto_load_on_init: true
@@ -697,26 +697,3 @@ signal_decay:
       regime_change_exit: true
     # Add more symbols as needed...
     # If a symbol is not listed, it uses the default above
-
-# Alpha Vantage API for SPY market filter
-alpha_vantage:
-  api_key: ${ALPHAVANTAGE_API_KEY}
-  
-# SPY Market Filter settings
-spy_market_filter:
-  enabled: true
-  correlation_strength: 0.50  # BTC-SPY correlation từ analysis
-  
-  # Signal adjustment factors
-  bull_regime_amplify: 1.3     # Amplify bullish signals in bull market
-  bear_regime_reduce: 0.6      # Reduce bullish signals in bear market
-  volatile_regime_reduce: 0.8  # Reduce all signals in volatile market
-  
-  # Thresholds
-  bull_momentum_threshold: 0.02   # 2% 5-day gain = bull
-  bear_momentum_threshold: -0.02  # 2% 5-day loss = bear
-  high_vol_threshold: 0.02        # 2% volatility = high vol
-  
-  # Emergency pause conditions
-  flash_crash_threshold: -0.05    # 5% drop in 3 days = pause
-  extreme_volatility: 0.03        # 3% daily volatility = pause
