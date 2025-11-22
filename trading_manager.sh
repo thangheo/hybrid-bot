@@ -247,15 +247,26 @@ start_python() {
     fi
     
     print_status "$BLUE" "Starting Python strategy with config: $config_path"
+
+    # If an older run wrote logs inside python-strategy/logs, move them into repo-root logs
+    # so operators always look in the same place (repo-root/logs/trading_bot.log)
+    if [[ -f "python-strategy/logs/trading_bot.log" ]]; then
+        if [[ ! -f "$LOG_DIR/trading_bot.log" ]]; then
+            print_status "$YELLOW" "Moving existing python-strategy/logs/trading_bot.log -> $LOG_DIR/trading_bot.log"
+            mv "python-strategy/logs/trading_bot.log" "$LOG_DIR/"
+        else
+            print_status "$BLUE" "Detected python-strategy/logs/trading_bot.log and $LOG_DIR/trading_bot.log both exist — leaving both files in place"
+        fi
+    fi
         
     source "$ENV_FILE"
     # Start Python process with nohup and config parameter
-    cd "$(dirname "$PYTHON_SCRIPT_PATH")" || exit 1
-    # NO LONGer need python
-    nohup python3 "$(basename "$PYTHON_SCRIPT_PATH")" --config "../$config_path" > "$PYTHON_LOG_FILE" 2>&1 &
+    # Run from repo root so the log_file path used by the python app
+    # ("logs/trading_bot.log") will resolve to the repo-root logs directory
+    nohup python3 "$PYTHON_SCRIPT_PATH" --config "$config_path" > "$PYTHON_LOG_FILE" 2>&1 &
     local python_pid=$!
     
-    # Save PID (adjust path since we changed directory)
+    # Save PID
     cd - > /dev/null
     echo "$python_pid" > "$PYTHON_PID_FILE"
     
