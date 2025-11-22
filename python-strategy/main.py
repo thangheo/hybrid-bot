@@ -175,6 +175,8 @@ class EnhancedTradingBot:
     def __init__(self, config_path: str = 'config/trading_bot.yaml'):
         self.config = self._load_config(config_path)
         self.running = False
+        # Guard to prevent duplicate shutdown work
+        self._stopping = False
         self.scheduler = AsyncIOScheduler()
         
         # Core managers
@@ -253,7 +255,17 @@ class EnhancedTradingBot:
     def _signal_handler(self, signum, frame):
         """Handle shutdown signals"""
         self.logger.info(f"Received signal {signum}, shutting down...")
-        asyncio.create_task(self.stop())
+        # Only schedule stop once — avoid duplicate concurrent shutdowns when
+        # multiple signals arrive (e.g., SIGINT twice or SIGTERM followed by SIGINT)
+        if not getattr(self, '_stopping', False):
+            self._stopping = True
+            try:
+                asyncio.create_task(self.stop())
+            except Exception:
+                # If we're not in an event loop (rare), fall back to marking
+                # running=False; the main loop will clean up when the event
+                # loop returns control.
+                self.running = False
     
     async def initialize(self):
         """Simplified initialization"""
@@ -386,16 +398,6 @@ class EnhancedTradingBot:
             while self.running:
                 await asyncio.sleep(1)
                 
-            if self.alert_manager:
-                await self.alert_manager.send_alert(
-                    'INFO',
-                    '🚀 Trading Bot Started',
-                    {
-                        'timestamp': datetime.now().isoformat(),
-                        'capabilities': self.system_capabilities,
-                        'config_version': self.config.get('version', 'unknown')
-                    }
-                )
         finally:
             await self.stop()
     
@@ -1024,6 +1026,13 @@ class EnhancedTradingBot:
     async def stop(self):
         """Graceful shutdown"""
         self.logger.info("🛑 Stopping Trading Bot...")
+        # Make stop idempotent
+        if getattr(self, '_stopping', False):
+            # If another task already started the shutdown, just return
+            self.logger.debug("Shutdown already in progress, skipping duplicate stop()")
+            return
+
+        self._stopping = True
         self.running = False
         
         try:

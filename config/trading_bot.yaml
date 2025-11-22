@@ -5,8 +5,8 @@
 regime:
   train_on_startup: false
 cpp_intelligence:
-  enabled: false  # Set to false to disable C++ integration
-  fallback_mode: true  # Continue trading even if C++ is unavailable
+  enabled: true  # Set to false to disable C++ integration
+  fallback_mode: false  # Continue trading even if C++ is unavailable
 signal_decay:
   enabled: false
   strong_signal_hours: 6    # >0.7 strength
