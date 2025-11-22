@@ -248,6 +248,7 @@ private:
     // Component instances
     OrderBookAnalyzerPtr orderBookAnalyzer_;
     ImbalanceDetectionEnginePtr imbalanceDetector_;
+    bool _use_imbalance_detection = false; //for hybrid mode
     LiquidityFlowMonitorPtr liquidityMonitor_;
     // Keep a separate VolumeProfileAnalyzer per trading pair (exchange:symbol)
     std::map<std::string, VolumeProfileAnalyzerPtr> volumeProfileAnalyzers_;

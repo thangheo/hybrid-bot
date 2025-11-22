@@ -661,15 +661,27 @@ trading::MarketIntelligence AdaptiveMarketIntelligence::generateIntelligenceFrom
     ai->set_liquidity_ratio(volume_percentile);
     ai->set_depth_imbalance(obMetrics.depthImbalance);
     ai->set_spread_stability(obMetrics.getMetric("spreadStability", 0.5));
-    ai->set_realized_volatility_1m(obMetrics.realize_volatility_1m);
     ai->set_volume_ratio_to_avg(obMetrics.getMetric("volumeRatioToAvg", 1.0));
     ai->set_volume_5s(obMetrics.getMetric("volume5s", total_volume * 0.2));
     ai->set_volume_30s(obMetrics.getMetric("volume30s", total_volume * 0.8));
 
     // Use volatility metrics from OrderBookAnalyzer
-    ai->set_realized_volatility_1m(obMetrics.realize_volatility_1m);
-    ai->set_realized_volatility_5m(obMetrics.realize_volatility_1m * 1.2);
-    ai->set_expected_volatility_5m(obMetrics.volatilityExpectation);
+    // If realize_volatility_1m is 0 (not enough snapshots yet), fallback to estimate
+    double volatility_1m = obMetrics.realize_volatility_1m;
+    if (volatility_1m <= 0.0 || !std::isfinite(volatility_1m)) {
+        // Fallback: estimate from spread when OrderBookAnalyzer doesn't have enough data yet
+        volatility_1m = estimateSimpleVolatility(relative_spread, profile->volatility_factor);
+    }
+
+    ai->set_realized_volatility_1m(volatility_1m);
+    ai->set_realized_volatility_5m(volatility_1m * 1.2);
+
+    // Use expected volatility from analyzer if available, otherwise estimate
+    double expected_vol_5m = obMetrics.volatilityExpectation;
+    if (expected_vol_5m <= 0.0 || !std::isfinite(expected_vol_5m)) {
+        expected_vol_5m = volatility_1m * 1.1;  // Simple estimate
+    }
+    ai->set_expected_volatility_5m(expected_vol_5m);
 
     // Flow metrics
     FlowMetrics flow;

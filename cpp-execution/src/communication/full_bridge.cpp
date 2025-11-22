@@ -6,6 +6,7 @@
 #include "data_ingestion/data_ingestion_service.hpp"
 #include "communication/zmq_server_client.hpp"
 #include "market_intelligence/adaptive_intelligence.hpp"
+#include "strategy/core_analysis/order_book_analyzer.hpp"
 #include "../../generated/cpp/proto/trading_messages.pb.h"
 #include <nlohmann/json.hpp>
 #include <iostream>
@@ -39,11 +40,14 @@ private:
     std::unique_ptr<DataIngestionService> dataService_;
     std::unique_ptr<GenericZmqServer> zmqServer_;
     std::unique_ptr<trading::intelligence::AdaptiveMarketIntelligence> adaptiveIntel_;
-    
+
+    // Strategy components - for comprehensive metrics calculation
+    std::shared_ptr<trading::strategy::OrderBookAnalyzerManager> analyzerManager_;
+
     // Market intelligence tracking
     std::unordered_map<std::string, trading::MarketIntelligence> latestIntelligence_;
     std::mutex intelligenceMutex_;
-    
+
     // Statistics
     std::atomic<uint64_t> messagesProcessed_{0};
     std::atomic<uint64_t> intelligenceGenerated_{0};
@@ -51,18 +55,35 @@ private:
 
 public:
     SimplifiedTradingServer() : startTime_(std::chrono::steady_clock::now()) {
+        std::cout << "Initializing Simplified Trading Server with enhanced metrics..." << std::endl;
+
+        // Initialize OrderBookAnalyzer manager with comprehensive configuration
+        trading::strategy::ParameterSet analyzerParams;
+        analyzerParams.setParameter("depthLevels", 20.0);           // Use 20 levels for better accuracy
+        analyzerParams.setParameter("priceGroupingFactor", 0.0001); // Group prices for cleaner analysis
+        analyzerParams.setParameter("emaAlpha", 0.2);               // EMA smoothing factor
+        analyzerParams.setParameter("minSamplesForStability", 5);   // Minimum samples for stable metrics
+        analyzerParams.setParameter("warmupMinLevels", 5);          // Warmup threshold
+        analyzerParams.setParameter("historySize", 100.0);          // Historical data size
+
+        analyzerManager_ = std::make_shared<trading::strategy::OrderBookAnalyzerManager>(analyzerParams);
+        std::cout << "  ✓ OrderBookAnalyzer manager initialized (20 levels, comprehensive metrics)" << std::endl;
+
         // Initialize adaptive intelligence
         adaptiveIntel_ = std::make_unique<trading::intelligence::AdaptiveMarketIntelligence>();
-        
+        std::cout << "  ✓ Adaptive intelligence initialized (with adaptive thresholds)" << std::endl;
+
         // Initialize data ingestion service
         dataService_ = std::make_unique<DataIngestionService>("config/data_ingestion.json");
-        
+        std::cout << "  ✓ Data ingestion service created" << std::endl;
+
         // Initialize ZMQ communication
-        //config
         ZmqServerConfig zmqConfig;
         zmqServer_ = std::make_unique<GenericZmqServer>(zmqConfig);
-        
+        std::cout << "  ✓ ZMQ server created" << std::endl;
+
         setupCallbacks();
+        std::cout << "  ✓ Callbacks configured" << std::endl;
     }
 
     ~SimplifiedTradingServer() {
@@ -208,55 +229,115 @@ private:
             if (!orderBook) {
                 return;
             }
-            
+
             // Validate order book has data
             auto bids = orderBook->getBids(5);
             auto asks = orderBook->getAsks(5);
-            
+
             if (bids.empty() || asks.empty()) {
                 return;
             }
-            
+
             // Verify prices are valid
             if (bids[0].price <= 0 || asks[0].price <= 0 || asks[0].price <= bids[0].price) {
                 return;
             }
-            
-            // Generate adaptive market intelligence
+
             std::string tradingPair = update.tradingPair.toString();
-            trading::MarketIntelligence intel = adaptiveIntel_->GenerateAdaptiveMarketIntelligence(tradingPair, orderBook);
+
+            // ═══════════════════════════════════════════════════════════════
+            // ENHANCED APPROACH: Use OrderBookAnalyzer for comprehensive metrics
+            // ═══════════════════════════════════════════════════════════════
+
+            // 1. Get or create analyzer for this symbol
+            auto analyzer = analyzerManager_->getAnalyzerForSymbol(
+                update.tradingPair,
+                update.exchangeId
+            );
+
+            // 2. Process orderbook snapshot to calculate ALL metrics ONCE
+            //    This includes: volume, imbalance, volatility, regime, flow, etc.
+            analyzer->processOrderBook(*orderBook);
+
+            // 3. Get pre-calculated comprehensive metrics from analyzer
+            auto obMetrics = analyzer->getMetrics();
+
+            // 4. Get flow metrics from liquidity monitor if available
+            std::shared_ptr<trading::strategy::LiquidityMetrics> flowMetrics;
+            auto flowMonitor = orderBook->getLiquidityFlowMonitor();
+            if (flowMonitor) {
+                auto metrics = flowMonitor->getLiquidityMetrics();
+                flowMetrics = std::make_shared<trading::strategy::LiquidityMetrics>(
+                    std::move(metrics)
+                );
+            }
+
+            // 5. Generate intelligence using comprehensive pre-calculated metrics
+            //    This is MUCH MORE ACCURATE than the old basic calculation
+            trading::MarketIntelligence intel =
+                adaptiveIntel_->generateIntelligenceFromMetrics(
+                    update.tradingPair,
+                    obMetrics,      // Comprehensive metrics from OrderBookAnalyzer
+                    flowMetrics     // Flow metrics from liquidity monitor
+                );
 
             if (intel.symbol().empty()) {
                 return; // No valid intelligence generated
             }
 
-            // Debug output for first few intelligence generations per trading pair
+            // ═══════════════════════════════════════════════════════════════
+            // Enhanced debug output showing comprehensive metrics
+            // ═══════════════════════════════════════════════════════════════
             static std::unordered_map<std::string, int> intelDebugCounts;
             intelDebugCounts[tradingPair]++;
-            
+
             if (intelDebugCounts[tradingPair] <= 3) {
-                std::cout << "\n=== ADAPTIVE INTELLIGENCE for " << tradingPair << " ===" << std::endl;
-                std::cout << "  Spread: " << intel.bid_ask_spread() << std::endl;
-                std::cout << "  Liquidity: " << intel.liquidity_ratio() << std::endl;
-                std::cout << "  Imbalance: " << intel.order_book_imbalance() << std::endl;
-                std::cout << "  Regime: " << intel.current_regime() << std::endl;
-                std::cout << "  Confidence: " << intel.regime_confidence() << std::endl;
-                std::cout << "=============================================" << std::endl;
+                std::cout << "\n╔═══════════════════════════════════════════════════════════╗" << std::endl;
+                std::cout << "║ ENHANCED ADAPTIVE INTELLIGENCE: " << std::left << std::setw(22) << tradingPair << "║" << std::endl;
+                std::cout << "╠═══════════════════════════════════════════════════════════╣" << std::endl;
+                std::cout << "║ Price & Spread Metrics:                                  ║" << std::endl;
+                std::cout << "║   Spread: " << std::setw(48) << intel.bid_ask_spread() << "║" << std::endl;
+                std::cout << "║   Spread Stability: " << std::setw(38) << intel.spread_stability() << "║" << std::endl;
+                std::cout << "║                                                           ║" << std::endl;
+                std::cout << "║ Volume & Liquidity Metrics:                              ║" << std::endl;
+                std::cout << "║   Liquidity Ratio: " << std::setw(39) << intel.liquidity_ratio() << "║" << std::endl;
+                std::cout << "║   Volume Ratio to Avg: " << std::setw(34) << intel.volume_ratio_to_avg() << "║" << std::endl;
+                std::cout << "║                                                           ║" << std::endl;
+                std::cout << "║ Imbalance Metrics:                                       ║" << std::endl;
+                std::cout << "║   Order Book Imbalance: " << std::setw(33) << intel.order_book_imbalance() << "║" << std::endl;
+                std::cout << "║   Depth Imbalance: " << std::setw(39) << intel.depth_imbalance() << "║" << std::endl;
+                std::cout << "║                                                           ║" << std::endl;
+                std::cout << "║ Volatility Metrics:                                      ║" << std::endl;
+                std::cout << "║   Realized Vol 1m: " << std::setw(39) << intel.realized_volatility_1m() << "║" << std::endl;
+                std::cout << "║   Expected Vol 5m: " << std::setw(39) << intel.expected_volatility_5m() << "║" << std::endl;
+                std::cout << "║                                                           ║" << std::endl;
+                std::cout << "║ Flow Metrics:                                            ║" << std::endl;
+                std::cout << "║   Aggressive Buy Ratio: " << std::setw(34) << intel.aggressive_buy_ratio() << "║" << std::endl;
+                std::cout << "║   Aggressive Sell Ratio: " << std::setw(33) << intel.aggressive_sell_ratio() << "║" << std::endl;
+                std::cout << "║   Flow Momentum: " << std::setw(41) << intel.flow_momentum() << "║" << std::endl;
+                std::cout << "║                                                           ║" << std::endl;
+                std::cout << "║ Regime Classification:                                   ║" << std::endl;
+                std::cout << "║   Regime: " << std::setw(48) << intel.current_regime() << "║" << std::endl;
+                std::cout << "║   Confidence: " << std::setw(44) << intel.regime_confidence() << "║" << std::endl;
+                std::cout << "║   Regime Stability: " << std::setw(38) << intel.regime_stability() << "║" << std::endl;
+                std::cout << "║                                                           ║" << std::endl;
+                std::cout << "║ Price Impact:                                            ║" << std::endl;
+                std::cout << "║   Estimate: " << std::setw(46) << intel.price_impact_estimate() << "║" << std::endl;
+                std::cout << "╚═══════════════════════════════════════════════════════════╝" << std::endl;
             }
-            
+
             // Store latest intelligence
             {
                 std::lock_guard<std::mutex> lock(intelligenceMutex_);
                 latestIntelligence_[tradingPair] = intel;
             }
-            
-            // Publish to ZMQ
+
+            // Publish to ZMQ for Python consumption
             if (zmqServer_ && intel.symbol() == tradingPair) {
-                // zmqServer_->PublishMarketIntelligence(intel)
                 zmqServer_->publishAsync("market_intelligence", intel.SerializeAsString());
                 intelligenceGenerated_.fetch_add(1);
             }
-            
+
         } catch (const std::exception& e) {
             std::cerr << "Error generating market intelligence: " << e.what() << std::endl;
         }
