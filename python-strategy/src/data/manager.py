@@ -290,17 +290,16 @@ class DataIngestionManager:
         """Verify we have sufficient data for strategy calculations"""
         try:
             df = self.get_symbol_data(symbol, days=100, timeframe=timeframe)
-            record_count = len(df)
-            
-                # Define minimum requirements (bars)
-                min_requirements = {
-                    '1m': 1500, # ~25 hours
-                    '5m': 500,  # multiple days of 5m bars
-                    '15m': 400,
-                    '1h': 240,  # ~10 days
-                    '4h': 60,
-                    '1d': 60
-                }
+            record_count = len(df)        
+            # Define minimum requirements (bars)
+            min_requirements = {
+                '1m': 1500, # ~25 hours
+                '5m': 500,  # multiple days of 5m bars
+                '15m': 400,
+                '1h': 240,  # ~10 days
+                '4h': 60,
+                '1d': 60
+            }
             
             min_needed = min_requirements.get(timeframe, 50)
             
