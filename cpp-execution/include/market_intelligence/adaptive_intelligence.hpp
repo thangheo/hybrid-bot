@@ -132,8 +132,14 @@ public:
     trading::MarketIntelligence GenerateAdaptiveMarketIntelligence(
         const core::Symbol& symbol,
         std::shared_ptr<OrderBook> orderbook);
-    
-    // New improved interface methods
+
+    // New improved interface using pre-calculated metrics from OrderBookAnalyzer
+    trading::MarketIntelligence generateIntelligenceFromMetrics(
+        const core::Symbol& symbol,
+        const strategy::OrderBookMetrics& obMetrics,
+        std::shared_ptr<strategy::LiquidityMetrics> flowMetrics = nullptr);
+
+    // Legacy interface - kept for backward compatibility
     trading::MarketIntelligence generateIntelligence(
         const core::Symbol& symbol,
         const std::vector<trading::PriceLevel>& bids,
