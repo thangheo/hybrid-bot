@@ -157,8 +157,8 @@ data_ingestion:
   
   # UPDATED: Optimal timeframes for Markov
   timeframes:
-    - "4h"      # PRIMARY: Optimal for Markov regime detection
-    - "1d"      # SECONDARY: Long-term confirmation
+    - "5m"      # PRIMARY: Optimal for Markov regime detection
+    - "1h"      # SECONDARY: Long-term confirmation
   
   # NEW: Historical data requirements
   historical_data:
@@ -179,11 +179,11 @@ data_ingestion:
     
   optimization:
     skip_recent_data_hours:         # Skip if data is fresh
-      4h: 2                        # Skip 4h if less than 2 hours old
-      1d: 12  
+      5m: 2                        # Skip 5m if less than 2 minutes old
+      1h: 12  
 # 🧠 MARKOV STRATEGY CONFIGURATION
 markov_strategy:
-  enabled: true
+  enabled: false
   
   # Markov Model Parameters
   markov_model:
@@ -231,13 +231,86 @@ markov_strategy:
 # 🎯 STRATEGY CONFIGURATION
 strategy:
   # Strategy selection
-  primary_strategy: "markov_etf_enhanced"
+  primary_strategy: "ema_pullback_with_imbalance"
 
   # Fallback hierarchy
   strategy_fallback_order:
-    - "markov_etf_enhanced"
+    - "stastical_mean_reversion"
     
-    
+
+ema_pullback_with_imbalance:
+  enabled: false
+  # EMA parameters
+  'ema_short': 20
+  'ema_long': 50
+  
+  # RSI parameters
+  'rsi_period': 14
+  'rsi_buy_range': (30, 50)
+  'rsi_sell_range': (50, 70)
+  
+  # Orderbook imbalance
+  'use_imbalance': True  # Set False to test pure EMA strategy
+  'imbalance_threshold_strong': 0.65
+  'imbalance_threshold_weak': 0.55
+  'volume_surge_threshold': 2.0
+  
+  # Risk management
+  'risk_reward_tp1': 1.0
+  'risk_reward_tp2': 2.0
+  'sl_atr_multiplier': 1.5
+  
+  # Timeframes
+  'primary_timeframe': '5m'
+  'trend_timeframe': '1h'
+  'min_periods': 50
+
+  # === REGIME FILTER (NEW!) ===
+  # Filter out unfavorable market conditions (ranging, choppy, mean-reverting)
+  'use_regime_filter': True  # Set False to disable regime filtering
+  'min_regime_confidence': 0.6  # Only trade when confidence >= 60%
+
+  # Regime detection configuration (IMPROVED v2.0)
+  'regime_config':
+    # === Core Indicators ===
+    # ADX (Average Directional Index) - Measures trend strength
+    'adx_trending': 25        # ADX > 25 = trending market
+    'adx_strong_trend': 40    # ADX > 40 = very strong trend
+
+    # Choppiness Index - Detects ranging/choppy markets
+    'chop_threshold': 61.8    # CI > 61.8 = choppy (avoid trading)
+
+    # Hurst Exponent - Detects trending vs mean-reverting behavior
+    'hurst_trending_min': 0.55    # H > 0.55 = trending
+    'hurst_window': 100           # Lookback window for Hurst calculation
+    'use_hurst': False            # NEW: Disable Hurst (unreliable at low timeframes)
+
+    # EMA Separation - Ensures EMAs are far enough apart
+    'ema_separation_min': 0.015   # 1.5% minimum gap between EMA20 and EMA50
+
+    # === Volatility Detection (IMPROVED) ===
+    'atr_percentile': 30              # ATR must be > 30th percentile (for trending)
+    'volatile_atr_threshold': 85      # ATR > 85th percentile = volatile
+    'volatile_return_threshold': 90   # Returns > 90th percentile = volatile
+
+    # Bollinger Band Squeeze Detection
+    'bb_squeeze_threshold': 0.5   # BB width < 50% of average = squeeze (avoid)
+
+    # === Regime Smoothing (NEW) ===
+    # Reduce flickering by applying consensus filter
+    'regime_smoothing_window': 3  # Use mode over last 3 bars
+
+    # === Score Thresholds (Priority Hierarchy) ===
+    # Lower threshold = easier to trigger that regime
+    'volatile_score_threshold': 6   # Volatile if score >= 6/10
+    'choppy_score_threshold': 6     # Choppy if score >= 6/10
+    'ranging_score_threshold': 6    # Ranging if score >= 6/10
+    'trending_score_threshold': 6   # Trending if score >= 6/10
+
+
+
+
+
   # Markov Strategy Parameters
   markov_etf_strategy:
     signal_threshold: 0.3

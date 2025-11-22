@@ -101,3 +101,46 @@ class TechnicalIndicators:
         """Calculate trend strength normalized by ATR"""
         price_change = abs(close - close.shift(lookback))
         return price_change / (atr + 1e-8)
+
+    @staticmethod
+    def true_range(high: pd.Series, low: pd.Series, close: pd.Series) -> pd.Series:
+        """Calculate True Range"""
+        tr1 = high - low
+        tr2 = abs(high - close.shift())
+        tr3 = abs(low - close.shift())
+        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+        return tr
+
+    @staticmethod
+    def adx(high: pd.Series, low: pd.Series, close: pd.Series, period: int = 14) -> pd.Series:
+        """
+        Average Directional Index (ADX)
+        Measures trend strength (not direction)
+        - ADX < 20: Weak trend / ranging
+        - ADX 20-25: Moderate trend
+        - ADX 25-50: Strong trend
+        - ADX > 50: Very strong trend
+        """
+        # Calculate +DM and -DM
+        plus_dm = high.diff()
+        minus_dm = -low.diff()
+
+        # Keep only valid directional movements
+        plus_dm[plus_dm < 0] = 0
+        minus_dm[minus_dm < 0] = 0
+        plus_dm[(plus_dm - minus_dm) < 0] = 0
+        minus_dm[(minus_dm - plus_dm) < 0] = 0
+
+        # Calculate True Range
+        tr = TechnicalIndicators.true_range(high, low, close)
+
+        # Smooth using Wilder's method (EMA with alpha = 1/period)
+        atr = tr.ewm(alpha=1/period, adjust=False).mean()
+        plus_di = 100 * (plus_dm.ewm(alpha=1/period, adjust=False).mean() / (atr + 1e-10))
+        minus_di = 100 * (minus_dm.ewm(alpha=1/period, adjust=False).mean() / (atr + 1e-10))
+
+        # Calculate DX and ADX
+        dx = 100 * abs(plus_di - minus_di) / (plus_di + minus_di + 1e-10)
+        adx = dx.ewm(alpha=1/period, adjust=False).mean()
+
+        return adx

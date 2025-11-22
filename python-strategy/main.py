@@ -40,7 +40,8 @@ from src.execution.models import Order, OrderSide, OrderType
 
 # 🚀 Import UNIFIED Strategy Manager
 # from strategy.unified_manager import UnifiedStrategyManager
-from src.strategy.strategies.markov_strategy_complete import MarkovETFStrategyPersistent
+# from src.strategy.strategies.markov_strategy_complete import MarkovETFStrategyPersistent
+from src.strategy.strategies.ema_pullback_with_imbalance import EMAPullbackImbalanceStrategy
 from src.communication.market_intelligence_bridge import MarketIntelligenceBridge
 #extract regime info
 from src.utils.regime_info import _extract_regime_info_for_risk_management
@@ -272,12 +273,33 @@ class EnhancedTradingBot:
             
             # 🚀 Initialize UNIFIED Strategy Manager
             # self.strategy_manager = UnifiedStrategyManager(self.config)
-            self.strategy_manager = MarkovETFStrategyPersistent(self.config)
-            self.strategy_info = self.strategy_manager.get_enhanced_strategy_info()
-            logger.info(f"Using strategy: {self.strategy_info.get('strategy_name', 'Unknown')}")
+            # self.strategy_manager = MarkovETFStrategyPersistent(self.config)
+            # Instantiate the configured strategy. EMAPullbackImbalanceStrategy now
+            # accepts either the full config or the specific nested section.
+            # Prefer passing the nested section but leave compatibility if full
+            # config is passed — the strategy will extract its own section.
+            self.strategy_manager = EMAPullbackImbalanceStrategy(self.config)
 
-            # Get system capabilities
-            self.system_capabilities = self.strategy_manager.get_system_capabilities()
+            # Strategy info: support either enhanced info methods or the basic
+            # get_strategy_info method implemented by strategy classes.
+            if hasattr(self.strategy_manager, 'get_enhanced_strategy_info'):
+                self.strategy_info = self.strategy_manager.get_enhanced_strategy_info()
+            elif hasattr(self.strategy_manager, 'get_strategy_info'):
+                self.strategy_info = self.strategy_manager.get_strategy_info()
+            else:
+                self.strategy_info = {'strategy_name': getattr(self.strategy_manager, 'name', 'Unknown')}
+
+            logger.info(f"Using strategy: {self.strategy_info.get('strategy_name', self.strategy_info.get('name', 'Unknown'))}")
+
+            # Get system capabilities if available, otherwise provide a safe
+            # minimal capabilities object so other code can continue.
+            if hasattr(self.strategy_manager, 'get_system_capabilities'):
+                self.system_capabilities = self.strategy_manager.get_system_capabilities()
+            else:
+                self.system_capabilities = {
+                    'etf_integration': {'enabled': False, 'manager_ready': False},
+                    'strategies': {'primary': self.strategy_info.get('name', self.strategy_info.get('strategy_name', 'Unknown')), 'total': 1}
+                }
             
             # Initialize other managers
             self.risk_manager = RiskManager(self.config.get('risk_management', {}))
@@ -443,52 +465,7 @@ class EnhancedTradingBot:
                     intel.liquidity_ratio > 0.7 or 
                     abs(intel.order_book_imbalance) > 0.3):
                     
-                    # self.logger.info(f"🚀 High confidence C++ signal for {symbol}: "
-                    #                 f"regime_conf={intel.regime_confidence:.2f}, "
-                    #                 f"liquidity={intel.liquidity_ratio:.2f}")
-                    # print all intelligence details for debugging
-
-                    # message MarketIntelligence {
-                    #     // Message metadata
-                    #     string symbol = 1;
-                    #     int64 timestamp = 2;
-                        
-                    #     // Order Book Metrics
-                    #     double bid_ask_spread = 3;
-                    #     double order_book_imbalance = 4;
-                    #     double depthImbalance = 5;         // Imbalance in deeper levels
-                    #     double liquidity_ratio = 6;
-                    #     double spread_stability = 7;        // How stable the spread has been
-                        
-                    #     // Flow Metrics
-                    #     double net_flow_5s = 8;
-                    #     double net_flow_30s = 9;
-                    #     double net_flow_5m = 10;            // 5 minute flow
-                    #     double aggressive_buy_ratio = 11;
-                    #     double aggressive_sell_ratio = 12;
-                    #     double passive_buy_ratio = 13;
-                    #     double passive_sell_ratio = 14;
-                        
-                    #     // Volatility Indicators
-                    #     double realized_volatility_1m = 15;
-                    #     double realized_volatility_5m = 16;
-                    #     double price_impact_estimate = 17;
-                    #     double volatility_trend = 18;       // Is volatility increasing/decreasing
-                        
-                    #     // Volume Analysis
-                    #     double volume_5s = 19;
-                    #     double volume_30s = 20;
-                    #     double volume_ratio_to_avg = 21;    // Current volume vs historical average
-                        
-                    #     // Regime Classification
-                    #     OrderBookRegime current_regime = 22;
-                    #     double regime_confidence = 23;      // Added for bridge.py compatibility
-                    #     double regime_stability = 24;       // How stable the regime has been
-                        
-                    #     // Predictive metrics
-                    #     double expected_volatility_5m = 25; // Expected volatility next 5 minutes
-                    #     double flow_momentum = 26;          // Acceleration of flow metrics
-
+        
                     self.logger.info(f"🚀 High confidence C++ signal for {symbol}: "
                                      f"regime_conf={intel.regime_confidence:.2f}, "
                                      f"liquidity={intel.liquidity_ratio:.2f}, "
@@ -745,16 +722,7 @@ class EnhancedTradingBot:
             # Extract each field with proper error handling
             try:
                 signal_dict['symbol'] = symbol.replace('/', '')
-                
-                # Try multiple possible keys for signal_strength
-                # if 'signal_strength' in signal_data.index:
-                #     signal_dict['signal_strength'] = float(signal_data['signal_strength'])
-                # elif 'strength' in signal_data.index:
-                #     signal_dict['signal_strength'] = float(signal_data['strength'])
-                # else:
-                #     # Calculate from raw signal as fallback
-                #     raw_signal = float(signal_data.get('signal', 0))
-                #     signal_dict['signal_strength'] = min(abs(raw_signal), 1.0)
+                 
                 #     self.logger.warning(f"Using calculated signal_strength for {symbol}: {signal_dict['signal_strength']}")
                 if 'signal_strength' in signal_data.index and pd.notna(signal_data['signal_strength']):
                     signal_dict['signal_strength'] = float(signal_data['signal_strength'])
@@ -1066,7 +1034,7 @@ async def test_system_capabilities(config_path: str):
             config = yaml.safe_load(f)
 
         # Test Markov ETF strategy manager
-        strategy_manager = MarkovETFStrategyPersistent(config)
+        strategy_manager = EMAPullbackImbalanceStrategy(config)
         capabilities = strategy_manager.get_system_capabilities()
         
         print("📊 System Capabilities:")
