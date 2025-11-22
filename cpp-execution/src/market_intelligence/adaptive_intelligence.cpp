@@ -307,45 +307,44 @@ CoinProfile& AdaptiveMarketIntelligence::GetOrCreateProfile(const core::Symbol& 
 trading::MarketIntelligence AdaptiveMarketIntelligence::GenerateAdaptiveMarketIntelligence(
     const core::Symbol& symbol,
     std::shared_ptr<OrderBook> orderbook) {
-    
+
     // Get order book data
     auto bids_raw = orderbook->getBids(10);
     auto asks_raw = orderbook->getAsks(10);
-    
+
     if (bids_raw.empty() || asks_raw.empty()) {
         MarketIntelligence intel;
         intel.set_symbol(symbol.toString());
-        //set topic to MARKET_INTEL
         intel.set_topic("MARKET_INTEL");
         return intel;
     }
-    
+
     // Convert to new format
     std::vector<trading::PriceLevel> bids, asks;
-    
+
     for (const auto& bid : bids_raw) {
         trading::PriceLevel level;
         level.set_price(bid.price);
         level.set_quantity(bid.quantity);
         bids.push_back(level);
     }
-    
+
     for (const auto& ask : asks_raw) {
         trading::PriceLevel level;
         level.set_price(ask.price);
         level.set_quantity(ask.quantity);
         asks.push_back(level);
     }
-    //get flow monitor from order book
+
+    // Get flow monitor from order book
     auto flowMonitor = orderbook->getLiquidityFlowMonitor();
-   
+
     if (flowMonitor) {
         auto metrics = flowMonitor->getLiquidityMetrics();
         auto flowMetrics = std::make_shared<strategy::LiquidityMetrics>(std::move(metrics));
         return generateIntelligence(symbol, bids, asks, flowMetrics);
     }
     return generateIntelligence(symbol, bids, asks, nullptr);
-    // Delegate to new implementation
 }
 
 // ============================================================================
@@ -625,6 +624,116 @@ std::vector<trading::PriceLevel> AdaptiveMarketIntelligence::ConvertPriceLevels(
     return result;
 }
 
+// New optimized method using pre-calculated OrderBookMetrics
+trading::MarketIntelligence AdaptiveMarketIntelligence::generateIntelligenceFromMetrics(
+    const core::Symbol& symbol,
+    const strategy::OrderBookMetrics& obMetrics,
+    std::shared_ptr<strategy::LiquidityMetrics> flowMetrics) {
+
+    google::protobuf::Arena arena;
+    auto* ai = google::protobuf::Arena::CreateMessage<trading::MarketIntelligence>(&arena);
+
+    ai->set_symbol(symbol.toString());
+    ai->set_timestamp(std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count());
+
+    // Get profile for adaptive thresholds
+    CoinProfile* profile = getOrCreateProfile(symbol);
+    if (!profile) {
+        trading::MarketIntelligence out;
+        out.CopyFrom(*ai);
+        return out;
+    }
+
+    // Use metrics directly from OrderBookAnalyzer instead of recalculating
+    double relative_spread = obMetrics.spreadPercent / 100.0;  // Convert from percent
+    double total_volume = obMetrics.totalBidVolume + obMetrics.totalAskVolume;
+
+    // Update historical statistics for adaptive thresholds
+    profile->updateStatistics(total_volume, relative_spread);
+
+    double volume_percentile = profile->volume_stats.getVolumePercentile(total_volume);
+    double spread_percentile = profile->spread_stats.getSpreadPercentile(relative_spread);
+
+    // Populate intelligence using OrderBookAnalyzer metrics
+    ai->set_bid_ask_spread(relative_spread);
+    ai->set_order_book_imbalance(obMetrics.volumeImbalance);
+    ai->set_liquidity_ratio(volume_percentile);
+    ai->set_depth_imbalance(obMetrics.depthImbalance);
+    ai->set_spread_stability(obMetrics.getMetric("spreadStability", 0.5));
+    ai->set_realized_volatility_1m(obMetrics.realize_volatility_1m);
+    ai->set_volume_ratio_to_avg(obMetrics.getMetric("volumeRatioToAvg", 1.0));
+    ai->set_volume_5s(obMetrics.getMetric("volume5s", total_volume * 0.2));
+    ai->set_volume_30s(obMetrics.getMetric("volume30s", total_volume * 0.8));
+
+    // Use volatility metrics from OrderBookAnalyzer
+    ai->set_realized_volatility_1m(obMetrics.realize_volatility_1m);
+    ai->set_realized_volatility_5m(obMetrics.realize_volatility_1m * 1.2);
+    ai->set_expected_volatility_5m(obMetrics.volatilityExpectation);
+
+    // Flow metrics
+    FlowMetrics flow;
+    if (flowMetrics) {
+        double imbalance_signal = flowMetrics->flow_imbalance;
+        if (!std::isfinite(imbalance_signal)) imbalance_signal = obMetrics.volumeImbalance;
+
+        flow.net_flow_5s = imbalance_signal * total_volume * 0.1;
+        flow.net_flow_30s = imbalance_signal * total_volume * 0.03;
+
+        double exec_delta = flowMetrics->bid_execution_rate - flowMetrics->ask_execution_rate;
+        double cancel_delta = flowMetrics->ask_cancel_rate - flowMetrics->bid_cancel_rate;
+        double toxicity_delta = flowMetrics->bid_toxicity - flowMetrics->ask_toxicity;
+
+        double agg = 0.5 + (imbalance_signal * 0.5) + (exec_delta * 0.1) + (cancel_delta * 0.05) - (toxicity_delta * 0.05);
+        agg = std::max(0.0, std::min(1.0, agg));
+        flow.aggressive_buy_ratio = agg;
+        flow.aggressive_sell_ratio = std::max(0.0, std::min(1.0, 1.0 - agg));
+
+        double size_adj = 1.0 + (flowMetrics->large_order_ratio * 0.5) - (flowMetrics->cancellation_ratio * 0.2);
+        size_adj = std::max(0.1, size_adj);
+        flow.net_flow_5s *= size_adj;
+        flow.net_flow_30s *= size_adj;
+    } else {
+        flow = estimateFlowMetrics(obMetrics.volumeImbalance, total_volume);
+    }
+
+    ai->set_aggressive_buy_ratio(flow.aggressive_buy_ratio);
+    ai->set_aggressive_sell_ratio(flow.aggressive_sell_ratio);
+    ai->set_net_flow_5s(flow.net_flow_5s);
+    ai->set_net_flow_30s(flow.net_flow_30s);
+    ai->set_net_flow_5m(flow.net_flow_30s * 10.0);
+    ai->set_passive_buy_ratio(1.0 - flow.aggressive_buy_ratio);
+    ai->set_passive_sell_ratio(1.0 - flow.aggressive_sell_ratio);
+    ai->set_flow_momentum(calculateFlowMomentum(flow));
+
+    // Price impact
+    double price_impact = estimatePriceImpact(total_volume, relative_spread, profile);
+    if (flowMetrics && (flowMetrics->pressure_index > 0.0 || flowMetrics->large_order_ratio > 0.0)) {
+        double adj = 1.0 + std::min(2.0, flowMetrics->pressure_index * 0.5 + flowMetrics->large_order_ratio * 0.3);
+        price_impact *= adj;
+    }
+    ai->set_price_impact_estimate(price_impact);
+
+    // Regime classification using adaptive thresholds
+    RegimeProbabilities probs = calculateRegimeProbabilities(
+        volume_percentile, spread_percentile, obMetrics.volumeImbalance, profile->volatility_factor);
+    auto [regime, confidence] = probs.getBestRegime();
+    ai->set_current_regime(regime);
+    ai->set_regime_confidence(confidence);
+    ai->set_regime_stability(calculateRegimeStability(profile, regime));
+
+    // Periodic saving
+    update_counter_++;
+    if (update_counter_ % save_frequency_ == 0) {
+        profile->saveToFile();
+    }
+
+    trading::MarketIntelligence out;
+    out.CopyFrom(*ai);
+    return out;
+}
+
+// Legacy method - now delegates to new method after converting bids/asks
 trading::MarketIntelligence AdaptiveMarketIntelligence::generateIntelligence(
     const core::Symbol& symbol,
     const std::vector<trading::PriceLevel>& bids,

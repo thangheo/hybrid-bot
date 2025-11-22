@@ -259,9 +259,9 @@ std::future<models::ExecutionReport> BinanceApiClient::placeOrder(const models::
         if (!isConnected()) {
             connect();
         }
-        
-        // Wait for rate limit
-        rateLimitController_->waitForPermission(ExchangeRequestType::PlaceOrder);
+
+        // Wait for rate limit (DISABLED - causing deadlock when no rules set)
+        // rateLimitController_->waitForPermission(ExchangeRequestType::PlaceOrder);
         
         // Prepare parameters
         std::map<std::string, std::string> params;
@@ -462,7 +462,7 @@ std::future<models::ExecutionReport> BinanceApiClient::cancelOrder(const std::st
         }
         
         // Wait for rate limit
-        rateLimitController_->waitForPermission(ExchangeRequestType::CancelOrder);
+        // rateLimitController_->waitForPermission(ExchangeRequestType::CancelOrder);
         
         // Prepare parameters
         std::map<std::string, std::string> params;
@@ -500,7 +500,7 @@ std::future<models::ExecutionReport> BinanceApiClient::getOrderStatus(const std:
         }
         
         // Wait for rate limit
-        rateLimitController_->waitForPermission(ExchangeRequestType::GetOrderStatus);
+        // rateLimitController_->waitForPermission(ExchangeRequestType::GetOrderStatus);
         
         // Prepare parameters
         std::map<std::string, std::string> params;
@@ -537,7 +537,7 @@ std::future<std::map<std::string, double>> BinanceApiClient::getAccountBalances(
         }
         
         // Wait for rate limit
-        rateLimitController_->waitForPermission(ExchangeRequestType::GetAccountBalance);
+        // rateLimitController_->waitForPermission(ExchangeRequestType::GetAccountBalance);
         
         // Prepare parameters
         std::map<std::string, std::string> params;
@@ -584,7 +584,7 @@ std::future<double> BinanceApiClient::getCurrentPrice(const core::Symbol& symbol
         }
         
         // Wait for rate limit
-        rateLimitController_->waitForPermission(ExchangeRequestType::GetMarketData);
+        // rateLimitController_->waitForPermission(ExchangeRequestType::GetMarketData);
         
         // Prepare parameters
         std::map<std::string, std::string> params;
@@ -618,7 +618,7 @@ std::string BinanceApiClient::getHealthStatus() {
     }
     
     // Wait for rate limit
-    rateLimitController_->waitForPermission(ExchangeRequestType::GetHealthStatus);
+    // rateLimitController_->waitForPermission(ExchangeRequestType::GetHealthStatus);
     
     // Prepare parameters
     std::map<std::string, std::string> params;
@@ -637,7 +637,7 @@ std::unordered_map<std::string, std::string> BinanceApiClient::getExchangeStatus
     }
     
     // Wait for rate limit
-    rateLimitController_->waitForPermission(ExchangeRequestType::GetExchangeStatuses);
+    // rateLimitController_->waitForPermission(ExchangeRequestType::GetExchangeStatuses);
     // Prepare parameters
     std::map<std::string, std::string> params;
     

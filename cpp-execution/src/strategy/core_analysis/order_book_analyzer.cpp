@@ -16,7 +16,7 @@
 #include <common/logger.hpp>
 #include <iostream>
 #include <format>
-
+#include <common/logger.hpp>
 namespace trading {
 namespace strategy {
 
@@ -78,7 +78,7 @@ OrderBookAnalyzer::OrderBookAnalyzer(const OrderBookAnalyzerConfig& config)
 
 void OrderBookAnalyzer::processOrderBook(const data_ingestion::OrderBook& snapshot) {
     if (!snapshot.isValid()) {
-        std::cout << std::format("DBG: OrderBookAnalyzer - received invalid snapshot for {} on {}\n",
+        LOG_DEBUG("OrderBookAnalyzer - received invalid snapshot for {} on {}",
                                  snapshot.getSymbol().toString(), snapshot.getExchangeId().toString());
         return;
     }
@@ -99,7 +99,7 @@ void OrderBookAnalyzer::processOrderBook(const data_ingestion::OrderBook& snapsh
 
         // Diagnostic: if empty, print a message
         if (cachedBids_.empty() || cachedAsks_.empty()) {
-            std::cout << std::format("DBG: OrderBookAnalyzer - empty bids={} asks={} for {} on {}\n",
+            LOG_DEBUG("DBG: OrderBookAnalyzer - empty bids={} asks={} for {} on {}",
                                      cachedBids_.size(), cachedAsks_.size(), snapshot.getSymbol().toString(), snapshot.getExchangeId().toString());
         }
         
@@ -149,7 +149,7 @@ void OrderBookAnalyzer::processOrderBook(const data_ingestion::OrderBook& snapsh
               && preGroupAskCount >= static_cast<size_t>(warmupMinLevels)
               && preGroupTotalBidVol > 0.0
               && preGroupTotalAskVol > 0.0)) {
-            std::cout << std::format("DBG: OrderBookAnalyzer - warmup skip bids={} asks={} bidVol={} askVol={} requiredLevels={} for {} on {}\n",
+            LOG_DEBUG("DBG: OrderBookAnalyzer - warmup skip bids={} asks={} bidVol={} askVol={} requiredLevels={} for {} on {}",
                                      preGroupBidCount, preGroupAskCount, preGroupTotalBidVol, preGroupTotalAskVol,
                                      warmupMinLevels, snapshot.getSymbol().toString(), snapshot.getExchangeId().toString());
             // Do not publish metrics yet; wait for fuller book
@@ -230,19 +230,11 @@ void OrderBookAnalyzer::processOrderBook(const data_ingestion::OrderBook& snapsh
         //print some debug info
         static size_t debug_counter = 0;
         if (++debug_counter % 5000 == 0) {
-            std::cout << "OrderBookAnalyzer Debug: Processed " << debug_counter << " snapshots for "
-                      << tradingPair_.toString() << " on " << exchangeId_.toString() << std::endl;
+            LOG_DEBUG("OrderBookAnalyzer Debug: Processed {} snapshots for {} on {}", debug_counter,
+                      tradingPair_.toString(), exchangeId_.toString());
         }
         //print some derrivative info
-        // if (debug_counter % 1000 == 0) {
-        //     std::cout << "Metrics for " << tradingPair_.toString() << " on " << exchangeId_.toString()
-        //               << "  MidPrice: " << currentMetrics_.midPrice 
-        //               << ", Spread: " << currentMetrics_.spread 
-        //               << ", Volume Imbalance: " << currentMetrics_.volumeImbalance 
-        //               << ", Liquidity Pressure: " << currentMetrics_.liquidityPressure
-        //               << ", Volatility Expectation: " << currentMetrics_.volatilityExpectation
-        //               << std::endl;
-        // }
+     
         lastUpdateTime_ = snapshot.getTimestamp();
         metricsToNotify = currentMetrics_;
         // --- Inline Orderbook-based regime detection ---
