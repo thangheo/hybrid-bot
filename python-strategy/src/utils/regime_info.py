@@ -19,23 +19,41 @@ from typing import Dict, List, Optional, Tuple, Any
 from src.strategy.strategies.markov_strategy_complete import MarkovRegimeInfo , MarketRegime
 
 def _extract_regime_info_for_risk_management(regime_info) -> dict:
-    """Extract regime information for risk management from MarkovRegimeInfo"""
-    
+    """
+    Extract regime information for risk management
+    Supports both MarkovRegimeInfo objects and dict inputs (from EMA Pullback strategy)
+    """
+
+    # Handle dict input (from EMA Pullback and other simple strategies)
+    if isinstance(regime_info, dict):
+        return {
+            'current_regime': regime_info.get('current_regime', 'balanced'),
+            'confidence': regime_info.get('confidence', 0.5),
+            'strength': regime_info.get('strength', 0.5),
+            'transition_confidence': regime_info.get('transition_confidence', 0.5),
+            'volatility_regime': regime_info.get('volatility_regime', 'medium'),
+            'etf_flow_regime': regime_info.get('etf_flow_regime', 'neutral'),
+            'etf_flow_strength': regime_info.get('etf_flow_strength', 0.5),
+            'regime_duration': regime_info.get('regime_duration', 1),
+            'expected_duration': regime_info.get('expected_duration', 5)
+        }
+
+    # Handle MarkovRegimeInfo object (from Markov strategy)
     # 1. REGIME CONFIDENCE = regime_probability (0-1)
     regime_confidence = getattr(regime_info, 'regime_probability', 0.5)
-    
+
     # 2. REGIME STRENGTH = Composite calculation using multiple factors
     regime_strength = _calculate_regime_strength(regime_info)
-    
+
     # 3. CURRENT REGIME = Direct extraction
     current_regime = getattr(regime_info, 'current_regime', 'balanced')
-    
+
     # Handle enum conversion if needed
     if hasattr(current_regime, 'value'):
         current_regime = current_regime.value
     elif hasattr(current_regime, 'name'):
         current_regime = current_regime.name.lower()
-    
+
     return {
         'current_regime': current_regime,
         'confidence': regime_confidence,
