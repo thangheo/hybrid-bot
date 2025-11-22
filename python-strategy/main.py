@@ -634,11 +634,11 @@ class EnhancedTradingBot:
             latest_signal = signals.iloc[-1]
 
             # Extract regime info from latest signal (Series, not DataFrame)
-            regime_info = {
-                'current_regime': latest_signal.get('regime', 'balanced'),
-                'confidence': latest_signal.get('regime_confidence', 0.5),
-                'strength': latest_signal.get('regime_strength', 0.5)
-            }
+            # regime_info = {
+            #     'current_regime': latest_signal.get('regime', 'balanced'),
+            #     'confidence': latest_signal.get('regime_confidence', 0.5),
+            #     'strength': latest_signal.get('regime_strength', 0.5)
+            # }
 
             # Update risk management
             # self._update_risk_management_with_regime(regime_info, current_volatility)
@@ -697,44 +697,84 @@ class EnhancedTradingBot:
             except Exception as e:
                 logger.error(f"Failed to update risk management with regime: {e}")
     def _log_signal_info(self, symbol: str, signal_data: pd.Series):
-        """Log signal information"""
+        """
+        Log comprehensive signal information for EMA Pullback strategy
+        Shows: signal, strength, confidence, trend alignment, pullback status, RSI, imbalance, volatility
+        """
         signal_value = signal_data.get('signal', 0)
+
+        # Skip logging for no-signal (reduce noise)
+        if signal_value == 0:
+            return
+
+        # === Core Signal Info ===
         signal_strength = signal_data.get('signal_strength', 0)
         confidence = signal_data.get('confidence', 'none')
 
-        # Format signal_strength and confidence properly
-        # signal_strength is always float, confidence can be string ('high', 'medium', 'low', 'none')
+        # Signal direction emoji
+        signal_emoji = "🟢 BUY" if signal_value > 0 else "🔴 SELL" if signal_value < 0 else "⚪ HOLD"
+
+        # Format strength (0-1 scale)
         try:
-            strength_str = f"{signal_strength:.3f}"
+            strength_str = f"{signal_strength:.2f}"
         except (ValueError, TypeError):
             strength_str = str(signal_strength)
 
-        # confidence is a string in EMA Pullback strategy
-        if isinstance(confidence, str):
-            confidence_str = confidence
-        else:
-            # Fallback for numeric confidence (legacy strategies)
-            try:
-                confidence_str = f"{confidence:.2f}"
-            except (ValueError, TypeError):
-                confidence_str = str(confidence)
+        # === EMA Pullback Specific Info ===
+        trend_aligned = signal_data.get('trend_aligned', 0)
+        in_pullback = signal_data.get('in_pullback_zone', False)
+        rsi_ok = signal_data.get('rsi_ok', False)
+        pattern = signal_data.get('pattern_detected', False)
 
-        log_message = f"{symbol} Signal: {signal_value} (strength: {strength_str}, confidence: {confidence_str})"
+        # === Orderbook Intelligence (from C++) ===
+        bid_imb = signal_data.get('bid_imbalance', 0.5)
+        ask_imb = signal_data.get('ask_imbalance', 0.5)
+        imbalance_strong = signal_data.get('imbalance_strong', False)
 
-        # Add regime info if available
-        if 'regime' in signal_data.index:
-            regime = signal_data.get('regime', 'unknown')
-            log_message += f", Regime: {regime}"
+        # === Market Conditions ===
+        volatile_enough = signal_data.get('volatile_enough', False)
+        is_tradeable = signal_data.get('is_tradeable', True)
+        filter_reason = signal_data.get('filter_reason', '')
 
-        # Add ETF info if available
-        if 'etf_flow_strength' in signal_data.index:
-            etf_strength = signal_data.get('etf_flow_strength', 0)
-            try:
-                log_message += f", ETF Flow: {etf_strength:.3f}"
-            except (ValueError, TypeError):
-                log_message += f", ETF Flow: {etf_strength}"
+        # === Build Compact Log Message ===
+        # Line 1: Signal overview
+        log_parts = [
+            f"{signal_emoji} {symbol}",
+            f"str={strength_str}",
+            f"conf={confidence}"
+        ]
 
-        self.logger.info(log_message)
+        # Line 2: EMA Pullback conditions
+        conditions = []
+        if trend_aligned != 0:
+            trend_emoji = "📈" if trend_aligned > 0 else "📉"
+            conditions.append(f"{trend_emoji}trend")
+        if in_pullback:
+            conditions.append("✓pullback")
+        if rsi_ok:
+            conditions.append("✓rsi")
+        if pattern:
+            conditions.append("✓pattern")
+        if imbalance_strong:
+            imb_direction = "bid" if bid_imb > ask_imb else "ask"
+            conditions.append(f"✓{imb_direction}_imb")
+        if volatile_enough:
+            conditions.append("✓vol")
+
+        if conditions:
+            log_parts.append(f"[{', '.join(conditions)}]")
+
+        # Line 3: Orderbook microstructure
+        if bid_imb != 0.5 or ask_imb != 0.5:  # Only log if C++ data available
+            orderbook_str = f"OB: bid={bid_imb:.2f}/ask={ask_imb:.2f}"
+            log_parts.append(orderbook_str)
+
+        # Line 4: Filter status (if rejected)
+        if not is_tradeable:
+            log_parts.append(f"❌FILTERED: {filter_reason}")
+
+        # Log compact message
+        self.logger.info(" | ".join(log_parts))
 
     async def _process_signal(self, symbol: str, signal_data: pd.Series, market_data: pd.DataFrame):
         """Process trading signal"""

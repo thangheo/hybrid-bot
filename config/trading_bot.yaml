@@ -634,7 +634,7 @@ performance_targets:
   sharpe_ratio_target: 2.0
 
 # 📖 VERSION & COMPATIBILITY
-version: "5.0.0 -markov persistence with full indicator support"
+version: "6.0 use ema_pullback_with_imbalance"
 compatibility:
   minimum_python_version: "3.9"
   required_packages:
