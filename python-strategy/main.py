@@ -649,9 +649,11 @@ class EnhancedTradingBot:
             # Process signals
             if latest_signal.get('signal', 0) != 0:
                 await self._process_signal(symbol, latest_signal, market_data)
-                
+
         except Exception as e:
+            import traceback
             self.logger.error(f"Signal processing failed for {symbol}: {e}")
+            self.logger.error(f"Traceback: {traceback.format_exc()}")
 
     def _update_risk_management_with_regime(self, regime_info: dict, current_volatility: float = None):
         """Update risk management parameters based on regime information"""
@@ -685,8 +687,12 @@ class EnhancedTradingBot:
                 self.last_regime = current_regime
                 self.last_regime_update = time.time()
                 self.last_confidence = regime_confidence
-                
-                logger.info(f"Risk management updated for regime: {current_regime} (confidence: {regime_confidence:.2f})")
+
+                # Safe logging with type checking
+                if isinstance(regime_confidence, (int, float)):
+                    logger.info(f"Risk management updated for regime: {current_regime} (confidence: {regime_confidence:.2f})")
+                else:
+                    logger.info(f"Risk management updated for regime: {current_regime} (confidence: {regime_confidence})")
                 
             except Exception as e:
                 logger.error(f"Failed to update risk management with regime: {e}")
