@@ -404,86 +404,112 @@ class EnhancedTradingBot:
     def _schedule_tasks(self):
         """Schedule trading tasks"""
         scheduling_config = self.config.get('scheduling', {})
-        
-        # Core data collection (every 30 minutes) - GIỮ NGUYÊN
+
+        # ═══════════════════════════════════════════════════════════
+        # 📊 ALIGNED FOR 5M/1H STRATEGY (EMA Pullback with Imbalance)
+        # ═══════════════════════════════════════════════════════════
+
+        # Data collection - Match primary timeframe (5m)
+        # Fetch latest OHLCV data from exchange every 5 minutes
         self.scheduler.add_job(
             self._collect_market_data,
-            trigger=IntervalTrigger(seconds=scheduling_config.get('data_interval', 1800)),
+            trigger=IntervalTrigger(seconds=scheduling_config.get('data_interval', 300)),  # 300s = 5min
             id='market_data_collection',
             max_instances=1
         )
-        
-        # Full signal generation (every 6 minutes) - GIỮ NGUYÊN  
+
+        # Signal generation - Match primary timeframe (5m)
+        # Generate trading signals based on 5m bars with 1h trend confirmation
         self.scheduler.add_job(
             self._generate_signals,
-            trigger=IntervalTrigger(seconds=scheduling_config.get('signal_interval', 360)),
+            trigger=IntervalTrigger(seconds=scheduling_config.get('signal_interval', 300)),  # 300s = 5min
             id='signal_generation',
             max_instances=1
         )
-        
-        # THÊM HÀM MỚI - Intelligence-based quick checks
+
+        # C++ Intelligence monitoring - High frequency
+        # Monitor orderbook microstructure changes from C++ in real-time
         self.scheduler.add_job(
             self._check_intelligence_changes,
-            trigger=IntervalTrigger(seconds=scheduling_config.get('intelligent_interval',60)),
+            trigger=IntervalTrigger(seconds=scheduling_config.get('intelligent_interval', 20)),  # 20s
             id='intelligence_monitoring',
             max_instances=1
         )
-        
-        # System monitoring - GIỮ NGUYÊN
+
+        # System health monitoring
         self.scheduler.add_job(
             self._monitor_system,
-            trigger=IntervalTrigger(seconds=160),
+            trigger=IntervalTrigger(seconds=160),  # ~3 minutes
             id='system_monitoring',
             max_instances=1
         )
-        
-        # Portfolio reconciliation - GIỮ NGUYÊN
+
+        # Portfolio reconciliation - Every 30 minutes
         self.scheduler.add_job(
             self._reconcile_portfolio,
-            trigger=IntervalTrigger(seconds=1800),
+            trigger=IntervalTrigger(seconds=1800),  # 30 minutes
             id='portfolio_reconciliation',
             max_instances=1
         )
     async def _check_intelligence_changes(self):
-        """Monitor C++ intelligence for significant changes"""
+        """
+        Monitor C++ orderbook intelligence for significant microstructure changes
+        that may require immediate action (suitable for EMA Pullback + Imbalance strategy)
+        """
         try:
             if not self.intelligence_bridge or not self.intelligence_bridge.is_available():
                 return
-                
+
             symbols = self.config.get('data_ingestion', {}).get('symbols', [])
-            
+
             for symbol in symbols:
                 intel = self.intelligence_bridge.get_intelligence(symbol)
                 if not intel:
                     continue
-                    
-                # Check if intelligence is fresh (< 30 seconds old)
+
+                # Only process fresh intelligence (< 30 seconds old)
                 intelligence_age = time.time() - intel.last_update
                 if intelligence_age > 30:
                     continue
-                    
-                # Check for significant regime changes or high confidence signals
-                if (intel.regime_confidence > 0.7 or 
-                    intel.liquidity_ratio > 0.7 or 
-                    abs(intel.order_book_imbalance) > 0.3):
-                    
-        
-                    self.logger.info(f"🚀 High confidence C++ signal for {symbol}: "
-                                     f"regime_conf={intel.regime_confidence:.2f}, "
-                                     f"liquidity={intel.liquidity_ratio:.2f}, "
-                                     f"order_book_imbalance={intel.order_book_imbalance:.2f}, "
-                                    #  f"bid_ask_spread={intel.bid_ask_spread:.5f}, "
-                                    #  f"depthImbalance={intel.depthImbalance:.2f}, "
-                                     f"liquidity={intel.liquidity_ratio:.2f}, "
-                                     f"regime_conf={intel.regime_confidence:.2f}, "
-                                    #  f"regime_stability={intel.regime_stability:.2f}, "
-                                    #  f"expected_volatility_5m={intel.expected_volatility_5m:.2f}, "
-                                    #  f"flow_momentum={intel.flow_momentum:.2f}, "
-                                     f"volatility_trend={intel.volatility_trend:.2f}"
-                                        )
-                    # Trigger immediate signal generation for this symbol
-                    await self._process_symbol_signals(symbol)
-                    
+
+                # ═══════════════════════════════════════════════════════════
+                # SIGNIFICANT ORDERBOOK MICROSTRUCTURE CHANGE DETECTION
+                # For EMA Pullback strategy: Watch for strong imbalance signals
+                # ═══════════════════════════════════════════════════════════
+
+                # Strong bid/ask imbalance (potential entry confirmation)
+                strong_imbalance = abs(intel.order_book_imbalance) > 0.4
+
+                # Liquidity spike (good for execution)
+                liquidity_spike = intel.liquidity_ratio > 0.8
+
+                # Low volatility with strong flow (accumulation/distribution)
+                low_vol_strong_flow = (
+                    intel.volatility_trend < 0.015 and
+                    abs(intel.order_book_imbalance) > 0.3
+                )
+
+                # Trigger immediate check if any significant condition met
+                if strong_imbalance or liquidity_spike or low_vol_strong_flow:
+                    # Log every 10th detection to avoid spam
+                    if not hasattr(self, '_intelligence_trigger_count'):
+                        self._intelligence_trigger_count = {}
+                    self._intelligence_trigger_count[symbol] = self._intelligence_trigger_count.get(symbol, 0) + 1
+
+                    if self._intelligence_trigger_count[symbol] % 10 == 1:
+                        self.logger.info(
+                            f"🔍 C++ microstructure alert for {symbol}: "
+                            f"imbalance={intel.order_book_imbalance:.3f}, "
+                            f"liquidity={intel.liquidity_ratio:.2f}, "
+                            f"vol_trend={intel.volatility_trend:.4f}, "
+                            f"age={intelligence_age:.1f}s"
+                        )
+
+                    # Note: We don't trigger immediate signal generation here
+                    # because the regular 5-minute signal cycle will pick up
+                    # the latest C++ intelligence data automatically via
+                    # get_cpp_orderbook_snapshot() in _process_symbol_signals()
+
         except Exception as e:
             self.logger.error(f"Intelligence monitoring failed: {e}")
     async def _collect_market_data(self):
@@ -533,36 +559,29 @@ class EnhancedTradingBot:
                 self.logger.warning("Strategy manager not initialized, skipping signal processing")
                 return
                 
-            # Get market data
+            # Get market data for multiple timeframes
             multi_tf_data = self.data_manager.get_multi_timeframe_data(symbol, days=100)
-            market_data = None
-            
-            # for tf in ['4h', '1d']:
-            #     if tf in multi_tf_data and not multi_tf_data[tf].empty:
-            #         market_data = multi_tf_data[tf]
-                    # break
-            if '4h' in multi_tf_data and not multi_tf_data['4h'].empty:
-                market_data = multi_tf_data['4h']
-            
-            if market_data is None or market_data.empty:
-                self.logger.warning(f"No data available for {symbol}")
-                return
-            
-            # Provide both primary and trend timeframe data to strategy
+
+            # Extract configured timeframes from strategy
             primary_tf = getattr(self.strategy_manager, 'primary_tf', '5m')
             trend_tf = getattr(self.strategy_manager, 'trend_tf', '1h')
 
-            # Prefer primary timeframe from the multi-timeframe result
-            market_data = multi_tf_data.get(primary_tf, None) or next((df for df in multi_tf_data.values() if not df.empty), None)
+            # Get primary timeframe data (5m for EMA Pullback strategy)
+            market_data = multi_tf_data.get(primary_tf)
 
-            # Set trend data on strategy if available
+            # Fallback: if primary TF not available, try any available timeframe
+            if market_data is None or market_data.empty:
+                market_data = next((df for df in multi_tf_data.values() if not df.empty), None)
+
+            # Final validation
+            if market_data is None or market_data.empty:
+                self.logger.warning(f"No data available for {symbol} (primary_tf={primary_tf})")
+                return
+
+            # Set trend timeframe data on strategy for trend confirmation (1h)
             trend_df = multi_tf_data.get(trend_tf)
             if trend_df is not None and not trend_df.empty and hasattr(self.strategy_manager, 'set_trend_data'):
                 self.strategy_manager.set_trend_data(trend_df)
-
-            if market_data is None or market_data.empty:
-                self.logger.warning(f"No usable primary timeframe data for {symbol}")
-                return
 
             # Calculate indicators (strategy expects (data, indicators) signature)
             indicators = self.strategy_manager.calculate_indicators(market_data)
