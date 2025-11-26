@@ -94,8 +94,7 @@ public:
         std::lock_guard<std::mutex> lock(handlerMutex_);
         
         // Use typeid instead of creating instance
-    const std::type_index typeIdx = std::type_index(typeid(EventType));
-    const char* typeName = typeid(EventType).name();
+        const std::type_index typeIdx = std::type_index(typeid(EventType));
         size_t handlerId = nextHandlerId_++;
         
         // Type-erased wrapper for the handler
@@ -116,9 +115,8 @@ public:
         std::lock_guard<std::mutex> lock(handlerMutex_);
         
         // Use typeid instead of creating instance
-    const std::type_index typeIdx = std::type_index(typeid(EventType));
-    const char* typeName = typeid(EventType).name();
-    auto typeIt = handlers_.find(typeIdx);
+        const std::type_index typeIdx = std::type_index(typeid(EventType));
+        auto typeIt = handlers_.find(typeIdx);
         if (typeIt != handlers_.end()) {
             auto handlerIt = typeIt->second.find(handlerId);
             if (handlerIt != typeIt->second.end()) {

@@ -149,15 +149,6 @@ static void loadSymbolTickSizes(const std::string& path = "config/symbol_tick_si
     } catch (...) {}
 }
 
-static double getSymbolTickSize(const core::Symbol& sym) {
-    std::string k = sym.toString();
-    k.erase(std::remove(k.begin(), k.end(), '/'), k.end());
-    auto it = g_symbolTickSize.find(k);
-    if (it != g_symbolTickSize.end() && it->second > 0.0) return it->second;
-    // fallback to exchange-level config
-    return 0.0; // let caller combine with exchange fallback
-}
-
 Trading_system::Trading_system() : running_(false), systemHealthy_(true) {
     setupConfigurations();
     setupStatistics();
@@ -175,8 +166,8 @@ Trading_system::Trading_system() : running_(false), systemHealthy_(true) {
     serverConfig.io_threads = 1;
     //use default config for now
     zmq_server_ = std::make_shared<GenericZmqServer>(serverConfig, zmq_context_);
-    zmq_server_->registerRequestHandler("ping", [](const std::string& request, 
-                                            const std::unordered_map<std::string, std::string>& metadata) -> std::string {
+    zmq_server_->registerRequestHandler("ping", []([[maybe_unused]] const std::string& request,
+                                            [[maybe_unused]] const std::unordered_map<std::string, std::string>& metadata) -> std::string {
         nlohmann::json response;
         response["status"] = "pong";
         response["timestamp"] = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -1246,7 +1237,7 @@ void Trading_system::createStrategyConfig() {
     }
 }
 
-void Trading_system::onMarketPriceUpdate(const core::Symbol& symbol, double price) {
+void Trading_system::onMarketPriceUpdate([[maybe_unused]] const core::Symbol& symbol, [[maybe_unused]] double price) {
     // ptcaManager_->updateMarketPrice(symbol, price);
 }
     // Ad
@@ -1768,7 +1759,6 @@ void Trading_system::execWorkerLoop(size_t workerId) {
             // Small delay to simulate processing/network latency for entries
             std::this_thread::sleep_for(50ms);
 
-            auto workerStart = std::chrono::steady_clock::now();
             std::cout << "🔄 ExecWorker processing signal " << task.id << " for " << task.symbol.toString() 
                       << " (execQueueSize=" << execQueue_.size() << ")" << std::endl;
 
@@ -2191,8 +2181,8 @@ void Trading_system::setupComponentConnections() {
         // std::cout << "Enqueuing signal " << signal.id << " from strategy " << signal.strategyId << std::endl;
         //print debug info for every 20th signal
         static std::atomic<int> signalCount{0};
-        int count = signalCount.fetch_add(1);
-      
+        signalCount.fetch_add(1);
+
         if (signalQueue_.size() >= signalQueueLimit_) {
             // drop oldest to make room
             signalQueue_.pop_front();
