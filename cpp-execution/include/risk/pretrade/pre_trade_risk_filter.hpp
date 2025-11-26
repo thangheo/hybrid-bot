@@ -150,7 +150,5 @@ private:
     
 };
 
-    static std::unique_ptr<PreTradeRiskFilter> createPreTradeFilter(const RiskConfig& config);
-    
 } // namespace risk
 } // namespace trading

@@ -6,7 +6,7 @@ using namespace trading;
 // Global demo instance for signal handling
 std::unique_ptr<Trading_system> E8Instance;
 
-void signalHandler(int sig) {
+void signalHandler([[maybe_unused]] int sig) {
     std::cout << "\nShutdown signal received..." << std::endl;
     if (E8Instance) {
         E8Instance->shutdown();
