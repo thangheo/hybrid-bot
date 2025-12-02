@@ -39,13 +39,13 @@ class EMAPullbackImbalanceStrategy(BaseStrategy):
             cfg = config
 
         super().__init__(cfg)
-        
+
         # === EMA Parameters ===
-        self.ema_short = config.get('ema_short', 20)
-        self.ema_long = config.get('ema_long', 50)
+        self.ema_short = cfg.get('ema_short', 20)
+        self.ema_long = cfg.get('ema_long', 50)
         
         # === RSI Parameters ===
-        self.rsi_period = config.get('rsi_period', 14)
+        self.rsi_period = cfg.get('rsi_period', 14)
         # Normalize RSI ranges: allow YAML to specify tuples, lists or strings
         def _normalize_range(val, default):
             if isinstance(val, (list, tuple)) and len(val) == 2:
