@@ -32,3 +32,6 @@ models/*
 build/
 *.pkl
 *.png
+
+# Recorded market data feeds for replay benchmarks (large)
+cpp-execution/data/feeds/
